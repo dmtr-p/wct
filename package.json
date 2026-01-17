@@ -1,0 +1,24 @@
+{
+	"name": "tab-cli",
+	"version": "0.1.0",
+	"description": "Git worktree workflow automation CLI",
+	"module": "src/index.ts",
+	"type": "module",
+	"bin": {
+		"tab": "src/index.ts"
+	},
+	"scripts": {
+		"start": "bun run src/index.ts",
+		"test": "bun test",
+		"lint": "bunx biome check",
+		"format": "bunx biome check --write"
+	},
+	"private": true,
+	"devDependencies": {
+		"@biomejs/biome": "2.3.11",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	}
+}

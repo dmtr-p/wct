@@ -1,0 +1,35 @@
+# tab-cli configuration for this project
+version: 1
+
+# Base directory for worktrees
+worktree_dir: "../worktrees"
+
+# Project name (used for tmux session naming)
+project_name: "tab-cli"
+
+# Files to copy to new worktree
+copy:
+  - .vscode/
+  - CLAUDE.md
+  - .claude
+
+# Commands to run after worktree creation
+setup:
+  - name: "Install dependencies"
+    command: "bun install"
+
+# IDE command
+ide:
+  command: "code $TAB_WORKTREE_DIR"
+
+# Tmux session configuration
+tmux:
+  layout: "panes"
+  split: "horizontal"
+  panes:
+    - name: "dev"
+      command: "bun run --watch src/index.ts"
+    - name: "test"
+      command: "bun test --watch"
+    - name: "shell"
+      command: "claude "

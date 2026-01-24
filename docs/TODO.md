@@ -15,9 +15,6 @@ copy:
   - .claude/**/*.json         # glob pattern
 ```
 
-### New commands
-- [ ] `tab rm <branch>` - Remove worktree and kill associated tmux session
-
 ### Worktree enhancements
 - [ ] Base branch option: `tab open feature-1 --base main` (default: current HEAD)
 

@@ -7,24 +7,27 @@ export interface TmuxSession {
 	windows: number;
 }
 
+export function parseSessionListOutput(output: string): TmuxSession[] {
+	if (!output) {
+		return [];
+	}
+
+	return output.split("\n").map((line) => {
+		const [name = "", attached, windows] = line.split(":");
+		return {
+			name,
+			attached: attached === "1",
+			windows: parseInt(windows ?? "0", 10),
+		};
+	});
+}
+
 export async function listSessions(): Promise<TmuxSession[]> {
 	try {
 		const result =
 			await $`tmux list-sessions -F "#{session_name}:#{session_attached}:#{session_windows}"`.quiet();
 		const output = result.text().trim();
-
-		if (!output) {
-			return [];
-		}
-
-		return output.split("\n").map((line) => {
-			const [name, attached, windows] = line.split(":");
-			return {
-				name,
-				attached: attached === "1",
-				windows: parseInt(windows, 10),
-			};
-		});
+		return parseSessionListOutput(output);
 	} catch {
 		return [];
 	}
@@ -118,4 +121,33 @@ export async function createSession(
 export function formatSessionName(projectName: string, branch: string): string {
 	const sanitizedBranch = branch.replace(/[^a-zA-Z0-9_-]/g, "-");
 	return `${projectName}-${sanitizedBranch}`;
+}
+
+export interface KillSessionResult {
+	success: boolean;
+	sessionName: string;
+	error?: string;
+}
+
+export async function killSession(name: string): Promise<KillSessionResult> {
+	try {
+		await $`tmux kill-session -t ${name}`.quiet();
+		return { success: true, sessionName: name };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return { success: false, sessionName: name, error: message };
+	}
+}
+
+export async function getCurrentSession(): Promise<string | null> {
+	if (!process.env.TMUX) {
+		return null;
+	}
+
+	try {
+		const result = await $`tmux display-message -p '#S'`.quiet();
+		return result.text().trim();
+	} catch {
+		return null;
+	}
 }

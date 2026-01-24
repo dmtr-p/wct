@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { closeCommand } from "./commands/close";
 import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
@@ -13,12 +14,15 @@ Usage:
   tab <command> [options]
 
 Commands:
-  open <branch>    Create worktree, run setup, start tmux session, open IDE
-  list             Show active worktrees with tmux session status
-  init             Generate a starter .tabrc.yaml config file
+  open <branch>     Create worktree, run setup, start tmux session, open IDE
+  close <branch>    Kill tmux session and remove worktree
+  list              Show active worktrees with tmux session status
+  init              Generate a starter .tabrc.yaml config file
 
 Options:
   -e, --existing   Use existing branch (for 'open' command)
+  -y, --yes        Skip confirmation prompt (for 'close' command)
+  -f, --force      Force removal even if worktree is dirty (for 'close' command)
   -h, --help       Show this help message
   -v, --version    Show version number
 
@@ -26,6 +30,8 @@ Examples:
   tab init                  Create a new .tabrc.yaml config file
   tab open feature-auth     Create new worktree and branch
   tab open feature-auth -e  Use existing branch
+  tab close feature-auth    Close worktree (with confirmation)
+  tab close feature-auth -y Skip confirmation
   tab list                  Show all worktrees and their status
 `;
 
@@ -36,6 +42,8 @@ async function main(): Promise<void> {
 			help: { type: "boolean", short: "h" },
 			version: { type: "boolean", short: "v" },
 			existing: { type: "boolean", short: "e" },
+			yes: { type: "boolean", short: "y" },
+			force: { type: "boolean", short: "f" },
 		},
 		allowPositionals: true,
 	});
@@ -69,6 +77,21 @@ async function main(): Promise<void> {
 				process.exit(1);
 			}
 			await openCommand({ branch, existing: !!values.existing });
+			break;
+		}
+
+		case "close": {
+			const branch = positionals[1];
+			if (!branch) {
+				logger.error("Missing branch name");
+				console.log("\nUsage: tab close <branch> [-y|--yes] [-f|--force]");
+				process.exit(1);
+			}
+			await closeCommand({
+				branch,
+				yes: !!values.yes,
+				force: !!values.force,
+			});
 			break;
 		}
 

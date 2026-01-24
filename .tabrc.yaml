@@ -11,7 +11,6 @@ project_name: "tab-cli"
 copy:
   - .vscode/
   - CLAUDE.md
-  - .claude
 
 # Commands to run after worktree creation
 setup:
@@ -27,8 +26,6 @@ tmux:
   layout: "panes"
   split: "horizontal"
   panes:
-    - name: "dev"
-      command: "bun run --watch src/index.ts"
     - name: "test"
       command: "bun test --watch"
     - name: "shell"

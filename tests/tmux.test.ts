@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { formatSessionName } from "../src/services/tmux";
+import {
+	formatSessionName,
+	getCurrentSession,
+	parseSessionListOutput,
+} from "../src/services/tmux";
 
 describe("formatSessionName", () => {
 	test("formats simple branch name", () => {
@@ -23,20 +27,13 @@ describe("formatSessionName", () => {
 	});
 });
 
-describe("tmux session parsing", () => {
+describe("parseSessionListOutput", () => {
 	test("parses session list output", () => {
 		const output = `main:0:3
 myapp-feature-auth:1:2
 myapp-fix-login:0:1`;
 
-		const sessions = output.split("\n").map((line) => {
-			const [name, attached, windows] = line.split(":");
-			return {
-				name,
-				attached: attached === "1",
-				windows: parseInt(windows, 10),
-			};
-		});
+		const sessions = parseSessionListOutput(output);
 
 		expect(sessions).toHaveLength(3);
 
@@ -54,8 +51,21 @@ myapp-fix-login:0:1`;
 	});
 
 	test("handles empty session list", () => {
-		const output = "";
-		const sessions = output ? output.split("\n") : [];
+		const sessions = parseSessionListOutput("");
 		expect(sessions).toHaveLength(0);
+	});
+});
+
+describe("getCurrentSession", () => {
+	test("returns null when TMUX env is not set", async () => {
+		const originalTmux = process.env.TMUX;
+		delete process.env.TMUX;
+
+		const result = await getCurrentSession();
+		expect(result).toBeNull();
+
+		if (originalTmux !== undefined) {
+			process.env.TMUX = originalTmux;
+		}
 	});
 });

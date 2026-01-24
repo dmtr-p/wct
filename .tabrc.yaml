@@ -10,7 +10,7 @@ project_name: "tab-cli"
 # Files to copy to new worktree
 copy:
   - .vscode/
-  - CLAUDE.md
+  - .claude/
 
 # Commands to run after worktree creation
 setup:

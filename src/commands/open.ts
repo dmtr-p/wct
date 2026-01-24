@@ -1,5 +1,5 @@
 import { loadConfig, resolveWorktreePath } from "../config/loader";
-import { copyFiles } from "../services/copy";
+import { copyEntries } from "../services/copy";
 import { openIDE } from "../services/ide";
 import { runSetupCommands, type SetupEnv } from "../services/setup";
 import { createSession, formatSessionName } from "../services/tmux";
@@ -76,9 +76,9 @@ export async function openCommand(options: OpenOptions): Promise<void> {
 
 	if (config.copy && config.copy.length > 0) {
 		logger.info("Copying files...");
-		const copyResults = await copyFiles(config.copy, mainDir, worktreePath);
+		const copyResults = await copyEntries(config.copy, mainDir, worktreePath);
 		const copied = copyResults.filter((r) => r.success).length;
-		logger.success(`Copied ${copied}/${config.copy.length} files`);
+		logger.success(`Copied ${copied}/${copyResults.length} files`);
 	}
 
 	if (config.setup && config.setup.length > 0) {

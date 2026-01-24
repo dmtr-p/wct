@@ -3,9 +3,9 @@
 ## Planned Features
 
 ### Copy config enhancements
-- [ ] Support copying directories recursively (e.g., `.claude/`)
-- [ ] Support glob patterns (e.g., `.claude/**/*.json`)
-- [ ] Use Bun's `Glob` API for pattern matching
+- [x] Support copying directories recursively (e.g., `.claude/`)
+- [x] Support glob patterns (e.g., `.claude/**/*.json`)
+- [x] Use Bun's `Glob` API for pattern matching
 
 Example config:
 ```yaml

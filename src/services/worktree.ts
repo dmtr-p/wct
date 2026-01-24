@@ -1,5 +1,33 @@
 import { $ } from "bun";
 
+interface ShellError extends Error {
+	stderr?: Buffer;
+	exitCode?: number;
+}
+
+function extractShellError(err: unknown): string {
+	if (err && typeof err === "object") {
+		const shellErr = err as ShellError;
+		if (shellErr.stderr) {
+			const stderr = shellErr.stderr.toString().trim();
+			if (stderr) {
+				// Filter to only fatal/error lines from git
+				const errorLines = stderr
+					.split("\n")
+					.filter((line) => /^(fatal|error):/.test(line));
+				if (errorLines.length > 0) {
+					return errorLines.join("\n");
+				}
+				return stderr;
+			}
+		}
+		if (shellErr.message) {
+			return shellErr.message;
+		}
+	}
+	return String(err);
+}
+
 export interface Worktree {
 	path: string;
 	branch: string;
@@ -93,7 +121,7 @@ export async function createWorktree(
 
 		return { success: true, path };
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+		const message = extractShellError(err);
 		return { success: false, path, error: message };
 	}
 }
@@ -134,7 +162,7 @@ export async function removeWorktree(
 		}
 		return { success: true, path };
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+		const message = extractShellError(err);
 		return { success: false, path, error: message };
 	}
 }

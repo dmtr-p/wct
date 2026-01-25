@@ -21,9 +21,13 @@ describe("validateConfig", () => {
 			],
 			ide: { command: "code $TAB_WORKTREE_DIR" },
 			tmux: {
-				layout: "panes",
-				split: "horizontal",
-				panes: [{ name: "dev", command: "bun run dev" }, { name: "shell" }],
+				windows: [
+					{
+						name: "dev",
+						split: "horizontal",
+						panes: [{ command: "bun run dev" }, { name: "shell" }],
+					},
+				],
 			},
 		});
 		expect(result.valid).toBe(true);
@@ -62,22 +66,261 @@ describe("validateConfig", () => {
 		expect(result.errors).toContain("setup[0].command must be a string");
 	});
 
-	test("rejects invalid tmux layout", () => {
+	test("accepts valid tmux windows config", () => {
 		const result = validateConfig({
-			tmux: { layout: "invalid" },
+			tmux: {
+				windows: [
+					{
+						name: "dev",
+						split: "horizontal",
+						panes: [
+							{ command: "bun run dev" },
+							{ name: "watch", command: "bun run watch" },
+						],
+					},
+					{
+						name: "testing",
+						panes: [{ command: "bun test --watch" }],
+					},
+					{
+						name: "shell",
+						command: "echo hello",
+					},
+				],
+			},
 		});
-		expect(result.valid).toBe(false);
-		expect(result.errors).toContain('tmux.layout must be "panes" or "windows"');
+		expect(result.valid).toBe(true);
+		expect(result.errors).toHaveLength(0);
 	});
 
-	test("rejects invalid tmux split", () => {
+	test("rejects tmux window without name", () => {
 		const result = validateConfig({
-			tmux: { split: "diagonal" },
+			tmux: {
+				windows: [{ command: "echo hello" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("tmux.windows[0].name must be a string");
+	});
+
+	test("rejects invalid tmux window split value", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev", split: "diagonal" }],
+			},
 		});
 		expect(result.valid).toBe(false);
 		expect(result.errors).toContain(
-			'tmux.split must be "horizontal" or "vertical"',
+			'tmux.windows[0].split must be "horizontal" or "vertical"',
 		);
+	});
+
+	test("rejects invalid tmux window pane command type", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [
+					{
+						name: "dev",
+						panes: [{ command: 123 }],
+					},
+				],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].panes[0].command must be a string",
+		);
+	});
+
+	test("rejects non-array tmux windows", () => {
+		const result = validateConfig({
+			tmux: { windows: "not-an-array" },
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("tmux.windows must be an array");
+	});
+
+	test("rejects non-array tmux window panes", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev", panes: "not-an-array" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("tmux.windows[0].panes must be an array");
+	});
+
+	test("accepts valid tmux window layout presets", () => {
+		const layouts = [
+			"even-horizontal",
+			"even-vertical",
+			"main-horizontal",
+			"main-vertical",
+			"tiled",
+		];
+		for (const layout of layouts) {
+			const result = validateConfig({
+				tmux: {
+					windows: [{ name: "dev", layout, panes: [{}, {}] }],
+				},
+			});
+			expect(result.valid).toBe(true);
+			expect(result.errors).toHaveLength(0);
+		}
+	});
+
+	test("rejects invalid tmux window layout", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev", layout: "invalid-layout" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].layout must be one of: even-horizontal, even-vertical, main-horizontal, main-vertical, tiled",
+		);
+	});
+
+	test("rejects deprecated tmux.layout property", () => {
+		const result = validateConfig({
+			tmux: { layout: "panes" },
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.layout is deprecated. Use tmux.windows instead.",
+		);
+	});
+
+	test("rejects deprecated tmux.split property", () => {
+		const result = validateConfig({
+			tmux: { split: "horizontal" },
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.split is deprecated. Use tmux.windows instead.",
+		);
+	});
+
+	test("rejects deprecated tmux.panes property", () => {
+		const result = validateConfig({
+			tmux: { panes: [{ command: "echo hello" }] },
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.panes is deprecated. Use tmux.windows instead.",
+		);
+	});
+
+	test("rejects multiple deprecated tmux properties at once", () => {
+		const result = validateConfig({
+			tmux: {
+				layout: "panes",
+				split: "horizontal",
+				panes: [{ command: "echo hello" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.layout is deprecated. Use tmux.windows instead.",
+		);
+		expect(result.errors).toContain(
+			"tmux.split is deprecated. Use tmux.windows instead.",
+		);
+		expect(result.errors).toContain(
+			"tmux.panes is deprecated. Use tmux.windows instead.",
+		);
+	});
+
+	test("rejects invalid tmux window object type", () => {
+		const result = validateConfig({
+			tmux: { windows: ["not-an-object"] },
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("tmux.windows[0] must be an object");
+	});
+
+	test("rejects invalid tmux pane object type", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev", panes: ["not-an-object"] }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].panes[0] must be an object",
+		);
+	});
+
+	test("rejects invalid tmux window command type", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev", command: 123 }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("tmux.windows[0].command must be a string");
+	});
+
+	test("rejects invalid tmux pane name type", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev", panes: [{ name: 123 }] }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].panes[0].name must be a string",
+		);
+	});
+
+	test("rejects tmux window name with colon", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev:server" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].name contains invalid characters (: . #). These characters conflict with tmux target syntax.",
+		);
+	});
+
+	test("rejects tmux window name with period", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev.server" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].name contains invalid characters (: . #). These characters conflict with tmux target syntax.",
+		);
+	});
+
+	test("rejects tmux window name with hash", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [{ name: "dev#1" }],
+			},
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"tmux.windows[0].name contains invalid characters (: . #). These characters conflict with tmux target syntax.",
+		);
+	});
+
+	test("accepts valid tmux window names with hyphens and underscores", () => {
+		const result = validateConfig({
+			tmux: {
+				windows: [
+					{ name: "dev-server" },
+					{ name: "test_runner" },
+					{ name: "shell123" },
+				],
+			},
+		});
+		expect(result.valid).toBe(true);
+		expect(result.errors).toHaveLength(0);
 	});
 });
 

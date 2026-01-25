@@ -23,10 +23,13 @@ ide:
 
 # Tmux session configuration
 tmux:
-  layout: "panes"
-  split: "horizontal"
-  panes:
-    - name: "test"
-      command: "bun test --watch"
-    - name: "shell"
-      command: "claude "
+  windows:
+    - name: "claude"
+      command: "claude"
+    - name: "git"
+      command: "lazygit"
+    - name: "dev"
+      split: "horizontal"
+      panes:
+        - command: "bun test --watch"
+        - {}

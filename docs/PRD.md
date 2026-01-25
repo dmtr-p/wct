@@ -76,20 +76,16 @@ ide:
 
 # Tmux session configuration
 tmux:
-  # Layout: "panes" (splits in one window) or "windows" (separate windows)
-  layout: "panes"  # or "windows"
-
-  # For "panes" layout - split direction
-  split: "horizontal"  # or "vertical"
-
-  # Panes/windows to create (used for both layouts)
-  panes:
+  windows:
     - name: "dev"
-      command: "bun run dev"
+      layout: "main-vertical"  # even-horizontal, even-vertical, main-horizontal, main-vertical, tiled
+      split: "horizontal"      # or "vertical" - direction for pane splits
+      panes:
+        - command: "bun run dev"
+        - command: "bun test --watch"
     - name: "claude"
       command: "claude"
-    - name: "shell"
-      command: ""  # empty = just a shell
+    - name: "shell"  # empty window = just a shell
 ```
 
 ### Workflow (`tab open`)

@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import type { TmuxConfig } from "../config/schema";
+import type { TmuxConfig, TmuxWindow } from "../config/schema";
 
 export interface TmuxSession {
 	name: string;
@@ -60,6 +60,168 @@ export interface CreateSessionResult {
 	alreadyExists?: boolean;
 }
 
+export interface TmuxCommand {
+	type:
+		| "new-session"
+		| "new-window"
+		| "split-window"
+		| "send-keys"
+		| "select-layout"
+		| "select-window";
+	args: string[];
+}
+
+export function buildWindowPaneCommands(
+	windowTarget: string,
+	workingDir: string,
+	window: TmuxWindow,
+): TmuxCommand[] {
+	const commands: TmuxCommand[] = [];
+	const panes = window.panes ?? [];
+	const split = window.split ?? "horizontal";
+
+	// If no panes, just run the window command (for single-pane windows)
+	if (panes.length === 0) {
+		if (window.command) {
+			commands.push({
+				type: "send-keys",
+				args: ["-t", windowTarget, window.command, "Enter"],
+			});
+		}
+		return commands;
+	}
+
+	// Run first pane command (panes[0] runs in the initial pane)
+	if (panes[0].command) {
+		commands.push({
+			type: "send-keys",
+			args: ["-t", windowTarget, panes[0].command, "Enter"],
+		});
+	}
+
+	// Create additional panes (each split creates new pane and makes it active)
+	for (let i = 1; i < panes.length; i++) {
+		const pane = panes[i];
+		const splitFlag = split === "horizontal" ? "-h" : "-v";
+
+		commands.push({
+			type: "split-window",
+			args: [splitFlag, "-t", windowTarget, "-c", workingDir],
+		});
+
+		// After split, the new pane is active, so send-keys goes to the right pane
+		if (pane.command) {
+			commands.push({
+				type: "send-keys",
+				args: ["-t", windowTarget, pane.command, "Enter"],
+			});
+		}
+	}
+
+	// Apply layout if multiple panes
+	if (panes.length > 1) {
+		const layout = window.layout ?? "tiled";
+		commands.push({
+			type: "select-layout",
+			args: ["-t", windowTarget, layout],
+		});
+	}
+
+	return commands;
+}
+
+async function executeCommand(cmd: TmuxCommand): Promise<void> {
+	switch (cmd.type) {
+		case "new-session":
+			await $`tmux new-session ${cmd.args}`.quiet();
+			break;
+		case "new-window":
+			await $`tmux new-window ${cmd.args}`.quiet();
+			break;
+		case "split-window":
+			await $`tmux split-window ${cmd.args}`.quiet();
+			break;
+		case "send-keys":
+			await $`tmux send-keys ${cmd.args}`.quiet();
+			break;
+		case "select-layout":
+			await $`tmux select-layout ${cmd.args}`.quiet();
+			break;
+		case "select-window":
+			await $`tmux select-window ${cmd.args}`.quiet();
+			break;
+	}
+}
+
+async function executeCommands(commands: TmuxCommand[]): Promise<void> {
+	for (const cmd of commands) {
+		await executeCommand(cmd);
+	}
+}
+
+export function buildWindowsPaneCommands(
+	sessionName: string,
+	workingDir: string,
+	windows: TmuxWindow[],
+): TmuxCommand[] {
+	const commands: TmuxCommand[] = [];
+
+	if (windows.length === 0) {
+		commands.push({
+			type: "new-session",
+			args: ["-d", "-s", sessionName, "-c", workingDir],
+		});
+		return commands;
+	}
+
+	// Create session with first window
+	const firstWindow = windows[0];
+	commands.push({
+		type: "new-session",
+		args: ["-d", "-s", sessionName, "-n", firstWindow.name, "-c", workingDir],
+	});
+	commands.push(
+		...buildWindowPaneCommands(
+			`${sessionName}:${firstWindow.name}`,
+			workingDir,
+			firstWindow,
+		),
+	);
+
+	// Create remaining windows
+	for (let i = 1; i < windows.length; i++) {
+		const window = windows[i];
+		commands.push({
+			type: "new-window",
+			args: ["-t", sessionName, "-n", window.name, "-c", workingDir],
+		});
+		commands.push(
+			...buildWindowPaneCommands(
+				`${sessionName}:${window.name}`,
+				workingDir,
+				window,
+			),
+		);
+	}
+
+	// Select first window
+	commands.push({
+		type: "select-window",
+		args: ["-t", `${sessionName}:${firstWindow.name}`],
+	});
+
+	return commands;
+}
+
+async function createSessionWithWindows(
+	name: string,
+	workingDir: string,
+	windows: TmuxWindow[],
+): Promise<void> {
+	const commands = buildWindowsPaneCommands(name, workingDir, windows);
+	await executeCommands(commands);
+}
+
 export async function createSession(
 	name: string,
 	workingDir: string,
@@ -74,43 +236,8 @@ export async function createSession(
 	}
 
 	try {
-		const layout = config?.layout ?? "panes";
-		const split = config?.split ?? "horizontal";
-		const panes = config?.panes ?? [{ name: "shell" }];
-
-		await $`tmux new-session -d -s ${name} -c ${workingDir}`.quiet();
-
-		if (panes.length > 0 && panes[0].command) {
-			await $`tmux send-keys -t ${name} ${panes[0].command} Enter`.quiet();
-		}
-
-		if (layout === "panes") {
-			for (let i = 1; i < panes.length; i++) {
-				const pane = panes[i];
-				const splitFlag = split === "horizontal" ? "-h" : "-v";
-
-				await $`tmux split-window ${splitFlag} -t ${name} -c ${workingDir}`.quiet();
-
-				if (pane.command) {
-					await $`tmux send-keys -t ${name} ${pane.command} Enter`.quiet();
-				}
-			}
-
-			await $`tmux select-layout -t ${name} tiled`.quiet();
-		} else {
-			for (let i = 1; i < panes.length; i++) {
-				const pane = panes[i];
-
-				await $`tmux new-window -t ${name} -n ${pane.name} -c ${workingDir}`.quiet();
-
-				if (pane.command) {
-					await $`tmux send-keys -t ${name}:${pane.name} ${pane.command} Enter`.quiet();
-				}
-			}
-
-			await $`tmux select-window -t ${name}:0`.quiet();
-		}
-
+		const windows = config?.windows ?? [];
+		await createSessionWithWindows(name, workingDir, windows);
 		return { success: true, sessionName: name };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

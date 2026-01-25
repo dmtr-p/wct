@@ -1,4 +1,4 @@
-import type { ResolvedConfig, TabConfig } from "./schema";
+import { type ResolvedConfig, type TabConfig, VALID_LAYOUTS } from "./schema";
 
 export interface ValidationResult {
 	valid: boolean;
@@ -78,40 +78,83 @@ export function validateConfig(config: unknown): ValidationResult {
 		} else {
 			const tmux = cfg.tmux as Record<string, unknown>;
 
-			if (
-				tmux.layout !== undefined &&
-				tmux.layout !== "panes" &&
-				tmux.layout !== "windows"
-			) {
-				errors.push('tmux.layout must be "panes" or "windows"');
+			// Check for deprecated top-level tmux properties
+			const deprecatedProps = ["layout", "split", "panes"];
+			for (const prop of deprecatedProps) {
+				if (tmux[prop] !== undefined) {
+					errors.push(`tmux.${prop} is deprecated. Use tmux.windows instead.`);
+				}
 			}
 
-			if (
-				tmux.split !== undefined &&
-				tmux.split !== "horizontal" &&
-				tmux.split !== "vertical"
-			) {
-				errors.push('tmux.split must be "horizontal" or "vertical"');
-			}
-
-			if (tmux.panes !== undefined) {
-				if (!Array.isArray(tmux.panes)) {
-					errors.push("tmux.panes must be an array");
+			if (tmux.windows !== undefined) {
+				if (!Array.isArray(tmux.windows)) {
+					errors.push("tmux.windows must be an array");
 				} else {
-					for (let i = 0; i < tmux.panes.length; i++) {
-						const pane = tmux.panes[i] as Record<string, unknown>;
-						if (!pane || typeof pane !== "object") {
-							errors.push(`tmux.panes[${i}] must be an object`);
+					for (let i = 0; i < tmux.windows.length; i++) {
+						const win = tmux.windows[i] as Record<string, unknown>;
+						if (!win || typeof win !== "object") {
+							errors.push(`tmux.windows[${i}] must be an object`);
 							continue;
 						}
-						if (typeof pane.name !== "string") {
-							errors.push(`tmux.panes[${i}].name must be a string`);
+						if (typeof win.name !== "string") {
+							errors.push(`tmux.windows[${i}].name must be a string`);
+						} else if (/[:.#]/.test(win.name)) {
+							errors.push(
+								`tmux.windows[${i}].name contains invalid characters (: . #). These characters conflict with tmux target syntax.`,
+							);
+						}
+						if (win.command !== undefined && typeof win.command !== "string") {
+							errors.push(`tmux.windows[${i}].command must be a string`);
 						}
 						if (
-							pane.command !== undefined &&
-							typeof pane.command !== "string"
+							win.split !== undefined &&
+							win.split !== "horizontal" &&
+							win.split !== "vertical"
 						) {
-							errors.push(`tmux.panes[${i}].command must be a string`);
+							errors.push(
+								`tmux.windows[${i}].split must be "horizontal" or "vertical"`,
+							);
+						}
+						if (
+							win.layout !== undefined &&
+							!VALID_LAYOUTS.includes(
+								win.layout as (typeof VALID_LAYOUTS)[number],
+							)
+						) {
+							errors.push(
+								`tmux.windows[${i}].layout must be one of: ${VALID_LAYOUTS.join(", ")}`,
+							);
+						}
+						if (win.panes !== undefined) {
+							if (!Array.isArray(win.panes)) {
+								errors.push(`tmux.windows[${i}].panes must be an array`);
+							} else {
+								for (let j = 0; j < win.panes.length; j++) {
+									const pane = win.panes[j] as Record<string, unknown>;
+									if (!pane || typeof pane !== "object") {
+										errors.push(
+											`tmux.windows[${i}].panes[${j}] must be an object`,
+										);
+										continue;
+									}
+									if (
+										pane.name !== undefined &&
+										typeof pane.name !== "string"
+									) {
+										errors.push(
+											`tmux.windows[${i}].panes[${j}].name must be a string`,
+										);
+									}
+									if (
+										pane.command !== undefined &&
+										typeof pane.command !== "string"
+									) {
+										errors.push(
+											`tmux.windows[${i}].panes[${j}].command must be a string`,
+										);
+									}
+								}
+							}
 						}
 					}
 				}

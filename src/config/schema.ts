@@ -5,14 +5,30 @@ export interface SetupCommand {
 }
 
 export interface TmuxPane {
-	name: string;
+	name?: string;
 	command?: string;
 }
 
-export interface TmuxConfig {
-	layout?: "panes" | "windows";
+export const VALID_LAYOUTS = [
+	"even-horizontal",
+	"even-vertical",
+	"main-horizontal",
+	"main-vertical",
+	"tiled",
+] as const;
+
+export type TmuxLayout = (typeof VALID_LAYOUTS)[number];
+
+export interface TmuxWindow {
+	name: string;
+	command?: string;
 	split?: "horizontal" | "vertical";
+	layout?: TmuxLayout;
 	panes?: TmuxPane[];
+}
+
+export interface TmuxConfig {
+	windows?: TmuxWindow[];
 }
 
 export interface IdeConfig {

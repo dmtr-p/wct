@@ -1,8 +1,8 @@
-# tab-cli - Product Requirements Document
+# wct - Product Requirements Document
 
 ## Overview
 
-`tab` is a command-line tool that automates the git worktree workflow, enabling developers to quickly spin up isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
+`wct` is a command-line tool that automates the git worktree workflow, enabling developers to quickly spin up isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
 
 ## Problem Statement
 
@@ -14,7 +14,7 @@ When working on multiple features or bug fixes simultaneously, developers need t
 4. Set up their terminal environment (tmux sessions, dev servers)
 5. Open their IDE in the correct directory
 
-This repetitive process is time-consuming and error-prone. `tab` automates the entire workflow with a single command.
+This repetitive process is time-consuming and error-prone. `wct` automates the entire workflow with a single command.
 
 ## Target Users
 
@@ -30,22 +30,22 @@ This repetitive process is time-consuming and error-prone. `tab` automates the e
 
 | Command | Description |
 |---------|-------------|
-| `tab open <branch>` | Create worktree, run setup, start tmux session, open IDE |
-| `tab open <branch> -e, --existing` | Same as above but for existing branch (no -b flag) |
-| `tab list` | Show active worktrees with tmux session status (attached/detached) |
-| `tab init` | Generate a starter `.tabrc.yaml` config file |
+| `wct open <branch>` | Create worktree, run setup, start tmux session, open IDE |
+| `wct open <branch> -e, --existing` | Same as above but for existing branch (no -b flag) |
+| `wct list` | Show active worktrees with tmux session status (attached/detached) |
+| `wct init` | Generate a starter `.wct.yaml` config file |
 
 ### Configuration
 
 **Config File Locations (in order of precedence):**
 
-1. `.tabrc.yaml` (project root) - project-specific config
-2. `~/.tabrc.yaml` - global defaults
+1. `.wct.yaml` (project root) - project-specific config
+2. `~/.wct.yaml` - global defaults
 
 **Config Schema:**
 
 ```yaml
-# .tabrc.yaml
+# .wct.yaml
 version: 1
 
 # Base directory for worktrees (supports ~ expansion)
@@ -69,10 +69,10 @@ setup:
     command: "bun run codegen"
     optional: true  # continue if fails
 
-# IDE command (TAB_WORKTREE_DIR env var available)
+# IDE command (WCT_WORKTREE_DIR env var available)
 ide:
-  command: "cursor $TAB_WORKTREE_DIR"
-  # or: "code $TAB_WORKTREE_DIR"
+  command: "cursor $WCT_WORKTREE_DIR"
+  # or: "code $WCT_WORKTREE_DIR"
 
 # Tmux session configuration
 tmux:
@@ -88,9 +88,9 @@ tmux:
     - name: "shell"  # empty window = just a shell
 ```
 
-### Workflow (`tab open`)
+### Workflow (`wct open`)
 
-When user runs `tab open feature-auth`:
+When user runs `wct open feature-auth`:
 
 1. **Validate** - Check git repo, config exists, branch name valid
 2. **Create worktree** - `git worktree add <path> -b <branch>` or checkout existing
@@ -103,7 +103,7 @@ When user runs `tab open feature-auth`:
 
 - **Continue with warnings**: If a step fails (e.g., dependency install), log a warning and proceed to next steps
 - **Clear error messages**: Show which step failed and why
-- **Idempotent operations**: Running `tab open` on existing worktree should handle gracefully
+- **Idempotent operations**: Running `wct open` on existing worktree should handle gracefully
 
 ### Environment Variables
 
@@ -111,10 +111,10 @@ Available in config commands:
 
 | Variable | Description |
 |----------|-------------|
-| `TAB_WORKTREE_DIR` | Full path to the worktree directory |
-| `TAB_MAIN_DIR` | Full path to the main repository directory |
-| `TAB_BRANCH` | Branch name |
-| `TAB_PROJECT` | Project name from config |
+| `WCT_WORKTREE_DIR` | Full path to the worktree directory |
+| `WCT_MAIN_DIR` | Full path to the main repository directory |
+| `WCT_BRANCH` | Branch name |
+| `WCT_PROJECT` | Project name from config |
 
 ---
 
@@ -149,13 +149,13 @@ Available in config commands:
 ### File Structure
 
 ```
-tab-cli/
+wct/
 ├── src/
 │   ├── index.ts          # Entry point, CLI setup
 │   ├── commands/
-│   │   ├── open.ts       # tab open command
-│   │   ├── list.ts       # tab list command
-│   │   └── init.ts       # tab init command
+│   │   ├── open.ts       # wct open command
+│   │   ├── list.ts       # wct list command
+│   │   └── init.ts       # wct init command
 │   ├── config/
 │   │   ├── loader.ts     # Load & merge configs
 │   │   ├── schema.ts     # Config type definitions
@@ -175,7 +175,7 @@ tab-cli/
 ├── package.json
 ├── tsconfig.json
 ├── biome.json            # Biome config
-├── .tabrc.yaml           # Example config
+├── .wct.yaml             # Example config
 └── README.md
 ```
 
@@ -185,9 +185,9 @@ tab-cli/
 
 ### In Scope (v0.1)
 
-- `tab open <branch>` - full workflow (with `--existing` flag)
-- `tab list` - show worktrees with tmux session status
-- `tab init` - generate starter config
+- `wct open <branch>` - full workflow (with `--existing` flag)
+- `wct list` - show worktrees with tmux session status
+- `wct init` - generate starter config
 - Global + project config with merging
 - Tmux layout (panes or windows, configurable)
 - Configurable IDE command
@@ -196,7 +196,7 @@ tab-cli/
 ### Out of Scope (Future)
 
 - Multiple named presets
-- `tab rm` cleanup command
+- `wct rm` cleanup command
 - Interactive mode with React Ink
 - Auto-attach to existing tmux session
 - Git hooks integration
@@ -208,18 +208,18 @@ tab-cli/
 ```bash
 # First time setup
 cd ~/projects/myapp
-tab init                    # Creates .tabrc.yaml template
+wct init                    # Creates .wct.yaml template
 
-# Edit .tabrc.yaml with your preferences
+# Edit .wct.yaml with your preferences
 
 # Create new worktree for a feature
-tab open feature-auth       # Creates worktree, installs deps, starts tmux, opens IDE
+wct open feature-auth       # Creates worktree, installs deps, starts tmux, opens IDE
 
 # Check out an existing remote branch
-tab open feature-auth -e    # Uses existing branch instead of creating new
+wct open feature-auth -e    # Uses existing branch instead of creating new
 
 # List active worktrees
-tab list
+wct list
 # Output:
 # BRANCH          WORKTREE                         TMUX SESSION              STATUS
 # feature-auth    ~/worktrees/myapp/feature-auth   myapp-feature-auth        attached

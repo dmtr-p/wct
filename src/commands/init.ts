@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { CONFIG_FILENAME } from "../config/loader";
 import * as logger from "../utils/logger";
 
-const TEMPLATE = `# tab-cli configuration
-# See documentation at: https://github.com/your-org/tab-cli
+const TEMPLATE = `# wct configuration
+# See documentation at: https://github.com/your-org/wct
 version: 1
 
 # Base directory for worktrees (supports ~ expansion)
@@ -27,10 +27,10 @@ setup:
   #   command: "bun run codegen"
   #   optional: true  # continue if fails
 
-# IDE command (environment variables available: TAB_WORKTREE_DIR, TAB_MAIN_DIR, TAB_BRANCH, TAB_PROJECT)
+# IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
 ide:
-  command: "code $TAB_WORKTREE_DIR"
-  # command: "cursor $TAB_WORKTREE_DIR"
+  command: "code $WCT_WORKTREE_DIR"
+  # command: "cursor $WCT_WORKTREE_DIR"
 
 # Tmux session configuration
 tmux:

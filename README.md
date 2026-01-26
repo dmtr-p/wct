@@ -1,4 +1,4 @@
-# tab-cli
+# wct
 
 To install dependencies:
 

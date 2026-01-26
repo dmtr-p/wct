@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`tab-cli` is a CLI tool that automates git worktree workflows. It enables developers to quickly create isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
+`wct` is a CLI tool that automates git worktree workflows. It enables developers to quickly create isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
 
 ## Commands
 
@@ -25,9 +25,9 @@ The planned file structure follows this layout:
 src/
 ├── index.ts              # Entry point, CLI setup with util.parseArgs
 ├── commands/
-│   ├── open.ts           # tab open <branch> - full worktree workflow
-│   ├── list.ts           # tab list - show active worktrees
-│   └── init.ts           # tab init - generate .tabrc.yaml
+│   ├── open.ts           # wct open <branch> - full worktree workflow
+│   ├── list.ts           # wct list - show active worktrees
+│   └── init.ts           # wct init - generate .wct.yaml
 ├── config/
 │   ├── loader.ts         # Load & merge configs (project + global)
 │   ├── schema.ts         # Config type definitions
@@ -56,15 +56,15 @@ This project has **zero runtime dependencies** by design.
 
 ## Config System
 
-Config files (`.tabrc.yaml`) are loaded from:
+Config files (`.wct.yaml`) are loaded from:
 1. Project root (takes precedence)
-2. `~/.tabrc.yaml` (global defaults)
+2. `~/.wct.yaml` (global defaults)
 
 Environment variables available in config commands:
-- `TAB_WORKTREE_DIR` - worktree path
-- `TAB_MAIN_DIR` - main repo path
-- `TAB_BRANCH` - branch name
-- `TAB_PROJECT` - project name
+- `WCT_WORKTREE_DIR` - worktree path
+- `WCT_MAIN_DIR` - main repo path
+- `WCT_BRANCH` - branch name
+- `WCT_PROJECT` - project name
 
 ## Code Style
 

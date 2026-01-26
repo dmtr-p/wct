@@ -9,14 +9,14 @@ export interface OpenIdeResult {
 
 function substituteEnvVars(command: string, env: SetupEnv): string {
 	return command
-		.replace(/\$TAB_WORKTREE_DIR/g, env.TAB_WORKTREE_DIR)
-		.replace(/\$TAB_MAIN_DIR/g, env.TAB_MAIN_DIR)
-		.replace(/\$TAB_BRANCH/g, env.TAB_BRANCH)
-		.replace(/\$TAB_PROJECT/g, env.TAB_PROJECT)
-		.replace(/\$\{TAB_WORKTREE_DIR\}/g, env.TAB_WORKTREE_DIR)
-		.replace(/\$\{TAB_MAIN_DIR\}/g, env.TAB_MAIN_DIR)
-		.replace(/\$\{TAB_BRANCH\}/g, env.TAB_BRANCH)
-		.replace(/\$\{TAB_PROJECT\}/g, env.TAB_PROJECT);
+		.replace(/\$WCT_WORKTREE_DIR/g, env.WCT_WORKTREE_DIR)
+		.replace(/\$WCT_MAIN_DIR/g, env.WCT_MAIN_DIR)
+		.replace(/\$WCT_BRANCH/g, env.WCT_BRANCH)
+		.replace(/\$WCT_PROJECT/g, env.WCT_PROJECT)
+		.replace(/\$\{WCT_WORKTREE_DIR\}/g, env.WCT_WORKTREE_DIR)
+		.replace(/\$\{WCT_MAIN_DIR\}/g, env.WCT_MAIN_DIR)
+		.replace(/\$\{WCT_BRANCH\}/g, env.WCT_BRANCH)
+		.replace(/\$\{WCT_PROJECT\}/g, env.WCT_PROJECT);
 }
 
 export async function openIDE(

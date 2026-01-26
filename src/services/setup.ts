@@ -3,10 +3,10 @@ import type { SetupCommand } from "../config/schema";
 import * as logger from "../utils/logger";
 
 export interface SetupEnv {
-	TAB_WORKTREE_DIR: string;
-	TAB_MAIN_DIR: string;
-	TAB_BRANCH: string;
-	TAB_PROJECT: string;
+	WCT_WORKTREE_DIR: string;
+	WCT_MAIN_DIR: string;
+	WCT_BRANCH: string;
+	WCT_PROJECT: string;
 }
 
 export interface SetupResult {

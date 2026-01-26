@@ -54,10 +54,10 @@ export async function openCommand(options: OpenOptions): Promise<void> {
 	const sessionName = formatSessionName(config.project_name, branch);
 
 	const env: SetupEnv = {
-		TAB_WORKTREE_DIR: worktreePath,
-		TAB_MAIN_DIR: mainDir,
-		TAB_BRANCH: branch,
-		TAB_PROJECT: config.project_name,
+		WCT_WORKTREE_DIR: worktreePath,
+		WCT_MAIN_DIR: mainDir,
+		WCT_BRANCH: branch,
+		WCT_PROJECT: config.project_name,
 	};
 
 	logger.info(`Creating worktree for '${branch}'`);

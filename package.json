@@ -1,11 +1,11 @@
 {
-	"name": "tab-cli",
+	"name": "wct",
 	"version": "0.1.0",
 	"description": "Git worktree workflow automation CLI",
 	"module": "src/index.ts",
 	"type": "module",
 	"bin": {
-		"tab": "src/index.ts"
+		"wct": "src/index.ts"
 	},
 	"scripts": {
 		"start": "bun run src/index.ts",

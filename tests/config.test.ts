@@ -19,7 +19,7 @@ describe("validateConfig", () => {
 				{ name: "Install", command: "bun install" },
 				{ name: "Codegen", command: "bun run codegen", optional: true },
 			],
-			ide: { command: "code $TAB_WORKTREE_DIR" },
+			ide: { command: "code $WCT_WORKTREE_DIR" },
 			tmux: {
 				windows: [
 					{

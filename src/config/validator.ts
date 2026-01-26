@@ -1,4 +1,4 @@
-import { type ResolvedConfig, type TabConfig, VALID_LAYOUTS } from "./schema";
+import { type ResolvedConfig, VALID_LAYOUTS, type WctConfig } from "./schema";
 
 export interface ValidationResult {
 	valid: boolean;
@@ -166,7 +166,7 @@ export function validateConfig(config: unknown): ValidationResult {
 }
 
 export function resolveConfig(
-	config: TabConfig,
+	config: WctConfig,
 	projectDir: string,
 ): ResolvedConfig {
 	const projectName =

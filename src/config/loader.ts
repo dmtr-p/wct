@@ -1,9 +1,9 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ResolvedConfig, TabConfig } from "./schema";
+import type { ResolvedConfig, WctConfig } from "./schema";
 import { resolveConfig, validateConfig } from "./validator";
 
-const CONFIG_FILENAME = ".tabrc.yaml";
+const CONFIG_FILENAME = ".wct.yaml";
 
 export function expandTilde(path: string): string {
 	if (path.startsWith("~/")) {
@@ -12,7 +12,7 @@ export function expandTilde(path: string): string {
 	return path;
 }
 
-async function loadConfigFile(path: string): Promise<TabConfig | null> {
+async function loadConfigFile(path: string): Promise<WctConfig | null> {
 	const file = Bun.file(path);
 	if (!(await file.exists())) {
 		return null;
@@ -20,18 +20,18 @@ async function loadConfigFile(path: string): Promise<TabConfig | null> {
 
 	const content = await file.text();
 	const parsed = Bun.YAML.parse(content);
-	return parsed as TabConfig;
+	return parsed as WctConfig;
 }
 
 function mergeConfigs(
-	global: TabConfig | null,
-	project: TabConfig | null,
-): TabConfig {
+	global: WctConfig | null,
+	project: WctConfig | null,
+): WctConfig {
 	if (!global && !project) {
 		return {};
 	}
 	if (!global) {
-		return project as TabConfig;
+		return project as WctConfig;
 	}
 	if (!project) {
 		return global;
@@ -77,7 +77,7 @@ export async function loadConfig(
 	if (!hasProjectConfig && !hasGlobalConfig) {
 		return {
 			config: null,
-			errors: ["No config file found. Run 'tab init' to create one."],
+			errors: ["No config file found. Run 'wct init' to create one."],
 			hasProjectConfig,
 			hasGlobalConfig,
 		};

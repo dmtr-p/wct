@@ -8,16 +8,16 @@ import * as logger from "./utils/logger";
 const VERSION = "0.1.0";
 
 const HELP = `
-tab - Git worktree workflow automation
+wct - Git worktree workflow automation
 
 Usage:
-  tab <command> [options]
+  wct <command> [options]
 
 Commands:
   open <branch>     Create worktree, run setup, start tmux session, open IDE
   close <branch>    Kill tmux session and remove worktree
   list              Show active worktrees with tmux session status
-  init              Generate a starter .tabrc.yaml config file
+  init              Generate a starter .wct.yaml config file
 
 Options:
   -e, --existing   Use existing branch (for 'open' command)
@@ -27,12 +27,12 @@ Options:
   -v, --version    Show version number
 
 Examples:
-  tab init                  Create a new .tabrc.yaml config file
-  tab open feature-auth     Create new worktree and branch
-  tab open feature-auth -e  Use existing branch
-  tab close feature-auth    Close worktree (with confirmation)
-  tab close feature-auth -y Skip confirmation
-  tab list                  Show all worktrees and their status
+  wct init                  Create a new .wct.yaml config file
+  wct open feature-auth     Create new worktree and branch
+  wct open feature-auth -e  Use existing branch
+  wct close feature-auth    Close worktree (with confirmation)
+  wct close feature-auth -y Skip confirmation
+  wct list                  Show all worktrees and their status
 `;
 
 async function main(): Promise<void> {
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
 	});
 
 	if (values.version) {
-		console.log(`tab version ${VERSION}`);
+		console.log(`wct version ${VERSION}`);
 		return;
 	}
 
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
 			const branch = positionals[1];
 			if (!branch) {
 				logger.error("Missing branch name");
-				console.log("\nUsage: tab open <branch> [-e|--existing]");
+				console.log("\nUsage: wct open <branch> [-e|--existing]");
 				process.exit(1);
 			}
 			await openCommand({ branch, existing: !!values.existing });
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
 			const branch = positionals[1];
 			if (!branch) {
 				logger.error("Missing branch name");
-				console.log("\nUsage: tab close <branch> [-y|--yes] [-f|--force]");
+				console.log("\nUsage: wct close <branch> [-y|--yes] [-f|--force]");
 				process.exit(1);
 			}
 			await closeCommand({

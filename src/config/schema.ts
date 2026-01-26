@@ -35,7 +35,7 @@ export interface IdeConfig {
 	command: string;
 }
 
-export interface TabConfig {
+export interface WctConfig {
 	version?: number;
 	worktree_dir?: string;
 	project_name?: string;
@@ -45,7 +45,7 @@ export interface TabConfig {
 	tmux?: TmuxConfig;
 }
 
-export interface ResolvedConfig extends TabConfig {
+export interface ResolvedConfig extends WctConfig {
 	worktree_dir: string;
 	project_name: string;
 }

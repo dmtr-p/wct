@@ -1,11 +1,11 @@
-# tab-cli configuration for this project
+# wct configuration for this project
 version: 1
 
 # Base directory for worktrees
 worktree_dir: "../worktrees"
 
 # Project name (used for tmux session naming)
-project_name: "tab-cli"
+project_name: "wct"
 
 # Files to copy to new worktree
 copy:
@@ -19,7 +19,7 @@ setup:
 
 # IDE command
 ide:
-  command: "code $TAB_WORKTREE_DIR"
+  command: "code $WCT_WORKTREE_DIR"
 
 # Tmux session configuration
 tmux:

@@ -9,44 +9,44 @@ Git worktree workflow automation CLI. Quickly create isolated development enviro
 Install with a single command (auto-detects your platform):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dmtr-p/tab-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dmtr-p/wct/main/install.sh | bash
 ```
 
 This will download the appropriate binary for your system and install it to `/usr/local/bin/wct`.
 
 To install to a custom location:
 ```bash
-INSTALL_DIR=$HOME/.local/bin curl -fsSL https://raw.githubusercontent.com/dmtr-p/tab-cli/main/install.sh | bash
+INSTALL_DIR=$HOME/.local/bin curl -fsSL https://raw.githubusercontent.com/dmtr-p/wct/main/install.sh | bash
 ```
 
 ### Manual Installation
 
-Download the binary for your platform from [Releases](https://github.com/dmtr-p/tab-cli/releases/latest):
+Download the binary for your platform from [Releases](https://github.com/dmtr-p/wct/releases/latest):
 
 **macOS (Apple Silicon):**
 ```bash
-curl -fsSL https://github.com/dmtr-p/tab-cli/releases/latest/download/wct-darwin-arm64 -o wct
+curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-darwin-arm64 -o wct
 chmod +x wct
 sudo mv wct /usr/local/bin/wct
 ```
 
 **macOS (Intel):**
 ```bash
-curl -fsSL https://github.com/dmtr-p/tab-cli/releases/latest/download/wct-darwin-x64 -o wct
+curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-darwin-x64 -o wct
 chmod +x wct
 sudo mv wct /usr/local/bin/wct
 ```
 
 **Linux (x64):**
 ```bash
-curl -fsSL https://github.com/dmtr-p/tab-cli/releases/latest/download/wct-linux-x64 -o wct
+curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-linux-x64 -o wct
 chmod +x wct
 sudo mv wct /usr/local/bin/wct
 ```
 
 **Linux (ARM64):**
 ```bash
-curl -fsSL https://github.com/dmtr-p/tab-cli/releases/latest/download/wct-linux-arm64 -o wct
+curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-linux-arm64 -o wct
 chmod +x wct
 sudo mv wct /usr/local/bin/wct
 ```

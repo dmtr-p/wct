@@ -20,7 +20,7 @@ else
 fi
 
 # Configuration
-REPO="dmtr-p/tab-cli"
+REPO="dmtr-p/wct"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 BINARY_NAME="wct"
 

@@ -11,7 +11,9 @@
 		"start": "bun run src/index.ts",
 		"test": "bun test",
 		"lint": "bunx biome check",
-		"format": "bunx biome check --write"
+		"format": "bunx biome check --write",
+		"build": "bun build src/index.ts --compile --outfile dist/wct",
+		"build:all": "bun run scripts/build-all.ts"
 	},
 	"private": true,
 	"devDependencies": {

@@ -19,7 +19,7 @@ copy:
 - [ ] Base branch option: `tab open feature-1 --base main` (default: current HEAD)
 
 ### Tmux config enhancements
-- [ ] Support panes inside windows (currently only supports panes OR windows, not both)
+- [x] Support panes inside windows (currently only supports panes OR windows, not both)
 
 Example config:
 ```yaml

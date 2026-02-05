@@ -11,10 +11,23 @@ import {
 
 describe("getCurrentBranch", () => {
 	test("returns current branch name in a git repo", async () => {
-		const branch = await getCurrentBranch();
-		expect(branch).not.toBeNull();
-		expect(typeof branch).toBe("string");
-		expect(branch?.length).toBeGreaterThan(0);
+		const tempDir = await mkdtemp(join(tmpdir(), "wct-test-branch-"));
+		const originalDir = process.cwd();
+
+		try {
+			await $`git init -b test-branch`.quiet().cwd(tempDir);
+			await $`git config user.email "test@test.com"`.quiet().cwd(tempDir);
+			await $`git config user.name "Test"`.quiet().cwd(tempDir);
+			await $`git config commit.gpgSign false`.quiet().cwd(tempDir);
+			await $`git commit --allow-empty -m "initial"`.quiet().cwd(tempDir);
+
+			process.chdir(tempDir);
+			const branch = await getCurrentBranch();
+			expect(branch).toBe("test-branch");
+		} finally {
+			process.chdir(originalDir);
+			await rm(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	test("returns null on detached HEAD", async () => {

@@ -2,6 +2,16 @@
 
 Git worktree workflow automation CLI. Quickly create isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
 
+## Usage
+
+```bash
+wct open <branch>       # Create worktree, run setup, start tmux session, open IDE
+wct up                  # Start tmux session and open IDE in current directory
+wct close <branch>      # Kill tmux session and remove worktree
+wct list                # Show active worktrees with tmux session status
+wct init                # Generate a starter .wct.yaml config file
+```
+
 ## Installation
 
 ### Quick Install (Recommended)

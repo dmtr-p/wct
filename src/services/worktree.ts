@@ -44,6 +44,27 @@ export async function getMainRepoPath(): Promise<string | null> {
 	}
 }
 
+export async function getCurrentBranch(): Promise<string | null> {
+	try {
+		const result = await $`git rev-parse --abbrev-ref HEAD`.quiet();
+		const branch = result.text().trim();
+		if (!branch || branch === "HEAD") {
+			return null;
+		}
+		return branch;
+	} catch {
+		return null;
+	}
+}
+
+export async function getMainWorktreePath(): Promise<string | null> {
+	const worktrees = await listWorktrees();
+	if (worktrees.length === 0) {
+		return null;
+	}
+	return worktrees[0].path;
+}
+
 export async function isGitRepo(): Promise<boolean> {
 	try {
 		await $`git rev-parse --git-dir`.quiet();

@@ -20,19 +20,21 @@ Commands:
   init              Generate a starter .wct.yaml config file
 
 Options:
-  -e, --existing   Use existing branch (for 'open' command)
-  -y, --yes        Skip confirmation prompt (for 'close' command)
-  -f, --force      Force removal even if worktree is dirty (for 'close' command)
-  -h, --help       Show this help message
-  -v, --version    Show version number
+  -e, --existing       Use existing branch (for 'open' command)
+  -b, --base <branch>  Base branch for new worktree (for 'open' command, default: HEAD)
+  -y, --yes            Skip confirmation prompt (for 'close' command)
+  -f, --force          Force removal even if worktree is dirty (for 'close' command)
+  -h, --help           Show this help message
+  -v, --version        Show version number
 
 Examples:
-  wct init                  Create a new .wct.yaml config file
-  wct open feature-auth     Create new worktree and branch
-  wct open feature-auth -e  Use existing branch
-  wct close feature-auth    Close worktree (with confirmation)
-  wct close feature-auth -y Skip confirmation
-  wct list                  Show all worktrees and their status
+  wct init                         Create a new .wct.yaml config file
+  wct open feature-auth            Create new worktree and branch from HEAD
+  wct open feature-auth -e         Use existing branch
+  wct open feature-auth -b main    Create new branch based on 'main'
+  wct close feature-auth           Close worktree (with confirmation)
+  wct close feature-auth -y        Skip confirmation
+  wct list                         Show all worktrees and their status
 `;
 
 async function main(): Promise<void> {
@@ -42,6 +44,7 @@ async function main(): Promise<void> {
 			help: { type: "boolean", short: "h" },
 			version: { type: "boolean", short: "v" },
 			existing: { type: "boolean", short: "e" },
+			base: { type: "string", short: "b" },
 			yes: { type: "boolean", short: "y" },
 			force: { type: "boolean", short: "f" },
 		},
@@ -73,10 +76,16 @@ async function main(): Promise<void> {
 			const branch = positionals[1];
 			if (!branch) {
 				logger.error("Missing branch name");
-				console.log("\nUsage: wct open <branch> [-e|--existing]");
+				console.log(
+					"\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
+				);
 				process.exit(1);
 			}
-			await openCommand({ branch, existing: !!values.existing });
+			await openCommand({
+				branch,
+				existing: !!values.existing,
+				base: values.base,
+			});
 			break;
 		}
 

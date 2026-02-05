@@ -14,10 +14,11 @@ import * as logger from "../utils/logger";
 export interface OpenOptions {
 	branch: string;
 	existing: boolean;
+	base?: string;
 }
 
 export async function openCommand(options: OpenOptions): Promise<void> {
-	const { branch, existing } = options;
+	const { branch, existing, base } = options;
 
 	if (!(await isGitRepo())) {
 		logger.error("Not a git repository");
@@ -38,10 +39,23 @@ export async function openCommand(options: OpenOptions): Promise<void> {
 		process.exit(1);
 	}
 
+	if (existing && base) {
+		logger.error("Options --existing and --base cannot be used together");
+		process.exit(1);
+	}
+
 	if (existing) {
 		const exists = await branchExists(branch);
 		if (!exists) {
 			logger.error(`Branch '${branch}' does not exist`);
+			process.exit(1);
+		}
+	}
+
+	if (base) {
+		const baseExists = await branchExists(base);
+		if (!baseExists) {
+			logger.error(`Base branch '${base}' does not exist`);
 			process.exit(1);
 		}
 	}
@@ -60,8 +74,15 @@ export async function openCommand(options: OpenOptions): Promise<void> {
 		WCT_PROJECT: config.project_name,
 	};
 
-	logger.info(`Creating worktree for '${branch}'`);
-	const worktreeResult = await createWorktree(worktreePath, branch, existing);
+	logger.info(
+		`Creating worktree for '${branch}'${base ? ` based on '${base}'` : ""}`,
+	);
+	const worktreeResult = await createWorktree(
+		worktreePath,
+		branch,
+		existing,
+		base,
+	);
 
 	if (!worktreeResult.success) {
 		logger.error(`Failed to create worktree: ${worktreeResult.error}`);

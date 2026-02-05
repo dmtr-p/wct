@@ -102,6 +102,7 @@ export async function createWorktree(
 	path: string,
 	branch: string,
 	useExisting: boolean,
+	base?: string,
 ): Promise<CreateWorktreeResult> {
 	const worktreeDir = Bun.file(path);
 	if (await worktreeDir.exists()) {
@@ -115,6 +116,8 @@ export async function createWorktree(
 	try {
 		if (useExisting) {
 			await $`git worktree add ${path} ${branch}`.quiet();
+		} else if (base) {
+			await $`git worktree add -b ${branch} ${path} ${base}`.quiet();
 		} else {
 			await $`git worktree add -b ${branch} ${path}`.quiet();
 		}

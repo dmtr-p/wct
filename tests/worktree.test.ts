@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { $ } from "bun";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { $ } from "bun";
 import {
 	createWorktree,
 	findWorktreeByBranch,
@@ -111,8 +111,9 @@ describe("createWorktree with base branch", () => {
 		expect(result.alreadyExists).toBeUndefined();
 
 		// Verify the new branch is based on develop (has develop's commit)
-		const log =
-			await $`git log --oneline feature-from-develop`.quiet().cwd(repoDir);
+		const log = await $`git log --oneline feature-from-develop`
+			.quiet()
+			.cwd(repoDir);
 		const logText = log.text();
 		expect(logText).toContain("develop commit");
 	});
@@ -120,17 +121,14 @@ describe("createWorktree with base branch", () => {
 	test("creates worktree without base (defaults to HEAD)", async () => {
 		process.chdir(repoDir);
 		const wtPath = join(worktreeDir, "feature-from-head");
-		const result = await createWorktree(
-			wtPath,
-			"feature-from-head",
-			false,
-		);
+		const result = await createWorktree(wtPath, "feature-from-head", false);
 
 		expect(result.success).toBe(true);
 
 		// Should be based on current HEAD (main), which does not have develop's commit
-		const log =
-			await $`git log --oneline feature-from-head`.quiet().cwd(repoDir);
+		const log = await $`git log --oneline feature-from-head`
+			.quiet()
+			.cwd(repoDir);
 		const logText = log.text();
 		expect(logText).not.toContain("develop commit");
 	});
@@ -152,13 +150,15 @@ describe("createWorktree with base branch", () => {
 	test("ignores base when using existing branch", async () => {
 		process.chdir(repoDir);
 		const wtPath = join(worktreeDir, "existing-branch-wt");
-		const result = await createWorktree(
-			wtPath,
-			"develop",
-			true,
-		);
+		// Pass base="main" but useExisting=true — base should be ignored,
+		// and the worktree should check out develop (which has "develop commit")
+		const result = await createWorktree(wtPath, "develop", true, "main");
 
 		expect(result.success).toBe(true);
 		expect(result.path).toBe(wtPath);
+
+		// Verify it checked out the existing develop branch, not main
+		const log = await $`git log --oneline develop`.quiet().cwd(repoDir);
+		expect(log.text()).toContain("develop commit");
 	});
 });

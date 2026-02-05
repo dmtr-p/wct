@@ -76,7 +76,9 @@ async function main(): Promise<void> {
 			const branch = positionals[1];
 			if (!branch) {
 				logger.error("Missing branch name");
-				console.log("\nUsage: wct open <branch> [-e|--existing]");
+				console.log(
+					"\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
+				);
 				process.exit(1);
 			}
 			await openCommand({

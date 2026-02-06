@@ -119,7 +119,10 @@ export function resolveWorktreePath(
 	const basePath = expanded.startsWith("/")
 		? expanded
 		: resolve(projectDir, expanded);
-	return join(basePath, `${projectName}-${slugifyBranch(branch)}`);
+	return join(
+		basePath,
+		`${slugifyBranch(projectName)}-${slugifyBranch(branch)}`,
+	);
 }
 
 export { CONFIG_FILENAME };

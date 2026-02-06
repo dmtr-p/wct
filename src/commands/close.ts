@@ -47,7 +47,7 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
 	}
 
 	const currentSession = await getCurrentSession();
-	if (currentSession === sessionName) {
+	if (currentSession === sessionName && !yes) {
 		const confirmed = await confirm(
 			"You are inside this tmux session. It will be killed. Continue?",
 		);

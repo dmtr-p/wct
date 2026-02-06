@@ -421,4 +421,14 @@ describe("resolveWorktreePath", () => {
 		);
 		expect(result).toBe("/var/worktrees/myapp-main");
 	});
+
+	test("slugifies project name with special characters", () => {
+		const result = resolveWorktreePath(
+			"../worktrees",
+			"main",
+			"/home/user/projects/my.app",
+			"my/app",
+		);
+		expect(result).toBe("/home/user/projects/worktrees/my-app-main");
+	});
 });

@@ -1,4 +1,4 @@
-import { loadConfig } from "../config/loader";
+import { basename } from "node:path";
 import { formatSessionName, listSessions } from "../services/tmux";
 import { listWorktrees } from "../services/worktree";
 import * as logger from "../utils/logger";
@@ -11,11 +11,6 @@ interface WorktreeRow {
 }
 
 export async function listCommand(): Promise<void> {
-	const cwd = process.cwd();
-	const { config } = await loadConfig(cwd);
-	const projectName =
-		config?.project_name ?? cwd.split("/").filter(Boolean).pop() ?? "project";
-
 	const worktrees = await listWorktrees();
 	const sessions = await listSessions();
 
@@ -30,7 +25,7 @@ export async function listCommand(): Promise<void> {
 		if (wt.isBare) continue;
 
 		const branch = wt.branch || "(unknown)";
-		const sessionName = formatSessionName(projectName, branch);
+		const sessionName = formatSessionName(basename(wt.path));
 		const session = sessions.find((s) => s.name === sessionName);
 
 		rows.push({

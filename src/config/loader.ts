@@ -12,6 +12,10 @@ export function expandTilde(path: string): string {
 	return path;
 }
 
+export function slugifyBranch(branch: string): string {
+	return branch.replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
 async function loadConfigFile(path: string): Promise<WctConfig | null> {
 	const file = Bun.file(path);
 	if (!(await file.exists())) {
@@ -109,12 +113,13 @@ export function resolveWorktreePath(
 	worktreeDir: string,
 	branch: string,
 	projectDir: string,
+	projectName: string,
 ): string {
 	const expanded = expandTilde(worktreeDir);
 	const basePath = expanded.startsWith("/")
 		? expanded
 		: resolve(projectDir, expanded);
-	return join(basePath, branch);
+	return join(basePath, `${projectName}-${slugifyBranch(branch)}`);
 }
 
 export { CONFIG_FILENAME };

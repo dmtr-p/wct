@@ -4,27 +4,28 @@ import {
 	formatSessionName,
 	getCurrentSession,
 	parseSessionListOutput,
+	switchSession,
 } from "../src/services/tmux";
 
 describe("formatSessionName", () => {
-	test("formats simple branch name", () => {
-		const result = formatSessionName("myapp", "feature-auth");
+	test("returns dirname unchanged when already clean", () => {
+		const result = formatSessionName("myapp-feature-auth");
 		expect(result).toBe("myapp-feature-auth");
 	});
 
-	test("sanitizes branch with slashes", () => {
-		const result = formatSessionName("myapp", "feature/auth");
-		expect(result).toBe("myapp-feature-auth");
-	});
-
-	test("sanitizes branch with special characters", () => {
-		const result = formatSessionName("myapp", "feature@auth#test");
+	test("sanitizes special characters", () => {
+		const result = formatSessionName("myapp-feature@auth#test");
 		expect(result).toBe("myapp-feature-auth-test");
 	});
 
-	test("handles underscores and hyphens", () => {
-		const result = formatSessionName("my_app", "feature_auth-test");
+	test("preserves underscores and hyphens", () => {
+		const result = formatSessionName("my_app-feature_auth-test");
 		expect(result).toBe("my_app-feature_auth-test");
+	});
+
+	test("sanitizes dots", () => {
+		const result = formatSessionName("myapp.v2");
+		expect(result).toBe("myapp-v2");
 	});
 });
 
@@ -351,5 +352,11 @@ describe("buildWindowsPaneCommands", () => {
 		// Should have layout command
 		const layoutCmd = commands.find((c) => c.type === "select-layout");
 		expect(layoutCmd?.args[2]).toBe("main-vertical");
+	});
+});
+
+describe("switchSession", () => {
+	test("switchSession function is defined", () => {
+		expect(typeof switchSession).toBe("function");
 	});
 });

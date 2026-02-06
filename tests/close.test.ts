@@ -10,14 +10,14 @@ describe("close command", () => {
 	});
 
 	describe("session name generation for close", () => {
-		test("generates session name to kill from project and branch", () => {
-			const sessionName = formatSessionName("myapp", "feature-auth");
+		test("generates session name from worktree dirname", () => {
+			const sessionName = formatSessionName("myapp-feature-auth");
 			expect(sessionName).toBe("myapp-feature-auth");
 		});
 
-		test("handles branch names with slashes when closing", () => {
-			const sessionName = formatSessionName("myapp", "feature/auth/login");
-			expect(sessionName).toBe("myapp-feature-auth-login");
+		test("sanitizes special characters in dirname", () => {
+			const sessionName = formatSessionName("myapp-feature.auth");
+			expect(sessionName).toBe("myapp-feature-auth");
 		});
 	});
 

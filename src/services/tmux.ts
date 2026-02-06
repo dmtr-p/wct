@@ -245,9 +245,8 @@ export async function createSession(
 	}
 }
 
-export function formatSessionName(projectName: string, branch: string): string {
-	const sanitizedBranch = branch.replace(/[^a-zA-Z0-9_-]/g, "-");
-	return `${projectName}-${sanitizedBranch}`;
+export function formatSessionName(dirName: string): string {
+	return dirName.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
 export interface KillSessionResult {
@@ -276,5 +275,23 @@ export async function getCurrentSession(): Promise<string | null> {
 		return result.text().trim();
 	} catch {
 		return null;
+	}
+}
+
+export interface SwitchSessionResult {
+	success: boolean;
+	sessionName: string;
+	error?: string;
+}
+
+export async function switchSession(
+	name: string,
+): Promise<SwitchSessionResult> {
+	try {
+		await $`tmux switch-client -t ${name}`.quiet();
+		return { success: true, sessionName: name };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return { success: false, sessionName: name, error: message };
 	}
 }

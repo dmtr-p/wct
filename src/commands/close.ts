@@ -1,4 +1,4 @@
-import { loadConfig } from "../config/loader";
+import { basename } from "node:path";
 import {
 	formatSessionName,
 	getCurrentSession,
@@ -7,7 +7,6 @@ import {
 } from "../services/tmux";
 import {
 	findWorktreeByBranch,
-	getMainRepoPath,
 	isGitRepo,
 	removeWorktree,
 } from "../services/worktree";
@@ -28,20 +27,6 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
 		process.exit(1);
 	}
 
-	const mainDir = await getMainRepoPath();
-	if (!mainDir) {
-		logger.error("Could not determine repository root");
-		process.exit(1);
-	}
-
-	const { config, errors } = await loadConfig(mainDir);
-	if (!config) {
-		for (const err of errors) {
-			logger.error(err);
-		}
-		process.exit(1);
-	}
-
 	const worktree = await findWorktreeByBranch(branch);
 	if (!worktree) {
 		logger.error(`No worktree found for branch '${branch}'`);
@@ -49,7 +34,7 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
 	}
 
 	const worktreePath = worktree.path;
-	const sessionName = formatSessionName(config.project_name, branch);
+	const sessionName = formatSessionName(basename(worktreePath));
 
 	if (!yes) {
 		const confirmed = await confirm(
@@ -63,7 +48,13 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
 
 	const currentSession = await getCurrentSession();
 	if (currentSession === sessionName) {
-		logger.warn("You are inside this tmux session. It will close.");
+		const confirmed = await confirm(
+			"You are inside this tmux session. It will be killed. Continue?",
+		);
+		if (!confirmed) {
+			logger.info("Aborted");
+			return;
+		}
 	}
 
 	if (await sessionExists(sessionName)) {

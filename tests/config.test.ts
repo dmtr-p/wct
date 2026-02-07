@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { expandTilde } from "../src/config/loader";
+import {
+	expandTilde,
+	resolveWorktreePath,
+	slugifyBranch,
+} from "../src/config/loader";
 import { resolveConfig, validateConfig } from "../src/config/validator";
 
 describe("validateConfig", () => {
@@ -359,5 +363,72 @@ describe("expandTilde", () => {
 	test("leaves relative paths unchanged", () => {
 		const result = expandTilde("../worktrees");
 		expect(result).toBe("../worktrees");
+	});
+});
+
+describe("slugifyBranch", () => {
+	test("replaces slashes with hyphens", () => {
+		expect(slugifyBranch("feature/auth")).toBe("feature-auth");
+	});
+
+	test("replaces multiple special characters", () => {
+		expect(slugifyBranch("feature@auth#test")).toBe("feature-auth-test");
+	});
+
+	test("leaves simple names unchanged", () => {
+		expect(slugifyBranch("feature-auth")).toBe("feature-auth");
+	});
+
+	test("preserves underscores", () => {
+		expect(slugifyBranch("feature_auth")).toBe("feature_auth");
+	});
+
+	test("handles nested slashes", () => {
+		expect(slugifyBranch("feature/auth/login")).toBe("feature-auth-login");
+	});
+});
+
+describe("resolveWorktreePath", () => {
+	test("includes project name prefix and slugified branch", () => {
+		const result = resolveWorktreePath(
+			"../worktrees",
+			"feature/auth",
+			"/home/user/projects/myapp",
+			"myapp",
+		);
+		expect(result).toBe("/home/user/projects/worktrees/myapp-feature-auth");
+	});
+
+	test("does not create nested directories from slashes in branch", () => {
+		const result = resolveWorktreePath(
+			"../worktrees",
+			"feature/auth/login",
+			"/home/user/projects/myapp",
+			"myapp",
+		);
+		expect(result).toBe(
+			"/home/user/projects/worktrees/myapp-feature-auth-login",
+		);
+		expect(result).not.toContain("feature/auth");
+	});
+
+	test("handles absolute worktree dir", () => {
+		const result = resolveWorktreePath(
+			"/var/worktrees",
+			"main",
+			"/home/user/projects/myapp",
+			"myapp",
+		);
+		expect(result).toBe("/var/worktrees/myapp-main");
+	});
+
+	test("slugifies project name with special characters", () => {
+		const result = resolveWorktreePath(
+			"../worktrees",
+			"main",
+			"/home/user/projects/my.app",
+			"my/app",
+		);
+		expect(result).toBe("/home/user/projects/worktrees/my-app-main");
 	});
 });

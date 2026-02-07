@@ -127,6 +127,15 @@ export async function createWorktree(
 ): Promise<CreateWorktreeResult> {
 	const worktreeDir = Bun.file(path);
 	if (await worktreeDir.exists()) {
+		const worktrees = await listWorktrees();
+		const existing = worktrees.find((wt) => wt.path === path);
+		if (existing && existing.branch !== branch) {
+			return {
+				success: false,
+				path,
+				error: `Path already exists for branch '${existing.branch}', not '${branch}'`,
+			};
+		}
 		return {
 			success: true,
 			path,

@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { closeCommand } from "./commands/close";
+import { downCommand } from "./commands/down";
 import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
@@ -17,6 +18,7 @@ Usage:
 Commands:
   open <branch>     Create worktree, run setup, start tmux session, open IDE
   up                Start tmux session and open IDE in current directory
+  down              Kill tmux session for current directory
   close <branch>    Kill tmux session and remove worktree
   list              Show active worktrees with tmux session status
   init              Generate a starter .wct.yaml config file
@@ -33,6 +35,7 @@ Examples:
   wct init                         Create a new .wct.yaml config file
   wct open feature-auth            Create new worktree and branch from HEAD
   wct up                           Start tmux + IDE in current directory
+  wct down                         Kill tmux session for current directory
   wct open feature-auth -e         Use existing branch
   wct open feature-auth -b main    Create new branch based on 'main'
   wct close feature-auth           Close worktree (with confirmation)
@@ -73,6 +76,10 @@ async function main(): Promise<void> {
 
 		case "up":
 			await upCommand();
+			break;
+
+		case "down":
+			await downCommand();
 			break;
 
 		case "list":

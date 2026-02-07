@@ -1,8 +1,13 @@
+import { basename } from "node:path";
 import { loadConfig, resolveWorktreePath } from "../config/loader";
 import { copyEntries } from "../services/copy";
 import { openIDE } from "../services/ide";
 import { runSetupCommands, type SetupEnv } from "../services/setup";
-import { createSession, formatSessionName } from "../services/tmux";
+import {
+	createSession,
+	formatSessionName,
+	switchSession,
+} from "../services/tmux";
 import {
 	branchExists,
 	createWorktree,
@@ -64,8 +69,9 @@ export async function openCommand(options: OpenOptions): Promise<void> {
 		config.worktree_dir,
 		branch,
 		mainDir,
+		config.project_name,
 	);
-	const sessionName = formatSessionName(config.project_name, branch);
+	const sessionName = formatSessionName(basename(worktreePath));
 
 	const env: SetupEnv = {
 		WCT_WORKTREE_DIR: worktreePath,
@@ -140,8 +146,17 @@ export async function openCommand(options: OpenOptions): Promise<void> {
 
 	logger.success(`Worktree '${branch}' is ready`);
 	if (config.tmux) {
-		console.log(
-			`\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
-		);
+		if (process.env.TMUX) {
+			const switchResult = await switchSession(sessionName);
+			if (switchResult.success) {
+				logger.success(`Switched to tmux session '${sessionName}'`);
+			} else {
+				logger.warn(`Failed to switch session: ${switchResult.error}`);
+			}
+		} else {
+			console.log(
+				`\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+			);
+		}
 	}
 }

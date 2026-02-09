@@ -36,15 +36,17 @@ export async function listCommand(): Promise<void> {
 		});
 	}
 
-	const headers = ["BRANCH", "WORKTREE", "TMUX SESSION", "STATUS"];
+	const headers = ["BRANCH", "WORKTREE", "TMUX SESSION", "STATUS"] as const;
 	const colWidths = [
 		Math.max(headers[0].length, ...rows.map((r) => r.branch.length)),
 		Math.max(headers[1].length, ...rows.map((r) => r.path.length)),
 		Math.max(headers[2].length, ...rows.map((r) => r.sessionName.length)),
 		Math.max(headers[3].length, ...rows.map((r) => r.status.length)),
-	];
+	] as const;
 
-	const headerLine = headers.map((h, i) => h.padEnd(colWidths[i])).join("  ");
+	const headerLine = headers
+		.map((h, i) => h.padEnd(colWidths[i] as number))
+		.join("  ");
 	console.log(logger.bold(headerLine));
 
 	for (const row of rows) {

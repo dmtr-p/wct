@@ -80,6 +80,25 @@ Or if installed to a custom location:
 rm $INSTALL_DIR/wct
 ```
 
+## Shell Completions
+
+Tab completions are available for bash, zsh, and fish.
+
+**Bash** — add to `~/.bashrc`:
+```bash
+eval "$(wct completions bash)"
+```
+
+**Zsh** — add to `~/.zshrc`:
+```bash
+eval "$(wct completions zsh)"
+```
+
+**Fish** — run once:
+```bash
+wct completions fish > ~/.config/fish/completions/wct.fish
+```
+
 ## Development
 
 To install dependencies:

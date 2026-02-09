@@ -3,11 +3,11 @@ import { CONFIG_FILENAME } from "../config/loader";
 import * as logger from "../utils/logger";
 
 const TEMPLATE = `# wct configuration
-# See documentation at: https://github.com/your-org/wct
+# See documentation at: https://github.com/dmtr-p/wct
 version: 1
 
 # Base directory for worktrees (supports ~ expansion)
-worktree_dir: "../worktrees"
+worktree_dir: ".."
 
 # Project name (used for tmux session naming: "project-branch")
 # project_name: "myapp"

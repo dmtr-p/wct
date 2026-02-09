@@ -1,35 +1,51 @@
 import { parseArgs } from "node:util";
 import { closeCommand } from "./commands/close";
+import { completionsCommand } from "./commands/completions";
 import { downCommand } from "./commands/down";
 import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
+import { COMMANDS } from "./commands/registry";
 import { upCommand } from "./commands/up";
 import * as logger from "./utils/logger";
 
 const VERSION = "0.1.0";
 
-const HELP = `
+function buildHelp(): string {
+	const commandLines = COMMANDS.map((cmd) => {
+		const label = cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name;
+		return `  ${label.padEnd(18)}${cmd.description}`;
+	});
+
+	const optionLines: string[] = [];
+	for (const cmd of COMMANDS) {
+		if (!cmd.options) continue;
+		for (const opt of cmd.options) {
+			const short = opt.short ? `-${opt.short}, ` : "    ";
+			const long =
+				opt.type === "string"
+					? `--${opt.name} <${opt.placeholder ?? opt.name}>`
+					: `--${opt.name}`;
+			const suffix = `(for '${cmd.name}' command)`;
+			optionLines.push(
+				`  ${short}${long.padEnd(17)}${opt.description} ${suffix}`,
+			);
+		}
+	}
+	optionLines.push("  -h, --help           Show this help message");
+	optionLines.push("  -v, --version        Show version number");
+
+	return `
 wct - Git worktree workflow automation
 
 Usage:
   wct <command> [options]
 
 Commands:
-  open <branch>     Create worktree, run setup, start tmux session, open IDE
-  up                Start tmux session and open IDE in current directory
-  down              Kill tmux session for current directory
-  close <branch>    Kill tmux session and remove worktree
-  list              Show active worktrees with tmux session status
-  init              Generate a starter .wct.yaml config file
+${commandLines.join("\n")}
 
 Options:
-  -e, --existing       Use existing branch (for 'open' command)
-  -b, --base <branch>  Base branch for new worktree (for 'open' command, default: HEAD)
-  -y, --yes            Skip confirmation prompt (for 'close' command)
-  -f, --force          Force removal even if worktree is dirty (for 'close' command)
-  -h, --help           Show this help message
-  -v, --version        Show version number
+${optionLines.join("\n")}
 
 Examples:
   wct init                         Create a new .wct.yaml config file
@@ -42,18 +58,37 @@ Examples:
   wct close feature-auth -y        Skip confirmation
   wct list                         Show all worktrees and their status
 `;
+}
+
+const HELP = buildHelp();
+
+function buildParseArgsOptions(): Record<
+	string,
+	{ type: "boolean" | "string"; short?: string }
+> {
+	const options: Record<
+		string,
+		{ type: "boolean" | "string"; short?: string }
+	> = {
+		help: { type: "boolean", short: "h" },
+		version: { type: "boolean", short: "v" },
+	};
+	for (const cmd of COMMANDS) {
+		if (!cmd.options) continue;
+		for (const opt of cmd.options) {
+			options[opt.name] = { type: opt.type };
+			if (opt.short) {
+				options[opt.name].short = opt.short;
+			}
+		}
+	}
+	return options;
+}
 
 async function main(): Promise<void> {
 	const { values, positionals } = parseArgs({
 		args: Bun.argv.slice(2),
-		options: {
-			help: { type: "boolean", short: "h" },
-			version: { type: "boolean", short: "v" },
-			existing: { type: "boolean", short: "e" },
-			base: { type: "string", short: "b" },
-			yes: { type: "boolean", short: "y" },
-			force: { type: "boolean", short: "f" },
-		},
+		options: buildParseArgsOptions(),
 		allowPositionals: true,
 	});
 
@@ -98,7 +133,7 @@ async function main(): Promise<void> {
 			await openCommand({
 				branch,
 				existing: !!values.existing,
-				base: values.base,
+				base: values.base as string | undefined,
 			});
 			break;
 		}
@@ -117,6 +152,10 @@ async function main(): Promise<void> {
 			});
 			break;
 		}
+
+		case "completions":
+			completionsCommand(positionals[1]);
+			break;
 
 		default:
 			logger.error(`Unknown command: ${command}`);

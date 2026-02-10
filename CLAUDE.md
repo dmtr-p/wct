@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bun install              # Install dependencies
-bun run index.ts         # Run the CLI
+bun run src/index.ts     # Run the CLI
 bun test                 # Run tests
 bun test --watch         # Run tests in watch mode
 bunx biome check --write # Format and lint code
@@ -19,15 +19,20 @@ bunx biome check         # Check without writing
 
 ## Architecture
 
-The planned file structure follows this layout:
+The file structure follows this layout:
 
 ```
 src/
 ├── index.ts              # Entry point, CLI setup with util.parseArgs
 ├── commands/
 │   ├── open.ts           # wct open <branch> - full worktree workflow
+│   ├── up.ts             # wct up - start tmux session and open IDE
+│   ├── down.ts           # wct down - kill tmux session
+│   ├── close.ts          # wct close <branch> - kill session and remove worktree
 │   ├── list.ts           # wct list - show active worktrees
-│   └── init.ts           # wct init - generate .wct.yaml
+│   ├── init.ts           # wct init - generate .wct.yaml
+│   ├── completions.ts    # Shell completions (bash, zsh, fish)
+│   └── registry.ts       # Command definitions for help and completions
 ├── config/
 │   ├── loader.ts         # Load & merge configs (project + global)
 │   ├── schema.ts         # Config type definitions
@@ -39,7 +44,8 @@ src/
 │   ├── tmux.ts           # Tmux session management
 │   └── ide.ts            # IDE launcher
 └── utils/
-    └── logger.ts         # Logging with Bun.color
+    ├── logger.ts         # Logging with Bun.color
+    └── prompt.ts         # User confirmation prompts
 ```
 
 ## Bun Runtime

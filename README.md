@@ -7,6 +7,7 @@ Git worktree workflow automation CLI. Quickly create isolated development enviro
 ```bash
 wct open <branch>       # Create worktree, run setup, start tmux session, open IDE
 wct up                  # Start tmux session and open IDE in current directory
+wct down                # Kill tmux session for current directory
 wct close <branch>      # Kill tmux session and remove worktree
 wct list                # Show active worktrees with tmux session status
 wct init                # Generate a starter .wct.yaml config file
@@ -110,7 +111,7 @@ bun install
 To run:
 
 ```bash
-bun run index.ts
+bun run src/index.ts
 ```
 
 This project was created using `bun init` in bun v1.3.6. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

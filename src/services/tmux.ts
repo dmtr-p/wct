@@ -35,7 +35,7 @@ export async function listSessions(): Promise<TmuxSession[]> {
 
 export async function sessionExists(name: string): Promise<boolean> {
 	try {
-		await $`tmux has-session -t ${`=${name}`}`.quiet();
+		await $`tmux has-session -t =${name}`.quiet();
 		return true;
 	} catch {
 		return false;
@@ -257,7 +257,7 @@ export interface KillSessionResult {
 
 export async function killSession(name: string): Promise<KillSessionResult> {
 	try {
-		await $`tmux kill-session -t ${`=${name}`}`.quiet();
+		await $`tmux kill-session -t =${name}`.quiet();
 		return { success: true, sessionName: name };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -288,7 +288,7 @@ export async function switchSession(
 	name: string,
 ): Promise<SwitchSessionResult> {
 	try {
-		await $`tmux switch-client -t ${`=${name}`}`.quiet();
+		await $`tmux switch-client -t =${name}`.quiet();
 		return { success: true, sessionName: name };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

@@ -51,7 +51,7 @@ function mergeConfigs(
 			? {
 					...global.tmux,
 					...project.tmux,
-					panes: project.tmux.panes ?? global.tmux?.panes,
+					windows: project.tmux.windows ?? global.tmux?.windows,
 				}
 			: global.tmux,
 	};

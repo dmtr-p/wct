@@ -34,18 +34,14 @@ ide:
 
 # Tmux session configuration
 tmux:
-  # Layout: "panes" (splits in one window) or "windows" (separate windows)
-  layout: "panes"
-
-  # For "panes" layout - split direction: "horizontal" or "vertical"
-  split: "horizontal"
-
-  # Panes/windows to create
-  panes:
+  windows:
     - name: "dev"
-      command: "bun run dev"
-    - name: "shell"
-      command: ""  # empty = just a shell
+      split: "horizontal"
+      panes:
+        - command: "bun run dev"
+        - {}  # empty shell
+    # - name: "shell"
+    #   command: ""
 `;
 
 export async function initCommand(): Promise<void> {

@@ -185,56 +185,6 @@ describe("validateConfig", () => {
 		);
 	});
 
-	test("rejects deprecated tmux.layout property", () => {
-		const result = validateConfig({
-			tmux: { layout: "panes" },
-		});
-		expect(result.valid).toBe(false);
-		expect(result.errors).toContain(
-			"tmux.layout is deprecated. Use tmux.windows instead.",
-		);
-	});
-
-	test("rejects deprecated tmux.split property", () => {
-		const result = validateConfig({
-			tmux: { split: "horizontal" },
-		});
-		expect(result.valid).toBe(false);
-		expect(result.errors).toContain(
-			"tmux.split is deprecated. Use tmux.windows instead.",
-		);
-	});
-
-	test("rejects deprecated tmux.panes property", () => {
-		const result = validateConfig({
-			tmux: { panes: [{ command: "echo hello" }] },
-		});
-		expect(result.valid).toBe(false);
-		expect(result.errors).toContain(
-			"tmux.panes is deprecated. Use tmux.windows instead.",
-		);
-	});
-
-	test("rejects multiple deprecated tmux properties at once", () => {
-		const result = validateConfig({
-			tmux: {
-				layout: "panes",
-				split: "horizontal",
-				panes: [{ command: "echo hello" }],
-			},
-		});
-		expect(result.valid).toBe(false);
-		expect(result.errors).toContain(
-			"tmux.layout is deprecated. Use tmux.windows instead.",
-		);
-		expect(result.errors).toContain(
-			"tmux.split is deprecated. Use tmux.windows instead.",
-		);
-		expect(result.errors).toContain(
-			"tmux.panes is deprecated. Use tmux.windows instead.",
-		);
-	});
-
 	test("rejects invalid tmux window object type", () => {
 		const result = validateConfig({
 			tmux: { windows: ["not-an-object"] },

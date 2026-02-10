@@ -78,14 +78,6 @@ export function validateConfig(config: unknown): ValidationResult {
 		} else {
 			const tmux = cfg.tmux as Record<string, unknown>;
 
-			// Check for deprecated top-level tmux properties
-			const deprecatedProps = ["layout", "split", "panes"];
-			for (const prop of deprecatedProps) {
-				if (tmux[prop] !== undefined) {
-					errors.push(`tmux.${prop} is deprecated. Use tmux.windows instead.`);
-				}
-			}
-
 			if (tmux.windows !== undefined) {
 				if (!Array.isArray(tmux.windows)) {
 					errors.push("tmux.windows must be an array");

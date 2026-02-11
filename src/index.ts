@@ -9,7 +9,7 @@ import { COMMANDS } from "./commands/registry";
 import { upCommand } from "./commands/up";
 import * as logger from "./utils/logger";
 
-const VERSION = "0.1.0";
+const { version: VERSION } = require("../package.json");
 
 function buildHelp(): string {
   const commandLines = COMMANDS.map((cmd) => {
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
       break;
 
     case "up":
-      await upCommand();
+      await upCommand({ noIde: !!values["no-ide"] });
       break;
 
     case "down":
@@ -134,6 +134,7 @@ async function main(): Promise<void> {
         branch,
         existing: !!values.existing,
         base: values.base as string | undefined,
+        noIde: !!values["no-ide"],
       });
       break;
     }

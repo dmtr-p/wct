@@ -14,7 +14,12 @@ import {
 } from "../services/worktree";
 import * as logger from "../utils/logger";
 
-export async function upCommand(): Promise<void> {
+export interface UpOptions {
+  noIde?: boolean;
+}
+
+export async function upCommand(options?: UpOptions): Promise<void> {
+  const { noIde } = options ?? {};
   if (!(await isGitRepo())) {
     logger.error("Not a git repository");
     process.exit(1);
@@ -68,7 +73,7 @@ export async function upCommand(): Promise<void> {
     }
   }
 
-  if (config.ide?.command) {
+  if (config.ide?.command && !noIde) {
     logger.info("Opening IDE...");
     const ideResult = await openIDE(config.ide.command, env);
 

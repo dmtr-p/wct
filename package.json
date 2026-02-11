@@ -4,7 +4,7 @@
   "description": "Git worktree workflow automation CLI",
   "module": "src/index.ts",
   "type": "module",
-  "license":"MIT",
+  "license": "MIT",
   "bin": {
     "wct": "src/index.ts"
   },

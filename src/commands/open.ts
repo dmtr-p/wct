@@ -20,10 +20,11 @@ export interface OpenOptions {
   branch: string;
   existing: boolean;
   base?: string;
+  noIde?: boolean;
 }
 
 export async function openCommand(options: OpenOptions): Promise<void> {
-  const { branch, existing, base } = options;
+  const { branch, existing, base, noIde } = options;
 
   if (!(await isGitRepo())) {
     logger.error("Not a git repository");
@@ -133,7 +134,7 @@ export async function openCommand(options: OpenOptions): Promise<void> {
     }
   }
 
-  if (config.ide?.command) {
+  if (config.ide?.command && !noIde) {
     logger.info("Opening IDE...");
     const ideResult = await openIDE(config.ide.command, env);
 

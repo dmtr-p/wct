@@ -32,11 +32,23 @@ export const COMMANDS: CommandDef[] = [
         placeholder: "branch",
         description: "Base branch for new worktree (default: HEAD)",
       },
+      {
+        name: "no-ide",
+        type: "boolean",
+        description: "Skip opening IDE",
+      },
     ],
   },
   {
     name: "up",
     description: "Start tmux session and open IDE in current directory",
+    options: [
+      {
+        name: "no-ide",
+        type: "boolean",
+        description: "Skip opening IDE",
+      },
+    ],
   },
   {
     name: "down",

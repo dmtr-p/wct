@@ -45,16 +45,16 @@ tmux:
 `;
 
 export async function initCommand(): Promise<void> {
-	const cwd = process.cwd();
-	const configPath = join(cwd, CONFIG_FILENAME);
+  const cwd = process.cwd();
+  const configPath = join(cwd, CONFIG_FILENAME);
 
-	const file = Bun.file(configPath);
-	if (await file.exists()) {
-		logger.warn(`${CONFIG_FILENAME} already exists`);
-		return;
-	}
+  const file = Bun.file(configPath);
+  if (await file.exists()) {
+    logger.warn(`${CONFIG_FILENAME} already exists`);
+    return;
+  }
 
-	await Bun.write(configPath, TEMPLATE);
-	logger.success(`Created ${CONFIG_FILENAME}`);
-	logger.info("Edit the config file to customize your workflow");
+  await Bun.write(configPath, TEMPLATE);
+  logger.success(`Created ${CONFIG_FILENAME}`);
+  logger.info("Edit the config file to customize your workflow");
 }

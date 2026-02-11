@@ -74,7 +74,7 @@ Environment variables available in config commands:
 
 ## Code Style
 
-- Indentation: tabs
+- Indentation: spaces
 - Quotes: double quotes
 - Biome handles linting and formatting
 - Use warning-based error handling (log and continue on non-critical failures)

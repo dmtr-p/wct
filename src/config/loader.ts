@@ -6,123 +6,123 @@ import { resolveConfig, validateConfig } from "./validator";
 const CONFIG_FILENAME = ".wct.yaml";
 
 export function expandTilde(path: string): string {
-	if (path.startsWith("~/")) {
-		return join(homedir(), path.slice(2));
-	}
-	return path;
+  if (path.startsWith("~/")) {
+    return join(homedir(), path.slice(2));
+  }
+  return path;
 }
 
 export function slugifyBranch(branch: string): string {
-	return branch.replace(/[^a-zA-Z0-9_-]/g, "-");
+  return branch.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
 async function loadConfigFile(path: string): Promise<WctConfig | null> {
-	const file = Bun.file(path);
-	if (!(await file.exists())) {
-		return null;
-	}
+  const file = Bun.file(path);
+  if (!(await file.exists())) {
+    return null;
+  }
 
-	const content = await file.text();
-	const parsed = Bun.YAML.parse(content);
-	return parsed as WctConfig;
+  const content = await file.text();
+  const parsed = Bun.YAML.parse(content);
+  return parsed as WctConfig;
 }
 
 function mergeConfigs(
-	global: WctConfig | null,
-	project: WctConfig | null,
+  global: WctConfig | null,
+  project: WctConfig | null,
 ): WctConfig {
-	if (!global && !project) {
-		return {};
-	}
-	if (!global) {
-		return project as WctConfig;
-	}
-	if (!project) {
-		return global;
-	}
+  if (!global && !project) {
+    return {};
+  }
+  if (!global) {
+    return project as WctConfig;
+  }
+  if (!project) {
+    return global;
+  }
 
-	return {
-		...global,
-		...project,
-		copy: project.copy ?? global.copy,
-		setup: project.setup ?? global.setup,
-		ide: project.ide ?? global.ide,
-		tmux: project.tmux
-			? {
-					...global.tmux,
-					...project.tmux,
-					windows: project.tmux.windows ?? global.tmux?.windows,
-				}
-			: global.tmux,
-	};
+  return {
+    ...global,
+    ...project,
+    copy: project.copy ?? global.copy,
+    setup: project.setup ?? global.setup,
+    ide: project.ide ?? global.ide,
+    tmux: project.tmux
+      ? {
+          ...global.tmux,
+          ...project.tmux,
+          windows: project.tmux.windows ?? global.tmux?.windows,
+        }
+      : global.tmux,
+  };
 }
 
 export interface LoadConfigResult {
-	config: ResolvedConfig | null;
-	errors: string[];
-	hasProjectConfig: boolean;
-	hasGlobalConfig: boolean;
+  config: ResolvedConfig | null;
+  errors: string[];
+  hasProjectConfig: boolean;
+  hasGlobalConfig: boolean;
 }
 
 export async function loadConfig(
-	projectDir: string,
+  projectDir: string,
 ): Promise<LoadConfigResult> {
-	const projectConfigPath = join(projectDir, CONFIG_FILENAME);
-	const globalConfigPath = join(homedir(), CONFIG_FILENAME);
+  const projectConfigPath = join(projectDir, CONFIG_FILENAME);
+  const globalConfigPath = join(homedir(), CONFIG_FILENAME);
 
-	const [projectConfig, globalConfig] = await Promise.all([
-		loadConfigFile(projectConfigPath),
-		loadConfigFile(globalConfigPath),
-	]);
+  const [projectConfig, globalConfig] = await Promise.all([
+    loadConfigFile(projectConfigPath),
+    loadConfigFile(globalConfigPath),
+  ]);
 
-	const hasProjectConfig = projectConfig !== null;
-	const hasGlobalConfig = globalConfig !== null;
+  const hasProjectConfig = projectConfig !== null;
+  const hasGlobalConfig = globalConfig !== null;
 
-	if (!hasProjectConfig && !hasGlobalConfig) {
-		return {
-			config: null,
-			errors: ["No config file found. Run 'wct init' to create one."],
-			hasProjectConfig,
-			hasGlobalConfig,
-		};
-	}
+  if (!hasProjectConfig && !hasGlobalConfig) {
+    return {
+      config: null,
+      errors: ["No config file found. Run 'wct init' to create one."],
+      hasProjectConfig,
+      hasGlobalConfig,
+    };
+  }
 
-	const merged = mergeConfigs(globalConfig, projectConfig);
-	const validation = validateConfig(merged);
+  const merged = mergeConfigs(globalConfig, projectConfig);
+  const validation = validateConfig(merged);
 
-	if (!validation.valid) {
-		return {
-			config: null,
-			errors: validation.errors,
-			hasProjectConfig,
-			hasGlobalConfig,
-		};
-	}
+  if (!validation.valid) {
+    return {
+      config: null,
+      errors: validation.errors,
+      hasProjectConfig,
+      hasGlobalConfig,
+    };
+  }
 
-	const resolved = resolveConfig(merged, projectDir);
+  const resolved = resolveConfig(merged, projectDir);
 
-	return {
-		config: resolved,
-		errors: [],
-		hasProjectConfig,
-		hasGlobalConfig,
-	};
+  return {
+    config: resolved,
+    errors: [],
+    hasProjectConfig,
+    hasGlobalConfig,
+  };
 }
 
 export function resolveWorktreePath(
-	worktreeDir: string,
-	branch: string,
-	projectDir: string,
-	projectName: string,
+  worktreeDir: string,
+  branch: string,
+  projectDir: string,
+  projectName: string,
 ): string {
-	const expanded = expandTilde(worktreeDir);
-	const basePath = expanded.startsWith("/")
-		? expanded
-		: resolve(projectDir, expanded);
-	return join(
-		basePath,
-		`${slugifyBranch(projectName)}-${slugifyBranch(branch)}`,
-	);
+  const expanded = expandTilde(worktreeDir);
+  const basePath = expanded.startsWith("/")
+    ? expanded
+    : resolve(projectDir, expanded);
+  return join(
+    basePath,
+    `${slugifyBranch(projectName)}-${slugifyBranch(branch)}`,
+  );
 }
 
 export { CONFIG_FILENAME };

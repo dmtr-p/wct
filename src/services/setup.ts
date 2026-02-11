@@ -3,51 +3,51 @@ import type { SetupCommand } from "../config/schema";
 import * as logger from "../utils/logger";
 
 export interface SetupEnv {
-	WCT_WORKTREE_DIR: string;
-	WCT_MAIN_DIR: string;
-	WCT_BRANCH: string;
-	WCT_PROJECT: string;
+  WCT_WORKTREE_DIR: string;
+  WCT_MAIN_DIR: string;
+  WCT_BRANCH: string;
+  WCT_PROJECT: string;
 }
 
 export interface SetupResult {
-	name: string;
-	success: boolean;
-	error?: string;
+  name: string;
+  success: boolean;
+  error?: string;
 }
 
 export async function runSetupCommands(
-	commands: SetupCommand[],
-	workingDir: string,
-	env: SetupEnv,
+  commands: SetupCommand[],
+  workingDir: string,
+  env: SetupEnv,
 ): Promise<SetupResult[]> {
-	const results: SetupResult[] = [];
-	const totalSteps = commands.length;
+  const results: SetupResult[] = [];
+  const totalSteps = commands.length;
 
-	const fullEnv = {
-		...process.env,
-		...env,
-	};
+  const fullEnv = {
+    ...process.env,
+    ...env,
+  };
 
-	for (let i = 0; i < commands.length; i++) {
-		const cmd = commands[i];
-		logger.step(i + 1, totalSteps, cmd.name);
+  for (let i = 0; i < commands.length; i++) {
+    const cmd = commands[i];
+    logger.step(i + 1, totalSteps, cmd.name);
 
-		try {
-			await $`sh -c ${cmd.command}`.cwd(workingDir).env(fullEnv).quiet();
+    try {
+      await $`sh -c ${cmd.command}`.cwd(workingDir).env(fullEnv).quiet();
 
-			results.push({ name: cmd.name, success: true });
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
+      results.push({ name: cmd.name, success: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
 
-			if (cmd.optional) {
-				logger.warn(`${cmd.name} failed (optional): ${message}`);
-				results.push({ name: cmd.name, success: false, error: message });
-			} else {
-				logger.error(`${cmd.name} failed: ${message}`);
-				results.push({ name: cmd.name, success: false, error: message });
-			}
-		}
-	}
+      if (cmd.optional) {
+        logger.warn(`${cmd.name} failed (optional): ${message}`);
+        results.push({ name: cmd.name, success: false, error: message });
+      } else {
+        logger.error(`${cmd.name} failed: ${message}`);
+        results.push({ name: cmd.name, success: false, error: message });
+      }
+    }
+  }
 
-	return results;
+  return results;
 }

@@ -18,6 +18,11 @@ function generateFishCompletions(): string {
     "    git branch --format='%(refname:short)' 2>/dev/null",
     "end",
     "",
+    "# Helper: list branches that have worktrees",
+    "function __wct_worktree_branches",
+    "    git worktree list --porcelain 2>/dev/null | string replace -rf '^branch refs/heads/(.+)' '$1'",
+    "end",
+    "",
     "# Commands",
   ];
 
@@ -60,17 +65,34 @@ function generateFishCompletions(): string {
   }
 
   // Branch completions for commands that take a <branch> arg
-  const branchCommands = COMMANDS.filter((cmd) =>
-    cmd.args?.includes("<branch>"),
+  const branchCommands = COMMANDS.filter(
+    (cmd) =>
+      cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
   )
     .map((cmd) => cmd.name)
     .join(" ");
 
-  lines.push("");
-  lines.push("# Branch completions");
-  lines.push(
-    `complete -c wct -n '__fish_seen_subcommand_from ${branchCommands}' -a '(__wct_branches)' -d 'Branch name'`,
-  );
+  const worktreeCommands = COMMANDS.filter(
+    (cmd) => cmd.completionType === "worktree",
+  )
+    .map((cmd) => cmd.name)
+    .join(" ");
+
+  if (branchCommands) {
+    lines.push("");
+    lines.push("# Branch completions");
+    lines.push(
+      `complete -c wct -n '__fish_seen_subcommand_from ${branchCommands}' -a '(__wct_branches)' -d 'Branch name'`,
+    );
+  }
+
+  if (worktreeCommands) {
+    lines.push("");
+    lines.push("# Worktree branch completions");
+    lines.push(
+      `complete -c wct -n '__fish_seen_subcommand_from ${worktreeCommands}' -a '(__wct_worktree_branches)' -d 'Branch name'`,
+    );
+  }
 
   // Completions subcommand: complete shell names
   lines.push("");
@@ -91,8 +113,12 @@ function generateFishCompletions(): string {
 
 function generateBashCompletions(): string {
   const cmdNames = COMMANDS.map((cmd) => cmd.name).join(" ");
-  const branchCommands = COMMANDS.filter((cmd) =>
-    cmd.args?.includes("<branch>"),
+  const branchCommands = COMMANDS.filter(
+    (cmd) =>
+      cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
+  ).map((cmd) => cmd.name);
+  const worktreeCommands = COMMANDS.filter(
+    (cmd) => cmd.completionType === "worktree",
   ).map((cmd) => cmd.name);
 
   const lines: string[] = [
@@ -103,6 +129,10 @@ function generateBashCompletions(): string {
     "",
     "_wct_branches() {",
     "    git branch --format='%(refname:short)' 2>/dev/null",
+    "}",
+    "",
+    "_wct_worktree_branches() {",
+    "    git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'",
     "}",
     "",
     "_wct() {",
@@ -127,6 +157,10 @@ function generateBashCompletions(): string {
       }
     }
     const isBranchCmd = branchCommands.includes(cmd.name);
+    const isWorktreeCmd = worktreeCommands.includes(cmd.name);
+    const completionFn = isWorktreeCmd
+      ? "_wct_worktree_branches"
+      : "_wct_branches";
 
     lines.push(`        ${cmd.name})`);
     if (opts.length > 0) {
@@ -134,16 +168,16 @@ function generateBashCompletions(): string {
         `            COMPREPLY=($(compgen -W '${opts.join(" ")}' -- "$cur"))`,
       );
     }
-    if (isBranchCmd) {
+    if (isBranchCmd || isWorktreeCmd) {
       if (opts.length > 0) {
         lines.push('            if [[ "$cur" != -* ]]; then');
         lines.push(
-          '                COMPREPLY=($(compgen -W "$(_wct_branches)" -- "$cur"))',
+          `                COMPREPLY=($(compgen -W "$(${completionFn})" -- "$cur"))`,
         );
         lines.push("            fi");
       } else {
         lines.push(
-          '            COMPREPLY=($(compgen -W "$(_wct_branches)" -- "$cur"))',
+          `            COMPREPLY=($(compgen -W "$(${completionFn})" -- "$cur"))`,
         );
       }
     }
@@ -165,8 +199,12 @@ function generateBashCompletions(): string {
 }
 
 function generateZshCompletions(): string {
-  const branchCommands = COMMANDS.filter((cmd) =>
-    cmd.args?.includes("<branch>"),
+  const branchCommands = COMMANDS.filter(
+    (cmd) =>
+      cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
+  ).map((cmd) => cmd.name);
+  const worktreeCommands = COMMANDS.filter(
+    (cmd) => cmd.completionType === "worktree",
   ).map((cmd) => cmd.name);
 
   const lines: string[] = [
@@ -180,6 +218,12 @@ function generateZshCompletions(): string {
     "_wct_branches() {",
     "    local branches",
     "    branches=($(git branch --format='%(refname:short)' 2>/dev/null))",
+    "    _describe 'branch' branches",
+    "}",
+    "",
+    "_wct_worktree_branches() {",
+    "    local branches",
+    "    branches=($(git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'))",
     "    _describe 'branch' branches",
     "}",
     "",
@@ -211,9 +255,13 @@ function generateZshCompletions(): string {
 
   for (const cmd of COMMANDS) {
     const isBranchCmd = branchCommands.includes(cmd.name);
+    const isWorktreeCmd = worktreeCommands.includes(cmd.name);
     const hasOpts = cmd.options && cmd.options.length > 0;
+    const completionFn = isWorktreeCmd
+      ? "_wct_worktree_branches"
+      : "_wct_branches";
 
-    if (!isBranchCmd && !hasOpts) continue;
+    if (!isBranchCmd && !isWorktreeCmd && !hasOpts) continue;
 
     lines.push(`                ${cmd.name})`);
 
@@ -243,13 +291,13 @@ function generateZshCompletions(): string {
           }
         }
       }
-      if (isBranchCmd) {
-        optLines.push("                        '*:branch:_wct_branches'");
+      if (isBranchCmd || isWorktreeCmd) {
+        optLines.push(`                        '*:branch:${completionFn}'`);
       }
       lines.push(optLines.join(" \\\n"));
       lines.push("                    ;;");
-    } else if (isBranchCmd) {
-      lines.push("                    _wct_branches");
+    } else if (isBranchCmd || isWorktreeCmd) {
+      lines.push(`                    ${completionFn}`);
       lines.push("                    ;;");
     }
   }

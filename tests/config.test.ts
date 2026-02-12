@@ -227,6 +227,34 @@ describe("validateConfig", () => {
     );
   });
 
+  test("accepts ide config with name and fork_workspace", () => {
+    const result = validateConfig({
+      ide: {
+        name: "vscode",
+        command: "code $WCT_WORKTREE_DIR",
+        fork_workspace: true,
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test("rejects non-string ide.name", () => {
+    const result = validateConfig({
+      ide: { name: 123, command: "code ." },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("ide.name must be a string");
+  });
+
+  test("rejects non-boolean ide.fork_workspace", () => {
+    const result = validateConfig({
+      ide: { command: "code .", fork_workspace: "yes" },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("ide.fork_workspace must be a boolean");
+  });
+
   test("rejects tmux window name with colon", () => {
     const result = validateConfig({
       tmux: {

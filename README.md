@@ -100,6 +100,58 @@ eval "$(wct completions zsh)"
 wct completions fish > ~/.config/fish/completions/wct.fish
 ```
 
+## Configuration
+
+Run `wct init` to generate a starter `.wct.yaml` in your project root. Here's an annotated example covering all options:
+
+```yaml
+version: 1
+
+# Base directory for worktrees (relative to project root, supports ~ expansion)
+worktree_dir: ".."
+
+# Project name used for tmux session naming ("project-branch")
+# Defaults to the git repo directory name
+project_name: "myapp"
+
+# Files/directories to copy from main repo into new worktrees
+copy:
+  - .env
+  - .env.local
+
+# Commands to run after worktree creation (in order)
+setup:
+  - name: "Install dependencies"
+    command: "bun install"
+  - name: "Generate types"
+    command: "bun run codegen"
+    optional: true  # continue even if this fails
+
+# IDE configuration
+ide:
+  name: vscode            # IDE identifier (vscode or cursor)
+  command: "code $WCT_WORKTREE_DIR"
+  fork_workspace: true    # sync VS Code workspace state to worktree
+
+# Tmux session layout
+tmux:
+  windows:
+    - name: "dev"
+      split: "horizontal"  # or "vertical"
+      panes:
+        - command: "bun run dev"
+        - {}  # empty shell
+    - name: "shell"
+```
+
+Environment variables `WCT_WORKTREE_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands and the `ide.command`.
+
+A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
+
+### VS Code Workspace Sync
+
+When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace storage (extensions state, UI layout, settings) from your main repo into the new worktree. This means each worktree opens with the same extensions, sidebar state, and editor layout as your main workspace — no manual reconfiguration needed. Requires that you've opened the main repo in VS Code at least once. Supported on macOS and Linux.
+
 ## Development
 
 To install dependencies:

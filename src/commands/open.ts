@@ -8,6 +8,7 @@ import {
   formatSessionName,
   switchSession,
 } from "../services/tmux";
+import { syncWorkspaceState } from "../services/vscode-workspace";
 import {
   branchExists,
   createWorktree,
@@ -100,6 +101,19 @@ export async function openCommand(options: OpenOptions): Promise<void> {
     logger.info("Worktree already exists");
   } else {
     logger.success(`Created worktree at ${worktreePath}`);
+  }
+
+  if (config.ide?.name === "vscode" && config.ide?.fork_workspace) {
+    logger.info("Syncing VS Code workspace state...");
+    const syncResult = await syncWorkspaceState(mainDir, worktreePath);
+
+    if (syncResult.success && !syncResult.skipped) {
+      logger.success("VS Code workspace state synced");
+    } else if (syncResult.skipped) {
+      logger.info("VS Code workspace already exists, skipping sync");
+    } else {
+      logger.warn(`VS Code workspace sync failed: ${syncResult.error}`);
+    }
   }
 
   if (config.copy && config.copy.length > 0) {

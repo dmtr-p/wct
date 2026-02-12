@@ -29,8 +29,10 @@ setup:
 
 # IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
 ide:
+  name: vscode
   command: "code $WCT_WORKTREE_DIR"
   # command: "cursor $WCT_WORKTREE_DIR"
+  # fork_workspace: true  # copy VS Code extension states to worktree
 
 # Tmux session configuration
 tmux:

@@ -11,6 +11,7 @@ export interface CommandDef {
   description: string;
   args?: string;
   options?: CommandOption[];
+  completionType?: "branch" | "worktree";
 }
 
 export const COMMANDS: CommandDef[] = [
@@ -58,6 +59,7 @@ export const COMMANDS: CommandDef[] = [
     name: "close",
     description: "Kill tmux session and remove worktree",
     args: "<branch>",
+    completionType: "worktree",
     options: [
       {
         name: "yes",

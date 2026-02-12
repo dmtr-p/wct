@@ -266,3 +266,34 @@ describe("syncWorkspaceState", () => {
     }
   });
 });
+
+describe("rewriteStatePaths error handling", () => {
+  test("returns 0 for corrupted database file", () => {
+    const corruptedDbPath = join(
+      tmpdir(),
+      `wct-test-corrupt-${Date.now()}.vscdb`,
+    );
+    // Create a non-database file
+    require("node:fs").writeFileSync(
+      corruptedDbPath,
+      "not a valid sqlite database",
+    );
+
+    try {
+      const count = rewriteStatePaths(
+        corruptedDbPath,
+        "/old/path",
+        "/new/path",
+      );
+      expect(count).toBe(0); // Should return 0 instead of throwing
+    } finally {
+      require("node:fs").unlinkSync(corruptedDbPath);
+    }
+  });
+
+  test("returns 0 for nonexistent database file", () => {
+    const nonexistentPath = join(tmpdir(), `nonexistent-${Date.now()}.vscdb`);
+    const count = rewriteStatePaths(nonexistentPath, "/old/path", "/new/path");
+    expect(count).toBe(0); // Should return 0 instead of throwing
+  });
+});

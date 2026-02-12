@@ -129,7 +129,7 @@ setup:
 
 # IDE configuration
 ide:
-  name: vscode            # IDE identifier (vscode or cursor)
+  name: vscode            # IDE identifier (use "vscode" for VS Code workspace sync)
   command: "code $WCT_WORKTREE_DIR"
   fork_workspace: true    # sync VS Code workspace state to worktree
 
@@ -150,7 +150,7 @@ A global config at `~/.wct.yaml` can provide defaults; project-level config take
 
 ### VS Code Workspace Sync
 
-When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace storage (extensions state, UI layout, settings) from your main repo into the new worktree. This means each worktree opens with the same extensions, sidebar state, and editor layout as your main workspace — no manual reconfiguration needed. Requires that you've opened the main repo in VS Code at least once. Supported on macOS and Linux.
+When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace storage (state and configuration of installed extensions, UI layout, settings) from your main repo into the new worktree. This means each worktree opens with the same extensions, sidebar state, and editor layout as your main workspace — no manual reconfiguration needed. Requires that you've opened the main repo in VS Code at least once. Supported on macOS and Linux.
 
 ## Development
 

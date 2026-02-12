@@ -36,7 +36,7 @@ export async function computeWorkspaceId(folderPath: string): Promise<string> {
   } else if (p === "darwin") {
     // Bun truncates birthtimeMs to integer, losing sub-ms precision.
     // Use birthtimeNs with bigint and round manually to match Node.js/VS Code.
-    // See docs/bun-birthtime-bug.md
+    // This is a Bun-specific workaround to match Node.js/VS Code ctime behavior.
     const ns = stats.birthtimeNs;
     const sec = ns / 1_000_000_000n;
     const nsec = ns % 1_000_000_000n;
@@ -85,7 +85,7 @@ export async function copyWorkspaceStorage(
   await cp(sourcePath, targetPath, {
     recursive: true,
     force: true,
-    filter: (src) => !src.endsWith("workspace.json"),
+    filter: (src) => src !== join(sourcePath, "workspace.json"),
   });
 }
 
@@ -108,36 +108,44 @@ export function rewriteStatePaths(
   oldPath: string,
   newPath: string,
 ): number {
-  const db = new Database(dbPath);
   try {
-    const encodedOld = oldPath.replaceAll("/", "%2F");
-    const encodedNew = newPath.replaceAll("/", "%2F");
+    const db = new Database(dbPath);
+    try {
+      // Note: Windows paths use backslashes, but this is not an issue as
+      // getVSCodeStoragePath() returns null on Windows (unsupported platform).
+      const encodedOld = oldPath.replaceAll("/", "%2F");
+      const encodedNew = newPath.replaceAll("/", "%2F");
 
-    const rows = db.query("SELECT key, value FROM ItemTable").all() as {
-      key: string;
-      value: string | Buffer;
-    }[];
-    const update = db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?");
+      const rows = db.query("SELECT key, value FROM ItemTable").all() as {
+        key: string;
+        value: string | Buffer;
+      }[];
+      const update = db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?");
 
-    let count = 0;
-    for (const row of rows) {
-      const text =
-        typeof row.value === "string"
-          ? row.value
-          : Buffer.from(row.value).toString("utf-8");
+      let count = 0;
+      for (const row of rows) {
+        const text =
+          typeof row.value === "string"
+            ? row.value
+            : Buffer.from(row.value).toString("utf-8");
 
-      if (!text.includes(oldPath) && !text.includes(encodedOld)) continue;
+        if (!text.includes(oldPath) && !text.includes(encodedOld)) continue;
 
-      const replaced = text
-        .replaceAll(oldPath, newPath)
-        .replaceAll(encodedOld, encodedNew);
-      update.run(replaced, row.key);
-      count++;
+        const replaced = text
+          .replaceAll(oldPath, newPath)
+          .replaceAll(encodedOld, encodedNew);
+        update.run(replaced, row.key);
+        count++;
+      }
+
+      return count;
+    } finally {
+      db.close();
     }
-
-    return count;
-  } finally {
-    db.close();
+  } catch {
+    // Database file may be corrupted, locked, or missing ItemTable.
+    // Return 0 to indicate no paths were rewritten.
+    return 0;
   }
 }
 
@@ -178,7 +186,9 @@ export async function syncWorkspaceState(
     await createWorkspaceJson(worktreeWorkspaceId, worktreePath);
 
     const dbFile = join(storagePath, worktreeWorkspaceId, "state.vscdb");
-    rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
+    if (await Bun.file(dbFile).exists()) {
+      rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
+    }
 
     const backupDbFile = join(
       storagePath,

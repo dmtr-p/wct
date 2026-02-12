@@ -32,7 +32,7 @@ ide:
   name: vscode
   command: "code $WCT_WORKTREE_DIR"
   # command: "cursor $WCT_WORKTREE_DIR"
-  # fork_workspace: true  # copy VS Code extension states to worktree
+  # fork_workspace: true  # (vscode only) copy VS Code workspace state to worktree; requires main repo opened in VS Code once
 
 # Tmux session configuration
 tmux:

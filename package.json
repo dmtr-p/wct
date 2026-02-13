@@ -11,6 +11,7 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "lint": "bunx biome check",
     "format": "bunx biome check --write",
     "build": "bun build src/index.ts --compile --outfile dist/wct",

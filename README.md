@@ -15,23 +15,6 @@ wct init                # Generate a starter .wct.yaml config file
 
 ## Installation
 
-### Quick Install (Recommended)
-
-Install with a single command (auto-detects your platform):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dmtr-p/wct/main/install.sh | bash
-```
-
-This will download the appropriate binary for your system and install it to `/usr/local/bin/wct`.
-
-To install to a custom location:
-```bash
-INSTALL_DIR=$HOME/.local/bin curl -fsSL https://raw.githubusercontent.com/dmtr-p/wct/main/install.sh | bash
-```
-
-### Manual Installation
-
 Download the binary for your platform from [Releases](https://github.com/dmtr-p/wct/releases/latest):
 
 **macOS (Apple Silicon):**
@@ -65,20 +48,6 @@ sudo mv wct /usr/local/bin/wct
 Verify installation:
 ```bash
 wct --version
-```
-
-### Uninstalling
-
-To remove wct:
-
-```bash
-sudo rm /usr/local/bin/wct
-```
-
-Or if installed to a custom location:
-
-```bash
-rm $INSTALL_DIR/wct
 ```
 
 ## Shell Completions

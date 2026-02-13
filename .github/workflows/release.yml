@@ -44,16 +44,6 @@ jobs:
           body: |
             ## Installation
 
-            ### Quick Install (Recommended)
-
-            Install with a single command (auto-detects your platform):
-
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/dmtr-p/wct/main/install.sh | bash
-            ```
-
-            ### Manual Installation
-
             Download the appropriate binary for your platform:
 
             **macOS (Apple Silicon):**

@@ -1,6 +1,14 @@
 import { Database } from "bun:sqlite";
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { createHash } from "node:crypto";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +21,8 @@ import {
   syncWorkspaceState,
   workspaceExists,
 } from "../src/services/vscode-workspace";
+
+const testStoragePath = join(tmpdir(), `wct-test-storage-${Date.now()}`);
 
 describe("hash algorithm", () => {
   test("MD5 test vector matches VS Code", () => {
@@ -80,17 +90,24 @@ describe("computeWorkspaceId", () => {
 });
 
 describe("workspaceExists", () => {
+  beforeAll(async () => {
+    await mkdir(testStoragePath, { recursive: true });
+    process.env.WCT_VSCODE_STORAGE_PATH = testStoragePath;
+  });
+
+  afterAll(async () => {
+    delete process.env.WCT_VSCODE_STORAGE_PATH;
+    await rm(testStoragePath, { recursive: true, force: true });
+  });
+
   test("returns false for nonexistent workspace", async () => {
     const exists = await workspaceExists("nonexistent-workspace-id-12345");
     expect(exists).toBe(false);
   });
 
   test("returns true for existing workspace dir", async () => {
-    const storagePath = getVSCodeStoragePath();
-    if (!storagePath) return; // skip on unsupported platform
-
     const testId = `wct-test-${Date.now()}`;
-    const testDir = join(storagePath, testId);
+    const testDir = join(testStoragePath, testId);
     await mkdir(testDir, { recursive: true });
     try {
       const exists = await workspaceExists(testId);
@@ -102,28 +119,33 @@ describe("workspaceExists", () => {
 });
 
 describe("copyWorkspaceStorage", () => {
+  const copyStoragePath = join(tmpdir(), `wct-test-copy-storage-${Date.now()}`);
   const testSourceId = `wct-test-source-${Date.now()}`;
   const testTargetId = `wct-test-target-${Date.now()}`;
-  let storagePath: string | null;
+
+  beforeAll(async () => {
+    await mkdir(copyStoragePath, { recursive: true });
+    process.env.WCT_VSCODE_STORAGE_PATH = copyStoragePath;
+  });
+
+  afterAll(async () => {
+    delete process.env.WCT_VSCODE_STORAGE_PATH;
+    await rm(copyStoragePath, { recursive: true, force: true });
+  });
 
   afterEach(async () => {
-    storagePath = getVSCodeStoragePath();
-    if (!storagePath) return;
-    await rm(join(storagePath, testSourceId), {
+    await rm(join(copyStoragePath, testSourceId), {
       recursive: true,
       force: true,
     });
-    await rm(join(storagePath, testTargetId), {
+    await rm(join(copyStoragePath, testTargetId), {
       recursive: true,
       force: true,
     });
   });
 
   test("copies state.vscdb and skips workspace.json", async () => {
-    storagePath = getVSCodeStoragePath();
-    if (!storagePath) return;
-
-    const sourceDir = join(storagePath, testSourceId);
+    const sourceDir = join(copyStoragePath, testSourceId);
     await mkdir(sourceDir, { recursive: true });
     await writeFile(join(sourceDir, "state.vscdb"), "fake-db-content");
     await writeFile(
@@ -133,7 +155,7 @@ describe("copyWorkspaceStorage", () => {
 
     await copyWorkspaceStorage(testSourceId, testTargetId);
 
-    const targetDir = join(storagePath, testTargetId);
+    const targetDir = join(copyStoragePath, testTargetId);
     const stateFile = Bun.file(join(targetDir, "state.vscdb"));
     expect(await stateFile.exists()).toBe(true);
     expect(await stateFile.text()).toBe("fake-db-content");
@@ -144,24 +166,32 @@ describe("copyWorkspaceStorage", () => {
 });
 
 describe("createWorkspaceJson", () => {
+  const wsJsonStoragePath = join(
+    tmpdir(),
+    `wct-test-wsjson-storage-${Date.now()}`,
+  );
   const testId = `wct-test-wsjson-${Date.now()}`;
-  let storagePath: string | null;
+
+  beforeAll(async () => {
+    await mkdir(wsJsonStoragePath, { recursive: true });
+    process.env.WCT_VSCODE_STORAGE_PATH = wsJsonStoragePath;
+  });
+
+  afterAll(async () => {
+    delete process.env.WCT_VSCODE_STORAGE_PATH;
+    await rm(wsJsonStoragePath, { recursive: true, force: true });
+  });
 
   afterEach(async () => {
-    storagePath = getVSCodeStoragePath();
-    if (!storagePath) return;
-    await rm(join(storagePath, testId), { recursive: true, force: true });
+    await rm(join(wsJsonStoragePath, testId), { recursive: true, force: true });
   });
 
   test("writes correct folder URI format", async () => {
-    storagePath = getVSCodeStoragePath();
-    if (!storagePath) return;
-
-    await mkdir(join(storagePath, testId), { recursive: true });
+    await mkdir(join(wsJsonStoragePath, testId), { recursive: true });
     await createWorkspaceJson(testId, "/Users/test/my-worktree");
 
     const content = await Bun.file(
-      join(storagePath, testId, "workspace.json"),
+      join(wsJsonStoragePath, testId, "workspace.json"),
     ).json();
     expect(content).toEqual({ folder: "file:///Users/test/my-worktree" });
   });
@@ -274,10 +304,7 @@ describe("rewriteStatePaths error handling", () => {
       `wct-test-corrupt-${Date.now()}.vscdb`,
     );
     // Create a non-database file
-    require("node:fs").writeFileSync(
-      corruptedDbPath,
-      "not a valid sqlite database",
-    );
+    writeFileSync(corruptedDbPath, "not a valid sqlite database");
 
     try {
       const count = rewriteStatePaths(
@@ -287,7 +314,7 @@ describe("rewriteStatePaths error handling", () => {
       );
       expect(count).toBe(0); // Should return 0 instead of throwing
     } finally {
-      require("node:fs").unlinkSync(corruptedDbPath);
+      unlinkSync(corruptedDbPath);
     }
   });
 

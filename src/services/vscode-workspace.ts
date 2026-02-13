@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { access, cp, mkdir, stat } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export interface SyncResult {
   success: boolean;
@@ -13,6 +14,9 @@ export interface SyncResult {
 }
 
 export function getVSCodeStoragePath(): string | null {
+  if (process.env.WCT_VSCODE_STORAGE_PATH) {
+    return process.env.WCT_VSCODE_STORAGE_PATH;
+  }
   const p = platform();
   if (p === "darwin") {
     return join(
@@ -60,14 +64,6 @@ export async function workspaceExists(workspaceId: string): Promise<boolean> {
   }
 }
 
-export async function findMainRepoWorkspaceId(
-  mainRepoPath: string,
-): Promise<string | null> {
-  const workspaceId = await computeWorkspaceId(mainRepoPath);
-  const exists = await workspaceExists(workspaceId);
-  return exists ? workspaceId : null;
-}
-
 export async function copyWorkspaceStorage(
   sourceId: string,
   targetId: string,
@@ -99,7 +95,7 @@ export async function createWorkspaceJson(
   const workspaceJsonPath = join(storagePath, workspaceId, "workspace.json");
   await Bun.write(
     workspaceJsonPath,
-    JSON.stringify({ folder: `file://${folderPath}` }),
+    JSON.stringify({ folder: pathToFileURL(folderPath).href }),
   );
 }
 
@@ -116,7 +112,11 @@ export function rewriteStatePaths(
       const encodedOld = oldPath.replaceAll("/", "%2F");
       const encodedNew = newPath.replaceAll("/", "%2F");
 
-      const rows = db.query("SELECT key, value FROM ItemTable").all() as {
+      const rows = db
+        .query(
+          "SELECT key, value FROM ItemTable WHERE value LIKE ? OR value LIKE ?",
+        )
+        .all(`%${oldPath}%`, `%${encodedOld}%`) as {
         key: string;
         value: string | Buffer;
       }[];
@@ -128,8 +128,6 @@ export function rewriteStatePaths(
           typeof row.value === "string"
             ? row.value
             : Buffer.from(row.value).toString("utf-8");
-
-        if (!text.includes(oldPath) && !text.includes(encodedOld)) continue;
 
         const replaced = text
           .replaceAll(oldPath, newPath)
@@ -172,8 +170,8 @@ export async function syncWorkspaceState(
 
     const worktreeWorkspaceId = await computeWorkspaceId(worktreePath);
 
-    const worktreeExists_ = await workspaceExists(worktreeWorkspaceId);
-    if (worktreeExists_) {
+    const alreadyExists = await workspaceExists(worktreeWorkspaceId);
+    if (alreadyExists) {
       return {
         success: true,
         skipped: true,

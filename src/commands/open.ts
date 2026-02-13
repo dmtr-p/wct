@@ -103,7 +103,10 @@ export async function openCommand(options: OpenOptions): Promise<void> {
     logger.success(`Created worktree at ${worktreePath}`);
   }
 
-  if (config.ide?.name === "vscode" && config.ide?.fork_workspace) {
+  if (
+    (config.ide?.name ?? "vscode") === "vscode" &&
+    config.ide?.fork_workspace
+  ) {
     logger.info("Syncing VS Code workspace state...");
     const syncResult = await syncWorkspaceState(mainDir, worktreePath);
 

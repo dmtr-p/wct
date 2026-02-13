@@ -83,7 +83,7 @@ describe("computeWorkspaceId", () => {
   });
 
   test("throws for nonexistent path", async () => {
-    expect(
+    await expect(
       computeWorkspaceId("/nonexistent/path/that/does/not/exist"),
     ).rejects.toThrow();
   });

@@ -32,7 +32,9 @@ export interface TmuxConfig {
 }
 
 export interface IdeConfig {
+  name?: string;
   command: string;
+  fork_workspace?: boolean;
 }
 
 export interface WctConfig {

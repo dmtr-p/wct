@@ -29,8 +29,10 @@ setup:
 
 # IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
 ide:
+  name: vscode
   command: "code $WCT_WORKTREE_DIR"
   # command: "cursor $WCT_WORKTREE_DIR"
+  # fork_workspace: true  # (vscode only) copy VS Code workspace state to worktree; requires main repo opened in VS Code once
 
 # Tmux session configuration
 tmux:

@@ -19,7 +19,9 @@ setup:
 
 # IDE command
 ide:
+  name: vscode
   command: "code $WCT_WORKTREE_DIR"
+  fork_workspace: true
 
 # Tmux session configuration
 tmux:

@@ -69,6 +69,15 @@ export function validateConfig(config: unknown): ValidationResult {
       if (typeof ide.command !== "string") {
         errors.push("ide.command must be a string");
       }
+      if (ide.name !== undefined && typeof ide.name !== "string") {
+        errors.push("ide.name must be a string");
+      }
+      if (
+        ide.fork_workspace !== undefined &&
+        typeof ide.fork_workspace !== "boolean"
+      ) {
+        errors.push("ide.fork_workspace must be a boolean");
+      }
     }
   }
 

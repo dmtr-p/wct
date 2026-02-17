@@ -5,6 +5,12 @@ import { resolveConfig, validateConfig } from "./validator";
 
 const CONFIG_FILENAME = ".wct.yaml";
 
+const DEFAULT_CONFIG: WctConfig = {
+  worktree_dir: "..",
+  ide: { command: "code $WCT_WORKTREE_DIR" },
+  tmux: { windows: [{ name: "main" }] },
+};
+
 export function expandTilde(path: string): string {
   if (path.startsWith("~/")) {
     return join(homedir(), path.slice(2));
@@ -78,16 +84,10 @@ export async function loadConfig(
   const hasProjectConfig = projectConfig !== null;
   const hasGlobalConfig = globalConfig !== null;
 
-  if (!hasProjectConfig && !hasGlobalConfig) {
-    return {
-      config: null,
-      errors: ["No config file found. Run 'wct init' to create one."],
-      hasProjectConfig,
-      hasGlobalConfig,
-    };
-  }
-
-  const merged = mergeConfigs(globalConfig, projectConfig);
+  const merged =
+    hasProjectConfig || hasGlobalConfig
+      ? mergeConfigs(globalConfig, projectConfig)
+      : DEFAULT_CONFIG;
   const validation = validateConfig(merged);
 
   if (!validation.valid) {
@@ -125,4 +125,4 @@ export function resolveWorktreePath(
   );
 }
 
-export { CONFIG_FILENAME };
+export { CONFIG_FILENAME, DEFAULT_CONFIG };

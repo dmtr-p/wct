@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_CONFIG,
   expandTilde,
   resolveWorktreePath,
   slugifyBranch,
@@ -363,6 +364,22 @@ describe("slugifyBranch", () => {
 
   test("handles nested slashes", () => {
     expect(slugifyBranch("feature/auth/login")).toBe("feature-auth-login");
+  });
+});
+
+describe("DEFAULT_CONFIG", () => {
+  test("uses parent directory as worktree_dir", () => {
+    expect(DEFAULT_CONFIG.worktree_dir).toBe("..");
+  });
+
+  test("opens VS Code with worktree path as default IDE", () => {
+    expect(DEFAULT_CONFIG.ide?.command).toBe("code $WCT_WORKTREE_DIR");
+  });
+
+  test("creates a single empty tmux window by default", () => {
+    expect(DEFAULT_CONFIG.tmux?.windows).toHaveLength(1);
+    expect(DEFAULT_CONFIG.tmux?.windows?.[0].name).toBe("main");
+    expect(DEFAULT_CONFIG.tmux?.windows?.[0].command).toBeUndefined();
   });
 });
 

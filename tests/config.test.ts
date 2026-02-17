@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
   expandTilde,
+  loadConfig,
   resolveWorktreePath,
   slugifyBranch,
 } from "../src/config/loader";
@@ -380,6 +381,28 @@ describe("DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG.tmux?.windows).toHaveLength(1);
     expect(DEFAULT_CONFIG.tmux?.windows?.[0].name).toBe("main");
     expect(DEFAULT_CONFIG.tmux?.windows?.[0].command).toBeUndefined();
+  });
+
+  test("loadConfig returns default config when no config files are present", async () => {
+    const noConfigFile = { exists: async () => false } as ReturnType<
+      typeof Bun.file
+    >;
+    const spy = spyOn(Bun, "file").mockImplementation(() => noConfigFile);
+
+    try {
+      const result = await loadConfig("/tmp/wct-test-no-config");
+
+      expect(result.config).not.toBeNull();
+      expect(result.config?.worktree_dir).toBe(DEFAULT_CONFIG.worktree_dir);
+      expect(result.config?.ide?.command).toBe(DEFAULT_CONFIG.ide?.command);
+      expect(result.config?.tmux?.windows).toHaveLength(1);
+      expect(result.config?.tmux?.windows?.[0].name).toBe(
+        DEFAULT_CONFIG.tmux?.windows?.[0].name,
+      );
+      expect(result.config?.tmux?.windows?.[0].command).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

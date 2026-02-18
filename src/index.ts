@@ -117,7 +117,8 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "init": {
-      await initCommand();
+      const result = await initCommand();
+      handleResult(result);
       break;
     }
 
@@ -134,7 +135,8 @@ async function main(): Promise<void> {
     }
 
     case "list": {
-      await listCommand();
+      const result = await listCommand();
+      handleResult(result);
       break;
     }
 

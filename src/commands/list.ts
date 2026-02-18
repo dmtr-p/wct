@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { formatSessionName, listSessions } from "../services/tmux";
 import { listWorktrees } from "../services/worktree";
 import * as logger from "../utils/logger";
+import { type CommandResult, ok } from "../utils/result";
 
 interface WorktreeRow {
   branch: string;
@@ -10,13 +11,13 @@ interface WorktreeRow {
   status: string;
 }
 
-export async function listCommand(): Promise<void> {
+export async function listCommand(): Promise<CommandResult> {
   const worktrees = await listWorktrees();
   const sessions = await listSessions();
 
   if (worktrees.length === 0) {
     logger.info("No worktrees found");
-    return;
+    return ok();
   }
 
   const rows: WorktreeRow[] = [];
@@ -58,4 +59,6 @@ export async function listCommand(): Promise<void> {
     ].join("  ");
     console.log(line);
   }
+
+  return ok();
 }

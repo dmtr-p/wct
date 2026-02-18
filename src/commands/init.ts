@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { CONFIG_FILENAME } from "../config/loader";
 import * as logger from "../utils/logger";
+import { type CommandResult, err, ok } from "../utils/result";
 
 const TEMPLATE = `# wct configuration
 # See documentation at: https://github.com/dmtr-p/wct
@@ -46,17 +47,26 @@ tmux:
     #   command: ""
 `;
 
-export async function initCommand(): Promise<void> {
+export async function initCommand(): Promise<CommandResult> {
   const cwd = process.cwd();
   const configPath = join(cwd, CONFIG_FILENAME);
 
   const file = Bun.file(configPath);
   if (await file.exists()) {
     logger.warn(`${CONFIG_FILENAME} already exists`);
-    return;
+    return ok();
   }
 
-  await Bun.write(configPath, TEMPLATE);
+  try {
+    await Bun.write(configPath, TEMPLATE);
+  } catch (e) {
+    return err(
+      `Failed to create ${CONFIG_FILENAME}: ${e instanceof Error ? e.message : String(e)}`,
+      "init_error",
+    );
+  }
+
   logger.success(`Created ${CONFIG_FILENAME}`);
   logger.info("Edit the config file to customize your workflow");
+  return ok();
 }

@@ -14,7 +14,8 @@ export type ErrorCode =
   | "missing_branch_arg"
   | "missing_shell_arg"
   | "unsupported_shell"
-  | "unknown_command";
+  | "unknown_command"
+  | "init_error";
 
 export interface CommandError {
   message: string;

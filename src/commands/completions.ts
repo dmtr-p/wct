@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/suspicious/noTemplateCurlyInString: shell variable interpolation */
-import * as logger from "../utils/logger";
+import { type CommandResult, err, ok } from "../utils/result";
 import { COMMANDS } from "./registry";
 
 function generateFishCompletions(): string {
@@ -32,7 +32,6 @@ function generateFishCompletions(): string {
     );
   }
 
-  // Also complete the completions command itself
   lines.push(
     "complete -c wct -n '__fish_use_subcommand' -a 'completions' -d 'Output shell completion script'",
   );
@@ -64,7 +63,6 @@ function generateFishCompletions(): string {
     }
   }
 
-  // Branch completions for commands that take a <branch> arg
   const branchCommands = COMMANDS.filter(
     (cmd) =>
       cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
@@ -94,7 +92,6 @@ function generateFishCompletions(): string {
     );
   }
 
-  // Completions subcommand: complete shell names
   lines.push("");
   lines.push("# Shell completions for 'completions' subcommand");
   lines.push(
@@ -320,27 +317,28 @@ function generateZshCompletions(): string {
   return lines.join("\n");
 }
 
-export function completionsCommand(shell: string | undefined): void {
+export function completionsCommand(shell: string | undefined): CommandResult {
   if (!shell) {
-    logger.error("Missing shell name");
-    console.log("\nUsage: wct completions <shell>");
-    console.log("Supported shells: fish, bash, zsh");
-    process.exit(1);
+    return err(
+      "Missing shell name\n\nUsage: wct completions <shell>\nSupported shells: fish, bash, zsh",
+      "missing_shell_arg",
+    );
   }
 
   switch (shell) {
     case "fish":
       console.log(generateFishCompletions());
-      break;
+      return ok();
     case "bash":
       console.log(generateBashCompletions());
-      break;
+      return ok();
     case "zsh":
       console.log(generateZshCompletions());
-      break;
+      return ok();
     default:
-      logger.error(`Unsupported shell: ${shell}`);
-      console.log("Supported shells: fish, bash, zsh");
-      process.exit(1);
+      return err(
+        `Unsupported shell: ${shell}\nSupported shells: fish, bash, zsh`,
+        "unsupported_shell",
+      );
   }
 }

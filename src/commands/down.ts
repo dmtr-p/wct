@@ -6,11 +6,11 @@ import {
 } from "../services/tmux";
 import { isGitRepo } from "../services/worktree";
 import * as logger from "../utils/logger";
+import { type CommandResult, err, ok } from "../utils/result";
 
-export async function downCommand(): Promise<void> {
+export async function downCommand(): Promise<CommandResult> {
   if (!(await isGitRepo())) {
-    logger.error("Not a git repository");
-    process.exit(1);
+    return err("Not a git repository", "not_git_repo");
   }
 
   const cwd = process.cwd();
@@ -18,7 +18,7 @@ export async function downCommand(): Promise<void> {
 
   if (!(await sessionExists(sessionName))) {
     logger.warn(`No tmux session '${sessionName}' found`);
-    return;
+    return ok();
   }
 
   logger.info(`Killing tmux session '${sessionName}'...`);
@@ -26,8 +26,8 @@ export async function downCommand(): Promise<void> {
 
   if (result.success) {
     logger.success(`Killed tmux session '${sessionName}'`);
+    return ok();
   } else {
-    logger.error(`Failed to kill tmux session: ${result.error}`);
-    process.exit(1);
+    return err(`Failed to kill tmux session: ${result.error}`, "tmux_error");
   }
 }

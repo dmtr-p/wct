@@ -13,40 +13,39 @@ import {
   isGitRepo,
 } from "../services/worktree";
 import * as logger from "../utils/logger";
+import { type CommandResult, err, ok } from "../utils/result";
 
 export interface UpOptions {
   noIde?: boolean;
 }
 
-export async function upCommand(options?: UpOptions): Promise<void> {
+export async function upCommand(options?: UpOptions): Promise<CommandResult> {
   const { noIde } = options ?? {};
   if (!(await isGitRepo())) {
-    logger.error("Not a git repository");
-    process.exit(1);
+    return err("Not a git repository", "not_git_repo");
   }
 
   const cwd = process.cwd();
 
   const mainWorktreePath = await getMainWorktreePath();
   if (!mainWorktreePath) {
-    logger.error("Could not determine main repository path");
-    process.exit(1);
+    return err(
+      "Could not determine main repository path",
+      "missing_main_worktree",
+    );
   }
 
   const { config, errors } = await loadConfig(mainWorktreePath);
   if (!config) {
-    for (const err of errors) {
-      logger.error(err);
-    }
-    process.exit(1);
+    return err(errors.join("\n"), "config_not_found");
   }
 
   const branch = await getCurrentBranch();
   if (!branch) {
-    logger.error(
+    return err(
       "Could not determine current branch (detached HEAD is not supported)",
+      "detached_head",
     );
-    process.exit(1);
   }
 
   const sessionName = formatSessionName(basename(cwd));
@@ -99,4 +98,6 @@ export async function upCommand(options?: UpOptions): Promise<void> {
       );
     }
   }
+
+  return ok();
 }

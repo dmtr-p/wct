@@ -16,6 +16,7 @@ import {
   isGitRepo,
 } from "../services/worktree";
 import * as logger from "../utils/logger";
+import { type CommandResult, err, ok } from "../utils/result";
 
 export interface OpenOptions {
   branch: string;
@@ -24,46 +25,46 @@ export interface OpenOptions {
   noIde?: boolean;
 }
 
-export async function openCommand(options: OpenOptions): Promise<void> {
+export async function openCommand(
+  options: OpenOptions,
+): Promise<CommandResult> {
   const { branch, existing, base, noIde } = options;
 
   if (!(await isGitRepo())) {
-    logger.error("Not a git repository");
-    process.exit(1);
+    return err("Not a git repository", "not_git_repo");
   }
 
   const mainDir = await getMainRepoPath();
   if (!mainDir) {
-    logger.error("Could not determine repository root");
-    process.exit(1);
+    return err("Could not determine repository root", "worktree_error");
   }
 
   const { config, errors } = await loadConfig(mainDir);
   if (!config) {
-    for (const err of errors) {
-      logger.error(err);
-    }
-    process.exit(1);
+    return err(errors.join("\n"), "config_not_found");
   }
 
   if (existing && base) {
-    logger.error("Options --existing and --base cannot be used together");
-    process.exit(1);
+    return err(
+      "Options --existing and --base cannot be used together",
+      "invalid_options",
+    );
   }
 
   if (existing) {
     const exists = await branchExists(branch);
     if (!exists) {
-      logger.error(`Branch '${branch}' does not exist`);
-      process.exit(1);
+      return err(`Branch '${branch}' does not exist`, "branch_not_found");
     }
   }
 
   if (base) {
     const baseExists = await branchExists(base);
     if (!baseExists) {
-      logger.error(`Base branch '${base}' does not exist`);
-      process.exit(1);
+      return err(
+        `Base branch '${base}' does not exist`,
+        "base_branch_not_found",
+      );
     }
   }
 
@@ -93,8 +94,10 @@ export async function openCommand(options: OpenOptions): Promise<void> {
   );
 
   if (!worktreeResult.success) {
-    logger.error(`Failed to create worktree: ${worktreeResult.error}`);
-    process.exit(1);
+    return err(
+      `Failed to create worktree: ${worktreeResult.error}`,
+      "worktree_error",
+    );
   }
 
   if (worktreeResult.alreadyExists) {
@@ -177,4 +180,6 @@ export async function openCommand(options: OpenOptions): Promise<void> {
       );
     }
   }
+
+  return ok();
 }

@@ -12,6 +12,7 @@ import {
 } from "../services/worktree";
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
+import { type CommandResult, err, ok } from "../utils/result";
 
 export interface CloseOptions {
   branch: string;
@@ -19,18 +20,21 @@ export interface CloseOptions {
   force?: boolean;
 }
 
-export async function closeCommand(options: CloseOptions): Promise<void> {
+export async function closeCommand(
+  options: CloseOptions,
+): Promise<CommandResult> {
   const { branch, yes = false, force = false } = options;
 
   if (!(await isGitRepo())) {
-    logger.error("Not a git repository");
-    process.exit(1);
+    return err("Not a git repository", "not_git_repo");
   }
 
   const worktree = await findWorktreeByBranch(branch);
   if (!worktree) {
-    logger.error(`No worktree found for branch '${branch}'`);
-    process.exit(1);
+    return err(
+      `No worktree found for branch '${branch}'`,
+      "worktree_not_found",
+    );
   }
 
   const worktreePath = worktree.path;
@@ -42,7 +46,7 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
     );
     if (!confirmed) {
       logger.info("Aborted");
-      return;
+      return ok();
     }
   }
 
@@ -53,7 +57,7 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
     );
     if (!confirmed) {
       logger.info("Aborted");
-      return;
+      return ok();
     }
   }
 
@@ -74,14 +78,18 @@ export async function closeCommand(options: CloseOptions): Promise<void> {
 
   if (removeResult.success) {
     logger.success(`Removed worktree '${branch}'`);
+    return ok();
   } else {
     if (removeResult.error?.includes("contains modified or untracked files")) {
-      logger.error(
+      return err(
         "Worktree has uncommitted changes. Use --force to remove anyway.",
+        "worktree_remove_failed",
       );
     } else {
-      logger.error(`Failed to remove worktree: ${removeResult.error}`);
+      return err(
+        `Failed to remove worktree: ${removeResult.error}`,
+        "worktree_remove_failed",
+      );
     }
-    process.exit(1);
   }
 }

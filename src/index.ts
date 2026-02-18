@@ -8,6 +8,7 @@ import { openCommand } from "./commands/open";
 import { COMMANDS } from "./commands/registry";
 import { upCommand } from "./commands/up";
 import * as logger from "./utils/logger";
+import { type CommandResult, err } from "./utils/result";
 
 const { version: VERSION } = require("../package.json");
 
@@ -76,13 +77,23 @@ function buildParseArgsOptions(): Record<
   for (const cmd of COMMANDS) {
     if (!cmd.options) continue;
     for (const opt of cmd.options) {
-      options[opt.name] = { type: opt.type };
+      const optConfig: { type: "boolean" | "string"; short?: string } = {
+        type: opt.type,
+      };
       if (opt.short) {
-        options[opt.name].short = opt.short;
+        optConfig.short = opt.short;
       }
+      options[opt.name] = optConfig;
     }
   }
   return options;
+}
+
+function handleResult(result: CommandResult): void {
+  if (!result.success) {
+    logger.error(result.error.message);
+    process.exit(1);
+  }
 }
 
 async function main(): Promise<void> {
@@ -105,63 +116,83 @@ async function main(): Promise<void> {
   const command = positionals[0];
 
   switch (command) {
-    case "init":
-      await initCommand();
+    case "init": {
+      const result = await initCommand();
+      handleResult(result);
       break;
+    }
 
-    case "up":
-      await upCommand({ noIde: !!values["no-ide"] });
+    case "up": {
+      const result = await upCommand({ noIde: !!values["no-ide"] });
+      handleResult(result);
       break;
+    }
 
-    case "down":
-      await downCommand();
+    case "down": {
+      const result = await downCommand();
+      handleResult(result);
       break;
+    }
 
-    case "list":
-      await listCommand();
+    case "list": {
+      const result = await listCommand();
+      handleResult(result);
       break;
+    }
 
     case "open": {
       const branch = positionals[1];
       if (!branch) {
-        logger.error("Missing branch name");
-        console.log(
-          "\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
+        handleResult(
+          err(
+            "Missing branch name\n\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
+            "missing_branch_arg",
+          ),
         );
-        process.exit(1);
+        return;
       }
-      await openCommand({
+      const result = await openCommand({
         branch,
         existing: !!values.existing,
         base: values.base as string | undefined,
         noIde: !!values["no-ide"],
       });
+      handleResult(result);
       break;
     }
 
     case "close": {
       const branch = positionals[1];
       if (!branch) {
-        logger.error("Missing branch name");
-        console.log("\nUsage: wct close <branch> [-y|--yes] [-f|--force]");
-        process.exit(1);
+        handleResult(
+          err(
+            "Missing branch name\n\nUsage: wct close <branch> [-y|--yes] [-f|--force]",
+            "missing_branch_arg",
+          ),
+        );
+        return;
       }
-      await closeCommand({
+      const result = await closeCommand({
         branch,
         yes: !!values.yes,
         force: !!values.force,
       });
+      handleResult(result);
       break;
     }
 
-    case "completions":
-      completionsCommand(positionals[1]);
+    case "completions": {
+      const result = completionsCommand(positionals[1]);
+      handleResult(result);
       break;
+    }
 
-    default:
-      logger.error(`Unknown command: ${command}`);
-      console.log(HELP);
-      process.exit(1);
+    default: {
+      handleResult(
+        err(`Unknown command: ${command}\n${HELP}`, "unknown_command"),
+      );
+      break;
+    }
   }
 }
 

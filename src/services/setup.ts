@@ -29,7 +29,8 @@ export async function runSetupCommands(
   };
 
   for (let i = 0; i < commands.length; i++) {
-    const cmd = commands[i];
+    // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
+    const cmd = commands[i]!;
     logger.step(i + 1, totalSteps, cmd.name);
 
     try {

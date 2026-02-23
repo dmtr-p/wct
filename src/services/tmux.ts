@@ -92,16 +92,19 @@ export function buildWindowPaneCommands(
   }
 
   // Run first pane command (panes[0] runs in the initial pane)
-  if (panes[0].command) {
+  // biome-ignore lint/style/noNonNullAssertion: guarded by panes.length > 0 check above
+  const firstPane = panes[0]!;
+  if (firstPane.command) {
     commands.push({
       type: "send-keys",
-      args: ["-t", windowTarget, panes[0].command, "Enter"],
+      args: ["-t", windowTarget, firstPane.command, "Enter"],
     });
   }
 
   // Create additional panes (each split creates new pane and makes it active)
   for (let i = 1; i < panes.length; i++) {
-    const pane = panes[i];
+    // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
+    const pane = panes[i]!;
     const splitFlag = split === "horizontal" ? "-h" : "-v";
 
     commands.push({
@@ -175,7 +178,8 @@ export function buildWindowsPaneCommands(
   }
 
   // Create session with first window
-  const firstWindow = windows[0];
+  // biome-ignore lint/style/noNonNullAssertion: guarded by windows.length === 0 check above
+  const firstWindow = windows[0]!;
   commands.push({
     type: "new-session",
     args: ["-d", "-s", sessionName, "-n", firstWindow.name, "-c", workingDir],
@@ -190,7 +194,8 @@ export function buildWindowsPaneCommands(
 
   // Create remaining windows
   for (let i = 1; i < windows.length; i++) {
-    const window = windows[i];
+    // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
+    const window = windows[i]!;
     commands.push({
       type: "new-window",
       args: ["-t", sessionName, "-n", window.name, "-c", workingDir],

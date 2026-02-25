@@ -8,7 +8,6 @@ import {
   test,
 } from "bun:test";
 import { createHash } from "node:crypto";
-import { unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -204,7 +203,7 @@ describe("createWorkspaceJson", () => {
 describe("rewriteStatePaths", () => {
   let dbPath: string;
 
-  function createTestDb(rows: { key: string; value: string }[]): void {
+  function createRewriteTestDb(rows: { key: string; value: string }[]): void {
     const db = new Database(dbPath);
     db.run("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)");
     const insert = db.prepare(
@@ -234,7 +233,7 @@ describe("rewriteStatePaths", () => {
 
   test("rewrites plain paths", () => {
     dbPath = join(tmpdir(), `wct-test-rewrite-${Date.now()}.vscdb`);
-    createTestDb([
+    createRewriteTestDb([
       { key: "editor.state", value: '{"uri":"file:///old/repo/src/index.ts"}' },
     ]);
 
@@ -247,7 +246,7 @@ describe("rewriteStatePaths", () => {
 
   test("rewrites URL-encoded paths", () => {
     dbPath = join(tmpdir(), `wct-test-rewrite-enc-${Date.now()}.vscdb`);
-    createTestDb([
+    createRewriteTestDb([
       {
         key: "git.state",
         value: "git:?path=%2Fold%2Frepo%2Ffile.ts",
@@ -263,7 +262,7 @@ describe("rewriteStatePaths", () => {
 
   test("leaves unrelated rows untouched", () => {
     dbPath = join(tmpdir(), `wct-test-rewrite-skip-${Date.now()}.vscdb`);
-    createTestDb([{ key: "unrelated", value: '{"setting":"value"}' }]);
+    createRewriteTestDb([{ key: "unrelated", value: '{"setting":"value"}' }]);
 
     const count = rewriteStatePaths(dbPath, "/old/repo", "/new/worktree");
 
@@ -274,7 +273,7 @@ describe("rewriteStatePaths", () => {
 
   test("returns correct count of modified rows", () => {
     dbPath = join(tmpdir(), `wct-test-rewrite-count-${Date.now()}.vscdb`);
-    createTestDb([
+    createRewriteTestDb([
       { key: "a", value: "file:///old/repo/one.ts" },
       { key: "b", value: "no match here" },
       { key: "c", value: "file:///old/repo/two.ts" },
@@ -302,13 +301,13 @@ describe("syncWorkspaceState", () => {
 });
 
 describe("rewriteStatePaths error handling", () => {
-  test("returns 0 for corrupted database file", () => {
+  test("returns 0 for corrupted database file", async () => {
     const corruptedDbPath = join(
       tmpdir(),
       `wct-test-corrupt-${Date.now()}.vscdb`,
     );
     // Create a non-database file
-    writeFileSync(corruptedDbPath, "not a valid sqlite database");
+    await Bun.write(corruptedDbPath, "not a valid sqlite database");
 
     try {
       const count = rewriteStatePaths(
@@ -318,7 +317,7 @@ describe("rewriteStatePaths error handling", () => {
       );
       expect(count).toBe(0); // Should return 0 instead of throwing
     } finally {
-      unlinkSync(corruptedDbPath);
+      await rm(corruptedDbPath, { force: true });
     }
   });
 

@@ -10,6 +10,45 @@ import {
   getMainWorktreePath,
 } from "../src/services/worktree";
 
+interface LinkedWorktreeFixture {
+  repoDir: string;
+  worktreeDir: string;
+}
+
+async function createLinkedWorktreeFixture(
+  repoPrefix: string,
+  worktreePrefix: string,
+): Promise<LinkedWorktreeFixture> {
+  const repoDir = await realpath(await mkdtemp(join(tmpdir(), repoPrefix)));
+  const worktreeDir = await realpath(
+    await mkdtemp(join(tmpdir(), worktreePrefix)),
+  );
+
+  await $`git init -b main`.quiet().cwd(repoDir);
+  await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
+  await $`git config user.name "Test"`.quiet().cwd(repoDir);
+  await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
+  await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
+
+  const wtPath = join(worktreeDir, "feature-branch");
+  await $`git worktree add -b feature-branch ${wtPath}`.quiet().cwd(repoDir);
+
+  return { repoDir, worktreeDir };
+}
+
+async function cleanupLinkedWorktreeFixture(
+  fixture: LinkedWorktreeFixture,
+  originalDir: string,
+): Promise<void> {
+  process.chdir(originalDir);
+  await $`git worktree remove ${join(fixture.worktreeDir, "feature-branch")}`
+    .quiet()
+    .cwd(fixture.repoDir)
+    .nothrow();
+  await rm(fixture.repoDir, { recursive: true, force: true });
+  await rm(fixture.worktreeDir, { recursive: true, force: true });
+}
+
 describe("getCurrentBranch", () => {
   test("returns current branch name in a git repo", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "wct-test-branch-"));
@@ -60,29 +99,16 @@ describe("getMainWorktreePath", () => {
   const originalDir = process.cwd();
 
   beforeAll(async () => {
-    repoDir = await realpath(
-      await mkdtemp(join(tmpdir(), "wct-test-main-wt-")),
+    const fixture = await createLinkedWorktreeFixture(
+      "wct-test-main-wt-",
+      "wct-test-wt-",
     );
-    worktreeDir = await realpath(await mkdtemp(join(tmpdir(), "wct-test-wt-")));
-
-    await $`git init -b main`.quiet().cwd(repoDir);
-    await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
-    await $`git config user.name "Test"`.quiet().cwd(repoDir);
-    await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
-    await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
-
-    const wtPath = join(worktreeDir, "feature-branch");
-    await $`git worktree add -b feature-branch ${wtPath}`.quiet().cwd(repoDir);
+    repoDir = fixture.repoDir;
+    worktreeDir = fixture.worktreeDir;
   });
 
   afterAll(async () => {
-    process.chdir(originalDir);
-    await $`git worktree remove ${join(worktreeDir, "feature-branch")}`
-      .quiet()
-      .cwd(repoDir)
-      .nothrow();
-    await rm(repoDir, { recursive: true, force: true });
-    await rm(worktreeDir, { recursive: true, force: true });
+    await cleanupLinkedWorktreeFixture({ repoDir, worktreeDir }, originalDir);
   });
 
   test("returns main repo path when run from main repo", async () => {
@@ -105,31 +131,16 @@ describe("getMainRepoPath", () => {
   const originalDir = process.cwd();
 
   beforeAll(async () => {
-    repoDir = await realpath(
-      await mkdtemp(join(tmpdir(), "wct-test-main-repo-")),
+    const fixture = await createLinkedWorktreeFixture(
+      "wct-test-main-repo-",
+      "wct-test-main-repo-wt-",
     );
-    worktreeDir = await realpath(
-      await mkdtemp(join(tmpdir(), "wct-test-main-repo-wt-")),
-    );
-
-    await $`git init -b main`.quiet().cwd(repoDir);
-    await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
-    await $`git config user.name "Test"`.quiet().cwd(repoDir);
-    await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
-    await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
-
-    const wtPath = join(worktreeDir, "feature-branch");
-    await $`git worktree add -b feature-branch ${wtPath}`.quiet().cwd(repoDir);
+    repoDir = fixture.repoDir;
+    worktreeDir = fixture.worktreeDir;
   });
 
   afterAll(async () => {
-    process.chdir(originalDir);
-    await $`git worktree remove ${join(worktreeDir, "feature-branch")}`
-      .quiet()
-      .cwd(repoDir)
-      .nothrow();
-    await rm(repoDir, { recursive: true, force: true });
-    await rm(worktreeDir, { recursive: true, force: true });
+    await cleanupLinkedWorktreeFixture({ repoDir, worktreeDir }, originalDir);
   });
 
   test("returns main repo path when run from main repo", async () => {

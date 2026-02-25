@@ -218,6 +218,30 @@ describe("buildWindowsPaneCommands", () => {
     expect(newWindowCmd?.args).toContain("WCT_MAIN_DIR=/repos/main");
   });
 
+  test("emits session set-environment commands for empty windows with env", () => {
+    const commands = buildWindowsPaneCommands(
+      "test-session",
+      "/work",
+      [],
+      TEST_ENV,
+    );
+    const setEnvCommands = commands.filter((c) => c.type === "set-environment");
+
+    expect(setEnvCommands).toHaveLength(Object.keys(TEST_ENV).length);
+
+    for (const [key, value] of Object.entries(TEST_ENV)) {
+      const match = setEnvCommands.find((c) => {
+        return (
+          c.args[0] === "-t" &&
+          c.args[1] === "test-session" &&
+          c.args[2] === key &&
+          c.args[3] === value
+        );
+      });
+      expect(match).toBeDefined();
+    }
+  });
+
   test("creates session with single window, no panes", () => {
     const commands = buildWindowsPaneCommands("test-session", "/work", [
       { name: "shell" },

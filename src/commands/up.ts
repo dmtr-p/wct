@@ -8,7 +8,7 @@ import {
 } from "../services/tmux";
 import {
   getCurrentBranch,
-  getMainWorktreePath,
+  getMainRepoPath,
   isGitRepo,
 } from "../services/worktree";
 import type { WctEnv } from "../types/env";
@@ -27,15 +27,12 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   const cwd = process.cwd();
 
-  const mainWorktreePath = await getMainWorktreePath();
-  if (!mainWorktreePath) {
-    return err(
-      "Could not determine main repository path",
-      "missing_main_worktree",
-    );
+  const mainRepoPath = await getMainRepoPath();
+  if (!mainRepoPath) {
+    return err("Could not determine repository root", "worktree_error");
   }
 
-  const { config, errors } = await loadConfig(mainWorktreePath);
+  const { config, errors } = await loadConfig(mainRepoPath);
   if (!config) {
     return err(errors.join("\n"), "config_error");
   }
@@ -52,7 +49,7 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   const env: WctEnv = {
     WCT_WORKTREE_DIR: cwd,
-    WCT_MAIN_DIR: mainWorktreePath,
+    WCT_MAIN_DIR: mainRepoPath,
     WCT_BRANCH: branch,
     WCT_PROJECT: config.project_name,
   };

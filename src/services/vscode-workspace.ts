@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, stat } from "node:fs/promises";
+import { cp, mkdir, stat } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -58,8 +58,8 @@ export async function workspaceExists(workspaceId: string): Promise<boolean> {
   if (!storagePath) return false;
 
   try {
-    await access(join(storagePath, workspaceId));
-    return true;
+    const stats = await stat(join(storagePath, workspaceId));
+    return stats.isDirectory();
   } catch {
     return false;
   }
@@ -206,12 +206,10 @@ async function filterEditorsInState(
         continue;
       }
 
-      try {
-        await access(filePath);
+      if (await Bun.file(filePath).exists()) {
         keepIndices.push(i);
-      } catch {
-        // File does not exist in the worktree — remove this editor
       }
+      // File does not exist in the worktree — remove this editor
     }
 
     const removed = editors.length - keepIndices.length;
@@ -273,17 +271,23 @@ export async function filterMissingEditors(
         .get("editorpart.state") as { value: string | Buffer } | null;
 
       if (topRow) {
-        const text =
-          typeof topRow.value === "string"
-            ? topRow.value
-            : Buffer.from(topRow.value).toString("utf-8");
-        const state = JSON.parse(text);
-        const removed = await filterEditorsInState(state);
-        totalRemoved += removed;
-        if (removed > 0) {
-          db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-            JSON.stringify(state),
-            "editorpart.state",
+        try {
+          const text =
+            typeof topRow.value === "string"
+              ? topRow.value
+              : Buffer.from(topRow.value).toString("utf-8");
+          const state = JSON.parse(text);
+          const removed = await filterEditorsInState(state);
+          totalRemoved += removed;
+          if (removed > 0) {
+            db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
+              JSON.stringify(state),
+              "editorpart.state",
+            );
+          }
+        } catch (err) {
+          logger.warn(
+            `Failed to process VS Code key 'editorpart.state' in '${dbPath}': ${String(err)}`,
           );
         }
       }
@@ -296,21 +300,27 @@ export async function filterMissingEditors(
       } | null;
 
       if (memoRow) {
-        const text =
-          typeof memoRow.value === "string"
-            ? memoRow.value
-            : Buffer.from(memoRow.value).toString("utf-8");
-        const memento = JSON.parse(text);
-        const editorState = memento["editorpart.state"];
-        if (editorState?.serializedGrid) {
-          const removed = await filterEditorsInState(editorState);
-          totalRemoved += removed;
-          if (removed > 0) {
-            db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-              JSON.stringify(memento),
-              "memento/workbench.parts.editor",
-            );
+        try {
+          const text =
+            typeof memoRow.value === "string"
+              ? memoRow.value
+              : Buffer.from(memoRow.value).toString("utf-8");
+          const memento = JSON.parse(text);
+          const editorState = memento["editorpart.state"];
+          if (editorState?.serializedGrid) {
+            const removed = await filterEditorsInState(editorState);
+            totalRemoved += removed;
+            if (removed > 0) {
+              db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
+                JSON.stringify(memento),
+                "memento/workbench.parts.editor",
+              );
+            }
           }
+        } catch (err) {
+          logger.warn(
+            `Failed to process VS Code key 'memento/workbench.parts.editor' in '${dbPath}': ${String(err)}`,
+          );
         }
       }
 

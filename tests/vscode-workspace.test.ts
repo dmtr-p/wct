@@ -9,7 +9,7 @@ import {
 } from "bun:test";
 import { createHash } from "node:crypto";
 import { unlinkSync, writeFileSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -151,8 +151,8 @@ describe("copyWorkspaceStorage", () => {
   test("copies state.vscdb and skips workspace.json", async () => {
     const sourceDir = join(copyStoragePath, testSourceId);
     await mkdir(sourceDir, { recursive: true });
-    await writeFile(join(sourceDir, "state.vscdb"), "fake-db-content");
-    await writeFile(
+    await Bun.write(join(sourceDir, "state.vscdb"), "fake-db-content");
+    await Bun.write(
       join(sourceDir, "workspace.json"),
       '{"folder":"file:///old"}',
     );
@@ -399,7 +399,7 @@ describe("filterMissingEditors", () => {
   test("keeps editors whose files exist", async () => {
     dbPath = join(tmpdir(), `wct-filter-exist-${Date.now()}.vscdb`);
     const tmpFile = join(tmpdir(), `wct-test-exist-${Date.now()}.ts`);
-    await writeFile(tmpFile, "");
+    await Bun.write(tmpFile, "");
     try {
       createEditorPartDb(makeLeafState([makeFileEditor(tmpFile)]));
       const count = await filterMissingEditors(dbPath, "/worktree");
@@ -430,8 +430,8 @@ describe("filterMissingEditors", () => {
     dbPath = join(tmpdir(), `wct-filter-mru-${Date.now()}.vscdb`);
     const tmpFile0 = join(tmpdir(), `wct-mru0-${Date.now()}.ts`);
     const tmpFile2 = join(tmpdir(), `wct-mru2-${Date.now()}.ts`);
-    await writeFile(tmpFile0, "");
-    await writeFile(tmpFile2, "");
+    await Bun.write(tmpFile0, "");
+    await Bun.write(tmpFile2, "");
     try {
       // Editors: [0=exists, 1=missing, 2=exists]; mru=[2,0,1]
       // After removing index 1: oldToNew={0->0, 2->1}; mru=[1,0]
@@ -461,7 +461,7 @@ describe("filterMissingEditors", () => {
   test("sets preview to undefined when its editor is removed", async () => {
     dbPath = join(tmpdir(), `wct-filter-prev-rm-${Date.now()}.vscdb`);
     const tmpFile = join(tmpdir(), `wct-prev-rm-${Date.now()}.ts`);
-    await writeFile(tmpFile, "");
+    await Bun.write(tmpFile, "");
     try {
       // preview = 1 (the missing file)
       createEditorPartDb(
@@ -485,7 +485,7 @@ describe("filterMissingEditors", () => {
   test("remaps preview index when its editor is kept", async () => {
     dbPath = join(tmpdir(), `wct-filter-prev-remap-${Date.now()}.vscdb`);
     const tmpFile = join(tmpdir(), `wct-prev-remap-${Date.now()}.ts`);
-    await writeFile(tmpFile, "");
+    await Bun.write(tmpFile, "");
     try {
       // Editors: [0=missing, 1=missing, 2=kept]; preview=2 → remaps to 0
       createEditorPartDb(
@@ -513,7 +513,7 @@ describe("filterMissingEditors", () => {
   test("adjusts sticky count when sticky editors are removed", async () => {
     dbPath = join(tmpdir(), `wct-filter-sticky-${Date.now()}.vscdb`);
     const tmpFile = join(tmpdir(), `wct-sticky-${Date.now()}.ts`);
-    await writeFile(tmpFile, "");
+    await Bun.write(tmpFile, "");
     try {
       // sticky=2: editors [0=missing, 1=kept]; first sticky editor removed → sticky=1
       const leafState = makeLeafState(
@@ -551,7 +551,7 @@ describe("filterMissingEditors", () => {
   test("handles split panes (branch node)", async () => {
     dbPath = join(tmpdir(), `wct-filter-branch-${Date.now()}.vscdb`);
     const tmpFile = join(tmpdir(), `wct-branch-${Date.now()}.ts`);
-    await writeFile(tmpFile, "");
+    await Bun.write(tmpFile, "");
     try {
       const branchState = {
         serializedGrid: {
@@ -604,7 +604,7 @@ describe("filterMissingEditors", () => {
 
   test("returns 0 on corrupted database file", async () => {
     dbPath = join(tmpdir(), `wct-filter-corrupt-${Date.now()}.vscdb`);
-    await writeFile(dbPath, "not valid sqlite");
+    await Bun.write(dbPath, "not valid sqlite");
     const count = await filterMissingEditors(dbPath, "/worktree");
     expect(count).toBe(0);
   });
@@ -650,7 +650,7 @@ describe("filterMissingEditors", () => {
   test("filters missing file editors from memento split panes", async () => {
     dbPath = join(tmpdir(), `wct-filter-memento-branch-${Date.now()}.vscdb`);
     const tmpFile = join(tmpdir(), `wct-memento-branch-${Date.now()}.ts`);
-    await writeFile(tmpFile, "");
+    await Bun.write(tmpFile, "");
     try {
       const memento = {
         "editorpart.state": {
@@ -777,7 +777,7 @@ describe("clearTerminalState", () => {
 
   test("returns 0 on corrupted database file", async () => {
     dbPath = join(tmpdir(), `wct-term-corrupt-${Date.now()}.vscdb`);
-    await writeFile(dbPath, "not valid sqlite");
+    await Bun.write(dbPath, "not valid sqlite");
 
     const count = clearTerminalState(dbPath);
 
@@ -904,7 +904,7 @@ describe("clearExternalAgentSessions", () => {
 
   test("returns 0 on corrupted database file", async () => {
     dbPath = join(tmpdir(), `wct-agent-corrupt-${Date.now()}.vscdb`);
-    await writeFile(dbPath, "not valid sqlite");
+    await Bun.write(dbPath, "not valid sqlite");
 
     const count = clearExternalAgentSessions(dbPath);
 

@@ -1,7 +1,6 @@
 import { basename } from "node:path";
 import { loadConfig } from "../config/loader";
 import { openIDE } from "../services/ide";
-import type { SetupEnv } from "../services/setup";
 import {
   createSession,
   formatSessionName,
@@ -12,6 +11,7 @@ import {
   getMainWorktreePath,
   isGitRepo,
 } from "../services/worktree";
+import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
 
@@ -50,7 +50,7 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   const sessionName = formatSessionName(basename(cwd));
 
-  const env: SetupEnv = {
+  const env: WctEnv = {
     WCT_WORKTREE_DIR: cwd,
     WCT_MAIN_DIR: mainWorktreePath,
     WCT_BRANCH: branch,
@@ -59,7 +59,7 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   if (config.tmux) {
     logger.info("Creating tmux session...");
-    const tmuxResult = await createSession(sessionName, cwd, config.tmux);
+    const tmuxResult = await createSession(sessionName, cwd, config.tmux, env);
 
     if (tmuxResult.success) {
       if (tmuxResult.alreadyExists) {

@@ -36,6 +36,12 @@ export interface Worktree {
 }
 
 export async function getMainRepoPath(): Promise<string | null> {
+  const mainWorktreePath = await getMainWorktreePath();
+  if (mainWorktreePath) {
+    return mainWorktreePath;
+  }
+
+  // Fallback for repositories where git worktree introspection fails.
   try {
     const result = await $`git rev-parse --show-toplevel`.quiet();
     return result.text().trim();

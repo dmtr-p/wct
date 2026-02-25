@@ -1,13 +1,7 @@
 import { $ } from "bun";
 import type { SetupCommand } from "../config/schema";
+import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
-
-export interface SetupEnv {
-  WCT_WORKTREE_DIR: string;
-  WCT_MAIN_DIR: string;
-  WCT_BRANCH: string;
-  WCT_PROJECT: string;
-}
 
 export interface SetupResult {
   name: string;
@@ -18,7 +12,7 @@ export interface SetupResult {
 export async function runSetupCommands(
   commands: SetupCommand[],
   workingDir: string,
-  env: SetupEnv,
+  env: WctEnv,
 ): Promise<SetupResult[]> {
   const results: SetupResult[] = [];
   const totalSteps = commands.length;

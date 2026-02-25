@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
+import type { WctEnv } from "../types/env";
 
 export interface TmuxSession {
   name: string;
@@ -65,16 +66,28 @@ export interface TmuxCommand {
     | "new-session"
     | "new-window"
     | "split-window"
+    | "set-environment"
     | "send-keys"
     | "select-layout"
     | "select-window";
   args: string[];
 }
 
+function buildEnvOptionArgs(env?: WctEnv): string[] {
+  if (!env) {
+    return [];
+  }
+  return Object.entries(env).flatMap(([key, value]) => [
+    "-e",
+    `${key}=${value}`,
+  ]);
+}
+
 export function buildWindowPaneCommands(
   windowTarget: string,
   workingDir: string,
   window: TmuxWindow,
+  envOptionArgs: string[] = [],
 ): TmuxCommand[] {
   const commands: TmuxCommand[] = [];
   const panes = window.panes ?? [];
@@ -109,7 +122,7 @@ export function buildWindowPaneCommands(
 
     commands.push({
       type: "split-window",
-      args: [splitFlag, "-t", windowTarget, "-c", workingDir],
+      args: [splitFlag, "-t", windowTarget, ...envOptionArgs, "-c", workingDir],
     });
 
     // After split, the new pane is active, so send-keys goes to the right pane
@@ -144,6 +157,9 @@ async function executeCommand(cmd: TmuxCommand): Promise<void> {
     case "split-window":
       await $`tmux split-window ${cmd.args}`.quiet();
       break;
+    case "set-environment":
+      await $`tmux set-environment ${cmd.args}`.quiet();
+      break;
     case "send-keys":
       await $`tmux send-keys ${cmd.args}`.quiet();
       break;
@@ -166,14 +182,23 @@ export function buildWindowsPaneCommands(
   sessionName: string,
   workingDir: string,
   windows: TmuxWindow[],
+  env?: WctEnv,
 ): TmuxCommand[] {
   const commands: TmuxCommand[] = [];
+  const envVars = env ? Object.entries(env) : [];
+  const envOptionArgs = buildEnvOptionArgs(env);
 
   if (windows.length === 0) {
     commands.push({
       type: "new-session",
-      args: ["-d", "-s", sessionName, "-c", workingDir],
+      args: ["-d", "-s", sessionName, ...envOptionArgs, "-c", workingDir],
     });
+    for (const [key, value] of envVars) {
+      commands.push({
+        type: "set-environment",
+        args: ["-t", sessionName, key, value],
+      });
+    }
     return commands;
   }
 
@@ -182,13 +207,29 @@ export function buildWindowsPaneCommands(
   const firstWindow = windows[0]!;
   commands.push({
     type: "new-session",
-    args: ["-d", "-s", sessionName, "-n", firstWindow.name, "-c", workingDir],
+    args: [
+      "-d",
+      "-s",
+      sessionName,
+      ...envOptionArgs,
+      "-n",
+      firstWindow.name,
+      "-c",
+      workingDir,
+    ],
   });
+  for (const [key, value] of envVars) {
+    commands.push({
+      type: "set-environment",
+      args: ["-t", sessionName, key, value],
+    });
+  }
   commands.push(
     ...buildWindowPaneCommands(
       `${sessionName}:${firstWindow.name}`,
       workingDir,
       firstWindow,
+      envOptionArgs,
     ),
   );
 
@@ -198,13 +239,22 @@ export function buildWindowsPaneCommands(
     const window = windows[i]!;
     commands.push({
       type: "new-window",
-      args: ["-t", sessionName, "-n", window.name, "-c", workingDir],
+      args: [
+        "-t",
+        sessionName,
+        ...envOptionArgs,
+        "-n",
+        window.name,
+        "-c",
+        workingDir,
+      ],
     });
     commands.push(
       ...buildWindowPaneCommands(
         `${sessionName}:${window.name}`,
         workingDir,
         window,
+        envOptionArgs,
       ),
     );
   }
@@ -222,8 +272,9 @@ async function createSessionWithWindows(
   name: string,
   workingDir: string,
   windows: TmuxWindow[],
+  env?: WctEnv,
 ): Promise<void> {
-  const commands = buildWindowsPaneCommands(name, workingDir, windows);
+  const commands = buildWindowsPaneCommands(name, workingDir, windows, env);
   await executeCommands(commands);
 }
 
@@ -231,6 +282,7 @@ export async function createSession(
   name: string,
   workingDir: string,
   config?: TmuxConfig,
+  env?: WctEnv,
 ): Promise<CreateSessionResult> {
   if (await sessionExists(name)) {
     return {
@@ -242,7 +294,7 @@ export async function createSession(
 
   try {
     const windows = config?.windows ?? [];
-    await createSessionWithWindows(name, workingDir, windows);
+    await createSessionWithWindows(name, workingDir, windows, env);
     return { success: true, sessionName: name };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

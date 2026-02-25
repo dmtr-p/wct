@@ -4,6 +4,7 @@ import { access, cp, mkdir, stat } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import * as logger from "../utils/logger";
 
 export interface SyncResult {
   success: boolean;
@@ -317,7 +318,10 @@ export async function filterMissingEditors(
     } finally {
       db.close();
     }
-  } catch {
+  } catch (err) {
+    logger.warn(
+      `Failed to filter missing editors in VS Code state DB '${dbPath}': ${String(err)}`,
+    );
     return 0;
   }
 }
@@ -340,7 +344,10 @@ export function clearTerminalState(dbPath: string): number {
     } finally {
       db.close();
     }
-  } catch {
+  } catch (err) {
+    logger.warn(
+      `Failed to clear terminal state in VS Code state DB '${dbPath}': ${String(err)}`,
+    );
     return 0;
   }
 }
@@ -400,7 +407,10 @@ export function clearExternalAgentSessions(dbPath: string): number {
     } finally {
       db.close();
     }
-  } catch {
+  } catch (err) {
+    logger.warn(
+      `Failed to clear external agent sessions in VS Code state DB '${dbPath}': ${String(err)}`,
+    );
     return 0;
   }
 }

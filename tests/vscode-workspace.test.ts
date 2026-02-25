@@ -24,6 +24,7 @@ import {
   syncWorkspaceState,
   workspaceExists,
 } from "../src/services/vscode-workspace";
+import { createTestDb, readAllKeys } from "./helpers/sqlite-test-utils";
 
 const testStoragePath = join(tmpdir(), `wct-test-storage-${Date.now()}`);
 
@@ -720,27 +721,6 @@ describe("filterMissingEditors", () => {
 describe("clearTerminalState", () => {
   let dbPath: string;
 
-  function createTestDb(rows: { key: string; value: string }[]): void {
-    const db = new Database(dbPath);
-    db.run("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)");
-    const insert = db.prepare(
-      "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
-    );
-    for (const row of rows) {
-      insert.run(row.key, row.value);
-    }
-    db.close();
-  }
-
-  function readAllKeys(): string[] {
-    const db = new Database(dbPath);
-    const rows = db.query("SELECT key FROM ItemTable").all() as {
-      key: string;
-    }[];
-    db.close();
-    return rows.map((r) => r.key);
-  }
-
   afterEach(async () => {
     if (dbPath) {
       await rm(dbPath, { force: true });
@@ -749,41 +729,47 @@ describe("clearTerminalState", () => {
 
   test("deletes terminal layout keys", () => {
     dbPath = join(tmpdir(), `wct-term-clear-${Date.now()}.vscdb`);
-    createTestDb([
-      {
-        key: "terminal",
-        value: '{"terminal":{"collapsed":false,"isHidden":true}}',
-      },
-      {
-        key: "terminal.integrated.layoutInfo",
-        value: '{"tabs":[{"activePersistentProcessId":5}]}',
-      },
-      {
-        key: "terminal.numberOfVisibleViews",
-        value: "1",
-      },
-    ]);
+    createTestDb(
+      [
+        {
+          key: "terminal",
+          value: '{"terminal":{"collapsed":false,"isHidden":true}}',
+        },
+        {
+          key: "terminal.integrated.layoutInfo",
+          value: '{"tabs":[{"activePersistentProcessId":5}]}',
+        },
+        {
+          key: "terminal.numberOfVisibleViews",
+          value: "1",
+        },
+      ],
+      dbPath,
+    );
 
     const count = clearTerminalState(dbPath);
 
     expect(count).toBe(3);
-    expect(readAllKeys()).toEqual([]);
+    expect(readAllKeys(dbPath)).toEqual([]);
   });
 
   test("preserves unrelated keys", () => {
     dbPath = join(tmpdir(), `wct-term-preserve-${Date.now()}.vscdb`);
-    createTestDb([
-      {
-        key: "terminal.integrated.environmentVariableCollectionsV2",
-        value: '{"some":"env-data"}',
-      },
-      { key: "editorpart.state", value: '{"some":"editor-data"}' },
-    ]);
+    createTestDb(
+      [
+        {
+          key: "terminal.integrated.environmentVariableCollectionsV2",
+          value: '{"some":"env-data"}',
+        },
+        { key: "editorpart.state", value: '{"some":"editor-data"}' },
+      ],
+      dbPath,
+    );
 
     const count = clearTerminalState(dbPath);
 
     expect(count).toBe(0);
-    expect(readAllKeys().sort()).toEqual([
+    expect(readAllKeys(dbPath).sort()).toEqual([
       "editorpart.state",
       "terminal.integrated.environmentVariableCollectionsV2",
     ]);
@@ -813,27 +799,6 @@ describe("clearTerminalState", () => {
 describe("clearExternalAgentSessions", () => {
   let dbPath: string;
 
-  function createTestDb(rows: { key: string; value: string }[]): void {
-    const db = new Database(dbPath);
-    db.run("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)");
-    const insert = db.prepare(
-      "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
-    );
-    for (const row of rows) {
-      insert.run(row.key, row.value);
-    }
-    db.close();
-  }
-
-  function readAllKeys(): string[] {
-    const db = new Database(dbPath);
-    const rows = db.query("SELECT key FROM ItemTable").all() as {
-      key: string;
-    }[];
-    db.close();
-    return rows.map((r) => r.key).sort();
-  }
-
   function readJson(key: string): unknown {
     const db = new Database(dbPath);
     const row = db
@@ -851,18 +816,21 @@ describe("clearExternalAgentSessions", () => {
 
   test("deletes agent session state keys", () => {
     dbPath = join(tmpdir(), `wct-agent-clear-${Date.now()}.vscdb`);
-    createTestDb([
-      {
-        key: "agentSessions.state.cache",
-        value: '[{"resource":"claude-code:/abc","read":123}]',
-      },
-      { key: "agentSessions.readDateBaseline2", value: "1234567890" },
-      { key: "unrelated.key", value: "keep" },
-    ]);
+    createTestDb(
+      [
+        {
+          key: "agentSessions.state.cache",
+          value: '[{"resource":"claude-code:/abc","read":123}]',
+        },
+        { key: "agentSessions.readDateBaseline2", value: "1234567890" },
+        { key: "unrelated.key", value: "keep" },
+      ],
+      dbPath,
+    );
 
     clearExternalAgentSessions(dbPath);
 
-    expect(readAllKeys()).toEqual(["unrelated.key"]);
+    expect(readAllKeys(dbPath).sort()).toEqual(["unrelated.key"]);
   });
 
   test("removes external sessions from chat session index", () => {
@@ -887,12 +855,15 @@ describe("clearExternalAgentSessions", () => {
         },
       },
     };
-    createTestDb([
-      {
-        key: "chat.ChatSessionStore.index",
-        value: JSON.stringify(sessionIndex),
-      },
-    ]);
+    createTestDb(
+      [
+        {
+          key: "chat.ChatSessionStore.index",
+          value: JSON.stringify(sessionIndex),
+        },
+      ],
+      dbPath,
+    );
 
     clearExternalAgentSessions(dbPath);
 
@@ -913,12 +884,15 @@ describe("clearExternalAgentSessions", () => {
         },
       },
     };
-    createTestDb([
-      {
-        key: "chat.ChatSessionStore.index",
-        value: JSON.stringify(sessionIndex),
-      },
-    ]);
+    createTestDb(
+      [
+        {
+          key: "chat.ChatSessionStore.index",
+          value: JSON.stringify(sessionIndex),
+        },
+      ],
+      dbPath,
+    );
 
     clearExternalAgentSessions(dbPath);
 

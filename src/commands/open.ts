@@ -41,7 +41,7 @@ export async function openCommand(
 
   const { config, errors } = await loadConfig(mainDir);
   if (!config) {
-    return err(errors.join("\n"), "config_not_found");
+    return err(errors.join("\n"), "config_error");
   }
 
   if (existing && base) {

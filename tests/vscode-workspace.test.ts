@@ -902,6 +902,26 @@ describe("clearExternalAgentSessions", () => {
     expect(Object.keys(result.entries)).toEqual(["copilot-session"]);
   });
 
+  test("keeps delete count when chat session index is malformed", () => {
+    dbPath = join(tmpdir(), `wct-agent-bad-chat-${Date.now()}.vscdb`);
+    createTestDb(
+      [
+        {
+          key: "agentSessions.state.cache",
+          value: '[{"resource":"claude-code:/abc","read":123}]',
+        },
+        { key: "agentSessions.readDateBaseline2", value: "1234567890" },
+        { key: "chat.ChatSessionStore.index", value: "{not-json" },
+      ],
+      dbPath,
+    );
+
+    const count = clearExternalAgentSessions(dbPath);
+
+    expect(count).toBe(2);
+    expect(readAllKeys(dbPath).sort()).toEqual(["chat.ChatSessionStore.index"]);
+  });
+
   test("returns 0 on corrupted database file", async () => {
     dbPath = join(tmpdir(), `wct-agent-corrupt-${Date.now()}.vscdb`);
     await Bun.write(dbPath, "not valid sqlite");

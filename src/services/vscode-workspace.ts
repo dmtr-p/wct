@@ -388,28 +388,38 @@ export function clearExternalAgentSessions(dbPath: string): number {
 
       if (!row) return deleteResult.changes;
 
-      const text =
-        typeof row.value === "string"
-          ? row.value
-          : Buffer.from(row.value).toString("utf-8");
-      const data = JSON.parse(text);
-
       let removed = 0;
-      if (data.entries) {
-        for (const [id, entry] of Object.entries(
-          data.entries as Record<string, { isExternal?: boolean }>,
-        )) {
-          if (entry.isExternal) {
-            delete data.entries[id];
-            removed++;
+      try {
+        const text =
+          typeof row.value === "string"
+            ? row.value
+            : Buffer.from(row.value).toString("utf-8");
+        const data = JSON.parse(text);
+
+        const externalIds: string[] = [];
+        if (data.entries) {
+          for (const [id, entry] of Object.entries(
+            data.entries as Record<string, { isExternal?: boolean }>,
+          )) {
+            if (entry.isExternal) {
+              externalIds.push(id);
+            }
           }
         }
-      }
 
-      if (removed > 0) {
-        db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-          JSON.stringify(data),
-          "chat.ChatSessionStore.index",
+        if (externalIds.length > 0) {
+          for (const id of externalIds) {
+            delete data.entries[id];
+          }
+          db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
+            JSON.stringify(data),
+            "chat.ChatSessionStore.index",
+          );
+          removed = externalIds.length;
+        }
+      } catch (err) {
+        logger.warn(
+          `Failed to process key 'chat.ChatSessionStore.index' in '${dbPath}': ${String(err)}`,
         );
       }
 

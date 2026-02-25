@@ -62,7 +62,7 @@ export async function getMainWorktreePath(): Promise<string | null> {
   if (worktrees.length === 0) {
     return null;
   }
-  return worktrees[0].path;
+  return worktrees[0]?.path ?? null;
 }
 
 export async function isGitRepo(): Promise<boolean> {

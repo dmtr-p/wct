@@ -37,7 +37,7 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   const { config, errors } = await loadConfig(mainWorktreePath);
   if (!config) {
-    return err(errors.join("\n"), "config_not_found");
+    return err(errors.join("\n"), "config_error");
   }
 
   const branch = await getCurrentBranch();

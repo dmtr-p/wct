@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { loadConfig, resolveWorktreePath } from "../config/loader";
 import { copyEntries } from "../services/copy";
 import { openIDE } from "../services/ide";
-import { runSetupCommands, type SetupEnv } from "../services/setup";
+import { runSetupCommands } from "../services/setup";
 import {
   createSession,
   formatSessionName,
@@ -15,6 +15,7 @@ import {
   getMainRepoPath,
   isGitRepo,
 } from "../services/worktree";
+import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
 
@@ -76,7 +77,7 @@ export async function openCommand(
   );
   const sessionName = formatSessionName(basename(worktreePath));
 
-  const env: SetupEnv = {
+  const env: WctEnv = {
     WCT_WORKTREE_DIR: worktreePath,
     WCT_MAIN_DIR: mainDir,
     WCT_BRANCH: branch,
@@ -141,6 +142,7 @@ export async function openCommand(
       sessionName,
       worktreePath,
       config.tmux,
+      env,
     );
 
     if (tmuxResult.success) {

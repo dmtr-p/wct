@@ -7,6 +7,13 @@ import {
   switchSession,
 } from "../src/services/tmux";
 
+const TEST_ENV = {
+  WCT_WORKTREE_DIR: "/worktrees/feature-auth",
+  WCT_MAIN_DIR: "/repos/main",
+  WCT_BRANCH: "feature-auth",
+  WCT_PROJECT: "myapp",
+};
+
 describe("formatSessionName", () => {
   test("returns dirname unchanged when already clean", () => {
     const result = formatSessionName("myapp-feature-auth");
@@ -73,6 +80,168 @@ describe("getCurrentSession", () => {
 });
 
 describe("buildWindowsPaneCommands", () => {
+  test("injects session environment variables when provided", () => {
+    const commands = buildWindowsPaneCommands(
+      "test-session",
+      "/work",
+      [{ name: "shell" }],
+      TEST_ENV,
+    );
+
+    expect(commands).toEqual([
+      {
+        type: "new-session",
+        args: [
+          "-d",
+          "-s",
+          "test-session",
+          "-e",
+          "WCT_WORKTREE_DIR=/worktrees/feature-auth",
+          "-e",
+          "WCT_MAIN_DIR=/repos/main",
+          "-e",
+          "WCT_BRANCH=feature-auth",
+          "-e",
+          "WCT_PROJECT=myapp",
+          "-n",
+          "shell",
+          "-c",
+          "/work",
+        ],
+      },
+      {
+        type: "set-environment",
+        args: [
+          "-t",
+          "test-session",
+          "WCT_WORKTREE_DIR",
+          "/worktrees/feature-auth",
+        ],
+      },
+      {
+        type: "set-environment",
+        args: ["-t", "test-session", "WCT_MAIN_DIR", "/repos/main"],
+      },
+      {
+        type: "set-environment",
+        args: ["-t", "test-session", "WCT_BRANCH", "feature-auth"],
+      },
+      {
+        type: "set-environment",
+        args: ["-t", "test-session", "WCT_PROJECT", "myapp"],
+      },
+      {
+        type: "select-window",
+        args: ["-t", "test-session:shell"],
+      },
+    ]);
+  });
+
+  test("does not inject session environment variables when env is omitted", () => {
+    const commands = buildWindowsPaneCommands("test-session", "/work", [
+      { name: "shell" },
+    ]);
+
+    const setEnvCommands = commands.filter((c) => c.type === "set-environment");
+    expect(setEnvCommands).toHaveLength(0);
+  });
+
+  test("sets session environment before window commands", () => {
+    const commands = buildWindowsPaneCommands(
+      "test-session",
+      "/work",
+      [{ name: "dev", command: "echo $WCT_BRANCH" }],
+      TEST_ENV,
+    );
+
+    const firstSetEnvIndex = commands.findIndex(
+      (c) => c.type === "set-environment",
+    );
+    const firstSendKeysIndex = commands.findIndex(
+      (c) => c.type === "send-keys",
+    );
+
+    expect(firstSetEnvIndex).toBeGreaterThan(0);
+    expect(firstSendKeysIndex).toBeGreaterThan(firstSetEnvIndex);
+  });
+
+  test("passes env to new-session via -e options", () => {
+    const commands = buildWindowsPaneCommands(
+      "test-session",
+      "/work",
+      [{ name: "dev", command: "echo $WCT_BRANCH" }],
+      TEST_ENV,
+    );
+
+    expect(commands[0]).toEqual({
+      type: "new-session",
+      args: [
+        "-d",
+        "-s",
+        "test-session",
+        "-e",
+        "WCT_WORKTREE_DIR=/worktrees/feature-auth",
+        "-e",
+        "WCT_MAIN_DIR=/repos/main",
+        "-e",
+        "WCT_BRANCH=feature-auth",
+        "-e",
+        "WCT_PROJECT=myapp",
+        "-n",
+        "dev",
+        "-c",
+        "/work",
+      ],
+    });
+  });
+
+  test("passes env to additional panes and windows via -e options", () => {
+    const commands = buildWindowsPaneCommands(
+      "test-session",
+      "/work",
+      [
+        {
+          name: "dev",
+          panes: [{ command: "echo one" }, { command: "echo two" }],
+        },
+        { name: "shell" },
+      ],
+      TEST_ENV,
+    );
+
+    const splitCmd = commands.find((c) => c.type === "split-window");
+    expect(splitCmd?.args).toContain("-e");
+    expect(splitCmd?.args).toContain("WCT_BRANCH=feature-auth");
+
+    const newWindowCmd = commands.find((c) => c.type === "new-window");
+    expect(newWindowCmd?.args).toContain("-e");
+    expect(newWindowCmd?.args).toContain("WCT_MAIN_DIR=/repos/main");
+  });
+
+  test("emits session set-environment commands for empty windows with env", () => {
+    const commands = buildWindowsPaneCommands(
+      "test-session",
+      "/work",
+      [],
+      TEST_ENV,
+    );
+    const setEnvCommands = commands.filter((c) => c.type === "set-environment");
+
+    expect(setEnvCommands).toHaveLength(Object.keys(TEST_ENV).length);
+
+    for (const [key, value] of Object.entries(TEST_ENV)) {
+      const match = setEnvCommands.find((c) => {
+        return (
+          c.args[0] === "-t" &&
+          c.args[1] === "test-session" &&
+          c.args[2] === key &&
+          c.args[3] === value
+        );
+      });
+      expect(match).toBeDefined();
+    }
+  });
+
   test("creates session with single window, no panes", () => {
     const commands = buildWindowsPaneCommands("test-session", "/work", [
       { name: "shell" },

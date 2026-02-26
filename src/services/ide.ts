@@ -1,13 +1,13 @@
 import { $ } from "bun";
+import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
-import type { SetupEnv } from "./setup";
 
 export interface OpenIdeResult {
   success: boolean;
   error?: string;
 }
 
-function substituteEnvVars(command: string, env: SetupEnv): string {
+function substituteEnvVars(command: string, env: WctEnv): string {
   return command
     .replace(/\$WCT_WORKTREE_DIR/g, env.WCT_WORKTREE_DIR)
     .replace(/\$WCT_MAIN_DIR/g, env.WCT_MAIN_DIR)
@@ -21,7 +21,7 @@ function substituteEnvVars(command: string, env: SetupEnv): string {
 
 export async function openIDE(
   command: string,
-  env: SetupEnv,
+  env: WctEnv,
 ): Promise<OpenIdeResult> {
   const expandedCommand = substituteEnvVars(command, env);
 

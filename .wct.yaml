@@ -26,8 +26,8 @@ ide:
 # Tmux session configuration
 tmux:
   windows:
-    - name: "claude"
-      command: "claude"
+    - name: "ai"
+      command: "codex"
     - name: "git"
       command: "lazygit"
     - name: "dev"

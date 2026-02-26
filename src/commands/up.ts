@@ -1,7 +1,6 @@
 import { basename } from "node:path";
 import { loadConfig } from "../config/loader";
 import { openIDE } from "../services/ide";
-import type { SetupEnv } from "../services/setup";
 import {
   createSession,
   formatSessionName,
@@ -9,9 +8,10 @@ import {
 } from "../services/tmux";
 import {
   getCurrentBranch,
-  getMainWorktreePath,
+  getMainRepoPath,
   isGitRepo,
 } from "../services/worktree";
+import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
 
@@ -27,15 +27,12 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   const cwd = process.cwd();
 
-  const mainWorktreePath = await getMainWorktreePath();
-  if (!mainWorktreePath) {
-    return err(
-      "Could not determine main repository path",
-      "missing_main_worktree",
-    );
+  const mainRepoPath = await getMainRepoPath();
+  if (!mainRepoPath) {
+    return err("Could not determine repository root", "worktree_error");
   }
 
-  const { config, errors } = await loadConfig(mainWorktreePath);
+  const { config, errors } = await loadConfig(mainRepoPath);
   if (!config) {
     return err(errors.join("\n"), "config_error");
   }
@@ -50,16 +47,16 @@ export async function upCommand(options?: UpOptions): Promise<CommandResult> {
 
   const sessionName = formatSessionName(basename(cwd));
 
-  const env: SetupEnv = {
+  const env: WctEnv = {
     WCT_WORKTREE_DIR: cwd,
-    WCT_MAIN_DIR: mainWorktreePath,
+    WCT_MAIN_DIR: mainRepoPath,
     WCT_BRANCH: branch,
     WCT_PROJECT: config.project_name,
   };
 
   if (config.tmux) {
     logger.info("Creating tmux session...");
-    const tmuxResult = await createSession(sessionName, cwd, config.tmux);
+    const tmuxResult = await createSession(sessionName, cwd, config.tmux, env);
 
     if (tmuxResult.success) {
       if (tmuxResult.alreadyExists) {

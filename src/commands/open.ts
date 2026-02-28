@@ -26,17 +26,17 @@ export const commandDef: CommandDef = {
   args: "<branch>",
   options: [
     {
-      name: "existing",
-      short: "e",
-      type: "boolean",
-      description: "Use existing branch",
-    },
-    {
       name: "base",
       short: "b",
       type: "string",
       placeholder: "branch",
       description: "Base branch for new worktree (default: HEAD)",
+    },
+    {
+      name: "existing",
+      short: "e",
+      type: "boolean",
+      description: "Use existing branch",
     },
     {
       name: "no-ide",

@@ -32,6 +32,18 @@ jobs:
       - name: Build all platforms
         run: bun run build:all
 
+      - name: Generate shell completions
+        run: |
+          chmod +x dist/wct-linux-x64
+          ./dist/wct-linux-x64 completions bash > dist/wct.bash
+          ./dist/wct-linux-x64 completions zsh > dist/_wct
+          ./dist/wct-linux-x64 completions fish > dist/wct.fish
+
+      - name: Add completion checksums
+        run: |
+          cd dist
+          sha256sum wct.bash _wct wct.fish >> checksums.txt
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -40,6 +52,9 @@ jobs:
             dist/wct-darwin-arm64
             dist/wct-linux-x64
             dist/wct-linux-arm64
+            dist/wct.bash
+            dist/_wct
+            dist/wct.fish
             dist/checksums.txt
           body: |
             ## Installation
@@ -58,6 +73,13 @@ jobs:
             **Linux (ARM64):** Use `wct-linux-arm64`
 
             Verify installation: `wct --version`
+
+            ## Shell Completions
+
+            Pre-generated shell completion files are included in this release:
+            - `wct.bash` — Bash completions
+            - `_wct` — Zsh completions
+            - `wct.fish` — Fish completions
 
             ## Checksums
 

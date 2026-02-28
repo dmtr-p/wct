@@ -59,6 +59,16 @@ jobs:
           body: |
             ## Installation
 
+            ### Homebrew (recommended)
+
+            ```bash
+            brew install dmtr-p/tools/wct
+            ```
+
+            Shell completions are installed automatically.
+
+            ### Manual download
+
             Download the appropriate binary for your platform:
 
             **macOS (Apple Silicon):**
@@ -74,7 +84,7 @@ jobs:
 
             Verify installation: `wct --version`
 
-            ## Shell Completions
+            ### Shell completions
 
             Pre-generated shell completion files are included in this release:
             - `wct.bash` — Bash completions

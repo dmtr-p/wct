@@ -15,32 +15,33 @@ wct init                # Generate a starter .wct.yaml config file
 
 ## Installation
 
+### Homebrew (recommended)
+
+```bash
+brew install dmtr-p/tools/wct
+```
+
+Shell completions for bash, zsh, and fish are installed automatically.
+
+### Manual download
+
 Download the binary for your platform from [Releases](https://github.com/dmtr-p/wct/releases/latest):
 
-**macOS (Apple Silicon):**
 ```bash
+# macOS (Apple Silicon)
 curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-darwin-arm64 -o wct
-chmod +x wct
-sudo mv wct /usr/local/bin/wct
-```
 
-**macOS (Intel):**
-```bash
+# macOS (Intel)
 curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-darwin-x64 -o wct
-chmod +x wct
-sudo mv wct /usr/local/bin/wct
-```
 
-**Linux (x64):**
-```bash
+# Linux (x64)
 curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-linux-x64 -o wct
-chmod +x wct
-sudo mv wct /usr/local/bin/wct
+
+# Linux (ARM64)
+curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-linux-arm64 -o wct
 ```
 
-**Linux (ARM64):**
 ```bash
-curl -fsSL https://github.com/dmtr-p/wct/releases/latest/download/wct-linux-arm64 -o wct
 chmod +x wct
 sudo mv wct /usr/local/bin/wct
 ```
@@ -50,9 +51,9 @@ Verify installation:
 wct --version
 ```
 
-## Shell Completions
+### Shell completions (manual install)
 
-Tab completions are available for bash, zsh, and fish.
+When installed via Homebrew, completions are set up automatically. For manual installs:
 
 **Bash** — add to `~/.bashrc`:
 ```bash

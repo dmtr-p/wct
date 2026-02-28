@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import {
   getChangedFilesCount,
   getCommitsBehind,
   getDefaultBranch,
+  statusCommand,
 } from "../src/commands/status";
 
 describe("getChangedFilesCount", () => {
@@ -145,5 +146,120 @@ describe("getDefaultBranch", () => {
     expect(branch).toBe("master");
 
     await rm(masterRepoDir, { recursive: true, force: true });
+  });
+});
+
+// Strip ANSI escape codes for test assertions
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes are control characters by definition
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+function stripAnsi(str: string): string {
+  return str.replace(ANSI_RE, "");
+}
+
+describe("statusCommand integration", () => {
+  let repoDir: string;
+  let worktreeDir: string;
+  const originalDir = process.cwd();
+
+  beforeAll(async () => {
+    repoDir = await mkdtemp(join(tmpdir(), "wct-status-int-"));
+    worktreeDir = await mkdtemp(join(tmpdir(), "wct-status-int-wt-"));
+
+    await $`git init -b main`.quiet().cwd(repoDir);
+    await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
+    await $`git config user.name "Test"`.quiet().cwd(repoDir);
+    await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
+    await $`git commit --allow-empty -m "initial commit"`.quiet().cwd(repoDir);
+
+    // Create a secondary worktree
+    const wtPath = join(worktreeDir, "feature-test");
+    await $`git worktree add -b feature-test ${wtPath}`.quiet().cwd(repoDir);
+
+    // Add commits to main so the worktree is behind
+    await $`git commit --allow-empty -m "main advance 1"`.quiet().cwd(repoDir);
+    await $`git commit --allow-empty -m "main advance 2"`.quiet().cwd(repoDir);
+    await $`git commit --allow-empty -m "main advance 3"`.quiet().cwd(repoDir);
+
+    // Create staged and unstaged changes in the worktree
+    await $`echo "staged content" > staged.txt`.quiet().cwd(wtPath);
+    await $`git add staged.txt`.quiet().cwd(wtPath);
+    await $`echo "unstaged content" > unstaged.txt`.quiet().cwd(wtPath);
+  });
+
+  afterAll(async () => {
+    process.chdir(originalDir);
+    await $`git worktree remove --force ${join(worktreeDir, "feature-test")}`
+      .quiet()
+      .cwd(repoDir)
+      .nothrow();
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(worktreeDir, { recursive: true, force: true });
+  });
+
+  test("prints header and worktree rows with correct data", async () => {
+    process.chdir(repoDir);
+
+    const lines: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation(
+      (...args: unknown[]) => {
+        lines.push(String(args[0]));
+      },
+    );
+
+    const result = await statusCommand();
+
+    spy.mockRestore();
+    process.chdir(originalDir);
+
+    expect(result.success).toBe(true);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+
+    // Verify header row contains all column headers
+    const header = stripAnsi(lines[0] ?? "");
+    expect(header).toContain("BRANCH");
+    expect(header).toContain("TMUX");
+    expect(header).toContain("CHANGES");
+    expect(header).toContain("BEHIND");
+
+    // Verify the feature worktree row
+    const dataLines = lines.slice(1).map(stripAnsi);
+    const featureRow = dataLines.find((l) => l.includes("feature-test"));
+    expect(featureRow).toBeDefined();
+    expect(featureRow).toContain("dead");
+    expect(featureRow).toContain("2 files");
+    expect(featureRow).toContain("\u21933");
+
+    // Verify main worktree is excluded from output
+    const mainRow = dataLines.find((l) => /\bmain\b/.test(l));
+    expect(mainRow).toBeUndefined();
+  });
+
+  test("returns ok with info message when no secondary worktrees exist", async () => {
+    const emptyRepo = await mkdtemp(join(tmpdir(), "wct-status-empty-"));
+    await $`git init -b main`.quiet().cwd(emptyRepo);
+    await $`git config user.email "test@test.com"`.quiet().cwd(emptyRepo);
+    await $`git config user.name "Test"`.quiet().cwd(emptyRepo);
+    await $`git config commit.gpgSign false`.quiet().cwd(emptyRepo);
+    await $`git commit --allow-empty -m "initial"`.quiet().cwd(emptyRepo);
+
+    process.chdir(emptyRepo);
+
+    const lines: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation(
+      (...args: unknown[]) => {
+        lines.push(String(args[0]));
+      },
+    );
+
+    const result = await statusCommand();
+
+    spy.mockRestore();
+    process.chdir(originalDir);
+
+    expect(result.success).toBe(true);
+    // Should print info message, not a table
+    expect(lines.some((l) => l.includes("No worktrees found"))).toBe(true);
+
+    await rm(emptyRepo, { recursive: true, force: true });
   });
 });

@@ -2,6 +2,12 @@ import { join } from "node:path";
 import { CONFIG_FILENAME } from "../config/loader";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
+import type { CommandDef } from "./registry";
+
+export const commandDef: CommandDef = {
+  name: "init",
+  description: "Generate a starter .wct.yaml config file",
+};
 
 const TEMPLATE = `# wct configuration
 # See documentation at: https://github.com/dmtr-p/wct

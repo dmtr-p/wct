@@ -12,11 +12,61 @@ import { type CommandResult, err } from "./utils/result";
 
 const { version: VERSION } = require("../package.json");
 
+type Handler = (
+  positionals: string[],
+  values: Record<string, unknown>,
+) => Promise<CommandResult> | CommandResult;
+
+const HANDLERS: Record<string, Handler> = {
+  close: (positionals, values) => {
+    const branch = positionals[1];
+    if (!branch) {
+      return err(
+        "Missing branch name\n\nUsage: wct close <branch> [-y|--yes] [-f|--force]",
+        "missing_branch_arg",
+      );
+    }
+
+    return closeCommand({
+      branch,
+      yes: !!values.yes,
+      force: !!values.force,
+    });
+  },
+  completions: (positionals) => completionsCommand(positionals[1]),
+  down: () => downCommand(),
+  init: () => initCommand(),
+  list: () => listCommand(),
+  open: (positionals, values) => {
+    const branch = positionals[1];
+    if (!branch) {
+      return err(
+        "Missing branch name\n\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
+        "missing_branch_arg",
+      );
+    }
+
+    return openCommand({
+      branch,
+      existing: !!values.existing,
+      base: values.base as string | undefined,
+      noIde: !!values["no-ide"],
+    });
+  },
+  up: (_positionals, values) => upCommand({ noIde: !!values["no-ide"] }),
+};
+
 function buildHelp(): string {
-  const commandLines = COMMANDS.map((cmd) => {
-    const label = cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name;
-    return `  ${label.padEnd(18)}${cmd.description}`;
-  });
+  const commandLabels = COMMANDS.map((cmd) =>
+    cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name,
+  );
+  const labelWidth = Math.max(
+    18,
+    ...commandLabels.map((label) => label.length),
+  );
+  const commandLines = COMMANDS.map(
+    (cmd, i) => `  ${commandLabels[i].padEnd(labelWidth)}  ${cmd.description}`,
+  );
 
   const optionLines: string[] = [];
   for (const cmd of COMMANDS) {
@@ -114,86 +164,17 @@ async function main(): Promise<void> {
   }
 
   const command = positionals[0];
+  const handler = HANDLERS[command];
 
-  switch (command) {
-    case "init": {
-      const result = await initCommand();
-      handleResult(result);
-      break;
-    }
-
-    case "up": {
-      const result = await upCommand({ noIde: !!values["no-ide"] });
-      handleResult(result);
-      break;
-    }
-
-    case "down": {
-      const result = await downCommand();
-      handleResult(result);
-      break;
-    }
-
-    case "list": {
-      const result = await listCommand();
-      handleResult(result);
-      break;
-    }
-
-    case "open": {
-      const branch = positionals[1];
-      if (!branch) {
-        handleResult(
-          err(
-            "Missing branch name\n\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
-            "missing_branch_arg",
-          ),
-        );
-        return;
-      }
-      const result = await openCommand({
-        branch,
-        existing: !!values.existing,
-        base: values.base as string | undefined,
-        noIde: !!values["no-ide"],
-      });
-      handleResult(result);
-      break;
-    }
-
-    case "close": {
-      const branch = positionals[1];
-      if (!branch) {
-        handleResult(
-          err(
-            "Missing branch name\n\nUsage: wct close <branch> [-y|--yes] [-f|--force]",
-            "missing_branch_arg",
-          ),
-        );
-        return;
-      }
-      const result = await closeCommand({
-        branch,
-        yes: !!values.yes,
-        force: !!values.force,
-      });
-      handleResult(result);
-      break;
-    }
-
-    case "completions": {
-      const result = completionsCommand(positionals[1]);
-      handleResult(result);
-      break;
-    }
-
-    default: {
-      handleResult(
-        err(`Unknown command: ${command}\n${HELP}`, "unknown_command"),
-      );
-      break;
-    }
+  if (!handler) {
+    handleResult(
+      err(`Unknown command: ${command}\n${HELP}`, "unknown_command"),
+    );
+    return;
   }
+
+  const result = await handler(positionals, values as Record<string, unknown>);
+  handleResult(result);
 }
 
 main().catch((err) => {

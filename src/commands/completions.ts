@@ -1,6 +1,9 @@
 /** biome-ignore-all lint/suspicious/noTemplateCurlyInString: shell variable interpolation */
+
 import { type CommandResult, err, ok } from "../utils/result";
 import { COMMANDS } from "./registry";
+
+export { commandDef } from "./completions-def";
 
 function generateFishCompletions(): string {
   const lines: string[] = [
@@ -31,10 +34,6 @@ function generateFishCompletions(): string {
       `complete -c wct -n '__fish_use_subcommand' -a '${cmd.name}' -d '${cmd.description}'`,
     );
   }
-
-  lines.push(
-    "complete -c wct -n '__fish_use_subcommand' -a 'completions' -d 'Output shell completion script'",
-  );
 
   lines.push("");
   lines.push("# Global options");
@@ -137,7 +136,7 @@ function generateBashCompletions(): string {
     '    local cword="$COMP_CWORD"',
     "",
     "    if [[ $cword -eq 1 ]]; then",
-    `        COMPREPLY=($(compgen -W '${cmdNames} completions' -- "$cur"))`,
+    `        COMPREPLY=($(compgen -W '${cmdNames}' -- "$cur"))`,
     "        return",
     "    fi",
     "",
@@ -146,6 +145,8 @@ function generateBashCompletions(): string {
   ];
 
   for (const cmd of COMMANDS) {
+    if (cmd.name === "completions") continue;
+
     const opts: string[] = [];
     if (cmd.options) {
       for (const opt of cmd.options) {
@@ -232,7 +233,6 @@ function generateZshCompletions(): string {
   for (const cmd of COMMANDS) {
     lines.push(`        '${cmd.name}:${cmd.description}'`);
   }
-  lines.push("        'completions:Output shell completion script'");
   lines.push("    )");
   lines.push("");
   lines.push("    _arguments -C \\");

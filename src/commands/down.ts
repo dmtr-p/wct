@@ -7,6 +7,12 @@ import {
 import { isGitRepo } from "../services/worktree";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
+import type { CommandDef } from "./registry";
+
+export const commandDef: CommandDef = {
+  name: "down",
+  description: "Kill tmux session for current directory",
+};
 
 export async function downCommand(): Promise<CommandResult> {
   if (!(await isGitRepo())) {

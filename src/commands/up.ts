@@ -14,6 +14,19 @@ import {
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
+import type { CommandDef } from "./registry";
+
+export const commandDef: CommandDef = {
+  name: "up",
+  description: "Start tmux session and open IDE in current directory",
+  options: [
+    {
+      name: "no-ide",
+      type: "boolean",
+      description: "Skip opening IDE",
+    },
+  ],
+};
 
 export interface UpOptions {
   noIde?: boolean;

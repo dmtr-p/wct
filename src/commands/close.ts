@@ -13,6 +13,28 @@ import {
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
 import { type CommandResult, err, ok } from "../utils/result";
+import type { CommandDef } from "./registry";
+
+export const commandDef: CommandDef = {
+  name: "close",
+  description: "Kill tmux session and remove worktree",
+  args: "<branch>",
+  completionType: "worktree",
+  options: [
+    {
+      name: "yes",
+      short: "y",
+      type: "boolean",
+      description: "Skip confirmation prompt",
+    },
+    {
+      name: "force",
+      short: "f",
+      type: "boolean",
+      description: "Force removal even if worktree is dirty",
+    },
+  ],
+};
 
 export interface CloseOptions {
   branch: string;

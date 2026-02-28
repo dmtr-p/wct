@@ -18,6 +18,33 @@ import {
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import { type CommandResult, err, ok } from "../utils/result";
+import type { CommandDef } from "./registry";
+
+export const commandDef: CommandDef = {
+  name: "open",
+  description: "Create worktree, run setup, start tmux session, open IDE",
+  args: "<branch>",
+  options: [
+    {
+      name: "existing",
+      short: "e",
+      type: "boolean",
+      description: "Use existing branch",
+    },
+    {
+      name: "base",
+      short: "b",
+      type: "string",
+      placeholder: "branch",
+      description: "Base branch for new worktree (default: HEAD)",
+    },
+    {
+      name: "no-ide",
+      type: "boolean",
+      description: "Skip opening IDE",
+    },
+  ],
+};
 
 export interface OpenOptions {
   branch: string;

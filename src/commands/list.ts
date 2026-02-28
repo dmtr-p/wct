@@ -3,6 +3,12 @@ import { formatSessionName, listSessions } from "../services/tmux";
 import { listWorktrees } from "../services/worktree";
 import * as logger from "../utils/logger";
 import { type CommandResult, ok } from "../utils/result";
+import type { CommandDef } from "./registry";
+
+export const commandDef: CommandDef = {
+  name: "list",
+  description: "Show active worktrees with tmux session status",
+};
 
 interface WorktreeRow {
   branch: string;

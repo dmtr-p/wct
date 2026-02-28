@@ -6,6 +6,7 @@ import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
 import { COMMANDS } from "./commands/registry";
+import { switchCommand } from "./commands/switch";
 import { upCommand } from "./commands/up";
 import * as logger from "./utils/logger";
 import { type CommandResult, err } from "./utils/result";
@@ -53,13 +54,37 @@ const HANDLERS: Record<string, Handler> = {
       noIde: !!values["no-ide"],
     });
   },
+  switch: (positionals) => {
+    const branch = positionals[1];
+    if (!branch) {
+      return err(
+        "Missing branch name\n\nUsage: wct switch <branch>",
+        "missing_branch_arg",
+      );
+    }
+
+    return switchCommand(branch);
+  },
   up: (_positionals, values) => upCommand({ noIde: !!values["no-ide"] }),
 };
 
+function resolveAlias(command: string): string {
+  for (const cmd of COMMANDS) {
+    if (cmd.aliases?.includes(command)) {
+      return cmd.name;
+    }
+  }
+  return command;
+}
+
 function buildHelp(): string {
-  const commandLabels = COMMANDS.map((cmd) =>
-    cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name,
-  );
+  const commandLabels = COMMANDS.map((cmd) => {
+    let label = cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name;
+    if (cmd.aliases?.length) {
+      label += ` (${cmd.aliases.join(", ")})`;
+    }
+    return label;
+  });
   const labelWidth = Math.max(
     18,
     ...commandLabels.map((label) => label.length),
@@ -108,6 +133,8 @@ Examples:
   wct close feature-auth           Close worktree (with confirmation)
   wct close feature-auth -y        Skip confirmation
   wct list                         Show all worktrees and their status
+  wct switch feature-auth          Switch to worktree's tmux session
+  wct sw feature-auth              Shorthand for switch
 `;
 }
 
@@ -163,7 +190,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const command = positionals[0];
+  const command = resolveAlias(positionals[0] as string);
   const handler = HANDLERS[command];
 
   if (!handler) {

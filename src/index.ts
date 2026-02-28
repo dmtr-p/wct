@@ -6,6 +6,7 @@ import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
 import { COMMANDS } from "./commands/registry";
+import { statusCommand } from "./commands/status";
 import { upCommand } from "./commands/up";
 import * as logger from "./utils/logger";
 import { type CommandResult, err } from "./utils/result";
@@ -53,6 +54,7 @@ const HANDLERS: Record<string, Handler> = {
       noIde: !!values["no-ide"],
     });
   },
+  status: () => statusCommand(),
   up: (_positionals, values) => upCommand({ noIde: !!values["no-ide"] }),
 };
 

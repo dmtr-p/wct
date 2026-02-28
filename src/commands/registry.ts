@@ -4,6 +4,7 @@ import { commandDef as downDef } from "./down";
 import { commandDef as initDef } from "./init";
 import { commandDef as listDef } from "./list";
 import { commandDef as openDef } from "./open";
+import { commandDef as statusDef } from "./status";
 import { commandDef as upDef } from "./up";
 
 export interface CommandOption {
@@ -29,5 +30,6 @@ export const COMMANDS: CommandDef[] = [
   initDef,
   listDef,
   openDef,
+  statusDef,
   upDef,
 ];

@@ -26,7 +26,9 @@ export async function getChangedFilesCount(
     const output = result.text().trim();
     if (!output) return 0;
     return output.split("\n").length;
-  } catch {
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.warn(`Failed to get changes for ${worktreePath}: ${message}`);
     return 0;
   }
 }
@@ -60,7 +62,11 @@ export async function getCommitsBehind(
       .quiet()
       .cwd(worktreePath);
     return Number.parseInt(result.text().trim(), 10);
-  } catch {
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.warn(
+      `Failed to get commits behind '${defaultBranch}' for ${worktreePath}: ${message}`,
+    );
     return 0;
   }
 }

@@ -352,3 +352,15 @@ export async function switchSession(
     return { success: false, sessionName: name, error: message };
   }
 }
+
+export async function attachSession(
+  name: string,
+): Promise<SwitchSessionResult> {
+  try {
+    await $`tmux attach-session -t =${name}`;
+    return { success: true, sessionName: name };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, sessionName: name, error: message };
+  }
+}

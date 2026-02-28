@@ -15,7 +15,9 @@ export type ErrorCode =
   | "missing_shell_arg"
   | "unsupported_shell"
   | "unknown_command"
-  | "init_error";
+  | "init_error"
+  | "pr_error"
+  | "gh_not_installed";
 
 export interface CommandError {
   message: string;

@@ -7,6 +7,12 @@ import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
 import { COMMANDS } from "./commands/registry";
 import { upCommand } from "./commands/up";
+import {
+  fetchBranch,
+  isGhInstalled,
+  parsePrArg,
+  resolvePrBranch,
+} from "./services/github";
 import * as logger from "./utils/logger";
 import { type CommandResult, err } from "./utils/result";
 
@@ -37,18 +43,72 @@ const HANDLERS: Record<string, Handler> = {
   down: () => downCommand(),
   init: () => initCommand(),
   list: () => listCommand(),
-  open: (positionals, values) => {
-    const branch = positionals[1];
-    if (!branch) {
+  open: async (positionals, values) => {
+    const prValue = values.pr as string | undefined;
+    const branchArg = positionals[1];
+
+    if (prValue && branchArg) {
       return err(
-        "Missing branch name\n\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>]",
-        "missing_branch_arg",
+        "Cannot use --pr together with a branch argument",
+        "invalid_options",
       );
+    }
+
+    if (prValue && values.base) {
+      return err("Cannot use --pr together with --base", "invalid_options");
+    }
+
+    let branch: string;
+
+    if (prValue) {
+      const prNumber = parsePrArg(prValue);
+      if (prNumber === null) {
+        return err(
+          `Invalid --pr value: '${prValue}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
+          "pr_error",
+        );
+      }
+
+      if (!(await isGhInstalled())) {
+        return err(
+          "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
+          "gh_not_installed",
+        );
+      }
+
+      logger.info(`Resolving PR #${prNumber}...`);
+      const result = await resolvePrBranch(prNumber);
+      if (!result.success) {
+        return err(
+          `Failed to resolve PR #${prNumber}: ${result.error}`,
+          "pr_error",
+        );
+      }
+
+      branch = result.branch as string;
+      logger.info(`PR #${prNumber} -> branch '${branch}'`);
+
+      logger.info(`Fetching branch '${branch}' from remote...`);
+      const fetchResult = await fetchBranch(branch);
+      if (!fetchResult.success) {
+        return err(
+          `Failed to fetch branch '${branch}': ${fetchResult.error}`,
+          "pr_error",
+        );
+      }
+    } else {
+      if (!branchArg) {
+        return err(
+          "Missing branch name\n\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>] [--pr <number|url>]",
+          "missing_branch_arg",
+        );
+      }
+      branch = branchArg;
     }
 
     return openCommand({
       branch,
-      existing: !!values.existing,
+      existing: !!prValue || !!values.existing,
       base: values.base as string | undefined,
       noIde: !!values["no-ide"],
     });
@@ -101,6 +161,7 @@ ${optionLines.join("\n")}
 Examples:
   wct init                         Create a new .wct.yaml config file
   wct open feature-auth            Create new worktree and branch from HEAD
+  wct open --pr 123                Open worktree from GitHub PR #123
   wct up                           Start tmux + IDE in current directory
   wct down                         Kill tmux session for current directory
   wct open feature-auth -e         Use existing branch

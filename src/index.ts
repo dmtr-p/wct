@@ -8,11 +8,13 @@ import { openCommand } from "./commands/open";
 import { COMMANDS } from "./commands/registry";
 import { upCommand } from "./commands/up";
 import {
+  addForkRemote,
   fetchBranch,
   isGhInstalled,
   parsePrArg,
-  resolvePrBranch,
+  resolvePr,
 } from "./services/github";
+import { branchExists } from "./services/worktree";
 import * as logger from "./utils/logger";
 import { type CommandResult, err } from "./utils/result";
 
@@ -77,25 +79,55 @@ const HANDLERS: Record<string, Handler> = {
       }
 
       logger.info(`Resolving PR #${prNumber}...`);
-      const result = await resolvePrBranch(prNumber);
-      if (!result.success) {
+      const prResult = await resolvePr(prNumber);
+      if (!prResult.success || !prResult.pr) {
         return err(
-          `Failed to resolve PR #${prNumber}: ${result.error}`,
+          `Failed to resolve PR #${prNumber}: ${prResult.error}`,
           "pr_error",
         );
       }
 
-      branch = result.branch as string;
-      logger.info(`PR #${prNumber} -> branch '${branch}'`);
+      const pr = prResult.pr;
+      branch = pr.branch;
 
-      logger.info(`Fetching branch '${branch}' from remote...`);
-      const fetchResult = await fetchBranch(branch);
+      let remote = "origin";
+      if (pr.isCrossRepository && pr.forkOwner && pr.forkRepo) {
+        remote = pr.forkOwner;
+        logger.info(
+          `PR is from fork ${pr.forkOwner}/${pr.forkRepo}, adding remote...`,
+        );
+        const remoteResult = await addForkRemote(
+          remote,
+          pr.forkOwner,
+          pr.forkRepo,
+        );
+        if (!remoteResult.success) {
+          return err(
+            `Failed to add remote '${remote}': ${remoteResult.error}`,
+            "pr_error",
+          );
+        }
+      }
+
+      logger.info(`Fetching branch '${branch}' from ${remote}...`);
+      const fetchResult = await fetchBranch(branch, remote);
       if (!fetchResult.success) {
         return err(
           `Failed to fetch branch '${branch}': ${fetchResult.error}`,
           "pr_error",
         );
       }
+
+      logger.info(`PR #${prNumber} -> branch '${branch}'`);
+
+      const localExists = await branchExists(branch);
+
+      return openCommand({
+        branch,
+        existing: localExists,
+        base: localExists ? undefined : `${remote}/${branch}`,
+        noIde: !!values["no-ide"],
+      });
     } else {
       if (!branchArg) {
         return err(
@@ -108,7 +140,7 @@ const HANDLERS: Record<string, Handler> = {
 
     return openCommand({
       branch,
-      existing: !!prValue || !!values.existing,
+      existing: !!values.existing,
       base: values.base as string | undefined,
       noIde: !!values["no-ide"],
     });

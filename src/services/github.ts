@@ -34,51 +34,104 @@ export async function isGhInstalled(): Promise<boolean> {
   }
 }
 
-export interface ResolvePrResult {
-  success: boolean;
-  branch?: string;
-  error?: string;
+export interface PrInfo {
+  branch: string;
+  prNumber: number;
+  isCrossRepository: boolean;
+  forkOwner?: string;
+  forkRepo?: string;
+}
+
+function extractShellError(err: unknown): string {
+  if (err && typeof err === "object" && "stderr" in err) {
+    return (err as { stderr: Buffer }).stderr.toString().trim();
+  }
+  return String(err);
 }
 
 /**
- * Resolve a PR number to its head branch name using the `gh` CLI.
+ * Resolve a PR number to its metadata using the `gh` CLI.
+ * Returns branch name, and fork info when the PR is cross-repository.
  */
-export async function resolvePrBranch(
+export async function resolvePr(
   prNumber: number,
-): Promise<ResolvePrResult> {
+): Promise<{ success: boolean; pr?: PrInfo; error?: string }> {
   try {
     const result =
-      await $`gh pr view ${prNumber} --json headRefName --jq .headRefName`.quiet();
-    const branch = result.text().trim();
-    if (!branch) {
+      await $`gh pr view ${prNumber} --json headRefName,isCrossRepository,headRepositoryOwner,headRepository`.quiet();
+    const data = JSON.parse(result.text().trim());
+
+    const pr: PrInfo = {
+      branch: data.headRefName,
+      prNumber,
+      isCrossRepository: data.isCrossRepository ?? false,
+    };
+
+    if (pr.isCrossRepository) {
+      pr.forkOwner = data.headRepositoryOwner?.login;
+      pr.forkRepo = data.headRepository?.name;
+    }
+
+    if (!pr.branch) {
       return { success: false, error: `PR #${prNumber} has no head branch` };
     }
-    return { success: true, branch };
+
+    return { success: true, pr };
   } catch (err) {
-    const message =
-      err && typeof err === "object" && "stderr" in err
-        ? (err as { stderr: Buffer }).stderr.toString().trim()
-        : String(err);
-    return { success: false, error: message };
+    return { success: false, error: extractShellError(err) };
   }
 }
 
 /**
- * Fetch a branch from the remote so it is available locally.
- * Uses `git fetch origin <branch>` to retrieve the ref.
+ * Add a git remote for a fork repository.
+ * Uses the same protocol (SSH/HTTPS) as the origin remote.
+ * No-op if the remote already exists.
  */
-export async function fetchBranch(branch: string): Promise<{
-  success: boolean;
-  error?: string;
-}> {
+export async function addForkRemote(
+  remoteName: string,
+  owner: string,
+  repo: string,
+): Promise<{ success: boolean; error?: string }> {
   try {
-    await $`git fetch origin ${branch}`.quiet();
+    await $`git remote get-url ${remoteName}`.quiet();
+    return { success: true };
+  } catch {
+    // Remote doesn't exist yet, will add below
+  }
+
+  let url: string;
+  try {
+    const originUrl = (await $`git remote get-url origin`.quiet())
+      .text()
+      .trim();
+    if (originUrl.startsWith("git@") || originUrl.includes("ssh://")) {
+      url = `git@github.com:${owner}/${repo}.git`;
+    } else {
+      url = `https://github.com/${owner}/${repo}.git`;
+    }
+  } catch {
+    url = `https://github.com/${owner}/${repo}.git`;
+  }
+
+  try {
+    await $`git remote add ${remoteName} ${url}`.quiet();
     return { success: true };
   } catch (err) {
-    const message =
-      err && typeof err === "object" && "stderr" in err
-        ? (err as { stderr: Buffer }).stderr.toString().trim()
-        : String(err);
-    return { success: false, error: message };
+    return { success: false, error: extractShellError(err) };
+  }
+}
+
+/**
+ * Fetch a branch from a remote so it is available locally.
+ */
+export async function fetchBranch(
+  branch: string,
+  remote = "origin",
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await $`git fetch ${remote} ${branch}`.quiet();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: extractShellError(err) };
   }
 }

@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/suspicious/noTemplateCurlyInString: shell variable interpolation */
 
 import { type CommandResult, err, ok } from "../utils/result";
-import { COMMANDS } from "./registry";
+import { COMMANDS, getAllNames } from "./registry";
 
 export { commandDef } from "./completions-def";
 
@@ -33,6 +33,13 @@ function generateFishCompletions(): string {
     lines.push(
       `complete -c wct -n '__fish_use_subcommand' -a '${cmd.name}' -d '${cmd.description}'`,
     );
+    if (cmd.aliases) {
+      for (const alias of cmd.aliases) {
+        lines.push(
+          `complete -c wct -n '__fish_use_subcommand' -a '${alias}' -d '${cmd.description}'`,
+        );
+      }
+    }
   }
 
   lines.push("");
@@ -49,10 +56,11 @@ function generateFishCompletions(): string {
 
   for (const cmd of COMMANDS) {
     if (!cmd.options) continue;
+    const names = getAllNames(cmd);
     for (const opt of cmd.options) {
       const parts = [
         "complete -c wct",
-        `-n '__fish_seen_subcommand_from ${cmd.name}'`,
+        `-n '__fish_seen_subcommand_from ${names.join(" ")}'`,
       ];
       if (opt.short) parts.push(`-s ${opt.short}`);
       parts.push(`-l ${opt.name}`);
@@ -66,13 +74,13 @@ function generateFishCompletions(): string {
     (cmd) =>
       cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
   )
-    .map((cmd) => cmd.name)
+    .flatMap((cmd) => getAllNames(cmd))
     .join(" ");
 
   const worktreeCommands = COMMANDS.filter(
     (cmd) => cmd.completionType === "worktree",
   )
-    .map((cmd) => cmd.name)
+    .flatMap((cmd) => getAllNames(cmd))
     .join(" ");
 
   if (branchCommands) {
@@ -108,14 +116,14 @@ function generateFishCompletions(): string {
 }
 
 function generateBashCompletions(): string {
-  const cmdNames = COMMANDS.map((cmd) => cmd.name).join(" ");
+  const cmdNames = COMMANDS.flatMap((cmd) => getAllNames(cmd)).join(" ");
   const branchCommands = COMMANDS.filter(
     (cmd) =>
       cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
-  ).map((cmd) => cmd.name);
+  ).flatMap((cmd) => getAllNames(cmd));
   const worktreeCommands = COMMANDS.filter(
     (cmd) => cmd.completionType === "worktree",
-  ).map((cmd) => cmd.name);
+  ).flatMap((cmd) => getAllNames(cmd));
 
   const lines: string[] = [
     "# Bash completions for wct",
@@ -154,13 +162,14 @@ function generateBashCompletions(): string {
         if (opt.short) opts.push(`-${opt.short}`);
       }
     }
-    const isBranchCmd = branchCommands.includes(cmd.name);
-    const isWorktreeCmd = worktreeCommands.includes(cmd.name);
+    const allNames = getAllNames(cmd);
+    const isBranchCmd = allNames.some((n) => branchCommands.includes(n));
+    const isWorktreeCmd = allNames.some((n) => worktreeCommands.includes(n));
     const completionFn = isWorktreeCmd
       ? "_wct_worktree_branches"
       : "_wct_branches";
 
-    lines.push(`        ${cmd.name})`);
+    lines.push(`        ${allNames.join("|")})`);
     if (opts.length > 0) {
       lines.push(
         `            COMPREPLY=($(compgen -W '${opts.join(" ")}' -- "$cur"))`,
@@ -200,10 +209,10 @@ function generateZshCompletions(): string {
   const branchCommands = COMMANDS.filter(
     (cmd) =>
       cmd.args?.includes("<branch>") && cmd.completionType !== "worktree",
-  ).map((cmd) => cmd.name);
+  ).flatMap((cmd) => getAllNames(cmd));
   const worktreeCommands = COMMANDS.filter(
     (cmd) => cmd.completionType === "worktree",
-  ).map((cmd) => cmd.name);
+  ).flatMap((cmd) => getAllNames(cmd));
 
   const lines: string[] = [
     "#compdef wct",
@@ -232,6 +241,11 @@ function generateZshCompletions(): string {
 
   for (const cmd of COMMANDS) {
     lines.push(`        '${cmd.name}:${cmd.description}'`);
+    if (cmd.aliases) {
+      for (const alias of cmd.aliases) {
+        lines.push(`        '${alias}:${cmd.description}'`);
+      }
+    }
   }
   lines.push("    )");
   lines.push("");
@@ -251,8 +265,9 @@ function generateZshCompletions(): string {
   lines.push('            case "$words[1]" in');
 
   for (const cmd of COMMANDS) {
-    const isBranchCmd = branchCommands.includes(cmd.name);
-    const isWorktreeCmd = worktreeCommands.includes(cmd.name);
+    const allNames = getAllNames(cmd);
+    const isBranchCmd = allNames.some((n) => branchCommands.includes(n));
+    const isWorktreeCmd = allNames.some((n) => worktreeCommands.includes(n));
     const hasOpts = cmd.options && cmd.options.length > 0;
     const completionFn = isWorktreeCmd
       ? "_wct_worktree_branches"
@@ -260,7 +275,7 @@ function generateZshCompletions(): string {
 
     if (!isBranchCmd && !isWorktreeCmd && !hasOpts) continue;
 
-    lines.push(`                ${cmd.name})`);
+    lines.push(`                ${allNames.join("|")})`);
 
     if (hasOpts && cmd.options) {
       lines.push("                    _arguments \\");

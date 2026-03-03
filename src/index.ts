@@ -36,7 +36,7 @@ const HANDLERS: Record<string, Handler> = {
   completions: (positionals) => completionsCommand(positionals[1]),
   down: () => downCommand(),
   init: () => initCommand(),
-  list: () => listCommand(),
+  list: (_pos, values) => listCommand({ short: !!values.short }),
   open: (positionals, values) => {
     const branch = positionals[1];
     if (!branch) {

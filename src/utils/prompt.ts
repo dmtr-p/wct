@@ -1,10 +1,14 @@
+import { stdin, stdout } from "node:process";
+import { createInterface } from "node:readline/promises";
+
 export async function confirm(message: string): Promise<boolean> {
-  process.stdout.write(`${message} [y/N] `);
+  const rl = createInterface({ input: stdin, output: stdout });
 
-  for await (const line of console) {
-    const answer = line.trim().toLowerCase();
-    return answer === "y" || answer === "yes";
+  try {
+    const answer = await rl.question(`${message} [y/N] `);
+    const normalized = answer.trim().toLowerCase();
+    return normalized === "y" || normalized === "yes";
+  } finally {
+    rl.close();
   }
-
-  return false;
 }

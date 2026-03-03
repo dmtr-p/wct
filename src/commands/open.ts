@@ -43,6 +43,12 @@ export const commandDef: CommandDef = {
       type: "boolean",
       description: "Skip opening IDE",
     },
+    {
+      name: "pr",
+      type: "string",
+      placeholder: "number-or-url",
+      description: "Open worktree from a GitHub PR",
+    },
   ],
 };
 

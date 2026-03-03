@@ -204,7 +204,6 @@ describe("listCommand integration", () => {
 
   test("prints header and worktree rows with correct data", async () => {
     process.chdir(repoDir);
-
     const lines: string[] = [];
     const spy = spyOn(console, "log").mockImplementation(
       (...args: unknown[]) => {
@@ -212,33 +211,34 @@ describe("listCommand integration", () => {
       },
     );
 
-    const result = await listCommand();
+    try {
+      const result = await listCommand();
 
-    spy.mockRestore();
-    process.chdir(originalDir);
+      expect(result.success).toBe(true);
+      expect(lines.length).toBeGreaterThanOrEqual(2);
 
-    expect(result.success).toBe(true);
-    expect(lines.length).toBeGreaterThanOrEqual(2);
+      // Verify header row contains all column headers
+      const header = stripAnsi(lines[0] ?? "");
+      expect(header).toContain("BRANCH");
+      expect(header).toContain("PATH");
+      expect(header).toContain("TMUX");
+      expect(header).toContain("CHANGES");
+      expect(header).toContain("SYNC");
 
-    // Verify header row contains all column headers
-    const header = stripAnsi(lines[0] ?? "");
-    expect(header).toContain("BRANCH");
-    expect(header).toContain("PATH");
-    expect(header).toContain("TMUX");
-    expect(header).toContain("CHANGES");
-    expect(header).toContain("SYNC");
-
-    // Verify the feature worktree row
-    const dataLines = lines.slice(1).map(stripAnsi);
-    const featureRow = dataLines.find((l) => l.includes("feature-test"));
-    expect(featureRow).toBeDefined();
-    expect(featureRow).toContain("2 files");
-    expect(featureRow).toContain("\u21933");
+      // Verify the feature worktree row
+      const dataLines = lines.slice(1).map(stripAnsi);
+      const featureRow = dataLines.find((l) => l.includes("feature-test"));
+      expect(featureRow).toBeDefined();
+      expect(featureRow).toContain("2 files");
+      expect(featureRow).toContain("\u21933");
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+    }
   });
 
   test("short mode prints only branch names", async () => {
     process.chdir(repoDir);
-
     const lines: string[] = [];
     const spy = spyOn(console, "log").mockImplementation(
       (...args: unknown[]) => {
@@ -246,16 +246,18 @@ describe("listCommand integration", () => {
       },
     );
 
-    const result = await listCommand({ short: true });
+    try {
+      const result = await listCommand({ short: true });
 
-    spy.mockRestore();
-    process.chdir(originalDir);
-
-    expect(result.success).toBe(true);
-    // Should have branch names only, no header
-    expect(lines.some((l) => l.includes("BRANCH"))).toBe(false);
-    expect(lines.some((l) => l.includes("main"))).toBe(true);
-    expect(lines.some((l) => l.includes("feature-test"))).toBe(true);
+      expect(result.success).toBe(true);
+      // Should have branch names only, no header
+      expect(lines.some((l) => l.includes("BRANCH"))).toBe(false);
+      expect(lines.some((l) => l.includes("main"))).toBe(true);
+      expect(lines.some((l) => l.includes("feature-test"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+    }
   });
 
   test("shows main worktree when no secondary worktrees exist", async () => {
@@ -267,7 +269,6 @@ describe("listCommand integration", () => {
     await $`git commit --allow-empty -m "initial"`.quiet().cwd(emptyRepo);
 
     process.chdir(emptyRepo);
-
     const lines: string[] = [];
     const spy = spyOn(console, "log").mockImplementation(
       (...args: unknown[]) => {
@@ -275,16 +276,17 @@ describe("listCommand integration", () => {
       },
     );
 
-    const result = await listCommand();
+    try {
+      const result = await listCommand();
 
-    spy.mockRestore();
-    process.chdir(originalDir);
-
-    expect(result.success).toBe(true);
-    // Should show the main worktree row
-    const dataLines = lines.slice(1).map(stripAnsi);
-    expect(dataLines.some((l) => l.includes("main"))).toBe(true);
-
-    await rm(emptyRepo, { recursive: true, force: true });
+      expect(result.success).toBe(true);
+      // Should show the main worktree row
+      const dataLines = lines.slice(1).map(stripAnsi);
+      expect(dataLines.some((l) => l.includes("main"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+      await rm(emptyRepo, { recursive: true, force: true });
+    }
   });
 });

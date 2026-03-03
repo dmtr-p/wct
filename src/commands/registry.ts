@@ -1,3 +1,4 @@
+import { commandDef as cdDef } from "./cd";
 import { commandDef as closeDef } from "./close";
 import { commandDef as completionsDef } from "./completions-def";
 import { commandDef as downDef } from "./down";
@@ -25,6 +26,7 @@ export interface CommandDef {
 }
 
 export const COMMANDS: CommandDef[] = [
+  cdDef,
   closeDef,
   completionsDef,
   downDef,

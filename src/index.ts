@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { cdCommand } from "./commands/cd";
 import { closeCommand } from "./commands/close";
 import { completionsCommand } from "./commands/completions";
 import { downCommand } from "./commands/down";
@@ -19,6 +20,17 @@ type Handler = (
 ) => Promise<CommandResult> | CommandResult;
 
 const HANDLERS: Record<string, Handler> = {
+  cd: (positionals) => {
+    const branch = positionals[1];
+    if (!branch) {
+      return err(
+        "Missing branch name\n\nUsage: wct cd <branch>",
+        "missing_branch_arg",
+      );
+    }
+
+    return cdCommand(branch);
+  },
   close: (positionals, values) => {
     const branch = positionals[1];
     if (!branch) {
@@ -125,6 +137,7 @@ ${optionLines.join("\n")}
 
 Examples:
   wct init                         Create a new .wct.yaml config file
+  wct cd feature-auth              Open a shell in the worktree directory
   wct open feature-auth            Create new worktree and branch from HEAD
   wct up                           Start tmux + IDE in current directory
   wct down                         Kill tmux session for current directory

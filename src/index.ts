@@ -6,7 +6,6 @@ import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
 import { openCommand } from "./commands/open";
 import { COMMANDS } from "./commands/registry";
-import { statusCommand } from "./commands/status";
 import { upCommand } from "./commands/up";
 import * as logger from "./utils/logger";
 import { type CommandResult, err } from "./utils/result";
@@ -37,7 +36,7 @@ const HANDLERS: Record<string, Handler> = {
   completions: (positionals) => completionsCommand(positionals[1]),
   down: () => downCommand(),
   init: () => initCommand(),
-  list: () => listCommand(),
+  list: (_pos, values) => listCommand({ short: !!values.short }),
   open: (positionals, values) => {
     const branch = positionals[1];
     if (!branch) {
@@ -54,7 +53,6 @@ const HANDLERS: Record<string, Handler> = {
       noIde: !!values["no-ide"],
     });
   },
-  status: () => statusCommand(),
   up: (_positionals, values) => upCommand({ noIde: !!values["no-ide"] }),
 };
 

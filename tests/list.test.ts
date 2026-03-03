@@ -7,8 +7,8 @@ import {
   getAheadBehind,
   getChangedFilesCount,
   getDefaultBranch,
-  statusCommand,
-} from "../src/commands/status";
+  listCommand,
+} from "../src/commands/list";
 
 describe("getChangedFilesCount", () => {
   let repoDir: string;
@@ -162,7 +162,7 @@ function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");
 }
 
-describe("statusCommand integration", () => {
+describe("listCommand integration", () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
@@ -212,7 +212,7 @@ describe("statusCommand integration", () => {
       },
     );
 
-    const result = await statusCommand();
+    const result = await listCommand();
 
     spy.mockRestore();
     process.chdir(originalDir);
@@ -223,6 +223,7 @@ describe("statusCommand integration", () => {
     // Verify header row contains all column headers
     const header = stripAnsi(lines[0] ?? "");
     expect(header).toContain("BRANCH");
+    expect(header).toContain("PATH");
     expect(header).toContain("TMUX");
     expect(header).toContain("CHANGES");
     expect(header).toContain("SYNC");
@@ -231,17 +232,34 @@ describe("statusCommand integration", () => {
     const dataLines = lines.slice(1).map(stripAnsi);
     const featureRow = dataLines.find((l) => l.includes("feature-test"));
     expect(featureRow).toBeDefined();
-    expect(featureRow).toContain("dead");
     expect(featureRow).toContain("2 files");
     expect(featureRow).toContain("\u21933");
-
-    // Verify main worktree is excluded from output
-    const mainRow = dataLines.find((l) => /\bmain\b/.test(l));
-    expect(mainRow).toBeUndefined();
   });
 
-  test("returns ok with info message when no secondary worktrees exist", async () => {
-    const emptyRepo = await mkdtemp(join(tmpdir(), "wct-status-empty-"));
+  test("short mode prints only branch names", async () => {
+    process.chdir(repoDir);
+
+    const lines: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation(
+      (...args: unknown[]) => {
+        lines.push(String(args[0]));
+      },
+    );
+
+    const result = await listCommand({ short: true });
+
+    spy.mockRestore();
+    process.chdir(originalDir);
+
+    expect(result.success).toBe(true);
+    // Should have branch names only, no header
+    expect(lines.some((l) => l.includes("BRANCH"))).toBe(false);
+    expect(lines.some((l) => l.includes("main"))).toBe(true);
+    expect(lines.some((l) => l.includes("feature-test"))).toBe(true);
+  });
+
+  test("shows main worktree when no secondary worktrees exist", async () => {
+    const emptyRepo = await mkdtemp(join(tmpdir(), "wct-list-single-"));
     await $`git init -b main`.quiet().cwd(emptyRepo);
     await $`git config user.email "test@test.com"`.quiet().cwd(emptyRepo);
     await $`git config user.name "Test"`.quiet().cwd(emptyRepo);
@@ -257,14 +275,15 @@ describe("statusCommand integration", () => {
       },
     );
 
-    const result = await statusCommand();
+    const result = await listCommand();
 
     spy.mockRestore();
     process.chdir(originalDir);
 
     expect(result.success).toBe(true);
-    // Should print info message, not a table
-    expect(lines.some((l) => l.includes("No worktrees found"))).toBe(true);
+    // Should show the main worktree row
+    const dataLines = lines.slice(1).map(stripAnsi);
+    expect(dataLines.some((l) => l.includes("main"))).toBe(true);
 
     await rm(emptyRepo, { recursive: true, force: true });
   });

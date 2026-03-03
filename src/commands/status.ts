@@ -15,7 +15,7 @@ interface StatusRow {
   branch: string;
   tmux: string;
   changes: string;
-  behind: string;
+  sync: string;
 }
 
 export async function getChangedFilesCount(
@@ -53,21 +53,28 @@ export async function getDefaultBranch(repoPath: string): Promise<string> {
   }
 }
 
-export async function getCommitsBehind(
+export async function getAheadBehind(
   worktreePath: string,
   defaultBranch: string,
-): Promise<number> {
+): Promise<{ ahead: number; behind: number }> {
   try {
-    const result = await $`git rev-list HEAD..${defaultBranch} --count`
-      .quiet()
-      .cwd(worktreePath);
-    return Number.parseInt(result.text().trim(), 10);
+    const result =
+      await $`git rev-list --left-right --count HEAD...${defaultBranch}`
+        .quiet()
+        .cwd(worktreePath);
+    const [ahead, behind] = result
+      .text()
+      .trim()
+      .split(/\s+/)
+      .map((n) => {
+        const parsed = Number.parseInt(n, 10);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      });
+    return { ahead: ahead ?? 0, behind: behind ?? 0 };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    logger.warn(
-      `Failed to get commits behind '${defaultBranch}' for ${worktreePath}: ${message}`,
-    );
-    return 0;
+    logger.warn(`Failed to get sync status for ${worktreePath}: ${message}`);
+    return { ahead: 0, behind: 0 };
   }
 }
 
@@ -75,8 +82,12 @@ function formatChanges(count: number): string {
   return `${count} ${count === 1 ? "file" : "files"}`;
 }
 
-function formatBehind(count: number): string {
-  return `\u2193${count}`;
+function formatSync(ahead: number, behind: number): string {
+  if (ahead === 0 && behind === 0) return "\u2713";
+  const parts: string[] = [];
+  if (ahead > 0) parts.push(`\u2191${ahead}`);
+  if (behind > 0) parts.push(`\u2193${behind}`);
+  return parts.join(" ");
 }
 
 export async function statusCommand(): Promise<CommandResult> {
@@ -102,23 +113,23 @@ export async function statusCommand(): Promise<CommandResult> {
       const sessionName = formatSessionName(basename(wt.path));
       const isAlive = await sessionExists(sessionName);
       const changesCount = await getChangedFilesCount(wt.path);
-      const behindCount = await getCommitsBehind(wt.path, defaultBranch);
+      const { ahead, behind } = await getAheadBehind(wt.path, defaultBranch);
 
       return {
         branch,
         tmux: isAlive ? "alive" : "dead",
         changes: formatChanges(changesCount),
-        behind: formatBehind(behindCount),
+        sync: formatSync(ahead, behind),
       };
     }),
   );
 
-  const headers = ["BRANCH", "TMUX", "CHANGES", "BEHIND"] as const;
+  const headers = ["BRANCH", "TMUX", "CHANGES", "SYNC"] as const;
   const colWidths = [
     Math.max(headers[0].length, ...rows.map((r) => r.branch.length)),
     Math.max(headers[1].length, ...rows.map((r) => r.tmux.length)),
     Math.max(headers[2].length, ...rows.map((r) => r.changes.length)),
-    Math.max(headers[3].length, ...rows.map((r) => r.behind.length)),
+    Math.max(headers[3].length, ...rows.map((r) => r.sync.length)),
   ] as const;
 
   const green = Bun.color("green", "ansi") ?? "";
@@ -143,7 +154,7 @@ export async function statusCommand(): Promise<CommandResult> {
       row.branch.padEnd(colWidths[0]),
       tmuxPadded,
       row.changes.padEnd(colWidths[2]),
-      row.behind.padEnd(colWidths[3]),
+      row.sync.padEnd(colWidths[3]),
     ].join("  ");
     console.log(line);
   }

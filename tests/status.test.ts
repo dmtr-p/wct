@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import {
+  getAheadBehind,
   getChangedFilesCount,
-  getCommitsBehind,
   getDefaultBranch,
   statusCommand,
 } from "../src/commands/status";
@@ -61,12 +61,12 @@ describe("getChangedFilesCount", () => {
   });
 });
 
-describe("getCommitsBehind", () => {
+describe("getAheadBehind", () => {
   let repoDir: string;
   let worktreeDir: string;
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-status-behind-"));
+    repoDir = await mkdtemp(join(tmpdir(), "wct-status-sync-"));
     worktreeDir = await mkdtemp(join(tmpdir(), "wct-status-wt-"));
 
     await $`git init -b main`.quiet().cwd(repoDir);
@@ -82,6 +82,9 @@ describe("getCommitsBehind", () => {
     // Add commits to main after the branch was created
     await $`git commit --allow-empty -m "main commit 1"`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "main commit 2"`.quiet().cwd(repoDir);
+
+    // Add a commit on the feature branch (ahead of main)
+    await $`git commit --allow-empty -m "feature commit 1"`.quiet().cwd(wtPath);
   });
 
   afterAll(async () => {
@@ -94,20 +97,23 @@ describe("getCommitsBehind", () => {
     await rm(worktreeDir, { recursive: true, force: true });
   });
 
-  test("counts commits behind default branch", async () => {
+  test("counts commits ahead and behind default branch", async () => {
     const wtPath = join(worktreeDir, "feature-branch");
-    const count = await getCommitsBehind(wtPath, "main");
-    expect(count).toBe(2);
+    const { ahead, behind } = await getAheadBehind(wtPath, "main");
+    expect(ahead).toBe(1);
+    expect(behind).toBe(2);
   });
 
-  test("returns 0 for main branch itself", async () => {
-    const count = await getCommitsBehind(repoDir, "main");
-    expect(count).toBe(0);
+  test("returns zeros for main branch itself", async () => {
+    const { ahead, behind } = await getAheadBehind(repoDir, "main");
+    expect(ahead).toBe(0);
+    expect(behind).toBe(0);
   });
 
-  test("returns 0 for invalid path", async () => {
-    const count = await getCommitsBehind("/nonexistent/path", "main");
-    expect(count).toBe(0);
+  test("returns zeros for invalid path", async () => {
+    const { ahead, behind } = await getAheadBehind("/nonexistent/path", "main");
+    expect(ahead).toBe(0);
+    expect(behind).toBe(0);
   });
 });
 
@@ -219,7 +225,7 @@ describe("statusCommand integration", () => {
     expect(header).toContain("BRANCH");
     expect(header).toContain("TMUX");
     expect(header).toContain("CHANGES");
-    expect(header).toContain("BEHIND");
+    expect(header).toContain("SYNC");
 
     // Verify the feature worktree row
     const dataLines = lines.slice(1).map(stripAnsi);

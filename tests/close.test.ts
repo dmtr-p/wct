@@ -208,6 +208,7 @@ describe("closeCommand", () => {
     expect(prompts[0]).toContain("feature-b");
     expect(prompts[1]).toContain("feature-a");
     expect(prompts[2]).toContain("inside this tmux session");
+    expect(mocks.confirmSpy).toHaveBeenCalledTimes(3);
   });
 });
 

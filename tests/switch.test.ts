@@ -1,10 +1,48 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { commandDef, switchCommand } from "../src/commands/switch";
+import * as tmux from "../src/services/tmux";
 import { formatSessionName } from "../src/services/tmux";
+import * as worktree from "../src/services/worktree";
 
 describe("switchCommand", () => {
   test("is exported as a function", () => {
     expect(typeof switchCommand).toBe("function");
+  });
+
+  test("extracts basename from full worktree path for session name", async () => {
+    const isGitRepoSpy = spyOn(worktree, "isGitRepo").mockResolvedValue(true);
+    const findSpy = spyOn(worktree, "findWorktreeByBranch").mockResolvedValue({
+      path: "/some/path/myapp-feature-auth",
+      branch: "feature-auth",
+      commit: "abc123",
+      isBare: false,
+    });
+    const sessionExistsSpy = spyOn(tmux, "sessionExists").mockResolvedValue(
+      true,
+    );
+    const switchSessionSpy = spyOn(tmux, "switchSession").mockResolvedValue({
+      success: true,
+      sessionName: "myapp-feature-auth",
+    });
+    // Simulate being inside tmux so switchSession is called
+    const origTmux = process.env.TMUX;
+    process.env.TMUX = "/tmp/tmux-1000/default,12345,0";
+
+    try {
+      const result = await switchCommand("feature-auth");
+      expect(result.success).toBe(true);
+      expect(switchSessionSpy).toHaveBeenCalledWith("myapp-feature-auth");
+    } finally {
+      if (origTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = origTmux;
+      }
+      isGitRepoSpy.mockRestore();
+      findSpy.mockRestore();
+      sessionExistsSpy.mockRestore();
+      switchSessionSpy.mockRestore();
+    }
   });
 });
 

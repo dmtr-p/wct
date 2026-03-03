@@ -30,15 +30,10 @@ function generateFishCompletions(): string {
   ];
 
   for (const cmd of COMMANDS) {
-    lines.push(
-      `complete -c wct -n '__fish_use_subcommand' -a '${cmd.name}' -d '${cmd.description}'`,
-    );
-    if (cmd.aliases) {
-      for (const alias of cmd.aliases) {
-        lines.push(
-          `complete -c wct -n '__fish_use_subcommand' -a '${alias}' -d '${cmd.description}'`,
-        );
-      }
+    for (const name of getAllNames(cmd)) {
+      lines.push(
+        `complete -c wct -n '__fish_use_subcommand' -a '${name}' -d '${cmd.description}'`,
+      );
     }
   }
 
@@ -240,11 +235,8 @@ function generateZshCompletions(): string {
   ];
 
   for (const cmd of COMMANDS) {
-    lines.push(`        '${cmd.name}:${cmd.description}'`);
-    if (cmd.aliases) {
-      for (const alias of cmd.aliases) {
-        lines.push(`        '${alias}:${cmd.description}'`);
-      }
+    for (const name of getAllNames(cmd)) {
+      lines.push(`        '${name}:${cmd.description}'`);
     }
   }
   lines.push("    )");

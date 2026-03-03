@@ -76,12 +76,6 @@ export async function closeCommand(
     const worktreePath = worktree.path;
     const sessionName = formatSessionName(basename(worktreePath));
 
-    if (branches.length > 1) {
-      logger.info(
-        `Closing branch '${branch}' (${index + 1}/${branches.length})`,
-      );
-    }
-
     if (
       currentSession &&
       sessionName === currentSession &&
@@ -94,6 +88,12 @@ export async function closeCommand(
       branchQueue.push(branch);
       deferredCurrentSessionBranch = true;
       continue;
+    }
+
+    if (branches.length > 1) {
+      logger.info(
+        `Closing branch '${branch}' (${index + 1}/${branches.length})`,
+      );
     }
 
     if (!yes) {

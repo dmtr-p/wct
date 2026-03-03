@@ -54,12 +54,9 @@ export async function closeCommand(
   }
 
   const currentSession = await getCurrentSession();
+  let processedCount = 0;
 
-  for (
-    let index = 0;
-    branchQueue.length > 0;
-    index = branches.length - branchQueue.length
-  ) {
+  while (branchQueue.length > 0) {
     const branch = branchQueue.shift();
     if (!branch) {
       break;
@@ -92,7 +89,7 @@ export async function closeCommand(
 
     if (branches.length > 1) {
       logger.info(
-        `Closing branch '${branch}' (${index + 1}/${branches.length})`,
+        `Closing branch '${branch}' (${processedCount + 1}/${branches.length})`,
       );
     }
 
@@ -133,10 +130,9 @@ export async function closeCommand(
 
     if (removeResult.success) {
       logger.success(`Removed worktree '${branch}'`);
+      processedCount += 1;
     } else {
-      if (
-        removeResult.error?.includes("contains modified or untracked files")
-      ) {
+      if (removeResult.code === "worktree_has_uncommitted_changes") {
         return err(
           "Worktree has uncommitted changes. Use --force to remove anyway.",
           "worktree_remove_failed",

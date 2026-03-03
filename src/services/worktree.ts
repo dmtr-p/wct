@@ -187,6 +187,7 @@ export interface RemoveWorktreeResult {
   success: boolean;
   path: string;
   error?: string;
+  code?: "worktree_has_uncommitted_changes" | "worktree_remove_failed";
 }
 
 export async function removeWorktree(
@@ -202,7 +203,17 @@ export async function removeWorktree(
     return { success: true, path };
   } catch (err) {
     const message = extractShellError(err);
-    return { success: false, path, error: message };
+    const hasUncommittedChanges = /contains modified or untracked files/i.test(
+      message,
+    );
+    return {
+      success: false,
+      path,
+      error: message,
+      code: hasUncommittedChanges
+        ? "worktree_has_uncommitted_changes"
+        : "worktree_remove_failed",
+    };
   }
 }
 

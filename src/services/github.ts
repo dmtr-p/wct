@@ -92,13 +92,6 @@ export async function addForkRemote(
   owner: string,
   repo: string,
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    await $`git remote get-url ${remoteName}`.quiet();
-    return { success: true };
-  } catch {
-    // Remote doesn't exist yet, will add below
-  }
-
   let url: string;
   try {
     const originUrl = (await $`git remote get-url origin`.quiet())
@@ -111,6 +104,23 @@ export async function addForkRemote(
     }
   } catch {
     url = `https://github.com/${owner}/${repo}.git`;
+  }
+
+  try {
+    const existingUrl = (await $`git remote get-url ${remoteName}`.quiet())
+      .text()
+      .trim();
+    const sshUrl = `git@github.com:${owner}/${repo}.git`;
+    const httpsUrl = `https://github.com/${owner}/${repo}.git`;
+    if (existingUrl === sshUrl || existingUrl === httpsUrl) {
+      return { success: true };
+    }
+    return {
+      success: false,
+      error: `Remote '${remoteName}' already exists with URL '${existingUrl}' (expected ${url})`,
+    };
+  } catch {
+    // Remote doesn't exist yet, will add below
   }
 
   try {

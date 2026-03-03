@@ -252,6 +252,75 @@ describe("closeCommand", () => {
       removeSpy.mockRestore();
     }
   });
+
+  test("defers current tmux session branch until last in multi-close", async () => {
+    const isGitRepoSpy = spyOn(worktree, "isGitRepo").mockResolvedValue(true);
+    const findSpy = spyOn(worktree, "findWorktreeByBranch").mockImplementation(
+      async (branch) => ({
+        path: `/tmp/myapp-${branch}`,
+        branch,
+        commit: "abc123",
+        isBare: false,
+      }),
+    );
+    const prompts: string[] = [];
+    const confirmSpy = spyOn(prompt, "confirm").mockImplementation(
+      async (message) => {
+        prompts.push(message);
+        return true;
+      },
+    );
+    const currentSessionSpy = spyOn(
+      tmux,
+      "getCurrentSession",
+    ).mockResolvedValue("myapp-feature-a");
+    const sessionExistsSpy = spyOn(tmux, "sessionExists").mockResolvedValue(
+      true,
+    );
+    const killSessionSpy = spyOn(tmux, "killSession").mockImplementation(
+      async (name) => ({
+        success: true,
+        sessionName: name,
+      }),
+    );
+    const removeSpy = spyOn(worktree, "removeWorktree").mockImplementation(
+      async (path) => ({
+        success: true,
+        path,
+      }),
+    );
+
+    try {
+      const result = await closeCommand({
+        branches: ["feature-a", "feature-b"],
+      });
+      expect(result.success).toBe(true);
+      expect(killSessionSpy).toHaveBeenNthCalledWith(1, "myapp-feature-b");
+      expect(killSessionSpy).toHaveBeenNthCalledWith(2, "myapp-feature-a");
+      expect(removeSpy).toHaveBeenNthCalledWith(
+        1,
+        "/tmp/myapp-feature-b",
+        false,
+      );
+      expect(removeSpy).toHaveBeenNthCalledWith(
+        2,
+        "/tmp/myapp-feature-a",
+        false,
+      );
+      expect(prompts[0]).toContain("feature-b");
+      expect(prompts[1]).toContain("feature-a");
+      expect(prompts[2]).toContain("inside this tmux session");
+      expect(findSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      isGitRepoSpy.mockRestore();
+      findSpy.mockRestore();
+      confirmSpy.mockRestore();
+      currentSessionSpy.mockRestore();
+      sessionExistsSpy.mockRestore();
+      killSessionSpy.mockRestore();
+      removeSpy.mockRestore();
+    }
+  });
 });
 
 describe("close commandDef", () => {

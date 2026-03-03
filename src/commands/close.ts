@@ -46,12 +46,25 @@ export async function closeCommand(
   options: CloseOptions,
 ): Promise<CommandResult> {
   const { branches, yes = false, force = false } = options;
+  const branchQueue = [...branches];
+  let deferredCurrentSessionBranch = false;
 
   if (!(await isGitRepo())) {
     return err("Not a git repository", "not_git_repo");
   }
 
-  for (const [index, branch] of branches.entries()) {
+  const currentSession = await getCurrentSession();
+
+  for (
+    let index = 0;
+    branchQueue.length > 0;
+    index = branches.length - branchQueue.length
+  ) {
+    const branch = branchQueue.shift();
+    if (!branch) {
+      break;
+    }
+
     const worktree = await findWorktreeByBranch(branch);
     if (!worktree) {
       return err(
@@ -69,6 +82,20 @@ export async function closeCommand(
       );
     }
 
+    if (
+      currentSession &&
+      sessionName === currentSession &&
+      branchQueue.length > 0 &&
+      !deferredCurrentSessionBranch
+    ) {
+      logger.warn(
+        `Deferring branch '${branch}' because it is the current tmux session`,
+      );
+      branchQueue.push(branch);
+      deferredCurrentSessionBranch = true;
+      continue;
+    }
+
     if (!yes) {
       const confirmed = await confirm(
         `Close worktree '${branch}' and kill tmux session '${sessionName}'?`,
@@ -79,7 +106,6 @@ export async function closeCommand(
       }
     }
 
-    const currentSession = await getCurrentSession();
     if (currentSession === sessionName && !yes) {
       const confirmed = await confirm(
         "You are inside this tmux session. It will be killed. Continue?",

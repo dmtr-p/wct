@@ -40,16 +40,16 @@ const HANDLERS: Record<string, Handler> = {
     return cdCommand(branch);
   },
   close: (positionals, values) => {
-    const branch = positionals[1];
-    if (!branch) {
+    const branches = positionals.slice(1);
+    if (branches.length === 0) {
       return err(
-        "Missing branch name\n\nUsage: wct close <branch> [-y|--yes] [-f|--force]",
+        "Missing branch name\n\nUsage: wct close <branch...> [-y|--yes] [-f|--force]",
         "missing_branch_arg",
       );
     }
 
     return closeCommand({
-      branch,
+      branches,
       yes: !!values.yes,
       force: !!values.force,
     });
@@ -237,6 +237,7 @@ Examples:
   wct open feature-auth -e         Use existing branch
   wct open feature-auth -b main    Create new branch based on 'main'
   wct close feature-auth           Close worktree (with confirmation)
+  wct close feature-a feature-b    Close multiple worktrees
   wct close feature-auth -y        Skip confirmation
   wct list                         Show all worktrees and their status
   wct switch feature-auth          Switch to worktree's tmux session

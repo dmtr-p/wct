@@ -12,9 +12,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 bun install              # Install dependencies
 bun run src/index.ts     # Run the CLI
 bun test                 # Run tests
-bun test --watch         # Run tests in watch mode
 bunx biome check --write # Format and lint code
-bunx biome check         # Check without writing
 ```
 
 ## Architecture
@@ -30,8 +28,11 @@ src/
 │   ├── down.ts           # wct down - kill tmux session
 │   ├── close.ts          # wct close <branch> - kill session and remove worktree
 │   ├── list.ts           # wct list - show active worktrees
+│   ├── switch.ts         # wct switch - quick tmux session switching
+│   ├── cd.ts             # wct cd - open shell in worktree directory
 │   ├── init.ts           # wct init - generate .wct.yaml
 │   ├── completions.ts    # Shell completions (bash, zsh, fish)
+│   ├── completions-def.ts # Completion definitions co-located with commands
 │   └── registry.ts       # Command definitions for help and completions
 ├── config/
 │   ├── loader.ts         # Load & merge configs (project + global)
@@ -42,10 +43,15 @@ src/
 │   ├── copy.ts           # File copying utilities
 │   ├── setup.ts          # Run setup commands
 │   ├── tmux.ts           # Tmux session management
-│   └── ide.ts            # IDE launcher
+│   ├── ide.ts            # IDE launcher
+│   ├── github.ts         # GitHub PR integration
+│   └── vscode-workspace.ts # VS Code workspace file generation
+├── types/
+│   └── env.ts            # Environment variable type definitions
 └── utils/
     ├── logger.ts         # Logging with Bun.color
-    └── prompt.ts         # User confirmation prompts
+    ├── prompt.ts         # User confirmation prompts
+    └── result.ts         # Result type utility
 ```
 
 ## Bun Runtime
@@ -63,10 +69,12 @@ This project has **zero runtime dependencies** by design.
 ## Config System
 
 Config files (`.wct.yaml`) are loaded from:
+
 1. Project root (takes precedence)
 2. `~/.wct.yaml` (global defaults)
 
 Environment variables available in config commands:
+
 - `WCT_WORKTREE_DIR` - worktree path
 - `WCT_MAIN_DIR` - main repo path
 - `WCT_BRANCH` - branch name

@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { completionsCommand } from "../src/commands/completions";
+import { COMMANDS } from "../src/commands/registry";
 
 function captureFishCompletions(): string {
   const logSpy = spyOn(console, "log").mockImplementation(() => {});
@@ -21,6 +22,25 @@ describe("fish completions", () => {
     expect(output).toContain(
       "complete -c wct -n '__fish_use_subcommand' -a 'switch' -d 'Switch to another worktree\\'s tmux session'",
     );
+  });
+
+  test("escapes backslashes in command descriptions", () => {
+    const switchCommand = COMMANDS.find((cmd) => cmd.name === "switch");
+    expect(switchCommand).toBeDefined();
+
+    const originalDescription = switchCommand?.description ?? "";
+    if (!switchCommand) return;
+
+    switchCommand.description = String.raw`Switch path C:\worktree\session`;
+    try {
+      const output = captureFishCompletions();
+
+      expect(output).toContain(
+        "complete -c wct -n '__fish_use_subcommand' -a 'switch' -d 'Switch path C:\\\\worktree\\\\session'",
+      );
+    } finally {
+      switchCommand.description = originalDescription;
+    }
   });
 
   test("uses regex filtering for worktree branch helper", () => {

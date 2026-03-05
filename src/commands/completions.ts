@@ -5,6 +5,11 @@ import { COMMANDS, getAllNames } from "./registry";
 
 export { commandDef } from "./completions-def";
 
+function quoteFish(value: string): string {
+  const escaped = value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  return `'${escaped}'`;
+}
+
 function generateFishCompletions(): string {
   const lines: string[] = [
     "# Fish completions for wct",
@@ -23,7 +28,7 @@ function generateFishCompletions(): string {
     "",
     "# Helper: list branches that have worktrees",
     "function __wct_worktree_branches",
-    "    git worktree list --porcelain 2>/dev/null | string replace -rf '^branch refs/heads/(.+)' '$1'",
+    "    git worktree list --porcelain 2>/dev/null | string match -rg '^branch refs/heads/(.+)$'",
     "end",
     "",
     "# Commands",
@@ -32,7 +37,7 @@ function generateFishCompletions(): string {
   for (const cmd of COMMANDS) {
     for (const name of getAllNames(cmd)) {
       lines.push(
-        `complete -c wct -n '__fish_use_subcommand' -a '${name}' -d '${cmd.description}'`,
+        `complete -c wct -n '__fish_use_subcommand' -a ${quoteFish(name)} -d ${quoteFish(cmd.description)}`,
       );
     }
   }
@@ -60,7 +65,7 @@ function generateFishCompletions(): string {
       if (opt.short) parts.push(`-s ${opt.short}`);
       parts.push(`-l ${opt.name}`);
       if (opt.type === "string") parts.push("-r");
-      parts.push(`-d '${opt.description}'`);
+      parts.push(`-d ${quoteFish(opt.description)}`);
       lines.push(parts.join(" "));
     }
   }

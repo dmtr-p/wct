@@ -143,8 +143,8 @@ async function interactiveMode(): Promise<CommandResult> {
           return;
         }
 
-        if (trimmed.startsWith("d")) {
-          const num = parseInt(trimmed.slice(1), 10);
+        if (/^d\d+$/.test(trimmed)) {
+          const num = Number.parseInt(trimmed.slice(1), 10);
           if (num >= 1 && num <= items.length) {
             // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
             const item = items[num - 1]!;
@@ -163,17 +163,19 @@ async function interactiveMode(): Promise<CommandResult> {
           }
         }
 
-        const num = parseInt(trimmed, 10);
-        if (num >= 1 && num <= items.length) {
-          // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
-          const item = items[num - 1]!;
-          rl.close();
-          const jumped = await queueInternals.jumpToItem(item);
-          if (!jumped) {
-            console.log(`  Failed to jump to ${item.session}`);
+        if (/^\d+$/.test(trimmed)) {
+          const num = Number.parseInt(trimmed, 10);
+          if (num >= 1 && num <= items.length) {
+            // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
+            const item = items[num - 1]!;
+            rl.close();
+            const jumped = await queueInternals.jumpToItem(item);
+            if (!jumped) {
+              console.log(`  Failed to jump to ${item.session}`);
+            }
+            resolve(ok());
+            return;
           }
-          resolve(ok());
-          return;
         }
 
         console.log("  Invalid input.");

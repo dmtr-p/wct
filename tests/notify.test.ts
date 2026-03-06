@@ -6,6 +6,7 @@ import {
   notifyCommand,
 } from "../src/commands/notify";
 import * as queue from "../src/services/queue";
+import * as logger from "../src/utils/logger";
 
 describe("notify commandDef", () => {
   test("has correct name", () => {
@@ -83,6 +84,28 @@ describe("notifyCommand", () => {
 
     expect(result.success).toBe(true);
     expect(addItemSpy).not.toHaveBeenCalled();
+  });
+
+  test("returns ok and warns when queue write fails", async () => {
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {});
+    addItemSpy.mockImplementation(() => {
+      throw new Error("database is locked");
+    });
+    process.env.TMUX_PANE = "%1";
+    process.env.WCT_BRANCH = "test-branch";
+    process.env.WCT_PROJECT = "test-project";
+
+    try {
+      const result = await notifyCommand();
+
+      expect(result.success).toBe(true);
+      expect(addItemSpy).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Failed to queue notification for branch='test-branch' project='test-project' session='test-project-test-branch' pane='%1': database is locked",
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

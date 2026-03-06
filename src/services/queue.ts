@@ -50,6 +50,7 @@ export function addItem(item: Omit<QueueItem, "id" | "timestamp">): QueueItem {
   const db = getDb();
   const id = generateId();
   const timestamp = Date.now();
+  const queueItem = { ...item, id, timestamp };
 
   try {
     // UNIQUE on pane means INSERT OR REPLACE removes the old item for that pane
@@ -71,7 +72,7 @@ export function addItem(item: Omit<QueueItem, "id" | "timestamp">): QueueItem {
     db.close();
   }
 
-  return { ...item, id, timestamp };
+  return queueItem;
 }
 
 export async function listItems(): Promise<QueueItem[]> {
@@ -152,6 +153,10 @@ export function clearAll(): number {
   let result: ReturnType<Database["run"]> | undefined;
   try {
     result = db.run("DELETE FROM queue");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Failed to clear queue items: ${message}`);
+    return 0;
   } finally {
     db.close();
   }
@@ -169,6 +174,10 @@ export function countItems(): number {
     row = db.query("SELECT COUNT(*) as count FROM queue").get() as {
       count: number;
     };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Failed to count queue items: ${message}`);
+    return 0;
   } finally {
     db.close();
   }

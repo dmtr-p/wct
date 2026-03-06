@@ -59,7 +59,6 @@ export async function notifyCommand(): Promise<CommandResult> {
       logger.warn(
         `Failed to inspect tmux pane '${tmuxPane}' for queued notification: ${message}`,
       );
-      return ok();
     }
 
     // Get session name
@@ -78,14 +77,22 @@ export async function notifyCommand(): Promise<CommandResult> {
       );
     }
 
-    await addItem({
-      branch,
-      project,
-      type: data.notification_type ?? data.type ?? "unknown",
-      message: data.message ?? data.title ?? "",
-      session,
-      pane: tmuxPane,
-    });
+    try {
+      addItem({
+        branch,
+        project,
+        type: data.notification_type ?? data.type ?? "unknown",
+        message: data.message ?? data.title ?? "",
+        session,
+        pane: tmuxPane,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `Failed to queue notification for branch='${branch}' project='${project}' session='${session}' pane='${tmuxPane}': ${message}`,
+      );
+      return ok();
+    }
 
     // Refresh status bars
     try {

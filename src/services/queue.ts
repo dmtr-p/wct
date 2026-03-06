@@ -1,10 +1,16 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import * as logger from "../utils/logger";
 import { listSessions } from "./tmux";
 
-const QUEUE_DIR = join(process.env.HOME ?? "/tmp", ".wct");
-const DB_PATH = join(QUEUE_DIR, "queue.db");
+function getQueueDir(): string {
+  return join(process.env.HOME ?? "/tmp", ".wct");
+}
+
+function getDbPath(): string {
+  return join(getQueueDir(), "queue.db");
+}
 
 export interface QueueItem {
   id: string;
@@ -18,8 +24,8 @@ export interface QueueItem {
 }
 
 function getDb(): Database {
-  mkdirSync(QUEUE_DIR, { recursive: true });
-  const db = new Database(DB_PATH, { create: true });
+  mkdirSync(getQueueDir(), { recursive: true });
+  const db = new Database(getDbPath(), { create: true });
   db.exec("PRAGMA journal_mode=WAL");
   db.exec(`CREATE TABLE IF NOT EXISTS queue (
     id TEXT PRIMARY KEY,
@@ -67,29 +73,47 @@ export function addItem(item: Omit<QueueItem, "id" | "timestamp">): QueueItem {
 
 export async function listItems(): Promise<QueueItem[]> {
   const db = getDb();
-  const rows = db
-    .query("SELECT * FROM queue ORDER BY timestamp ASC")
-    .all() as QueueItem[];
+  try {
+    const rows = db
+      .query("SELECT * FROM queue ORDER BY timestamp ASC")
+      .all() as QueueItem[];
 
-  const sessions = new Set((await listSessions()).map((s) => s.name));
-  const live: QueueItem[] = [];
-  const staleIds: string[] = [];
-
-  for (const row of rows) {
-    if (sessions.has(row.session)) {
-      live.push(row);
-    } else {
-      staleIds.push(row.id);
+    const sessionList = await listSessions();
+    if (sessionList === null) {
+      if (rows.length > 0) {
+        logger.warn(
+          "Skipping queue stale cleanup because tmux sessions could not be determined",
+        );
+      }
+      return rows;
     }
-  }
 
-  if (staleIds.length > 0) {
-    const placeholders = staleIds.map(() => "?").join(",");
-    db.run(`DELETE FROM queue WHERE id IN (${placeholders})`, staleIds);
-  }
+    const sessions = new Set(sessionList.map((s) => s.name));
+    const live: QueueItem[] = [];
+    const staleIds: string[] = [];
 
-  db.close();
-  return live;
+    for (const row of rows) {
+      if (sessions.has(row.session)) {
+        live.push(row);
+      } else {
+        staleIds.push(row.id);
+      }
+    }
+
+    if (staleIds.length > 0) {
+      try {
+        const placeholders = staleIds.map(() => "?").join(",");
+        db.run(`DELETE FROM queue WHERE id IN (${placeholders})`, staleIds);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`Failed to remove stale queue items: ${message}`);
+      }
+    }
+
+    return live;
+  } finally {
+    db.close();
+  }
 }
 
 export function removeItem(id: string): boolean {
@@ -100,10 +124,20 @@ export function removeItem(id: string): boolean {
 }
 
 export function removeItemsBySession(session: string): number {
-  const db = getDb();
-  const result = db.run("DELETE FROM queue WHERE session = ?", [session]);
-  db.close();
-  return result.changes;
+  let db: Database | null = null;
+  try {
+    db = getDb();
+    const result = db.run("DELETE FROM queue WHERE session = ?", [session]);
+    return result.changes;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(
+      `Failed to remove queued items for session '${session}': ${message}`,
+    );
+    return 0;
+  } finally {
+    db?.close();
+  }
 }
 
 export function clearAll(): number {

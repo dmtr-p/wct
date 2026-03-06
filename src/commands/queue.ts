@@ -3,7 +3,6 @@ import { $ } from "bun";
 import type { QueueItem } from "../services/queue";
 import {
   clearAll,
-  countItems,
   formatCount,
   listItems,
   removeItem,
@@ -66,16 +65,22 @@ function truncate(str: string, max: number): string {
   return `${str.slice(0, max - 1)}\u2026`;
 }
 
-async function jumpToItem(item: QueueItem): Promise<boolean> {
-  try {
-    await $`tmux switch-client -t =${item.session}`.quiet();
-    await $`tmux select-pane -t ${item.pane}`.quiet();
-    await removeItem(item.id);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export const queueInternals = {
+  async jumpToItem(item: QueueItem): Promise<boolean> {
+    try {
+      await $`tmux switch-client -t =${item.session}`.quiet();
+      await $`tmux select-pane -t ${item.pane}`.quiet();
+      await removeItem(item.id);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `Failed to jump to queue item session='${item.session}' pane='${item.pane}': ${message}`,
+      );
+      return false;
+    }
+  },
+};
 
 async function interactiveMode(): Promise<CommandResult> {
   const items = await listItems();
@@ -163,7 +168,7 @@ async function interactiveMode(): Promise<CommandResult> {
           // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
           const item = items[num - 1]!;
           rl.close();
-          const jumped = await jumpToItem(item);
+          const jumped = await queueInternals.jumpToItem(item);
           if (!jumped) {
             console.log(`  Failed to jump to ${item.session}`);
           }
@@ -184,8 +189,7 @@ export async function queueCommand(
   options: QueueOptions,
 ): Promise<CommandResult> {
   if (options.count) {
-    const count = await countItems();
-    const output = formatCount(count);
+    const output = formatCount((await listItems()).length);
     if (output) {
       process.stdout.write(output);
     }
@@ -198,7 +202,7 @@ export async function queueCommand(
     if (!item) {
       return err(`Queue item '${options.jump}' not found`, "queue_error");
     }
-    const jumped = await jumpToItem(item);
+    const jumped = await queueInternals.jumpToItem(item);
     if (!jumped) {
       return err(`Failed to jump to session '${item.session}'`, "queue_error");
     }

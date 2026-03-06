@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { closeCommand, commandDef } from "../src/commands/close";
+import * as queue from "../src/services/queue";
 import * as tmux from "../src/services/tmux";
 import { formatSessionName } from "../src/services/tmux";
 import * as worktree from "../src/services/worktree";
@@ -12,6 +13,9 @@ interface CloseCommandSpies {
   currentSessionSpy: ReturnType<typeof spyOn<typeof tmux, "getCurrentSession">>;
   sessionExistsSpy: ReturnType<typeof spyOn<typeof tmux, "sessionExists">>;
   killSessionSpy: ReturnType<typeof spyOn<typeof tmux, "killSession">>;
+  removeItemsBySessionSpy: ReturnType<
+    typeof spyOn<typeof queue, "removeItemsBySession">
+  >;
   removeSpy: ReturnType<typeof spyOn<typeof worktree, "removeWorktree">>;
   restore: () => void;
 }
@@ -41,6 +45,10 @@ function setupMocks(): CloseCommandSpies {
       sessionName: name,
     }),
   );
+  const removeItemsBySessionSpy = spyOn(
+    queue,
+    "removeItemsBySession",
+  ).mockReturnValue(0);
   const removeSpy = spyOn(worktree, "removeWorktree").mockImplementation(
     async (path) => ({
       success: true,
@@ -55,6 +63,7 @@ function setupMocks(): CloseCommandSpies {
     currentSessionSpy,
     sessionExistsSpy,
     killSessionSpy,
+    removeItemsBySessionSpy,
     removeSpy,
     restore: () => {
       isGitRepoSpy.mockRestore();
@@ -63,6 +72,7 @@ function setupMocks(): CloseCommandSpies {
       currentSessionSpy.mockRestore();
       sessionExistsSpy.mockRestore();
       killSessionSpy.mockRestore();
+      removeItemsBySessionSpy.mockRestore();
       removeSpy.mockRestore();
     },
   };
@@ -209,6 +219,36 @@ describe("closeCommand", () => {
     expect(prompts[1]).toContain("feature-a");
     expect(prompts[2]).toContain("inside this tmux session");
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(3);
+  });
+
+  test("removes queue items only after a successful session kill", async () => {
+    const result = await closeCommand({
+      branches: ["feature-a"],
+      yes: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.killSessionSpy).toHaveBeenCalledTimes(1);
+    expect(mocks.removeItemsBySessionSpy).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.removeItemsBySessionSpy.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(mocks.killSessionSpy.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  test("does not remove queue items when killSession fails", async () => {
+    mocks.killSessionSpy.mockResolvedValue({
+      success: false,
+      sessionName: "myapp-feature-a",
+      error: "tmux failed",
+    });
+
+    const result = await closeCommand({
+      branches: ["feature-a"],
+      yes: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.removeItemsBySessionSpy).not.toHaveBeenCalled();
   });
 });
 

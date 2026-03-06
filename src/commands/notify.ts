@@ -1,5 +1,7 @@
 import { $ } from "bun";
 import { addItem } from "../services/queue";
+import { formatSessionName } from "../services/tmux";
+import * as logger from "../utils/logger";
 import { type CommandResult, ok } from "../utils/result";
 import type { CommandDef } from "./registry";
 
@@ -8,39 +10,72 @@ export const commandDef: CommandDef = {
   description: "Queue a notification from Claude Code hooks",
 };
 
+export function isPaneCurrentlyVisible(output: string): boolean {
+  const [paneActive, windowVisible, attachedCountRaw] = output.split(":");
+  const attachedCount = Number.parseInt(attachedCountRaw ?? "0", 10);
+  return (
+    paneActive === "1" &&
+    windowVisible === "1" &&
+    (Number.isNaN(attachedCount) ? 0 : attachedCount) > 0
+  );
+}
+
+export function isMissingPaneError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("can't find pane") ||
+    normalized.includes("can't find window") ||
+    normalized.includes("no such pane")
+  );
+}
+
 export async function notifyCommand(): Promise<CommandResult> {
+  const tmuxPane = process.env.TMUX_PANE;
+  const branch = process.env.WCT_BRANCH;
+  const project = process.env.WCT_PROJECT;
+
+  if (!tmuxPane || !branch || !project) {
+    return ok();
+  }
+
   try {
     const stdin = await Bun.stdin.text();
     const data = JSON.parse(stdin);
 
-    const tmuxPane = process.env.TMUX_PANE;
-    const branch = process.env.WCT_BRANCH;
-    const project = process.env.WCT_PROJECT;
-
-    if (!tmuxPane || !branch || !project) {
-      return ok();
-    }
-
     // Check if user is viewing this pane
     try {
       const result =
-        await $`tmux display-message -p -t ${tmuxPane} '#{pane_active}:#{session_attached}'`.quiet();
+        await $`tmux display-message -p -t ${tmuxPane} '#{pane_active}:#{window_visible}:#{session_attached}'`.quiet();
       const output = result.text().trim();
-      if (output === "1:1") {
+      if (isPaneCurrentlyVisible(output)) {
         return ok();
       }
-    } catch {
-      // pane might not exist, skip
+    } catch (error) {
+      if (isMissingPaneError(error)) {
+        return ok();
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `Failed to inspect tmux pane '${tmuxPane}' for queued notification: ${message}`,
+      );
       return ok();
     }
 
     // Get session name
-    let session: string;
+    let session = formatSessionName(`${project}-${branch}`);
     try {
       const result =
         await $`tmux display-message -p -t ${tmuxPane} '#{session_name}'`.quiet();
       session = result.text().trim();
-    } catch {
+    } catch (error) {
+      if (isMissingPaneError(error)) {
+        return ok();
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `Failed to resolve tmux session for pane '${tmuxPane}', using fallback '${session}': ${message}`,
+      );
       return ok();
     }
 
@@ -56,11 +91,17 @@ export async function notifyCommand(): Promise<CommandResult> {
     // Refresh status bars
     try {
       await $`tmux refresh-client -S`.quiet();
-    } catch {
-      // ignore
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `Failed to refresh tmux status after queueing notification session='${session}' pane='${tmuxPane}': ${message}`,
+      );
     }
-  } catch {
-    // Never fail loudly
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(
+      `Failed to process notification for branch='${branch}' project='${project}' pane='${tmuxPane}': ${message}`,
+    );
   }
 
   return ok();

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { commandDef, notifyCommand } from "../src/commands/notify";
+import {
+  commandDef,
+  isMissingPaneError,
+  isPaneCurrentlyVisible,
+  notifyCommand,
+} from "../src/commands/notify";
 import * as queue from "../src/services/queue";
 
 describe("notify commandDef", () => {
@@ -54,6 +59,7 @@ describe("notifyCommand", () => {
     const result = await notifyCommand();
 
     expect(result.success).toBe(true);
+    expect(stdinSpy).not.toHaveBeenCalled();
     expect(addItemSpy).not.toHaveBeenCalled();
   });
 
@@ -77,5 +83,30 @@ describe("notifyCommand", () => {
 
     expect(result.success).toBe(true);
     expect(addItemSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("isPaneCurrentlyVisible", () => {
+  test("returns true when pane is active in a visible window with attached clients", () => {
+    expect(isPaneCurrentlyVisible("1:1:1")).toBe(true);
+  });
+
+  test("returns false for hidden windows even if pane is active", () => {
+    expect(isPaneCurrentlyVisible("1:0:1")).toBe(false);
+  });
+
+  test("returns false when attached count is invalid", () => {
+    expect(isPaneCurrentlyVisible("1:1:not-a-number")).toBe(false);
+  });
+});
+
+describe("isMissingPaneError", () => {
+  test("returns true for missing pane failures", () => {
+    expect(isMissingPaneError(new Error("can't find pane: %1"))).toBe(true);
+    expect(isMissingPaneError("no such pane")).toBe(true);
+  });
+
+  test("returns false for unrelated tmux failures", () => {
+    expect(isMissingPaneError(new Error("connection refused"))).toBe(false);
   });
 });

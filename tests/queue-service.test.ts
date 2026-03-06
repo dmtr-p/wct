@@ -1,5 +1,22 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "bun:test";
+import { join } from "node:path";
+import { $ } from "bun";
+import * as tmux from "../src/services/tmux";
+
+const originalHome = process.env.HOME;
+const testHome = join("/tmp", `wct-test-queue-${Date.now()}`);
+
+process.env.HOME = testHome;
+
+const {
   addItem,
   clearAll,
   countItems,
@@ -7,8 +24,7 @@ import {
   listItems,
   removeItem,
   removeItemsBySession,
-} from "../src/services/queue";
-import * as tmux from "../src/services/tmux";
+} = await import("../src/services/queue");
 
 describe("formatCount", () => {
   test("returns empty string for 0", () => {
@@ -21,7 +37,8 @@ describe("formatCount", () => {
 });
 
 describe("queue service", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await $`mkdir -p ${testHome}`.quiet();
     clearAll();
   });
 
@@ -115,8 +132,51 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.session).toBe("live-session");
-      // Stale item should be cleaned up from DB
       expect(countItems()).toBe(1);
+    } finally {
+      listSessionsSpy.mockRestore();
+    }
+  });
+
+  test("listItems keeps entries when tmux session discovery fails", async () => {
+    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue(null);
+
+    try {
+      addItem({
+        branch: "a",
+        project: "p",
+        type: "t",
+        message: "m",
+        session: "possibly-live-session",
+        pane: "%250",
+      });
+
+      const items = await listItems();
+
+      expect(items).toHaveLength(1);
+      expect(countItems()).toBe(1);
+    } finally {
+      listSessionsSpy.mockRestore();
+    }
+  });
+
+  test("listItems removes all entries when tmux has zero sessions", async () => {
+    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([]);
+
+    try {
+      addItem({
+        branch: "a",
+        project: "p",
+        type: "t",
+        message: "m",
+        session: "old-session",
+        pane: "%251",
+      });
+
+      const items = await listItems();
+
+      expect(items).toHaveLength(0);
+      expect(countItems()).toBe(0);
     } finally {
       listSessionsSpy.mockRestore();
     }
@@ -219,4 +279,13 @@ describe("queue service", () => {
     expect(cleared).toBe(2);
     expect(countItems()).toBe(0);
   });
+});
+
+afterAll(async () => {
+  await $`rm -rf ${testHome}`.quiet();
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
 });

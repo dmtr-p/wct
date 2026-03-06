@@ -1,8 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { resolveWctBin } from "../utils/bin";
+import { formatShellCommand, resolveWctBin } from "../utils/bin";
 import * as logger from "../utils/logger";
-import { type CommandResult, ok } from "../utils/result";
+import { type CommandResult, err, ok } from "../utils/result";
 import type { CommandDef } from "./registry";
 
 export const commandDef: CommandDef = {
@@ -19,20 +19,54 @@ export const commandDef: CommandDef = {
 
 function buildHooksConfig() {
   const bin = resolveWctBin();
+  const notifyCommand = formatShellCommand(bin, ["notify"]);
   return {
     hooks: {
       Notification: [
         {
           matcher: "permission_prompt",
-          hooks: [{ type: "command", command: `${bin} notify`, async: true }],
+          hooks: [{ type: "command", command: notifyCommand, async: true }],
         },
         {
           matcher: "idle_prompt",
-          hooks: [{ type: "command", command: `${bin} notify`, async: true }],
+          hooks: [{ type: "command", command: notifyCommand, async: true }],
         },
       ],
     },
   };
+}
+
+function hasWctNotifyHookForMatcher(
+  hooks: unknown[],
+  matcher: string,
+  notifyCommand: string,
+): boolean {
+  return hooks.some((hook) => {
+    if (
+      typeof hook !== "object" ||
+      hook === null ||
+      !("matcher" in hook) ||
+      (hook as { matcher?: unknown }).matcher !== matcher ||
+      !("hooks" in hook)
+    ) {
+      return false;
+    }
+
+    const nestedHooks = (hook as { hooks?: unknown }).hooks;
+    if (!Array.isArray(nestedHooks)) {
+      return false;
+    }
+
+    return nestedHooks.some(
+      (nestedHook) =>
+        typeof nestedHook === "object" &&
+        nestedHook !== null &&
+        "type" in nestedHook &&
+        "command" in nestedHook &&
+        (nestedHook as { type?: unknown }).type === "command" &&
+        (nestedHook as { command?: unknown }).command === notifyCommand,
+    );
+  });
 }
 
 export interface HooksOptions {
@@ -61,15 +95,6 @@ export async function hooksCommand(
     } catch {
       logger.warn("Could not parse existing settings file, creating new one");
     }
-
-    if (
-      settings.hooks &&
-      typeof settings.hooks === "object" &&
-      "Notification" in (settings.hooks as Record<string, unknown>)
-    ) {
-      logger.warn("Notification hooks already configured in settings");
-      return ok();
-    }
   }
 
   // Merge hooks into settings
@@ -77,17 +102,34 @@ export async function hooksCommand(
     settings.hooks && typeof settings.hooks === "object"
       ? (settings.hooks as Record<string, unknown>)
       : {};
+  const notificationConfig = buildHooksConfig().hooks.Notification;
+  const notifyCommand = notificationConfig[0]?.hooks[0]?.command ?? "";
+  const notificationHooks = Array.isArray(existingHooks.Notification)
+    ? existingHooks.Notification
+    : [];
+  const newNotificationHooks = notificationConfig.filter(
+    (hook) =>
+      !hasWctNotifyHookForMatcher(
+        notificationHooks,
+        hook.matcher,
+        notifyCommand,
+      ),
+  );
 
   settings.hooks = {
     ...existingHooks,
-    ...buildHooksConfig().hooks,
+    Notification: [...notificationHooks, ...newNotificationHooks],
   };
 
-  // Ensure .claude directory exists
-  mkdirSync(join(process.cwd(), ".claude"), { recursive: true });
-
-  await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
-  logger.success(`Installed hooks config to ${settingsPath}`);
+  try {
+    mkdirSync(join(process.cwd(), ".claude"), { recursive: true });
+    await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
+    logger.success(`Installed hooks config to ${settingsPath}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Failed to install hooks config: ${message}`);
+    return err(`Failed to install hooks config: ${message}`, "config_error");
+  }
 
   return ok();
 }

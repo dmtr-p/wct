@@ -115,10 +115,10 @@ export async function closeCommand(
     }
 
     if (await sessionExists(sessionName)) {
-      await removeItemsBySession(sessionName);
       logger.info(`Killing tmux session '${sessionName}'...`);
       const killResult = await killSession(sessionName);
       if (killResult.success) {
+        await removeItemsBySession(sessionName);
         logger.success(`Killed tmux session '${sessionName}'`);
       } else {
         logger.warn(`Failed to kill tmux session: ${killResult.error}`);

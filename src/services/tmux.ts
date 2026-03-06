@@ -1,7 +1,7 @@
 import { $ } from "bun";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import type { WctEnv } from "../types/env";
-import { resolveWctBin } from "../utils/bin";
+import { formatShellCommand, resolveWctBin } from "../utils/bin";
 
 export interface TmuxSession {
   name: string;
@@ -24,14 +24,14 @@ export function parseSessionListOutput(output: string): TmuxSession[] {
   });
 }
 
-export async function listSessions(): Promise<TmuxSession[]> {
+export async function listSessions(): Promise<TmuxSession[] | null> {
   try {
     const result =
       await $`tmux list-sessions -F "#{session_name}:#{session_attached}:#{session_windows}"`.quiet();
     const output = result.text().trim();
     return parseSessionListOutput(output);
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -48,6 +48,9 @@ export async function getSessionStatus(
   name: string,
 ): Promise<"attached" | "detached" | null> {
   const sessions = await listSessions();
+  if (!sessions) {
+    return null;
+  }
   const session = sessions.find((s) => s.name === name);
   if (!session) {
     return null;
@@ -76,13 +79,20 @@ export interface TmuxCommand {
   args: string[];
 }
 
-function buildEnvOptionArgs(env?: WctEnv): string[] {
+function getDefinedEnvEntries(env?: WctEnv): [string, string][] {
   if (!env) {
     return [];
   }
-  return Object.entries(env)
-    .filter(([, value]) => value !== undefined)
-    .flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+  return Object.entries(env).filter(
+    ([, value]): value is string => value !== undefined,
+  );
+}
+
+function buildEnvOptionArgs(env?: WctEnv): string[] {
+  return getDefinedEnvEntries(env).flatMap(([key, value]) => [
+    "-e",
+    `${key}=${value}`,
+  ]);
 }
 
 export function buildWindowPaneCommands(
@@ -193,7 +203,7 @@ export function buildWindowsPaneCommands(
   env?: WctEnv,
 ): TmuxCommand[] {
   const commands: TmuxCommand[] = [];
-  const envVars = env ? Object.entries(env) : [];
+  const envVars = getDefinedEnvEntries(env);
   const envOptionArgs = buildEnvOptionArgs(env);
 
   if (windows.length === 0) {
@@ -306,8 +316,8 @@ async function configureQueueStatusBar(sessionName: string): Promise<void> {
     }
 
     // Prepend queue count
-    const queueCount = `#(${wctBin} queue --count)`;
-    if (!currentStatusRight.includes("queue --count")) {
+    const queueCount = `#(${formatShellCommand(wctBin, ["queue", "--count"])})`;
+    if (!currentStatusRight.includes(queueCount)) {
       const newStatusRight = currentStatusRight
         ? `${queueCount} ${currentStatusRight}`
         : queueCount;
@@ -318,7 +328,9 @@ async function configureQueueStatusBar(sessionName: string): Promise<void> {
     }
 
     // Bind C-q to interactive queue popup (root table, no prefix needed)
-    await $`tmux bind-key -T root C-q display-popup -E -w 80% -h 50% ${{ raw: `'${wctBin} queue --interactive'` }}`.quiet();
+    await $`tmux bind-key -T root C-q display-popup -E -w 80% -h 50% ${{
+      raw: formatShellCommand(wctBin, ["queue", "--interactive"]),
+    }}`.quiet();
   } catch {
     // Non-critical, ignore failures
   }

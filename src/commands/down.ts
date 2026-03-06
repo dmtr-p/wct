@@ -28,11 +28,11 @@ export async function downCommand(): Promise<CommandResult> {
     return ok();
   }
 
-  await removeItemsBySession(sessionName);
   logger.info(`Killing tmux session '${sessionName}'...`);
   const result = await killSession(sessionName);
 
   if (result.success) {
+    await removeItemsBySession(sessionName);
     logger.success(`Killed tmux session '${sessionName}'`);
     return ok();
   } else {

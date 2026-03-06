@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { $ } from "bun";
 import { commandDef, hooksCommand } from "../src/commands/hooks";
 import * as bin from "../src/utils/bin";
 
@@ -21,16 +20,19 @@ describe("hooksCommand", () => {
   let originalCwd: string;
 
   beforeEach(async () => {
-    binSpy = spyOn(bin, "resolveWctBin").mockReturnValue("/usr/bin/wct");
+    binSpy = spyOn(bin, "resolveWctBin").mockReturnValue({
+      cmd: "/usr/bin/wct",
+      args: [],
+    });
     originalCwd = process.cwd();
-    await mkdir(testDir, { recursive: true });
+    await $`mkdir -p ${testDir}`.quiet();
     process.chdir(testDir);
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
     binSpy.mockRestore();
-    await rm(testDir, { recursive: true, force: true });
+    await $`rm -rf ${testDir}`.quiet();
   });
 
   test("default mode outputs JSON with Notification hooks to stdout", async () => {
@@ -67,7 +69,7 @@ describe("hooksCommand", () => {
 
   test("--install merges with existing settings", async () => {
     const claudeDir = join(testDir, ".claude");
-    mkdirSync(claudeDir, { recursive: true });
+    await $`mkdir -p ${claudeDir}`.quiet();
     await Bun.write(
       join(claudeDir, "settings.local.json"),
       JSON.stringify({ permissions: { allow: ["Read"] } }),
@@ -86,7 +88,7 @@ describe("hooksCommand", () => {
 
   test("--install merges with existing non-Notification hooks", async () => {
     const claudeDir = join(testDir, ".claude");
-    mkdirSync(claudeDir, { recursive: true });
+    await $`mkdir -p ${claudeDir}`.quiet();
     await Bun.write(
       join(claudeDir, "settings.local.json"),
       JSON.stringify({
@@ -107,9 +109,9 @@ describe("hooksCommand", () => {
     expect(settings.hooks.Notification).toHaveLength(2);
   });
 
-  test("--install warns if Notification already configured", async () => {
+  test("--install merges missing matchers into existing Notification hooks", async () => {
     const claudeDir = join(testDir, ".claude");
-    mkdirSync(claudeDir, { recursive: true });
+    await $`mkdir -p ${claudeDir}`.quiet();
     await Bun.write(
       join(claudeDir, "settings.local.json"),
       JSON.stringify({ hooks: { Notification: [{ matcher: "existing" }] } }),
@@ -117,20 +119,95 @@ describe("hooksCommand", () => {
 
     const result = await hooksCommand({ install: true });
 
-    // Should return ok without overwriting
     expect(result.success).toBe(true);
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),
     ).json();
-    // Original Notification should be preserved (not overwritten)
-    expect(settings.hooks.Notification).toHaveLength(1);
+    expect(settings.hooks.Notification).toHaveLength(3);
     expect(settings.hooks.Notification[0].matcher).toBe("existing");
+    expect(settings.hooks.Notification[1].matcher).toBe("permission_prompt");
+    expect(settings.hooks.Notification[2].matcher).toBe("idle_prompt");
+  });
+
+  test("--install does not duplicate existing wct Notification matchers", async () => {
+    const claudeDir = join(testDir, ".claude");
+    await $`mkdir -p ${claudeDir}`.quiet();
+    await Bun.write(
+      join(claudeDir, "settings.local.json"),
+      JSON.stringify({
+        hooks: {
+          Notification: [
+            {
+              matcher: "permission_prompt",
+              hooks: [
+                {
+                  type: "command",
+                  command: "'/usr/bin/wct' 'notify'",
+                  async: true,
+                },
+              ],
+            },
+            {
+              matcher: "idle_prompt",
+              hooks: [
+                {
+                  type: "command",
+                  command: "'/usr/bin/wct' 'notify'",
+                  async: true,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await hooksCommand({ install: true });
+
+    expect(result.success).toBe(true);
+
+    const settings = await Bun.file(
+      join(claudeDir, "settings.local.json"),
+    ).json();
+    expect(settings.hooks.Notification).toHaveLength(2);
+  });
+
+  test("adds wct notify to an existing matcher with other hooks", async () => {
+    const claudeDir = join(testDir, ".claude");
+    await $`mkdir -p ${claudeDir}`.quiet();
+    await Bun.write(
+      join(claudeDir, "settings.local.json"),
+      JSON.stringify({
+        hooks: {
+          Notification: [
+            {
+              matcher: "permission_prompt",
+              hooks: [{ type: "command", command: "echo custom", async: true }],
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await hooksCommand({ install: true });
+
+    expect(result.success).toBe(true);
+
+    const settings = await Bun.file(
+      join(claudeDir, "settings.local.json"),
+    ).json();
+    expect(settings.hooks.Notification).toHaveLength(3);
+    expect(settings.hooks.Notification[0].matcher).toBe("permission_prompt");
+    expect(settings.hooks.Notification[0].hooks).toHaveLength(1);
+    expect(settings.hooks.Notification[1].matcher).toBe("permission_prompt");
+    expect(settings.hooks.Notification[1].hooks[0].command).toContain("notify");
+    expect(settings.hooks.Notification[2].matcher).toBe("idle_prompt");
   });
 
   test("--install handles corrupt JSON gracefully", async () => {
     const claudeDir = join(testDir, ".claude");
-    mkdirSync(claudeDir, { recursive: true });
+    await $`mkdir -p ${claudeDir}`.quiet();
     await Bun.write(join(claudeDir, "settings.local.json"), "{not valid json");
 
     const result = await hooksCommand({ install: true });

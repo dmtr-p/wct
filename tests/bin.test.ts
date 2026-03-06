@@ -2,18 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { resolveWctBin } from "../src/utils/bin";
 
 describe("resolveWctBin", () => {
-  test("returns a string", () => {
+  test("returns a command object", () => {
     const result = resolveWctBin();
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
+    expect(typeof result.cmd).toBe("string");
+    expect(Array.isArray(result.args)).toBe(true);
+    expect(result.cmd.length).toBeGreaterThan(0);
   });
 
   test("returns either wct path or bun run fallback", () => {
     const result = resolveWctBin();
-    // Either Bun.which found wct in PATH, or it falls back to bun run
-    const isWhichResult = !result.startsWith("bun run ");
+    const isWhichResult = result.args.length === 0;
     const isFallback =
-      result.startsWith("bun run ") && result.endsWith("index.ts");
+      result.cmd === "bun" &&
+      result.args[0] === "run" &&
+      result.args[1]?.endsWith("index.ts");
 
     expect(isWhichResult || isFallback).toBe(true);
   });

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { commandDef, queueCommand } from "../src/commands/queue";
+import * as queueCommandModule from "../src/commands/queue";
 import * as queueService from "../src/services/queue";
+
+const { commandDef, queueCommand, queueInternals } = queueCommandModule;
 
 interface QueueCommandSpies {
   countItemsSpy: ReturnType<typeof spyOn<typeof queueService, "countItems">>;
@@ -123,6 +125,9 @@ describe("queueCommand", () => {
   });
 
   test("--jump with valid id but failed tmux switch returns queue_error", async () => {
+    const jumpSpy = spyOn(queueInternals, "jumpToItem").mockResolvedValue(
+      false,
+    );
     mocks.listItemsSpy.mockResolvedValue([
       {
         id: "item-1",
@@ -136,12 +141,15 @@ describe("queueCommand", () => {
       },
     ]);
 
-    // jumpToItem calls tmux commands which will fail in test env
-    const result = await queueCommand({ jump: "item-1" });
+    try {
+      const result = await queueCommand({ jump: "item-1" });
 
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe("queue_error");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("queue_error");
+      }
+    } finally {
+      jumpSpy.mockRestore();
     }
   });
 

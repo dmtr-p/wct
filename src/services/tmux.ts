@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import type { WctEnv } from "../types/env";
+import { resolveWctBin } from "../utils/bin";
 
 export interface TmuxSession {
   name: string;
@@ -69,7 +70,9 @@ export interface TmuxCommand {
     | "set-environment"
     | "send-keys"
     | "select-layout"
-    | "select-window";
+    | "select-window"
+    | "set-option"
+    | "bind-key";
   args: string[];
 }
 
@@ -77,10 +80,9 @@ function buildEnvOptionArgs(env?: WctEnv): string[] {
   if (!env) {
     return [];
   }
-  return Object.entries(env).flatMap(([key, value]) => [
-    "-e",
-    `${key}=${value}`,
-  ]);
+  return Object.entries(env)
+    .filter(([, value]) => value !== undefined)
+    .flatMap(([key, value]) => ["-e", `${key}=${value}`]);
 }
 
 export function buildWindowPaneCommands(
@@ -168,6 +170,12 @@ async function executeCommand(cmd: TmuxCommand): Promise<void> {
       break;
     case "select-window":
       await $`tmux select-window ${cmd.args}`.quiet();
+      break;
+    case "set-option":
+      await $`tmux set-option ${cmd.args}`.quiet();
+      break;
+    case "bind-key":
+      await $`tmux bind-key ${cmd.args}`.quiet();
       break;
   }
 }
@@ -278,6 +286,44 @@ async function createSessionWithWindows(
   await executeCommands(commands);
 }
 
+async function configureQueueStatusBar(sessionName: string): Promise<void> {
+  try {
+    const wctBin = resolveWctBin();
+
+    // Set status refresh interval
+    await executeCommand({
+      type: "set-option",
+      args: ["-t", sessionName, "status-interval", "5"],
+    });
+
+    // Read current status-right
+    let currentStatusRight = "";
+    try {
+      const result = await $`tmux show-options -gv status-right`.quiet();
+      currentStatusRight = result.text().trim();
+    } catch {
+      currentStatusRight = "";
+    }
+
+    // Prepend queue count
+    const queueCount = `#(${wctBin} queue --count)`;
+    if (!currentStatusRight.includes("queue --count")) {
+      const newStatusRight = currentStatusRight
+        ? `${queueCount} ${currentStatusRight}`
+        : queueCount;
+      await executeCommand({
+        type: "set-option",
+        args: ["-t", sessionName, "status-right", newStatusRight],
+      });
+    }
+
+    // Bind C-q to interactive queue popup (root table, no prefix needed)
+    await $`tmux bind-key -T root C-q display-popup -E -w 80% -h 50% ${{ raw: `'${wctBin} queue --interactive'` }}`.quiet();
+  } catch {
+    // Non-critical, ignore failures
+  }
+}
+
 export async function createSession(
   name: string,
   workingDir: string,
@@ -295,6 +341,7 @@ export async function createSession(
   try {
     const windows = config?.windows ?? [];
     await createSessionWithWindows(name, workingDir, windows, env);
+    await configureQueueStatusBar(name);
     return { success: true, sessionName: name };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

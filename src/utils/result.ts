@@ -17,7 +17,9 @@ export type ErrorCode =
   | "unknown_command"
   | "init_error"
   | "pr_error"
-  | "gh_not_installed";
+  | "gh_not_installed"
+  | "queue_error"
+  | "notify_error";
 
 export interface CommandError {
   message: string;

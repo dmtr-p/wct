@@ -2,9 +2,12 @@ import { commandDef as cdDef } from "./cd";
 import { commandDef as closeDef } from "./close";
 import { commandDef as completionsDef } from "./completions-def";
 import { commandDef as downDef } from "./down";
+import { commandDef as hooksDef } from "./hooks";
 import { commandDef as initDef } from "./init";
 import { commandDef as listDef } from "./list";
+import { commandDef as notifyDef } from "./notify";
 import { commandDef as openDef } from "./open";
+import { commandDef as queueDef } from "./queue";
 import { commandDef as switchDef } from "./switch";
 import { commandDef as upDef } from "./up";
 
@@ -30,9 +33,12 @@ export const COMMANDS: CommandDef[] = [
   closeDef,
   completionsDef,
   downDef,
+  hooksDef,
   initDef,
   listDef,
+  notifyDef,
   openDef,
+  queueDef,
   switchDef,
   upDef,
 ];

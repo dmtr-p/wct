@@ -3,9 +3,12 @@ import { cdCommand } from "./commands/cd";
 import { closeCommand } from "./commands/close";
 import { completionsCommand } from "./commands/completions";
 import { downCommand } from "./commands/down";
+import { hooksCommand } from "./commands/hooks";
 import { initCommand } from "./commands/init";
 import { listCommand } from "./commands/list";
+import { notifyCommand } from "./commands/notify";
 import { openCommand } from "./commands/open";
+import { queueCommand } from "./commands/queue";
 import { COMMANDS } from "./commands/registry";
 import { switchCommand } from "./commands/switch";
 import { upCommand } from "./commands/up";
@@ -140,6 +143,7 @@ const HANDLERS: Record<string, Handler> = {
         existing: localExists,
         base: localExists ? undefined : `${remote}/${branch}`,
         noIde: !!values["no-ide"],
+        prompt: values.prompt as string | undefined,
       });
     } else {
       if (!branchArg) {
@@ -156,6 +160,7 @@ const HANDLERS: Record<string, Handler> = {
       existing: !!values.existing,
       base: values.base as string | undefined,
       noIde: !!values["no-ide"],
+      prompt: values.prompt as string | undefined,
     });
   },
   switch: (positionals) => {
@@ -170,6 +175,16 @@ const HANDLERS: Record<string, Handler> = {
     return switchCommand(branch);
   },
   up: (_positionals, values) => upCommand({ noIde: !!values["no-ide"] }),
+  hooks: (_positionals, values) => hooksCommand({ install: !!values.install }),
+  notify: () => notifyCommand(),
+  queue: (_positionals, values) =>
+    queueCommand({
+      count: !!values.count,
+      interactive: !!values.interactive,
+      jump: values.jump as string | undefined,
+      dismiss: values.dismiss as string | undefined,
+      clear: !!values.clear,
+    }),
 };
 
 function resolveAlias(command: string): string {

@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { removeItemsBySession } from "../services/queue";
 import {
   formatSessionName,
   killSession,
@@ -27,6 +28,7 @@ export async function downCommand(): Promise<CommandResult> {
     return ok();
   }
 
+  await removeItemsBySession(sessionName);
   logger.info(`Killing tmux session '${sessionName}'...`);
   const result = await killSession(sessionName);
 

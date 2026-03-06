@@ -51,22 +51,25 @@ export function addItem(item: Omit<QueueItem, "id" | "timestamp">): QueueItem {
   const id = generateId();
   const timestamp = Date.now();
 
-  // UNIQUE on pane means INSERT OR REPLACE removes the old item for that pane
-  db.run(
-    `INSERT OR REPLACE INTO queue (id, branch, project, type, message, session, pane, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      item.branch,
-      item.project,
-      item.type,
-      item.message,
-      item.session,
-      item.pane,
-      timestamp,
-    ],
-  );
-  db.close();
+  try {
+    // UNIQUE on pane means INSERT OR REPLACE removes the old item for that pane
+    db.run(
+      `INSERT OR REPLACE INTO queue (id, branch, project, type, message, session, pane, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        item.branch,
+        item.project,
+        item.type,
+        item.message,
+        item.session,
+        item.pane,
+        timestamp,
+      ],
+    );
+  } finally {
+    db.close();
+  }
 
   return { ...item, id, timestamp };
 }
@@ -118,9 +121,13 @@ export async function listItems(): Promise<QueueItem[]> {
 
 export function removeItem(id: string): boolean {
   const db = getDb();
-  const result = db.run("DELETE FROM queue WHERE id = ?", [id]);
-  db.close();
-  return result.changes > 0;
+  let result: ReturnType<Database["run"]> | undefined;
+  try {
+    result = db.run("DELETE FROM queue WHERE id = ?", [id]);
+  } finally {
+    db.close();
+  }
+  return (result?.changes ?? 0) > 0;
 }
 
 export function removeItemsBySession(session: string): number {
@@ -142,18 +149,30 @@ export function removeItemsBySession(session: string): number {
 
 export function clearAll(): number {
   const db = getDb();
-  const result = db.run("DELETE FROM queue");
-  db.close();
-  return result.changes;
+  let result: ReturnType<Database["run"]> | undefined;
+  try {
+    result = db.run("DELETE FROM queue");
+  } finally {
+    db.close();
+  }
+  return result?.changes ?? 0;
 }
 
 export function countItems(): number {
   const db = getDb();
-  const row = db.query("SELECT COUNT(*) as count FROM queue").get() as {
-    count: number;
-  };
-  db.close();
-  return row.count;
+  let row:
+    | {
+        count: number;
+      }
+    | undefined;
+  try {
+    row = db.query("SELECT COUNT(*) as count FROM queue").get() as {
+      count: number;
+    };
+  } finally {
+    db.close();
+  }
+  return row?.count ?? 0;
 }
 
 export function formatCount(count: number): string {

@@ -103,7 +103,11 @@ export async function hooksCommand(
       ? (settings.hooks as Record<string, unknown>)
       : {};
   const notificationConfig = buildHooksConfig().hooks.Notification;
-  const notifyCommand = notificationConfig[0]?.hooks[0]?.command ?? "";
+  const notifyCommand = notificationConfig[0]?.hooks[0]?.command;
+  if (!notifyCommand) {
+    logger.warn("Failed to build notify hook command");
+    return err("Failed to build notify hook command", "config_error");
+  }
   const notificationHooks = Array.isArray(existingHooks.Notification)
     ? existingHooks.Notification
     : [];

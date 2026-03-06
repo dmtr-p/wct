@@ -76,7 +76,6 @@ export async function notifyCommand(): Promise<CommandResult> {
       logger.warn(
         `Failed to resolve tmux session for pane '${tmuxPane}', using fallback '${session}': ${message}`,
       );
-      return ok();
     }
 
     await addItem({

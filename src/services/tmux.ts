@@ -309,10 +309,16 @@ async function configureQueueStatusBar(sessionName: string): Promise<void> {
     // Read current status-right
     let currentStatusRight = "";
     try {
-      const result = await $`tmux show-options -gv status-right`.quiet();
+      const result =
+        await $`tmux show-options -v -t ${sessionName} status-right`.quiet();
       currentStatusRight = result.text().trim();
     } catch {
-      currentStatusRight = "";
+      try {
+        const result = await $`tmux show-options -gv status-right`.quiet();
+        currentStatusRight = result.text().trim();
+      } catch {
+        currentStatusRight = "";
+      }
     }
 
     // Prepend queue count

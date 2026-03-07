@@ -182,10 +182,48 @@ describe("queue service", () => {
     }
   });
 
+  test("listItems removes entries whose pane no longer exists in a live session", async () => {
+    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([
+      { name: "live-session", attached: false, windows: 1 },
+    ]);
+    const isPaneAliveSpy = spyOn(tmux, "isPaneAlive").mockImplementation(
+      async (pane) => pane === "%311" || false,
+    );
+
+    try {
+      addItem({
+        branch: "a",
+        project: "p",
+        type: "t",
+        message: "live",
+        session: "live-session",
+        pane: "%311",
+      });
+      addItem({
+        branch: "b",
+        project: "p",
+        type: "t",
+        message: "stale-pane",
+        session: "live-session",
+        pane: "%312",
+      });
+
+      const items = await listItems();
+
+      expect(items).toHaveLength(1);
+      expect(items[0]?.pane).toBe("%311");
+      expect(countItems()).toBe(1);
+    } finally {
+      isPaneAliveSpy.mockRestore();
+      listSessionsSpy.mockRestore();
+    }
+  });
+
   test("listItems skips stale cleanup when all items are live", async () => {
     const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([
       { name: "s1", attached: false, windows: 1 },
     ]);
+    const isPaneAliveSpy = spyOn(tmux, "isPaneAlive").mockResolvedValue(true);
 
     try {
       addItem({
@@ -202,6 +240,7 @@ describe("queue service", () => {
       expect(items).toHaveLength(1);
       expect(countItems()).toBe(1);
     } finally {
+      isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
     }
   });

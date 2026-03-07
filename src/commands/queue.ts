@@ -191,7 +191,9 @@ export async function queueCommand(
   options: QueueOptions,
 ): Promise<CommandResult> {
   if (options.count) {
-    const output = formatCount((await listItems()).length);
+    const output = formatCount(
+      (await listItems({ validatePanes: false, logWarnings: false })).length,
+    );
     if (output) {
       process.stdout.write(output);
     }

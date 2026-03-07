@@ -2,6 +2,7 @@ import { $ } from "bun";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import type { WctEnv } from "../types/env";
 import { formatShellCommand, resolveWctBin } from "../utils/bin";
+import * as logger from "../utils/logger";
 
 export interface TmuxSession {
   name: string;
@@ -31,6 +32,28 @@ export async function listSessions(): Promise<TmuxSession[] | null> {
     const output = result.text().trim();
     return parseSessionListOutput(output);
   } catch {
+    return null;
+  }
+}
+
+function isMissingPaneError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("can't find pane") ||
+    normalized.includes("can't find window") ||
+    normalized.includes("no such pane")
+  );
+}
+
+export async function isPaneAlive(pane: string): Promise<boolean | null> {
+  try {
+    await $`tmux display-message -p -t ${pane} '#{pane_id}'`.quiet();
+    return true;
+  } catch (error) {
+    if (isMissingPaneError(error)) {
+      return false;
+    }
     return null;
   }
 }
@@ -337,8 +360,9 @@ async function configureQueueStatusBar(sessionName: string): Promise<void> {
     await $`tmux bind-key -T root C-q display-popup -E -w 80% -h 50% ${{
       raw: formatShellCommand(wctBin, ["queue", "--interactive"]),
     }}`.quiet();
-  } catch {
-    // Non-critical, ignore failures
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Failed to set up queue-status widget/popup: ${message}`);
   }
 }
 

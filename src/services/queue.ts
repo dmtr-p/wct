@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as logger from "../utils/logger";
-import { listSessions } from "./tmux";
+import { isPaneAlive, listSessions } from "./tmux";
 
 function getQueueDir(): string {
   return join(process.env.HOME ?? "/tmp", ".wct");
@@ -21,6 +21,11 @@ export interface QueueItem {
   session: string;
   pane: string;
   timestamp: number;
+}
+
+export interface ListItemsOptions {
+  validatePanes?: boolean;
+  logWarnings?: boolean;
 }
 
 function getDb(): Database {
@@ -75,7 +80,10 @@ export function addItem(item: Omit<QueueItem, "id" | "timestamp">): QueueItem {
   return queueItem;
 }
 
-export async function listItems(): Promise<QueueItem[]> {
+export async function listItems(
+  options: ListItemsOptions = {},
+): Promise<QueueItem[]> {
+  const { validatePanes = true, logWarnings = true } = options;
   const db = getDb();
   try {
     const rows = db
@@ -84,7 +92,7 @@ export async function listItems(): Promise<QueueItem[]> {
 
     const sessionList = await listSessions();
     if (sessionList === null) {
-      if (rows.length > 0) {
+      if (logWarnings && rows.length > 0) {
         logger.warn(
           "Skipping queue stale cleanup because tmux sessions could not be determined",
         );
@@ -97,11 +105,26 @@ export async function listItems(): Promise<QueueItem[]> {
     const staleIds: string[] = [];
 
     for (const row of rows) {
-      if (sessions.has(row.session)) {
-        live.push(row);
-      } else {
+      if (!sessions.has(row.session)) {
         staleIds.push(row.id);
+        continue;
       }
+
+      if (validatePanes) {
+        const paneAlive = await isPaneAlive(row.pane);
+        if (paneAlive === false) {
+          staleIds.push(row.id);
+          continue;
+        }
+
+        if (paneAlive === null && logWarnings) {
+          logger.warn(
+            `Skipping pane liveness cleanup for queue item '${row.id}' because tmux pane '${row.pane}' could not be inspected`,
+          );
+        }
+      }
+
+      live.push(row);
     }
 
     if (staleIds.length > 0) {

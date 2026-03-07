@@ -65,22 +65,61 @@ describe("queueCommand", () => {
   });
 
   test("--count with 0 items writes nothing to stdout", async () => {
-    mocks.countItemsSpy.mockReturnValue(0);
+    mocks.listItemsSpy.mockResolvedValue([]);
     mocks.formatCountSpy.mockReturnValue("");
 
     const result = await queueCommand({ count: true });
 
     expect(result.success).toBe(true);
+    expect(mocks.listItemsSpy).toHaveBeenCalledWith({
+      validatePanes: false,
+      logWarnings: false,
+    });
     expect(mocks.stdoutWriteSpy).not.toHaveBeenCalled();
   });
 
   test("--count with items writes formatted count", async () => {
-    mocks.countItemsSpy.mockReturnValue(3);
+    mocks.listItemsSpy.mockResolvedValue([
+      {
+        id: "item-1",
+        branch: "feat",
+        project: "p",
+        type: "t",
+        message: "m",
+        session: "s",
+        pane: "%1",
+        timestamp: Date.now(),
+      },
+      {
+        id: "item-2",
+        branch: "feat",
+        project: "p",
+        type: "t",
+        message: "m",
+        session: "s",
+        pane: "%2",
+        timestamp: Date.now(),
+      },
+      {
+        id: "item-3",
+        branch: "feat",
+        project: "p",
+        type: "t",
+        message: "m",
+        session: "s",
+        pane: "%3",
+        timestamp: Date.now(),
+      },
+    ]);
     mocks.formatCountSpy.mockReturnValue("\u{1F514} 3");
 
     const result = await queueCommand({ count: true });
 
     expect(result.success).toBe(true);
+    expect(mocks.listItemsSpy).toHaveBeenCalledWith({
+      validatePanes: false,
+      logWarnings: false,
+    });
     expect(mocks.stdoutWriteSpy).toHaveBeenCalledWith("\u{1F514} 3");
   });
 

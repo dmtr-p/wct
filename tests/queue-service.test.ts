@@ -140,9 +140,7 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.session).toBe("live-session");
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
-        1,
-      );
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
     } finally {
       isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
@@ -165,9 +163,7 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(1);
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
-        1,
-      );
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
     } finally {
       listSessionsSpy.mockRestore();
     }
@@ -189,9 +185,7 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(0);
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
-        0,
-      );
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(0);
     } finally {
       listSessionsSpy.mockRestore();
     }
@@ -227,9 +221,7 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.pane).toBe("%311");
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
-        1,
-      );
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
     } finally {
       isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
@@ -255,9 +247,7 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(1);
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
-        1,
-      );
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
     } finally {
       isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();

@@ -32,7 +32,7 @@ export async function downCommand(): Promise<CommandResult> {
   const result = await killSession(sessionName);
 
   if (result.success) {
-    await removeItemsBySession(sessionName);
+    removeItemsBySession(sessionName);
     logger.success(`Killed tmux session '${sessionName}'`);
     return ok();
   } else {

@@ -36,13 +36,19 @@ describe("formatCount", () => {
 });
 
 describe("queue service", () => {
+  let listSessionsSpy: ReturnType<typeof spyOn<typeof tmux, "listSessions">>;
+
   beforeEach(async () => {
     await $`mkdir -p ${testHome}`.quiet();
     clearAll();
+    // Mock listSessions to return null so real tmux sessions don't cause
+    // test items (with fake session names) to be deleted as stale.
+    listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue(null);
   });
 
   afterEach(() => {
     clearAll();
+    listSessionsSpy.mockRestore();
   });
 
   test("addItem returns item with generated id and timestamp", () => {
@@ -61,7 +67,7 @@ describe("queue service", () => {
     expect(item.project).toBe("myapp");
   });
 
-  test("addItem dedup - second add with same pane replaces first", () => {
+  test("addItem dedup - second add with same pane replaces first", async () => {
     addItem({
       branch: "feature-x",
       project: "myapp",
@@ -101,7 +107,7 @@ describe("queue service", () => {
       pane: "%202",
     });
 
-    await expect(listItems({ validatePanes: false })).resolves.toHaveLength(2);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(2);
   });
 
   test("listItems returns items sorted by timestamp and removes stale", async () => {
@@ -134,7 +140,7 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.session).toBe("live-session");
-      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
         1,
       );
     } finally {
@@ -159,7 +165,7 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(1);
-      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
         1,
       );
     } finally {
@@ -183,7 +189,7 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(0);
-      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
         0,
       );
     } finally {
@@ -221,7 +227,7 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.pane).toBe("%311");
-      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
         1,
       );
     } finally {
@@ -249,7 +255,7 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(1);
-      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+      expect(listItems({ validatePanes: false })).resolves.toHaveLength(
         1,
       );
     } finally {
@@ -258,7 +264,7 @@ describe("queue service", () => {
     }
   });
 
-  test("removeItem returns true for existing item", () => {
+  test("removeItem returns true for existing item", async () => {
     const item = addItem({
       branch: "a",
       project: "p",
@@ -276,7 +282,7 @@ describe("queue service", () => {
     expect(removeItem("nonexistent-id")).toBe(false);
   });
 
-  test("removeItemsBySession removes matching items and returns count", () => {
+  test("removeItemsBySession removes matching items and returns count", async () => {
     addItem({
       branch: "a",
       project: "p",

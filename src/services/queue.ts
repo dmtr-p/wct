@@ -31,8 +31,8 @@ export interface ListItemsOptions {
 function getDb(): Database {
   mkdirSync(getQueueDir(), { recursive: true });
   const db = new Database(getDbPath(), { create: true });
-  db.exec("PRAGMA journal_mode=WAL");
-  db.exec(`CREATE TABLE IF NOT EXISTS queue (
+  db.run("PRAGMA journal_mode=WAL");
+  db.run(`CREATE TABLE IF NOT EXISTS queue (
     id TEXT PRIMARY KEY,
     branch TEXT NOT NULL,
     project TEXT NOT NULL,

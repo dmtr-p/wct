@@ -79,7 +79,7 @@ export const queueInternals = {
     try {
       await $`tmux switch-client -t =${item.session}`.quiet();
       await $`tmux select-pane -t ${item.pane}`.quiet();
-      await removeItem(item.id);
+      removeItem(item.id);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -157,7 +157,7 @@ async function interactiveMode(): Promise<CommandResult> {
           if (num >= 1 && num <= items.length) {
             // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
             const item = items[num - 1]!;
-            await removeItem(item.id);
+            removeItem(item.id);
             items.splice(num - 1, 1);
             console.log(`  Dismissed: ${item.branch}`);
             if (items.length === 0) {
@@ -223,7 +223,7 @@ export async function queueCommand(
   }
 
   if (options.dismiss) {
-    const removed = await removeItem(options.dismiss);
+    const removed = removeItem(options.dismiss);
     if (!removed) {
       return err(`Queue item '${options.dismiss}' not found`, "queue_error");
     }

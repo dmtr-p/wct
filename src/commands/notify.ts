@@ -33,13 +33,20 @@ export async function notifyCommand(): Promise<CommandResult> {
     const stdin = await Bun.stdin.text();
     const data = JSON.parse(stdin);
 
-    // Check if user is viewing this pane
+    // Check pane visibility and get session name in one tmux call
+    let session = formatSessionName(`${project}-${branch}`);
     try {
       const result =
-        await $`tmux display-message -p -t ${tmuxPane} '#{pane_active}:#{window_visible}:#{session_attached}'`.quiet();
+        await $`tmux display-message -p -t ${tmuxPane} '#{pane_active}:#{window_visible}:#{session_attached}:#{session_name}'`.quiet();
       const output = result.text().trim();
-      if (isPaneCurrentlyVisible(output)) {
+      const lastColon = output.lastIndexOf(":");
+      const visibilityPart = output.slice(0, lastColon);
+      const sessionName = output.slice(lastColon + 1);
+      if (isPaneCurrentlyVisible(visibilityPart)) {
         return ok();
+      }
+      if (sessionName) {
+        session = sessionName;
       }
     } catch (error) {
       if (isMissingPaneError(error)) {
@@ -48,22 +55,6 @@ export async function notifyCommand(): Promise<CommandResult> {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn(
         `Failed to inspect tmux pane '${tmuxPane}' for queued notification: ${message}`,
-      );
-    }
-
-    // Get session name
-    let session = formatSessionName(`${project}-${branch}`);
-    try {
-      const result =
-        await $`tmux display-message -p -t ${tmuxPane} '#{session_name}'`.quiet();
-      session = result.text().trim();
-    } catch (error) {
-      if (isMissingPaneError(error)) {
-        return ok();
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn(
-        `Failed to resolve tmux session for pane '${tmuxPane}', using fallback '${session}': ${message}`,
       );
     }
 

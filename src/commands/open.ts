@@ -49,6 +49,13 @@ export const commandDef: CommandDef = {
       placeholder: "number-or-url",
       description: "Open worktree from a GitHub PR",
     },
+    {
+      name: "prompt",
+      short: "p",
+      type: "string",
+      placeholder: "text",
+      description: "Set WCT_PROMPT env var in tmux session",
+    },
   ],
 };
 
@@ -57,12 +64,13 @@ export interface OpenOptions {
   existing: boolean;
   base?: string;
   noIde?: boolean;
+  prompt?: string;
 }
 
 export async function openCommand(
   options: OpenOptions,
 ): Promise<CommandResult> {
-  const { branch, existing, base, noIde } = options;
+  const { branch, existing, base, noIde, prompt } = options;
 
   if (!(await isGitRepo())) {
     return err("Not a git repository", "not_git_repo");
@@ -115,6 +123,7 @@ export async function openCommand(
     WCT_MAIN_DIR: mainDir,
     WCT_BRANCH: branch,
     WCT_PROJECT: config.project_name,
+    WCT_PROMPT: prompt,
   };
 
   logger.info(

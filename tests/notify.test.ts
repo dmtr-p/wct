@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
   commandDef,
-  isMissingPaneError,
   isPaneCurrentlyVisible,
   notifyCommand,
 } from "../src/commands/notify";
 import * as queue from "../src/services/queue";
+import { isMissingPaneError } from "../src/services/tmux";
 import * as logger from "../src/utils/logger";
 
 describe("notify commandDef", () => {

@@ -36,7 +36,7 @@ export async function listSessions(): Promise<TmuxSession[] | null> {
   }
 }
 
-function isMissingPaneError(error: unknown): boolean {
+export function isMissingPaneError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   return (

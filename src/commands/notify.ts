@@ -1,6 +1,6 @@
 import { $ } from "bun";
 import { addItem } from "../services/queue";
-import { formatSessionName } from "../services/tmux";
+import { formatSessionName, isMissingPaneError } from "../services/tmux";
 import * as logger from "../utils/logger";
 import { type CommandResult, ok } from "../utils/result";
 import type { CommandDef } from "./registry";
@@ -17,16 +17,6 @@ export function isPaneCurrentlyVisible(output: string): boolean {
     paneActive === "1" &&
     windowVisible === "1" &&
     (Number.isNaN(attachedCount) ? 0 : attachedCount) > 0
-  );
-}
-
-export function isMissingPaneError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("can't find pane") ||
-    normalized.includes("can't find window") ||
-    normalized.includes("no such pane")
   );
 }
 

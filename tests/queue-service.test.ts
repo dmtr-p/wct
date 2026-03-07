@@ -109,6 +109,9 @@ describe("queue service", () => {
     const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([
       { name: "live-session", attached: false, windows: 1 },
     ]);
+    const isPaneAliveSpy = spyOn(tmux, "isPaneAlive").mockImplementation(
+      async (pane) => pane === "%301",
+    );
 
     try {
       addItem({
@@ -134,6 +137,7 @@ describe("queue service", () => {
       expect(items[0]?.session).toBe("live-session");
       expect(countItems()).toBe(1);
     } finally {
+      isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
     }
   });

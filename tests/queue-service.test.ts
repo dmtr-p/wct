@@ -19,7 +19,6 @@ process.env.HOME = testHome;
 const {
   addItem,
   clearAll,
-  countItems,
   formatCount,
   listItems,
   removeItem,
@@ -81,10 +80,10 @@ describe("queue service", () => {
       pane: "%100",
     });
 
-    expect(countItems()).toBe(1);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
   });
 
-  test("countItems returns correct count after adds", () => {
+  test("listItems with pane validation disabled returns correct count after adds", async () => {
     addItem({
       branch: "a",
       project: "p",
@@ -102,7 +101,7 @@ describe("queue service", () => {
       pane: "%202",
     });
 
-    expect(countItems()).toBe(2);
+    await expect(listItems({ validatePanes: false })).resolves.toHaveLength(2);
   });
 
   test("listItems returns items sorted by timestamp and removes stale", async () => {
@@ -135,7 +134,9 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.session).toBe("live-session");
-      expect(countItems()).toBe(1);
+      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+        1,
+      );
     } finally {
       isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
@@ -158,7 +159,9 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(1);
-      expect(countItems()).toBe(1);
+      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+        1,
+      );
     } finally {
       listSessionsSpy.mockRestore();
     }
@@ -180,7 +183,9 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(0);
-      expect(countItems()).toBe(0);
+      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+        0,
+      );
     } finally {
       listSessionsSpy.mockRestore();
     }
@@ -216,7 +221,9 @@ describe("queue service", () => {
 
       expect(items).toHaveLength(1);
       expect(items[0]?.pane).toBe("%311");
-      expect(countItems()).toBe(1);
+      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+        1,
+      );
     } finally {
       isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
@@ -242,7 +249,9 @@ describe("queue service", () => {
       const items = await listItems();
 
       expect(items).toHaveLength(1);
-      expect(countItems()).toBe(1);
+      await expect(listItems({ validatePanes: false })).resolves.toHaveLength(
+        1,
+      );
     } finally {
       isPaneAliveSpy.mockRestore();
       listSessionsSpy.mockRestore();
@@ -260,7 +269,7 @@ describe("queue service", () => {
     });
 
     expect(removeItem(item.id)).toBe(true);
-    expect(countItems()).toBe(0);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(0);
   });
 
   test("removeItem returns false for nonexistent id", () => {
@@ -296,7 +305,7 @@ describe("queue service", () => {
     const removed = removeItemsBySession("target");
 
     expect(removed).toBe(2);
-    expect(countItems()).toBe(1);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
   });
 
   test("clearAll removes everything", () => {
@@ -320,7 +329,7 @@ describe("queue service", () => {
     const cleared = clearAll();
 
     expect(cleared).toBe(2);
-    expect(countItems()).toBe(0);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(0);
   });
 });
 

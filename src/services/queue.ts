@@ -187,28 +187,6 @@ export function clearAll(): number {
   return result?.changes ?? 0;
 }
 
-export function countItems(): number {
-  let db: Database | null = null;
-  let row:
-    | {
-        count: number;
-      }
-    | undefined;
-  try {
-    db = getDb();
-    row = db.query("SELECT COUNT(*) as count FROM queue").get() as {
-      count: number;
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`Failed to count queue items: ${message}`);
-    return 0;
-  } finally {
-    db?.close();
-  }
-  return row?.count ?? 0;
-}
-
 export function formatCount(count: number): string {
   if (count === 0) return "";
   return `\u{1F514} ${count}`;

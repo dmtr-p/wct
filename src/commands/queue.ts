@@ -65,6 +65,15 @@ function truncate(str: string, max: number): string {
   return `${str.slice(0, max - 1)}\u2026`;
 }
 
+function formatAge(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
 export const queueInternals = {
   async jumpToItem(item: QueueItem): Promise<boolean> {
     try {
@@ -247,13 +256,4 @@ export async function queueCommand(
   }
 
   return ok();
-}
-
-function formatAge(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
 }

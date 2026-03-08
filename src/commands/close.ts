@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { removeItemsBySession } from "../services/queue";
 import {
   formatSessionName,
   getCurrentSession,
@@ -117,6 +118,7 @@ export async function closeCommand(
       logger.info(`Killing tmux session '${sessionName}'...`);
       const killResult = await killSession(sessionName);
       if (killResult.success) {
+        removeItemsBySession(sessionName);
         logger.success(`Killed tmux session '${sessionName}'`);
       } else {
         logger.warn(`Failed to kill tmux session: ${killResult.error}`);

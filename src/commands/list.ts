@@ -119,7 +119,7 @@ export async function listCommand(opts?: {
     return ok();
   }
 
-  const sessions = await listSessions();
+  const sessions = (await listSessions()) ?? [];
   const mainRepoPath = await getMainWorktreePath();
   const defaultBranch = mainRepoPath
     ? await getDefaultBranch(mainRepoPath)

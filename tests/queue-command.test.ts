@@ -5,7 +5,6 @@ import * as queueService from "../src/services/queue";
 const { commandDef, queueCommand, queueInternals } = queueCommandModule;
 
 interface QueueCommandSpies {
-  countItemsSpy: ReturnType<typeof spyOn<typeof queueService, "countItems">>;
   formatCountSpy: ReturnType<typeof spyOn<typeof queueService, "formatCount">>;
   listItemsSpy: ReturnType<typeof spyOn<typeof queueService, "listItems">>;
   removeItemSpy: ReturnType<typeof spyOn<typeof queueService, "removeItem">>;
@@ -15,7 +14,6 @@ interface QueueCommandSpies {
 }
 
 function setupMocks(): QueueCommandSpies {
-  const countItemsSpy = spyOn(queueService, "countItems").mockReturnValue(0);
   const formatCountSpy = spyOn(queueService, "formatCount").mockReturnValue("");
   const listItemsSpy = spyOn(queueService, "listItems").mockResolvedValue([]);
   const removeItemSpy = spyOn(queueService, "removeItem").mockReturnValue(true);
@@ -23,14 +21,12 @@ function setupMocks(): QueueCommandSpies {
   const stdoutWriteSpy = spyOn(process.stdout, "write").mockReturnValue(true);
 
   return {
-    countItemsSpy,
     formatCountSpy,
     listItemsSpy,
     removeItemSpy,
     clearAllSpy,
     stdoutWriteSpy,
     restore: () => {
-      countItemsSpy.mockRestore();
       formatCountSpy.mockRestore();
       listItemsSpy.mockRestore();
       removeItemSpy.mockRestore();

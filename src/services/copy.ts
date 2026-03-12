@@ -38,81 +38,23 @@ function expandDirectory(dirPath: string, baseDir: string) {
   });
 }
 
-function escapeRegex(char: string): string {
-  return /[\\^$+.()|]/.test(char) ? `\\${char}` : char;
-}
-
-function globToRegExp(pattern: string): RegExp {
-  let regex = "";
-
-  for (let i = 0; i < pattern.length; i++) {
-    const char = pattern.charAt(i);
-
-    if (char === "*") {
-      const next = pattern[i + 1];
-      const afterNext = pattern[i + 2];
-
-      if (next === "*") {
-        if (afterNext === "/") {
-          regex += "(?:.*/)?";
-          i += 2;
-        } else {
-          regex += ".*";
-          i += 1;
-        }
-      } else {
-        regex += "[^/]*";
-      }
-      continue;
-    }
-
-    if (char === "?") {
-      regex += "[^/]";
-      continue;
-    }
-
-    if (char === "[") {
-      const end = pattern.indexOf("]", i + 1);
-      if (end === -1) {
-        regex += "\\[";
-      } else {
-        regex += pattern.slice(i, end + 1);
-        i = end;
-      }
-      continue;
-    }
-
-    if (char === "{") {
-      const end = pattern.indexOf("}", i + 1);
-      if (end === -1) {
-        regex += "\\{";
-      } else {
-        const parts = pattern
-          .slice(i + 1, end)
-          .split(",")
-          .map((part) => part.replaceAll("/", "\\/"));
-        regex += `(?:${parts.join("|")})`;
-        i = end;
-      }
-      continue;
-    }
-
-    if (char === "/") {
-      regex += "\\/";
-      continue;
-    }
-
-    regex += escapeRegex(char);
-  }
-
-  return new RegExp(`^${regex}$`);
-}
-
 function expandGlob(pattern: string, baseDir: string) {
-  return Effect.gen(function* () {
-    const files = yield* listFilesRecursive(baseDir);
-    const regex = globToRegExp(pattern.replaceAll("\\", "/"));
-    return files.filter((file) => regex.test(file.replaceAll("\\", "/")));
+  return Effect.tryPromise({
+    try: async () => {
+      const glob = new Bun.Glob(pattern);
+      const files: string[] = [];
+
+      for await (const file of glob.scan({
+        cwd: baseDir,
+        onlyFiles: true,
+        dot: true,
+      })) {
+        files.push(file);
+      }
+
+      return files;
+    },
+    catch: (error) => error,
   });
 }
 

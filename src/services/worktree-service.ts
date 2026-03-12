@@ -248,23 +248,21 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
     ),
   removeWorktree: (path, force = false) =>
     Effect.gen(function* () {
-      try {
-        if (force) {
-          yield* execProcess("git", ["worktree", "remove", "--force", path]);
-        } else {
-          yield* execProcess("git", ["worktree", "remove", path]);
-        }
-        return { _tag: "Removed" as const, path };
-      } catch (error) {
+      const args = force
+        ? ["worktree", "remove", "--force", path]
+        : ["worktree", "remove", path];
+      yield* execProcess("git", args);
+      return { _tag: "Removed" as const, path };
+    }).pipe(
+      Effect.catch((error) => {
         const message = extractShellError(error);
         if (/contains modified or untracked files/i.test(message)) {
-          return { _tag: "BlockedByChanges" as const, path };
+          return Effect.succeed({ _tag: "BlockedByChanges" as const, path });
         }
-        return yield* Effect.fail(
+        return Effect.fail(
           commandError("worktree_remove_failed", message, error),
         );
-      }
-    }).pipe(
+      }),
       Effect.mapError((error) =>
         commandError(
           "worktree_remove_failed",

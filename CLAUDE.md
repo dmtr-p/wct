@@ -64,7 +64,9 @@ Use Bun exclusively - no Node.js fallback. Leverage Bun built-in APIs:
 - `Bun.color("red", "ansi")` for terminal colors
 - `import { parseArgs } from "util"` for CLI argument parsing
 
-This project has **zero runtime dependencies** by design.
+The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added.
+
+This project uses **Effect v4**. If your training data covers Effect v3, read [EFFECT_V4.md](./EFFECT_V4.md) for the correct v4 APIs and patterns.
 
 ## Config System
 

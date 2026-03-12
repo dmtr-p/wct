@@ -4,7 +4,6 @@ import * as logger from "../utils/logger";
 import {
   ensureDirectory,
   isDirectory,
-  listFilesRecursive,
   pathExists,
   readBytes,
   writeBytes,
@@ -33,8 +32,24 @@ function expandDirectory(dirPath: string, baseDir: string) {
       return [];
     }
 
-    const files = yield* listFilesRecursive(fullPath);
-    return files.map((file) => join(normalizedDir, file));
+    const files = yield* Effect.tryPromise({
+      try: async () => {
+        const glob = new Bun.Glob("**/*");
+        const files: string[] = [];
+
+        for await (const file of glob.scan({
+          cwd: fullPath,
+          onlyFiles: true,
+          dot: true,
+        })) {
+          files.push(join(normalizedDir, file));
+        }
+
+        return files;
+      },
+      catch: (error) => error,
+    });
+    return files;
   });
 }
 

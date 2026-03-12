@@ -22,10 +22,12 @@ The file structure follows this layout:
 ```
 src/
 ├── index.ts              # Entry point; handles completions/version shortcuts and runs the Effect root via BunRuntime.runMain
+├── errors.ts             # Unified error types (WctCommandError) and error constructors
 ├── cli/
 │   ├── root-command.ts   # Effect CLI root command tree and command dispatch
 │   └── completions.ts    # Custom shell completions layered on top of the Effect CLI UX
 ├── commands/
+│   ├── command-def.ts    # Shared command option and metadata interfaces
 │   ├── open.ts           # Native Effect implementation of wct open <branch>
 │   ├── up.ts             # Native Effect implementation of wct up
 │   ├── down.ts           # Native Effect implementation of wct down
@@ -42,19 +44,25 @@ src/
 │   ├── schema.ts         # Effect Schema model for .wct.yaml
 │   └── validator.ts      # Validation helpers and path-aware error rendering
 ├── effect/
+│   ├── cli.ts            # Re-exports for Effect unstable CLI modules
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
 │   └── services.ts       # Live service bundle provided to the app
 ├── services/
 │   ├── worktree-service.ts # Effect service for git worktree operations
 │   ├── copy.ts           # File copying utilities
+│   ├── filesystem.ts     # Effect-based filesystem helpers (pathExists, ensureDirectory, stat)
+│   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
 │   ├── setup-service.ts  # Effect service for setup command execution
 │   ├── tmux.ts           # Tmux session management
 │   ├── ide-service.ts    # Effect service for IDE launching
 │   ├── github-service.ts # Effect service for GitHub PR integration
+│   ├── hooks-service.ts  # Effect service for git hook installation
+│   ├── queue-storage.ts  # SQLite-backed queue persistence service
 │   └── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/
+    ├── bin.ts            # wct binary resolution and shell command formatting
     ├── logger.ts         # Effect-native logging helpers
     └── prompt.ts         # Effect-native prompt helpers
 ```

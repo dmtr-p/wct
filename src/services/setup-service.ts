@@ -38,29 +38,41 @@ export const liveSetupService: SetupService = SetupService.of({
         const cmd = commands[i]!;
         yield* logger.step(i + 1, totalSteps, cmd.name);
 
-        try {
-          yield* execShell(cmd.command, {
-            cwd: workingDir,
-            env: fullEnv,
-            extendEnv: false,
-          });
-
-          results.push({ name: cmd.name, _tag: "Succeeded" });
-        } catch (error) {
+        const step = execShell(cmd.command, {
+          cwd: workingDir,
+          env: fullEnv,
+          extendEnv: false,
+        }).pipe(
+          Effect.as<SetupResult>({
+            name: cmd.name,
+            _tag: "Succeeded",
+          }),
+        );
+        const result: SetupResult = yield* Effect.catch(step, (error) => {
           const message = getProcessErrorMessage(error);
 
           if (cmd.optional) {
-            yield* logger.warn(`${cmd.name} failed (optional): ${message}`);
-            results.push({
-              name: cmd.name,
-              _tag: "OptionalFailed",
-              error: message,
-            });
-          } else {
-            yield* logger.error(`${cmd.name} failed: ${message}`);
-            results.push({ name: cmd.name, _tag: "Failed", error: message });
+            return logger
+              .warn(`${cmd.name} failed (optional): ${message}`)
+              .pipe(
+                Effect.as<SetupResult>({
+                  name: cmd.name,
+                  _tag: "OptionalFailed",
+                  error: message,
+                }),
+              );
           }
-        }
+
+          return logger.error(`${cmd.name} failed: ${message}`).pipe(
+            Effect.as<SetupResult>({
+              name: cmd.name,
+              _tag: "Failed",
+              error: message,
+            }),
+          );
+        });
+
+        results.push(result);
       }
 
       return results;

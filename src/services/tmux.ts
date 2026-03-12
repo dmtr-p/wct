@@ -346,28 +346,22 @@ function configureQueueStatusBar(sessionName: string) {
       });
 
       // Read current status-right
-      let currentStatusRight = "";
-      try {
-        const result = yield* execProcess("tmux", [
+      const currentStatusRight = yield* Effect.catch(
+        execProcess("tmux", [
           "show-options",
           "-v",
           "-t",
           sessionName,
           "status-right",
-        ]);
-        currentStatusRight = result.stdout.trim();
-      } catch {
-        try {
-          const result = yield* execProcess("tmux", [
-            "show-options",
-            "-gv",
-            "status-right",
-          ]);
-          currentStatusRight = result.stdout.trim();
-        } catch {
-          currentStatusRight = "";
-        }
-      }
+        ]).pipe(Effect.map((result) => result.stdout.trim())),
+        () =>
+          Effect.catch(
+            execProcess("tmux", ["show-options", "-gv", "status-right"]).pipe(
+              Effect.map((result) => result.stdout.trim()),
+            ),
+            () => Effect.succeed(""),
+          ),
+      );
 
       // Prepend queue count
       const queueCount = `#(${formatShellCommand(wctBin, ["queue", "--count"])})`;

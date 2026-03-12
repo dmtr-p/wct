@@ -75,13 +75,17 @@ export const liveHooksService: HooksService = HooksService.of({
 
       let settings: Record<string, unknown> = {};
       if (yield* pathExists(settingsPath)) {
-        try {
-          settings = JSON.parse(yield* readText(settingsPath));
-        } catch {
-          yield* logger.warn(
-            "Could not parse existing settings file, creating new one",
-          );
-        }
+        const settingsText = yield* readText(settingsPath);
+        settings = yield* Effect.catch(
+          Effect.try({
+            try: () => JSON.parse(settingsText) as Record<string, unknown>,
+            catch: (error) => error,
+          }),
+          () =>
+            logger
+              .warn("Could not parse existing settings file, creating new one")
+              .pipe(Effect.as({})),
+        );
       }
 
       const existingHooks =

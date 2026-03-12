@@ -43,6 +43,17 @@ function warnSync(message: string) {
   console.log(`${WARN_PREFIX} ${message}`);
 }
 
+function withDatabase<A, E, R>(
+  dbPath: string,
+  use: (db: Database) => Effect.Effect<A, E, R>,
+) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => new Database(dbPath)),
+    use,
+    (db) => Effect.sync(() => db.close()),
+  );
+}
+
 export function getVSCodeStoragePath(): string | null {
   if (process.env.WCT_VSCODE_STORAGE_PATH) {
     return process.env.WCT_VSCODE_STORAGE_PATH;
@@ -295,82 +306,115 @@ function filterEditorsInState(state: Record<string, unknown>) {
 }
 
 export function filterMissingEditors(dbPath: string, _worktreePath: string) {
-  return Effect.gen(function* () {
-    try {
-      const db = new Database(dbPath);
-      try {
+  return Effect.catch(
+    withDatabase(dbPath, (db) =>
+      Effect.gen(function* () {
         let totalRemoved = 0;
 
         // Try top-level editorpart.state (older VS Code versions)
-        const topRow = db
-          .query("SELECT value FROM ItemTable WHERE key = ?")
-          .get("editorpart.state") as { value: string | Buffer } | null;
+        const topRow = yield* Effect.try({
+          try: () =>
+            db
+              .query("SELECT value FROM ItemTable WHERE key = ?")
+              .get("editorpart.state") as { value: string | Buffer } | null,
+          catch: (error) => error,
+        });
 
         if (topRow) {
-          try {
-            const text =
-              typeof topRow.value === "string"
-                ? topRow.value
-                : Buffer.from(topRow.value).toString("utf-8");
-            const state = JSON.parse(text);
-            const removed = yield* filterEditorsInState(state);
-            totalRemoved += removed;
-            if (removed > 0) {
-              db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-                JSON.stringify(state),
-                "editorpart.state",
-              );
-            }
-          } catch (err) {
-            yield* logger.warn(
-              `Failed to process VS Code key 'editorpart.state' in '${dbPath}': ${String(err)}`,
-            );
-          }
+          const removed = yield* Effect.catch(
+            Effect.gen(function* () {
+              const text =
+                typeof topRow.value === "string"
+                  ? topRow.value
+                  : Buffer.from(topRow.value).toString("utf-8");
+              const state = yield* Effect.try({
+                try: () => JSON.parse(text),
+                catch: (error) => error,
+              });
+              const removed = yield* filterEditorsInState(state);
+              if (removed > 0) {
+                yield* Effect.try({
+                  try: () =>
+                    db
+                      .prepare("UPDATE ItemTable SET value = ? WHERE key = ?")
+                      .run(JSON.stringify(state), "editorpart.state"),
+                  catch: (error) => error,
+                });
+              }
+              return removed;
+            }),
+            (err) =>
+              logger
+                .warn(
+                  `Failed to process VS Code key 'editorpart.state' in '${dbPath}': ${String(err)}`,
+                )
+                .pipe(Effect.as(0)),
+          );
+          totalRemoved += removed;
         }
 
         // Try memento/workbench.parts.editor (newer VS Code versions)
-        const memoRow = db
-          .query("SELECT value FROM ItemTable WHERE key = ?")
-          .get("memento/workbench.parts.editor") as {
-          value: string | Buffer;
-        } | null;
+        const memoRow = yield* Effect.try({
+          try: () =>
+            db
+              .query("SELECT value FROM ItemTable WHERE key = ?")
+              .get("memento/workbench.parts.editor") as {
+              value: string | Buffer;
+            } | null,
+          catch: (error) => error,
+        });
 
         if (memoRow) {
-          try {
-            const text =
-              typeof memoRow.value === "string"
-                ? memoRow.value
-                : Buffer.from(memoRow.value).toString("utf-8");
-            const memento = JSON.parse(text);
-            const editorState = memento["editorpart.state"];
-            if (editorState?.serializedGrid) {
-              const removed = yield* filterEditorsInState(editorState);
-              totalRemoved += removed;
-              if (removed > 0) {
-                db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-                  JSON.stringify(memento),
-                  "memento/workbench.parts.editor",
-                );
+          const removed = yield* Effect.catch(
+            Effect.gen(function* () {
+              const text =
+                typeof memoRow.value === "string"
+                  ? memoRow.value
+                  : Buffer.from(memoRow.value).toString("utf-8");
+              const memento = yield* Effect.try({
+                try: () => JSON.parse(text),
+                catch: (error) => error,
+              });
+              const editorState = memento["editorpart.state"];
+              if (!editorState?.serializedGrid) {
+                return 0;
               }
-            }
-          } catch (err) {
-            yield* logger.warn(
-              `Failed to process VS Code key 'memento/workbench.parts.editor' in '${dbPath}': ${String(err)}`,
-            );
-          }
+
+              const removed = yield* filterEditorsInState(editorState);
+              if (removed > 0) {
+                yield* Effect.try({
+                  try: () =>
+                    db
+                      .prepare("UPDATE ItemTable SET value = ? WHERE key = ?")
+                      .run(
+                        JSON.stringify(memento),
+                        "memento/workbench.parts.editor",
+                      ),
+                  catch: (error) => error,
+                });
+              }
+              return removed;
+            }),
+            (err) =>
+              logger
+                .warn(
+                  `Failed to process VS Code key 'memento/workbench.parts.editor' in '${dbPath}': ${String(err)}`,
+                )
+                .pipe(Effect.as(0)),
+          );
+          totalRemoved += removed;
         }
 
         return totalRemoved;
-      } finally {
-        db.close();
-      }
-    } catch (err) {
-      yield* logger.warn(
-        `Failed to filter missing editors in VS Code state DB '${dbPath}': ${String(err)}`,
-      );
-      return 0;
-    }
-  });
+      }),
+    ),
+    (err) =>
+      logger
+        .warn(
+          `Failed to filter missing editors in VS Code state DB '${dbPath}': ${String(err)}`,
+        )
+        .pipe(Effect.as(0)),
+  );
 }
 
 const TERMINAL_KEYS_TO_CLEAR = [

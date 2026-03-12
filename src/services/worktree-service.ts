@@ -69,11 +69,8 @@ function extractShellError(error: unknown): string {
 }
 
 function listWorktreesImpl() {
-  return Effect.catch(
-    execProcess("git", ["worktree", "list", "--porcelain"]).pipe(
-      Effect.map((result) => parseWorktreeListOutput(result.stdout)),
-    ),
-    () => Effect.succeed([]),
+  return execProcess("git", ["worktree", "list", "--porcelain"]).pipe(
+    Effect.map((result) => parseWorktreeListOutput(result.stdout)),
   );
 }
 

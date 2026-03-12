@@ -66,6 +66,15 @@ export interface HooksService {
 export const HooksService =
   ServiceMap.Service<HooksService>("wct/HooksService");
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 export const liveHooksService: HooksService = HooksService.of({
   renderHooksConfig: () =>
     Effect.sync(() => JSON.stringify(buildHooksConfig(), null, 2)),
@@ -78,9 +87,21 @@ export const liveHooksService: HooksService = HooksService.of({
         const settingsText = yield* readText(settingsPath);
         settings = yield* Effect.catch(
           Effect.try({
-            try: () => JSON.parse(settingsText) as Record<string, unknown>,
+            try: () => JSON.parse(settingsText),
             catch: (error) => error,
-          }),
+          }).pipe(
+            Effect.flatMap((parsed) => {
+              if (isPlainObject(parsed)) {
+                return Effect.succeed(parsed);
+              }
+
+              return logger
+                .warn(
+                  "Existing settings file must contain a JSON object, creating new one",
+                )
+                .pipe(Effect.as({}));
+            }),
+          ),
           () =>
             logger
               .warn("Could not parse existing settings file, creating new one")

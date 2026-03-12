@@ -40,7 +40,7 @@ export const VSCodeWorkspaceService =
 const WARN_PREFIX = "\x1b[33mwarn\x1b[0m";
 
 function warnSync(message: string) {
-  console.log(`${WARN_PREFIX} ${message}`);
+  console.warn(`${WARN_PREFIX} ${message}`);
 }
 
 function withDatabase<A, E, R>(

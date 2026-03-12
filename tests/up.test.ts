@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { chmod, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
@@ -153,6 +153,7 @@ describe("getMainRepoPath", () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
+  const originalPath = process.env.PATH;
 
   beforeAll(async () => {
     const fixture = await createLinkedWorktreeFixture(
@@ -186,6 +187,56 @@ describe("getMainRepoPath", () => {
       ),
     );
     expect(result).toBe(repoDir);
+  });
+
+  async function withFailingWorktreeList(cwd: string, fn: () => Promise<void>) {
+    const fakeBinDir = await mkdtemp(join(tmpdir(), "wct-test-fake-git-"));
+    const realGit = (await $`which git`.quiet().text()).trim();
+    const fakeGitPath = join(fakeBinDir, "git");
+    try {
+      await Bun.write(
+        fakeGitPath,
+        `#!/bin/sh
+if [ "$1" = "worktree" ] && [ "$2" = "list" ] && [ "$3" = "--porcelain" ]; then
+  echo "simulated git worktree failure" >&2
+  exit 1
+fi
+exec "${realGit}" "$@"
+`,
+      );
+      await chmod(fakeGitPath, 0o755);
+
+      process.env.PATH = `${fakeBinDir}:${originalPath ?? ""}`;
+      process.chdir(cwd);
+      await fn();
+    } finally {
+      process.env.PATH = originalPath;
+      process.chdir(originalDir);
+      await rm(fakeBinDir, { recursive: true, force: true });
+    }
+  }
+
+  test("falls back to rev-parse when git worktree list fails", async () => {
+    await withFailingWorktreeList(repoDir, async () => {
+      const result = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getMainRepoPath()),
+        ),
+      );
+      expect(result).toBe(repoDir);
+    });
+  });
+
+  test("falls back to the main repo path when git worktree list fails in a linked worktree", async () => {
+    const wtPath = join(worktreeDir, "feature-branch");
+    await withFailingWorktreeList(wtPath, async () => {
+      const result = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getMainRepoPath()),
+        ),
+      );
+      expect(result).toBe(repoDir);
+    });
   });
 });
 

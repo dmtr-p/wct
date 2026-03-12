@@ -128,11 +128,11 @@ export function listCommand(opts?: {
       return;
     }
 
-    const sessions =
-      (yield* TmuxService.use((service) => service.listSessions())) ?? [];
-    const mainRepoPath = yield* WorktreeService.use((service) =>
-      service.getMainWorktreePath(),
-    );
+    const [sessionsList, mainRepoPath] = yield* Effect.all([
+      TmuxService.use((service) => service.listSessions()),
+      WorktreeService.use((service) => service.getMainWorktreePath()),
+    ]);
+    const sessions = sessionsList ?? [];
     const defaultBranch = mainRepoPath
       ? yield* Effect.mapError(getDefaultBranch(mainRepoPath), (error) =>
           commandError(
@@ -150,11 +150,10 @@ export function listCommand(opts?: {
           const branch = wt.branch || "(unknown)";
           const sessionName = formatSessionName(basename(wt.path));
           const session = sessions.find((s) => s.name === sessionName);
-          const changesCount = yield* getChangedFilesCount(wt.path);
-          const { ahead, behind } = yield* getAheadBehind(
-            wt.path,
-            defaultBranch,
-          );
+          const [changesCount, { ahead, behind }] = yield* Effect.all([
+            getChangedFilesCount(wt.path),
+            getAheadBehind(wt.path, defaultBranch),
+          ]);
 
           let tmux = "";
           let tmuxRaw = "";

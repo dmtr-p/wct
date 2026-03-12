@@ -40,12 +40,22 @@ export function upCommand(
 
     const cwd = process.cwd();
 
-    const mainRepoPath = yield* WorktreeService.use((service) =>
-      service.getMainRepoPath(),
-    );
+    const [mainRepoPath, branch] = yield* Effect.all([
+      WorktreeService.use((service) => service.getMainRepoPath()),
+      WorktreeService.use((service) => service.getCurrentBranch()),
+    ]);
+
     if (!mainRepoPath) {
       return yield* Effect.fail(
         commandError("worktree_error", "Could not determine repository root"),
+      );
+    }
+    if (!branch) {
+      return yield* Effect.fail(
+        commandError(
+          "detached_head",
+          "Could not determine current branch (detached HEAD is not supported)",
+        ),
       );
     }
 
@@ -60,18 +70,6 @@ export function upCommand(
       );
     }
 
-    const branch = yield* WorktreeService.use((service) =>
-      service.getCurrentBranch(),
-    );
-    if (!branch) {
-      return yield* Effect.fail(
-        commandError(
-          "detached_head",
-          "Could not determine current branch (detached HEAD is not supported)",
-        ),
-      );
-    }
-
     const sessionName = formatSessionName(basename(cwd));
 
     const env: WctEnv = {
@@ -81,36 +79,53 @@ export function upCommand(
       WCT_PROJECT: config.project_name,
     };
 
-    if (config.tmux) {
-      yield* logger.info("Creating tmux session...");
-      yield* Effect.catch(
-        TmuxService.use((service) =>
-          service.createSession(sessionName, cwd, config.tmux, env),
-        ).pipe(
-          Effect.tap((tmuxResult) =>
-            tmuxResult._tag === "AlreadyExists"
-              ? logger.info(`Tmux session '${sessionName}' already exists`)
-              : logger.success(`Created tmux session '${sessionName}'`),
-          ),
-        ),
-        (error) =>
-          logger.warn(
-            `Failed to create tmux session: ${toWctError(error).message}`,
-          ),
-      );
-    }
-
     const ideCommand = config.ide?.command;
-    if (ideCommand && !noIde) {
-      yield* logger.info("Opening IDE...");
-      yield* Effect.catch(
-        IdeService.use((service) => service.openIDE(ideCommand, env)).pipe(
-          Effect.tap(() => logger.success("IDE opened")),
-        ),
-        (error) =>
-          logger.warn(`Failed to open IDE: ${toWctError(error).message}`),
-      );
-    }
+    yield* Effect.all([
+      config.tmux
+        ? logger
+            .info("Creating tmux session...")
+            .pipe(
+              Effect.andThen(
+                Effect.catch(
+                  TmuxService.use((service) =>
+                    service.createSession(sessionName, cwd, config.tmux, env),
+                  ).pipe(
+                    Effect.tap((tmuxResult) =>
+                      tmuxResult._tag === "AlreadyExists"
+                        ? logger.info(
+                            `Tmux session '${sessionName}' already exists`,
+                          )
+                        : logger.success(
+                            `Created tmux session '${sessionName}'`,
+                          ),
+                    ),
+                  ),
+                  (error) =>
+                    logger.warn(
+                      `Failed to create tmux session: ${toWctError(error).message}`,
+                    ),
+                ),
+              ),
+            )
+        : Effect.void,
+      ideCommand && !noIde
+        ? logger
+            .info("Opening IDE...")
+            .pipe(
+              Effect.andThen(
+                Effect.catch(
+                  IdeService.use((service) =>
+                    service.openIDE(ideCommand, env),
+                  ).pipe(Effect.tap(() => logger.success("IDE opened"))),
+                  (error) =>
+                    logger.warn(
+                      `Failed to open IDE: ${toWctError(error).message}`,
+                    ),
+                ),
+              ),
+            )
+        : Effect.void,
+    ]);
 
     yield* logger.success(`Environment ready for '${branch}'`);
     if (config.tmux) {

@@ -1,3 +1,4 @@
+import { dirname, isAbsolute, resolve } from "node:path";
 import { Effect, ServiceMap } from "effect";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
@@ -74,6 +75,29 @@ function listWorktreesImpl() {
   );
 }
 
+function resolveMainRepoPathFromGitDirs(
+  topLevelPath: string | null,
+  gitCommonDir: string | null,
+): string | null {
+  if (!gitCommonDir) {
+    return topLevelPath;
+  }
+
+  const commonDir = gitCommonDir;
+  if (commonDir === ".git") {
+    return topLevelPath;
+  }
+
+  const absoluteCommonDir =
+    topLevelPath && !isAbsolute(commonDir)
+      ? resolve(topLevelPath, commonDir)
+      : commonDir;
+
+  return absoluteCommonDir.endsWith("/.git")
+    ? dirname(absoluteCommonDir)
+    : topLevelPath;
+}
+
 export function parseWorktreeListOutput(output: string): Worktree[] {
   const worktrees: Worktree[] = [];
   let current: Partial<Worktree> = {};
@@ -105,18 +129,30 @@ export function parseWorktreeListOutput(output: string): Worktree[] {
 export const liveWorktreeService: WorktreeService = WorktreeService.of({
   getMainRepoPath: () =>
     Effect.gen(function* () {
-      const worktrees = yield* listWorktreesImpl();
+      const worktrees = yield* Effect.catch(listWorktreesImpl(), () =>
+        Effect.succeed([]),
+      );
       const mainWorktreePath = worktrees[0]?.path ?? null;
       if (mainWorktreePath) {
         return mainWorktreePath;
       }
 
-      return yield* Effect.catch(
-        execProcess("git", ["rev-parse", "--show-toplevel"]).pipe(
-          Effect.map((result) => result.stdout.trim()),
+      const [topLevelPath, gitCommonDir] = yield* Effect.all([
+        Effect.catch(
+          execProcess("git", ["rev-parse", "--show-toplevel"]).pipe(
+            Effect.map((result) => result.stdout.trim()),
+          ),
+          () => Effect.succeed(null),
         ),
-        () => Effect.succeed(null),
-      );
+        Effect.catch(
+          execProcess("git", ["rev-parse", "--git-common-dir"]).pipe(
+            Effect.map((result) => result.stdout.trim()),
+          ),
+          () => Effect.succeed(null),
+        ),
+      ]);
+
+      return resolveMainRepoPathFromGitDirs(topLevelPath, gitCommonDir);
     }).pipe(
       Effect.mapError((error) =>
         commandError(

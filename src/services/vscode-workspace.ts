@@ -449,30 +449,30 @@ export function clearExternalAgentSessions(dbPath: string) {
   return Effect.catch(
     withDatabase(dbPath, (db) =>
       Effect.gen(function* () {
-      // Delete agent session state that references stale SSE ports
-      const placeholders = AGENT_SESSION_KEYS_TO_CLEAR.map(() => "?").join(
-        ", ",
-      );
-      const deleteResult = yield* Effect.try({
-        try: () =>
-          db
-            .prepare(`DELETE FROM ItemTable WHERE key IN (${placeholders})`)
-            .run(...AGENT_SESSION_KEYS_TO_CLEAR),
-        catch: (error) => error,
-      });
+        // Delete agent session state that references stale SSE ports
+        const placeholders = AGENT_SESSION_KEYS_TO_CLEAR.map(() => "?").join(
+          ", ",
+        );
+        const deleteResult = yield* Effect.try({
+          try: () =>
+            db
+              .prepare(`DELETE FROM ItemTable WHERE key IN (${placeholders})`)
+              .run(...AGENT_SESSION_KEYS_TO_CLEAR),
+          catch: (error) => error,
+        });
 
-      // Remove external sessions (e.g. Claude Code) from the chat session index
-      const row = yield* Effect.try({
-        try: () =>
-          db
-            .query("SELECT value FROM ItemTable WHERE key = ?")
-            .get("chat.ChatSessionStore.index") as {
-            value: string | Buffer;
-          } | null,
-        catch: (error) => error,
-      });
+        // Remove external sessions (e.g. Claude Code) from the chat session index
+        const row = yield* Effect.try({
+          try: () =>
+            db
+              .query("SELECT value FROM ItemTable WHERE key = ?")
+              .get("chat.ChatSessionStore.index") as {
+              value: string | Buffer;
+            } | null,
+          catch: (error) => error,
+        });
 
-      if (!row) return deleteResult.changes;
+        if (!row) return deleteResult.changes;
 
         let removed = 0;
         removed = yield* Effect.catch(
@@ -503,10 +503,9 @@ export function clearExternalAgentSessions(dbPath: string) {
               }
               yield* Effect.try({
                 try: () =>
-                  db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-                    JSON.stringify(data),
-                    "chat.ChatSessionStore.index",
-                  ),
+                  db
+                    .prepare("UPDATE ItemTable SET value = ? WHERE key = ?")
+                    .run(JSON.stringify(data), "chat.ChatSessionStore.index"),
                 catch: (error) => error,
               });
               return externalIds.length;

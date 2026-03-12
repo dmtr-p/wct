@@ -91,9 +91,11 @@ export const liveHooksService: HooksService = HooksService.of({
       const notificationConfig = buildHooksConfig().hooks.Notification;
       const notifyCommand = notificationConfig[0]?.hooks[0]?.command;
       if (!notifyCommand) {
-        throw commandError(
+        return yield* Effect.fail(
+          commandError(
           "config_error",
           "Failed to build notify hook command",
+          ),
         );
       }
 

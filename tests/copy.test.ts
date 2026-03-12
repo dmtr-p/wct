@@ -1,16 +1,28 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { Effect } from "effect";
-import { runBunPromise } from "../src/effect/runtime";
+import { Console, Effect } from "effect";
+import { runBunPromise, type BunServices as BunServicesType } from "../src/effect/runtime";
 import {
   copyEntries,
   detectEntryType,
   expandEntry,
 } from "../src/services/copy";
 
-function runEffect<A>(effect: Effect.Effect<A, unknown, unknown>): Promise<A> {
-  return runBunPromise(effect);
+function runEffect<A>(
+  effect: Effect.Effect<
+    A,
+    unknown,
+    BunServicesType.BunServices | Console.Console | never
+  >,
+): Promise<A> {
+  return runBunPromise(
+    Effect.provideService(
+      effect,
+      Console.Console,
+      globalThis.console,
+    ) as Effect.Effect<A, unknown, BunServicesType.BunServices>,
+  );
 }
 
 describe("detectEntryType", () => {

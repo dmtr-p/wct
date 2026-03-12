@@ -11,8 +11,8 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Effect } from "effect";
-import { runBunPromise } from "../src/effect/runtime";
+import { Console, Effect, type Effect as EffectType } from "effect";
+import { runBunPromise, type BunServices as BunServicesType } from "../src/effect/runtime";
 import {
   clearExternalAgentSessions,
   clearTerminalState,
@@ -29,8 +29,20 @@ import { createTestDb, readAllKeys } from "./helpers/sqlite-test-utils";
 
 const testStoragePath = join(tmpdir(), `wct-test-storage-${Date.now()}`);
 
-function runEffect<A>(effect: Effect.Effect<A, unknown, unknown>) {
-  return runBunPromise(effect);
+function runEffect<A>(
+  effect: EffectType.Effect<
+    A,
+    unknown,
+    BunServicesType.BunServices | Console.Console | never
+  >,
+) {
+  return runBunPromise(
+    Effect.provideService(
+      effect,
+      Console.Console,
+      globalThis.console,
+    ) as EffectType.Effect<A, unknown, BunServicesType.BunServices>,
+  );
 }
 
 describe("hash algorithm", () => {

@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { WctServices } from "../../src/effect/services";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,
@@ -54,7 +55,7 @@ export interface ServiceOverrides {
 export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   overrides: ServiceOverrides = {},
-) {
+): Effect.Effect<A, E, Exclude<R, WctServices>> {
   let provided = effect;
 
   provided = Effect.provideService(
@@ -98,5 +99,5 @@ export function withTestServices<A, E, R>(
     overrides.worktree ?? liveWorktreeService,
   );
 
-  return provided;
+  return provided as Effect.Effect<A, E, Exclude<R, WctServices>>;
 }

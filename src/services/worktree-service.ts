@@ -193,29 +193,26 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         };
       }
 
-      try {
-        if (useExisting) {
-          yield* execProcess("git", ["worktree", "add", path, branch]);
-        } else if (base) {
-          yield* execProcess("git", [
-            "worktree",
-            "add",
-            "-b",
-            branch,
-            path,
-            base,
-          ]);
-        } else {
-          yield* execProcess("git", ["worktree", "add", "-b", branch, path]);
-        }
-
-        return { _tag: "Created" as const, path };
-      } catch (error) {
-        return yield* Effect.fail(
-          commandError("worktree_error", extractShellError(error), error),
-        );
+      if (useExisting) {
+        yield* execProcess("git", ["worktree", "add", path, branch]);
+      } else if (base) {
+        yield* execProcess("git", [
+          "worktree",
+          "add",
+          "-b",
+          branch,
+          path,
+          base,
+        ]);
+      } else {
+        yield* execProcess("git", ["worktree", "add", "-b", branch, path]);
       }
+
+      return { _tag: "Created" as const, path };
     }).pipe(
+      Effect.catch((error) =>
+        Effect.fail(commandError("worktree_error", extractShellError(error), error)),
+      ),
       Effect.mapError((error) =>
         commandError(
           "worktree_error",

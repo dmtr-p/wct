@@ -169,11 +169,11 @@ function copyFiles(
       const sourcePath = join(sourceDir, file);
       const targetPath = join(targetDir, file);
 
-      try {
+      const result = yield* Effect.catch(
+        Effect.gen(function* () {
         if (!(yield* pathExists(sourcePath))) {
           yield* logger.warn(`File not found: ${file}`);
-          results.push({ file, success: false, error: "File not found" });
-          continue;
+          return { file, success: false as const, error: "File not found" };
         }
 
         const targetDirPath = dirname(targetPath);
@@ -182,12 +182,17 @@ function copyFiles(
         const content = yield* readBytes(sourcePath);
         yield* writeBytes(targetPath, content);
 
-        results.push({ file, success: true });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        yield* logger.warn(`Failed to copy ${file}: ${message}`);
-        results.push({ file, success: false, error: message });
-      }
+          return { file, success: true as const };
+        }),
+        (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          return logger.warn(`Failed to copy ${file}: ${message}`).pipe(
+            Effect.as({ file, success: false as const, error: message }),
+          );
+        },
+      );
+
+      results.push(result);
     }
 
     return results;

@@ -1,7 +1,7 @@
 import { Effect, ServiceMap } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import { runBunPromise } from "../effect/runtime";
-import type { WctServices } from "../effect/services";
+import { provideWctServices, type WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { formatShellCommand, resolveWctBin } from "../utils/bin";
@@ -544,7 +544,9 @@ export const liveTmuxService: TmuxService = TmuxService.of({
 });
 
 function provideTmuxService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return Effect.provideService(effect, TmuxService, liveTmuxService);
+  return provideWctServices(
+    Effect.provideService(effect, TmuxService, liveTmuxService),
+  );
 }
 
 export async function listSessions(): Promise<TmuxSession[] | null> {

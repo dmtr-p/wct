@@ -34,4 +34,4 @@ const program = provideBunServices(
   ),
 );
 
-BunRuntime.runMain(program as never);
+BunRuntime.runMain(program);

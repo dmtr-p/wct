@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
+import { provideWctServices } from "../src/effect/services";
 import { upCommand } from "../src/commands/up";
 import { runBunPromise } from "../src/effect/runtime";
 import {
@@ -11,8 +12,10 @@ import {
   WorktreeService,
 } from "../src/services/worktree-service";
 
-function withWorktreeService<A>(effect: Effect.Effect<A, unknown, unknown>) {
-  return Effect.provideService(effect, WorktreeService, liveWorktreeService);
+function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return provideWctServices(
+    Effect.provideService(effect, WorktreeService, liveWorktreeService),
+  );
 }
 
 interface LinkedWorktreeFixture {

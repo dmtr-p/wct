@@ -37,12 +37,6 @@ export interface VSCodeWorkspaceService {
 export const VSCodeWorkspaceService =
   ServiceMap.Service<VSCodeWorkspaceService>("wct/VSCodeWorkspaceService");
 
-const WARN_PREFIX = "\x1b[33mwarn\x1b[0m";
-
-function warnSync(message: string) {
-  console.warn(`${WARN_PREFIX} ${message}`);
-}
-
 function withDatabase<A, E, R>(
   dbPath: string,
   use: (db: Database) => Effect.Effect<A, E, R>,
@@ -423,24 +417,27 @@ const TERMINAL_KEYS_TO_CLEAR = [
   "terminal.numberOfVisibleViews",
 ];
 
-export function clearTerminalState(dbPath: string): number {
-  try {
-    const db = new Database(dbPath);
-    try {
-      const placeholders = TERMINAL_KEYS_TO_CLEAR.map(() => "?").join(", ");
-      const result = db
-        .prepare(`DELETE FROM ItemTable WHERE key IN (${placeholders})`)
-        .run(...TERMINAL_KEYS_TO_CLEAR);
-      return result.changes;
-    } finally {
-      db.close();
-    }
-  } catch (err) {
-    warnSync(
-      `Failed to clear terminal state in VS Code state DB '${dbPath}': ${String(err)}`,
-    );
-    return 0;
-  }
+export function clearTerminalState(dbPath: string) {
+  return Effect.catch(
+    withDatabase(dbPath, (db) =>
+      Effect.try({
+        try: () => {
+          const placeholders = TERMINAL_KEYS_TO_CLEAR.map(() => "?").join(", ");
+          const result = db
+            .prepare(`DELETE FROM ItemTable WHERE key IN (${placeholders})`)
+            .run(...TERMINAL_KEYS_TO_CLEAR);
+          return result.changes;
+        },
+        catch: (error) => error,
+      }),
+    ),
+    (err) =>
+      logger
+        .warn(
+          `Failed to clear terminal state in VS Code state DB '${dbPath}': ${String(err)}`,
+        )
+        .pipe(Effect.as(0)),
+  );
 }
 
 const AGENT_SESSION_KEYS_TO_CLEAR = [
@@ -448,72 +445,93 @@ const AGENT_SESSION_KEYS_TO_CLEAR = [
   "agentSessions.readDateBaseline2",
 ];
 
-export function clearExternalAgentSessions(dbPath: string): number {
-  try {
-    const db = new Database(dbPath);
-    try {
+export function clearExternalAgentSessions(dbPath: string) {
+  return Effect.catch(
+    withDatabase(dbPath, (db) =>
+      Effect.gen(function* () {
       // Delete agent session state that references stale SSE ports
       const placeholders = AGENT_SESSION_KEYS_TO_CLEAR.map(() => "?").join(
         ", ",
       );
-      const deleteResult = db
-        .prepare(`DELETE FROM ItemTable WHERE key IN (${placeholders})`)
-        .run(...AGENT_SESSION_KEYS_TO_CLEAR);
+      const deleteResult = yield* Effect.try({
+        try: () =>
+          db
+            .prepare(`DELETE FROM ItemTable WHERE key IN (${placeholders})`)
+            .run(...AGENT_SESSION_KEYS_TO_CLEAR),
+        catch: (error) => error,
+      });
 
       // Remove external sessions (e.g. Claude Code) from the chat session index
-      const row = db
-        .query("SELECT value FROM ItemTable WHERE key = ?")
-        .get("chat.ChatSessionStore.index") as {
-        value: string | Buffer;
-      } | null;
+      const row = yield* Effect.try({
+        try: () =>
+          db
+            .query("SELECT value FROM ItemTable WHERE key = ?")
+            .get("chat.ChatSessionStore.index") as {
+            value: string | Buffer;
+          } | null,
+        catch: (error) => error,
+      });
 
       if (!row) return deleteResult.changes;
 
-      let removed = 0;
-      try {
-        const text =
-          typeof row.value === "string"
-            ? row.value
-            : Buffer.from(row.value).toString("utf-8");
-        const data = JSON.parse(text);
+        let removed = 0;
+        removed = yield* Effect.catch(
+          Effect.gen(function* () {
+            const text =
+              typeof row.value === "string"
+                ? row.value
+                : Buffer.from(row.value).toString("utf-8");
+            const data = yield* Effect.try({
+              try: () => JSON.parse(text),
+              catch: (error) => error,
+            });
 
-        const externalIds: string[] = [];
-        if (data.entries) {
-          for (const [id, entry] of Object.entries(
-            data.entries as Record<string, { isExternal?: boolean }>,
-          )) {
-            if (entry.isExternal) {
-              externalIds.push(id);
+            const externalIds: string[] = [];
+            if (data.entries) {
+              for (const [id, entry] of Object.entries(
+                data.entries as Record<string, { isExternal?: boolean }>,
+              )) {
+                if (entry.isExternal) {
+                  externalIds.push(id);
+                }
+              }
             }
-          }
-        }
 
-        if (externalIds.length > 0) {
-          for (const id of externalIds) {
-            delete data.entries[id];
-          }
-          db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-            JSON.stringify(data),
-            "chat.ChatSessionStore.index",
-          );
-          removed = externalIds.length;
-        }
-      } catch (err) {
-        warnSync(
-          `Failed to process key 'chat.ChatSessionStore.index' in '${dbPath}': ${String(err)}`,
+            if (externalIds.length > 0) {
+              for (const id of externalIds) {
+                delete data.entries[id];
+              }
+              yield* Effect.try({
+                try: () =>
+                  db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
+                    JSON.stringify(data),
+                    "chat.ChatSessionStore.index",
+                  ),
+                catch: (error) => error,
+              });
+              return externalIds.length;
+            }
+
+            return 0;
+          }),
+          (err) =>
+            logger
+              .warn(
+                `Failed to process key 'chat.ChatSessionStore.index' in '${dbPath}': ${String(err)}`,
+              )
+              .pipe(Effect.as(0)),
         );
-      }
 
-      return deleteResult.changes + removed;
-    } finally {
-      db.close();
-    }
-  } catch (err) {
-    warnSync(
-      `Failed to clear external agent sessions in VS Code state DB '${dbPath}': ${String(err)}`,
-    );
-    return 0;
-  }
+        return deleteResult.changes + removed;
+      }),
+    ),
+    (err) =>
+      logger
+        .warn(
+          `Failed to clear external agent sessions in VS Code state DB '${dbPath}': ${String(err)}`,
+        )
+        .pipe(Effect.as(0)),
+  );
 }
 
 function syncWorkspaceStateImpl(
@@ -560,8 +578,8 @@ function syncWorkspaceStateImpl(
       if (yield* pathExists(dbFile)) {
         rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
         yield* filterMissingEditors(dbFile, worktreePath);
-        clearTerminalState(dbFile);
-        clearExternalAgentSessions(dbFile);
+        yield* clearTerminalState(dbFile);
+        yield* clearExternalAgentSessions(dbFile);
       }
 
       const backupDbFile = join(
@@ -572,8 +590,8 @@ function syncWorkspaceStateImpl(
       if (yield* pathExists(backupDbFile)) {
         rewriteStatePaths(backupDbFile, mainRepoPath, worktreePath);
         yield* filterMissingEditors(backupDbFile, worktreePath);
-        clearTerminalState(backupDbFile);
-        clearExternalAgentSessions(backupDbFile);
+        yield* clearTerminalState(backupDbFile);
+        yield* clearExternalAgentSessions(backupDbFile);
       }
 
       return {

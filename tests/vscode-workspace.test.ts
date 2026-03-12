@@ -761,7 +761,7 @@ describe("clearTerminalState", () => {
     }
   });
 
-  test("deletes terminal layout keys", () => {
+  test("deletes terminal layout keys", async () => {
     dbPath = join(tmpdir(), `wct-term-clear-${Date.now()}.vscdb`);
     createTestDb(
       [
@@ -781,13 +781,13 @@ describe("clearTerminalState", () => {
       dbPath,
     );
 
-    const count = clearTerminalState(dbPath);
+    const count = await runEffect(clearTerminalState(dbPath));
 
     expect(count).toBe(3);
     expect(readAllKeys(dbPath)).toEqual([]);
   });
 
-  test("preserves unrelated keys", () => {
+  test("preserves unrelated keys", async () => {
     dbPath = join(tmpdir(), `wct-term-preserve-${Date.now()}.vscdb`);
     createTestDb(
       [
@@ -800,7 +800,7 @@ describe("clearTerminalState", () => {
       dbPath,
     );
 
-    const count = clearTerminalState(dbPath);
+    const count = await runEffect(clearTerminalState(dbPath));
 
     expect(count).toBe(0);
     expect(readAllKeys(dbPath).sort()).toEqual([
@@ -813,18 +813,18 @@ describe("clearTerminalState", () => {
     dbPath = join(tmpdir(), `wct-term-corrupt-${Date.now()}.vscdb`);
     await Bun.write(dbPath, "not valid sqlite");
 
-    const count = clearTerminalState(dbPath);
+    const count = await runEffect(clearTerminalState(dbPath));
 
     expect(count).toBe(0);
   });
 
-  test("returns 0 when no terminal keys exist", () => {
+  test("returns 0 when no terminal keys exist", async () => {
     dbPath = join(tmpdir(), `wct-term-empty-${Date.now()}.vscdb`);
     const db = new Database(dbPath);
     db.run("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)");
     db.close();
 
-    const count = clearTerminalState(dbPath);
+    const count = await runEffect(clearTerminalState(dbPath));
 
     expect(count).toBe(0);
   });
@@ -848,7 +848,7 @@ describe("clearExternalAgentSessions", () => {
     }
   });
 
-  test("deletes agent session state keys", () => {
+  test("deletes agent session state keys", async () => {
     dbPath = join(tmpdir(), `wct-agent-clear-${Date.now()}.vscdb`);
     createTestDb(
       [
@@ -862,12 +862,12 @@ describe("clearExternalAgentSessions", () => {
       dbPath,
     );
 
-    clearExternalAgentSessions(dbPath);
+    await runEffect(clearExternalAgentSessions(dbPath));
 
     expect(readAllKeys(dbPath).sort()).toEqual(["unrelated.key"]);
   });
 
-  test("removes external sessions from chat session index", () => {
+  test("removes external sessions from chat session index", async () => {
     dbPath = join(tmpdir(), `wct-agent-chat-${Date.now()}.vscdb`);
     const sessionIndex = {
       version: 1,
@@ -899,7 +899,7 @@ describe("clearExternalAgentSessions", () => {
       dbPath,
     );
 
-    clearExternalAgentSessions(dbPath);
+    await runEffect(clearExternalAgentSessions(dbPath));
 
     const result = readJson("chat.ChatSessionStore.index") as {
       entries: Record<string, unknown>;
@@ -907,7 +907,7 @@ describe("clearExternalAgentSessions", () => {
     expect(Object.keys(result.entries)).toEqual(["copilot-session"]);
   });
 
-  test("preserves chat index when no external sessions", () => {
+  test("preserves chat index when no external sessions", async () => {
     dbPath = join(tmpdir(), `wct-agent-noext-${Date.now()}.vscdb`);
     const sessionIndex = {
       version: 1,
@@ -928,7 +928,7 @@ describe("clearExternalAgentSessions", () => {
       dbPath,
     );
 
-    clearExternalAgentSessions(dbPath);
+    await runEffect(clearExternalAgentSessions(dbPath));
 
     const result = readJson("chat.ChatSessionStore.index") as {
       entries: Record<string, unknown>;
@@ -936,7 +936,7 @@ describe("clearExternalAgentSessions", () => {
     expect(Object.keys(result.entries)).toEqual(["copilot-session"]);
   });
 
-  test("keeps delete count when chat session index is malformed", () => {
+  test("keeps delete count when chat session index is malformed", async () => {
     dbPath = join(tmpdir(), `wct-agent-bad-chat-${Date.now()}.vscdb`);
     createTestDb(
       [
@@ -950,7 +950,7 @@ describe("clearExternalAgentSessions", () => {
       dbPath,
     );
 
-    const count = clearExternalAgentSessions(dbPath);
+    const count = await runEffect(clearExternalAgentSessions(dbPath));
 
     expect(count).toBe(2);
     expect(readAllKeys(dbPath).sort()).toEqual(["chat.ChatSessionStore.index"]);
@@ -960,7 +960,7 @@ describe("clearExternalAgentSessions", () => {
     dbPath = join(tmpdir(), `wct-agent-corrupt-${Date.now()}.vscdb`);
     await Bun.write(dbPath, "not valid sqlite");
 
-    const count = clearExternalAgentSessions(dbPath);
+    const count = await runEffect(clearExternalAgentSessions(dbPath));
 
     expect(count).toBe(0);
   });

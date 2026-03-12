@@ -75,7 +75,11 @@ class Logger extends ServiceMap.Service<Logger>()("Logger", {
 **Key differences:**
 - `effect:` → `make:`
 - `dependencies:` removed — use `Layer.provide()` explicitly
-- Layer naming: use `layer` instead of `Default` or `Live`
+- Generic upstream guidance often uses `layer` instead of `Default` or `Live`
+- Repo convention here is more specific:
+  - for service classes such as `Logger extends ServiceMap.Service(...)`, `static readonly layer` is the preferred name
+  - for concrete service values provided from plain objects, keep the existing `live<ServiceName>Service` style, for example `liveGitHubService`, `liveTmuxService`, and `liveWorktreeService`
+- Do not rename the current `live*Service` values just to match upstream examples; the important part is consistent Effect provisioning, not forcing every concrete implementation to be named `layer`
 
 ### Accessors removed
 

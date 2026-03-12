@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
-import { provideWctServices } from "../src/effect/services";
 import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
 import {
   liveWorktreeService,
   parseWorktreeListOutput,

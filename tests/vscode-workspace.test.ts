@@ -12,7 +12,10 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Console, Effect, type Effect as EffectType } from "effect";
-import { runBunPromise, type BunServices as BunServicesType } from "../src/effect/runtime";
+import {
+  type BunServices as BunServicesType,
+  runBunPromise,
+} from "../src/effect/runtime";
 import {
   clearExternalAgentSessions,
   clearTerminalState,

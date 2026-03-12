@@ -211,7 +211,9 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
       return { _tag: "Created" as const, path };
     }).pipe(
       Effect.catch((error) =>
-        Effect.fail(commandError("worktree_error", extractShellError(error), error)),
+        Effect.fail(
+          commandError("worktree_error", extractShellError(error), error),
+        ),
       ),
       Effect.mapError((error) =>
         commandError(

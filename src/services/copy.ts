@@ -171,24 +171,24 @@ function copyFiles(
 
       const result = yield* Effect.catch(
         Effect.gen(function* () {
-        if (!(yield* pathExists(sourcePath))) {
-          yield* logger.warn(`File not found: ${file}`);
-          return { file, success: false as const, error: "File not found" };
-        }
+          if (!(yield* pathExists(sourcePath))) {
+            yield* logger.warn(`File not found: ${file}`);
+            return { file, success: false as const, error: "File not found" };
+          }
 
-        const targetDirPath = dirname(targetPath);
-        yield* ensureDirectory(targetDirPath);
+          const targetDirPath = dirname(targetPath);
+          yield* ensureDirectory(targetDirPath);
 
-        const content = yield* readBytes(sourcePath);
-        yield* writeBytes(targetPath, content);
+          const content = yield* readBytes(sourcePath);
+          yield* writeBytes(targetPath, content);
 
           return { file, success: true as const };
         }),
         (err) => {
           const message = err instanceof Error ? err.message : String(err);
-          return logger.warn(`Failed to copy ${file}: ${message}`).pipe(
-            Effect.as({ file, success: false as const, error: message }),
-          );
+          return logger
+            .warn(`Failed to copy ${file}: ${message}`)
+            .pipe(Effect.as({ file, success: false as const, error: message }));
         },
       );
 

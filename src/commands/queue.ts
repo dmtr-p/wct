@@ -1,15 +1,16 @@
 import { createInterface } from "node:readline";
-import { $ } from "bun";
-import type { QueueItem } from "../services/queue";
+import { Console, Effect } from "effect";
+import type { WctServices } from "../effect/services";
+import { commandError, type WctError } from "../errors";
+import { execProcess, getProcessErrorMessage } from "../services/process";
 import {
-  clearAll,
-  formatCount,
-  listItems,
-  removeItem,
-} from "../services/queue";
+  type ListItemsOptions,
+  type QueueItem,
+  QueueStorage,
+  type QueueStorageService,
+} from "../services/queue-storage";
 import * as logger from "../utils/logger";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "queue",
@@ -74,81 +75,125 @@ function formatAge(timestamp: number): string {
   return `${hours}h ago`;
 }
 
+export function formatCount(count: number): string {
+  if (count === 0) return "";
+  return `\u{1F514} ${count}`;
+}
+
 export const queueInternals = {
-  async jumpToItem(item: QueueItem): Promise<boolean> {
-    try {
-      await $`tmux switch-client -t =${item.session}`.quiet();
-      await $`tmux select-pane -t ${item.pane}`.quiet();
-      removeItem(item.id);
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn(
-        `Failed to jump to queue item session='${item.session}' pane='${item.pane}': ${message}`,
-      );
-      return false;
-    }
-  },
+  jumpToItem: (
+    queueStorage: QueueStorageService,
+    item: QueueItem,
+  ): Effect.Effect<boolean, never, WctServices> =>
+    Effect.catch(
+      Effect.gen(function* () {
+        yield* Effect.mapError(
+          execProcess("tmux", ["switch-client", "-t", `=${item.session}`]),
+          (error) =>
+            commandError(
+              "queue_error",
+              `Failed to switch to session '${item.session}'`,
+              error,
+            ),
+        );
+        yield* Effect.mapError(
+          execProcess("tmux", ["select-pane", "-t", item.pane]),
+          (error) =>
+            commandError(
+              "queue_error",
+              `Failed to select pane '${item.pane}'`,
+              error,
+            ),
+        );
+        yield* queueStorage.removeItem(item.id);
+        return true;
+      }),
+      (error) =>
+        logger
+          .warn(
+            `Failed to jump to queue item session='${item.session}' pane='${item.pane}': ${getProcessErrorMessage(error)}`,
+          )
+          .pipe(Effect.as(false)),
+    ),
 };
 
-async function interactiveMode(): Promise<CommandResult> {
-  const items = await listItems();
+function listQueueItems(
+  queueStorage: QueueStorageService,
+  options: ListItemsOptions = {},
+): Effect.Effect<QueueItem[], WctError, WctServices> {
+  return queueStorage.listItems(options);
+}
 
-  if (items.length === 0) {
+function interactiveMode(
+  queueStorage: QueueStorageService,
+): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const items = yield* listQueueItems(queueStorage);
+
+    if (items.length === 0) {
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            rl.question(
+              "\n  No pending notifications. Press enter to close.\n",
+              () => {
+                rl.close();
+                resolve();
+              },
+            );
+          }),
+      );
+      return;
+    }
+
+    const render = () => {
+      console.log("\n  Agent Queue\n");
+      for (let i = 0; i < items.length; i++) {
+        // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
+        const item = items[i]!;
+        const num = String(i + 1).padStart(2);
+        const type = `[${formatType(item.type)}]`.padEnd(14);
+        const branch = truncate(item.branch, 16).padEnd(16);
+        const msg = truncate(item.message, 40);
+        console.log(`  ${num}  ${type}${branch}${msg}`);
+      }
+      console.log("\n  [number] jump  [d+number] dismiss  [c] clear  [q] quit");
+    };
+
+    render();
+
     const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });
-    await new Promise<void>((resolve) => {
-      rl.question(
-        "\n  No pending notifications. Press enter to close.\n",
-        () => {
-          rl.close();
-          resolve();
-        },
+
+    const readInput = () =>
+      Effect.promise(
+        () =>
+          new Promise<string>((resolve) => {
+            rl.question("  > ", resolve);
+          }),
       );
-    });
-    return ok();
-  }
 
-  const render = () => {
-    console.log("\n  Agent Queue\n");
-    for (let i = 0; i < items.length; i++) {
-      // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
-      const item = items[i]!;
-      const num = String(i + 1).padStart(2);
-      const type = `[${formatType(item.type)}]`.padEnd(14);
-      const branch = truncate(item.branch, 16).padEnd(16);
-      const msg = truncate(item.message, 40);
-      console.log(`  ${num}  ${type}${branch}${msg}`);
-    }
-    console.log("\n  [number] jump  [d+number] dismiss  [c] clear  [q] quit");
-  };
-
-  render();
-
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise<CommandResult>((resolve) => {
-    const prompt = () => {
-      rl.question("  > ", async (input) => {
+    const prompt = (): Effect.Effect<void, WctError, WctServices> =>
+      Effect.gen(function* () {
+        const input = yield* readInput();
         const trimmed = input.trim().toLowerCase();
 
         if (trimmed === "q" || trimmed === "") {
           rl.close();
-          resolve(ok());
           return;
         }
 
         if (trimmed === "c") {
-          clearAll();
+          yield* queueStorage.clearAll();
           items.length = 0;
-          console.log("  Cleared all items.");
+          yield* Console.log("  Cleared all items.");
           rl.close();
-          resolve(ok());
           return;
         }
 
@@ -157,18 +202,16 @@ async function interactiveMode(): Promise<CommandResult> {
           if (num >= 1 && num <= items.length) {
             // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
             const item = items[num - 1]!;
-            removeItem(item.id);
+            yield* queueStorage.removeItem(item.id);
             items.splice(num - 1, 1);
-            console.log(`  Dismissed: ${item.branch}`);
+            yield* Console.log(`  Dismissed: ${item.branch}`);
             if (items.length === 0) {
-              console.log("  Queue empty.");
+              yield* Console.log("  Queue empty.");
               rl.close();
-              resolve(ok());
               return;
             }
             render();
-            prompt();
-            return;
+            return yield* prompt();
           }
         }
 
@@ -178,82 +221,101 @@ async function interactiveMode(): Promise<CommandResult> {
             // biome-ignore lint/style/noNonNullAssertion: guarded by bounds check
             const item = items[num - 1]!;
             rl.close();
-            const jumped = await queueInternals.jumpToItem(item);
+            const jumped = yield* queueInternals.jumpToItem(queueStorage, item);
             if (!jumped) {
-              console.log(`  Failed to jump to ${item.session}`);
+              yield* Console.log(`  Failed to jump to ${item.session}`);
             }
-            resolve(ok());
             return;
           }
         }
 
-        console.log("  Invalid input.");
-        prompt();
+        yield* Console.log("  Invalid input.");
+        return yield* prompt();
       });
-    };
 
-    prompt();
+    yield* prompt();
   });
 }
 
-export async function queueCommand(
+export function queueCommand(
   options: QueueOptions,
-): Promise<CommandResult> {
-  if (options.count) {
-    const output = formatCount(
-      (await listItems({ validatePanes: false, logWarnings: false })).length,
-    );
-    if (output) {
-      process.stdout.write(output);
-    }
-    return ok();
-  }
+): Effect.Effect<void, WctError, WctServices> {
+  return QueueStorage.use((queueStorage) =>
+    Effect.gen(function* () {
+      if (options.count) {
+        const items = yield* listQueueItems(queueStorage, {
+          validatePanes: false,
+          logWarnings: false,
+        });
+        const output = formatCount(items.length);
+        if (output) {
+          yield* Effect.sync(() => {
+            process.stdout.write(output);
+          });
+        }
+        return;
+      }
 
-  if (options.jump) {
-    const items = await listItems();
-    const item = items.find((i) => i.id === options.jump);
-    if (!item) {
-      return err(`Queue item '${options.jump}' not found`, "queue_error");
-    }
-    const jumped = await queueInternals.jumpToItem(item);
-    if (!jumped) {
-      return err(`Failed to jump to session '${item.session}'`, "queue_error");
-    }
-    return ok();
-  }
+      if (options.jump) {
+        const items = yield* listQueueItems(queueStorage);
+        const item = items.find((i) => i.id === options.jump);
+        if (!item) {
+          return yield* Effect.fail(
+            commandError(
+              "queue_error",
+              `Queue item '${options.jump}' not found`,
+            ),
+          );
+        }
+        const jumped = yield* queueInternals.jumpToItem(queueStorage, item);
+        if (!jumped) {
+          return yield* Effect.fail(
+            commandError(
+              "queue_error",
+              `Failed to jump to session '${item.session}'`,
+            ),
+          );
+        }
+        return;
+      }
 
-  if (options.dismiss) {
-    const removed = removeItem(options.dismiss);
-    if (!removed) {
-      return err(`Queue item '${options.dismiss}' not found`, "queue_error");
-    }
-    logger.success("Item dismissed");
-    return ok();
-  }
+      const dismissId = options.dismiss;
+      if (dismissId) {
+        const removed = yield* queueStorage.removeItem(dismissId);
+        if (!removed) {
+          return yield* Effect.fail(
+            commandError("queue_error", `Queue item '${dismissId}' not found`),
+          );
+        }
+        yield* logger.success("Item dismissed");
+        return;
+      }
 
-  if (options.clear) {
-    const count = clearAll();
-    logger.success(`Cleared ${count} items`);
-    return ok();
-  }
+      if (options.clear) {
+        const count = yield* queueStorage.clearAll();
+        yield* logger.success(`Cleared ${count} items`);
+        return;
+      }
 
-  if (options.interactive) {
-    return interactiveMode();
-  }
+      if (options.interactive) {
+        yield* interactiveMode(queueStorage);
+        return;
+      }
 
-  // Default: list items
-  const items = await listItems();
-  if (items.length === 0) {
-    logger.info("No pending notifications");
-    return ok();
-  }
+      const items = yield* listQueueItems(queueStorage);
+      if (items.length === 0) {
+        yield* logger.info("No pending notifications");
+        return;
+      }
 
-  for (const item of items) {
-    const type = `[${formatType(item.type)}]`.padEnd(14);
-    const branch = item.branch.padEnd(20);
-    const age = formatAge(item.timestamp);
-    console.log(`  ${item.id}  ${type}${branch}${age}  ${item.message}`);
-  }
-
-  return ok();
+      for (const item of items) {
+        const type = `[${formatType(item.type)}]`.padEnd(14);
+        const branch = item.branch.padEnd(20);
+        const age = formatAge(item.timestamp);
+        yield* Console.log(
+          `  ${item.id}  ${type}${branch}${age}  ${item.message}`,
+        );
+      }
+    }),
+  );
 }

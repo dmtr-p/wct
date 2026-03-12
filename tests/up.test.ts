@@ -3,12 +3,17 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { Effect } from "effect";
 import { upCommand } from "../src/commands/up";
+import { runBunPromise } from "../src/effect/runtime";
 import {
-  getCurrentBranch,
-  getMainRepoPath,
-  getMainWorktreePath,
-} from "../src/services/worktree";
+  liveWorktreeService,
+  WorktreeService,
+} from "../src/services/worktree-service";
+
+function withWorktreeService<A>(effect: Effect.Effect<A, unknown, unknown>) {
+  return Effect.provideService(effect, WorktreeService, liveWorktreeService);
+}
 
 interface LinkedWorktreeFixture {
   repoDir: string;
@@ -62,7 +67,11 @@ describe("getCurrentBranch", () => {
       await $`git commit --allow-empty -m "initial"`.quiet().cwd(tempDir);
 
       process.chdir(tempDir);
-      const branch = await getCurrentBranch();
+      const branch = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getCurrentBranch()),
+        ),
+      );
       expect(branch).toBe("test-branch");
     } finally {
       process.chdir(originalDir);
@@ -84,7 +93,11 @@ describe("getCurrentBranch", () => {
       await $`git checkout ${sha.trim()}`.quiet().cwd(tempDir);
 
       process.chdir(tempDir);
-      const branch = await getCurrentBranch();
+      const branch = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getCurrentBranch()),
+        ),
+      );
       expect(branch).toBeNull();
     } finally {
       process.chdir(originalDir);
@@ -113,14 +126,22 @@ describe("getMainWorktreePath", () => {
 
   test("returns main repo path when run from main repo", async () => {
     process.chdir(repoDir);
-    const result = await getMainWorktreePath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainWorktreePath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 
   test("returns main repo path when run from a worktree", async () => {
     const wtPath = join(worktreeDir, "feature-branch");
     process.chdir(wtPath);
-    const result = await getMainWorktreePath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainWorktreePath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 });
@@ -145,14 +166,22 @@ describe("getMainRepoPath", () => {
 
   test("returns main repo path when run from main repo", async () => {
     process.chdir(repoDir);
-    const result = await getMainRepoPath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainRepoPath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 
   test("returns main repo path when run from a worktree", async () => {
     const wtPath = join(worktreeDir, "feature-branch");
     process.chdir(wtPath);
-    const result = await getMainRepoPath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainRepoPath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 });

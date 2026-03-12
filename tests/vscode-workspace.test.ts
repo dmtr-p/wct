@@ -11,6 +11,8 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Effect } from "effect";
+import { runBunPromise } from "../src/effect/runtime";
 import {
   clearExternalAgentSessions,
   clearTerminalState,
@@ -26,6 +28,10 @@ import {
 import { createTestDb, readAllKeys } from "./helpers/sqlite-test-utils";
 
 const testStoragePath = join(tmpdir(), `wct-test-storage-${Date.now()}`);
+
+function runEffect<A>(effect: Effect.Effect<A, unknown, unknown>) {
+  return runBunPromise(effect);
+}
 
 describe("hash algorithm", () => {
   test("MD5 test vector matches VS Code", () => {
@@ -59,14 +65,14 @@ describe("getVSCodeStoragePath", () => {
 
 describe("computeWorkspaceId", () => {
   test("returns 32-char hex string", async () => {
-    const id = await computeWorkspaceId(tmpdir());
+    const id = await runEffect(computeWorkspaceId(tmpdir()));
     expect(id).toHaveLength(32);
     expect(id).toMatch(/^[0-9a-f]{32}$/);
   });
 
   test("is deterministic for same folder", async () => {
-    const id1 = await computeWorkspaceId(tmpdir());
-    const id2 = await computeWorkspaceId(tmpdir());
+    const id1 = await runEffect(computeWorkspaceId(tmpdir()));
+    const id2 = await runEffect(computeWorkspaceId(tmpdir()));
     expect(id1).toBe(id2);
   });
 
@@ -76,8 +82,8 @@ describe("computeWorkspaceId", () => {
     await mkdir(dir1, { recursive: true });
     await mkdir(dir2, { recursive: true });
     try {
-      const id1 = await computeWorkspaceId(dir1);
-      const id2 = await computeWorkspaceId(dir2);
+      const id1 = await runEffect(computeWorkspaceId(dir1));
+      const id2 = await runEffect(computeWorkspaceId(dir2));
       expect(id1).not.toBe(id2);
     } finally {
       await rm(dir1, { recursive: true, force: true });
@@ -87,7 +93,7 @@ describe("computeWorkspaceId", () => {
 
   test("throws for nonexistent path", async () => {
     await expect(
-      computeWorkspaceId("/nonexistent/path/that/does/not/exist"),
+      runEffect(computeWorkspaceId("/nonexistent/path/that/does/not/exist")),
     ).rejects.toThrow();
   });
 });
@@ -104,7 +110,9 @@ describe("workspaceExists", () => {
   });
 
   test("returns false for nonexistent workspace", async () => {
-    const exists = await workspaceExists("nonexistent-workspace-id-12345");
+    const exists = await runEffect(
+      workspaceExists("nonexistent-workspace-id-12345"),
+    );
     expect(exists).toBe(false);
   });
 
@@ -113,10 +121,22 @@ describe("workspaceExists", () => {
     const testDir = join(testStoragePath, testId);
     await mkdir(testDir, { recursive: true });
     try {
-      const exists = await workspaceExists(testId);
+      const exists = await runEffect(workspaceExists(testId));
       expect(exists).toBe(true);
     } finally {
       await rm(testDir, { recursive: true, force: true });
+    }
+  });
+
+  test("returns false for an existing non-directory entry", async () => {
+    const testId = `wct-test-file-${Date.now()}`;
+    const testFile = join(testStoragePath, testId);
+    await Bun.write(testFile, "stale");
+    try {
+      const exists = await runEffect(workspaceExists(testId));
+      expect(exists).toBe(false);
+    } finally {
+      await rm(testFile, { force: true });
     }
   });
 });
@@ -156,7 +176,7 @@ describe("copyWorkspaceStorage", () => {
       '{"folder":"file:///old"}',
     );
 
-    await copyWorkspaceStorage(testSourceId, testTargetId);
+    await runEffect(copyWorkspaceStorage(testSourceId, testTargetId));
 
     const targetDir = join(copyStoragePath, testTargetId);
     const stateFile = Bun.file(join(targetDir, "state.vscdb"));
@@ -191,7 +211,7 @@ describe("createWorkspaceJson", () => {
 
   test("writes correct folder URI format", async () => {
     await mkdir(join(wsJsonStoragePath, testId), { recursive: true });
-    await createWorkspaceJson(testId, "/Users/test/my-worktree");
+    await runEffect(createWorkspaceJson(testId, "/Users/test/my-worktree"));
 
     const content = await Bun.file(
       join(wsJsonStoragePath, testId, "workspace.json"),
@@ -241,7 +261,7 @@ describe("rewriteStatePaths", () => {
 
     expect(count).toBe(1);
     const rows = readAllRows();
-    expect(rows[0].value).toBe('{"uri":"file:///new/worktree/src/index.ts"}');
+    expect(rows[0]?.value).toBe('{"uri":"file:///new/worktree/src/index.ts"}');
   });
 
   test("rewrites URL-encoded paths", () => {
@@ -257,7 +277,7 @@ describe("rewriteStatePaths", () => {
 
     expect(count).toBe(1);
     const rows = readAllRows();
-    expect(rows[0].value).toBe("git:?path=%2Fnew%2Fworktree%2Ffile.ts");
+    expect(rows[0]?.value).toBe("git:?path=%2Fnew%2Fworktree%2Ffile.ts");
   });
 
   test("leaves unrelated rows untouched", () => {
@@ -268,7 +288,7 @@ describe("rewriteStatePaths", () => {
 
     expect(count).toBe(0);
     const rows = readAllRows();
-    expect(rows[0].value).toBe('{"setting":"value"}');
+    expect(rows[0]?.value).toBe('{"setting":"value"}');
   });
 
   test("returns correct count of modified rows", () => {
@@ -290,7 +310,7 @@ describe("syncWorkspaceState", () => {
     const tmpDir = join(tmpdir(), `wct-test-sync-${Date.now()}`);
     await mkdir(tmpDir, { recursive: true });
     try {
-      const result = await syncWorkspaceState(tmpDir, tmpDir);
+      const result = await runEffect(syncWorkspaceState(tmpDir, tmpDir));
       // Main workspace won't exist in VS Code storage for a temp dir
       expect(result.success).toBe(false);
       expect(result.error).toContain("not found");
@@ -401,7 +421,7 @@ describe("filterMissingEditors", () => {
     await Bun.write(tmpFile, "");
     try {
       createEditorPartDb(makeLeafState([makeFileEditor(tmpFile)]));
-      const count = await filterMissingEditors(dbPath, "/worktree");
+      const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
       expect(count).toBe(0);
       const state = readEditorPartState();
       const root = (state.serializedGrid as Record<string, unknown>)
@@ -416,7 +436,7 @@ describe("filterMissingEditors", () => {
   test("removes editors whose files don't exist", async () => {
     dbPath = join(tmpdir(), `wct-filter-missing-${Date.now()}.vscdb`);
     createEditorPartDb(makeLeafState([makeFileEditor("/nonexistent/file.ts")]));
-    const count = await filterMissingEditors(dbPath, "/worktree");
+    const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
     expect(count).toBe(1);
     const state = readEditorPartState();
     const root = (state.serializedGrid as Record<string, unknown>)
@@ -444,7 +464,7 @@ describe("filterMissingEditors", () => {
           [2, 0, 1],
         ),
       );
-      await filterMissingEditors(dbPath, "/worktree");
+      await runEffect(filterMissingEditors(dbPath, "/worktree"));
       const state = readEditorPartState();
       const root = (state.serializedGrid as Record<string, unknown>)
         .root as Record<string, unknown>;
@@ -470,7 +490,7 @@ describe("filterMissingEditors", () => {
           1,
         ),
       );
-      await filterMissingEditors(dbPath, "/worktree");
+      await runEffect(filterMissingEditors(dbPath, "/worktree"));
       const state = readEditorPartState();
       const root = (state.serializedGrid as Record<string, unknown>)
         .root as Record<string, unknown>;
@@ -498,7 +518,7 @@ describe("filterMissingEditors", () => {
           2,
         ),
       );
-      await filterMissingEditors(dbPath, "/worktree");
+      await runEffect(filterMissingEditors(dbPath, "/worktree"));
       const state = readEditorPartState();
       const root = (state.serializedGrid as Record<string, unknown>)
         .root as Record<string, unknown>;
@@ -524,7 +544,7 @@ describe("filterMissingEditors", () => {
       const group = root.data as Record<string, unknown>;
       group.sticky = 2;
       createEditorPartDb(leafState);
-      await filterMissingEditors(dbPath, "/worktree");
+      await runEffect(filterMissingEditors(dbPath, "/worktree"));
       const state = readEditorPartState();
       const resultRoot = (state.serializedGrid as Record<string, unknown>)
         .root as Record<string, unknown>;
@@ -538,7 +558,7 @@ describe("filterMissingEditors", () => {
   test("leaves non-file editors untouched", async () => {
     dbPath = join(tmpdir(), `wct-filter-nonfile-${Date.now()}.vscdb`);
     createEditorPartDb(makeLeafState([makeNonFileEditor()]));
-    const count = await filterMissingEditors(dbPath, "/worktree");
+    const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
     expect(count).toBe(0);
     const state = readEditorPartState();
     const root = (state.serializedGrid as Record<string, unknown>)
@@ -582,18 +602,18 @@ describe("filterMissingEditors", () => {
         mostRecentActiveGroups: [1, 2],
       };
       createEditorPartDb(branchState);
-      const count = await filterMissingEditors(dbPath, "/worktree");
+      const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
       expect(count).toBe(1);
       const state = readEditorPartState();
       const root = (state.serializedGrid as Record<string, unknown>)
         .root as Record<string, unknown>;
       const leaves = root.data as Record<string, unknown>[];
       expect(
-        ((leaves[0].data as Record<string, unknown>).editors as unknown[])
+        ((leaves[0]?.data as Record<string, unknown>).editors as unknown[])
           .length,
       ).toBe(1);
       expect(
-        ((leaves[1].data as Record<string, unknown>).editors as unknown[])
+        ((leaves[1]?.data as Record<string, unknown>).editors as unknown[])
           .length,
       ).toBe(0);
     } finally {
@@ -604,7 +624,7 @@ describe("filterMissingEditors", () => {
   test("returns 0 on corrupted database file", async () => {
     dbPath = join(tmpdir(), `wct-filter-corrupt-${Date.now()}.vscdb`);
     await Bun.write(dbPath, "not valid sqlite");
-    const count = await filterMissingEditors(dbPath, "/worktree");
+    const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
     expect(count).toBe(0);
   });
 
@@ -613,7 +633,7 @@ describe("filterMissingEditors", () => {
     const db = new Database(dbPath);
     db.run("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)");
     db.close();
-    const count = await filterMissingEditors(dbPath, "/worktree");
+    const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
     expect(count).toBe(0);
   });
 
@@ -632,7 +652,7 @@ describe("filterMissingEditors", () => {
     );
     db.close();
 
-    const count = await filterMissingEditors(dbPath, "/worktree");
+    const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
     expect(count).toBe(1);
 
     const db2 = new Database(dbPath);
@@ -697,7 +717,7 @@ describe("filterMissingEditors", () => {
       );
       db.close();
 
-      const count = await filterMissingEditors(dbPath, "/worktree");
+      const count = await runEffect(filterMissingEditors(dbPath, "/worktree"));
       expect(count).toBe(2);
 
       const db2 = new Database(dbPath);

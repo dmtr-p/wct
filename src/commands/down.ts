@@ -1,41 +1,48 @@
 import { basename } from "node:path";
-import { removeItemsBySession } from "../services/queue";
-import {
-  formatSessionName,
-  killSession,
-  sessionExists,
-} from "../services/tmux";
-import { isGitRepo } from "../services/worktree";
+import { Effect } from "effect";
+import { commandError, toWctError } from "../errors";
+import { QueueStorage } from "../services/queue-storage";
+import { formatSessionName, TmuxService } from "../services/tmux";
+import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "down",
   description: "Kill tmux session for current directory",
 };
 
-export async function downCommand(): Promise<CommandResult> {
-  if (!(await isGitRepo())) {
-    return err("Not a git repository", "not_git_repo");
-  }
+export function downCommand() {
+  return Effect.gen(function* () {
+    const isRepo = yield* WorktreeService.use((service) => service.isGitRepo());
+    if (!isRepo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
+      );
+    }
 
-  const cwd = process.cwd();
-  const sessionName = formatSessionName(basename(cwd));
+    const cwd = process.cwd();
+    const sessionName = formatSessionName(basename(cwd));
 
-  if (!(await sessionExists(sessionName))) {
-    logger.warn(`No tmux session '${sessionName}' found`);
-    return ok();
-  }
+    const exists = yield* TmuxService.use((service) =>
+      service.sessionExists(sessionName),
+    );
+    if (!exists) {
+      yield* logger.warn(`No tmux session '${sessionName}' found`);
+      return;
+    }
 
-  logger.info(`Killing tmux session '${sessionName}'...`);
-  const result = await killSession(sessionName);
+    yield* logger.info(`Killing tmux session '${sessionName}'...`);
 
-  if (result.success) {
-    removeItemsBySession(sessionName);
-    logger.success(`Killed tmux session '${sessionName}'`);
-    return ok();
-  } else {
-    return err(`Failed to kill tmux session: ${result.error}`, "tmux_error");
-  }
+    yield* TmuxService.use((service) => service.killSession(sessionName));
+
+    yield* logger.success(`Killed tmux session '${sessionName}'`);
+    yield* Effect.catch(
+      QueueStorage.use((service) => service.removeItemsBySession(sessionName)),
+      (error) =>
+        logger.warn(
+          `Failed to clean queue entries for session '${sessionName}': ${toWctError(error).message}`,
+        ),
+    );
+  });
 }

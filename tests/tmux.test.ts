@@ -46,17 +46,17 @@ myapp-fix-login:0:1`;
 
     expect(sessions).toHaveLength(3);
 
-    expect(sessions[0].name).toBe("main");
-    expect(sessions[0].attached).toBe(false);
-    expect(sessions[0].windows).toBe(3);
+    expect(sessions[0]?.name).toBe("main");
+    expect(sessions[0]?.attached).toBe(false);
+    expect(sessions[0]?.windows).toBe(3);
 
-    expect(sessions[1].name).toBe("myapp-feature-auth");
-    expect(sessions[1].attached).toBe(true);
-    expect(sessions[1].windows).toBe(2);
+    expect(sessions[1]?.name).toBe("myapp-feature-auth");
+    expect(sessions[1]?.attached).toBe(true);
+    expect(sessions[1]?.windows).toBe(2);
 
-    expect(sessions[2].name).toBe("myapp-fix-login");
-    expect(sessions[2].attached).toBe(false);
-    expect(sessions[2].windows).toBe(1);
+    expect(sessions[2]?.name).toBe("myapp-fix-login");
+    expect(sessions[2]?.attached).toBe(false);
+    expect(sessions[2]?.windows).toBe(1);
   });
 
   test("handles empty session list", () => {
@@ -344,8 +344,8 @@ describe("buildWindowsPaneCommands", () => {
 
     const newWindowCmds = commands.filter((c) => c.type === "new-window");
     expect(newWindowCmds).toHaveLength(2);
-    expect(newWindowCmds[0].args).toContain("shell");
-    expect(newWindowCmds[1].args).toContain("test");
+    expect(newWindowCmds[0]?.args).toContain("shell");
+    expect(newWindowCmds[1]?.args).toContain("test");
 
     // Last command should select first window
     expect(commands[commands.length - 1]).toEqual({
@@ -371,7 +371,7 @@ describe("buildWindowsPaneCommands", () => {
     // Second window should be created
     const newWindowCmds = commands.filter((c) => c.type === "new-window");
     expect(newWindowCmds).toHaveLength(1);
-    expect(newWindowCmds[0].args).toContain("shell");
+    expect(newWindowCmds[0]?.args).toContain("shell");
   });
 
   test("handles empty windows array", () => {
@@ -414,7 +414,7 @@ describe("buildWindowsPaneCommands", () => {
     // First pane has no command, second does
     const sendKeysCmds = commands.filter((c) => c.type === "send-keys");
     expect(sendKeysCmds).toHaveLength(1);
-    expect(sendKeysCmds[0].args).toContain("bun run watch");
+    expect(sendKeysCmds[0]?.args).toContain("bun run watch");
   });
 
   test("defaults to horizontal split when not specified", () => {

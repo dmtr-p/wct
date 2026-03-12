@@ -1,4 +1,7 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   DEFAULT_CONFIG,
   expandTilde,
@@ -7,6 +10,10 @@ import {
   slugifyBranch,
 } from "../src/config/loader";
 import { resolveConfig, validateConfig } from "../src/config/validator";
+
+function expectValidationError(errors: string[], expected: string): void {
+  expect(errors.some((error) => error.includes(expected))).toBe(true);
+}
 
 describe("validateConfig", () => {
   test("accepts valid minimal config", () => {
@@ -43,25 +50,28 @@ describe("validateConfig", () => {
   test("rejects non-object config", () => {
     const result = validateConfig("not an object");
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Config must be an object");
+    expectValidationError(
+      result.errors,
+      'Expected object, got "not an object"',
+    );
   });
 
   test("rejects invalid version type", () => {
     const result = validateConfig({ version: "1" });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("version must be a number");
+    expectValidationError(result.errors, "version: Expected number");
   });
 
   test("rejects invalid worktree_dir type", () => {
     const result = validateConfig({ worktree_dir: 123 });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("worktree_dir must be a string");
+    expectValidationError(result.errors, "worktree_dir: Expected string");
   });
 
   test("rejects invalid copy array items", () => {
     const result = validateConfig({ copy: [".env", 123, ".env.local"] });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("copy[1] must be a string");
+    expectValidationError(result.errors, "copy[1]: Expected string");
   });
 
   test("rejects invalid setup command", () => {
@@ -69,7 +79,7 @@ describe("validateConfig", () => {
       setup: [{ name: "Install" }],
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("setup[0].command must be a string");
+    expectValidationError(result.errors, "setup[0].command: Missing key");
   });
 
   test("accepts valid tmux windows config", () => {
@@ -106,7 +116,7 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("tmux.windows[0].name must be a string");
+    expectValidationError(result.errors, "tmux.windows[0].name: Missing key");
   });
 
   test("rejects invalid tmux window split value", () => {
@@ -116,8 +126,9 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      'tmux.windows[0].split must be "horizontal" or "vertical"',
+    expectValidationError(
+      result.errors,
+      'tmux.windows[0].split: Expected "horizontal" | "vertical"',
     );
   });
 
@@ -133,8 +144,9 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].panes[0].command must be a string",
+    expectValidationError(
+      result.errors,
+      "tmux.windows[0].panes[0].command: Expected string",
     );
   });
 
@@ -143,7 +155,7 @@ describe("validateConfig", () => {
       tmux: { windows: "not-an-array" },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("tmux.windows must be an array");
+    expectValidationError(result.errors, "tmux.windows: Expected array");
   });
 
   test("rejects non-array tmux window panes", () => {
@@ -153,7 +165,10 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("tmux.windows[0].panes must be an array");
+    expectValidationError(
+      result.errors,
+      "tmux.windows[0].panes: Expected array",
+    );
   });
 
   test("accepts valid tmux window layout presets", () => {
@@ -182,8 +197,9 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].layout must be one of: even-horizontal, even-vertical, main-horizontal, main-vertical, tiled",
+    expectValidationError(
+      result.errors,
+      'tmux.windows[0].layout: Expected "even-horizontal" | "even-vertical" | "main-horizontal" | "main-vertical" | "tiled"',
     );
   });
 
@@ -192,7 +208,7 @@ describe("validateConfig", () => {
       tmux: { windows: ["not-an-object"] },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("tmux.windows[0] must be an object");
+    expectValidationError(result.errors, "tmux.windows[0]: Expected object");
   });
 
   test("rejects invalid tmux pane object type", () => {
@@ -202,8 +218,9 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].panes[0] must be an object",
+    expectValidationError(
+      result.errors,
+      "tmux.windows[0].panes[0]: Expected object",
     );
   });
 
@@ -214,7 +231,10 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("tmux.windows[0].command must be a string");
+    expectValidationError(
+      result.errors,
+      "tmux.windows[0].command: Expected string",
+    );
   });
 
   test("rejects invalid tmux pane name type", () => {
@@ -224,8 +244,9 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].panes[0].name must be a string",
+    expectValidationError(
+      result.errors,
+      "tmux.windows[0].panes[0].name: Expected string",
     );
   });
 
@@ -246,7 +267,7 @@ describe("validateConfig", () => {
       ide: { name: 123, command: "code ." },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("ide.name must be a string");
+    expectValidationError(result.errors, "ide.name: Expected string");
   });
 
   test("rejects non-boolean ide.fork_workspace", () => {
@@ -254,7 +275,10 @@ describe("validateConfig", () => {
       ide: { command: "code .", fork_workspace: "yes" },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("ide.fork_workspace must be a boolean");
+    expectValidationError(
+      result.errors,
+      "ide.fork_workspace: Expected boolean",
+    );
   });
 
   test("rejects tmux window name with colon", () => {
@@ -379,30 +403,22 @@ describe("DEFAULT_CONFIG", () => {
 
   test("creates a single empty tmux window by default", () => {
     expect(DEFAULT_CONFIG.tmux?.windows).toHaveLength(1);
-    expect(DEFAULT_CONFIG.tmux?.windows?.[0].name).toBe("main");
-    expect(DEFAULT_CONFIG.tmux?.windows?.[0].command).toBeUndefined();
+    expect(DEFAULT_CONFIG.tmux?.windows?.[0]?.name).toBe("main");
+    expect(DEFAULT_CONFIG.tmux?.windows?.[0]?.command).toBeUndefined();
   });
 
   test("loadConfig returns default config when no config files are present", async () => {
-    const noConfigFile = { exists: async () => false } as ReturnType<
-      typeof Bun.file
-    >;
-    const spy = spyOn(Bun, "file").mockImplementation(() => noConfigFile);
+    const projectDir = mkdtempSync(join(tmpdir(), "wct-config-test-"));
+    const result = await loadConfig(projectDir);
 
-    try {
-      const result = await loadConfig("/tmp/wct-test-no-config");
-
-      expect(result.config).not.toBeNull();
-      expect(result.config?.worktree_dir).toBe(DEFAULT_CONFIG.worktree_dir);
-      expect(result.config?.ide?.command).toBe(DEFAULT_CONFIG.ide?.command);
-      expect(result.config?.tmux?.windows).toHaveLength(1);
-      expect(result.config?.tmux?.windows?.[0].name).toBe(
-        DEFAULT_CONFIG.tmux?.windows?.[0].name,
-      );
-      expect(result.config?.tmux?.windows?.[0].command).toBeUndefined();
-    } finally {
-      spy.mockRestore();
-    }
+    expect(result.config).not.toBeNull();
+    expect(result.config?.worktree_dir).toBe(DEFAULT_CONFIG.worktree_dir);
+    expect(result.config?.ide?.command).toBe(DEFAULT_CONFIG.ide?.command);
+    expect(result.config?.tmux?.windows).toHaveLength(1);
+    expect(result.config?.tmux?.windows?.[0]?.name).toBe(
+      DEFAULT_CONFIG.tmux?.windows?.[0]?.name,
+    );
+    expect(result.config?.tmux?.windows?.[0]?.command).toBeUndefined();
   });
 });
 

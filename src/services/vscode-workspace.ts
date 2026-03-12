@@ -1,10 +1,19 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { cp, mkdir, stat } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { type Console, Effect, type FileSystem, ServiceMap } from "effect";
 import * as logger from "../utils/logger";
+import {
+  copyPath,
+  ensureDirectory,
+  isDirectory,
+  pathExists,
+  removePath,
+  statBigint,
+  writeText,
+} from "./filesystem";
 
 export interface SyncResult {
   success: boolean;
@@ -12,6 +21,26 @@ export interface SyncResult {
   error?: string;
   mainWorkspaceId?: string;
   worktreeWorkspaceId?: string;
+}
+
+export interface VSCodeWorkspaceService {
+  syncWorkspaceState: (
+    mainRepoPath: string,
+    worktreePath: string,
+  ) => Effect.Effect<
+    SyncResult,
+    never,
+    Console.Console | FileSystem.FileSystem
+  >;
+}
+
+export const VSCodeWorkspaceService =
+  ServiceMap.Service<VSCodeWorkspaceService>("wct/VSCodeWorkspaceService");
+
+const WARN_PREFIX = "\x1b[33mwarn\x1b[0m";
+
+function warnSync(message: string) {
+  console.log(`${WARN_PREFIX} ${message}`);
 }
 
 export function getVSCodeStoragePath(): string | null {
@@ -31,70 +60,71 @@ export function getVSCodeStoragePath(): string | null {
   return null;
 }
 
-export async function computeWorkspaceId(folderPath: string): Promise<string> {
-  const stats = await stat(folderPath, { bigint: true });
+export function computeWorkspaceId(folderPath: string) {
+  return Effect.gen(function* () {
+    const stats = yield* statBigint(folderPath);
 
-  let ctime: string;
-  const p = platform();
-  if (p === "linux") {
-    ctime = String(stats.ino);
-  } else if (p === "darwin") {
-    // Bun truncates birthtimeMs to integer, losing sub-ms precision.
-    // Use birthtimeNs with bigint and round manually to match Node.js/VS Code.
-    // This is a Bun-specific workaround to match Node.js/VS Code ctime behavior.
-    const ns = stats.birthtimeNs;
-    const sec = ns / 1_000_000_000n;
-    const nsec = ns % 1_000_000_000n;
-    ctime = String(Number(sec) * 1000 + Math.round(Number(nsec) / 1_000_000));
-  } else {
-    throw new Error(`Unsupported platform: ${p}`);
-  }
+    let ctime: string;
+    const p = platform();
+    if (p === "linux") {
+      ctime = String(stats.ino);
+    } else if (p === "darwin") {
+      // Bun truncates birthtimeMs to integer, losing sub-ms precision.
+      // Use birthtimeNs with bigint and round manually to match Node.js/VS Code.
+      // This is a Bun-specific workaround to match Node.js/VS Code ctime behavior.
+      const ns = stats.birthtimeNs;
+      const sec = ns / 1_000_000_000n;
+      const nsec = ns % 1_000_000_000n;
+      ctime = String(Number(sec) * 1000 + Math.round(Number(nsec) / 1_000_000));
+    } else {
+      return yield* Effect.fail(new Error(`Unsupported platform: ${p}`));
+    }
 
-  return createHash("md5").update(folderPath).update(ctime).digest("hex");
+    return createHash("md5").update(folderPath).update(ctime).digest("hex");
+  });
 }
 
-export async function workspaceExists(workspaceId: string): Promise<boolean> {
-  const storagePath = getVSCodeStoragePath();
-  if (!storagePath) return false;
-
-  try {
-    const stats = await stat(join(storagePath, workspaceId));
-    return stats.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-export async function copyWorkspaceStorage(
-  sourceId: string,
-  targetId: string,
-): Promise<void> {
+export function workspaceExists(workspaceId: string) {
   const storagePath = getVSCodeStoragePath();
   if (!storagePath) {
-    throw new Error("VS Code storage path not found");
+    return Effect.succeed(false);
+  }
+
+  return Effect.gen(function* () {
+    const workspacePath = join(storagePath, workspaceId);
+    const exists = yield* pathExists(workspacePath);
+    if (!exists) {
+      return false;
+    }
+
+    return yield* isDirectory(workspacePath);
+  });
+}
+
+export function copyWorkspaceStorage(sourceId: string, targetId: string) {
+  const storagePath = getVSCodeStoragePath();
+  if (!storagePath) {
+    return Effect.fail(new Error("VS Code storage path not found"));
   }
 
   const sourcePath = join(storagePath, sourceId);
   const targetPath = join(storagePath, targetId);
 
-  await mkdir(targetPath, { recursive: true });
-
-  await cp(sourcePath, targetPath, {
-    recursive: true,
-    force: true,
-    filter: (src) => src !== join(sourcePath, "workspace.json"),
+  return Effect.gen(function* () {
+    yield* ensureDirectory(targetPath);
+    yield* copyPath(sourcePath, targetPath, { overwrite: true });
+    yield* removePath(join(targetPath, "workspace.json"), { force: true });
   });
 }
 
-export async function createWorkspaceJson(
-  workspaceId: string,
-  folderPath: string,
-): Promise<void> {
+export function createWorkspaceJson(workspaceId: string, folderPath: string) {
   const storagePath = getVSCodeStoragePath();
-  if (!storagePath) return;
+  if (!storagePath) {
+    return Effect.void;
+  }
 
   const workspaceJsonPath = join(storagePath, workspaceId, "workspace.json");
-  await Bun.write(
+  return writeText(
     workspaceJsonPath,
     JSON.stringify({ folder: pathToFileURL(folderPath).href }),
   );
@@ -166,174 +196,181 @@ interface ISerializedNode {
   size?: number;
 }
 
-async function filterEditorsInState(
-  state: Record<string, unknown>,
-): Promise<number> {
-  let totalRemoved = 0;
+function filterEditorsInState(state: Record<string, unknown>) {
+  return Effect.gen(function* () {
+    let totalRemoved = 0;
 
-  async function walkNode(node: ISerializedNode): Promise<void> {
-    if (node.type === "branch") {
-      for (const child of node.data as ISerializedNode[]) {
-        await walkNode(child);
-      }
-      return;
+    function walkNode(
+      node: ISerializedNode,
+    ): Effect.Effect<void, never, FileSystem.FileSystem> {
+      return Effect.gen(function* () {
+        if (node.type === "branch") {
+          for (const child of node.data as ISerializedNode[]) {
+            yield* walkNode(child);
+          }
+          return;
+        }
+
+        if (node.type !== "leaf") return;
+
+        const group = node.data as ISerializedEditorGroupModel;
+        const editors = group.editors ?? [];
+        const keepIndices: number[] = [];
+
+        for (let i = 0; i < editors.length; i++) {
+          // biome-ignore lint/style/noNonNullAssertion: <key> is guaranteed by the loop condition
+          const editor = editors[i]!;
+          if (editor.id !== "workbench.editors.files.fileEditorInput") {
+            keepIndices.push(i);
+            continue;
+          }
+
+          let filePath: string | undefined;
+          try {
+            filePath = JSON.parse(editor.value)?.resourceJSON?.path;
+          } catch {
+            keepIndices.push(i);
+            continue;
+          }
+
+          if (!filePath) {
+            keepIndices.push(i);
+            continue;
+          }
+
+          if (
+            yield* Effect.catch(pathExists(filePath), () =>
+              Effect.succeed(false),
+            )
+          ) {
+            keepIndices.push(i);
+          }
+          // File does not exist in the worktree — remove this editor
+        }
+
+        const removed = editors.length - keepIndices.length;
+        totalRemoved += removed;
+
+        if (removed === 0) return;
+
+        const oldToNew = new Map<number, number>();
+        keepIndices.forEach((oldIdx, newIdx) => {
+          oldToNew.set(oldIdx, newIdx);
+        });
+
+        // biome-ignore lint/style/noNonNullAssertion: keepIndices contains valid indices from editors
+        group.editors = keepIndices.map((i) => editors[i]!);
+
+        if (group.mru) {
+          group.mru = group.mru
+            .filter((i: number) => oldToNew.has(i))
+            .map((i: number) => oldToNew.get(i) ?? 0);
+        }
+
+        if (group.preview !== undefined) {
+          group.preview = oldToNew.has(group.preview)
+            ? oldToNew.get(group.preview)
+            : undefined;
+        }
+
+        if (group.sticky !== undefined) {
+          let newSticky = 0;
+          for (let i = 0; i < group.sticky; i++) {
+            if (oldToNew.has(i)) newSticky++;
+          }
+          group.sticky = newSticky;
+        }
+      });
     }
 
-    if (node.type !== "leaf") return;
-
-    const group = node.data as ISerializedEditorGroupModel;
-    const editors = group.editors ?? [];
-    const keepIndices: number[] = [];
-
-    for (let i = 0; i < editors.length; i++) {
-      // biome-ignore lint/style/noNonNullAssertion: <key> is guaranteed by the loop condition
-      const editor = editors[i]!;
-      if (editor.id !== "workbench.editors.files.fileEditorInput") {
-        keepIndices.push(i);
-        continue;
+    if (state.serializedGrid) {
+      const grid = state.serializedGrid as { root?: ISerializedNode };
+      if (grid.root) {
+        yield* walkNode(grid.root);
       }
-
-      let filePath: string | undefined;
-      try {
-        filePath = JSON.parse(editor.value)?.resourceJSON?.path;
-      } catch {
-        keepIndices.push(i);
-        continue;
-      }
-
-      if (!filePath) {
-        keepIndices.push(i);
-        continue;
-      }
-
-      if (await Bun.file(filePath).exists()) {
-        keepIndices.push(i);
-      }
-      // File does not exist in the worktree — remove this editor
     }
 
-    const removed = editors.length - keepIndices.length;
-    totalRemoved += removed;
-
-    if (removed === 0) return;
-
-    const oldToNew = new Map<number, number>();
-    keepIndices.forEach((oldIdx, newIdx) => {
-      oldToNew.set(oldIdx, newIdx);
-    });
-
-    // biome-ignore lint/style/noNonNullAssertion: keepIndices contains valid indices from editors
-    group.editors = keepIndices.map((i) => editors[i]!);
-
-    if (group.mru) {
-      group.mru = group.mru
-        .filter((i: number) => oldToNew.has(i))
-        .map((i: number) => oldToNew.get(i) ?? 0);
-    }
-
-    if (group.preview !== undefined) {
-      group.preview = oldToNew.has(group.preview)
-        ? oldToNew.get(group.preview)
-        : undefined;
-    }
-
-    if (group.sticky !== undefined) {
-      let newSticky = 0;
-      for (let i = 0; i < group.sticky; i++) {
-        if (oldToNew.has(i)) newSticky++;
-      }
-      group.sticky = newSticky;
-    }
-  }
-
-  if (state.serializedGrid) {
-    const grid = state.serializedGrid as { root?: ISerializedNode };
-    if (grid.root) {
-      await walkNode(grid.root);
-    }
-  }
-
-  return totalRemoved;
+    return totalRemoved;
+  });
 }
 
-export async function filterMissingEditors(
-  dbPath: string,
-  _worktreePath: string,
-): Promise<number> {
-  try {
-    const db = new Database(dbPath);
+export function filterMissingEditors(dbPath: string, _worktreePath: string) {
+  return Effect.gen(function* () {
     try {
-      let totalRemoved = 0;
+      const db = new Database(dbPath);
+      try {
+        let totalRemoved = 0;
 
-      // Try top-level editorpart.state (older VS Code versions)
-      const topRow = db
-        .query("SELECT value FROM ItemTable WHERE key = ?")
-        .get("editorpart.state") as { value: string | Buffer } | null;
+        // Try top-level editorpart.state (older VS Code versions)
+        const topRow = db
+          .query("SELECT value FROM ItemTable WHERE key = ?")
+          .get("editorpart.state") as { value: string | Buffer } | null;
 
-      if (topRow) {
-        try {
-          const text =
-            typeof topRow.value === "string"
-              ? topRow.value
-              : Buffer.from(topRow.value).toString("utf-8");
-          const state = JSON.parse(text);
-          const removed = await filterEditorsInState(state);
-          totalRemoved += removed;
-          if (removed > 0) {
-            db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-              JSON.stringify(state),
-              "editorpart.state",
-            );
-          }
-        } catch (err) {
-          logger.warn(
-            `Failed to process VS Code key 'editorpart.state' in '${dbPath}': ${String(err)}`,
-          );
-        }
-      }
-
-      // Try memento/workbench.parts.editor (newer VS Code versions)
-      const memoRow = db
-        .query("SELECT value FROM ItemTable WHERE key = ?")
-        .get("memento/workbench.parts.editor") as {
-        value: string | Buffer;
-      } | null;
-
-      if (memoRow) {
-        try {
-          const text =
-            typeof memoRow.value === "string"
-              ? memoRow.value
-              : Buffer.from(memoRow.value).toString("utf-8");
-          const memento = JSON.parse(text);
-          const editorState = memento["editorpart.state"];
-          if (editorState?.serializedGrid) {
-            const removed = await filterEditorsInState(editorState);
+        if (topRow) {
+          try {
+            const text =
+              typeof topRow.value === "string"
+                ? topRow.value
+                : Buffer.from(topRow.value).toString("utf-8");
+            const state = JSON.parse(text);
+            const removed = yield* filterEditorsInState(state);
             totalRemoved += removed;
             if (removed > 0) {
               db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
-                JSON.stringify(memento),
-                "memento/workbench.parts.editor",
+                JSON.stringify(state),
+                "editorpart.state",
               );
             }
+          } catch (err) {
+            yield* logger.warn(
+              `Failed to process VS Code key 'editorpart.state' in '${dbPath}': ${String(err)}`,
+            );
           }
-        } catch (err) {
-          logger.warn(
-            `Failed to process VS Code key 'memento/workbench.parts.editor' in '${dbPath}': ${String(err)}`,
-          );
         }
-      }
 
-      return totalRemoved;
-    } finally {
-      db.close();
+        // Try memento/workbench.parts.editor (newer VS Code versions)
+        const memoRow = db
+          .query("SELECT value FROM ItemTable WHERE key = ?")
+          .get("memento/workbench.parts.editor") as {
+          value: string | Buffer;
+        } | null;
+
+        if (memoRow) {
+          try {
+            const text =
+              typeof memoRow.value === "string"
+                ? memoRow.value
+                : Buffer.from(memoRow.value).toString("utf-8");
+            const memento = JSON.parse(text);
+            const editorState = memento["editorpart.state"];
+            if (editorState?.serializedGrid) {
+              const removed = yield* filterEditorsInState(editorState);
+              totalRemoved += removed;
+              if (removed > 0) {
+                db.prepare("UPDATE ItemTable SET value = ? WHERE key = ?").run(
+                  JSON.stringify(memento),
+                  "memento/workbench.parts.editor",
+                );
+              }
+            }
+          } catch (err) {
+            yield* logger.warn(
+              `Failed to process VS Code key 'memento/workbench.parts.editor' in '${dbPath}': ${String(err)}`,
+            );
+          }
+        }
+
+        return totalRemoved;
+      } finally {
+        db.close();
+      }
+    } catch (err) {
+      yield* logger.warn(
+        `Failed to filter missing editors in VS Code state DB '${dbPath}': ${String(err)}`,
+      );
+      return 0;
     }
-  } catch (err) {
-    logger.warn(
-      `Failed to filter missing editors in VS Code state DB '${dbPath}': ${String(err)}`,
-    );
-    return 0;
-  }
+  });
 }
 
 const TERMINAL_KEYS_TO_CLEAR = [
@@ -355,7 +392,7 @@ export function clearTerminalState(dbPath: string): number {
       db.close();
     }
   } catch (err) {
-    logger.warn(
+    warnSync(
       `Failed to clear terminal state in VS Code state DB '${dbPath}': ${String(err)}`,
     );
     return 0;
@@ -418,7 +455,7 @@ export function clearExternalAgentSessions(dbPath: string): number {
           removed = externalIds.length;
         }
       } catch (err) {
-        logger.warn(
+        warnSync(
           `Failed to process key 'chat.ChatSessionStore.index' in '${dbPath}': ${String(err)}`,
         );
       }
@@ -428,78 +465,93 @@ export function clearExternalAgentSessions(dbPath: string): number {
       db.close();
     }
   } catch (err) {
-    logger.warn(
+    warnSync(
       `Failed to clear external agent sessions in VS Code state DB '${dbPath}': ${String(err)}`,
     );
     return 0;
   }
 }
 
-export async function syncWorkspaceState(
+function syncWorkspaceStateImpl(
   mainRepoPath: string,
   worktreePath: string,
-): Promise<SyncResult> {
-  try {
-    const storagePath = getVSCodeStoragePath();
-    if (!storagePath) {
-      return { success: false, error: "Unsupported platform" };
-    }
+): Effect.Effect<SyncResult, never, Console.Console | FileSystem.FileSystem> {
+  return Effect.catch(
+    Effect.gen(function* () {
+      const storagePath = getVSCodeStoragePath();
+      if (!storagePath) {
+        return {
+          success: false,
+          error: "Unsupported platform",
+        } satisfies SyncResult;
+      }
 
-    const mainWorkspaceId = await computeWorkspaceId(mainRepoPath);
+      const mainWorkspaceId = yield* computeWorkspaceId(mainRepoPath);
 
-    const mainExists = await workspaceExists(mainWorkspaceId);
-    if (!mainExists) {
-      return {
-        success: false,
-        error:
-          "Main repo workspace storage not found. Open main repo in VS Code first.",
-      };
-    }
+      const mainExists = yield* workspaceExists(mainWorkspaceId);
+      if (!mainExists) {
+        return {
+          success: false,
+          error:
+            "Main repo workspace storage not found. Open main repo in VS Code first.",
+        } satisfies SyncResult;
+      }
 
-    const worktreeWorkspaceId = await computeWorkspaceId(worktreePath);
+      const worktreeWorkspaceId = yield* computeWorkspaceId(worktreePath);
 
-    const alreadyExists = await workspaceExists(worktreeWorkspaceId);
-    if (alreadyExists) {
+      const alreadyExists = yield* workspaceExists(worktreeWorkspaceId);
+      if (alreadyExists) {
+        return {
+          success: true,
+          skipped: true,
+          mainWorkspaceId,
+          worktreeWorkspaceId,
+        } satisfies SyncResult;
+      }
+
+      yield* copyWorkspaceStorage(mainWorkspaceId, worktreeWorkspaceId);
+      yield* createWorkspaceJson(worktreeWorkspaceId, worktreePath);
+
+      const dbFile = join(storagePath, worktreeWorkspaceId, "state.vscdb");
+      if (yield* pathExists(dbFile)) {
+        rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
+        yield* filterMissingEditors(dbFile, worktreePath);
+        clearTerminalState(dbFile);
+        clearExternalAgentSessions(dbFile);
+      }
+
+      const backupDbFile = join(
+        storagePath,
+        worktreeWorkspaceId,
+        "state.vscdb.backup",
+      );
+      if (yield* pathExists(backupDbFile)) {
+        rewriteStatePaths(backupDbFile, mainRepoPath, worktreePath);
+        yield* filterMissingEditors(backupDbFile, worktreePath);
+        clearTerminalState(backupDbFile);
+        clearExternalAgentSessions(backupDbFile);
+      }
+
       return {
         success: true,
-        skipped: true,
         mainWorkspaceId,
         worktreeWorkspaceId,
-      };
-    }
+      } satisfies SyncResult;
+    }),
+    (err) =>
+      Effect.succeed({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      } satisfies SyncResult),
+  );
+}
 
-    await copyWorkspaceStorage(mainWorkspaceId, worktreeWorkspaceId);
-    await createWorkspaceJson(worktreeWorkspaceId, worktreePath);
+export const liveVSCodeWorkspaceService: VSCodeWorkspaceService =
+  VSCodeWorkspaceService.of({
+    syncWorkspaceState: (mainRepoPath, worktreePath) =>
+      syncWorkspaceStateImpl(mainRepoPath, worktreePath),
+  });
 
-    const dbFile = join(storagePath, worktreeWorkspaceId, "state.vscdb");
-    if (await Bun.file(dbFile).exists()) {
-      rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
-      await filterMissingEditors(dbFile, worktreePath);
-      clearTerminalState(dbFile);
-      clearExternalAgentSessions(dbFile);
-    }
-
-    const backupDbFile = join(
-      storagePath,
-      worktreeWorkspaceId,
-      "state.vscdb.backup",
-    );
-    if (await Bun.file(backupDbFile).exists()) {
-      rewriteStatePaths(backupDbFile, mainRepoPath, worktreePath);
-      await filterMissingEditors(backupDbFile, worktreePath);
-      clearTerminalState(backupDbFile);
-      clearExternalAgentSessions(backupDbFile);
-    }
-
-    return {
-      success: true,
-      mainWorkspaceId,
-      worktreeWorkspaceId,
-    };
-  } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+export function syncWorkspaceState(mainRepoPath: string, worktreePath: string) {
+  return syncWorkspaceStateImpl(mainRepoPath, worktreePath);
 }

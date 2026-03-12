@@ -1,332 +1,37 @@
-import { parseArgs } from "node:util";
-import { cdCommand } from "./commands/cd";
-import { closeCommand } from "./commands/close";
-import { completionsCommand } from "./commands/completions";
-import { downCommand } from "./commands/down";
-import { hooksCommand } from "./commands/hooks";
-import { initCommand } from "./commands/init";
-import { listCommand } from "./commands/list";
-import { notifyCommand } from "./commands/notify";
-import { openCommand } from "./commands/open";
-import { queueCommand } from "./commands/queue";
-import { COMMANDS } from "./commands/registry";
-import { switchCommand } from "./commands/switch";
-import { upCommand } from "./commands/up";
+import { Effect } from "effect";
 import {
-  addForkRemote,
-  fetchBranch,
-  isGhInstalled,
-  parsePrArg,
-  resolvePr,
-} from "./services/github";
-import { branchExists } from "./services/worktree";
-import * as logger from "./utils/logger";
-import { type CommandResult, err } from "./utils/result";
+  generateCompletionScript,
+  getCustomCompletionShell,
+} from "./cli/completions";
+import { rootCommand } from "./cli/root-command";
+import { Command } from "./effect/cli";
+import { BunRuntime, provideBunServices } from "./effect/runtime";
+import { provideWctServices } from "./effect/services";
+import { toWctError } from "./errors";
 
 const { version: VERSION } = require("../package.json");
+const args = process.argv.slice(2);
+const customCompletionShell = getCustomCompletionShell(args);
 
-type Handler = (
-  positionals: string[],
-  values: Record<string, unknown>,
-) => Promise<CommandResult> | CommandResult;
-
-const HANDLERS: Record<string, Handler> = {
-  cd: (positionals) => {
-    const branch = positionals[1];
-    if (!branch) {
-      return err(
-        "Missing branch name\n\nUsage: wct cd <branch>",
-        "missing_branch_arg",
-      );
-    }
-
-    return cdCommand(branch);
-  },
-  close: (positionals, values) => {
-    const branches = positionals.slice(1);
-    if (branches.length === 0) {
-      return err(
-        "Missing branch name\n\nUsage: wct close <branch...> [-y|--yes] [-f|--force]",
-        "missing_branch_arg",
-      );
-    }
-
-    return closeCommand({
-      branches,
-      yes: !!values.yes,
-      force: !!values.force,
-    });
-  },
-  completions: (positionals) => completionsCommand(positionals[1]),
-  down: () => downCommand(),
-  init: () => initCommand(),
-  list: (_pos, values) => listCommand({ short: !!values.short }),
-  open: async (positionals, values) => {
-    const prValue = values.pr as string | undefined;
-    const branchArg = positionals[1];
-
-    if (prValue && branchArg) {
-      return err(
-        "Cannot use --pr together with a branch argument",
-        "invalid_options",
-      );
-    }
-
-    if (prValue && values.base) {
-      return err("Cannot use --pr together with --base", "invalid_options");
-    }
-
-    let branch: string;
-
-    if (prValue) {
-      const prNumber = parsePrArg(prValue);
-      if (prNumber === null) {
-        return err(
-          `Invalid --pr value: '${prValue}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
-          "pr_error",
-        );
-      }
-
-      if (!(await isGhInstalled())) {
-        return err(
-          "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
-          "gh_not_installed",
-        );
-      }
-
-      logger.info(`Resolving PR #${prNumber}...`);
-      const prResult = await resolvePr(prNumber);
-      if (!prResult.success || !prResult.pr) {
-        return err(
-          `Failed to resolve PR #${prNumber}: ${prResult.error}`,
-          "pr_error",
-        );
-      }
-
-      const pr = prResult.pr;
-      branch = pr.branch;
-
-      let remote = "origin";
-      if (pr.isCrossRepository && pr.forkOwner && pr.forkRepo) {
-        remote = pr.forkOwner;
-        logger.info(
-          `PR is from fork ${pr.forkOwner}/${pr.forkRepo}, adding remote...`,
-        );
-        const remoteResult = await addForkRemote(
-          remote,
-          pr.forkOwner,
-          pr.forkRepo,
-        );
-        if (!remoteResult.success) {
-          return err(
-            `Failed to add remote '${remote}': ${remoteResult.error}`,
-            "pr_error",
-          );
-        }
-      }
-
-      logger.info(`Fetching branch '${branch}' from ${remote}...`);
-      const fetchResult = await fetchBranch(branch, remote);
-      if (!fetchResult.success) {
-        return err(
-          `Failed to fetch branch '${branch}': ${fetchResult.error}`,
-          "pr_error",
-        );
-      }
-
-      logger.info(`PR #${prNumber} -> branch '${branch}'`);
-
-      const localExists = await branchExists(branch);
-
-      return openCommand({
-        branch,
-        existing: localExists,
-        base: localExists ? undefined : `${remote}/${branch}`,
-        noIde: !!values["no-ide"],
-        prompt: values.prompt as string | undefined,
-      });
-    } else {
-      if (!branchArg) {
-        return err(
-          "Missing branch name\n\nUsage: wct open <branch> [-e|--existing] [-b|--base <branch>] [--pr <number|url>]",
-          "missing_branch_arg",
-        );
-      }
-      branch = branchArg;
-    }
-
-    return openCommand({
-      branch,
-      existing: !!values.existing,
-      base: values.base as string | undefined,
-      noIde: !!values["no-ide"],
-      prompt: values.prompt as string | undefined,
-    });
-  },
-  switch: (positionals) => {
-    const branch = positionals[1];
-    if (!branch) {
-      return err(
-        "Missing branch name\n\nUsage: wct switch <branch>",
-        "missing_branch_arg",
-      );
-    }
-
-    return switchCommand(branch);
-  },
-  up: (_positionals, values) => upCommand({ noIde: !!values["no-ide"] }),
-  hooks: (_positionals, values) => hooksCommand({ install: !!values.install }),
-  notify: () => notifyCommand(),
-  queue: (_positionals, values) =>
-    queueCommand({
-      count: !!values.count,
-      interactive: !!values.interactive,
-      jump: values.jump as string | undefined,
-      dismiss: values.dismiss as string | undefined,
-      clear: !!values.clear,
-    }),
-};
-
-function resolveAlias(command: string): string {
-  for (const cmd of COMMANDS) {
-    if (cmd.aliases?.includes(command)) {
-      return cmd.name;
-    }
-  }
-  return command;
+if (args.length === 1 && args[0] === "-v") {
+  process.stdout.write(`wct v${VERSION}\n`);
+  process.exit(0);
 }
 
-function buildHelp(): string {
-  const commandLabels = COMMANDS.map((cmd) => {
-    let label = cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name;
-    if (cmd.aliases?.length) {
-      label += ` (${cmd.aliases.join(", ")})`;
-    }
-    return label;
-  });
-  const labelWidth = Math.max(
-    18,
-    ...commandLabels.map((label) => label.length),
-  );
-  const commandLines = COMMANDS.map(
-    (cmd, i) => `  ${commandLabels[i].padEnd(labelWidth)}  ${cmd.description}`,
-  );
-
-  const optionLines: string[] = [];
-  for (const cmd of COMMANDS) {
-    if (!cmd.options) continue;
-    for (const opt of cmd.options) {
-      const short = opt.short ? `-${opt.short}, ` : "    ";
-      const long =
-        opt.type === "string"
-          ? `--${opt.name} <${opt.placeholder ?? opt.name}>`
-          : `--${opt.name}`;
-      const suffix = `(for '${cmd.name}' command)`;
-      optionLines.push(
-        `  ${short}${long.padEnd(17)}${opt.description} ${suffix}`,
-      );
-    }
-  }
-  optionLines.push("  -h, --help           Show this help message");
-  optionLines.push("  -v, --version        Show version number");
-
-  return `
-wct - Git worktree workflow automation
-
-Usage:
-  wct <command> [options]
-
-Commands:
-${commandLines.join("\n")}
-
-Options:
-${optionLines.join("\n")}
-
-Examples:
-  wct init                         Create a new .wct.yaml config file
-  wct cd feature-auth              Open a shell in the worktree directory
-  wct open feature-auth            Create new worktree and branch from HEAD
-  wct open --pr 123                Open worktree from GitHub PR #123
-  wct up                           Start tmux + IDE in current directory
-  wct down                         Kill tmux session for current directory
-  wct open feature-auth -e         Use existing branch
-  wct open feature-auth -b main    Create new branch based on 'main'
-  wct close feature-auth           Close worktree (with confirmation)
-  wct close feature-a feature-b    Close multiple worktrees
-  wct close feature-auth -y        Skip confirmation
-  wct list                         Show all worktrees and their status
-  wct switch feature-auth          Switch to worktree's tmux session
-  wct sw feature-auth              Shorthand for switch
-`;
+if (customCompletionShell) {
+  process.stdout.write(`${generateCompletionScript(customCompletionShell)}\n`);
+  process.exit(0);
 }
 
-const HELP = buildHelp();
+const program = provideBunServices(
+  provideWctServices(
+    Effect.catch(Command.run(rootCommand, { version: VERSION }), (error) =>
+      Effect.sync(() => {
+        process.stderr.write(`${toWctError(error).message}\n`);
+        process.exitCode = 1;
+      }),
+    ),
+  ),
+);
 
-function buildParseArgsOptions(): Record<
-  string,
-  { type: "boolean" | "string"; short?: string }
-> {
-  const options: Record<
-    string,
-    { type: "boolean" | "string"; short?: string }
-  > = {
-    help: { type: "boolean", short: "h" },
-    version: { type: "boolean", short: "v" },
-  };
-  for (const cmd of COMMANDS) {
-    if (!cmd.options) continue;
-    for (const opt of cmd.options) {
-      const optConfig: { type: "boolean" | "string"; short?: string } = {
-        type: opt.type,
-      };
-      if (opt.short) {
-        optConfig.short = opt.short;
-      }
-      options[opt.name] = optConfig;
-    }
-  }
-  return options;
-}
-
-function handleResult(result: CommandResult): void {
-  if (!result.success) {
-    logger.error(result.error.message);
-    process.exit(1);
-  }
-}
-
-async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: buildParseArgsOptions(),
-    allowPositionals: true,
-  });
-
-  if (values.version) {
-    console.log(`wct version ${VERSION}`);
-    return;
-  }
-
-  if (values.help || positionals.length === 0) {
-    console.log(HELP);
-    return;
-  }
-
-  const command = resolveAlias(positionals[0] as string);
-  const handler = HANDLERS[command];
-
-  if (!handler) {
-    handleResult(
-      err(`Unknown command: ${command}\n${HELP}`, "unknown_command"),
-    );
-    return;
-  }
-
-  const result = await handler(positionals, values as Record<string, unknown>);
-  handleResult(result);
-}
-
-main().catch((err) => {
-  logger.error(err.message ?? String(err));
-  process.exit(1);
-});
+BunRuntime.runMain(program as never);

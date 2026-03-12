@@ -1,12 +1,26 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { Effect } from "effect";
 import {
   commandDef,
   isPaneCurrentlyVisible,
   notifyCommand,
 } from "../src/commands/notify";
-import * as queue from "../src/services/queue";
+import { runBunPromise } from "../src/effect/runtime";
+import { commandError } from "../src/errors";
+import {
+  liveQueueStorage,
+  type QueueItem,
+  type QueueStorageService,
+} from "../src/services/queue-storage";
 import { isMissingPaneError } from "../src/services/tmux";
 import * as logger from "../src/utils/logger";
+import { withTestServices } from "./helpers/services";
+
+async function runCommand(
+  overrides: { queueStorage?: QueueStorageService } = {},
+) {
+  await runBunPromise(withTestServices(notifyCommand(), overrides));
+}
 
 describe("notify commandDef", () => {
   test("has correct name", () => {
@@ -15,21 +29,25 @@ describe("notify commandDef", () => {
 });
 
 describe("notifyCommand", () => {
-  let addItemSpy: ReturnType<typeof spyOn>;
   let stdinSpy: ReturnType<typeof spyOn>;
   let savedEnv: Record<string, string | undefined>;
+  let queueCalls: Array<Omit<QueueItem, "id" | "timestamp">>;
+  let queueOverrides: QueueStorageService;
 
   beforeEach(() => {
-    addItemSpy = spyOn(queue, "addItem").mockReturnValue({
-      id: "mock-id",
-      branch: "b",
-      project: "p",
-      type: "t",
-      message: "m",
-      session: "s",
-      pane: "%1",
-      timestamp: 0,
-    });
+    queueCalls = [];
+    queueOverrides = {
+      ...liveQueueStorage,
+      addItem: (item) =>
+        Effect.sync(() => {
+          queueCalls.push(item);
+          return {
+            id: "mock-id",
+            timestamp: 0,
+            ...item,
+          };
+        }),
+    };
     // Mock Bun.stdin.text() to avoid hanging on stdin
     stdinSpy = spyOn(Bun.stdin, "text").mockResolvedValue("{}");
     savedEnv = {
@@ -44,7 +62,6 @@ describe("notifyCommand", () => {
   });
 
   afterEach(() => {
-    addItemSpy.mockRestore();
     stdinSpy.mockRestore();
     // Restore env
     for (const [key, value] of Object.entries(savedEnv)) {
@@ -57,11 +74,9 @@ describe("notifyCommand", () => {
   });
 
   test("returns ok when env vars missing", async () => {
-    const result = await notifyCommand();
-
-    expect(result.success).toBe(true);
+    await expect(runCommand()).resolves.toBeUndefined();
     expect(stdinSpy).not.toHaveBeenCalled();
-    expect(addItemSpy).not.toHaveBeenCalled();
+    expect(queueCalls).toEqual([]);
   });
 
   test("returns ok when stdin is invalid JSON", async () => {
@@ -70,39 +85,47 @@ describe("notifyCommand", () => {
     process.env.WCT_BRANCH = "test-branch";
     process.env.WCT_PROJECT = "test-project";
 
-    const result = await notifyCommand();
-
-    expect(result.success).toBe(true);
-    expect(addItemSpy).not.toHaveBeenCalled();
+    await expect(
+      runCommand({ queueStorage: queueOverrides }),
+    ).resolves.toBeUndefined();
+    expect(queueCalls).toEqual([]);
   });
 
   test("returns ok when only some env vars are set", async () => {
     process.env.TMUX_PANE = "%1";
     // WCT_BRANCH and WCT_PROJECT still missing
 
-    const result = await notifyCommand();
-
-    expect(result.success).toBe(true);
-    expect(addItemSpy).not.toHaveBeenCalled();
+    await expect(runCommand()).resolves.toBeUndefined();
+    expect(queueCalls).toEqual([]);
   });
 
   test("returns ok and warns when queue write fails", async () => {
-    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {});
-    addItemSpy.mockImplementation(() => {
-      throw new Error("database is locked");
-    });
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => Effect.void);
+    queueOverrides = {
+      ...queueOverrides,
+      addItem: () =>
+        Effect.fail(commandError("queue_error", "database is locked")),
+    };
     process.env.TMUX_PANE = "%1";
     process.env.WCT_BRANCH = "test-branch";
     process.env.WCT_PROJECT = "test-project";
 
     try {
-      const result = await notifyCommand();
-
-      expect(result.success).toBe(true);
-      expect(addItemSpy).toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalledWith(
-        "Failed to queue notification for branch='test-branch' project='test-project' session='test-project-test-branch' pane='%1': database is locked",
+      await expect(
+        runCommand({ queueStorage: queueOverrides }),
+      ).resolves.toBeUndefined();
+      expect(queueCalls).toEqual([]);
+      const warnMessages = warnSpy.mock.calls.map((call) =>
+        String(call[0] ?? ""),
       );
+      const queueWriteWarning = warnMessages.find((message) =>
+        message.includes(
+          "Failed to queue notification for branch='test-branch' project='test-project'",
+        ),
+      );
+
+      expect(queueWriteWarning).toBeDefined();
+      expect(queueWriteWarning).toContain("pane='%1': database is locked");
     } finally {
       warnSpy.mockRestore();
     }

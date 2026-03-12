@@ -1,8 +1,11 @@
 import { join } from "node:path";
+import { Effect } from "effect";
 import { CONFIG_FILENAME } from "../config/loader";
+import type { WctServices } from "../effect/services";
+import { commandError, type WctError } from "../errors";
+import { pathExists, writeText } from "../services/filesystem";
 import * as logger from "../utils/logger";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "init",
@@ -53,26 +56,33 @@ tmux:
     #   command: ""
 `;
 
-export async function initCommand(): Promise<CommandResult> {
-  const cwd = process.cwd();
-  const configPath = join(cwd, CONFIG_FILENAME);
+export function initCommand(): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const cwd = process.cwd();
+    const configPath = join(cwd, CONFIG_FILENAME);
 
-  const file = Bun.file(configPath);
-  if (await file.exists()) {
-    logger.warn(`${CONFIG_FILENAME} already exists`);
-    return ok();
-  }
-
-  try {
-    await Bun.write(configPath, TEMPLATE);
-  } catch (e) {
-    return err(
-      `Failed to create ${CONFIG_FILENAME}: ${e instanceof Error ? e.message : String(e)}`,
-      "init_error",
+    const exists = yield* Effect.mapError(pathExists(configPath), (error) =>
+      commandError(
+        "init_error",
+        `Failed to check for existing ${CONFIG_FILENAME}`,
+        error,
+      ),
     );
-  }
 
-  logger.success(`Created ${CONFIG_FILENAME}`);
-  logger.info("Edit the config file to customize your workflow");
-  return ok();
+    if (exists) {
+      yield* logger.warn(`${CONFIG_FILENAME} already exists`);
+      return;
+    }
+
+    yield* Effect.mapError(writeText(configPath, TEMPLATE), (error) =>
+      commandError(
+        "init_error",
+        `Failed to create ${CONFIG_FILENAME}: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      ),
+    );
+
+    yield* logger.success(`Created ${CONFIG_FILENAME}`);
+    yield* logger.info("Edit the config file to customize your workflow");
+  });
 }

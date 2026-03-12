@@ -1,7 +1,10 @@
-import { findWorktreeByBranch, isGitRepo } from "../services/worktree";
+import { Effect } from "effect";
+import type { WctServices } from "../effect/services";
+import { commandError, type WctError } from "../errors";
+import { spawnInteractive } from "../services/process";
+import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "cd",
@@ -10,31 +13,43 @@ export const commandDef: CommandDef = {
   completionType: "worktree",
 };
 
-export async function cdCommand(branch: string): Promise<CommandResult> {
-  if (!(await isGitRepo())) {
-    return err("Not a git repository", "not_git_repo");
-  }
+export function cdCommand(
+  branch: string,
+): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
+    if (!repo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
+      );
+    }
 
-  const worktree = await findWorktreeByBranch(branch);
-  if (!worktree) {
-    return err(
-      `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
-      "worktree_not_found",
+    const worktree = yield* WorktreeService.use((service) =>
+      service.findWorktreeByBranch(branch),
     );
-  }
+    if (!worktree) {
+      return yield* Effect.fail(
+        commandError(
+          "worktree_not_found",
+          `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
+        ),
+      );
+    }
 
-  const shell = process.env.SHELL ?? "/bin/sh";
+    const shell = process.env.SHELL ?? "/bin/sh";
 
-  logger.info(`Entering ${worktree.path} (exit to return)`);
+    yield* logger.info(`Entering ${worktree.path} (exit to return)`);
 
-  const proc = Bun.spawn([shell], {
-    cwd: worktree.path,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+    yield* Effect.mapError(
+      spawnInteractive(shell, [], {
+        cwd: worktree.path,
+      }),
+      (error) =>
+        commandError(
+          "worktree_error",
+          `Failed to enter worktree '${worktree.path}'`,
+          error,
+        ),
+    );
   });
-
-  await proc.exited;
-
-  return ok();
 }

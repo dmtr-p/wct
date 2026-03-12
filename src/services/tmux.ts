@@ -1,14 +1,57 @@
-import { $ } from "bun";
+import { Effect, ServiceMap } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
+import { runBunPromise } from "../effect/runtime";
+import type { WctServices } from "../effect/services";
+import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { formatShellCommand, resolveWctBin } from "../utils/bin";
 import * as logger from "../utils/logger";
+import {
+  execProcess,
+  getProcessErrorMessage,
+  ProcessExitError,
+  runProcess,
+  spawnInteractive,
+} from "./process";
 
 export interface TmuxSession {
   name: string;
   attached: boolean;
   windows: number;
 }
+
+export type CreateSessionResult =
+  | { _tag: "Created"; sessionName: string }
+  | { _tag: "AlreadyExists"; sessionName: string };
+
+export interface TmuxService {
+  listSessions: () => Effect.Effect<
+    TmuxSession[] | null,
+    WctError,
+    WctServices
+  >;
+  isPaneAlive: (
+    pane: string,
+  ) => Effect.Effect<boolean | null, WctError, WctServices>;
+  sessionExists: (
+    name: string,
+  ) => Effect.Effect<boolean, WctError, WctServices>;
+  getSessionStatus: (
+    name: string,
+  ) => Effect.Effect<"attached" | "detached" | null, WctError, WctServices>;
+  createSession: (
+    name: string,
+    workingDir: string,
+    config?: TmuxConfig,
+    env?: WctEnv,
+  ) => Effect.Effect<CreateSessionResult, WctError, WctServices>;
+  killSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
+  getCurrentSession: () => Effect.Effect<string | null, WctError, WctServices>;
+  switchSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
+  attachSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
+}
+
+export const TmuxService = ServiceMap.Service<TmuxService>("wct/TmuxService");
 
 export function parseSessionListOutput(output: string): TmuxSession[] {
   if (!output) {
@@ -25,15 +68,17 @@ export function parseSessionListOutput(output: string): TmuxSession[] {
   });
 }
 
-export async function listSessions(): Promise<TmuxSession[] | null> {
-  try {
-    const result =
-      await $`tmux list-sessions -F "#{session_name}:#{session_attached}:#{session_windows}"`.quiet();
-    const output = result.text().trim();
-    return parseSessionListOutput(output);
-  } catch {
-    return null;
-  }
+function listSessionsImpl() {
+  return Effect.catch(
+    execProcess("tmux", [
+      "list-sessions",
+      "-F",
+      "#{session_name}:#{session_attached}:#{session_windows}",
+    ]).pipe(
+      Effect.map((result) => parseSessionListOutput(result.stdout.trim())),
+    ),
+    () => Effect.succeed(null),
+  );
 }
 
 export function isMissingPaneError(error: unknown): boolean {
@@ -46,46 +91,46 @@ export function isMissingPaneError(error: unknown): boolean {
   );
 }
 
-export async function isPaneAlive(pane: string): Promise<boolean | null> {
-  try {
-    await $`tmux display-message -p -t ${pane} '#{pane_id}'`.quiet();
-    return true;
-  } catch (error) {
-    if (isMissingPaneError(error)) {
+function isPaneAliveImpl(pane: string) {
+  return Effect.gen(function* () {
+    const result = yield* runProcess("tmux", [
+      "display-message",
+      "-p",
+      "-t",
+      pane,
+      "#{pane_id}",
+    ]);
+
+    if (result.success) {
+      return true;
+    }
+
+    if (isMissingPaneError(result.stderr || result.stdout)) {
       return false;
     }
+
     return null;
-  }
+  });
 }
 
-export async function sessionExists(name: string): Promise<boolean> {
-  try {
-    await $`tmux has-session -t =${name}`.quiet();
-    return true;
-  } catch {
-    return false;
-  }
+function sessionExistsImpl(name: string) {
+  return runProcess("tmux", ["has-session", "-t", `=${name}`]).pipe(
+    Effect.map((result) => result.success),
+  );
 }
 
-export async function getSessionStatus(
-  name: string,
-): Promise<"attached" | "detached" | null> {
-  const sessions = await listSessions();
-  if (!sessions) {
-    return null;
-  }
-  const session = sessions.find((s) => s.name === name);
-  if (!session) {
-    return null;
-  }
-  return session.attached ? "attached" : "detached";
-}
-
-export interface CreateSessionResult {
-  success: boolean;
-  sessionName: string;
-  error?: string;
-  alreadyExists?: boolean;
+function getSessionStatusImpl(name: string) {
+  return Effect.gen(function* () {
+    const sessions = yield* listSessionsImpl();
+    if (!sessions) {
+      return null;
+    }
+    const session = sessions.find((s) => s.name === name);
+    if (!session) {
+      return null;
+    }
+    return session.attached ? "attached" : "detached";
+  });
 }
 
 export interface TmuxCommand {
@@ -107,7 +152,7 @@ function getDefinedEnvEntries(env?: WctEnv): [string, string][] {
     return [];
   }
   return Object.entries(env).filter(
-    ([, value]): value is string => value !== undefined,
+    (entry): entry is [string, string] => entry[1] !== undefined,
   );
 }
 
@@ -181,48 +226,18 @@ export function buildWindowPaneCommands(
   return commands;
 }
 
-async function executeCommand(cmd: TmuxCommand): Promise<void> {
-  switch (cmd.type) {
-    case "new-session":
-      await $`tmux new-session ${cmd.args}`.quiet();
-      break;
-    case "new-window":
-      await $`tmux new-window ${cmd.args}`.quiet();
-      break;
-    case "split-window":
-      await $`tmux split-window ${cmd.args}`.quiet();
-      break;
-    case "set-environment":
-      await $`tmux set-environment ${cmd.args}`.quiet();
-      break;
-    case "send-keys":
-      await $`tmux send-keys ${cmd.args}`.quiet();
-      break;
-    case "select-layout":
-      await $`tmux select-layout ${cmd.args}`.quiet();
-      break;
-    case "select-window":
-      await $`tmux select-window ${cmd.args}`.quiet();
-      break;
-    case "set-option":
-      await $`tmux set-option ${cmd.args}`.quiet();
-      break;
-    case "bind-key":
-      await $`tmux bind-key ${cmd.args}`.quiet();
-      break;
-  }
+function executeCommand(cmd: TmuxCommand) {
+  return execProcess("tmux", [cmd.type, ...cmd.args]).pipe(Effect.asVoid);
 }
 
-async function executeCommands(commands: TmuxCommand[]): Promise<void> {
-  for (const cmd of commands) {
-    await executeCommand(cmd);
-  }
+function executeCommands(commands: TmuxCommand[]) {
+  return Effect.forEach(commands, executeCommand, { discard: true });
 }
 
 export function buildWindowsPaneCommands(
   sessionName: string,
   workingDir: string,
-  windows: TmuxWindow[],
+  windows: ReadonlyArray<TmuxWindow>,
   env?: WctEnv,
 ): TmuxCommand[] {
   const commands: TmuxCommand[] = [];
@@ -309,61 +324,257 @@ export function buildWindowsPaneCommands(
   return commands;
 }
 
-async function createSessionWithWindows(
+function createSessionWithWindows(
   name: string,
   workingDir: string,
-  windows: TmuxWindow[],
+  windows: ReadonlyArray<TmuxWindow>,
   env?: WctEnv,
-): Promise<void> {
+) {
   const commands = buildWindowsPaneCommands(name, workingDir, windows, env);
-  await executeCommands(commands);
+  return executeCommands(commands);
 }
 
-async function configureQueueStatusBar(sessionName: string): Promise<void> {
-  try {
-    const wctBin = resolveWctBin();
+function configureQueueStatusBar(sessionName: string) {
+  return Effect.catch(
+    Effect.gen(function* () {
+      const wctBin = resolveWctBin();
 
-    // Set status refresh interval
-    await executeCommand({
-      type: "set-option",
-      args: ["-t", sessionName, "status-interval", "5"],
-    });
-
-    // Read current status-right
-    let currentStatusRight = "";
-    try {
-      const result =
-        await $`tmux show-options -v -t ${sessionName} status-right`.quiet();
-      currentStatusRight = result.text().trim();
-    } catch {
-      try {
-        const result = await $`tmux show-options -gv status-right`.quiet();
-        currentStatusRight = result.text().trim();
-      } catch {
-        currentStatusRight = "";
-      }
-    }
-
-    // Prepend queue count
-    const queueCount = `#(${formatShellCommand(wctBin, ["queue", "--count"])})`;
-    if (!currentStatusRight.includes(queueCount)) {
-      const newStatusRight = currentStatusRight
-        ? `${queueCount} ${currentStatusRight}`
-        : queueCount;
-      await executeCommand({
+      // Set status refresh interval
+      yield* executeCommand({
         type: "set-option",
-        args: ["-t", sessionName, "status-right", newStatusRight],
+        args: ["-t", sessionName, "status-interval", "5"],
       });
+
+      // Read current status-right
+      let currentStatusRight = "";
+      try {
+        const result = yield* execProcess("tmux", [
+          "show-options",
+          "-v",
+          "-t",
+          sessionName,
+          "status-right",
+        ]);
+        currentStatusRight = result.stdout.trim();
+      } catch {
+        try {
+          const result = yield* execProcess("tmux", [
+            "show-options",
+            "-gv",
+            "status-right",
+          ]);
+          currentStatusRight = result.stdout.trim();
+        } catch {
+          currentStatusRight = "";
+        }
+      }
+
+      // Prepend queue count
+      const queueCount = `#(${formatShellCommand(wctBin, ["queue", "--count"])})`;
+      if (!currentStatusRight.includes(queueCount)) {
+        const newStatusRight = currentStatusRight
+          ? `${queueCount} ${currentStatusRight}`
+          : queueCount;
+        yield* executeCommand({
+          type: "set-option",
+          args: ["-t", sessionName, "status-right", newStatusRight],
+        });
+      }
+
+      // Bind C-q to interactive queue popup (root table, no prefix needed)
+      yield* execProcess("tmux", [
+        "bind-key",
+        "-T",
+        "root",
+        "C-q",
+        "display-popup",
+        "-E",
+        "-w",
+        "80%",
+        "-h",
+        "50%",
+        formatShellCommand(wctBin, ["queue", "--interactive"]),
+      ]);
+    }),
+    (error) =>
+      logger.warn(
+        `Failed to set up queue-status widget/popup: ${getProcessErrorMessage(error)}`,
+      ),
+  );
+}
+
+function createSessionImpl(
+  name: string,
+  workingDir: string,
+  config?: TmuxConfig,
+  env?: WctEnv,
+) {
+  return Effect.gen(function* () {
+    if (yield* sessionExistsImpl(name)) {
+      return { _tag: "AlreadyExists" as const, sessionName: name };
     }
 
-    // Bind C-q to interactive queue popup (root table, no prefix needed)
-    await $`tmux bind-key -T root C-q display-popup -E -w 80% -h 50% ${{
-      raw: formatShellCommand(wctBin, ["queue", "--interactive"]),
-    }}`.quiet();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`Failed to set up queue-status widget/popup: ${message}`);
+    const windows = config?.windows ?? [];
+    yield* createSessionWithWindows(name, workingDir, windows, env);
+    yield* configureQueueStatusBar(name);
+    return { _tag: "Created" as const, sessionName: name };
+  });
+}
+
+export function formatSessionName(dirName: string): string {
+  return dirName.replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function killSessionImpl(name: string) {
+  return execProcess("tmux", ["kill-session", "-t", `=${name}`]).pipe(
+    Effect.asVoid,
+  );
+}
+
+function getCurrentSessionImpl() {
+  if (!process.env.TMUX) {
+    return Effect.succeed(null);
   }
+
+  return Effect.catch(
+    execProcess("tmux", ["display-message", "-p", "#S"]).pipe(
+      Effect.map((result) => result.stdout.trim()),
+    ),
+    () => Effect.succeed(null),
+  );
+}
+
+function switchSessionImpl(name: string) {
+  return execProcess("tmux", ["switch-client", "-t", `=${name}`]).pipe(
+    Effect.asVoid,
+  );
+}
+
+function attachSessionImpl(name: string) {
+  return Effect.gen(function* () {
+    const exitCode = yield* spawnInteractive("tmux", [
+      "attach-session",
+      "-t",
+      `=${name}`,
+    ]);
+
+    if (exitCode !== 0) {
+      return yield* Effect.fail(
+        new ProcessExitError({
+          command: "tmux",
+          args: ["attach-session", "-t", `=${name}`],
+          stdout: "",
+          stderr: "",
+          exitCode,
+        }),
+      );
+    }
+  });
+}
+
+export const liveTmuxService: TmuxService = TmuxService.of({
+  listSessions: () =>
+    Effect.mapError(listSessionsImpl(), (error) =>
+      commandError("tmux_error", "Failed to list tmux sessions", error),
+    ),
+  isPaneAlive: (pane) =>
+    Effect.mapError(isPaneAliveImpl(pane), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to inspect tmux pane '${pane}'`,
+        error,
+      ),
+    ),
+  sessionExists: (name) =>
+    Effect.mapError(sessionExistsImpl(name), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to check tmux session '${name}'`,
+        error,
+      ),
+    ),
+  getSessionStatus: (name) =>
+    Effect.mapError(getSessionStatusImpl(name), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to get tmux session status for '${name}'`,
+        error,
+      ),
+    ),
+  createSession: (name, workingDir, config, env) =>
+    Effect.mapError(createSessionImpl(name, workingDir, config, env), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to create tmux session '${name}': ${getProcessErrorMessage(error)}`,
+        error,
+      ),
+    ),
+  killSession: (name) =>
+    Effect.mapError(killSessionImpl(name), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to kill tmux session: ${getProcessErrorMessage(error)}`,
+        error,
+      ),
+    ),
+  getCurrentSession: () =>
+    Effect.mapError(getCurrentSessionImpl(), (error) =>
+      commandError(
+        "tmux_error",
+        "Failed to determine current tmux session",
+        error,
+      ),
+    ),
+  switchSession: (name) =>
+    Effect.mapError(switchSessionImpl(name), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to switch to session '${name}': ${getProcessErrorMessage(error)}`,
+        error,
+      ),
+    ),
+  attachSession: (name) =>
+    Effect.mapError(attachSessionImpl(name), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to attach to session '${name}': ${getProcessErrorMessage(error)}`,
+        error,
+      ),
+    ),
+});
+
+function provideTmuxService<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return Effect.provideService(effect, TmuxService, liveTmuxService);
+}
+
+export async function listSessions(): Promise<TmuxSession[] | null> {
+  return runBunPromise(
+    provideTmuxService(TmuxService.use((service) => service.listSessions())),
+  );
+}
+
+export async function isPaneAlive(pane: string): Promise<boolean | null> {
+  return runBunPromise(
+    provideTmuxService(TmuxService.use((service) => service.isPaneAlive(pane))),
+  );
+}
+
+export async function sessionExists(name: string): Promise<boolean> {
+  return runBunPromise(
+    provideTmuxService(
+      TmuxService.use((service) => service.sessionExists(name)),
+    ),
+  );
+}
+
+export async function getSessionStatus(
+  name: string,
+): Promise<"attached" | "detached" | null> {
+  return runBunPromise(
+    provideTmuxService(
+      TmuxService.use((service) => service.getSessionStatus(name)),
+    ),
+  );
 }
 
 export async function createSession(
@@ -372,84 +583,41 @@ export async function createSession(
   config?: TmuxConfig,
   env?: WctEnv,
 ): Promise<CreateSessionResult> {
-  if (await sessionExists(name)) {
-    return {
-      success: true,
-      sessionName: name,
-      alreadyExists: true,
-    };
-  }
-
-  try {
-    const windows = config?.windows ?? [];
-    await createSessionWithWindows(name, workingDir, windows, env);
-    await configureQueueStatusBar(name);
-    return { success: true, sessionName: name };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { success: false, sessionName: name, error: message };
-  }
+  return runBunPromise(
+    provideTmuxService(
+      TmuxService.use((service) =>
+        service.createSession(name, workingDir, config, env),
+      ),
+    ),
+  );
 }
 
-export function formatSessionName(dirName: string): string {
-  return dirName.replace(/[^a-zA-Z0-9_-]/g, "-");
-}
-
-export interface KillSessionResult {
-  success: boolean;
-  sessionName: string;
-  error?: string;
-}
-
-export async function killSession(name: string): Promise<KillSessionResult> {
-  try {
-    await $`tmux kill-session -t =${name}`.quiet();
-    return { success: true, sessionName: name };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { success: false, sessionName: name, error: message };
-  }
+export async function killSession(name: string): Promise<void> {
+  return runBunPromise(
+    provideTmuxService(TmuxService.use((service) => service.killSession(name))),
+  );
 }
 
 export async function getCurrentSession(): Promise<string | null> {
-  if (!process.env.TMUX) {
-    return null;
-  }
-
-  try {
-    const result = await $`tmux display-message -p '#S'`.quiet();
-    return result.text().trim();
-  } catch {
-    return null;
-  }
+  return runBunPromise(
+    provideTmuxService(
+      TmuxService.use((service) => service.getCurrentSession()),
+    ),
+  );
 }
 
-export interface SwitchSessionResult {
-  success: boolean;
-  sessionName: string;
-  error?: string;
+export async function switchSession(name: string): Promise<void> {
+  return runBunPromise(
+    provideTmuxService(
+      TmuxService.use((service) => service.switchSession(name)),
+    ),
+  );
 }
 
-export async function switchSession(
-  name: string,
-): Promise<SwitchSessionResult> {
-  try {
-    await $`tmux switch-client -t =${name}`.quiet();
-    return { success: true, sessionName: name };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { success: false, sessionName: name, error: message };
-  }
-}
-
-export async function attachSession(
-  name: string,
-): Promise<SwitchSessionResult> {
-  try {
-    await $`tmux attach-session -t =${name}`;
-    return { success: true, sessionName: name };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { success: false, sessionName: name, error: message };
-  }
+export async function attachSession(name: string): Promise<void> {
+  return runBunPromise(
+    provideTmuxService(
+      TmuxService.use((service) => service.attachSession(name)),
+    ),
+  );
 }

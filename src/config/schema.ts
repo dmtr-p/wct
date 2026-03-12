@@ -1,13 +1,4 @@
-export interface SetupCommand {
-  name: string;
-  command: string;
-  optional?: boolean;
-}
-
-export interface TmuxPane {
-  name?: string;
-  command?: string;
-}
+import { Schema } from "effect";
 
 export const VALID_LAYOUTS = [
   "even-horizontal",
@@ -17,37 +8,62 @@ export const VALID_LAYOUTS = [
   "tiled",
 ] as const;
 
+export const SetupCommandSchema = Schema.Struct({
+  name: Schema.String,
+  command: Schema.String,
+  optional: Schema.optional(Schema.Boolean),
+});
+
+export const TmuxPaneSchema = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+});
+
+export const TmuxLayoutSchema = Schema.Literals(VALID_LAYOUTS);
+
+export const TmuxWindowSchema = Schema.Struct({
+  name: Schema.String,
+  command: Schema.optional(Schema.String),
+  split: Schema.optional(Schema.Literals(["horizontal", "vertical"] as const)),
+  layout: Schema.optional(TmuxLayoutSchema),
+  panes: Schema.optional(Schema.Array(TmuxPaneSchema)),
+});
+
+export const TmuxConfigSchema = Schema.Struct({
+  windows: Schema.optional(Schema.Array(TmuxWindowSchema)),
+});
+
+export const IdeConfigSchema = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  command: Schema.String,
+  fork_workspace: Schema.optional(Schema.Boolean),
+});
+
+export const WctConfigSchema = Schema.Struct({
+  version: Schema.optional(Schema.Number),
+  worktree_dir: Schema.optional(Schema.String),
+  project_name: Schema.optional(Schema.String),
+  copy: Schema.optional(Schema.Array(Schema.String)),
+  setup: Schema.optional(Schema.Array(SetupCommandSchema)),
+  ide: Schema.optional(IdeConfigSchema),
+  tmux: Schema.optional(TmuxConfigSchema),
+});
+
+export const ResolvedConfigSchema = Schema.Struct({
+  version: Schema.optional(Schema.Number),
+  worktree_dir: Schema.String,
+  project_name: Schema.String,
+  copy: Schema.optional(Schema.Array(Schema.String)),
+  setup: Schema.optional(Schema.Array(SetupCommandSchema)),
+  ide: Schema.optional(IdeConfigSchema),
+  tmux: Schema.optional(TmuxConfigSchema),
+});
+
+export type SetupCommand = typeof SetupCommandSchema.Type;
+export type TmuxPane = typeof TmuxPaneSchema.Type;
 export type TmuxLayout = (typeof VALID_LAYOUTS)[number];
-
-export interface TmuxWindow {
-  name: string;
-  command?: string;
-  split?: "horizontal" | "vertical";
-  layout?: TmuxLayout;
-  panes?: TmuxPane[];
-}
-
-export interface TmuxConfig {
-  windows?: TmuxWindow[];
-}
-
-export interface IdeConfig {
-  name?: string;
-  command: string;
-  fork_workspace?: boolean;
-}
-
-export interface WctConfig {
-  version?: number;
-  worktree_dir?: string;
-  project_name?: string;
-  copy?: string[];
-  setup?: SetupCommand[];
-  ide?: IdeConfig;
-  tmux?: TmuxConfig;
-}
-
-export interface ResolvedConfig extends WctConfig {
-  worktree_dir: string;
-  project_name: string;
-}
+export type TmuxWindow = typeof TmuxWindowSchema.Type;
+export type TmuxConfig = typeof TmuxConfigSchema.Type;
+export type IdeConfig = typeof IdeConfigSchema.Type;
+export type WctConfig = typeof WctConfigSchema.Type;
+export type ResolvedConfig = typeof ResolvedConfigSchema.Type;

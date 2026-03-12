@@ -1,8 +1,28 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { Effect } from "effect";
 import { commandDef, switchCommand } from "../src/commands/switch";
-import * as tmux from "../src/services/tmux";
-import { formatSessionName } from "../src/services/tmux";
-import * as worktree from "../src/services/worktree";
+import { runBunPromise } from "../src/effect/runtime";
+import { commandError } from "../src/errors";
+import {
+  formatSessionName,
+  liveTmuxService,
+  type TmuxService,
+} from "../src/services/tmux";
+import {
+  liveWorktreeService,
+  type WorktreeService,
+} from "../src/services/worktree-service";
+import { withTestServices } from "./helpers/services";
+
+async function runCommand(
+  branch: string,
+  overrides: {
+    tmux?: TmuxService;
+    worktree?: WorktreeService;
+  } = {},
+) {
+  await runBunPromise(withTestServices(switchCommand(branch), overrides));
+}
 
 describe("switchCommand", () => {
   test("is exported as a function", () => {
@@ -10,38 +30,77 @@ describe("switchCommand", () => {
   });
 
   test("extracts basename from full worktree path for session name", async () => {
-    const isGitRepoSpy = spyOn(worktree, "isGitRepo").mockResolvedValue(true);
-    const findSpy = spyOn(worktree, "findWorktreeByBranch").mockResolvedValue({
-      path: "/some/path/myapp-feature-auth",
-      branch: "feature-auth",
-      commit: "abc123",
-      isBare: false,
-    });
-    const sessionExistsSpy = spyOn(tmux, "sessionExists").mockResolvedValue(
-      true,
-    );
-    const switchSessionSpy = spyOn(tmux, "switchSession").mockResolvedValue({
-      success: true,
-      sessionName: "myapp-feature-auth",
-    });
+    const switchCalls: string[] = [];
     // Simulate being inside tmux so switchSession is called
     const origTmux = process.env.TMUX;
     process.env.TMUX = "/tmp/tmux-1000/default,12345,0";
 
     try {
-      const result = await switchCommand("feature-auth");
-      expect(result.success).toBe(true);
-      expect(switchSessionSpy).toHaveBeenCalledWith("myapp-feature-auth");
+      await expect(
+        runCommand("feature-auth", {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            findWorktreeByBranch: () =>
+              Effect.succeed({
+                path: "/some/path/myapp-feature-auth",
+                branch: "feature-auth",
+                commit: "abc123",
+                isBare: false,
+              }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(true),
+            switchSession: (name) =>
+              Effect.sync(() => {
+                switchCalls.push(name);
+              }),
+          },
+        }),
+      ).resolves.toBeUndefined();
+      expect(switchCalls).toEqual(["myapp-feature-auth"]);
     } finally {
       if (origTmux === undefined) {
         delete process.env.TMUX;
       } else {
         process.env.TMUX = origTmux;
       }
-      isGitRepoSpy.mockRestore();
-      findSpy.mockRestore();
-      sessionExistsSpy.mockRestore();
-      switchSessionSpy.mockRestore();
+    }
+  });
+
+  test("fails when attach-session fails outside tmux", async () => {
+    const origTmux = process.env.TMUX;
+    delete process.env.TMUX;
+
+    try {
+      await expect(
+        runCommand("feature-auth", {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            findWorktreeByBranch: () =>
+              Effect.succeed({
+                path: "/some/path/myapp-feature-auth",
+                branch: "feature-auth",
+                commit: "abc123",
+                isBare: false,
+              }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(true),
+            attachSession: () =>
+              Effect.fail(commandError("tmux_error", "attach failed")),
+          },
+        }),
+      ).rejects.toThrow("attach failed");
+    } finally {
+      if (origTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = origTmux;
+      }
     }
   });
 });

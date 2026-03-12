@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parsePrArg } from "../src/services/github";
+import { parsePrArg } from "../src/services/github-service";
 
 describe("GitHub PR resolution", () => {
   describe("parsePrArg", () => {

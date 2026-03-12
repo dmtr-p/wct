@@ -1,20 +1,14 @@
 import { basename } from "node:path";
+import { Console, Effect } from "effect";
 import { loadConfig } from "../config/loader";
-import { openIDE } from "../services/ide";
-import {
-  createSession,
-  formatSessionName,
-  switchSession,
-} from "../services/tmux";
-import {
-  getCurrentBranch,
-  getMainRepoPath,
-  isGitRepo,
-} from "../services/worktree";
+import type { WctServices } from "../effect/services";
+import { commandError, toWctError, type WctError } from "../errors";
+import { IdeService } from "../services/ide-service";
+import { formatSessionName, TmuxService } from "../services/tmux";
+import { WorktreeService } from "../services/worktree-service";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "up",
@@ -32,82 +26,111 @@ export interface UpOptions {
   noIde?: boolean;
 }
 
-export async function upCommand(options?: UpOptions): Promise<CommandResult> {
-  const { noIde } = options ?? {};
-  if (!(await isGitRepo())) {
-    return err("Not a git repository", "not_git_repo");
-  }
-
-  const cwd = process.cwd();
-
-  const mainRepoPath = await getMainRepoPath();
-  if (!mainRepoPath) {
-    return err("Could not determine repository root", "worktree_error");
-  }
-
-  const { config, errors } = await loadConfig(mainRepoPath);
-  if (!config) {
-    return err(errors.join("\n"), "config_error");
-  }
-
-  const branch = await getCurrentBranch();
-  if (!branch) {
-    return err(
-      "Could not determine current branch (detached HEAD is not supported)",
-      "detached_head",
-    );
-  }
-
-  const sessionName = formatSessionName(basename(cwd));
-
-  const env: WctEnv = {
-    WCT_WORKTREE_DIR: cwd,
-    WCT_MAIN_DIR: mainRepoPath,
-    WCT_BRANCH: branch,
-    WCT_PROJECT: config.project_name,
-  };
-
-  if (config.tmux) {
-    logger.info("Creating tmux session...");
-    const tmuxResult = await createSession(sessionName, cwd, config.tmux, env);
-
-    if (tmuxResult.success) {
-      if (tmuxResult.alreadyExists) {
-        logger.info(`Tmux session '${sessionName}' already exists`);
-      } else {
-        logger.success(`Created tmux session '${sessionName}'`);
-      }
-    } else {
-      logger.warn(`Failed to create tmux session: ${tmuxResult.error}`);
-    }
-  }
-
-  if (config.ide?.command && !noIde) {
-    logger.info("Opening IDE...");
-    const ideResult = await openIDE(config.ide.command, env);
-
-    if (ideResult.success) {
-      logger.success("IDE opened");
-    } else {
-      logger.warn(`Failed to open IDE: ${ideResult.error}`);
-    }
-  }
-
-  logger.success(`Environment ready for '${branch}'`);
-  if (config.tmux) {
-    if (process.env.TMUX) {
-      const switchResult = await switchSession(sessionName);
-      if (switchResult.success) {
-        logger.success(`Switched to tmux session '${sessionName}'`);
-      } else {
-        logger.warn(`Failed to switch session: ${switchResult.error}`);
-      }
-    } else {
-      console.log(
-        `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+export function upCommand(
+  options?: UpOptions,
+): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const { noIde } = options ?? {};
+    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
+    if (!repo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
       );
     }
-  }
 
-  return ok();
+    const cwd = process.cwd();
+
+    const mainRepoPath = yield* WorktreeService.use((service) =>
+      service.getMainRepoPath(),
+    );
+    if (!mainRepoPath) {
+      return yield* Effect.fail(
+        commandError("worktree_error", "Could not determine repository root"),
+      );
+    }
+
+    const { config, errors } = yield* Effect.tryPromise({
+      try: () => loadConfig(mainRepoPath),
+      catch: (error) =>
+        commandError("config_error", "Failed to load configuration", error),
+    });
+    if (!config) {
+      return yield* Effect.fail(
+        commandError("config_error", errors.join("\n")),
+      );
+    }
+
+    const branch = yield* WorktreeService.use((service) =>
+      service.getCurrentBranch(),
+    );
+    if (!branch) {
+      return yield* Effect.fail(
+        commandError(
+          "detached_head",
+          "Could not determine current branch (detached HEAD is not supported)",
+        ),
+      );
+    }
+
+    const sessionName = formatSessionName(basename(cwd));
+
+    const env: WctEnv = {
+      WCT_WORKTREE_DIR: cwd,
+      WCT_MAIN_DIR: mainRepoPath,
+      WCT_BRANCH: branch,
+      WCT_PROJECT: config.project_name,
+    };
+
+    if (config.tmux) {
+      yield* logger.info("Creating tmux session...");
+      yield* Effect.catch(
+        TmuxService.use((service) =>
+          service.createSession(sessionName, cwd, config.tmux, env),
+        ).pipe(
+          Effect.tap((tmuxResult) =>
+            tmuxResult._tag === "AlreadyExists"
+              ? logger.info(`Tmux session '${sessionName}' already exists`)
+              : logger.success(`Created tmux session '${sessionName}'`),
+          ),
+        ),
+        (error) =>
+          logger.warn(
+            `Failed to create tmux session: ${toWctError(error).message}`,
+          ),
+      );
+    }
+
+    const ideCommand = config.ide?.command;
+    if (ideCommand && !noIde) {
+      yield* logger.info("Opening IDE...");
+      yield* Effect.catch(
+        IdeService.use((service) => service.openIDE(ideCommand, env)).pipe(
+          Effect.tap(() => logger.success("IDE opened")),
+        ),
+        (error) =>
+          logger.warn(`Failed to open IDE: ${toWctError(error).message}`),
+      );
+    }
+
+    yield* logger.success(`Environment ready for '${branch}'`);
+    if (config.tmux) {
+      if (process.env.TMUX) {
+        yield* Effect.catch(
+          TmuxService.use((service) => service.switchSession(sessionName)).pipe(
+            Effect.tap(() =>
+              logger.success(`Switched to tmux session '${sessionName}'`),
+            ),
+          ),
+          (error) =>
+            logger.warn(
+              `Failed to switch session: ${toWctError(error).message}`,
+            ),
+        );
+      } else {
+        yield* Console.log(
+          `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+        );
+      }
+    }
+  });
 }

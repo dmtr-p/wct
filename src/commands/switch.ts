@@ -1,14 +1,10 @@
 import { basename } from "node:path";
-import {
-  attachSession,
-  formatSessionName,
-  sessionExists,
-  switchSession,
-} from "../services/tmux";
-import { findWorktreeByBranch, isGitRepo } from "../services/worktree";
+import { Effect } from "effect";
+import { commandError } from "../errors";
+import { formatSessionName, TmuxService } from "../services/tmux";
+import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "switch",
@@ -18,49 +14,48 @@ export const commandDef: CommandDef = {
   completionType: "worktree",
 };
 
-export async function switchCommand(branch: string): Promise<CommandResult> {
-  if (!(await isGitRepo())) {
-    return err("Not a git repository", "not_git_repo");
-  }
-
-  const worktree = await findWorktreeByBranch(branch);
-  if (!worktree) {
-    return err(
-      `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
-      "worktree_not_found",
-    );
-  }
-
-  const sessionName = formatSessionName(basename(worktree.path));
-
-  if (!(await sessionExists(sessionName))) {
-    return err(
-      `No tmux session '${sessionName}' for branch '${branch}'. Try: wct up (from the worktree directory)`,
-      "tmux_error",
-    );
-  }
-
-  const insideTmux = !!process.env.TMUX;
-
-  if (insideTmux) {
-    const result = await switchSession(sessionName);
-    if (!result.success) {
-      return err(
-        `Failed to switch to session '${sessionName}': ${result.error}`,
-        "tmux_error",
+export function switchCommand(branch: string) {
+  return Effect.gen(function* () {
+    const isRepo = yield* WorktreeService.use((service) => service.isGitRepo());
+    if (!isRepo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
       );
     }
-    logger.success(`Switched to session '${sessionName}'`);
-  } else {
-    logger.info(`Attaching to session '${sessionName}'...`);
-    const result = await attachSession(sessionName);
-    if (!result.success) {
-      return err(
-        `Failed to attach to session '${sessionName}': ${result.error}`,
-        "tmux_error",
+
+    const worktree = yield* WorktreeService.use((service) =>
+      service.findWorktreeByBranch(branch),
+    );
+    if (!worktree) {
+      return yield* Effect.fail(
+        commandError(
+          "worktree_not_found",
+          `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
+        ),
       );
     }
-  }
 
-  return ok();
+    const sessionName = formatSessionName(basename(worktree.path));
+    const sessionPresent = yield* TmuxService.use((service) =>
+      service.sessionExists(sessionName),
+    );
+    if (!sessionPresent) {
+      return yield* Effect.fail(
+        commandError(
+          "tmux_error",
+          `No tmux session '${sessionName}' for branch '${branch}'. Try: wct up (from the worktree directory)`,
+        ),
+      );
+    }
+
+    if (process.env.TMUX) {
+      yield* TmuxService.use((service) => service.switchSession(sessionName));
+      yield* logger.success(`Switched to session '${sessionName}'`);
+      return;
+    }
+
+    yield* logger.info(`Attaching to session '${sessionName}'...`);
+
+    yield* TmuxService.use((service) => service.attachSession(sessionName));
+  });
 }

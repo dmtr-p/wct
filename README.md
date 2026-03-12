@@ -57,17 +57,17 @@ When installed via Homebrew, completions are set up automatically. For manual in
 
 **Bash** — add to `~/.bashrc`:
 ```bash
-eval "$(wct completions bash)"
+eval "$(wct --completions bash)"
 ```
 
 **Zsh** — add to `~/.zshrc`:
 ```bash
-eval "$(wct completions zsh)"
+eval "$(wct --completions zsh)"
 ```
 
 **Fish** — run once:
 ```bash
-wct completions fish > ~/.config/fish/completions/wct.fish
+wct --completions fish > ~/.config/fish/completions/wct.fish
 ```
 
 ## Configuration

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { chmod, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -254,11 +254,7 @@ describe("upCommand", () => {
     const originalTmux = process.env.TMUX;
     delete process.env.TMUX;
 
-    const lines: string[] = [];
-    const originalLog = console.log;
-    console.log = (...args: unknown[]) => {
-      lines.push(String(args[0]));
-    };
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
 
     try {
       await $`git init -b main`.quiet().cwd(repoDir);
@@ -297,11 +293,12 @@ tmux:
         ),
       ).resolves.toBeUndefined();
 
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
       expect(
-        lines.some((line) => line.includes("Attach to tmux session")),
+        loggedLines.some((line) => line.includes("Attach to tmux session")),
       ).toBe(false);
     } finally {
-      console.log = originalLog;
+      logSpy.mockRestore();
       if (originalTmux === undefined) {
         delete process.env.TMUX;
       } else {

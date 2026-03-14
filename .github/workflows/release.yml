@@ -35,9 +35,9 @@ jobs:
       - name: Generate shell completions
         run: |
           chmod +x dist/wct-linux-x64
-          ./dist/wct-linux-x64 completions bash > dist/wct.bash
-          ./dist/wct-linux-x64 completions zsh > dist/_wct
-          ./dist/wct-linux-x64 completions fish > dist/wct.fish
+          ./dist/wct-linux-x64 --completions bash > dist/wct.bash
+          ./dist/wct-linux-x64 --completions zsh > dist/_wct
+          ./dist/wct-linux-x64 --completions fish > dist/wct.fish
 
       - name: Add completion checksums
         run: |

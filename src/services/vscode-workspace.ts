@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { type Console, Effect, type FileSystem, ServiceMap } from "effect";
+import { Effect, type FileSystem, ServiceMap } from "effect";
 import * as logger from "../utils/logger";
 import {
   copyPath,
@@ -27,11 +27,7 @@ export interface VSCodeWorkspaceService {
   syncWorkspaceState: (
     mainRepoPath: string,
     worktreePath: string,
-  ) => Effect.Effect<
-    SyncResult,
-    never,
-    Console.Console | FileSystem.FileSystem
-  >;
+  ) => Effect.Effect<SyncResult, never, FileSystem.FileSystem>;
 }
 
 export const VSCodeWorkspaceService =
@@ -536,7 +532,7 @@ export function clearExternalAgentSessions(dbPath: string) {
 function syncWorkspaceStateImpl(
   mainRepoPath: string,
   worktreePath: string,
-): Effect.Effect<SyncResult, never, Console.Console | FileSystem.FileSystem> {
+): Effect.Effect<SyncResult, never, FileSystem.FileSystem> {
   return Effect.catch(
     Effect.gen(function* () {
       const storagePath = getVSCodeStoragePath();

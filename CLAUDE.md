@@ -21,50 +21,70 @@ The file structure follows this layout:
 
 ```
 src/
-├── index.ts              # Entry point, CLI setup with util.parseArgs
+├── index.ts              # Entry point; handles completions/version shortcuts and runs the Effect root via BunRuntime.runMain
+├── errors.ts             # Unified error types (WctCommandError) and error constructors
+├── cli/
+│   ├── root-command.ts   # Effect CLI root command tree and command dispatch
+│   └── completions.ts    # Custom shell completions layered on top of the Effect CLI UX
 ├── commands/
-│   ├── open.ts           # wct open <branch> - full worktree workflow
-│   ├── up.ts             # wct up - start tmux session and open IDE
-│   ├── down.ts           # wct down - kill tmux session
-│   ├── close.ts          # wct close <branch> - kill session and remove worktree
-│   ├── list.ts           # wct list - show active worktrees
-│   ├── switch.ts         # wct switch - quick tmux session switching
-│   ├── cd.ts             # wct cd - open shell in worktree directory
-│   ├── init.ts           # wct init - generate .wct.yaml
-│   ├── completions.ts    # Shell completions (bash, zsh, fish)
-│   ├── completions-def.ts # Completion definitions co-located with commands
-│   └── registry.ts       # Command definitions for help and completions
+│   ├── command-def.ts    # Shared command option and metadata interfaces
+│   ├── open.ts           # Native Effect implementation of wct open <branch>
+│   ├── up.ts             # Native Effect implementation of wct up
+│   ├── down.ts           # Native Effect implementation of wct down
+│   ├── close.ts          # Native Effect implementation of wct close <branch>
+│   ├── list.ts           # Native Effect implementation of wct list
+│   ├── switch.ts         # Native Effect implementation of wct switch
+│   ├── cd.ts             # Native Effect implementation of wct cd
+│   ├── init.ts           # Native Effect implementation of wct init
+│   ├── notify.ts         # Native Effect implementation of wct notify
+│   ├── queue.ts          # Native Effect implementation of wct queue
+│   └── hooks.ts          # Native Effect implementation of wct hooks
 ├── config/
-│   ├── loader.ts         # Load & merge configs (project + global)
-│   ├── schema.ts         # Config type definitions
-│   └── validator.ts      # Config validation
+│   ├── loader.ts         # Effect-based config loading and merge flow
+│   ├── schema.ts         # Effect Schema model for .wct.yaml
+│   └── validator.ts      # Validation helpers and path-aware error rendering
+├── effect/
+│   ├── cli.ts            # Re-exports for Effect unstable CLI modules
+│   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
+│   └── services.ts       # Live service bundle provided to the app
 ├── services/
-│   ├── worktree.ts       # Git worktree operations
+│   ├── worktree-service.ts # Effect service for git worktree operations
 │   ├── copy.ts           # File copying utilities
-│   ├── setup.ts          # Run setup commands
+│   ├── filesystem.ts     # Effect-based filesystem helpers (pathExists, ensureDirectory, stat)
+│   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
+│   ├── setup-service.ts  # Effect service for setup command execution
 │   ├── tmux.ts           # Tmux session management
-│   ├── ide.ts            # IDE launcher
-│   ├── github.ts         # GitHub PR integration
-│   └── vscode-workspace.ts # VS Code workspace file generation
+│   ├── ide-service.ts    # Effect service for IDE launching
+│   ├── github-service.ts # Effect service for GitHub PR integration
+│   ├── hooks-service.ts  # Effect service for git hook installation
+│   ├── queue-storage.ts  # SQLite-backed queue persistence service
+│   └── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/
-    ├── logger.ts         # Logging with Bun.color
-    ├── prompt.ts         # User confirmation prompts
-    └── result.ts         # Result type utility
+    ├── bin.ts            # wct binary resolution and shell command formatting
+    ├── logger.ts         # Effect-native logging helpers
+    └── prompt.ts         # Effect-native prompt helpers
 ```
 
 ## Bun Runtime
 
-Use Bun exclusively - no Node.js fallback. Leverage Bun built-in APIs:
+Use Bun exclusively - no Node.js fallback. The runtime boundary is:
 
-- `Bun.$\`command\`` for shell execution (git, tmux commands)
-- `Bun.file()` / `Bun.write()` for file I/O
+- `effect` for the application, services, errors, schemas, and CLI
+- `effect/unstable/cli` for the root command tree and built-in CLI UX
+- `@effect/platform-bun` for `BunRuntime.runMain` and `BunServices.layer`
+
+Leverage Bun built-in APIs where they are still the right primitive:
+
 - `Bun.YAML.parse()` for config parsing
-- `Bun.color("red", "ansi")` for terminal colors
-- `import { parseArgs } from "util"` for CLI argument parsing
+- `Bun.spawn(...)` for interactive inherited-stdio process handoff
+- `Bun.Glob` for copy pattern expansion
+- `Bun.which` for executable lookup
 
-This project has **zero runtime dependencies** by design.
+The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added.
+
+This project uses **Effect v4**. If your training data covers Effect v3, read [EFFECT_V4.md](./EFFECT_V4.md) for the correct v4 APIs and patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
 
 ## Config System
 

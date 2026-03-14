@@ -1,62 +1,84 @@
-import { describe, expect, spyOn, test } from "bun:test";
-import { completionsCommand } from "../src/commands/completions";
-import { COMMANDS } from "../src/commands/registry";
+import { describe, expect, test } from "bun:test";
 
-function captureFishCompletions(): string {
-  const logSpy = spyOn(console, "log").mockImplementation(() => {});
+const { version: VERSION } = require("../package.json");
 
-  try {
-    const result = completionsCommand("fish");
-    expect(result.success).toBe(true);
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    return String(logSpy.mock.calls[0]?.[0] ?? "");
-  } finally {
-    logSpy.mockRestore();
-  }
+function runCliProcess(args: string[]) {
+  return Bun.spawnSync(["bun", "run", "src/index.ts", ...args]);
 }
 
-describe("fish completions", () => {
-  test("escapes apostrophes in command descriptions", () => {
-    const output = captureFishCompletions();
+describe("Effect CLI root", () => {
+  test("renders built-in help from the root command", () => {
+    const result = runCliProcess(["--help"]);
+    const output = result.stdout.toString();
 
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("GLOBAL FLAGS");
+    expect(output).toContain("--completions choice");
+    expect(output).toContain("switch, sw");
+    expect(output).not.toContain("\n  completions");
+  });
+
+  test("renders built-in version output", () => {
+    const result = runCliProcess(["--version"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe(`wct v${VERSION}`);
+  });
+
+  test("renders version output for the short -v flag", () => {
+    const result = runCliProcess(["-v"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe(`wct v${VERSION}`);
+  });
+
+  test("renders custom fish completions with branch and worktree helpers", () => {
+    const result = runCliProcess(["--completions", "fish"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("function __wct_branches");
+    expect(output).toContain("function __wct_worktree_branches");
+    expect(output).toContain("git branch --format='%(refname:short)'");
+    expect(output).toContain("git worktree list --porcelain");
+    expect(output).toContain("-a 'switch'");
+    expect(output).not.toContain("-a 'completions'");
+  });
+
+  test("renders bash completions with command-specific options after a subcommand", () => {
+    const result = runCliProcess(["--completions", "bash"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
     expect(output).toContain(
-      "complete -c wct -n '__fish_use_subcommand' -a 'switch' -d 'Switch to another worktree\\'s tmux session'",
+      "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --pr --prompt -p' -- \"$cur\"))",
     );
   });
 
-  test("escapes backslashes in command descriptions", () => {
-    const switchCommand = COMMANDS.find((cmd) => cmd.name === "switch");
-    expect(switchCommand).toBeDefined();
+  test("falls back to Effect built-in completions for sh", () => {
+    const result = runCliProcess(["--completions", "sh"]);
+    const output = result.stdout.toString();
 
-    const originalDescription = switchCommand?.description ?? "";
-    if (!switchCommand) return;
-
-    switchCommand.description = String.raw`Switch path C:\worktree\session`;
-    try {
-      const output = captureFishCompletions();
-
-      expect(output).toContain(
-        "complete -c wct -n '__fish_use_subcommand' -a 'switch' -d 'Switch path C:\\\\worktree\\\\session'",
-      );
-    } finally {
-      switchCommand.description = originalDescription;
-    }
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("Static completion script for Bash");
   });
 
-  test("uses regex filtering for worktree branch helper", () => {
-    const output = captureFishCompletions();
+  test("does not expose the legacy completions subcommand", async () => {
+    const result = runCliProcess(["completions", "fish"]);
 
-    expect(output).toContain(
-      "git worktree list --porcelain 2>/dev/null | string match -rg '^branch refs/heads/(.+)$'",
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toContain(
+      'Unknown subcommand "completions"',
     );
-    expect(output).not.toContain("string replace -rf");
   });
 
-  test("includes sw alias in worktree branch completion condition", () => {
-    const output = captureFishCompletions();
+  test("renders command validation failures without a stack trace", () => {
+    const result = runCliProcess(["open"]);
+    const stderr = result.stderr.toString();
 
-    expect(output).toContain(
-      "complete -c wct -n '__fish_seen_subcommand_from cd close switch sw' -a '(__wct_worktree_branches)' -d 'Branch name'",
-    );
+    expect(result.exitCode).toBe(1);
+    expect(stderr).toContain("Missing branch name");
+    expect(stderr).not.toContain("WctCommandError");
+    expect(stderr).not.toContain("at ");
   });
 });

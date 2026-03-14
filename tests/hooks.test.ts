@@ -3,9 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { commandDef, hooksCommand } from "../src/commands/hooks";
+import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
 import * as bin from "../src/utils/bin";
 
 const testDir = join(tmpdir(), `wct-test-hooks-${Date.now()}`);
+
+async function runCommand(options: { install?: boolean }) {
+  await runBunPromise(provideWctServices(hooksCommand(options)));
+}
 
 describe("hooks commandDef", () => {
   test("has correct name and --install option", () => {
@@ -40,9 +46,7 @@ describe("hooksCommand", () => {
     const errorSpy = spyOn(console, "error").mockImplementation(() => {});
 
     try {
-      const result = await hooksCommand({});
-
-      expect(result.success).toBe(true);
+      await expect(runCommand({})).resolves.toBeUndefined();
       expect(logSpy).toHaveBeenCalledTimes(1);
 
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
@@ -57,9 +61,7 @@ describe("hooksCommand", () => {
   });
 
   test("--install creates .claude/settings.local.json with hooks", async () => {
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settingsPath = join(testDir, ".claude", "settings.local.json");
     const settings = await Bun.file(settingsPath).json();
@@ -75,9 +77,7 @@ describe("hooksCommand", () => {
       JSON.stringify({ permissions: { allow: ["Read"] } }),
     );
 
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),
@@ -96,9 +96,7 @@ describe("hooksCommand", () => {
       }),
     );
 
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),
@@ -117,9 +115,7 @@ describe("hooksCommand", () => {
       JSON.stringify({ hooks: { Notification: [{ matcher: "existing" }] } }),
     );
 
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),
@@ -163,9 +159,7 @@ describe("hooksCommand", () => {
       }),
     );
 
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),
@@ -190,9 +184,7 @@ describe("hooksCommand", () => {
       }),
     );
 
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),
@@ -210,9 +202,7 @@ describe("hooksCommand", () => {
     await $`mkdir -p ${claudeDir}`.quiet();
     await Bun.write(join(claudeDir, "settings.local.json"), "{not valid json");
 
-    const result = await hooksCommand({ install: true });
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({ install: true })).resolves.toBeUndefined();
 
     const settings = await Bun.file(
       join(claudeDir, "settings.local.json"),

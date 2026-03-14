@@ -1,14 +1,25 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { chmod, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { Effect } from "effect";
 import { upCommand } from "../src/commands/up";
+import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
+import { commandError } from "../src/errors";
+import { liveTmuxService } from "../src/services/tmux";
 import {
-  getCurrentBranch,
-  getMainRepoPath,
-  getMainWorktreePath,
-} from "../src/services/worktree";
+  liveWorktreeService,
+  WorktreeService,
+} from "../src/services/worktree-service";
+import { withTestServices } from "./helpers/services";
+
+function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return provideWctServices(
+    Effect.provideService(effect, WorktreeService, liveWorktreeService),
+  );
+}
 
 interface LinkedWorktreeFixture {
   repoDir: string;
@@ -62,7 +73,11 @@ describe("getCurrentBranch", () => {
       await $`git commit --allow-empty -m "initial"`.quiet().cwd(tempDir);
 
       process.chdir(tempDir);
-      const branch = await getCurrentBranch();
+      const branch = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getCurrentBranch()),
+        ),
+      );
       expect(branch).toBe("test-branch");
     } finally {
       process.chdir(originalDir);
@@ -84,7 +99,11 @@ describe("getCurrentBranch", () => {
       await $`git checkout ${sha.trim()}`.quiet().cwd(tempDir);
 
       process.chdir(tempDir);
-      const branch = await getCurrentBranch();
+      const branch = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getCurrentBranch()),
+        ),
+      );
       expect(branch).toBeNull();
     } finally {
       process.chdir(originalDir);
@@ -113,14 +132,22 @@ describe("getMainWorktreePath", () => {
 
   test("returns main repo path when run from main repo", async () => {
     process.chdir(repoDir);
-    const result = await getMainWorktreePath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainWorktreePath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 
   test("returns main repo path when run from a worktree", async () => {
     const wtPath = join(worktreeDir, "feature-branch");
     process.chdir(wtPath);
-    const result = await getMainWorktreePath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainWorktreePath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 });
@@ -129,6 +156,7 @@ describe("getMainRepoPath", () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
+  const originalPath = process.env.PATH;
 
   beforeAll(async () => {
     const fixture = await createLinkedWorktreeFixture(
@@ -145,20 +173,139 @@ describe("getMainRepoPath", () => {
 
   test("returns main repo path when run from main repo", async () => {
     process.chdir(repoDir);
-    const result = await getMainRepoPath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainRepoPath()),
+      ),
+    );
     expect(result).toBe(repoDir);
   });
 
   test("returns main repo path when run from a worktree", async () => {
     const wtPath = join(worktreeDir, "feature-branch");
     process.chdir(wtPath);
-    const result = await getMainRepoPath();
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.getMainRepoPath()),
+      ),
+    );
     expect(result).toBe(repoDir);
+  });
+
+  async function withFailingWorktreeList(cwd: string, fn: () => Promise<void>) {
+    const fakeBinDir = await mkdtemp(join(tmpdir(), "wct-test-fake-git-"));
+    const realGit = (await $`which git`.quiet().text()).trim();
+    const fakeGitPath = join(fakeBinDir, "git");
+    try {
+      await Bun.write(
+        fakeGitPath,
+        `#!/bin/sh
+if [ "$1" = "worktree" ] && [ "$2" = "list" ] && [ "$3" = "--porcelain" ]; then
+  echo "simulated git worktree failure" >&2
+  exit 1
+fi
+exec "${realGit}" "$@"
+`,
+      );
+      await chmod(fakeGitPath, 0o755);
+
+      process.env.PATH = `${fakeBinDir}:${originalPath ?? ""}`;
+      process.chdir(cwd);
+      await fn();
+    } finally {
+      process.env.PATH = originalPath;
+      process.chdir(originalDir);
+      await rm(fakeBinDir, { recursive: true, force: true });
+    }
+  }
+
+  test("falls back to rev-parse when git worktree list fails", async () => {
+    await withFailingWorktreeList(repoDir, async () => {
+      const result = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getMainRepoPath()),
+        ),
+      );
+      expect(result).toBe(repoDir);
+    });
+  });
+
+  test("falls back to the main repo path when git worktree list fails in a linked worktree", async () => {
+    const wtPath = join(worktreeDir, "feature-branch");
+    await withFailingWorktreeList(wtPath, async () => {
+      const result = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getMainRepoPath()),
+        ),
+      );
+      expect(result).toBe(repoDir);
+    });
   });
 });
 
 describe("upCommand", () => {
   test("is exported as a function", () => {
     expect(typeof upCommand).toBe("function");
+  });
+
+  test("does not print attach guidance when tmux session creation fails", async () => {
+    const repoDir = await mkdtemp(join(tmpdir(), "wct-up-tmux-fail-"));
+    const originalDir = process.cwd();
+    const originalTmux = process.env.TMUX;
+    delete process.env.TMUX;
+
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await $`git init -b main`.quiet().cwd(repoDir);
+      await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
+      await $`git config user.name "Test"`.quiet().cwd(repoDir);
+      await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
+      await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
+      await Bun.write(
+        join(repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(repoDir);
+
+      await expect(
+        runBunPromise(
+          withTestServices(upCommand(), {
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(repoDir),
+              getCurrentBranch: () => Effect.succeed("main"),
+            },
+            tmux: {
+              ...liveTmuxService,
+              createSession: () =>
+                Effect.fail(commandError("tmux_error", "tmux boom")),
+            },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) => line.includes("Attach to tmux session")),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+      if (originalTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = originalTmux;
+      }
+      process.chdir(originalDir);
+      await rm(repoDir, { recursive: true, force: true });
+    }
   });
 });

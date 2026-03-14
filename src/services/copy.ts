@@ -1,6 +1,13 @@
-import { mkdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { Effect } from "effect";
 import * as logger from "../utils/logger";
+import {
+  ensureDirectory,
+  isDirectory,
+  pathExists,
+  readBytes,
+  writeBytes,
+} from "./filesystem";
 
 export interface CopyResult {
   file: string;
@@ -16,55 +23,57 @@ export function detectEntryType(entry: string): CopyEntryType {
   return "file";
 }
 
-async function expandDirectory(
-  dirPath: string,
-  baseDir: string,
-): Promise<string[]> {
+function expandDirectory(dirPath: string, baseDir: string) {
   const normalizedDir = dirPath.endsWith("/") ? dirPath.slice(0, -1) : dirPath;
   const fullPath = join(baseDir, normalizedDir);
 
-  try {
-    const stats = await stat(fullPath);
-    if (!stats.isDirectory()) {
+  return Effect.gen(function* () {
+    if (!(yield* isDirectory(fullPath))) {
       return [];
     }
-  } catch {
-    return [];
-  }
 
-  const glob = new Bun.Glob("**/*");
-  const files: string[] = [];
+    const files = yield* Effect.tryPromise({
+      try: async () => {
+        const glob = new Bun.Glob("**/*");
+        const files: string[] = [];
 
-  for await (const file of glob.scan({
-    cwd: fullPath,
-    onlyFiles: true,
-    dot: true,
-  })) {
-    files.push(join(normalizedDir, file));
-  }
+        for await (const file of glob.scan({
+          cwd: fullPath,
+          onlyFiles: true,
+          dot: true,
+        })) {
+          files.push(join(normalizedDir, file));
+        }
 
-  return files;
+        return files;
+      },
+      catch: (error) => error,
+    });
+    return files;
+  });
 }
 
-async function expandGlob(pattern: string, baseDir: string): Promise<string[]> {
-  const glob = new Bun.Glob(pattern);
-  const files: string[] = [];
+function expandGlob(pattern: string, baseDir: string) {
+  return Effect.tryPromise({
+    try: async () => {
+      const glob = new Bun.Glob(pattern);
+      const files: string[] = [];
 
-  for await (const file of glob.scan({
-    cwd: baseDir,
-    onlyFiles: true,
-    dot: true,
-  })) {
-    files.push(file);
-  }
+      for await (const file of glob.scan({
+        cwd: baseDir,
+        onlyFiles: true,
+        dot: true,
+      })) {
+        files.push(file);
+      }
 
-  return files;
+      return files;
+    },
+    catch: (error) => error,
+  });
 }
 
-export async function expandEntry(
-  entry: string,
-  baseDir: string,
-): Promise<string[]> {
+export function expandEntry(entry: string, baseDir: string) {
   const entryType = detectEntryType(entry);
 
   switch (entryType) {
@@ -73,68 +82,76 @@ export async function expandEntry(
     case "glob":
       return expandGlob(entry, baseDir);
     case "file":
-      return [entry];
+      return Effect.succeed([entry]);
   }
 }
 
-export async function copyEntries(
-  entries: string[],
+export function copyEntries(
+  entries: ReadonlyArray<string>,
   sourceDir: string,
   targetDir: string,
-): Promise<CopyResult[]> {
-  const allFiles: string[] = [];
+) {
+  return Effect.gen(function* () {
+    const allFiles: string[] = [];
 
-  for (const entry of entries) {
-    const expanded = await expandEntry(entry, sourceDir);
-    if (expanded.length === 0) {
-      const entryType = detectEntryType(entry);
-      if (entryType === "directory") {
-        logger.warn(`Directory not found or empty: ${entry}`);
-      } else if (entryType === "glob") {
-        logger.warn(`No files matched pattern: ${entry}`);
+    for (const entry of entries) {
+      const expanded = yield* expandEntry(entry, sourceDir);
+      if (expanded.length === 0) {
+        const entryType = detectEntryType(entry);
+        if (entryType === "directory") {
+          yield* logger.warn(`Directory not found or empty: ${entry}`);
+        } else if (entryType === "glob") {
+          yield* logger.warn(`No files matched pattern: ${entry}`);
+        }
       }
+      allFiles.push(...expanded);
     }
-    allFiles.push(...expanded);
-  }
 
-  // Deduplicate files (in case of overlapping patterns)
-  const uniqueFiles = [...new Set(allFiles)];
+    // Deduplicate files (in case of overlapping patterns)
+    const uniqueFiles = [...new Set(allFiles)];
 
-  return copyFiles(uniqueFiles, sourceDir, targetDir);
+    return yield* copyFiles(uniqueFiles, sourceDir, targetDir);
+  });
 }
 
-async function copyFiles(
-  files: string[],
+function copyFiles(
+  files: ReadonlyArray<string>,
   sourceDir: string,
   targetDir: string,
-): Promise<CopyResult[]> {
-  const results: CopyResult[] = [];
+) {
+  return Effect.gen(function* () {
+    const results: CopyResult[] = [];
 
-  for (const file of files) {
-    const sourcePath = join(sourceDir, file);
-    const targetPath = join(targetDir, file);
+    for (const file of files) {
+      const sourcePath = join(sourceDir, file);
+      const targetPath = join(targetDir, file);
 
-    try {
-      const sourceFile = Bun.file(sourcePath);
-      if (!(await sourceFile.exists())) {
-        logger.warn(`File not found: ${file}`);
-        results.push({ file, success: false, error: "File not found" });
-        continue;
-      }
+      const result = yield* Effect.catch(
+        Effect.gen(function* () {
+          if (!(yield* pathExists(sourcePath))) {
+            yield* logger.warn(`File not found: ${file}`);
+            return { file, success: false as const, error: "File not found" };
+          }
 
-      const targetDirPath = dirname(targetPath);
-      await mkdir(targetDirPath, { recursive: true });
+          const targetDirPath = dirname(targetPath);
+          yield* ensureDirectory(targetDirPath);
 
-      const content = await sourceFile.arrayBuffer();
-      await Bun.write(targetPath, content);
+          const content = yield* readBytes(sourcePath);
+          yield* writeBytes(targetPath, content);
 
-      results.push({ file, success: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn(`Failed to copy ${file}: ${message}`);
-      results.push({ file, success: false, error: message });
+          return { file, success: true as const };
+        }),
+        (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          return logger
+            .warn(`Failed to copy ${file}: ${message}`)
+            .pipe(Effect.as({ file, success: false as const, error: message }));
+        },
+      );
+
+      results.push(result);
     }
-  }
 
-  return results;
+    return results;
+  });
 }

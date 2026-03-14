@@ -9,6 +9,15 @@ import {
 } from "bun:test";
 import { join } from "node:path";
 import { $ } from "bun";
+import { Effect } from "effect";
+import { runBunPromise, runBunSync } from "../src/effect/runtime";
+import {
+  type ListItemsOptions,
+  liveQueueStorage,
+  type QueueItem,
+  QueueStorage,
+  type QueueStorageService,
+} from "../src/services/queue-storage";
 import * as tmux from "../src/services/tmux";
 
 const originalHome = process.env.HOME;
@@ -16,14 +25,58 @@ const testHome = join("/tmp", `wct-test-queue-${Date.now()}`);
 
 process.env.HOME = testHome;
 
-const {
-  addItem,
-  clearAll,
-  formatCount,
-  listItems,
-  removeItem,
-  removeItemsBySession,
-} = await import("../src/services/queue");
+function provideQueueStorage<A>(
+  effect: Effect.Effect<A, unknown, QueueStorageService>,
+) {
+  return Effect.provideService(effect, QueueStorage, liveQueueStorage);
+}
+
+function addItem(item: Omit<QueueItem, "id" | "timestamp">) {
+  return runBunSync(
+    provideQueueStorage(
+      QueueStorage.use((queueStorage) => queueStorage.addItem(item)),
+    ),
+  );
+}
+
+function clearAll() {
+  return runBunSync(
+    provideQueueStorage(
+      QueueStorage.use((queueStorage) => queueStorage.clearAll()),
+    ),
+  );
+}
+
+function listItems(options: ListItemsOptions = {}) {
+  return runBunPromise(
+    provideQueueStorage(
+      QueueStorage.use((queueStorage) => queueStorage.listItems(options)),
+    ),
+  );
+}
+
+function removeItem(id: string) {
+  return runBunSync(
+    provideQueueStorage(
+      QueueStorage.use((queueStorage) => queueStorage.removeItem(id)),
+    ),
+  );
+}
+
+function removeItemsBySession(session: string) {
+  return runBunSync(
+    provideQueueStorage(
+      QueueStorage.use((queueStorage) =>
+        queueStorage.removeItemsBySession(session),
+      ),
+    ),
+  );
+}
+
+function formatCount(count: number): string {
+  if (count === 0) return "";
+  return `\u{1F514} ${count}`;
+}
 
 describe("formatCount", () => {
   test("returns empty string for 0", () => {

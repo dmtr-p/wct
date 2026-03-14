@@ -1,22 +1,48 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { Effect } from "effect";
 import { closeCommand, commandDef } from "../src/commands/close";
-import * as queue from "../src/services/queue";
-import * as tmux from "../src/services/tmux";
-import { formatSessionName } from "../src/services/tmux";
-import * as worktree from "../src/services/worktree";
+import { runBunPromise } from "../src/effect/runtime";
+import { commandError } from "../src/errors";
+import {
+  liveQueueStorage,
+  type QueueStorageService,
+} from "../src/services/queue-storage";
+import {
+  formatSessionName,
+  liveTmuxService,
+  type TmuxService,
+} from "../src/services/tmux";
+import {
+  liveWorktreeService,
+  type WorktreeService,
+} from "../src/services/worktree-service";
+import * as logger from "../src/utils/logger";
 import * as prompt from "../src/utils/prompt";
+import { withTestServices } from "./helpers/services";
+
+async function runCommand(
+  options: {
+    branches: string[];
+    yes?: boolean;
+    force?: boolean;
+  },
+  overrides: {
+    queueStorage?: QueueStorageService;
+    tmux?: TmuxService;
+    worktree?: WorktreeService;
+  } = {},
+) {
+  await runBunPromise(withTestServices(closeCommand(options), overrides));
+}
 
 interface CloseCommandSpies {
-  isGitRepoSpy: ReturnType<typeof spyOn<typeof worktree, "isGitRepo">>;
-  findSpy: ReturnType<typeof spyOn<typeof worktree, "findWorktreeByBranch">>;
   confirmSpy: ReturnType<typeof spyOn<typeof prompt, "confirm">>;
-  currentSessionSpy: ReturnType<typeof spyOn<typeof tmux, "getCurrentSession">>;
-  sessionExistsSpy: ReturnType<typeof spyOn<typeof tmux, "sessionExists">>;
-  killSessionSpy: ReturnType<typeof spyOn<typeof tmux, "killSession">>;
-  removeItemsBySessionSpy: ReturnType<
-    typeof spyOn<typeof queue, "removeItemsBySession">
-  >;
-  removeSpy: ReturnType<typeof spyOn<typeof worktree, "removeWorktree">>;
+  queueCalls: string[];
+  tmuxCalls: string[];
+  worktreeCalls: string[];
+  tmux: TmuxService;
+  worktree: WorktreeService;
+  queueStorage: QueueStorageService;
   restore: () => void;
 }
 
@@ -30,50 +56,51 @@ function makeWorktree(branch: string) {
 }
 
 function setupMocks(): CloseCommandSpies {
-  const isGitRepoSpy = spyOn(worktree, "isGitRepo").mockResolvedValue(true);
-  const findSpy = spyOn(worktree, "findWorktreeByBranch").mockImplementation(
-    async (branch) => makeWorktree(branch),
+  const confirmSpy = spyOn(prompt, "confirm").mockImplementation(() =>
+    Effect.succeed(true),
   );
-  const confirmSpy = spyOn(prompt, "confirm").mockResolvedValue(true);
-  const currentSessionSpy = spyOn(tmux, "getCurrentSession").mockResolvedValue(
-    null,
-  );
-  const sessionExistsSpy = spyOn(tmux, "sessionExists").mockResolvedValue(true);
-  const killSessionSpy = spyOn(tmux, "killSession").mockImplementation(
-    async (name) => ({
-      success: true,
-      sessionName: name,
-    }),
-  );
-  const removeItemsBySessionSpy = spyOn(
-    queue,
-    "removeItemsBySession",
-  ).mockReturnValue(0);
-  const removeSpy = spyOn(worktree, "removeWorktree").mockImplementation(
-    async (path) => ({
-      success: true,
-      path,
-    }),
-  );
+  const queueCalls: string[] = [];
+  const tmuxCalls: string[] = [];
+  const worktreeCalls: string[] = [];
+  const tmux = {
+    ...liveTmuxService,
+    getCurrentSession: () => Effect.succeed(null),
+    sessionExists: () => Effect.succeed(true),
+    killSession: (name: string) =>
+      Effect.sync(() => {
+        tmuxCalls.push(name);
+      }),
+  };
+  const worktree = {
+    ...liveWorktreeService,
+    isGitRepo: () => Effect.succeed(true),
+    findWorktreeByBranch: (branch: string) =>
+      Effect.succeed(makeWorktree(branch)),
+    removeWorktree: (path: string) =>
+      Effect.sync(() => {
+        worktreeCalls.push(path);
+        return { _tag: "Removed" as const, path };
+      }),
+  };
+  const queueStorage = {
+    ...liveQueueStorage,
+    removeItemsBySession: (session: string) =>
+      Effect.sync(() => {
+        queueCalls.push(session);
+        return 0;
+      }),
+  };
 
   return {
-    isGitRepoSpy,
-    findSpy,
     confirmSpy,
-    currentSessionSpy,
-    sessionExistsSpy,
-    killSessionSpy,
-    removeItemsBySessionSpy,
-    removeSpy,
+    queueCalls,
+    tmuxCalls,
+    worktreeCalls,
+    tmux,
+    worktree,
+    queueStorage,
     restore: () => {
-      isGitRepoSpy.mockRestore();
-      findSpy.mockRestore();
       confirmSpy.mockRestore();
-      currentSessionSpy.mockRestore();
-      sessionExistsSpy.mockRestore();
-      killSessionSpy.mockRestore();
-      removeItemsBySessionSpy.mockRestore();
-      removeSpy.mockRestore();
     },
   };
 }
@@ -94,127 +121,135 @@ describe("closeCommand", () => {
   });
 
   test("closes multiple branches in order", async () => {
-    const result = await closeCommand({
-      branches: ["feature-a", "feature-b"],
-    });
-
-    expect(result.success).toBe(true);
-    expect(mocks.findSpy).toHaveBeenNthCalledWith(1, "feature-a");
-    expect(mocks.findSpy).toHaveBeenNthCalledWith(2, "feature-b");
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a", "feature-b"],
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).resolves.toBeUndefined();
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(2);
-    expect(mocks.killSessionSpy).toHaveBeenNthCalledWith(
-      1,
+    expect(mocks.tmuxCalls).toEqual([
       formatSessionName("myapp-feature-a"),
-    );
-    expect(mocks.killSessionSpy).toHaveBeenNthCalledWith(
-      2,
       formatSessionName("myapp-feature-b"),
-    );
-    expect(mocks.removeSpy).toHaveBeenNthCalledWith(
-      1,
+    ]);
+    expect(mocks.worktreeCalls).toEqual([
       "/tmp/myapp-feature-a",
-      false,
-    );
-    expect(mocks.removeSpy).toHaveBeenNthCalledWith(
-      2,
       "/tmp/myapp-feature-b",
-      false,
-    );
+    ]);
   });
 
   test("stops on first missing branch in multi-close", async () => {
-    mocks.findSpy.mockImplementation(async (branch) => {
-      if (branch === "missing") {
-        return null;
-      }
-      return makeWorktree(branch);
-    });
+    mocks.worktree = {
+      ...mocks.worktree,
+      findWorktreeByBranch: (branch: string) =>
+        Effect.succeed(branch === "missing" ? null : makeWorktree(branch)),
+    };
 
-    const result = await closeCommand({
-      branches: ["feature-a", "missing", "feature-c"],
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe("worktree_not_found");
-      expect(result.error.message).toContain("missing");
-    }
-    expect(mocks.findSpy).toHaveBeenCalledTimes(2);
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a", "missing", "feature-c"],
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).rejects.toThrow("No worktree found for branch 'missing'");
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(1);
-    expect(mocks.killSessionSpy).toHaveBeenCalledTimes(1);
-    expect(mocks.removeSpy).toHaveBeenCalledTimes(1);
+    expect(mocks.tmuxCalls).toHaveLength(1);
+    expect(mocks.worktreeCalls).toHaveLength(1);
   });
 
   test("stops on first remove failure", async () => {
-    mocks.removeSpy.mockImplementation(async (path) => {
-      if (path.endsWith("feature-b")) {
-        return {
-          success: false,
-          path,
-          code: "worktree_has_uncommitted_changes",
-          error: "fatal: contains modified or untracked files",
-        };
-      }
-      return {
-        success: true,
-        path,
-      };
-    });
+    mocks.worktree = {
+      ...mocks.worktree,
+      removeWorktree: (path: string) =>
+        Effect.sync(() => {
+          mocks.worktreeCalls.push(path);
+          if (path.endsWith("feature-b")) {
+            return { _tag: "BlockedByChanges" as const, path };
+          }
+          return { _tag: "Removed" as const, path };
+        }),
+    };
 
-    const result = await closeCommand({
-      branches: ["feature-a", "feature-b", "feature-c"],
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe("worktree_remove_failed");
-      expect(result.error.message).toContain("Use --force");
-    }
-    expect(mocks.findSpy).toHaveBeenCalledTimes(2);
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a", "feature-b", "feature-c"],
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).rejects.toThrow("Use --force");
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(2);
-    expect(mocks.killSessionSpy).toHaveBeenCalledTimes(2);
-    expect(mocks.removeSpy).toHaveBeenCalledTimes(2);
+    expect(mocks.tmuxCalls).toHaveLength(2);
+    expect(mocks.worktreeCalls).toHaveLength(2);
   });
 
   test("skips confirmations for all branches with --yes", async () => {
-    mocks.currentSessionSpy.mockResolvedValue("myapp-feature-a");
+    mocks.tmux = {
+      ...mocks.tmux,
+      getCurrentSession: () => Effect.succeed("myapp-feature-a"),
+    };
 
-    const result = await closeCommand({
-      branches: ["feature-a", "feature-b"],
-      yes: true,
-    });
-
-    expect(result.success).toBe(true);
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a", "feature-b"],
+          yes: true,
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).resolves.toBeUndefined();
     expect(mocks.confirmSpy).not.toHaveBeenCalled();
-    expect(mocks.killSessionSpy).toHaveBeenCalledTimes(2);
-    expect(mocks.removeSpy).toHaveBeenCalledTimes(2);
+    expect(mocks.tmuxCalls).toHaveLength(2);
+    expect(mocks.worktreeCalls).toHaveLength(2);
   });
 
   test("defers current tmux session branch until last in multi-close", async () => {
     const prompts: string[] = [];
-    mocks.confirmSpy.mockImplementation(async (message) => {
+    mocks.confirmSpy.mockImplementation((message: string) => {
       prompts.push(message);
-      return true;
+      return Effect.succeed(true);
     });
-    mocks.currentSessionSpy.mockResolvedValue("myapp-feature-a");
+    mocks.tmux = {
+      ...mocks.tmux,
+      getCurrentSession: () => Effect.succeed("myapp-feature-a"),
+    };
 
-    const result = await closeCommand({
-      branches: ["feature-a", "feature-b"],
-    });
-
-    expect(result.success).toBe(true);
-    expect(mocks.killSessionSpy).toHaveBeenNthCalledWith(1, "myapp-feature-b");
-    expect(mocks.killSessionSpy).toHaveBeenNthCalledWith(2, "myapp-feature-a");
-    expect(mocks.removeSpy).toHaveBeenNthCalledWith(
-      1,
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a", "feature-b"],
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(mocks.tmuxCalls).toEqual(["myapp-feature-b", "myapp-feature-a"]);
+    expect(mocks.worktreeCalls).toEqual([
       "/tmp/myapp-feature-b",
-      false,
-    );
-    expect(mocks.removeSpy).toHaveBeenNthCalledWith(
-      2,
       "/tmp/myapp-feature-a",
-      false,
-    );
+    ]);
     expect(prompts[0]).toContain("feature-b");
     expect(prompts[1]).toContain("feature-a");
     expect(prompts[2]).toContain("inside this tmux session");
@@ -222,33 +257,76 @@ describe("closeCommand", () => {
   });
 
   test("removes queue items only after a successful session kill", async () => {
-    const result = await closeCommand({
-      branches: ["feature-a"],
-      yes: true,
-    });
-
-    expect(result.success).toBe(true);
-    expect(mocks.killSessionSpy).toHaveBeenCalledTimes(1);
-    expect(mocks.removeItemsBySessionSpy).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.removeItemsBySessionSpy.mock.invocationCallOrder[0],
-    ).toBeGreaterThan(mocks.killSessionSpy.mock.invocationCallOrder[0] ?? 0);
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a"],
+          yes: true,
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(mocks.tmuxCalls).toEqual(["myapp-feature-a"]);
+    expect(mocks.queueCalls).toEqual(["myapp-feature-a"]);
   });
 
   test("does not remove queue items when killSession fails", async () => {
-    mocks.killSessionSpy.mockResolvedValue({
-      success: false,
-      sessionName: "myapp-feature-a",
-      error: "tmux failed",
-    });
+    mocks.tmux = {
+      ...mocks.tmux,
+      killSession: () => Effect.fail(commandError("tmux_error", "tmux failed")),
+    };
 
-    const result = await closeCommand({
-      branches: ["feature-a"],
-      yes: true,
-    });
+    await expect(
+      runCommand(
+        {
+          branches: ["feature-a"],
+          yes: true,
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          queueStorage: mocks.queueStorage,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(mocks.queueCalls).toEqual([]);
+  });
 
-    expect(result.success).toBe(true);
-    expect(mocks.removeItemsBySessionSpy).not.toHaveBeenCalled();
+  test("warns separately when queue cleanup fails after tmux kill", async () => {
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => Effect.void);
+    mocks.queueStorage = {
+      ...mocks.queueStorage,
+      removeItemsBySession: () =>
+        Effect.fail(commandError("queue_error", "queue locked")),
+    };
+
+    try {
+      await expect(
+        runCommand(
+          {
+            branches: ["feature-a"],
+            yes: true,
+          },
+          {
+            tmux: mocks.tmux,
+            worktree: mocks.worktree,
+            queueStorage: mocks.queueStorage,
+          },
+        ),
+      ).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to clean queue entries"),
+      );
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining("Failed to kill tmux session"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

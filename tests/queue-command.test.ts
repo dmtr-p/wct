@@ -1,38 +1,36 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { Effect } from "effect";
 import * as queueCommandModule from "../src/commands/queue";
-import * as queueService from "../src/services/queue";
+import { runBunPromise } from "../src/effect/runtime";
+import {
+  liveQueueStorage,
+  type QueueItem,
+  type QueueStorageService,
+} from "../src/services/queue-storage";
+import { withTestServices } from "./helpers/services";
 
 const { commandDef, queueCommand, queueInternals } = queueCommandModule;
 
-interface QueueCommandSpies {
-  formatCountSpy: ReturnType<typeof spyOn<typeof queueService, "formatCount">>;
-  listItemsSpy: ReturnType<typeof spyOn<typeof queueService, "listItems">>;
-  removeItemSpy: ReturnType<typeof spyOn<typeof queueService, "removeItem">>;
-  clearAllSpy: ReturnType<typeof spyOn<typeof queueService, "clearAll">>;
-  stdoutWriteSpy: ReturnType<typeof spyOn>;
-  restore: () => void;
+async function runCommand(
+  options: queueCommandModule.QueueOptions,
+  overrides: {
+    queueStorage?: QueueStorageService;
+  } = {},
+) {
+  await runBunPromise(withTestServices(queueCommand(options), overrides));
 }
 
-function setupMocks(): QueueCommandSpies {
-  const formatCountSpy = spyOn(queueService, "formatCount").mockReturnValue("");
-  const listItemsSpy = spyOn(queueService, "listItems").mockResolvedValue([]);
-  const removeItemSpy = spyOn(queueService, "removeItem").mockReturnValue(true);
-  const clearAllSpy = spyOn(queueService, "clearAll").mockReturnValue(0);
-  const stdoutWriteSpy = spyOn(process.stdout, "write").mockReturnValue(true);
-
+function makeItem(id: string, overrides: Partial<QueueItem> = {}): QueueItem {
   return {
-    formatCountSpy,
-    listItemsSpy,
-    removeItemSpy,
-    clearAllSpy,
-    stdoutWriteSpy,
-    restore: () => {
-      formatCountSpy.mockRestore();
-      listItemsSpy.mockRestore();
-      removeItemSpy.mockRestore();
-      clearAllSpy.mockRestore();
-      stdoutWriteSpy.mockRestore();
-    },
+    id,
+    branch: "feat",
+    project: "p",
+    type: "t",
+    message: "m",
+    session: "s",
+    pane: "%1",
+    timestamp: Date.now(),
+    ...overrides,
   };
 }
 
@@ -50,183 +48,156 @@ describe("queue commandDef", () => {
 });
 
 describe("queueCommand", () => {
-  let mocks: QueueCommandSpies;
+  let queueCalls: string[];
+  let queueStorage: QueueStorageService;
+  let stdoutWriteSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
-    mocks = setupMocks();
+    queueCalls = [];
+    queueStorage = {
+      ...liveQueueStorage,
+      listItems: () => Effect.succeed([]),
+      removeItem: (id: string) =>
+        Effect.sync(() => {
+          queueCalls.push(id);
+          return true;
+        }),
+      clearAll: () => Effect.succeed(0),
+    };
+    stdoutWriteSpy = spyOn(process.stdout, "write").mockReturnValue(true);
   });
 
   afterEach(() => {
-    mocks.restore();
+    stdoutWriteSpy.mockRestore();
   });
 
   test("--count with 0 items writes nothing to stdout", async () => {
-    mocks.listItemsSpy.mockResolvedValue([]);
-    mocks.formatCountSpy.mockReturnValue("");
+    queueStorage = {
+      ...queueStorage,
+      listItems: () => Effect.succeed([]),
+    };
 
-    const result = await queueCommand({ count: true });
-
-    expect(result.success).toBe(true);
-    expect(mocks.listItemsSpy).toHaveBeenCalledWith({
-      validatePanes: false,
-      logWarnings: false,
-    });
-    expect(mocks.stdoutWriteSpy).not.toHaveBeenCalled();
+    await expect(
+      runCommand({ count: true }, { queueStorage }),
+    ).resolves.toBeUndefined();
+    expect(stdoutWriteSpy).not.toHaveBeenCalled();
   });
 
   test("--count with items writes formatted count", async () => {
-    mocks.listItemsSpy.mockResolvedValue([
-      {
-        id: "item-1",
-        branch: "feat",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "s",
-        pane: "%1",
-        timestamp: Date.now(),
-      },
-      {
-        id: "item-2",
-        branch: "feat",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "s",
-        pane: "%2",
-        timestamp: Date.now(),
-      },
-      {
-        id: "item-3",
-        branch: "feat",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "s",
-        pane: "%3",
-        timestamp: Date.now(),
-      },
-    ]);
-    mocks.formatCountSpy.mockReturnValue("\u{1F514} 3");
+    queueStorage = {
+      ...queueStorage,
+      listItems: () =>
+        Effect.succeed([
+          makeItem("item-1"),
+          makeItem("item-2", { pane: "%2" }),
+          makeItem("item-3", { pane: "%3" }),
+        ]),
+    };
 
-    const result = await queueCommand({ count: true });
-
-    expect(result.success).toBe(true);
-    expect(mocks.listItemsSpy).toHaveBeenCalledWith({
-      validatePanes: false,
-      logWarnings: false,
-    });
-    expect(mocks.stdoutWriteSpy).toHaveBeenCalledWith("\u{1F514} 3");
+    await expect(
+      runCommand({ count: true }, { queueStorage }),
+    ).resolves.toBeUndefined();
+    expect(stdoutWriteSpy).toHaveBeenCalledWith("\u{1F514} 3");
   });
 
   test("--dismiss valid id calls removeItem and succeeds", async () => {
-    mocks.removeItemSpy.mockReturnValue(true);
-
-    const result = await queueCommand({ dismiss: "abc-123" });
-
-    expect(result.success).toBe(true);
-    expect(mocks.removeItemSpy).toHaveBeenCalledWith("abc-123");
+    await expect(
+      runCommand({ dismiss: "abc-123" }, { queueStorage }),
+    ).resolves.toBeUndefined();
+    expect(queueCalls).toEqual(["abc-123"]);
   });
 
   test("--dismiss invalid id returns queue_error", async () => {
-    mocks.removeItemSpy.mockReturnValue(false);
+    queueStorage = {
+      ...queueStorage,
+      removeItem: () => Effect.succeed(false),
+    };
 
-    const result = await queueCommand({ dismiss: "nonexistent" });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe("queue_error");
-    }
+    await expect(
+      runCommand({ dismiss: "nonexistent" }, { queueStorage }),
+    ).rejects.toThrow("Queue item 'nonexistent' not found");
   });
 
   test("--clear calls clearAll and succeeds", async () => {
-    mocks.clearAllSpy.mockReturnValue(5);
+    let clearCalls = 0;
+    queueStorage = {
+      ...queueStorage,
+      clearAll: () =>
+        Effect.sync(() => {
+          clearCalls += 1;
+          return 5;
+        }),
+    };
 
-    const result = await queueCommand({ clear: true });
-
-    expect(result.success).toBe(true);
-    expect(mocks.clearAllSpy).toHaveBeenCalled();
+    await expect(
+      runCommand({ clear: true }, { queueStorage }),
+    ).resolves.toBeUndefined();
+    expect(clearCalls).toBe(1);
   });
 
   test("--jump with invalid id returns queue_error", async () => {
-    mocks.listItemsSpy.mockResolvedValue([]);
+    queueStorage = {
+      ...queueStorage,
+      listItems: () => Effect.succeed([]),
+    };
 
-    const result = await queueCommand({ jump: "nonexistent" });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe("queue_error");
-    }
+    await expect(
+      runCommand({ jump: "nonexistent" }, { queueStorage }),
+    ).rejects.toThrow("Queue item 'nonexistent' not found");
   });
 
   test("--jump with valid id but failed tmux switch returns queue_error", async () => {
-    const jumpSpy = spyOn(queueInternals, "jumpToItem").mockResolvedValue(
-      false,
+    const jumpSpy = spyOn(queueInternals, "jumpToItem").mockReturnValue(
+      Effect.succeed(false),
     );
-    mocks.listItemsSpy.mockResolvedValue([
-      {
-        id: "item-1",
-        branch: "feat",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "dead-session",
-        pane: "%1",
-        timestamp: Date.now(),
-      },
-    ]);
+    queueStorage = {
+      ...queueStorage,
+      listItems: () =>
+        Effect.succeed([makeItem("item-1", { session: "dead-session" })]),
+    };
 
     try {
-      const result = await queueCommand({ jump: "item-1" });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe("queue_error");
-      }
+      await expect(
+        runCommand({ jump: "item-1" }, { queueStorage }),
+      ).rejects.toThrow("Failed to jump to session 'dead-session'");
     } finally {
       jumpSpy.mockRestore();
     }
   });
 
   test("default with no items returns ok", async () => {
-    mocks.listItemsSpy.mockResolvedValue([]);
-
-    const result = await queueCommand({});
-
-    expect(result.success).toBe(true);
+    await expect(runCommand({}, { queueStorage })).resolves.toBeUndefined();
   });
 
   test("default with items lists them with formatted type and age", async () => {
     const consoleSpy = spyOn(console, "log").mockImplementation(() => {});
+    queueStorage = {
+      ...queueStorage,
+      listItems: () =>
+        Effect.succeed([
+          makeItem("test-1", {
+            branch: "feature-x",
+            project: "myapp",
+            type: "permission_prompt",
+            message: "Allow?",
+            session: "myapp-feature-x",
+            timestamp: Date.now() - 90_000,
+          }),
+          makeItem("test-2", {
+            branch: "feature-y",
+            project: "myapp",
+            type: "idle_prompt",
+            message: "Done",
+            session: "myapp-feature-y",
+            pane: "%2",
+            timestamp: Date.now() - 5000,
+          }),
+        ]),
+    };
+
     try {
-      mocks.listItemsSpy.mockResolvedValue([
-        {
-          id: "test-1",
-          branch: "feature-x",
-          project: "myapp",
-          type: "permission_prompt",
-          message: "Allow?",
-          session: "myapp-feature-x",
-          pane: "%1",
-          timestamp: Date.now() - 90_000, // 90 seconds ago
-        },
-        {
-          id: "test-2",
-          branch: "feature-y",
-          project: "myapp",
-          type: "idle_prompt",
-          message: "Done",
-          session: "myapp-feature-y",
-          pane: "%2",
-          timestamp: Date.now() - 5000, // 5 seconds ago
-        },
-      ]);
-
-      const result = await queueCommand({});
-
-      expect(result.success).toBe(true);
+      await expect(runCommand({}, { queueStorage })).resolves.toBeUndefined();
       expect(consoleSpy).toHaveBeenCalledTimes(2);
-      // formatType maps permission_prompt -> permission, idle_prompt -> question
       const call0 = consoleSpy.mock.calls[0]?.[0] as string;
       expect(call0).toContain("[permission]");
       expect(call0).toContain("1m ago");

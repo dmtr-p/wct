@@ -1,10 +1,12 @@
 import { basename, relative } from "node:path";
-import { $ } from "bun";
-import { formatSessionName, listSessions } from "../services/tmux";
-import { getMainWorktreePath, listWorktrees } from "../services/worktree";
+import { Console, Effect } from "effect";
+import type { WctServices } from "../effect/services";
+import { commandError, type WctError } from "../errors";
+import { execProcess } from "../services/process";
+import { formatSessionName, TmuxService } from "../services/tmux";
+import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
-import { type CommandResult, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "list",
@@ -19,71 +21,96 @@ export const commandDef: CommandDef = {
   ],
 };
 
-export async function getChangedFilesCount(
-  worktreePath: string,
-): Promise<number> {
-  try {
-    const result = await $`git status --porcelain`.quiet().cwd(worktreePath);
-    const output = result.text().trim();
-    if (!output) return 0;
-    return output.split("\n").length;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    logger.warn(`Failed to get changes for ${worktreePath}: ${message}`);
-    return 0;
-  }
+export function getChangedFilesCount(worktreePath: string) {
+  return Effect.catch(
+    execProcess("git", ["status", "--porcelain"], {
+      cwd: worktreePath,
+    }).pipe(
+      Effect.map((result) => {
+        const output = result.stdout.trim();
+        if (!output) return 0;
+        return output.split("\n").length;
+      }),
+    ),
+    (error) =>
+      logger
+        .warn(
+          `Failed to get changes for ${worktreePath}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        .pipe(Effect.as(0)),
+  );
 }
 
-export async function getDefaultBranch(repoPath: string): Promise<string> {
-  try {
-    const result = await $`git symbolic-ref refs/remotes/origin/HEAD`
-      .quiet()
-      .cwd(repoPath);
-    const ref = result.text().trim();
-    // refs/remotes/origin/main -> main
-    return ref.replace("refs/remotes/origin/", "");
-  } catch {
-    // Fallback: check if common default branch names exist
-    for (const candidate of ["main", "master"]) {
-      try {
-        await $`git rev-parse --verify ${candidate}`.quiet().cwd(repoPath);
-        return candidate;
-      } catch {}
+export function getDefaultBranch(repoPath: string) {
+  return Effect.gen(function* () {
+    const ref = yield* Effect.catch(
+      execProcess("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], {
+        cwd: repoPath,
+      }).pipe(Effect.map((result) => result.stdout.trim())),
+      () => Effect.succeed(null),
+    );
+    if (ref) {
+      return ref.replace("refs/remotes/origin/", "");
     }
-    return "main";
-  }
+
+    for (const candidate of ["main", "master"]) {
+      const exists = yield* Effect.catch(
+        execProcess("git", ["rev-parse", "--verify", candidate], {
+          cwd: repoPath,
+        }).pipe(Effect.as(true)),
+        () => Effect.succeed(false),
+      );
+      if (exists) {
+        return candidate;
+      }
+    }
+    return null;
+  });
 }
 
-export async function getAheadBehind(
+export function getAheadBehind(
   worktreePath: string,
-  defaultBranch: string,
-): Promise<{ ahead: number; behind: number }> {
-  try {
-    const result =
-      await $`git rev-list --left-right --count HEAD...${defaultBranch}`
-        .quiet()
-        .cwd(worktreePath);
-    const [ahead, behind] = result
-      .text()
-      .trim()
-      .split(/\s+/)
-      .map((n) => {
-        const parsed = Number.parseInt(n, 10);
-        return Number.isNaN(parsed) ? 0 : parsed;
-      });
-    return { ahead: ahead ?? 0, behind: behind ?? 0 };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    logger.warn(`Failed to get sync status for ${worktreePath}: ${message}`);
-    return { ahead: 0, behind: 0 };
+  defaultBranch: string | null,
+) {
+  if (!defaultBranch) {
+    return Effect.succeed(null);
   }
+
+  return Effect.catch(
+    execProcess(
+      "git",
+      ["rev-list", "--left-right", "--count", `HEAD...${defaultBranch}`],
+      { cwd: worktreePath },
+    ).pipe(
+      Effect.map((result) => {
+        const [ahead, behind] = result.stdout
+          .trim()
+          .split(/\s+/)
+          .map((n: string) => {
+            const parsed = Number.parseInt(n, 10);
+            return Number.isNaN(parsed) ? 0 : parsed;
+          });
+        return { ahead: ahead ?? 0, behind: behind ?? 0 };
+      }),
+    ),
+    (error) =>
+      logger
+        .warn(
+          `Failed to get sync status for ${worktreePath}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        .pipe(Effect.as(null)),
+  );
 }
 
 export function formatChanges(count: number): string {
   return `${count} ${count === 1 ? "file" : "files"}`;
 }
 
-export function formatSync(ahead: number, behind: number): string {
+export function formatSync(
+  sync: { ahead: number; behind: number } | null,
+): string {
+  if (!sync) return "?";
+  const { ahead, behind } = sync;
   if (ahead === 0 && behind === 0) return "\u2713";
   const parts: string[] = [];
   if (ahead > 0) parts.push(`\u2191${ahead}`);
@@ -91,103 +118,110 @@ export function formatSync(ahead: number, behind: number): string {
   return parts.join(" ");
 }
 
-interface ListRow {
-  branch: string;
-  path: string;
-  tmux: string;
-  tmuxRaw: string;
-  changes: string;
-  sync: string;
-}
-
-export async function listCommand(opts?: {
+export function listCommand(opts?: {
   short?: boolean;
-}): Promise<CommandResult> {
-  const worktrees = await listWorktrees();
+}): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const worktrees = yield* WorktreeService.use((service) =>
+      service.listWorktrees(),
+    );
+    const nonBareWorktrees = worktrees.filter((wt) => !wt.isBare);
 
-  const nonBareWorktrees = worktrees.filter((wt) => !wt.isBare);
-
-  if (nonBareWorktrees.length === 0) {
-    logger.info("No worktrees found");
-    return ok();
-  }
-
-  if (opts?.short) {
-    for (const wt of nonBareWorktrees) {
-      console.log(wt.branch || "(unknown)");
+    if (nonBareWorktrees.length === 0) {
+      yield* logger.info("No worktrees found");
+      return;
     }
-    return ok();
-  }
 
-  const sessions = (await listSessions()) ?? [];
-  const mainRepoPath = await getMainWorktreePath();
-  const defaultBranch = mainRepoPath
-    ? await getDefaultBranch(mainRepoPath)
-    : "main";
-
-  const green = Bun.color("green", "ansi") ?? "";
-  const reset = "\x1b[0m";
-  const cwd = process.cwd();
-
-  const rows: ListRow[] = await Promise.all(
-    nonBareWorktrees.map(async (wt) => {
-      const branch = wt.branch || "(unknown)";
-      const sessionName = formatSessionName(basename(wt.path));
-      const session = sessions.find((s) => s.name === sessionName);
-      const changesCount = await getChangedFilesCount(wt.path);
-      const { ahead, behind } = await getAheadBehind(wt.path, defaultBranch);
-
-      let tmux = "";
-      let tmuxRaw = "";
-      if (session) {
-        if (session.attached) {
-          tmuxRaw = `* ${sessionName}`;
-          tmux = `${green}${tmuxRaw}${reset}`;
-        } else {
-          tmuxRaw = `  ${sessionName}`;
-          tmux = tmuxRaw;
-        }
+    if (opts?.short) {
+      for (const wt of nonBareWorktrees) {
+        yield* Console.log(wt.branch || "(unknown)");
       }
+      return;
+    }
 
-      return {
-        branch,
-        path: relative(cwd, wt.path) || ".",
-        tmux,
-        tmuxRaw,
-        changes: formatChanges(changesCount),
-        sync: formatSync(ahead, behind),
-      };
-    }),
-  );
+    const [sessionsList, mainRepoPath] = yield* Effect.all([
+      TmuxService.use((service) => service.listSessions()),
+      WorktreeService.use((service) => service.getMainWorktreePath()),
+    ]);
+    const sessions = sessionsList ?? [];
+    const defaultBranch = mainRepoPath
+      ? yield* Effect.mapError(getDefaultBranch(mainRepoPath), (error) =>
+          commandError(
+            "worktree_error",
+            "Failed to determine the default branch",
+            error,
+          ),
+        )
+      : null;
 
-  const headers = ["BRANCH", "PATH", "TMUX", "CHANGES", "SYNC"] as const;
-  const colWidths = [
-    Math.max(headers[0].length, ...rows.map((r) => r.branch.length)),
-    Math.max(headers[1].length, ...rows.map((r) => r.path.length)),
-    Math.max(headers[2].length, ...rows.map((r) => r.tmuxRaw.length)),
-    Math.max(headers[3].length, ...rows.map((r) => r.changes.length)),
-    Math.max(headers[4].length, ...rows.map((r) => r.sync.length)),
-  ] as const;
+    const cwd = process.cwd();
+    const rows = yield* Effect.mapError(
+      Effect.forEach(nonBareWorktrees, (wt) =>
+        Effect.gen(function* () {
+          const branch = wt.branch || "(unknown)";
+          const sessionName = formatSessionName(basename(wt.path));
+          const session = sessions.find((s) => s.name === sessionName);
+          const [changesCount, syncStatus] = yield* Effect.all([
+            getChangedFilesCount(wt.path),
+            getAheadBehind(wt.path, defaultBranch),
+          ]);
 
-  const headerLine = headers
-    .map((h, i) => h.padEnd(colWidths[i] as number))
-    .join("  ");
-  console.log(logger.bold(headerLine));
+          let tmux = "";
+          let tmuxRaw = "";
+          if (session) {
+            if (session.attached) {
+              tmuxRaw = `* ${sessionName}`;
+              tmux = logger.green(tmuxRaw);
+            } else {
+              tmuxRaw = `  ${sessionName}`;
+              tmux = tmuxRaw;
+            }
+          }
 
-  for (const row of rows) {
-    // Pad tmux using raw (non-ANSI) length
-    const tmuxPadded =
-      row.tmux + " ".repeat(Math.max(0, colWidths[2] - row.tmuxRaw.length));
+          return {
+            branch,
+            path: relative(cwd, wt.path) || ".",
+            tmux,
+            tmuxRaw,
+            changes: formatChanges(changesCount),
+            sync: formatSync(syncStatus),
+          };
+        }),
+      ),
+      (error) =>
+        commandError(
+          "worktree_error",
+          "Failed to collect worktree status",
+          error,
+        ),
+    );
 
-    const line = [
-      row.branch.padEnd(colWidths[0]),
-      row.path.padEnd(colWidths[1]),
-      tmuxPadded,
-      row.changes.padEnd(colWidths[3]),
-      row.sync.padEnd(colWidths[4]),
-    ].join("  ");
-    console.log(line);
-  }
+    const headers = ["BRANCH", "PATH", "TMUX", "CHANGES", "SYNC"] as const;
+    const colWidths = [
+      Math.max(headers[0].length, ...rows.map((row) => row.branch.length)),
+      Math.max(headers[1].length, ...rows.map((row) => row.path.length)),
+      Math.max(headers[2].length, ...rows.map((row) => row.tmuxRaw.length)),
+      Math.max(headers[3].length, ...rows.map((row) => row.changes.length)),
+      Math.max(headers[4].length, ...rows.map((row) => row.sync.length)),
+    ] as const;
 
-  return ok();
+    const headerLine = headers
+      .map((header, index) => header.padEnd(colWidths[index] as number))
+      .join("  ");
+    yield* Console.log(logger.bold(headerLine));
+
+    for (const row of rows) {
+      const tmuxPadded =
+        row.tmux + " ".repeat(Math.max(0, colWidths[2] - row.tmuxRaw.length));
+
+      const line = [
+        row.branch.padEnd(colWidths[0]),
+        row.path.padEnd(colWidths[1]),
+        tmuxPadded,
+        row.changes.padEnd(colWidths[3]),
+        row.sync.padEnd(colWidths[4]),
+      ].join("  ");
+      yield* Console.log(line);
+    }
+  });
 }

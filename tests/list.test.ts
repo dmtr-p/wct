@@ -4,11 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import {
+  formatSync,
   getAheadBehind,
   getChangedFilesCount,
   getDefaultBranch,
   listCommand,
 } from "../src/commands/list";
+import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
+
+async function runCommand(options?: { short?: boolean }) {
+  await runBunPromise(provideWctServices(listCommand(options)));
+}
 
 describe("getChangedFilesCount", () => {
   let repoDir: string;
@@ -27,7 +34,7 @@ describe("getChangedFilesCount", () => {
   });
 
   test("returns 0 for clean worktree", async () => {
-    const count = await getChangedFilesCount(repoDir);
+    const count = await runBunPromise(getChangedFilesCount(repoDir));
     expect(count).toBe(0);
   });
 
@@ -35,7 +42,7 @@ describe("getChangedFilesCount", () => {
     await $`echo "hello" > file1.txt`.quiet().cwd(repoDir);
     await $`echo "world" > file2.txt`.quiet().cwd(repoDir);
 
-    const count = await getChangedFilesCount(repoDir);
+    const count = await runBunPromise(getChangedFilesCount(repoDir));
     expect(count).toBe(2);
 
     // Cleanup
@@ -47,7 +54,7 @@ describe("getChangedFilesCount", () => {
     await $`git add staged.txt`.quiet().cwd(repoDir);
     await $`echo "unstaged" > unstaged.txt`.quiet().cwd(repoDir);
 
-    const count = await getChangedFilesCount(repoDir);
+    const count = await runBunPromise(getChangedFilesCount(repoDir));
     expect(count).toBe(2);
 
     // Cleanup
@@ -56,7 +63,9 @@ describe("getChangedFilesCount", () => {
   });
 
   test("returns 0 for invalid path", async () => {
-    const count = await getChangedFilesCount("/nonexistent/path");
+    const count = await runBunPromise(
+      getChangedFilesCount("/nonexistent/path"),
+    );
     expect(count).toBe(0);
   });
 });
@@ -99,21 +108,32 @@ describe("getAheadBehind", () => {
 
   test("counts commits ahead and behind default branch", async () => {
     const wtPath = join(worktreeDir, "feature-branch");
-    const { ahead, behind } = await getAheadBehind(wtPath, "main");
+    const status = await runBunPromise(getAheadBehind(wtPath, "main"));
+    expect(status).not.toBeNull();
+    if (!status) {
+      throw new Error("expected sync status");
+    }
+    const { ahead, behind } = status;
     expect(ahead).toBe(1);
     expect(behind).toBe(2);
   });
 
   test("returns zeros for main branch itself", async () => {
-    const { ahead, behind } = await getAheadBehind(repoDir, "main");
+    const status = await runBunPromise(getAheadBehind(repoDir, "main"));
+    expect(status).not.toBeNull();
+    if (!status) {
+      throw new Error("expected sync status");
+    }
+    const { ahead, behind } = status;
     expect(ahead).toBe(0);
     expect(behind).toBe(0);
   });
 
-  test("returns zeros for invalid path", async () => {
-    const { ahead, behind } = await getAheadBehind("/nonexistent/path", "main");
-    expect(ahead).toBe(0);
-    expect(behind).toBe(0);
+  test("returns null for invalid path", async () => {
+    const status = await runBunPromise(
+      getAheadBehind("/nonexistent/path", "main"),
+    );
+    expect(status).toBeNull();
   });
 });
 
@@ -134,7 +154,7 @@ describe("getDefaultBranch", () => {
   });
 
   test("detects main branch via fallback", async () => {
-    const branch = await getDefaultBranch(repoDir);
+    const branch = await runBunPromise(getDefaultBranch(repoDir));
     expect(branch).toBe("main");
   });
 
@@ -148,10 +168,32 @@ describe("getDefaultBranch", () => {
       .quiet()
       .cwd(masterRepoDir);
 
-    const branch = await getDefaultBranch(masterRepoDir);
+    const branch = await runBunPromise(getDefaultBranch(masterRepoDir));
     expect(branch).toBe("master");
 
     await rm(masterRepoDir, { recursive: true, force: true });
+  });
+
+  test("returns null when no default branch candidate is available", async () => {
+    const trunkRepoDir = await mkdtemp(join(tmpdir(), "wct-status-trunk-"));
+    await $`git init -b trunk`.quiet().cwd(trunkRepoDir);
+    await $`git config user.email "test@test.com"`.quiet().cwd(trunkRepoDir);
+    await $`git config user.name "Test"`.quiet().cwd(trunkRepoDir);
+    await $`git config commit.gpgSign false`.quiet().cwd(trunkRepoDir);
+    await $`git commit --allow-empty -m "initial commit"`
+      .quiet()
+      .cwd(trunkRepoDir);
+
+    const branch = await runBunPromise(getDefaultBranch(trunkRepoDir));
+    expect(branch).toBeNull();
+
+    await rm(trunkRepoDir, { recursive: true, force: true });
+  });
+});
+
+describe("formatSync", () => {
+  test("shows unknown when default branch could not be determined", () => {
+    expect(formatSync(null)).toBe("?");
   });
 });
 
@@ -212,9 +254,7 @@ describe("listCommand integration", () => {
     );
 
     try {
-      const result = await listCommand();
-
-      expect(result.success).toBe(true);
+      await expect(runCommand()).resolves.toBeUndefined();
       expect(lines.length).toBeGreaterThanOrEqual(2);
 
       // Verify header row contains all column headers
@@ -247,9 +287,7 @@ describe("listCommand integration", () => {
     );
 
     try {
-      const result = await listCommand({ short: true });
-
-      expect(result.success).toBe(true);
+      await expect(runCommand({ short: true })).resolves.toBeUndefined();
       // Should have branch names only, no header
       expect(lines.some((l) => l.includes("BRANCH"))).toBe(false);
       expect(lines.some((l) => l.includes("main"))).toBe(true);
@@ -277,9 +315,7 @@ describe("listCommand integration", () => {
     );
 
     try {
-      const result = await listCommand();
-
-      expect(result.success).toBe(true);
+      await expect(runCommand()).resolves.toBeUndefined();
       // Should show the main worktree row
       const dataLines = lines.slice(1).map(stripAnsi);
       expect(dataLines.some((l) => l.includes("main"))).toBe(true);

@@ -3,11 +3,20 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { Effect } from "effect";
+import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
 import {
-  createWorktree,
-  findWorktreeByBranch,
+  liveWorktreeService,
   parseWorktreeListOutput,
-} from "../src/services/worktree";
+  WorktreeService,
+} from "../src/services/worktree-service";
+
+function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return provideWctServices(
+    Effect.provideService(effect, WorktreeService, liveWorktreeService),
+  );
+}
 
 describe("parseWorktreeListOutput", () => {
   test("parses porcelain output correctly", () => {
@@ -28,15 +37,15 @@ detached
 
     expect(worktrees).toHaveLength(3);
 
-    expect(worktrees[0].path).toBe("/home/user/projects/myapp");
-    expect(worktrees[0].branch).toBe("main");
-    expect(worktrees[0].commit).toBe("abc123def456");
+    expect(worktrees[0]?.path).toBe("/home/user/projects/myapp");
+    expect(worktrees[0]?.branch).toBe("main");
+    expect(worktrees[0]?.commit).toBe("abc123def456");
 
-    expect(worktrees[1].path).toBe("/home/user/worktrees/myapp/feature-auth");
-    expect(worktrees[1].branch).toBe("feature-auth");
+    expect(worktrees[1]?.path).toBe("/home/user/worktrees/myapp/feature-auth");
+    expect(worktrees[1]?.branch).toBe("feature-auth");
 
-    expect(worktrees[2].path).toBe("/home/user/worktrees/myapp/detached");
-    expect(worktrees[2].branch).toBe("(detached)");
+    expect(worktrees[2]?.path).toBe("/home/user/worktrees/myapp/detached");
+    expect(worktrees[2]?.branch).toBe("(detached)");
   });
 
   test("handles bare repository", () => {
@@ -47,7 +56,7 @@ bare
     const worktrees = parseWorktreeListOutput(output);
 
     expect(worktrees).toHaveLength(1);
-    expect(worktrees[0].isBare).toBe(true);
+    expect(worktrees[0]?.isBare).toBe(true);
   });
 
   test("handles empty output", () => {
@@ -58,7 +67,13 @@ bare
 
 describe("findWorktreeByBranch", () => {
   test("returns null when no worktrees exist", async () => {
-    const result = await findWorktreeByBranch("nonexistent-branch-xyz");
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.findWorktreeByBranch("nonexistent-branch-xyz"),
+        ),
+      ),
+    );
     expect(result).toBeNull();
   });
 });
@@ -99,16 +114,21 @@ describe("createWorktree with base branch", () => {
   test("creates worktree with base branch", async () => {
     process.chdir(repoDir);
     const wtPath = join(worktreeDir, "feature-from-develop");
-    const result = await createWorktree(
-      wtPath,
-      "feature-from-develop",
-      false,
-      "develop",
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.createWorktree(
+            wtPath,
+            "feature-from-develop",
+            false,
+            "develop",
+          ),
+        ),
+      ),
     );
 
-    expect(result.success).toBe(true);
+    expect(result._tag).toBe("Created");
     expect(result.path).toBe(wtPath);
-    expect(result.alreadyExists).toBeUndefined();
 
     // Verify the new branch is based on develop (has develop's commit)
     const log = await $`git log --oneline feature-from-develop`
@@ -121,9 +141,15 @@ describe("createWorktree with base branch", () => {
   test("creates worktree without base (defaults to HEAD)", async () => {
     process.chdir(repoDir);
     const wtPath = join(worktreeDir, "feature-from-head");
-    const result = await createWorktree(wtPath, "feature-from-head", false);
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.createWorktree(wtPath, "feature-from-head", false),
+        ),
+      ),
+    );
 
-    expect(result.success).toBe(true);
+    expect(result._tag).toBe("Created");
 
     // Should be based on current HEAD (main), which does not have develop's commit
     const log = await $`git log --oneline feature-from-head`
@@ -136,15 +162,20 @@ describe("createWorktree with base branch", () => {
   test("returns error when base branch does not exist", async () => {
     process.chdir(repoDir);
     const wtPath = join(worktreeDir, "feature-bad-base");
-    const result = await createWorktree(
-      wtPath,
-      "feature-bad-base",
-      false,
-      "nonexistent-branch",
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
+    await expect(
+      runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) =>
+            service.createWorktree(
+              wtPath,
+              "feature-bad-base",
+              false,
+              "nonexistent-branch",
+            ),
+          ),
+        ),
+      ),
+    ).rejects.toThrow();
   });
 
   test("ignores base when using existing branch", async () => {
@@ -152,13 +183,38 @@ describe("createWorktree with base branch", () => {
     const wtPath = join(worktreeDir, "existing-branch-wt");
     // Pass base="main" but useExisting=true — base should be ignored,
     // and the worktree should check out develop (which has "develop commit")
-    const result = await createWorktree(wtPath, "develop", true, "main");
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.createWorktree(wtPath, "develop", true, "main"),
+        ),
+      ),
+    );
 
-    expect(result.success).toBe(true);
+    expect(result._tag).toBe("Created");
     expect(result.path).toBe(wtPath);
 
     // Verify it checked out the existing develop branch, not main
     const log = await $`git log --oneline develop`.quiet().cwd(repoDir);
     expect(log.text()).toContain("develop commit");
+  });
+
+  test("treats an occupied unregistered path as a conflict", async () => {
+    process.chdir(repoDir);
+    const wtPath = join(worktreeDir, "occupied-path");
+    await Bun.write(wtPath, "not a worktree");
+
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.createWorktree(wtPath, "occupied-branch", false),
+        ),
+      ),
+    );
+
+    expect(result).toEqual({
+      _tag: "PathConflict",
+      path: wtPath,
+    });
   });
 });

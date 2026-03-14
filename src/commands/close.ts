@@ -1,20 +1,13 @@
 import { basename } from "node:path";
-import { removeItemsBySession } from "../services/queue";
-import {
-  formatSessionName,
-  getCurrentSession,
-  killSession,
-  sessionExists,
-} from "../services/tmux";
-import {
-  findWorktreeByBranch,
-  isGitRepo,
-  removeWorktree,
-} from "../services/worktree";
+import { Effect } from "effect";
+import type { WctServices } from "../effect/services";
+import { commandError, toWctError, type WctError } from "../errors";
+import { QueueStorage } from "../services/queue-storage";
+import { formatSessionName, TmuxService } from "../services/tmux";
+import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
-import { type CommandResult, err, ok } from "../utils/result";
-import type { CommandDef } from "./registry";
+import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "close",
@@ -43,110 +36,141 @@ export interface CloseOptions {
   force?: boolean;
 }
 
-export async function closeCommand(
+export function closeCommand(
   options: CloseOptions,
-): Promise<CommandResult> {
-  const { branches, yes = false, force = false } = options;
-  const branchQueue = [...branches];
-  let deferredCurrentSessionBranch = false;
+): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const { branches, yes = false, force = false } = options;
+    const branchQueue = [...branches];
+    let deferredCurrentSessionBranch = false;
 
-  if (!(await isGitRepo())) {
-    return err("Not a git repository", "not_git_repo");
-  }
-
-  const currentSession = await getCurrentSession();
-  let processedCount = 0;
-
-  while (branchQueue.length > 0) {
-    const branch = branchQueue.shift();
-    if (!branch) {
-      break;
-    }
-
-    const worktree = await findWorktreeByBranch(branch);
-    if (!worktree) {
-      return err(
-        `No worktree found for branch '${branch}'`,
-        "worktree_not_found",
+    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
+    if (!repo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
       );
     }
 
-    const worktreePath = worktree.path;
-    const sessionName = formatSessionName(basename(worktreePath));
+    const currentSession = yield* TmuxService.use((service) =>
+      service.getCurrentSession(),
+    );
+    let processedCount = 0;
 
-    if (
-      currentSession &&
-      sessionName === currentSession &&
-      branchQueue.length > 0 &&
-      !deferredCurrentSessionBranch
-    ) {
-      logger.warn(
-        `Deferring branch '${branch}' because it is the current tmux session`,
-      );
-      branchQueue.push(branch);
-      deferredCurrentSessionBranch = true;
-      continue;
-    }
-
-    if (branches.length > 1) {
-      logger.info(
-        `Closing branch '${branch}' (${processedCount + 1}/${branches.length})`,
-      );
-    }
-
-    if (!yes) {
-      const confirmed = await confirm(
-        `Close worktree '${branch}' and kill tmux session '${sessionName}'?`,
-      );
-      if (!confirmed) {
-        logger.info("Aborted");
-        return ok();
+    while (branchQueue.length > 0) {
+      const branch = branchQueue.shift();
+      if (!branch) {
+        break;
       }
-    }
 
-    if (currentSession === sessionName && !yes) {
-      const confirmed = await confirm(
-        "You are inside this tmux session. It will be killed. Continue?",
+      const worktree = yield* WorktreeService.use((service) =>
+        service.findWorktreeByBranch(branch),
       );
-      if (!confirmed) {
-        logger.info("Aborted");
-        return ok();
-      }
-    }
-
-    if (await sessionExists(sessionName)) {
-      logger.info(`Killing tmux session '${sessionName}'...`);
-      const killResult = await killSession(sessionName);
-      if (killResult.success) {
-        removeItemsBySession(sessionName);
-        logger.success(`Killed tmux session '${sessionName}'`);
-      } else {
-        logger.warn(`Failed to kill tmux session: ${killResult.error}`);
-      }
-    } else {
-      logger.warn(`Tmux session '${sessionName}' does not exist`);
-    }
-
-    logger.info(`Removing worktree at ${worktreePath}...`);
-    const removeResult = await removeWorktree(worktreePath, force);
-
-    if (removeResult.success) {
-      logger.success(`Removed worktree '${branch}'`);
-      processedCount += 1;
-    } else {
-      if (removeResult.code === "worktree_has_uncommitted_changes") {
-        return err(
-          "Worktree has uncommitted changes. Use --force to remove anyway.",
-          "worktree_remove_failed",
-        );
-      } else {
-        return err(
-          `Failed to remove worktree: ${removeResult.error}`,
-          "worktree_remove_failed",
+      if (!worktree) {
+        return yield* Effect.fail(
+          commandError(
+            "worktree_not_found",
+            `No worktree found for branch '${branch}'`,
+          ),
         );
       }
-    }
-  }
 
-  return ok();
+      const worktreePath = worktree.path;
+      const sessionName = formatSessionName(basename(worktreePath));
+
+      if (
+        currentSession &&
+        sessionName === currentSession &&
+        branchQueue.length > 0 &&
+        !deferredCurrentSessionBranch
+      ) {
+        yield* logger.warn(
+          `Deferring branch '${branch}' because it is the current tmux session`,
+        );
+        branchQueue.push(branch);
+        deferredCurrentSessionBranch = true;
+        continue;
+      }
+
+      if (branches.length > 1) {
+        yield* logger.info(
+          `Closing branch '${branch}' (${processedCount + 1}/${branches.length})`,
+        );
+      }
+
+      if (!yes) {
+        const confirmed = yield* Effect.mapError(
+          confirm(
+            `Close worktree '${branch}' and kill tmux session '${sessionName}'?`,
+          ),
+          (error) =>
+            commandError("tmux_error", "Confirmation prompt failed", error),
+        );
+        if (!confirmed) {
+          yield* logger.info("Aborted");
+          return;
+        }
+      }
+
+      if (currentSession === sessionName && !yes) {
+        const confirmed = yield* Effect.mapError(
+          confirm(
+            "You are inside this tmux session. It will be killed. Continue?",
+          ),
+          (error) =>
+            commandError("tmux_error", "Confirmation prompt failed", error),
+        );
+        if (!confirmed) {
+          yield* logger.info("Aborted");
+          return;
+        }
+      }
+
+      const exists = yield* TmuxService.use((service) =>
+        service.sessionExists(sessionName),
+      );
+      if (exists) {
+        yield* logger.info(`Killing tmux session '${sessionName}'...`);
+        const killed = yield* Effect.catch(
+          TmuxService.use((service) => service.killSession(sessionName)).pipe(
+            Effect.as(true),
+          ),
+          (error) =>
+            logger
+              .warn(`Failed to kill tmux session: ${toWctError(error).message}`)
+              .pipe(Effect.as(false)),
+        );
+        if (killed) {
+          yield* logger.success(`Killed tmux session '${sessionName}'`);
+          yield* Effect.catch(
+            QueueStorage.use((service) =>
+              service.removeItemsBySession(sessionName),
+            ),
+            (error) =>
+              logger.warn(
+                `Failed to clean queue entries for session '${sessionName}': ${toWctError(error).message}`,
+              ),
+          );
+        }
+      } else {
+        yield* logger.warn(`Tmux session '${sessionName}' does not exist`);
+      }
+
+      yield* logger.info(`Removing worktree at ${worktreePath}...`);
+      const removeResult = yield* WorktreeService.use((service) =>
+        service.removeWorktree(worktreePath, force),
+      );
+
+      if (removeResult._tag === "Removed") {
+        yield* logger.success(`Removed worktree '${branch}'`);
+        processedCount += 1;
+      } else if (removeResult._tag === "BlockedByChanges") {
+        return yield* Effect.fail(
+          commandError(
+            "worktree_remove_failed",
+            "Worktree has uncommitted changes. Use --force to remove anyway.",
+          ),
+        );
+      }
+    }
+  });
 }

@@ -1,5 +1,8 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { Effect, FileSystem, Path } from "effect";
+import { identity } from "effect/Function";
+import { runBunPromise } from "../effect/runtime";
 import type { ResolvedConfig, WctConfig } from "./schema";
 import { resolveConfig, validateConfig } from "./validator";
 
@@ -20,17 +23,6 @@ export function expandTilde(path: string): string {
 
 export function slugifyBranch(branch: string): string {
   return branch.replace(/[^a-zA-Z0-9_-]/g, "-");
-}
-
-async function loadConfigFile(path: string): Promise<WctConfig | null> {
-  const file = Bun.file(path);
-  if (!(await file.exists())) {
-    return null;
-  }
-
-  const content = await file.text();
-  const parsed = Bun.YAML.parse(content);
-  return parsed as WctConfig;
 }
 
 function mergeConfigs(
@@ -70,43 +62,136 @@ export interface LoadConfigResult {
   hasGlobalConfig: boolean;
 }
 
-export async function loadConfig(
-  projectDir: string,
-): Promise<LoadConfigResult> {
-  const projectConfigPath = join(projectDir, CONFIG_FILENAME);
-  const globalConfigPath = join(homedir(), CONFIG_FILENAME);
+interface LoadedConfigFile {
+  exists: boolean;
+  config: WctConfig | null;
+  error?: string;
+}
 
-  const [projectConfig, globalConfig] = await Promise.all([
-    loadConfigFile(projectConfigPath),
-    loadConfigFile(globalConfigPath),
-  ]);
+function loadConfigFileEffect(
+  filePath: string,
+): Effect.Effect<LoadedConfigFile, never, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const exists = yield* Effect.match(fs.exists(filePath), {
+      onFailure: () => false,
+      onSuccess: identity,
+    });
 
-  const hasProjectConfig = projectConfig !== null;
-  const hasGlobalConfig = globalConfig !== null;
+    if (!exists) {
+      return { exists: false, config: null };
+    }
 
-  const merged =
-    hasProjectConfig || hasGlobalConfig
-      ? mergeConfigs(globalConfig, projectConfig)
-      : DEFAULT_CONFIG;
-  const validation = validateConfig(merged);
+    const contentResult = yield* Effect.match(fs.readFileString(filePath), {
+      onFailure: (error) => ({
+        ok: false as const,
+        message: `Failed to read ${filePath}: ${error.message}`,
+      }),
+      onSuccess: (content) => ({
+        ok: true as const,
+        content,
+      }),
+    });
 
-  if (!validation.valid) {
+    if (!contentResult.ok) {
+      return {
+        exists: true,
+        config: null,
+        error: contentResult.message,
+      };
+    }
+
+    const parsedResult = yield* Effect.match(
+      Effect.try({
+        try: () => Bun.YAML.parse(contentResult.content),
+        catch: (error) =>
+          `Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+      {
+        onFailure: (error) => ({
+          ok: false as const,
+          message: error,
+        }),
+        onSuccess: (config) => ({
+          ok: true as const,
+          config,
+        }),
+      },
+    );
+
+    if (!parsedResult.ok) {
+      return {
+        exists: true,
+        config: null,
+        error: parsedResult.message,
+      };
+    }
+
     return {
-      config: null,
-      errors: validation.errors,
+      exists: true,
+      config: parsedResult.config as WctConfig,
+    };
+  });
+}
+
+export function loadConfigEffect(
+  projectDir: string,
+): Effect.Effect<LoadConfigResult, never, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const projectConfigPath = path.join(projectDir, CONFIG_FILENAME);
+    const globalConfigPath = path.join(homedir(), CONFIG_FILENAME);
+
+    const [projectConfig, globalConfig] = yield* Effect.all([
+      loadConfigFileEffect(projectConfigPath),
+      loadConfigFileEffect(globalConfigPath),
+    ]);
+
+    const hasProjectConfig = projectConfig.exists;
+    const hasGlobalConfig = globalConfig.exists;
+    const loadErrors = [projectConfig.error, globalConfig.error].filter(
+      (error): error is string => typeof error === "string",
+    );
+
+    if (loadErrors.length > 0) {
+      return {
+        config: null,
+        errors: loadErrors,
+        hasProjectConfig,
+        hasGlobalConfig,
+      };
+    }
+
+    const merged =
+      hasProjectConfig || hasGlobalConfig
+        ? mergeConfigs(globalConfig.config, projectConfig.config)
+        : DEFAULT_CONFIG;
+    const validation = validateConfig(merged);
+
+    if (!validation.valid) {
+      return {
+        config: null,
+        errors: validation.errors,
+        hasProjectConfig,
+        hasGlobalConfig,
+      };
+    }
+
+    const resolved = resolveConfig(merged, projectDir);
+
+    return {
+      config: resolved,
+      errors: [],
       hasProjectConfig,
       hasGlobalConfig,
     };
-  }
+  });
+}
 
-  const resolved = resolveConfig(merged, projectDir);
-
-  return {
-    config: resolved,
-    errors: [],
-    hasProjectConfig,
-    hasGlobalConfig,
-  };
+export async function loadConfig(
+  projectDir: string,
+): Promise<LoadConfigResult> {
+  return await runBunPromise(loadConfigEffect(projectDir));
 }
 
 export function resolveWorktreePath(

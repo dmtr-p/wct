@@ -64,11 +64,18 @@ export function getDefaultBranch(repoPath: string) {
         return candidate;
       }
     }
-    return "main";
+    return null;
   });
 }
 
-export function getAheadBehind(worktreePath: string, defaultBranch: string) {
+export function getAheadBehind(
+  worktreePath: string,
+  defaultBranch: string | null,
+) {
+  if (!defaultBranch) {
+    return Effect.succeed(null);
+  }
+
   return Effect.catch(
     execProcess(
       "git",
@@ -99,7 +106,11 @@ export function formatChanges(count: number): string {
   return `${count} ${count === 1 ? "file" : "files"}`;
 }
 
-export function formatSync(ahead: number, behind: number): string {
+export function formatSync(
+  sync: { ahead: number; behind: number } | null,
+): string {
+  if (!sync) return "?";
+  const { ahead, behind } = sync;
   if (ahead === 0 && behind === 0) return "\u2713";
   const parts: string[] = [];
   if (ahead > 0) parts.push(`\u2191${ahead}`);
@@ -141,7 +152,7 @@ export function listCommand(opts?: {
             error,
           ),
         )
-      : "main";
+      : null;
 
     const cwd = process.cwd();
     const rows = yield* Effect.mapError(
@@ -150,7 +161,7 @@ export function listCommand(opts?: {
           const branch = wt.branch || "(unknown)";
           const sessionName = formatSessionName(basename(wt.path));
           const session = sessions.find((s) => s.name === sessionName);
-          const [changesCount, { ahead, behind }] = yield* Effect.all([
+          const [changesCount, syncStatus] = yield* Effect.all([
             getChangedFilesCount(wt.path),
             getAheadBehind(wt.path, defaultBranch),
           ]);
@@ -173,7 +184,7 @@ export function listCommand(opts?: {
             tmux,
             tmuxRaw,
             changes: formatChanges(changesCount),
-            sync: formatSync(ahead, behind),
+            sync: formatSync(syncStatus),
           };
         }),
       ),

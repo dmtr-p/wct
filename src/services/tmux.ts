@@ -405,11 +405,19 @@ function createSessionImpl(
 ) {
   return Effect.gen(function* () {
     if (yield* sessionExistsImpl(name)) {
+      yield* configureQueueStatusBar(name);
       return { _tag: "AlreadyExists" as const, sessionName: name };
     }
 
     const windows = config?.windows ?? [];
-    yield* createSessionWithWindows(name, workingDir, windows, env);
+    yield* Effect.catch(
+      createSessionWithWindows(name, workingDir, windows, env),
+      (error) =>
+        Effect.gen(function* () {
+          yield* Effect.catch(killSessionImpl(name), () => Effect.void);
+          return yield* Effect.fail(error);
+        }),
+    );
     yield* configureQueueStatusBar(name);
     return { _tag: "Created" as const, sessionName: name };
   });

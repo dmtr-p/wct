@@ -198,4 +198,23 @@ describe("createWorktree with base branch", () => {
     const log = await $`git log --oneline develop`.quiet().cwd(repoDir);
     expect(log.text()).toContain("develop commit");
   });
+
+  test("treats an occupied unregistered path as a conflict", async () => {
+    process.chdir(repoDir);
+    const wtPath = join(worktreeDir, "occupied-path");
+    await Bun.write(wtPath, "not a worktree");
+
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.createWorktree(wtPath, "occupied-branch", false),
+        ),
+      ),
+    );
+
+    expect(result).toEqual({
+      _tag: "PathConflict",
+      path: wtPath,
+    });
+  });
 });

@@ -47,6 +47,7 @@ sudo mv wct /usr/local/bin/wct
 ```
 
 Verify installation:
+
 ```bash
 wct --version
 ```
@@ -56,16 +57,19 @@ wct --version
 When installed via Homebrew, completions are set up automatically. For manual installs:
 
 **Bash** — add to `~/.bashrc`:
+
 ```bash
 eval "$(wct --completions bash)"
 ```
 
 **Zsh** — add to `~/.zshrc`:
+
 ```bash
 eval "$(wct --completions zsh)"
 ```
 
 **Fish** — run once:
+
 ```bash
 wct --completions fish > ~/.config/fish/completions/wct.fish
 ```
@@ -95,22 +99,22 @@ setup:
     command: "bun install"
   - name: "Generate types"
     command: "bun run codegen"
-    optional: true  # continue even if this fails
+    optional: true # continue even if this fails
 
 # IDE configuration
 ide:
-  name: vscode            # IDE identifier (use "vscode" for VS Code workspace sync)
+  name: vscode # IDE identifier (use "vscode" for VS Code workspace sync)
   command: "code $WCT_WORKTREE_DIR"
-  fork_workspace: true    # sync VS Code workspace state to worktree
+  fork_workspace: true # sync VS Code workspace state to worktree
 
 # Tmux session layout
 tmux:
   windows:
     - name: "dev"
-      split: "horizontal"  # or "vertical"
+      split: "horizontal" # or "vertical"
       panes:
         - command: "bun run dev"
-        - {}  # empty shell
+        - {} # empty shell
     - name: "shell"
 ```
 

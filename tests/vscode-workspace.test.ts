@@ -333,6 +333,43 @@ describe("syncWorkspaceState", () => {
       await rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  test("cleans up a partial worktree workspace when initialization fails", async () => {
+    const storagePath = join(tmpdir(), `wct-test-sync-storage-${Date.now()}`);
+    const mainRepoPath = join(tmpdir(), `wct-test-sync-main-${Date.now()}`);
+    const worktreePath = join(tmpdir(), `wct-test-sync-worktree-${Date.now()}`);
+
+    await mkdir(storagePath, { recursive: true });
+    await mkdir(mainRepoPath, { recursive: true });
+    await mkdir(worktreePath, { recursive: true });
+
+    const mainWorkspaceId = await runEffect(computeWorkspaceId(mainRepoPath));
+    const worktreeWorkspaceId = await runEffect(
+      computeWorkspaceId(worktreePath),
+    );
+    const mainWorkspaceDir = join(storagePath, mainWorkspaceId);
+    const occupiedTargetPath = join(storagePath, worktreeWorkspaceId);
+
+    process.env.WCT_VSCODE_STORAGE_PATH = storagePath;
+
+    try {
+      await mkdir(mainWorkspaceDir, { recursive: true });
+      await Bun.write(join(mainWorkspaceDir, "state.vscdb"), "fake-db");
+      await Bun.write(occupiedTargetPath, "stale");
+
+      const result = await runEffect(
+        syncWorkspaceState(mainRepoPath, worktreePath),
+      );
+
+      expect(result.success).toBe(false);
+      expect(await Bun.file(occupiedTargetPath).exists()).toBe(false);
+    } finally {
+      delete process.env.WCT_VSCODE_STORAGE_PATH;
+      await rm(storagePath, { recursive: true, force: true });
+      await rm(mainRepoPath, { recursive: true, force: true });
+      await rm(worktreePath, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("rewriteStatePaths error handling", () => {

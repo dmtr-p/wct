@@ -15,7 +15,7 @@ export interface Worktree {
 export type CreateWorktreeResult =
   | { _tag: "Created"; path: string }
   | { _tag: "AlreadyExists"; path: string }
-  | { _tag: "PathConflict"; path: string; existingBranch: string };
+  | { _tag: "PathConflict"; path: string; existingBranch?: string };
 
 export type RemoveWorktreeResult =
   | { _tag: "Removed"; path: string }
@@ -212,7 +212,14 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
       if (exists) {
         const worktrees = yield* listWorktreesImpl();
         const existing = worktrees.find((worktree) => worktree.path === path);
-        if (existing && existing.branch !== branch) {
+        if (existing?.branch === branch) {
+          return {
+            _tag: "AlreadyExists" as const,
+            path,
+          };
+        }
+
+        if (existing) {
           return {
             _tag: "PathConflict" as const,
             path,
@@ -221,7 +228,7 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         }
 
         return {
-          _tag: "AlreadyExists" as const,
+          _tag: "PathConflict" as const,
           path,
         };
       }

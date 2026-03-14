@@ -7,10 +7,13 @@ import { Effect } from "effect";
 import { upCommand } from "../src/commands/up";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
+import { commandError } from "../src/errors";
+import { liveTmuxService } from "../src/services/tmux";
 import {
   liveWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
+import { withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return provideWctServices(
@@ -243,5 +246,69 @@ exec "${realGit}" "$@"
 describe("upCommand", () => {
   test("is exported as a function", () => {
     expect(typeof upCommand).toBe("function");
+  });
+
+  test("does not print attach guidance when tmux session creation fails", async () => {
+    const repoDir = await mkdtemp(join(tmpdir(), "wct-up-tmux-fail-"));
+    const originalDir = process.cwd();
+    const originalTmux = process.env.TMUX;
+    delete process.env.TMUX;
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(String(args[0]));
+    };
+
+    try {
+      await $`git init -b main`.quiet().cwd(repoDir);
+      await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
+      await $`git config user.name "Test"`.quiet().cwd(repoDir);
+      await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
+      await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
+      await Bun.write(
+        join(repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(repoDir);
+
+      await expect(
+        runBunPromise(
+          withTestServices(upCommand(), {
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(repoDir),
+              getCurrentBranch: () => Effect.succeed("main"),
+            },
+            tmux: {
+              ...liveTmuxService,
+              createSession: () =>
+                Effect.fail(commandError("tmux_error", "tmux boom")),
+            },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(
+        lines.some((line) => line.includes("Attach to tmux session")),
+      ).toBe(false);
+    } finally {
+      console.log = originalLog;
+      if (originalTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = originalTmux;
+      }
+      process.chdir(originalDir);
+      await rm(repoDir, { recursive: true, force: true });
+    }
   });
 });

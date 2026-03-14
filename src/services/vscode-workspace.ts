@@ -559,6 +559,7 @@ function syncWorkspaceStateImpl(
       }
 
       const worktreeWorkspaceId = yield* computeWorkspaceId(worktreePath);
+      const worktreeWorkspacePath = join(storagePath, worktreeWorkspaceId);
 
       const alreadyExists = yield* workspaceExists(worktreeWorkspaceId);
       if (alreadyExists) {
@@ -570,10 +571,25 @@ function syncWorkspaceStateImpl(
         } satisfies SyncResult;
       }
 
-      yield* copyWorkspaceStorage(mainWorkspaceId, worktreeWorkspaceId);
-      yield* createWorkspaceJson(worktreeWorkspaceId, worktreePath);
+      yield* Effect.catch(
+        Effect.gen(function* () {
+          yield* copyWorkspaceStorage(mainWorkspaceId, worktreeWorkspaceId);
+          yield* createWorkspaceJson(worktreeWorkspaceId, worktreePath);
+        }),
+        (error) =>
+          Effect.gen(function* () {
+            yield* Effect.catch(
+              removePath(worktreeWorkspacePath, {
+                recursive: true,
+                force: true,
+              }),
+              () => Effect.void,
+            );
+            return yield* Effect.fail(error);
+          }),
+      );
 
-      const dbFile = join(storagePath, worktreeWorkspaceId, "state.vscdb");
+      const dbFile = join(worktreeWorkspacePath, "state.vscdb");
       if (yield* pathExists(dbFile)) {
         rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
         yield* filterMissingEditors(dbFile, worktreePath);
@@ -581,11 +597,7 @@ function syncWorkspaceStateImpl(
         yield* clearExternalAgentSessions(dbFile);
       }
 
-      const backupDbFile = join(
-        storagePath,
-        worktreeWorkspaceId,
-        "state.vscdb.backup",
-      );
+      const backupDbFile = join(worktreeWorkspacePath, "state.vscdb.backup");
       if (yield* pathExists(backupDbFile)) {
         rewriteStatePaths(backupDbFile, mainRepoPath, worktreePath);
         yield* filterMissingEditors(backupDbFile, worktreePath);

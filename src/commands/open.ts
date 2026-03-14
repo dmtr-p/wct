@@ -1,17 +1,17 @@
 import { basename } from "node:path";
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { loadConfig, resolveWorktreePath } from "../config/loader";
 import type { WctServices } from "../effect/services";
-import { commandError, toWctError, type WctError } from "../errors";
+import { commandError, type WctError } from "../errors";
 import { copyEntries } from "../services/copy";
-import { IdeService } from "../services/ide-service";
 import { SetupService } from "../services/setup-service";
-import { formatSessionName, TmuxService } from "../services/tmux";
+import { formatSessionName } from "../services/tmux";
 import { VSCodeWorkspaceService } from "../services/vscode-workspace";
 import { WorktreeService } from "../services/worktree-service";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
+import { launchSessionAndIde } from "./session";
 
 export const commandDef: CommandDef = {
   name: "open",
@@ -154,7 +154,9 @@ export function openCommand(
       return yield* Effect.fail(
         commandError(
           "worktree_error",
-          `Path already exists for branch '${worktreeResult.existingBranch}', not '${branch}'`,
+          worktreeResult.existingBranch
+            ? `Path already exists for branch '${worktreeResult.existingBranch}', not '${branch}'`
+            : `Path '${worktreePath}' already exists and is not a registered worktree for '${branch}'`,
         ),
       );
     }
@@ -220,78 +222,15 @@ export function openCommand(
       }
     }
 
-    const ideCommand = config.ide?.command;
-    yield* Effect.all([
-      config.tmux
-        ? logger
-            .info("Creating tmux session...")
-            .pipe(
-              Effect.andThen(
-                Effect.catch(
-                  TmuxService.use((service) =>
-                    service.createSession(
-                      sessionName,
-                      worktreePath,
-                      config.tmux,
-                      env,
-                    ),
-                  ).pipe(
-                    Effect.tap((tmuxResult) =>
-                      tmuxResult._tag === "AlreadyExists"
-                        ? logger.info(
-                            `Tmux session '${sessionName}' already exists`,
-                          )
-                        : logger.success(
-                            `Created tmux session '${sessionName}'`,
-                          ),
-                    ),
-                  ),
-                  (error) =>
-                    logger.warn(
-                      `Failed to create tmux session: ${toWctError(error).message}`,
-                    ),
-                ),
-              ),
-            )
-        : Effect.void,
-      ideCommand && !noIde
-        ? logger
-            .info("Opening IDE...")
-            .pipe(
-              Effect.andThen(
-                Effect.catch(
-                  IdeService.use((service) =>
-                    service.openIDE(ideCommand, env),
-                  ).pipe(Effect.tap(() => logger.success("IDE opened"))),
-                  (error) =>
-                    logger.warn(
-                      `Failed to open IDE: ${toWctError(error).message}`,
-                    ),
-                ),
-              ),
-            )
-        : Effect.void,
-    ]);
+    yield* launchSessionAndIde({
+      sessionName,
+      workingDir: worktreePath,
+      tmuxConfig: config.tmux,
+      env,
+      ideCommand: config.ide?.command,
+      noIde,
+    });
 
     yield* logger.success(`Worktree '${branch}' is ready`);
-    if (config.tmux) {
-      if (process.env.TMUX) {
-        yield* Effect.catch(
-          TmuxService.use((service) => service.switchSession(sessionName)).pipe(
-            Effect.tap(() =>
-              logger.success(`Switched to tmux session '${sessionName}'`),
-            ),
-          ),
-          (error) =>
-            logger.warn(
-              `Failed to switch session: ${toWctError(error).message}`,
-            ),
-        );
-      } else {
-        yield* Console.log(
-          `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
-        );
-      }
-    }
   });
 }

@@ -11,26 +11,37 @@ describe("process", () => {
     const spawn = spyOn(Bun, "spawn").mockReturnValue({
       exited: Promise.resolve(0),
     } as unknown as ReturnType<typeof Bun.spawn>);
+    const originalSentinel = process.env.SENTINEL_TEST;
+    process.env.SENTINEL_TEST = "1";
 
-    const exitCode = await runBunPromise(
-      spawnInteractive("/bin/sh", ["-c", "exit 0"], {
+    try {
+      const exitCode = await runBunPromise(
+        spawnInteractive("/bin/sh", ["-c", "exit 0"], {
+          cwd: "/tmp/worktree",
+          env: {
+            WCT_BRANCH: "main",
+          },
+        }),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(spawn).toHaveBeenCalledWith(["/bin/sh", "-c", "exit 0"], {
         cwd: "/tmp/worktree",
-        env: {
+        env: expect.objectContaining({
           WCT_BRANCH: "main",
-        },
-      }),
-    );
-
-    expect(exitCode).toBe(0);
-    expect(spawn).toHaveBeenCalledWith(["/bin/sh", "-c", "exit 0"], {
-      cwd: "/tmp/worktree",
-      env: expect.objectContaining({
-        WCT_BRANCH: "main",
-      }),
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
+          SENTINEL_TEST: "1",
+        }),
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+    } finally {
+      if (originalSentinel === undefined) {
+        delete process.env.SENTINEL_TEST;
+      } else {
+        process.env.SENTINEL_TEST = originalSentinel;
+      }
+    }
   });
 
   test("spawnInteractive can replace the environment when extendEnv is false", async () => {

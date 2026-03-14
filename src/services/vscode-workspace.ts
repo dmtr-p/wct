@@ -240,8 +240,12 @@ function filterEditorsInState(state: Record<string, unknown>) {
           }
 
           if (
-            yield* Effect.catch(pathExists(filePath), () =>
-              Effect.succeed(false),
+            yield* Effect.catch(pathExists(filePath), (error) =>
+              logger
+                .warn(
+                  `Failed to check VS Code editor path ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+                )
+                .pipe(Effect.as(true)),
             )
           ) {
             keepIndices.push(i);

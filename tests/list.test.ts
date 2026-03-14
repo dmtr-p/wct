@@ -129,17 +129,11 @@ describe("getAheadBehind", () => {
     expect(behind).toBe(0);
   });
 
-  test("returns zeros for invalid path", async () => {
+  test("returns null for invalid path", async () => {
     const status = await runBunPromise(
       getAheadBehind("/nonexistent/path", "main"),
     );
-    expect(status).not.toBeNull();
-    if (!status) {
-      throw new Error("expected sync status");
-    }
-    const { ahead, behind } = status;
-    expect(ahead).toBe(0);
-    expect(behind).toBe(0);
+    expect(status).toBeNull();
   });
 });
 

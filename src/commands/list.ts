@@ -98,7 +98,7 @@ export function getAheadBehind(
         .warn(
           `Failed to get sync status for ${worktreePath}: ${error instanceof Error ? error.message : String(error)}`,
         )
-        .pipe(Effect.as({ ahead: 0, behind: 0 })),
+        .pipe(Effect.as(null)),
   );
 }
 

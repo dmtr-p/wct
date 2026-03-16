@@ -308,4 +308,167 @@ tmux:
       await rm(repoDir, { recursive: true, force: true });
     }
   });
+
+  test("prints attach guidance and does not attach when --no-attach is set", async () => {
+    const repoDir = await mkdtemp(join(tmpdir(), "wct-up-no-attach-"));
+    const originalDir = process.cwd();
+    const originalTmux = process.env.TMUX;
+    delete process.env.TMUX;
+
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const attachCalls: string[] = [];
+
+    try {
+      await $`git init -b main`.quiet().cwd(repoDir);
+      await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
+      await $`git config user.name "Test"`.quiet().cwd(repoDir);
+      await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
+      await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
+      await Bun.write(
+        join(repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(repoDir);
+
+      await expect(
+        runBunPromise(
+          withTestServices(upCommand({ noAttach: true }), {
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(repoDir),
+              getCurrentBranch: () => Effect.succeed("main"),
+            },
+            tmux: {
+              ...liveTmuxService,
+              createSession: () =>
+                Effect.succeed({
+                  _tag: "Created" as const,
+                  sessionName: "myapp-main",
+                }),
+              attachSession: (name) =>
+                Effect.sync(() => {
+                  attachCalls.push(name);
+                }),
+            },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(attachCalls).toEqual([]);
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) => line.includes("Attach to tmux session")),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+      if (originalTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = originalTmux;
+      }
+      process.chdir(originalDir);
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  test("prints attach guidance and does not attach without a TTY", async () => {
+    const repoDir = await mkdtemp(join(tmpdir(), "wct-up-no-tty-"));
+    const originalDir = process.cwd();
+    const originalTmux = process.env.TMUX;
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+    delete process.env.TMUX;
+
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const attachCalls: string[] = [];
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      await $`git init -b main`.quiet().cwd(repoDir);
+      await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
+      await $`git config user.name "Test"`.quiet().cwd(repoDir);
+      await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
+      await $`git commit --allow-empty -m "initial"`.quiet().cwd(repoDir);
+      await Bun.write(
+        join(repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(repoDir);
+
+      await expect(
+        runBunPromise(
+          withTestServices(upCommand(), {
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(repoDir),
+              getCurrentBranch: () => Effect.succeed("main"),
+            },
+            tmux: {
+              ...liveTmuxService,
+              createSession: () =>
+                Effect.succeed({
+                  _tag: "Created" as const,
+                  sessionName: "myapp-main",
+                }),
+              attachSession: (name) =>
+                Effect.sync(() => {
+                  attachCalls.push(name);
+                }),
+            },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(attachCalls).toEqual([]);
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) => line.includes("Attach to tmux session")),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+      if (stdinDescriptor) {
+        Object.defineProperty(process.stdin, "isTTY", stdinDescriptor);
+      }
+      if (stdoutDescriptor) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      }
+      if (originalTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = originalTmux;
+      }
+      process.chdir(originalDir);
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
 });

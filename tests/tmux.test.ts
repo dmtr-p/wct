@@ -140,6 +140,13 @@ describe("planQueueStatusRightUpdate", () => {
     ).toEqual({ action: "noop" });
   });
 
+  test("sets queue count when both session-local and global status are empty", () => {
+    expect(planQueueStatusRightUpdate(queueCount, "", "")).toEqual({
+      action: "set",
+      value: queueCount,
+    });
+  });
+
   test("does not overwrite session-local status when queue count is only global", () => {
     expect(
       planQueueStatusRightUpdate(

@@ -4,6 +4,7 @@ import {
   formatSessionName,
   getCurrentSession,
   parseSessionListOutput,
+  planQueueStatusRightUpdate,
   switchSession,
 } from "../src/services/tmux";
 
@@ -76,6 +77,97 @@ describe("getCurrentSession", () => {
     if (originalTmux !== undefined) {
       process.env.TMUX = originalTmux;
     }
+  });
+});
+
+describe("planQueueStatusRightUpdate", () => {
+  const queueCount = "#(wct queue --count)";
+
+  test("prepends queue count to the global status when no session override exists", () => {
+    expect(
+      planQueueStatusRightUpdate(
+        queueCount,
+        "",
+        "#{E:@catppuccin_status_application}#{E:@catppuccin_status_session}",
+      ),
+    ).toEqual({
+      action: "set",
+      value:
+        "#(wct queue --count) #{E:@catppuccin_status_application}#{E:@catppuccin_status_session}",
+    });
+  });
+
+  test("repairs sessions previously reduced to only the queue count", () => {
+    expect(
+      planQueueStatusRightUpdate(
+        queueCount,
+        "#(wct queue --count)",
+        "#{E:@catppuccin_status_application}#{E:@catppuccin_status_session}",
+      ),
+    ).toEqual({
+      action: "set",
+      value:
+        "#(wct queue --count) #{E:@catppuccin_status_application}#{E:@catppuccin_status_session}",
+    });
+  });
+
+  test("does not overwrite session-local status that already contains the queue count", () => {
+    expect(
+      planQueueStatusRightUpdate(
+        queueCount,
+        "#(wct queue --count) old-theme",
+        "new-theme",
+      ),
+    ).toEqual({ action: "noop" });
+  });
+
+  test("prepends queue count to non-wct session-local status content", () => {
+    expect(
+      planQueueStatusRightUpdate(queueCount, "session-local", "global-status"),
+    ).toEqual({
+      action: "set",
+      value: "#(wct queue --count) session-local",
+    });
+  });
+
+  test("does not duplicate the queue count when it already exists globally", () => {
+    expect(
+      planQueueStatusRightUpdate(
+        queueCount,
+        "",
+        "#(wct queue --count) global-status",
+      ),
+    ).toEqual({ action: "noop" });
+  });
+
+  test("sets queue count when both session-local and global status are empty", () => {
+    expect(planQueueStatusRightUpdate(queueCount, "", "")).toEqual({
+      action: "set",
+      value: queueCount,
+    });
+  });
+
+  test("does not overwrite session-local status when queue count is only global", () => {
+    expect(
+      planQueueStatusRightUpdate(
+        queueCount,
+        "session-local",
+        "#(wct queue --count) global-status",
+      ),
+    ).toEqual({
+      action: "set",
+      value: "#(wct queue --count) session-local",
+    });
+  });
+
+  test("unsets a broken queue-only session override when global already has queue count", () => {
+    expect(
+      planQueueStatusRightUpdate(
+        queueCount,
+        "#(wct queue --count)",
+        "#(wct queue --count) global-status",
+      ),
+    ).toEqual({ action: "unset" });
   });
 });
 

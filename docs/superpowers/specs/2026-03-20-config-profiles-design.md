@@ -60,9 +60,9 @@ profiles:
 
 ## Resolution Rules
 
-1. Base config is loaded and merged (global + project) as it works today.
-2. If `--profile <name>` is passed, use that profile. Error if the name is not found in `profiles`.
-3. Otherwise, iterate profiles in definition order. The first profile whose `match` glob(s) match the branch name wins.
+1. Base config is loaded and merged (global + project) as it works today. The `profiles` key follows the same merge strategy as other top-level keys: project `profiles` replaces global `profiles` entirely.
+2. If `--profile <name>` is passed, use that profile. Error if the name is not found in `profiles`. Empty string is treated as no profile specified.
+3. Otherwise, iterate profiles in definition order (JS engines preserve object key insertion order per ES2015+ spec; `Bun.YAML.parse` returns a plain object that preserves YAML key order). The first profile whose `match` glob(s) match the branch name wins.
 4. If no profile matches (and no `--profile` flag), base config is used as-is.
 5. For the selected profile, each section it defines (`setup`, `ide`, `tmux`, `copy`) **replaces** the corresponding base section entirely. Sections the profile doesn't define fall through from the base.
 
@@ -130,7 +130,11 @@ resolveProfile(config: ResolvedConfig, branch: string, explicitProfile?: string)
 
 ## Glob Matching
 
-Uses `Bun.Glob` — the same primitive already used for copy file matching. The glob is tested against the full branch name string (e.g., `feature/frontend-auth` tested against `feature/frontend-*`).
+Uses `Bun.Glob` — the same primitive already used for copy file matching. The glob is tested against the raw git branch name (e.g., `feature/frontend-auth` tested against `feature/frontend-*`), not the slugified version.
+
+## Completions
+
+The custom completions system (`src/cli/completions.ts`) should provide tab-completion for `--profile` values. Since profile names are defined in the config file, completion reads and parses the config (same as existing completions that need config context) and returns the profile name keys.
 
 ## Testing
 
@@ -142,3 +146,8 @@ Uses `Bun.Glob` — the same primitive already used for copy file matching. The 
   - Section replacement (profile `tmux` replaces base `tmux`, base `ide` falls through)
   - Error on unknown `--profile` name
 - Config validation tests for invalid profile schemas
+
+## Future Enhancements (Out of Scope)
+
+- `wct list` showing which profile was used per worktree (requires persisting profile selection)
+- `wct init` including a commented-out profiles example in the generated config

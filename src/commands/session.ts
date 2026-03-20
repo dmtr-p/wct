@@ -7,6 +7,10 @@ import { TmuxService } from "../services/tmux";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 
+function canAutoAttachTmux() {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
 export function launchSessionAndIde(opts: {
   sessionName: string;
   workingDir: string;
@@ -14,8 +18,17 @@ export function launchSessionAndIde(opts: {
   env: WctEnv;
   ideCommand?: string;
   noIde?: boolean;
+  noAttach?: boolean;
 }): Effect.Effect<void, WctError, WctServices> {
-  const { sessionName, workingDir, tmuxConfig, env, ideCommand, noIde } = opts;
+  const {
+    sessionName,
+    workingDir,
+    tmuxConfig,
+    env,
+    ideCommand,
+    noIde,
+    noAttach,
+  } = opts;
 
   return Effect.gen(function* () {
     const [tmuxResult] = yield* Effect.all([
@@ -72,24 +85,42 @@ export function launchSessionAndIde(opts: {
         : Effect.void,
     ]);
 
-    if (tmuxResult) {
-      if (process.env.TMUX) {
-        yield* Effect.catch(
-          TmuxService.use((service) => service.switchSession(sessionName)).pipe(
-            Effect.tap(() =>
-              logger.success(`Switched to tmux session '${sessionName}'`),
-            ),
-          ),
-          (error) =>
-            logger.warn(
-              `Failed to switch session: ${toWctError(error).message}`,
-            ),
-        );
-      } else {
-        yield* Console.log(
-          `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
-        );
-      }
+    if (!tmuxResult) {
+      return;
     }
+
+    if (noAttach || !canAutoAttachTmux()) {
+      yield* Console.log(
+        `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+      );
+      return;
+    }
+
+    if (process.env.TMUX) {
+      yield* Effect.catch(
+        TmuxService.use((service) => service.switchSession(sessionName)).pipe(
+          Effect.tap(() =>
+            logger.success(`Switched to tmux session '${sessionName}'`),
+          ),
+        ),
+        (error) =>
+          logger.warn(`Failed to switch session: ${toWctError(error).message}`),
+      );
+      return;
+    }
+
+    yield* Console.log("");
+    yield* logger.info(`Attaching to tmux session '${sessionName}'...`);
+    yield* Effect.catch(
+      TmuxService.use((service) => service.attachSession(sessionName)).pipe(
+        Effect.tap(() =>
+          logger.success(`Attached to tmux session '${sessionName}'`),
+        ),
+      ),
+      (error) =>
+        logger.warn(
+          `Failed to attach session: ${toWctError(error).message}\nAttach manually with: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+        ),
+    );
   });
 }

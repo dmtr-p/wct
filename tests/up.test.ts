@@ -315,7 +315,7 @@ tmux:
     const originalTmux = process.env.TMUX;
     delete process.env.TMUX;
 
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const attachCalls: string[] = [];
 
     try {
@@ -393,7 +393,7 @@ tmux:
     );
     delete process.env.TMUX;
 
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const attachCalls: string[] = [];
 
     Object.defineProperty(process.stdin, "isTTY", {

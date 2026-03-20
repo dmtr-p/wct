@@ -37,6 +37,11 @@ export const commandDef: CommandDef = {
       description: "Skip opening IDE",
     },
     {
+      name: "no-attach",
+      type: "boolean",
+      description: "Do not attach to tmux outside tmux",
+    },
+    {
       name: "pr",
       type: "string",
       placeholder: "number-or-url",
@@ -57,6 +62,7 @@ export interface OpenOptions {
   existing: boolean;
   base?: string;
   noIde?: boolean;
+  noAttach?: boolean;
   prompt?: string;
 }
 
@@ -64,7 +70,7 @@ export function openCommand(
   options: OpenOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { branch, existing, base, noIde, prompt } = options;
+    const { branch, existing, base, noIde, noAttach, prompt } = options;
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
@@ -229,6 +235,7 @@ export function openCommand(
       env,
       ideCommand: config.ide?.command,
       noIde,
+      noAttach,
     });
 
     yield* logger.success(`Worktree '${branch}' is ready`);

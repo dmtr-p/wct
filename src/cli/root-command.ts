@@ -169,8 +169,9 @@ const upCliCommand = Command.make(
   "up",
   {
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
+    noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
   },
-  ({ noIde }) => upCommand({ noIde }),
+  ({ noIde, noAttach }) => upCommand({ noIde, noAttach }),
 ).pipe(
   Command.withDescription(
     "Start tmux session and open IDE in current directory",
@@ -189,6 +190,7 @@ const openCliCommand = Command.make(
     ),
     existing: booleanFlag("existing", "Use existing branch", "e"),
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
+    noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     pr: optionalStringFlag(
       "pr",
       "Open worktree from a GitHub PR",
@@ -202,7 +204,7 @@ const openCliCommand = Command.make(
       "TEXT",
     ),
   },
-  ({ branch, base, existing, noIde, pr, prompt }) =>
+  ({ branch, base, existing, noIde, noAttach, pr, prompt }) =>
     Effect.gen(function* () {
       const branchArg = optionToUndefined(branch);
       const baseValue = optionToUndefined(base);
@@ -275,6 +277,7 @@ const openCliCommand = Command.make(
           existing: localExists,
           base: localExists ? undefined : `${remote}/${resolvedBranch}`,
           noIde,
+          noAttach,
           prompt: promptValue,
         });
       }
@@ -288,6 +291,7 @@ const openCliCommand = Command.make(
         existing,
         base: baseValue,
         noIde,
+        noAttach,
         prompt: promptValue,
       });
     }),

@@ -52,7 +52,7 @@ describe("Effect CLI root", () => {
 
     expect(result.exitCode).toBe(0);
     expect(output).toContain(
-      "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --pr --prompt -p' -- \"$cur\"))",
+      "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --no-attach --pr --prompt -p' -- \"$cur\"))",
     );
   });
 

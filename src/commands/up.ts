@@ -19,18 +19,24 @@ export const commandDef: CommandDef = {
       type: "boolean",
       description: "Skip opening IDE",
     },
+    {
+      name: "no-attach",
+      type: "boolean",
+      description: "Do not attach to tmux outside tmux",
+    },
   ],
 };
 
 export interface UpOptions {
   noIde?: boolean;
+  noAttach?: boolean;
 }
 
 export function upCommand(
   options?: UpOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { noIde } = options ?? {};
+    const { noIde, noAttach } = options ?? {};
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
       return yield* Effect.fail(
@@ -86,6 +92,7 @@ export function upCommand(
       env,
       ideCommand: config.ide?.command,
       noIde,
+      noAttach,
     });
 
     yield* logger.success(`Environment ready for '${branch}'`);

@@ -82,7 +82,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 - `Bun.Glob` for copy pattern expansion
 - `Bun.which` for executable lookup
 
-The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added.
+The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. The only dev dependency exceptions are `@biomejs/biome`, `@types/bun`, and `vitest`.
 
 This project uses **Effect v4**. If your training data covers Effect v3, read [EFFECT_V4.md](./EFFECT_V4.md) for the correct v4 APIs and patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
 

@@ -11,7 +11,6 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "test": "bun --bun vitest run",
-    "test:coverage": "bun --bun vitest run --coverage",
     "lint": "bunx biome check",
     "format": "bunx biome check --write",
     "build": "bun build src/index.ts --compile --outfile dist/wct",

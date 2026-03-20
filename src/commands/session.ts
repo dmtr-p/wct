@@ -89,6 +89,13 @@ export function launchSessionAndIde(opts: {
       return;
     }
 
+    if (noAttach || !canAutoAttachTmux()) {
+      yield* Console.log(
+        `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+      );
+      return;
+    }
+
     if (process.env.TMUX) {
       yield* Effect.catch(
         TmuxService.use((service) => service.switchSession(sessionName)).pipe(
@@ -98,13 +105,6 @@ export function launchSessionAndIde(opts: {
         ),
         (error) =>
           logger.warn(`Failed to switch session: ${toWctError(error).message}`),
-      );
-      return;
-    }
-
-    if (noAttach || !canAutoAttachTmux()) {
-      yield* Console.log(
-        `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
       );
       return;
     }

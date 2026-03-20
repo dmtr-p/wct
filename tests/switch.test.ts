@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
+import { describe, expect, test } from "vitest";
 import { commandDef, switchCommand } from "../src/commands/switch";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";

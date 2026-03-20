@@ -1,7 +1,15 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  type MockInstance,
+  test,
+  vi,
+} from "vitest";
 import { commandDef, hooksCommand } from "../src/commands/hooks";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
@@ -22,11 +30,11 @@ describe("hooks commandDef", () => {
 });
 
 describe("hooksCommand", () => {
-  let binSpy: ReturnType<typeof spyOn>;
+  let binSpy: MockInstance;
   let originalCwd: string;
 
   beforeEach(async () => {
-    binSpy = spyOn(bin, "resolveWctBin").mockReturnValue({
+    binSpy = vi.spyOn(bin, "resolveWctBin").mockReturnValue({
       cmd: "/usr/bin/wct",
       args: [],
     });
@@ -42,8 +50,8 @@ describe("hooksCommand", () => {
   });
 
   test("default mode outputs JSON with Notification hooks to stdout", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       await expect(runCommand({})).resolves.toBeUndefined();

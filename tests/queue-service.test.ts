@@ -1,15 +1,16 @@
+import { join } from "node:path";
+import { $ } from "bun";
+import { Effect } from "effect";
 import {
   afterAll,
   afterEach,
   beforeEach,
   describe,
   expect,
-  spyOn,
+  type MockInstance,
   test,
-} from "bun:test";
-import { join } from "node:path";
-import { $ } from "bun";
-import { Effect } from "effect";
+  vi,
+} from "vitest";
 import { runBunPromise, runBunSync } from "../src/effect/runtime";
 import {
   type ListItemsOptions,
@@ -89,14 +90,14 @@ describe("formatCount", () => {
 });
 
 describe("queue service", () => {
-  let listSessionsSpy: ReturnType<typeof spyOn<typeof tmux, "listSessions">>;
+  let listSessionsSpy: MockInstance;
 
   beforeEach(async () => {
     await $`mkdir -p ${testHome}`.quiet();
     clearAll();
     // Mock listSessions to return null so real tmux sessions don't cause
     // test items (with fake session names) to be deleted as stale.
-    listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue(null);
+    listSessionsSpy = vi.spyOn(tmux, "listSessions").mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -164,12 +165,14 @@ describe("queue service", () => {
   });
 
   test("listItems returns items sorted by timestamp and removes stale", async () => {
-    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([
-      { name: "live-session", attached: false, windows: 1 },
-    ]);
-    const isPaneAliveSpy = spyOn(tmux, "isPaneAlive").mockImplementation(
-      async (pane) => pane === "%301",
-    );
+    const listSessionsSpy = vi
+      .spyOn(tmux, "listSessions")
+      .mockResolvedValue([
+        { name: "live-session", attached: false, windows: 1 },
+      ]);
+    const isPaneAliveSpy = vi
+      .spyOn(tmux, "isPaneAlive")
+      .mockImplementation(async (pane) => pane === "%301");
 
     try {
       addItem({
@@ -201,7 +204,9 @@ describe("queue service", () => {
   });
 
   test("listItems keeps entries when tmux session discovery fails", async () => {
-    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue(null);
+    const listSessionsSpy = vi
+      .spyOn(tmux, "listSessions")
+      .mockResolvedValue(null);
 
     try {
       addItem({
@@ -223,7 +228,9 @@ describe("queue service", () => {
   });
 
   test("listItems removes all entries when tmux has zero sessions", async () => {
-    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([]);
+    const listSessionsSpy = vi
+      .spyOn(tmux, "listSessions")
+      .mockResolvedValue([]);
 
     try {
       addItem({
@@ -245,12 +252,14 @@ describe("queue service", () => {
   });
 
   test("listItems removes entries whose pane no longer exists in a live session", async () => {
-    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([
-      { name: "live-session", attached: false, windows: 1 },
-    ]);
-    const isPaneAliveSpy = spyOn(tmux, "isPaneAlive").mockImplementation(
-      async (pane) => pane === "%311" || false,
-    );
+    const listSessionsSpy = vi
+      .spyOn(tmux, "listSessions")
+      .mockResolvedValue([
+        { name: "live-session", attached: false, windows: 1 },
+      ]);
+    const isPaneAliveSpy = vi
+      .spyOn(tmux, "isPaneAlive")
+      .mockImplementation(async (pane) => pane === "%311" || false);
 
     try {
       addItem({
@@ -282,10 +291,12 @@ describe("queue service", () => {
   });
 
   test("listItems skips stale cleanup when all items are live", async () => {
-    const listSessionsSpy = spyOn(tmux, "listSessions").mockResolvedValue([
-      { name: "s1", attached: false, windows: 1 },
-    ]);
-    const isPaneAliveSpy = spyOn(tmux, "isPaneAlive").mockResolvedValue(true);
+    const listSessionsSpy = vi
+      .spyOn(tmux, "listSessions")
+      .mockResolvedValue([{ name: "s1", attached: false, windows: 1 }]);
+    const isPaneAliveSpy = vi
+      .spyOn(tmux, "isPaneAlive")
+      .mockResolvedValue(true);
 
     try {
       addItem({

@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import packageJson from "../package.json";
 
-const { version: VERSION } = require("../package.json");
+const VERSION = packageJson.version;
 
 function runCliProcess(args: string[]) {
   return Bun.spawnSync(["bun", "run", "src/index.ts", ...args]);

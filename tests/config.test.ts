@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, test } from "vitest";
 import {
   DEFAULT_CONFIG,
   expandTilde,
@@ -355,7 +355,7 @@ describe("resolveConfig", () => {
 describe("expandTilde", () => {
   test("expands tilde prefix", () => {
     const result = expandTilde("~/worktrees");
-    expect(result).not.toStartWith("~");
+    expect(result.startsWith("~")).toBe(false);
     expect(result).toContain("worktrees");
   });
 

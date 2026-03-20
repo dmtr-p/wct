@@ -1,5 +1,13 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  type MockInstance,
+  test,
+  vi,
+} from "vitest";
 import * as queueCommandModule from "../src/commands/queue";
 import { runBunPromise } from "../src/effect/runtime";
 import {
@@ -50,7 +58,7 @@ describe("queue commandDef", () => {
 describe("queueCommand", () => {
   let queueCalls: string[];
   let queueStorage: QueueStorageService;
-  let stdoutWriteSpy: ReturnType<typeof spyOn>;
+  let stdoutWriteSpy: MockInstance;
 
   beforeEach(() => {
     queueCalls = [];
@@ -64,7 +72,7 @@ describe("queueCommand", () => {
         }),
       clearAll: () => Effect.succeed(0),
     };
-    stdoutWriteSpy = spyOn(process.stdout, "write").mockReturnValue(true);
+    stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -147,9 +155,9 @@ describe("queueCommand", () => {
   });
 
   test("--jump with valid id but failed tmux switch returns queue_error", async () => {
-    const jumpSpy = spyOn(queueInternals, "jumpToItem").mockReturnValue(
-      Effect.succeed(false),
-    );
+    const jumpSpy = vi
+      .spyOn(queueInternals, "jumpToItem")
+      .mockReturnValue(Effect.succeed(false));
     queueStorage = {
       ...queueStorage,
       listItems: () =>
@@ -170,7 +178,7 @@ describe("queueCommand", () => {
   });
 
   test("default with items lists them with formatted type and age", async () => {
-    const consoleSpy = spyOn(console, "log").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     queueStorage = {
       ...queueStorage,
       listItems: () =>

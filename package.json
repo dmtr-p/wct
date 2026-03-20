@@ -10,8 +10,8 @@
   },
   "scripts": {
     "start": "bun run src/index.ts",
-    "test": "bun test",
-    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
+    "test": "bun --bun vitest run",
+    "test:coverage": "bun --bun vitest run --coverage",
     "lint": "bunx biome check",
     "format": "bunx biome check --write",
     "build": "bun build src/index.ts --compile --outfile dist/wct",
@@ -19,7 +19,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "vitest": "^4.1.0"
   },
   "peerDependencies": {
     "typescript": "^5"

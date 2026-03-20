@@ -11,7 +11,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 ```bash
 bun install              # Install dependencies
 bun run src/index.ts     # Run the CLI
-bun test                 # Run tests
+bun test                 # Run tests (vitest)
 bunx biome check --write # Format and lint code
 ```
 
@@ -109,8 +109,10 @@ Environment variables available in config commands:
 
 ## Testing
 
+Tests use [vitest](https://vitest.dev/) as the test runner. Run tests with `bun test` (which invokes `vitest run`).
+
 ```ts
-import { test, expect } from "bun:test";
+import { test, expect } from "vitest";
 
 test("example", () => {
   expect(1).toBe(1);

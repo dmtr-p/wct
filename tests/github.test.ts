@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { parsePrArg } from "../src/services/github-service";
 
 describe("GitHub PR resolution", () => {

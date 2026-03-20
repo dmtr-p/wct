@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   formatSync,
   getAheadBehind,
@@ -247,11 +247,11 @@ describe("listCommand integration", () => {
   test("prints header and worktree rows with correct data", async () => {
     process.chdir(repoDir);
     const lines: string[] = [];
-    const spy = spyOn(console, "log").mockImplementation(
-      (...args: unknown[]) => {
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
         lines.push(String(args[0]));
-      },
-    );
+      });
 
     try {
       await expect(runCommand()).resolves.toBeUndefined();
@@ -280,11 +280,11 @@ describe("listCommand integration", () => {
   test("short mode prints only branch names", async () => {
     process.chdir(repoDir);
     const lines: string[] = [];
-    const spy = spyOn(console, "log").mockImplementation(
-      (...args: unknown[]) => {
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
         lines.push(String(args[0]));
-      },
-    );
+      });
 
     try {
       await expect(runCommand({ short: true })).resolves.toBeUndefined();
@@ -308,11 +308,11 @@ describe("listCommand integration", () => {
 
     process.chdir(emptyRepo);
     const lines: string[] = [];
-    const spy = spyOn(console, "log").mockImplementation(
-      (...args: unknown[]) => {
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
         lines.push(String(args[0]));
-      },
-    );
+      });
 
     try {
       await expect(runCommand()).resolves.toBeUndefined();

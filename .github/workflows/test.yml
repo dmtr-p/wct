@@ -24,13 +24,5 @@ jobs:
       - name: Run linter
         run: bun run lint
 
-      - name: Run tests with coverage
-        run: bun run test:coverage
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-lcov
-          path: coverage/lcov.info
-          if-no-files-found: error
+      - name: Run tests
+        run: bun run test

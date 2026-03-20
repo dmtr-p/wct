@@ -1,5 +1,13 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  type MockInstance,
+  test,
+  vi,
+} from "vitest";
 import { closeCommand, commandDef } from "../src/commands/close";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
@@ -36,7 +44,7 @@ async function runCommand(
 }
 
 interface CloseCommandSpies {
-  confirmSpy: ReturnType<typeof spyOn<typeof prompt, "confirm">>;
+  confirmSpy: MockInstance;
   queueCalls: string[];
   tmuxCalls: string[];
   worktreeCalls: string[];
@@ -56,9 +64,9 @@ function makeWorktree(branch: string) {
 }
 
 function setupMocks(): CloseCommandSpies {
-  const confirmSpy = spyOn(prompt, "confirm").mockImplementation(() =>
-    Effect.succeed(true),
-  );
+  const confirmSpy = vi
+    .spyOn(prompt, "confirm")
+    .mockImplementation(() => Effect.succeed(true));
   const queueCalls: string[] = [];
   const tmuxCalls: string[] = [];
   const worktreeCalls: string[] = [];
@@ -297,7 +305,9 @@ describe("closeCommand", () => {
   });
 
   test("warns separately when queue cleanup fails after tmux kill", async () => {
-    const warnSpy = spyOn(logger, "warn").mockImplementation(() => Effect.void);
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => Effect.void);
     mocks.queueStorage = {
       ...mocks.queueStorage,
       removeItemsBySession: () =>

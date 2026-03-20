@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { spawnInteractive } from "../src/services/process";
 
 describe("process", () => {
   afterEach(() => {
-    mock.restore();
+    vi.restoreAllMocks();
   });
 
   test("spawnInteractive uses Bun.spawn with inherited stdio", async () => {
-    const spawn = spyOn(Bun, "spawn").mockReturnValue({
+    const spawn = vi.spyOn(Bun, "spawn").mockReturnValue({
       exited: Promise.resolve(0),
     } as unknown as ReturnType<typeof Bun.spawn>);
     const originalSentinel = process.env.SENTINEL_TEST;
@@ -45,7 +45,7 @@ describe("process", () => {
   });
 
   test("spawnInteractive can replace the environment when extendEnv is false", async () => {
-    const spawn = spyOn(Bun, "spawn").mockReturnValue({
+    const spawn = vi.spyOn(Bun, "spawn").mockReturnValue({
       exited: Promise.resolve(0),
     } as unknown as ReturnType<typeof Bun.spawn>);
 

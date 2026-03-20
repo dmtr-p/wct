@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Console, Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   type BunServices as BunServicesType,
   runBunPromise,
@@ -63,7 +63,7 @@ describe("detectEntryType", () => {
 });
 
 describe("expandEntry", () => {
-  const tempDir = join(import.meta.dir, ".temp-test-expand");
+  const tempDir = join(import.meta.dirname, ".temp-test-expand");
 
   beforeEach(async () => {
     await mkdir(tempDir, { recursive: true });
@@ -156,7 +156,7 @@ describe("expandEntry", () => {
 });
 
 describe("copyEntries", () => {
-  const tempDir = join(import.meta.dir, ".temp-test-copy");
+  const tempDir = join(import.meta.dirname, ".temp-test-copy");
   const sourceDir = join(tempDir, "source");
   const targetDir = join(tempDir, "target");
 

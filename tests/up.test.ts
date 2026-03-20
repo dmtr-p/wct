@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { chmod, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { upCommand } from "../src/commands/up";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
@@ -254,7 +254,7 @@ describe("upCommand", () => {
     const originalTmux = process.env.TMUX;
     delete process.env.TMUX;
 
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
       await $`git init -b main`.quiet().cwd(repoDir);
@@ -315,7 +315,7 @@ tmux:
     const originalTmux = process.env.TMUX;
     delete process.env.TMUX;
 
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const attachCalls: string[] = [];
 
     try {
@@ -393,7 +393,7 @@ tmux:
     );
     delete process.env.TMUX;
 
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const attachCalls: string[] = [];
 
     Object.defineProperty(process.stdin, "isTTY", {

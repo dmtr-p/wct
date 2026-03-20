@@ -1,5 +1,13 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  type MockInstance,
+  test,
+  vi,
+} from "vitest";
 import {
   commandDef,
   isPaneCurrentlyVisible,
@@ -29,7 +37,7 @@ describe("notify commandDef", () => {
 });
 
 describe("notifyCommand", () => {
-  let stdinSpy: ReturnType<typeof spyOn>;
+  let stdinSpy: MockInstance;
   let savedEnv: Record<string, string | undefined>;
   let queueCalls: Array<Omit<QueueItem, "id" | "timestamp">>;
   let queueOverrides: QueueStorageService;
@@ -49,7 +57,7 @@ describe("notifyCommand", () => {
         }),
     };
     // Mock Bun.stdin.text() to avoid hanging on stdin
-    stdinSpy = spyOn(Bun.stdin, "text").mockResolvedValue("{}");
+    stdinSpy = vi.spyOn(Bun.stdin, "text").mockResolvedValue("{}");
     savedEnv = {
       TMUX_PANE: process.env.TMUX_PANE,
       WCT_BRANCH: process.env.WCT_BRANCH,
@@ -100,7 +108,9 @@ describe("notifyCommand", () => {
   });
 
   test("returns ok and warns when queue write fails", async () => {
-    const warnSpy = spyOn(logger, "warn").mockImplementation(() => Effect.void);
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => Effect.void);
     queueOverrides = {
       ...queueOverrides,
       addItem: () =>

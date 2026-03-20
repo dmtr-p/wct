@@ -1,5 +1,13 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  type MockInstance,
+  test,
+  vi,
+} from "vitest";
 import { downCommand } from "../src/commands/down";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
@@ -48,14 +56,16 @@ describe("down session name derivation", () => {
 });
 
 describe("downCommand behavior", () => {
-  let cwdSpy: ReturnType<typeof spyOn<typeof process, "cwd">>;
+  let cwdSpy: MockInstance;
   let queueCalls: string[];
   let tmuxOverrides: TmuxService;
   let worktreeOverrides: WorktreeService;
   let queueOverrides: QueueStorageService;
 
   beforeEach(() => {
-    cwdSpy = spyOn(process, "cwd").mockReturnValue("/tmp/myapp-feature-auth");
+    cwdSpy = vi
+      .spyOn(process, "cwd")
+      .mockReturnValue("/tmp/myapp-feature-auth");
     queueCalls = [];
     worktreeOverrides = {
       ...liveWorktreeService,
@@ -127,7 +137,9 @@ describe("downCommand behavior", () => {
   });
 
   test("warns and succeeds when queue cleanup fails after kill", async () => {
-    const warnSpy = spyOn(logger, "warn").mockImplementation(() => Effect.void);
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => Effect.void);
     queueOverrides = {
       ...queueOverrides,
       removeItemsBySession: () =>

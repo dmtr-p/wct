@@ -92,6 +92,21 @@ export function validateConfig(config: unknown): ValidationResult {
     errors.push(...validateTmuxWindowNames(decoded));
   }
 
+  if (decoded.profiles) {
+    for (const [profileName, profile] of Object.entries(decoded.profiles)) {
+      if (profile.tmux?.windows) {
+        const profileErrors = validateTmuxWindowNames({
+          tmux: profile.tmux,
+        } as WctConfig);
+        errors.push(
+          ...profileErrors.map((e) =>
+            e.replace("tmux.", `profiles.${profileName}.tmux.`),
+          ),
+        );
+      }
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }
 

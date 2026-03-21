@@ -1,6 +1,10 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import { loadConfig, resolveWorktreePath } from "../config/loader";
+import {
+  loadConfig,
+  resolveProfile,
+  resolveWorktreePath,
+} from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { copyEntries } from "../services/copy";
@@ -54,6 +58,14 @@ export const commandDef: CommandDef = {
       placeholder: "text",
       description: "Set WCT_PROMPT env var in tmux session",
     },
+    {
+      name: "profile",
+      short: "P",
+      type: "string",
+      placeholder: "name",
+      description: "Use a named config profile",
+      completionValues: "__wct_profiles",
+    },
   ],
 };
 
@@ -64,13 +76,15 @@ export interface OpenOptions {
   noIde?: boolean;
   noAttach?: boolean;
   prompt?: string;
+  profile?: string;
 }
 
 export function openCommand(
   options: OpenOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { branch, existing, base, noIde, noAttach, prompt } = options;
+    const { branch, existing, base, noIde, noAttach, prompt, profile } =
+      options;
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
@@ -97,6 +111,18 @@ export function openCommand(
       return yield* Effect.fail(
         commandError("config_error", errors.join("\n")),
       );
+    }
+
+    const { config: resolved, profileName } = yield* Effect.try({
+      try: () => resolveProfile(config, branch, profile),
+      catch: (error) =>
+        commandError(
+          "config_error",
+          error instanceof Error ? error.message : String(error),
+        ),
+    });
+    if (profileName) {
+      yield* logger.info(`Using profile '${profileName}'`);
     }
 
     if (existing && base) {
@@ -174,8 +200,8 @@ export function openCommand(
     }
 
     if (
-      (config.ide?.name ?? "vscode") === "vscode" &&
-      config.ide?.fork_workspace
+      (resolved.ide?.name ?? "vscode") === "vscode" &&
+      resolved.ide?.fork_workspace
     ) {
       yield* logger.info("Syncing VS Code workspace state...");
       const syncResult = yield* VSCodeWorkspaceService.use((service) =>
@@ -192,7 +218,7 @@ export function openCommand(
       }
     }
 
-    const copyConfig = config.copy;
+    const copyConfig = resolved.copy;
     if (copyConfig && copyConfig.length > 0) {
       yield* logger.info("Copying files...");
       const copyResults = yield* Effect.mapError(
@@ -204,7 +230,7 @@ export function openCommand(
       yield* logger.success(`Copied ${copied}/${copyResults.length} files`);
     }
 
-    const setupConfig = config.setup;
+    const setupConfig = resolved.setup;
     if (setupConfig && setupConfig.length > 0) {
       yield* logger.info("Running setup commands...");
       const setupResults = yield* SetupService.use((service) =>
@@ -231,9 +257,9 @@ export function openCommand(
     yield* launchSessionAndIde({
       sessionName,
       workingDir: worktreePath,
-      tmuxConfig: config.tmux,
+      tmuxConfig: resolved.tmux,
       env,
-      ideCommand: config.ide?.command,
+      ideCommand: resolved.ide?.command,
       noIde,
       noAttach,
     });

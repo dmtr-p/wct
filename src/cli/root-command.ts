@@ -170,8 +170,15 @@ const upCliCommand = Command.make(
   {
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
+    profile: optionalStringFlag(
+      "profile",
+      "Use a named config profile",
+      "P",
+      "NAME",
+    ),
   },
-  ({ noIde, noAttach }) => upCommand({ noIde, noAttach }),
+  ({ noIde, noAttach, profile }) =>
+    upCommand({ noIde, noAttach, profile: optionToUndefined(profile) }),
 ).pipe(
   Command.withDescription(
     "Start tmux session and open IDE in current directory",
@@ -203,8 +210,14 @@ const openCliCommand = Command.make(
       "p",
       "TEXT",
     ),
+    profile: optionalStringFlag(
+      "profile",
+      "Use a named config profile",
+      "P",
+      "NAME",
+    ),
   },
-  ({ branch, base, existing, noIde, noAttach, pr, prompt }) =>
+  ({ branch, base, existing, noIde, noAttach, pr, prompt, profile }) =>
     Effect.gen(function* () {
       const branchArg = optionToUndefined(branch);
       const baseValue = optionToUndefined(base);
@@ -279,6 +292,7 @@ const openCliCommand = Command.make(
           noIde,
           noAttach,
           prompt: promptValue,
+          profile: optionToUndefined(profile),
         });
       }
 
@@ -293,6 +307,7 @@ const openCliCommand = Command.make(
         noIde,
         noAttach,
         prompt: promptValue,
+        profile: optionToUndefined(profile),
       });
     }),
 ).pipe(

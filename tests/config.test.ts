@@ -330,6 +330,71 @@ describe("validateConfig", () => {
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
   });
+
+  test("accepts valid config with profiles", () => {
+    const result = validateConfig({
+      version: 1,
+      setup: [{ name: "Install", command: "bun install" }],
+      ide: { command: "code ." },
+      tmux: { windows: [{ name: "main" }] },
+      profiles: {
+        frontend: {
+          match: "feature/frontend-*",
+          ide: { command: "cursor ." },
+          tmux: { windows: [{ name: "dev", command: "bun run dev" }] },
+        },
+        docs: {
+          match: ["docs/*", "content/*"],
+          setup: [{ name: "Build", command: "bun run build" }],
+        },
+        minimal: {
+          tmux: { windows: [{ name: "shell" }] },
+        },
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test("rejects profile with invalid tmux config", () => {
+    const result = validateConfig({
+      profiles: {
+        bad: {
+          tmux: { windows: "not-an-array" },
+        },
+      },
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  test("rejects profile with invalid match type", () => {
+    const result = validateConfig({
+      profiles: {
+        bad: {
+          match: 123,
+        },
+      },
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  test("rejects profile tmux window name with invalid characters", () => {
+    const result = validateConfig({
+      profiles: {
+        bad: {
+          tmux: {
+            windows: [{ name: "dev:server" }],
+          },
+        },
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) =>
+        e.includes("profiles.bad.tmux.windows[0].name"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("resolveConfig", () => {

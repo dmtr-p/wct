@@ -4,6 +4,7 @@ export interface CommandOption {
   type: "boolean" | "string";
   placeholder?: string;
   description: string;
+  completionValues?: string;
 }
 
 export interface CommandDef {

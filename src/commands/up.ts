@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import { loadConfig } from "../config/loader";
+import { loadConfig, resolveProfile } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { formatSessionName } from "../services/tmux";
@@ -24,19 +24,28 @@ export const commandDef: CommandDef = {
       type: "boolean",
       description: "Do not attach to tmux outside tmux",
     },
+    {
+      name: "profile",
+      short: "P",
+      type: "string",
+      placeholder: "name",
+      description: "Use a named config profile",
+      completionValues: "__wct_profiles",
+    },
   ],
 };
 
 export interface UpOptions {
   noIde?: boolean;
   noAttach?: boolean;
+  profile?: string;
 }
 
 export function upCommand(
   options?: UpOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { noIde, noAttach } = options ?? {};
+    const { noIde, noAttach, profile } = options ?? {};
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
       return yield* Effect.fail(
@@ -76,6 +85,18 @@ export function upCommand(
       );
     }
 
+    const { config: resolved, profileName } = yield* Effect.try({
+      try: () => resolveProfile(config, branch, profile),
+      catch: (error) =>
+        commandError(
+          "config_error",
+          error instanceof Error ? error.message : String(error),
+        ),
+    });
+    if (profileName) {
+      yield* logger.info(`Using profile '${profileName}'`);
+    }
+
     const sessionName = formatSessionName(basename(cwd));
 
     const env: WctEnv = {
@@ -88,9 +109,9 @@ export function upCommand(
     yield* launchSessionAndIde({
       sessionName,
       workingDir: cwd,
-      tmuxConfig: config.tmux,
+      tmuxConfig: resolved.tmux,
       env,
-      ideCommand: config.ide?.command,
+      ideCommand: resolved.ide?.command,
       noIde,
       noAttach,
     });

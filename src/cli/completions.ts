@@ -69,6 +69,13 @@ function generateFishCompletions(): string {
     "    git worktree list --porcelain 2>/dev/null | string match -rg '^branch refs/heads/(.+)$'",
     "end",
     "",
+    "# Helper: list config profile names",
+    "function __wct_profiles",
+    "    if test -f .wct.yaml",
+    '        awk \'/^profiles:/{found=1;next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{sub(/^  /,"");sub(/:.*/,"");print}\' .wct.yaml',
+    "    end",
+    "end",
+    "",
     "# Commands",
   ];
 
@@ -114,6 +121,9 @@ function generateFishCompletions(): string {
         parts.push("-r");
       }
       parts.push(`-d ${quoteFish(option.description)}`);
+      if (option.completionValues) {
+        parts.push(`-a '(${option.completionValues})'`);
+      }
       lines.push(parts.join(" "));
     }
   }
@@ -178,8 +188,15 @@ function generateBashCompletions(): string {
     "    git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'",
     "}",
     "",
+    "_wct_profiles() {",
+    "    if [[ -f .wct.yaml ]]; then",
+    '        awk \'/^profiles:/{found=1;next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{sub(/^  /,"");sub(/:.*/,"");print}\' .wct.yaml',
+    "    fi",
+    "}",
+    "",
     "_wct() {",
     '    local cur="${COMP_WORDS[COMP_CWORD]}"',
+    '    local prev="${COMP_WORDS[COMP_CWORD-1]}"',
     '    local cword="$COMP_CWORD"',
     "",
     "    if [[ $cword -eq 1 ]]; then",
@@ -213,6 +230,23 @@ function generateBashCompletions(): string {
       : "_wct_branches";
 
     lines.push(`        ${allNames.join("|")})`);
+    const optionsWithCompletionValues = (command.options ?? []).filter(
+      (option) => option.completionValues,
+    );
+    for (const option of optionsWithCompletionValues) {
+      const prevCheck = option.short
+        ? `"$prev" == "--${option.name}" || "$prev" == "-${option.short}"`
+        : `"$prev" == "--${option.name}"`;
+      const bashFunc = option.completionValues
+        ? option.completionValues.replace(/^__/, "_")
+        : option.completionValues;
+      lines.push(`            if [[ ${prevCheck} ]]; then`);
+      lines.push(
+        `                COMPREPLY=($(compgen -W "$(${bashFunc})" -- "$cur"))`,
+      );
+      lines.push("                return");
+      lines.push("            fi");
+    }
     if (options.length > 0) {
       lines.push(
         `            COMPREPLY=($(compgen -W '${globalFlags} ${options.join(" ")}' -- "$cur"))`,
@@ -277,6 +311,14 @@ function generateZshCompletions(): string {
     "    _describe 'branch' branches",
     "}",
     "",
+    "_wct_profiles() {",
+    "    local profiles",
+    "    if [[ -f .wct.yaml ]]; then",
+    '        profiles=($(awk \'/^profiles:/{found=1;next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{sub(/^  /,"");sub(/:.*/,"");print}\' .wct.yaml))',
+    "        _describe 'profile' profiles",
+    "    fi",
+    "}",
+    "",
     "_wct() {",
     "    local -a commands",
     "    commands=(",
@@ -331,8 +373,11 @@ function generateZshCompletions(): string {
       for (const option of command.options) {
         if (option.short) {
           if (option.type === "string") {
+            const completionAction = option.completionValues
+              ? option.completionValues.replace(/^__/, "_")
+              : "";
             optionLines.push(
-              `                        '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]:${option.placeholder || option.name}:'`,
+              `                        '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
             );
           } else {
             optionLines.push(
@@ -340,8 +385,11 @@ function generateZshCompletions(): string {
             );
           }
         } else if (option.type === "string") {
+          const completionAction = option.completionValues
+            ? option.completionValues.replace(/^__/, "_")
+            : "";
           optionLines.push(
-            `                        '--${option.name}[${option.description}]:${option.placeholder || option.name}:'`,
+            `                        '--${option.name}[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
           );
         } else {
           optionLines.push(

@@ -39,6 +39,16 @@ export const IdeConfigSchema = Schema.Struct({
   fork_workspace: Schema.optional(Schema.Boolean),
 });
 
+export const ProfileSchema = Schema.Struct({
+  match: Schema.optional(
+    Schema.Union([Schema.String, Schema.Array(Schema.String)]),
+  ),
+  copy: Schema.optional(Schema.Array(Schema.String)),
+  setup: Schema.optional(Schema.Array(SetupCommandSchema)),
+  ide: Schema.optional(IdeConfigSchema),
+  tmux: Schema.optional(TmuxConfigSchema),
+});
+
 export const WctConfigSchema = Schema.Struct({
   version: Schema.optional(Schema.Number),
   worktree_dir: Schema.optional(Schema.String),
@@ -47,6 +57,7 @@ export const WctConfigSchema = Schema.Struct({
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
   ide: Schema.optional(IdeConfigSchema),
   tmux: Schema.optional(TmuxConfigSchema),
+  profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });
 
 export const ResolvedConfigSchema = Schema.Struct({
@@ -57,6 +68,7 @@ export const ResolvedConfigSchema = Schema.Struct({
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
   ide: Schema.optional(IdeConfigSchema),
   tmux: Schema.optional(TmuxConfigSchema),
+  profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });
 
 export type SetupCommand = typeof SetupCommandSchema.Type;
@@ -65,5 +77,6 @@ export type TmuxLayout = (typeof VALID_LAYOUTS)[number];
 export type TmuxWindow = typeof TmuxWindowSchema.Type;
 export type TmuxConfig = typeof TmuxConfigSchema.Type;
 export type IdeConfig = typeof IdeConfigSchema.Type;
+export type Profile = typeof ProfileSchema.Type;
 export type WctConfig = typeof WctConfigSchema.Type;
 export type ResolvedConfig = typeof ResolvedConfigSchema.Type;

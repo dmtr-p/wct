@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { Effect, FileSystem, Path } from "effect";
 import { identity } from "effect/Function";
 import { runBunPromise } from "../effect/runtime";
-import type { ResolvedConfig, WctConfig } from "./schema";
+import type { Profile, ResolvedConfig, WctConfig } from "./schema";
 import { resolveConfig, validateConfig } from "./validator";
 
 const CONFIG_FILENAME = ".wct.yaml";
@@ -52,6 +52,7 @@ function mergeConfigs(
           windows: project.tmux.windows ?? global.tmux?.windows,
         }
       : global.tmux,
+    profiles: project.profiles ?? global.profiles,
   };
 }
 
@@ -208,6 +209,78 @@ export function resolveWorktreePath(
     basePath,
     `${slugifyBranch(projectName)}-${slugifyBranch(branch)}`,
   );
+}
+
+export interface ProfileResult {
+  config: ResolvedConfig;
+  profileName?: string;
+}
+
+function matchesGlob(branch: string, pattern: string): boolean {
+  const glob = new Bun.Glob(pattern);
+  return glob.match(branch);
+}
+
+function profileMatchesBranch(profile: Profile, branch: string): boolean {
+  if (!profile.match) return false;
+  const patterns = Array.isArray(profile.match)
+    ? profile.match
+    : [profile.match];
+  return patterns.some((pattern) => matchesGlob(branch, pattern));
+}
+
+function applyProfile(
+  config: ResolvedConfig,
+  profile: Profile,
+): ResolvedConfig {
+  const { profiles: _, ...base } = config;
+  return {
+    ...base,
+    setup: profile.setup ?? base.setup,
+    ide: profile.ide ?? base.ide,
+    tmux: profile.tmux ?? base.tmux,
+    copy: profile.copy ?? base.copy,
+  };
+}
+
+function stripProfiles(config: ResolvedConfig): ResolvedConfig {
+  const { profiles: _, ...rest } = config;
+  return rest;
+}
+
+export function resolveProfile(
+  config: ResolvedConfig,
+  branch: string,
+  explicitProfile?: string,
+): ProfileResult {
+  if (explicitProfile === "") {
+    return { config: stripProfiles(config) };
+  }
+
+  if (!config.profiles) {
+    return { config: stripProfiles(config) };
+  }
+
+  if (explicitProfile) {
+    const profile = config.profiles[explicitProfile];
+    if (!profile) {
+      throw new Error(
+        `Profile '${explicitProfile}' not found. Available profiles: ${Object.keys(config.profiles).join(", ")}`,
+      );
+    }
+    return {
+      config: applyProfile(config, profile),
+      profileName: explicitProfile,
+    };
+  }
+
+  for (const [name, profile] of Object.entries(config.profiles)) {
+    if (profileMatchesBranch(profile, branch)) {
+      return { config: applyProfile(config, profile), profileName: name };
+    }
+  }
+
+  return { config: stripProfiles(config) };
 }
 
 export { CONFIG_FILENAME, DEFAULT_CONFIG };

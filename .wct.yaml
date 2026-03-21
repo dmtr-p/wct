@@ -20,18 +20,16 @@ setup:
 # IDE command
 ide:
   name: vscode
-  command: "code $WCT_WORKTREE_DIR"
+  command: "code $WCT_WORKTREE_DIR --reuse-window"
   fork_workspace: true
 
 # Tmux session configuration
 tmux:
   windows:
     - name: "ai"
-      command: "codex"
-    - name: "git"
-      command: "lazygit"
+      command: "claude $WCT_PROMPT"
     - name: "dev"
-      split: "horizontal"
+      split: "vertical"
       panes:
-        - command: "bun test --watch"
+        - command: "lazygit"
         - {}

@@ -268,6 +268,7 @@ export function App() {
   );
 }
 
-export function startTui() {
-  render(<App />);
+export function startTui(): Promise<void> {
+  const instance = render(<App />);
+  return instance.waitUntilExit();
 }

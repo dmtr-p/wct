@@ -11,8 +11,6 @@ export const commandDef: CommandDef = {
 export function tuiCommand(): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
     const { startTui } = yield* Effect.promise(() => import("../tui/App"));
-    startTui();
-    // Keep the process alive until Ink exits
-    yield* Effect.never;
+    yield* Effect.promise(() => startTui());
   });
 }

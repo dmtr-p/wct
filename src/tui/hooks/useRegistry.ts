@@ -1,5 +1,7 @@
 // src/tui/hooks/useRegistry.ts
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Effect } from "effect";
 import { useCallback, useEffect, useState } from "react";
 import { liveRegistryService } from "../../services/registry-service";
@@ -17,6 +19,7 @@ export interface RepoInfo {
   repoPath: string;
   project: string;
   worktrees: WorktreeInfo[];
+  profileNames: string[];
   error?: string; // set if repo path is missing
 }
 
@@ -73,6 +76,23 @@ async function getDefaultBranch(repoPath: string): Promise<string | null> {
     return branch || null;
   } catch {
     return null;
+  }
+}
+
+function getProfileNames(repoPath: string): string[] {
+  try {
+    const paths = [join(repoPath, ".wct.yaml"), join(homedir(), ".wct.yaml")];
+    for (const p of paths) {
+      if (!existsSync(p)) continue;
+      const content = readFileSync(p, "utf-8");
+      const parsed = Bun.YAML.parse(content);
+      if (parsed?.profiles && typeof parsed.profiles === "object") {
+        return Object.keys(parsed.profiles);
+      }
+    }
+    return [];
+  } catch {
+    return [];
   }
 }
 
@@ -142,11 +162,13 @@ export function useRegistry() {
               repoPath: item.repo_path,
               project: item.project,
               worktrees: [],
+              profileNames: [],
               error: "Directory not found",
             };
           }
           const worktrees = await discoverWorktrees(item.repo_path);
           const defaultBranch = await getDefaultBranch(item.repo_path);
+          const profileNames = getProfileNames(item.repo_path);
           await Promise.all(
             worktrees.map(async (wt) => {
               wt.changedFiles = await getChangedCount(wt.path);
@@ -158,6 +180,7 @@ export function useRegistry() {
             repoPath: item.repo_path,
             project: item.project,
             worktrees,
+            profileNames,
           };
         }),
       );

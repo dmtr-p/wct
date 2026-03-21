@@ -25,16 +25,24 @@ export function WorktreeItem({
   const notifText = notifications > 0 ? ` !${notifications}` : "";
   const changesText = changedFiles > 0 ? ` ~${changedFiles}` : "";
 
+  const prefix = isSelected ? "❯   " : "    ";
+
   return (
     <Box>
-      <Text color={isSelected ? "cyan" : undefined}>
-        {"  "}
-        <Text color={indicatorColor}>{indicator}</Text> {branch}
-        <Text dimColor>{attached}</Text>
-        {sync && sync !== "\u2713" ? <Text dimColor> {sync}</Text> : null}
-        {changesText ? <Text color="blue">{changesText}</Text> : null}
-        {notifText ? <Text color="yellow">{notifText}</Text> : null}
+      <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
+      <Text color={indicatorColor}>{indicator}</Text>
+      <Text
+        color={isSelected ? "cyan" : undefined}
+        bold={isSelected}
+        inverse={isSelected}
+      >
+        {" "}
+        {branch}
       </Text>
+      <Text dimColor>{attached}</Text>
+      {sync && sync !== "\u2713" ? <Text dimColor> {sync}</Text> : null}
+      {changesText ? <Text color="blue">{changesText}</Text> : null}
+      {notifText ? <Text color="yellow">{notifText}</Text> : null}
     </Box>
   );
 }

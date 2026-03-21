@@ -4,7 +4,7 @@ import { basename } from "node:path";
 import { Box, render, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatSessionName } from "../services/tmux";
-import { OpenModal } from "./components/OpenModal";
+import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { type TreeItem, TreeView } from "./components/TreeView";
 import { useQueue } from "./hooks/useQueue";
@@ -34,6 +34,7 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { items: queueItems, refresh: refreshQueue } = useQueue();
   const {
+    client,
     sessions,
     error: tmuxError,
     switchSession,
@@ -43,17 +44,21 @@ export function App() {
   } = useTmux();
 
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
+  const [didInitialExpand, setDidInitialExpand] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showOpenModal, setShowOpenModal] = useState(false);
+  const [openModalBase, setOpenModalBase] = useState<string | undefined>();
+  const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [mode, setMode] = useState<"normal" | "search">("normal");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Auto-expand all repos on first load
   useEffect(() => {
-    if (repos.length > 0 && expandedRepos.size === 0) {
+    if (!didInitialExpand && repos.length > 0) {
       setExpandedRepos(new Set(repos.map((r) => r.id)));
+      setDidInitialExpand(true);
     }
-  }, [repos, expandedRepos.size]);
+  }, [repos, didInitialExpand]);
 
   // Reset selection when search query changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run on searchQuery change
@@ -107,27 +112,23 @@ export function App() {
     });
   }, []);
 
-  const handleOpen = useCallback(
-    async (opts: {
-      branch: string;
-      base?: string;
-      pr?: string;
-      profile?: string;
-    }) => {
-      setShowOpenModal(false);
-      const args = ["open", opts.branch];
-      if (opts.base) args.push("--base", opts.base);
-      if (opts.pr) args.push("--pr", opts.pr);
-      if (opts.profile) args.push("--profile", opts.profile);
+  const handleOpen = useCallback(async (opts: OpenModalResult) => {
+    setShowOpenModal(false);
+    const args = ["open", opts.branch];
+    if (opts.base) args.push("--base", opts.base);
+    if (opts.pr) args.push("--pr", opts.pr);
+    if (opts.profile) args.push("--profile", opts.profile);
+    if (opts.prompt) args.push("--prompt", opts.prompt);
+    if (opts.existing) args.push("--existing");
+    if (opts.noIde) args.push("--no-ide");
+    if (opts.noAttach) args.push("--no-attach");
 
-      const proc = Bun.spawn(["wct", ...args], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      await proc.exited;
-    },
-    [],
-  );
+    const proc = Bun.spawn(["wct", ...args], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await proc.exited;
+  }, []);
 
   useInput(
     (input, key) => {
@@ -159,6 +160,20 @@ export function App() {
       }
 
       if (input === "o") {
+        // Determine default base from selected item
+        const selected = treeItems[selectedIndex];
+        let base: string | undefined;
+        let profiles: string[] = [];
+        if (selected) {
+          const repo = filteredRepos[selected.repoIndex]!;
+          profiles = repo.profileNames;
+          if (selected.type === "worktree") {
+            const wt = repo.worktrees[selected.worktreeIndex!]!;
+            base = wt.branch;
+          }
+        }
+        setOpenModalBase(base);
+        setOpenModalProfiles(profiles);
         setShowOpenModal(true);
         return;
       }
@@ -177,7 +192,7 @@ export function App() {
       if (!currentItem) return;
 
       if (key.leftArrow && currentItem.type === "repo") {
-        const repo = repos[currentItem.repoIndex]!;
+        const repo = filteredRepos[currentItem.repoIndex]!;
         if (expandedRepos.has(repo.id)) {
           toggleExpanded(repo.id);
         }
@@ -185,7 +200,7 @@ export function App() {
       }
 
       if (key.rightArrow && currentItem.type === "repo") {
-        const repo = repos[currentItem.repoIndex]!;
+        const repo = filteredRepos[currentItem.repoIndex]!;
         if (!expandedRepos.has(repo.id)) {
           toggleExpanded(repo.id);
         }
@@ -194,20 +209,37 @@ export function App() {
 
       if (key.return) {
         if (currentItem.type === "repo") {
-          const repo = repos[currentItem.repoIndex]!;
+          const repo = filteredRepos[currentItem.repoIndex]!;
           toggleExpanded(repo.id);
         } else if (currentItem.type === "worktree") {
-          const repo = repos[currentItem.repoIndex]!;
+          const repo = filteredRepos[currentItem.repoIndex]!;
           const wt = repo.worktrees[currentItem.worktreeIndex!]!;
           const sessionName = formatSessionName(basename(wt.path));
-          switchSession(sessionName);
+          const hasSession = sessions.some((s) => s.name === sessionName);
+          if (hasSession) {
+            switchSession(sessionName);
+          } else {
+            Bun.spawn(["wct", "up"], {
+              cwd: wt.path,
+              stdout: "ignore",
+              stderr: "ignore",
+            });
+          }
         }
         return;
       }
 
       if (input === "c" && currentItem.type === "worktree") {
-        const repo = repos[currentItem.repoIndex]!;
+        const repo = filteredRepos[currentItem.repoIndex]!;
         const wt = repo.worktrees[currentItem.worktreeIndex!]!;
+        const closingSession = formatSessionName(basename(wt.path));
+        // If closing the active session, switch to another one first
+        if (client && client.session === closingSession) {
+          const other = sessions.find((s) => s.name !== closingSession);
+          if (other) {
+            switchSession(other.name);
+          }
+        }
         Bun.spawn(["wct", "close", wt.branch, "--yes"], {
           stdout: "ignore",
           stderr: "ignore",
@@ -261,6 +293,8 @@ export function App() {
       <StatusBar mode={mode} searchQuery={searchQuery} />
       <OpenModal
         visible={showOpenModal}
+        defaultBase={openModalBase}
+        profileNames={openModalProfiles}
         onSubmit={handleOpen}
         onCancel={() => setShowOpenModal(false)}
       />
@@ -269,6 +303,9 @@ export function App() {
 }
 
 export function startTui(): Promise<void> {
+  process.stdout.write("\x1b[?1049h\x1b[H");
   const instance = render(<App />);
-  return instance.waitUntilExit();
+  return instance.waitUntilExit().then(() => {
+    process.stdout.write("\x1b[?1049l");
+  });
 }

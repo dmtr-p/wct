@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { listCommand } from "../src/commands/list";
 import {
   formatSync,
   getAheadBehind,
   getChangedFilesCount,
   getDefaultBranch,
-  listCommand,
-} from "../src/commands/list";
+} from "../src/services/worktree-status";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 

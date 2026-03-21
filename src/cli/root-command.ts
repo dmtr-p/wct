@@ -8,7 +8,9 @@ import { listCommand } from "../commands/list";
 import { notifyCommand } from "../commands/notify";
 import { openCommand } from "../commands/open";
 import { queueCommand } from "../commands/queue";
+import { registerCommand } from "../commands/register";
 import { switchCommand } from "../commands/switch";
+import { unregisterCommand } from "../commands/unregister";
 import { upCommand } from "../commands/up";
 import { Argument, Command, Flag } from "../effect/cli";
 import { WctCommandError, type WctError } from "../errors";
@@ -316,6 +318,28 @@ const openCliCommand = Command.make(
   ),
 );
 
+const registerCliCommand = Command.make(
+  "register",
+  {
+    path: Argument.string("path").pipe(
+      Argument.withDescription("Path to repo"),
+      Argument.optional,
+    ),
+  },
+  ({ path }) => registerCommand(optionToUndefined(path)),
+).pipe(Command.withDescription("Register a repo in the TUI registry"));
+
+const unregisterCliCommand = Command.make(
+  "unregister",
+  {
+    path: Argument.string("path").pipe(
+      Argument.withDescription("Path to repo"),
+      Argument.optional,
+    ),
+  },
+  ({ path }) => unregisterCommand(optionToUndefined(path)),
+).pipe(Command.withDescription("Remove a repo from the TUI registry"));
+
 export const rootCommand = Command.make("wct").pipe(
   Command.withDescription("Git worktree workflow automation"),
   Command.withExamples([
@@ -342,7 +366,9 @@ export const rootCommand = Command.make("wct").pipe(
     notifyCliCommand,
     openCliCommand,
     queueCliCommand,
+    registerCliCommand,
     switchCliCommand,
+    unregisterCliCommand,
     upCliCommand,
   ]),
 );

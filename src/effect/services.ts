@@ -27,6 +27,11 @@ import {
   type QueueStorageService,
 } from "../services/queue-storage";
 import {
+  liveRegistryService,
+  RegistryService,
+  type RegistryServiceApi,
+} from "../services/registry-service";
+import {
   liveSetupService,
   SetupService,
   type SetupService as SetupServiceApi,
@@ -56,6 +61,7 @@ export type WctServices =
   | IdeServiceApi
   | Path.Path
   | QueueStorageService
+  | RegistryServiceApi
   | SetupServiceApi
   | Terminal.Terminal
   | TmuxServiceApi
@@ -72,26 +78,30 @@ export function provideWctServices<A, E, R>(
           Effect.provideService(
             Effect.provideService(
               Effect.provideService(
-                Effect.provideService(effect, GitHubService, liveGitHubService),
-                HooksService,
-                liveHooksService,
+                Effect.provideService(
+                  Effect.provideService(effect, GitHubService, liveGitHubService),
+                  HooksService,
+                  liveHooksService,
+                ),
+                IdeService,
+                liveIdeService,
               ),
-              IdeService,
-              liveIdeService,
+              QueueStorage,
+              liveQueueStorage,
             ),
-            QueueStorage,
-            liveQueueStorage,
+            SetupService,
+            liveSetupService,
           ),
-          SetupService,
-          liveSetupService,
+          TmuxService,
+          liveTmuxService,
         ),
-        TmuxService,
-        liveTmuxService,
+        VSCodeWorkspaceService,
+        liveVSCodeWorkspaceService,
       ),
-      VSCodeWorkspaceService,
-      liveVSCodeWorkspaceService,
+      WorktreeService,
+      liveWorktreeService,
     ),
-    WorktreeService,
-    liveWorktreeService,
+    RegistryService,
+    liveRegistryService,
   ) as Effect.Effect<A, E, Exclude<R, WctServices>>;
 }

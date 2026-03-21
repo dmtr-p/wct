@@ -1,0 +1,125 @@
+import { useCallback, useEffect, useState } from "react";
+
+interface TmuxClient {
+  tty: string;
+  session: string;
+}
+
+export interface TmuxSessionInfo {
+  name: string;
+  attached: boolean;
+}
+
+async function runTmux(args: string[]): Promise<string> {
+  const proc = Bun.spawn(["tmux", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const text = await new Response(proc.stdout).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`tmux ${args[0]} failed`);
+  }
+  return text.trim();
+}
+
+export function useTmux() {
+  const [client, setClient] = useState<TmuxClient | null>(null);
+  const [sessions, setSessions] = useState<TmuxSessionInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const output = await runTmux([
+        "list-sessions",
+        "-F",
+        "#{session_name}\t#{session_attached}",
+      ]);
+      const parsed = output
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [name, attached] = line.split("\t");
+          return { name: name!, attached: attached === "1" };
+        });
+      setSessions(parsed);
+    } catch {
+      setSessions([]);
+    }
+  }, []);
+
+  const discoverClient = useCallback(async () => {
+    try {
+      const output = await runTmux([
+        "list-clients",
+        "-F",
+        "#{client_tty}\t#{client_session}",
+      ]);
+      const clients = output
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [tty, session] = line.split("\t");
+          return { tty: tty!, session: session! };
+        });
+
+      if (clients.length === 0) {
+        setError("No tmux client found — start tmux in the other pane");
+        setClient(null);
+      } else if (clients.length === 1) {
+        setClient(clients[0]!);
+        setError(null);
+      } else {
+        setError(
+          `Multiple tmux clients found (${clients.length}). Multi-client support coming soon.`,
+        );
+        setClient(null);
+      }
+    } catch {
+      setError("No tmux client found — start tmux in the other pane");
+      setClient(null);
+    }
+  }, []);
+
+  const switchSession = useCallback(
+    async (sessionName: string) => {
+      if (!client) return false;
+      try {
+        await runTmux(["switch-client", "-c", client.tty, "-t", sessionName]);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const jumpToPane = useCallback(
+    async (sessionName: string, pane: string) => {
+      if (!client) return false;
+      try {
+        await runTmux(["switch-client", "-c", client.tty, "-t", sessionName]);
+        await runTmux(["select-pane", "-t", pane]);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [client],
+  );
+
+  useEffect(() => {
+    discoverClient();
+    refreshSessions();
+  }, [discoverClient, refreshSessions]);
+
+  return {
+    client,
+    sessions,
+    error,
+    switchSession,
+    jumpToPane,
+    refreshSessions,
+    discoverClient,
+  };
+}

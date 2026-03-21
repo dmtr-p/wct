@@ -1013,8 +1013,12 @@ export function App() {
   );
 }
 
-export function startTui() {
-  render(<App />, { fullScreen: true });
+export function startTui(): Promise<void> {
+  process.stdout.write("\x1b[?1049h");
+  const instance = render(<App />);
+  return instance.waitUntilExit().then(() => {
+    process.stdout.write("\x1b[?1049l");
+  });
 }
 ```
 
@@ -2079,8 +2083,12 @@ export function App() {
   );
 }
 
-export function startTui() {
-  render(<App />, { fullScreen: true });
+export function startTui(): Promise<void> {
+  process.stdout.write("\x1b[?1049h");
+  const instance = render(<App />);
+  return instance.waitUntilExit().then(() => {
+    process.stdout.write("\x1b[?1049l");
+  });
 }
 ```
 

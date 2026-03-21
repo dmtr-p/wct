@@ -164,14 +164,16 @@ export function closeCommand(
         yield* logger.success(`Removed worktree '${branch}'`);
         processedCount += 1;
       } else if (removeResult._tag === "BlockedByChanges") {
-        const forceConfirmed = yield* Effect.mapError(
-          confirm("Worktree has uncommitted changes. Force remove anyway?"),
-          (error) =>
-            commandError("tmux_error", "Confirmation prompt failed", error),
-        );
-        if (!forceConfirmed) {
-          yield* logger.info("Aborted");
-          return;
+        if (!yes) {
+          const forceConfirmed = yield* Effect.mapError(
+            confirm("Worktree has uncommitted changes. Force remove anyway?"),
+            (error) =>
+              commandError("tmux_error", "Confirmation prompt failed", error),
+          );
+          if (!forceConfirmed) {
+            yield* logger.info("Aborted");
+            return;
+          }
         }
         const retryResult = yield* WorktreeService.use((service) =>
           service.removeWorktree(worktreePath, true),

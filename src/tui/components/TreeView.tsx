@@ -1,10 +1,9 @@
 import { basename } from "node:path";
 import { Box } from "ink";
-import React from "react";
 import type { QueueItem } from "../../services/queue-storage";
 import { formatSessionName } from "../../services/tmux";
+import { formatSync } from "../../services/worktree-status";
 import type { RepoInfo } from "../hooks/useRegistry";
-import type { TmuxSessionInfo } from "../hooks/useTmux";
 import { RepoNode } from "./RepoNode";
 import { WorktreeItem } from "./WorktreeItem";
 
@@ -66,7 +65,8 @@ export function TreeView({
             branch={wt.branch}
             hasSession={!!session}
             isAttached={session?.attached ?? false}
-            sync=""
+            sync={formatSync(wt.sync)}
+            changedFiles={wt.changedFiles}
             notifications={notifications}
             isSelected={idx === selectedIndex}
           />

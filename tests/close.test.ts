@@ -247,6 +247,40 @@ describe("closeCommand", () => {
     expect(mocks.worktreeCalls).toHaveLength(2);
   });
 
+  test("skips force-remove prompt with --force on dirty worktree", async () => {
+    let forceArg = false;
+    mocks.worktree = {
+      ...mocks.worktree,
+      removeWorktree: (path: string, force?: boolean) =>
+        Effect.sync(() => {
+          mocks.worktreeCalls.push(path);
+          if (force) {
+            forceArg = true;
+          }
+          return { _tag: "Removed" as const, path };
+        }),
+    };
+
+    await runCommand(
+      {
+        branches: ["feature-a"],
+        force: true,
+      },
+      {
+        tmux: mocks.tmux,
+        worktree: mocks.worktree,
+        queueStorage: mocks.queueStorage,
+      },
+    );
+    // --force skips the dirty-worktree prompt (only the branch confirmation remains)
+    expect(mocks.confirmSpy).toHaveBeenCalledTimes(1);
+    expect(mocks.confirmSpy).not.toHaveBeenCalledWith(
+      "Worktree has uncommitted changes. Force remove anyway?",
+    );
+    expect(forceArg).toBe(true);
+    expect(mocks.worktreeCalls).toHaveLength(1);
+  });
+
   test("skips force-remove prompt with --yes on dirty worktree", async () => {
     let forceRemoveCalled = false;
     mocks.worktree = {

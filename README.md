@@ -13,6 +13,8 @@ wct list                # Show active worktrees with tmux session status
 wct init                # Generate a starter .wct.yaml config file
 ```
 
+Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
+
 ## Installation
 
 ### Homebrew (recommended)
@@ -116,11 +118,51 @@ tmux:
         - command: "bun run dev"
         - {} # empty shell
     - name: "shell"
+
+# Config profiles — override sections per branch pattern
+profiles:
+  ci:
+    match: "ci/*"
+    setup:
+      - name: "Install (CI)"
+        command: "bun install --frozen-lockfile"
+    tmux:
+      windows:
+        - name: "logs"
+          panes:
+            - command: "tail -f ci.log"
+  hotfix:
+    match: ["hotfix/*", "fix/*"]
+    copy:
+      - .env
+      - .env.production
 ```
 
 Environment variables `WCT_WORKTREE_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands and the `ide.command`.
 
 A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
+
+### Config Profiles
+
+Profiles let you override `copy`, `setup`, `ide`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
+
+```yaml
+profiles:
+  ci:
+    match: "ci/*"
+    setup:
+      - name: "Install (CI)"
+        command: "bun install --frozen-lockfile"
+  hotfix:
+    match: ["hotfix/*", "fix/*"]
+    copy:
+      - .env
+      - .env.production
+```
+
+**Auto-matching:** When you run `wct open <branch>`, profiles are matched against the branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
+
+**Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open` or `wct up` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
 
 ### VS Code Workspace Sync
 

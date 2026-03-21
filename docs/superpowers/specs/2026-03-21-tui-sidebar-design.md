@@ -13,6 +13,7 @@ The TUI is terminal-agnostic — it works in any terminal emulator with split pa
 ### Process Model
 
 - **Single process**: `wct tui` is an Effect CLI subcommand that lazy-imports Ink/React (`await import("../tui/App.tsx")`) so the dependency is only loaded for this command
+- **Alternate screen**: TUI enters the terminal's alternate screen buffer (`\x1b[?1049h\x1b[H`) on startup and restores the main screen (`\x1b[?1049l`) on exit, keeping the user's scrollback clean
 - **Two terminal panes**: TUI in one split, tmux client in the other
 - **tmux control**: On startup, TUI runs `tmux list-clients` and expects exactly one client. If multiple clients exist, it errors with a message to specify a target (future: `--target` flag). It stores the client TTY and uses `tmux switch-client -t <tty>` to target it.
 
@@ -66,6 +67,7 @@ The registry stores **repos**, not worktrees. On each refresh:
 2. For each repo, run `git worktree list` to discover all actual worktrees
 3. This catches worktrees created outside of wct
 4. Enrich with live status (tmux, changes, sync, notifications)
+5. Load profile names from repo's `.wct.yaml` (or global `~/.wct.yaml`) for the Open Modal
 
 ## UI Design
 
@@ -96,15 +98,23 @@ c:close  j:jump  /:search  q:quit
 - `↑N`/`↓N` — commits ahead/behind default branch
 - `!N` — pending notification count
 
+### Selection Indicator
+
+Selected items are highlighted with:
+- `❯` cursor prefix
+- Cyan color + bold + inverse (reverse video) on the item text
+
+This makes the active selection clearly visible at a glance.
+
 ### Keybindings
 
 | Key | Action |
 |-----|--------|
 | `↑`/`↓` | Navigate items |
 | `←`/`→` | Collapse/expand repo group |
-| `Enter` | Switch tmux to selected worktree's session |
+| `Enter` | Switch tmux to selected worktree's session (if session exists) or run `wct up` (if no session) |
 | `o` | Open modal: create new worktree |
-| `c` | Close selected worktree |
+| `c` | Close selected worktree (switches to another session first if closing the active one) |
 | `j` | Jump to pane with pending notification |
 | `/` | Filter/search worktrees |
 | `q` | Quit TUI |
@@ -113,10 +123,23 @@ c:close  j:jump  /:search  q:quit
 
 Pressing `o` shows a centered modal overlay with:
 
-- Branch name text input
-- Optional fields: `--base` branch, `--pr` number, `--profile` name
-- Enter to confirm, Esc to cancel
-- Runs `wct open` in the background, TUI refreshes when DB changes
+**Text fields:**
+- Branch name (required)
+- Base branch (pre-filled with selected worktree's branch)
+- PR number or URL
+- Profile name (only shown if profiles exist in repo's `.wct.yaml`)
+- Prompt (multiline textarea — Enter adds newline, Tab advances to next field)
+
+**Toggle fields:**
+- Existing branch `[ ]`/`[x]`
+- No IDE `[ ]`/`[x]`
+- No attach `[ ]`/`[x]`
+
+**Submit button** at the bottom — highlighted green when focused.
+
+**Navigation:** Tab/↑↓ to move between fields, Space to toggle checkboxes, Ctrl+S to submit from any field, Esc to cancel.
+
+Runs `wct open` in the background with all selected flags. TUI refreshes when DB changes.
 
 ## Component Tree
 

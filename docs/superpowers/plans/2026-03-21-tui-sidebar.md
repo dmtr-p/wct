@@ -1014,7 +1014,7 @@ export function App() {
 }
 
 export function startTui() {
-  render(<App />);
+  render(<App />, { fullScreen: true });
 }
 ```
 
@@ -2080,7 +2080,7 @@ export function App() {
 }
 
 export function startTui() {
-  render(<App />);
+  render(<App />, { fullScreen: true });
 }
 ```
 

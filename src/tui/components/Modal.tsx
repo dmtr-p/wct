@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import React, { type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 interface Props {
   title: string;

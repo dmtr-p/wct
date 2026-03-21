@@ -4,14 +4,14 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { listCommand } from "../src/commands/list";
+import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
 import {
   formatSync,
   getAheadBehind,
   getChangedFilesCount,
   getDefaultBranch,
 } from "../src/services/worktree-status";
-import { runBunPromise } from "../src/effect/runtime";
-import { provideWctServices } from "../src/effect/services";
 
 async function runCommand(options?: { short?: boolean }) {
   await runBunPromise(provideWctServices(listCommand(options)));

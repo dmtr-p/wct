@@ -27,7 +27,6 @@ export const commandDef: CommandDef = {
   ],
 };
 
-
 export function listCommand(opts?: {
   short?: boolean;
 }): Effect.Effect<void, WctError, WctServices> {

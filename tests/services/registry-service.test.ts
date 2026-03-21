@@ -56,9 +56,7 @@ describe("registry-service", () => {
     );
     expect(updated.project).toBe("new-name");
 
-    await Effect.runPromise(
-      liveRegistryService.unregister("/tmp/idem-repo"),
-    );
+    await Effect.runPromise(liveRegistryService.unregister("/tmp/idem-repo"));
   });
 
   test("unregister returns false for unknown path", async () => {

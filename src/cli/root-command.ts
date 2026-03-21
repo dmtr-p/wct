@@ -129,8 +129,18 @@ const notifyCliCommand = Command.make("notify", {}, () => notifyCommand()).pipe(
 const queueCliCommand = Command.make(
   "queue",
   {
-    jump: optionalStringFlag("jump", "Jump to item's tmux session/pane", undefined, "ID"),
-    dismiss: optionalStringFlag("dismiss", "Remove item from queue", undefined, "ID"),
+    jump: optionalStringFlag(
+      "jump",
+      "Jump to item's tmux session/pane",
+      undefined,
+      "ID",
+    ),
+    dismiss: optionalStringFlag(
+      "dismiss",
+      "Remove item from queue",
+      undefined,
+      "ID",
+    ),
     clear: booleanFlag("clear", "Clear all queue items"),
   },
   ({ jump, dismiss, clear }) =>

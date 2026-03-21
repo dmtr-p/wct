@@ -30,8 +30,9 @@ export interface RegistryServiceApi {
   ) => Effect.Effect<RegistryItem | null, WctError>;
 }
 
-export const RegistryService =
-  ServiceMap.Service<RegistryServiceApi>("wct/RegistryService");
+export const RegistryService = ServiceMap.Service<RegistryServiceApi>(
+  "wct/RegistryService",
+);
 
 const REGISTRY_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS registry (
   id TEXT PRIMARY KEY,
@@ -95,7 +96,12 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
 
       const id = generateId();
       const created_at = Date.now();
-      const item: RegistryItem = { id, repo_path: repoPath, project, created_at };
+      const item: RegistryItem = {
+        id,
+        repo_path: repoPath,
+        project,
+        created_at,
+      };
 
       yield* withDb("register repo", (db) => {
         db.run(

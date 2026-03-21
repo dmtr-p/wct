@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Modal } from "./Modal";
 
 interface Props {
@@ -38,7 +38,7 @@ export function OpenModal({ visible, onSubmit, onCancel }: Props) {
   useInput(
     (input, key) => {
       if (!visible) return;
-      const currentField = FIELDS[focusIndex]!.key;
+      const currentField = FIELDS[focusIndex]?.key;
 
       if (key.escape) {
         onCancel();

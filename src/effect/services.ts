@@ -79,7 +79,11 @@ export function provideWctServices<A, E, R>(
             Effect.provideService(
               Effect.provideService(
                 Effect.provideService(
-                  Effect.provideService(effect, GitHubService, liveGitHubService),
+                  Effect.provideService(
+                    effect,
+                    GitHubService,
+                    liveGitHubService,
+                  ),
                   HooksService,
                   liveHooksService,
                 ),

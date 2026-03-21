@@ -128,30 +128,12 @@ const notifyCliCommand = Command.make("notify", {}, () => notifyCommand()).pipe(
 const queueCliCommand = Command.make(
   "queue",
   {
-    count: booleanFlag("count", "Output count for tmux status bar"),
-    interactive: booleanFlag(
-      "interactive",
-      "Interactive mode for tmux popup",
-      "i",
-    ),
-    jump: optionalStringFlag(
-      "jump",
-      "Jump to item's tmux session/pane",
-      undefined,
-      "ID",
-    ),
-    dismiss: optionalStringFlag(
-      "dismiss",
-      "Remove item from queue",
-      undefined,
-      "ID",
-    ),
+    jump: optionalStringFlag("jump", "Jump to item's tmux session/pane", undefined, "ID"),
+    dismiss: optionalStringFlag("dismiss", "Remove item from queue", undefined, "ID"),
     clear: booleanFlag("clear", "Clear all queue items"),
   },
-  ({ count, interactive, jump, dismiss, clear }) =>
+  ({ jump, dismiss, clear }) =>
     queueCommand({
-      count,
-      interactive,
       jump: optionToUndefined(jump),
       dismiss: optionToUndefined(dismiss),
       clear,

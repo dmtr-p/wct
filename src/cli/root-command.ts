@@ -10,6 +10,7 @@ import { openCommand } from "../commands/open";
 import { queueCommand } from "../commands/queue";
 import { registerCommand } from "../commands/register";
 import { switchCommand } from "../commands/switch";
+import { tuiCommand } from "../commands/tui";
 import { unregisterCommand } from "../commands/unregister";
 import { upCommand } from "../commands/up";
 import { Argument, Command, Flag } from "../effect/cli";
@@ -311,6 +312,10 @@ const registerCliCommand = Command.make(
   ({ path }) => registerCommand(optionToUndefined(path)),
 ).pipe(Command.withDescription("Register a repo in the TUI registry"));
 
+const tuiCliCommand = Command.make("tui", {}, () => tuiCommand()).pipe(
+  Command.withDescription("Interactive TUI sidebar for managing worktrees"),
+);
+
 const unregisterCliCommand = Command.make(
   "unregister",
   {
@@ -350,6 +355,7 @@ export const rootCommand = Command.make("wct").pipe(
     queueCliCommand,
     registerCliCommand,
     switchCliCommand,
+    tuiCliCommand,
     unregisterCliCommand,
     upCliCommand,
   ]),

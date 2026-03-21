@@ -55,9 +55,33 @@ export function App() {
     }
   }, [repos, expandedRepos.size]);
 
+  // Reset selection when search query changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run on searchQuery change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [searchQuery]);
+
+  const filteredRepos = useMemo(() => {
+    if (!searchQuery) return repos;
+    const q = searchQuery.toLowerCase();
+    return repos
+      .map((repo) => ({
+        ...repo,
+        worktrees: repo.worktrees.filter(
+          (wt) =>
+            wt.branch.toLowerCase().includes(q) ||
+            repo.project.toLowerCase().includes(q),
+        ),
+      }))
+      .filter(
+        (repo) =>
+          repo.worktrees.length > 0 || repo.project.toLowerCase().includes(q),
+      );
+  }, [repos, searchQuery]);
+
   const treeItems = useMemo(
-    () => buildTreeItems(repos, expandedRepos),
-    [repos, expandedRepos],
+    () => buildTreeItems(filteredRepos, expandedRepos),
+    [filteredRepos, expandedRepos],
   );
 
   const refreshAll = useCallback(async () => {
@@ -226,7 +250,7 @@ export function App() {
       <Text bold>wct</Text>
       <Text> </Text>
       <TreeView
-        repos={repos}
+        repos={filteredRepos}
         sessions={sessions}
         queueItems={queueItems}
         expandedRepos={expandedRepos}

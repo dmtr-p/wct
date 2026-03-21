@@ -632,13 +632,20 @@ import {
 
 Add `RegistryServiceApi` to the `WctServices` union type.
 
-Add provision in `provideWctServices` — wrap the existing innermost `Effect.provideService` call:
+Add `| RegistryServiceApi` to the `WctServices` type union (around line 50-63).
+
+Add provision in `provideWctServices` — wrap the outermost `Effect.provideService` call (the `WorktreeService` one) with one more layer:
+
 ```typescript
-Effect.provideService(
-  Effect.provideService(effect, GitHubService, liveGitHubService),
+return Effect.provideService(
+  Effect.provideService(
+    // ... existing chain ...
+    WorktreeService,
+    liveWorktreeService,
+  ),
   RegistryService,
   liveRegistryService,
-),
+) as Effect.Effect<A, E, Exclude<R, WctServices>>;
 ```
 
 - [ ] **Step 5: Run tests**
@@ -935,7 +942,7 @@ In `src/services/tmux.ts`:
 - Remove calls to `configureQueueStatusBar(name)` in `createSessionImpl` (lines 461 and 474)
 - Remove the `planQueueStatusRightUpdate` function (lines 359-397)
 - Remove the `getSessionLocalStatusRight` and `getGlobalStatusRight` helper functions (lines 338-357)
-- Remove the `resolveWctBin` and `formatShellCommand` imports/usages if they become unused after this removal
+- Check if `resolveWctBin` and `formatShellCommand` are used elsewhere in tmux.ts (outside the removed status bar code). If unused, remove them. If used elsewhere (e.g., in hook installation), keep them
 
 - [ ] **Step 4: Remove the queue --count flag and commandDef entry**
 
@@ -1078,11 +1085,11 @@ git commit -m "feat: add wct tui command with minimal Ink app"
 
 ```typescript
 // src/tui/hooks/useRegistry.ts
+import { existsSync } from "node:fs";
 import { useCallback, useEffect, useState } from "react";
 import { Effect } from "effect";
 import type { RegistryItem } from "../../services/registry-service";
 import { liveRegistryService } from "../../services/registry-service";
-import { execProcess } from "../../services/process";
 
 export interface WorktreeInfo {
   branch: string;
@@ -1152,7 +1159,6 @@ export function useRegistry() {
       const items = await Effect.runPromise(liveRegistryService.listRepos());
       const repoInfos: RepoInfo[] = await Promise.all(
         items.map(async (item) => {
-          const { existsSync } = await import("node:fs");
           if (!existsSync(item.repo_path)) {
             return {
               id: item.id,
@@ -2321,8 +2327,10 @@ bun run src/index.ts tui --help
 
 - [ ] **Step 4: Commit any fixes**
 
+Stage only the changed files explicitly (no `git add -A`):
+
 ```bash
-git add -A
+git add <changed files>
 git commit -m "chore: fix lint and test issues"
 ```
 

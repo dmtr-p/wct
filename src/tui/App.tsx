@@ -6,11 +6,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
-import { type TreeItem, TreeView } from "./components/TreeView";
+import { TreeView } from "./components/TreeView";
 import { useQueue } from "./hooks/useQueue";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
 import { useTmux } from "./hooks/useTmux";
+import type { TreeItem } from "./types";
 
 function buildTreeItems(
   repos: RepoInfo[],

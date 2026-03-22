@@ -4,14 +4,9 @@ import type { QueueItem } from "../../services/queue-storage";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-status";
 import type { RepoInfo } from "../hooks/useRegistry";
+import type { TreeItem } from "../types";
 import { RepoNode } from "./RepoNode";
 import { WorktreeItem } from "./WorktreeItem";
-
-export interface TreeItem {
-  type: "repo" | "worktree";
-  repoIndex: number;
-  worktreeIndex?: number;
-}
 
 interface Props {
   repos: RepoInfo[];

@@ -18,7 +18,11 @@ function buildTreeItems(
 ): TreeItem[] {
   const items: TreeItem[] = [];
   for (let ri = 0; ri < repos.length; ri++) {
-    const repo = repos[ri]!;
+    const repo = repos[ri];
+    if (!repo) {
+      continue;
+    }
+
     items.push({ type: "repo", repoIndex: ri });
     if (expandedRepos.has(repo.id)) {
       for (let wi = 0; wi < repo.worktrees.length; wi++) {
@@ -165,11 +169,19 @@ export function App() {
         let base: string | undefined;
         let profiles: string[] = [];
         if (selected) {
-          const repo = filteredRepos[selected.repoIndex]!;
-          profiles = repo.profileNames;
-          if (selected.type === "worktree") {
-            const wt = repo.worktrees[selected.worktreeIndex!]!;
-            base = wt.branch;
+          const repo = filteredRepos[selected.repoIndex];
+          if (repo) {
+            profiles = repo.profileNames;
+          }
+          if (repo && selected.type === "worktree") {
+            const worktreeIndex = selected.worktreeIndex;
+            const wt =
+              worktreeIndex === undefined
+                ? undefined
+                : repo.worktrees[worktreeIndex];
+            if (wt) {
+              base = wt.branch;
+            }
           }
         }
         setOpenModalBase(base);
@@ -191,36 +203,40 @@ export function App() {
       const currentItem = treeItems[selectedIndex];
       if (!currentItem) return;
 
+      const currentRepo = filteredRepos[currentItem.repoIndex];
+      if (!currentRepo) return;
+
+      const currentWorktree =
+        currentItem.type === "worktree" &&
+        currentItem.worktreeIndex !== undefined
+          ? currentRepo.worktrees[currentItem.worktreeIndex]
+          : undefined;
+
       if (key.leftArrow && currentItem.type === "repo") {
-        const repo = filteredRepos[currentItem.repoIndex]!;
-        if (expandedRepos.has(repo.id)) {
-          toggleExpanded(repo.id);
+        if (expandedRepos.has(currentRepo.id)) {
+          toggleExpanded(currentRepo.id);
         }
         return;
       }
 
       if (key.rightArrow && currentItem.type === "repo") {
-        const repo = filteredRepos[currentItem.repoIndex]!;
-        if (!expandedRepos.has(repo.id)) {
-          toggleExpanded(repo.id);
+        if (!expandedRepos.has(currentRepo.id)) {
+          toggleExpanded(currentRepo.id);
         }
         return;
       }
 
       if (key.return) {
         if (currentItem.type === "repo") {
-          const repo = filteredRepos[currentItem.repoIndex]!;
-          toggleExpanded(repo.id);
-        } else if (currentItem.type === "worktree") {
-          const repo = filteredRepos[currentItem.repoIndex]!;
-          const wt = repo.worktrees[currentItem.worktreeIndex!]!;
-          const sessionName = formatSessionName(basename(wt.path));
+          toggleExpanded(currentRepo.id);
+        } else if (currentWorktree) {
+          const sessionName = formatSessionName(basename(currentWorktree.path));
           const hasSession = sessions.some((s) => s.name === sessionName);
           if (hasSession) {
             switchSession(sessionName);
           } else {
             Bun.spawn(["wct", "up"], {
-              cwd: wt.path,
+              cwd: currentWorktree.path,
               stdout: "ignore",
               stderr: "ignore",
             });
@@ -229,10 +245,10 @@ export function App() {
         return;
       }
 
-      if (input === "c" && currentItem.type === "worktree") {
-        const repo = filteredRepos[currentItem.repoIndex]!;
-        const wt = repo.worktrees[currentItem.worktreeIndex!]!;
-        const closingSession = formatSessionName(basename(wt.path));
+      if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
+        const closingSession = formatSessionName(
+          basename(currentWorktree.path),
+        );
         // If closing the active session, switch to another one first
         if (client && client.session === closingSession) {
           const other = sessions.find((s) => s.name !== closingSession);
@@ -240,7 +256,7 @@ export function App() {
             switchSession(other.name);
           }
         }
-        Bun.spawn(["wct", "close", wt.branch, "--yes"], {
+        Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
           stdout: "ignore",
           stderr: "ignore",
         });
@@ -249,8 +265,8 @@ export function App() {
 
       if (input === "j") {
         // Jump to first notification's pane
-        if (queueItems.length > 0) {
-          const item = queueItems[0]!;
+        const [item] = queueItems;
+        if (item) {
           jumpToPane(item.session, item.pane);
         }
         return;

@@ -151,9 +151,9 @@ async function discoverWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
     }
 
     // Mark first worktree as main
-    if (worktrees.length > 0) {
-      // biome-ignore lint/style/noNonNullAssertion: length check guarantees index 0 exists
-      worktrees[0]!.isMainWorktree = true;
+    const [mainWorktree] = worktrees;
+    if (mainWorktree) {
+      mainWorktree.isMainWorktree = true;
     }
 
     return worktrees;

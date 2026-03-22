@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import type { WctError } from "../errors";
 import * as logger from "../utils/logger";
 import { execProcess } from "./process";
 

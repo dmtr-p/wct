@@ -40,7 +40,11 @@ export function TreeView({
   return (
     <Box flexDirection="column">
       {items.map((item, idx) => {
-        const repo = repos[item.repoIndex]!;
+        const repo = repos[item.repoIndex];
+        if (!repo) {
+          return null;
+        }
+
         if (item.type === "repo") {
           return (
             <RepoNode
@@ -53,7 +57,16 @@ export function TreeView({
           );
         }
 
-        const wt = repo.worktrees[item.worktreeIndex!]!;
+        const worktreeIndex = item.worktreeIndex;
+        if (worktreeIndex === undefined) {
+          return null;
+        }
+
+        const wt = repo.worktrees[worktreeIndex];
+        if (!wt) {
+          return null;
+        }
+
         const sessionName = formatSessionName(basename(wt.path));
         const session = sessionMap.get(sessionName);
         const notifKey = `${repo.project}/${wt.branch}`;

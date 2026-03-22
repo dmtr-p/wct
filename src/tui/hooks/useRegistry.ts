@@ -73,10 +73,25 @@ async function getDefaultBranch(repoPath: string): Promise<string | null> {
     const text = await new Response(proc.stdout).text();
     await proc.exited;
     const branch = text.trim();
-    return branch || null;
+    if (branch) return branch;
   } catch {
-    return null;
+    // Fall through to candidate check
   }
+
+  for (const candidate of ["main", "master"]) {
+    try {
+      const proc = Bun.spawn(["git", "rev-parse", "--verify", candidate], {
+        cwd: repoPath,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await proc.exited;
+      if (proc.exitCode === 0) return candidate;
+    } catch {
+      // Continue to next candidate
+    }
+  }
+  return null;
 }
 
 function getProfileNames(repoPath: string): string[] {

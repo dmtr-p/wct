@@ -126,7 +126,7 @@ async function discoverWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
 
     for (const line of text.split("\n")) {
       if (line.startsWith("worktree ")) {
-        if (current.path) {
+        if (current.path && current.branch) {
           worktrees.push(current as WorktreeInfo);
         }
         current = {

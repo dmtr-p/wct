@@ -329,7 +329,10 @@ export function OpenModal({
           </Box>
         );
       })}
-      <Text dimColor>Tab/↑↓: navigate | Ctrl+S: submit | Esc: cancel</Text>
+      <Text dimColor>
+        Tab/↑↓: navigate | Ctrl+↑: prev from prompt | Ctrl+S: submit | Esc:
+        cancel
+      </Text>
     </Modal>
   );
 }

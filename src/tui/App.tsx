@@ -55,7 +55,7 @@ export function App() {
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
-  const [_pendingActions, setPendingActions] = useState<
+  const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
 
@@ -119,7 +119,7 @@ export function App() {
     });
   }, []);
 
-  const handleOpen = useCallback(async (opts: OpenModalResult) => {
+  function handleOpen(opts: OpenModalResult) {
     setMode(Mode.Navigate);
     const args = ["open", opts.branch];
     if (opts.base) args.push("--base", opts.base);
@@ -130,12 +130,47 @@ export function App() {
     if (opts.noIde) args.push("--no-ide");
     if (opts.noAttach) args.push("--no-attach");
 
+    // Determine project from current selection
+    const selected = treeItems[selectedIndex];
+    const repo = selected ? filteredRepos[selected.repoIndex] : undefined;
+    const project = repo?.project ?? "unknown";
+
+    const key = pendingKey(project, opts.branch);
+    setPendingActions((prev) =>
+      new Map(prev).set(key, {
+        type: "opening",
+        branch: opts.branch,
+        project,
+      }),
+    );
+
     const proc = Bun.spawn(["wct", ...args], {
       stdout: "ignore",
       stderr: "ignore",
     });
-    await proc.exited;
-  }, []);
+
+    proc.exited.then((code) => {
+      if (code !== 0) {
+        // Show error briefly, then clear
+        setTimeout(() => {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        }, 5000);
+      } else {
+        // Success: trigger immediate refresh so real worktree appears
+        refreshAll().then(() => {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        });
+      }
+    });
+  }
 
   /** Move selection up or down in the flat tree list */
   function navigateTree(direction: 1 | -1) {
@@ -283,9 +318,31 @@ export function App() {
           switchSession(other.name);
         }
       }
-      Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
-        stdout: "ignore",
-        stderr: "ignore",
+
+      const key = pendingKey(currentRepo.project, currentWorktree.branch);
+      setPendingActions((prev) =>
+        new Map(prev).set(key, {
+          type: "closing",
+          branch: currentWorktree.branch,
+          project: currentRepo.project,
+        }),
+      );
+
+      const proc = Bun.spawn(
+        ["wct", "close", currentWorktree.branch, "--yes"],
+        {
+          stdout: "ignore",
+          stderr: "ignore",
+        },
+      );
+      proc.exited.then(() => {
+        refreshAll().then(() => {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        });
       });
       return;
     }
@@ -415,6 +472,7 @@ export function App() {
         expandedRepos={expandedRepos}
         selectedIndex={selectedIndex}
         items={treeItems}
+        pendingActions={pendingActions}
       />
       <Text> </Text>
       <StatusBar mode={mode} searchQuery={searchQuery} />

@@ -74,22 +74,17 @@ function withDb<A>(
 
 export const liveRegistryService: RegistryServiceApi = RegistryService.of({
   register: (repoPath, project) =>
-    Effect.gen(function* () {
-      const existing = yield* withDb("check existing", (db) => {
-        return db
-          .query("SELECT * FROM registry WHERE repo_path = ?")
-          .get(repoPath) as RegistryItem | null;
-      });
+    withDb("register repo", (db) => {
+      const existing = db
+        .query("SELECT * FROM registry WHERE repo_path = ?")
+        .get(repoPath) as RegistryItem | null;
 
       if (existing) {
-        // Update project name if changed
         if (existing.project !== project) {
-          yield* withDb("update project", (db) => {
-            db.run("UPDATE registry SET project = ? WHERE repo_path = ?", [
-              project,
-              repoPath,
-            ]);
-          });
+          db.run("UPDATE registry SET project = ? WHERE repo_path = ?", [
+            project,
+            repoPath,
+          ]);
         }
         return { ...existing, project };
       }
@@ -102,14 +97,10 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
         project,
         created_at,
       };
-
-      yield* withDb("register repo", (db) => {
-        db.run(
-          "INSERT INTO registry (id, repo_path, project, created_at) VALUES (?, ?, ?, ?)",
-          [id, repoPath, project, created_at],
-        );
-      });
-
+      db.run(
+        "INSERT INTO registry (id, repo_path, project, created_at) VALUES (?, ?, ?, ?)",
+        [id, repoPath, project, created_at],
+      );
       return item;
     }),
 

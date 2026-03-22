@@ -3,6 +3,7 @@
 import { basename } from "node:path";
 import { Box, type Key, render, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { QueueItem } from "../services/queue-storage";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
@@ -12,12 +13,34 @@ import { useQueue } from "./hooks/useQueue";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
 import { useTmux } from "./hooks/useTmux";
-import { Mode, type PendingAction, pendingKey, type TreeItem } from "./types";
+import {
+  Mode,
+  type PaneInfo,
+  type PendingAction,
+  type PRInfo,
+  pendingKey,
+  type TreeItem,
+} from "./types";
 
-function buildTreeItems(
-  repos: RepoInfo[],
-  expandedRepos: Set<string>,
-): TreeItem[] {
+interface BuildTreeOptions {
+  repos: RepoInfo[];
+  expandedRepos: Set<string>;
+  expandedWorktreeKey: string | null;
+  queueItems: QueueItem[];
+  prData: Map<string, PRInfo>;
+  panes: Map<string, PaneInfo[]>;
+  jumpToPane: (session: string, pane: string) => void;
+}
+
+function buildTreeItems({
+  repos,
+  expandedRepos,
+  expandedWorktreeKey,
+  queueItems,
+  prData,
+  panes,
+  jumpToPane,
+}: BuildTreeOptions): TreeItem[] {
   const items: TreeItem[] = [];
   for (let ri = 0; ri < repos.length; ri++) {
     const repo = repos[ri];
@@ -29,6 +52,86 @@ function buildTreeItems(
     if (expandedRepos.has(repo.id)) {
       for (let wi = 0; wi < repo.worktrees.length; wi++) {
         items.push({ type: "worktree", repoIndex: ri, worktreeIndex: wi });
+
+        const wt = repo.worktrees[wi];
+        if (!wt) continue;
+        const wtKey = pendingKey(repo.project, wt.branch);
+        if (wtKey !== expandedWorktreeKey) continue;
+
+        const sessionName = formatSessionName(basename(wt.path));
+
+        // Notifications for this worktree
+        const wtNotifs = queueItems.filter(
+          (q) => q.branch === wt.branch && q.project === repo.project,
+        );
+        if (wtNotifs.length > 0) {
+          items.push({
+            type: "detail",
+            repoIndex: ri,
+            worktreeIndex: wi,
+            detailKind: "notification-header",
+            label: `Notifications (${wtNotifs.length})`,
+          });
+          for (const notif of wtNotifs) {
+            items.push({
+              type: "detail",
+              repoIndex: ri,
+              worktreeIndex: wi,
+              detailKind: "notification",
+              label: notif.message,
+              action: () => jumpToPane(notif.session, notif.pane),
+            });
+          }
+        }
+
+        // PR data for this worktree
+        const pr = prData.get(wtKey);
+        if (pr) {
+          items.push({
+            type: "detail",
+            repoIndex: ri,
+            worktreeIndex: wi,
+            detailKind: "pr",
+            label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
+            action: () =>
+              Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
+                cwd: repo.repoPath,
+              }),
+          });
+          for (const check of pr.checks) {
+            items.push({
+              type: "detail",
+              repoIndex: ri,
+              worktreeIndex: wi,
+              detailKind: "check",
+              label: check.name,
+              meta: { state: check.state },
+            });
+          }
+        }
+
+        // Panes for this worktree
+        const sessionPanes = panes.get(sessionName);
+        if (sessionPanes && sessionPanes.length > 0) {
+          items.push({
+            type: "detail",
+            repoIndex: ri,
+            worktreeIndex: wi,
+            detailKind: "pane-header",
+            label: `Panes (${sessionPanes.length})`,
+          });
+          for (const pane of sessionPanes) {
+            items.push({
+              type: "detail",
+              repoIndex: ri,
+              worktreeIndex: wi,
+              detailKind: "pane",
+              label: `${pane.window}:${pane.index} ${pane.command}`,
+              action: () =>
+                jumpToPane(sessionName, `${pane.window}.${pane.index}`),
+            });
+          }
+        }
       }
     }
   }
@@ -43,6 +146,7 @@ export function App() {
   const {
     client,
     sessions,
+    panes,
     error: tmuxError,
     switchSession,
     jumpToPane,
@@ -93,9 +197,29 @@ export function App() {
       );
   }, [repos, searchQuery]);
 
+  const expandedWorktreeKey =
+    mode.type === "Expanded" ? mode.worktreeKey : null;
+
   const treeItems = useMemo(
-    () => buildTreeItems(filteredRepos, expandedRepos),
-    [filteredRepos, expandedRepos],
+    () =>
+      buildTreeItems({
+        repos: filteredRepos,
+        expandedRepos,
+        expandedWorktreeKey,
+        queueItems,
+        prData,
+        panes,
+        jumpToPane,
+      }),
+    [
+      filteredRepos,
+      expandedRepos,
+      expandedWorktreeKey,
+      queueItems,
+      prData,
+      panes,
+      jumpToPane,
+    ],
   );
 
   const refreshAll = useCallback(async () => {
@@ -418,6 +542,14 @@ export function App() {
       return;
     }
 
+    if (key.return) {
+      const item = treeItems[selectedIndex];
+      if (item?.type === "detail" && item.action) {
+        item.action();
+      }
+      return;
+    }
+
     if (input === "/") {
       setMode(Mode.Search);
       setSearchQuery("");
@@ -476,6 +608,8 @@ export function App() {
         items={treeItems}
         pendingActions={pendingActions}
         prData={prData}
+        panes={panes}
+        expandedWorktreeKey={expandedWorktreeKey}
       />
       <Text> </Text>
       <StatusBar mode={mode} searchQuery={searchQuery} />

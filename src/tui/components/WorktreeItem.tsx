@@ -9,6 +9,8 @@ interface Props {
   notifications: number;
   isSelected: boolean;
   pendingStatus?: "opening" | "closing" | "starting";
+  isExpanded?: boolean;
+  hasExpandableData?: boolean;
 }
 
 export function WorktreeItem({
@@ -20,12 +22,19 @@ export function WorktreeItem({
   notifications,
   isSelected,
   pendingStatus,
+  isExpanded,
+  hasExpandableData,
 }: Props) {
   const indicator = hasSession ? "\u25CF" : "\u25CB";
   const indicatorColor = hasSession ? "green" : "gray";
   const attached = isAttached ? " *" : "";
   const notifText = notifications > 0 ? ` !${notifications}` : "";
   const changesText = changedFiles > 0 ? ` ~${changedFiles}` : "";
+  const expandIcon = isExpanded
+    ? "\u25BC "
+    : hasExpandableData
+      ? "\u25B6 "
+      : "";
 
   const prefix = isSelected ? "❯   " : "    ";
 
@@ -56,6 +65,7 @@ export function WorktreeItem({
   return (
     <Box>
       <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
+      {expandIcon ? <Text dimColor>{expandIcon}</Text> : null}
       <Text color={indicatorColor}>
         {indicator}
         {pendingStatus === "starting" ? (

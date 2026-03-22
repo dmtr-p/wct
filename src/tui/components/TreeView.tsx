@@ -5,11 +5,13 @@ import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-status";
 import type { RepoInfo } from "../hooks/useRegistry";
 import {
+  type PaneInfo,
   type PendingAction,
   type PRInfo,
   pendingKey,
   type TreeItem,
 } from "../types";
+import { DetailRow } from "./DetailRow";
 import { RepoNode } from "./RepoNode";
 import { WorktreeItem } from "./WorktreeItem";
 
@@ -22,6 +24,8 @@ interface Props {
   items: TreeItem[];
   pendingActions: Map<string, PendingAction>;
   prData: Map<string, PRInfo>;
+  panes: Map<string, PaneInfo[]>;
+  expandedWorktreeKey: string | null;
 }
 
 export function TreeView({
@@ -32,7 +36,9 @@ export function TreeView({
   selectedIndex,
   items,
   pendingActions,
-  prData: _prData,
+  prData,
+  panes,
+  expandedWorktreeKey,
 }: Props) {
   const sessionMap = new Map(sessions.map((s) => [s.name, s]));
   const notifCounts = new Map<string, number>();
@@ -85,6 +91,19 @@ export function TreeView({
       continue;
     }
 
+    if (item.type === "detail") {
+      elements.push(
+        <DetailRow
+          key={`detail-${repo.id}-${item.worktreeIndex}-${item.detailKind}-${item.label}`}
+          kind={item.detailKind}
+          label={item.label}
+          isSelected={idx === selectedIndex}
+          meta={item.meta}
+        />,
+      );
+      continue;
+    }
+
     const worktreeIndex = item.worktreeIndex;
     if (worktreeIndex === undefined) continue;
 
@@ -99,6 +118,14 @@ export function TreeView({
     const wtKey = pendingKey(repo.project, wt.branch);
     const pending = pendingActions.get(wtKey);
 
+    // Determine if this worktree has expandable data
+    const wtPr = prData.get(wtKey);
+    const wtPanes = panes.get(sessionName);
+    const wtNotifCount = notifCounts.get(notifKey) ?? 0;
+    const hasExpandableData =
+      !!wtPr || (wtPanes && wtPanes.length > 0) || wtNotifCount > 0;
+    const isExpanded = expandedWorktreeKey === wtKey;
+
     elements.push(
       <WorktreeItem
         key={`wt-${repo.id}-${wt.branch}`}
@@ -110,6 +137,8 @@ export function TreeView({
         notifications={notifications}
         isSelected={idx === selectedIndex}
         pendingStatus={pending?.type}
+        isExpanded={isExpanded}
+        hasExpandableData={!!hasExpandableData}
       />,
     );
 

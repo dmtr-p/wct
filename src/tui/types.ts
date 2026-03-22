@@ -28,6 +28,7 @@ export type TreeItem =
       detailKind: DetailKind;
       label: string;
       action?: () => void;
+      meta?: { state?: string; paneRef?: string };
     };
 
 export type DetailKind =

@@ -157,7 +157,7 @@ type PRInfo = {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   headRefName: string;
-  checks: Array<{ name: string; state: "SUCCESS" | "FAILURE" | "PENDING" }>;
+  checks: Array<{ name: string; state: "SUCCESS" | "FAILURE" | "PENDING" | "IN_PROGRESS" | "QUEUED" | "SKIPPED" | "CANCELLED" | string }>;
 };
 
 type PaneInfo = {
@@ -224,9 +224,10 @@ Bracket-style list with blinking cursor on the selected option. `↑↓` to sele
 - **Labels:** Bold + accent color when focused, dim when unfocused.
 - **Blinking cursor implementation:** Use a `setInterval` toggle (500ms) flipping a boolean that controls cursor character visibility, since Ink does not expose ANSI blink natively.
 
-### Cursor character
+### Cursor characters
 
-Use `❯` (U+276F) consistently for both the tree view selection cursor and modal list cursors, matching the existing codebase convention.
+- **Tree view selection:** `❯` (U+276F), matching the existing codebase convention.
+- **Modal list item pointer:** `▸` (U+25B8), visually distinct from the tree cursor to signal "this is a picker, not the main navigation."
 
 ## 6. Space to Switch/Create Session
 

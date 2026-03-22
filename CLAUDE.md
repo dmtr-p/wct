@@ -38,7 +38,8 @@ src/
 │   ├── init.ts           # Native Effect implementation of wct init
 │   ├── notify.ts         # Native Effect implementation of wct notify
 │   ├── queue.ts          # Native Effect implementation of wct queue
-│   └── hooks.ts          # Native Effect implementation of wct hooks
+│   ├── hooks.ts          # Native Effect implementation of wct hooks
+│   └── tui.ts            # Native Effect implementation of wct tui
 ├── config/
 │   ├── loader.ts         # Effect-based config loading and merge flow
 │   ├── schema.ts         # Effect Schema model for .wct.yaml
@@ -58,7 +59,23 @@ src/
 │   ├── github-service.ts # Effect service for GitHub PR integration
 │   ├── hooks-service.ts  # Effect service for git hook installation
 │   ├── queue-storage.ts  # SQLite-backed queue persistence service
-│   └── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
+│   ├── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
+│   ├── registry-service.ts # Effect service for multi-repo registry
+│   └── worktree-status.ts  # Helpers for computing worktree status
+├── tui/
+│   ├── App.tsx            # Root Ink component, data fetching, keyboard routing
+│   ├── components/
+│   │   ├── TreeView.tsx   # Collapsible repo/worktree list
+│   │   ├── RepoNode.tsx   # Single repo group
+│   │   ├── WorktreeItem.tsx # Branch line with status indicators
+│   │   ├── OpenModal.tsx  # Modal for wct open
+│   │   ├── StatusBar.tsx  # Bottom keybinding hints
+│   │   └── Modal.tsx      # Generic modal wrapper
+│   └── hooks/
+│       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
+│       ├── useQueue.ts    # Fetch notifications from DB
+│       ├── useRefresh.ts  # Hybrid poll + fs.watch
+│       └── useTmux.ts     # switch-client, list-clients
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/
@@ -82,7 +99,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 - `Bun.Glob` for copy pattern expansion
 - `Bun.which` for executable lookup
 
-The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. The only dev dependency exceptions are `@biomejs/biome`, `@types/bun`, and `vitest`.
+The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. Exception: `ink` and `react` are runtime dependencies used exclusively by the `wct tui` subcommand. They are lazy-imported so they are never loaded for other commands. The only dev dependency exceptions are `@biomejs/biome`, `@types/bun`, and `vitest`.
 
 This project uses **Effect v4**. If your training data covers Effect v3, read [EFFECT_V4.md](./EFFECT_V4.md) for the correct v4 APIs and patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
 

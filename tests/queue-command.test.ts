@@ -1,13 +1,5 @@
 import { Effect } from "effect";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  type MockInstance,
-  test,
-  vi,
-} from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as queueCommandModule from "../src/commands/queue";
 import { runBunPromise } from "../src/effect/runtime";
 import {
@@ -47,18 +39,15 @@ describe("queue commandDef", () => {
     expect(commandDef.name).toBe("queue");
     expect(commandDef.options).toBeDefined();
     const optionNames = commandDef.options?.map((o) => o.name) ?? [];
-    expect(optionNames).toContain("count");
     expect(optionNames).toContain("dismiss");
     expect(optionNames).toContain("clear");
     expect(optionNames).toContain("jump");
-    expect(optionNames).toContain("interactive");
   });
 });
 
 describe("queueCommand", () => {
   let queueCalls: string[];
   let queueStorage: QueueStorageService;
-  let stdoutWriteSpy: MockInstance;
 
   beforeEach(() => {
     queueCalls = [];
@@ -72,40 +61,6 @@ describe("queueCommand", () => {
         }),
       clearAll: () => Effect.succeed(0),
     };
-    stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    stdoutWriteSpy.mockRestore();
-  });
-
-  test("--count with 0 items writes nothing to stdout", async () => {
-    queueStorage = {
-      ...queueStorage,
-      listItems: () => Effect.succeed([]),
-    };
-
-    await expect(
-      runCommand({ count: true }, { queueStorage }),
-    ).resolves.toBeUndefined();
-    expect(stdoutWriteSpy).not.toHaveBeenCalled();
-  });
-
-  test("--count with items writes formatted count", async () => {
-    queueStorage = {
-      ...queueStorage,
-      listItems: () =>
-        Effect.succeed([
-          makeItem("item-1"),
-          makeItem("item-2", { pane: "%2" }),
-          makeItem("item-3", { pane: "%3" }),
-        ]),
-    };
-
-    await expect(
-      runCommand({ count: true }, { queueStorage }),
-    ).resolves.toBeUndefined();
-    expect(stdoutWriteSpy).toHaveBeenCalledWith("\u{1F514} 3");
   });
 
   test("--dismiss valid id calls removeItem and succeeds", async () => {

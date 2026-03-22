@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { Effect, ServiceMap } from "effect";
 import { commandError, type WctError } from "../errors";
 import * as logger from "../utils/logger";
@@ -10,7 +10,7 @@ function getQueueDir(): string {
 }
 
 function getDbPath(): string {
-  return `${getQueueDir()}/queue.db`;
+  return `${getQueueDir()}/wct.db`;
 }
 
 export interface QueueItem {
@@ -61,6 +61,21 @@ function generateId(): string {
   return `${ts}-${rand}`;
 }
 
+function cleanupOldDb(): void {
+  const oldPath = `${getQueueDir()}/queue.db`;
+  const newPath = getDbPath();
+  try {
+    if (!existsSync(newPath) && existsSync(oldPath)) {
+      unlinkSync(oldPath);
+      for (const suffix of ["-wal", "-shm"]) {
+        try {
+          unlinkSync(oldPath + suffix);
+        } catch {}
+      }
+    }
+  } catch {}
+}
+
 function withDbSync<A>(
   operation: string,
   f: (db: Database) => A,
@@ -68,6 +83,7 @@ function withDbSync<A>(
   return Effect.try({
     try: () => {
       mkdirSync(getQueueDir(), { recursive: true });
+      cleanupOldDb();
 
       const db = new Database(getDbPath(), { create: true });
       db.run("PRAGMA journal_mode=WAL");

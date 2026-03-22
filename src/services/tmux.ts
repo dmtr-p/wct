@@ -4,8 +4,6 @@ import { runBunPromise } from "../effect/runtime";
 import { provideWctServices, type WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
-import { formatShellCommand, resolveWctBin } from "../utils/bin";
-import * as logger from "../utils/logger";
 import {
   execProcess,
   getProcessErrorMessage,
@@ -142,8 +140,7 @@ export interface TmuxCommand {
     | "send-keys"
     | "select-layout"
     | "select-window"
-    | "set-option"
-    | "bind-key";
+    | "set-option";
   args: string[];
 }
 
@@ -334,122 +331,6 @@ function createSessionWithWindows(
   return executeCommands(commands);
 }
 
-function getSessionLocalStatusRight(sessionName: string) {
-  return Effect.catch(
-    execProcess("tmux", [
-      "show-options",
-      "-qv",
-      "-t",
-      sessionName,
-      "status-right",
-    ]).pipe(Effect.map((result) => result.stdout.trim())),
-    () => Effect.succeed(""),
-  );
-}
-
-function getGlobalStatusRight() {
-  return Effect.catch(
-    execProcess("tmux", ["show-options", "-gv", "status-right"]).pipe(
-      Effect.map((result) => result.stdout.trim()),
-    ),
-    () => Effect.succeed(""),
-  );
-}
-
-export function planQueueStatusRightUpdate(
-  queueCount: string,
-  sessionStatusRight: string,
-  globalStatusRight: string,
-): { action: "noop" } | { action: "unset" } | { action: "set"; value: string } {
-  const currentSessionStatusRight = sessionStatusRight.trim();
-  const currentGlobalStatusRight = globalStatusRight.trim();
-  const sessionHasQueue = currentSessionStatusRight.includes(queueCount);
-  const globalHasQueue = currentGlobalStatusRight.includes(queueCount);
-
-  if (sessionHasQueue) {
-    if (currentSessionStatusRight !== queueCount) {
-      return { action: "noop" };
-    }
-
-    if (globalHasQueue) {
-      return { action: "unset" };
-    }
-
-    return currentGlobalStatusRight
-      ? { action: "set", value: `${queueCount} ${currentGlobalStatusRight}` }
-      : { action: "noop" };
-  }
-
-  if (currentSessionStatusRight) {
-    return {
-      action: "set",
-      value: `${queueCount} ${currentSessionStatusRight}`,
-    };
-  }
-
-  if (globalHasQueue) {
-    return { action: "noop" };
-  }
-
-  return currentGlobalStatusRight
-    ? { action: "set", value: `${queueCount} ${currentGlobalStatusRight}` }
-    : { action: "set", value: queueCount };
-}
-
-function configureQueueStatusBar(sessionName: string) {
-  return Effect.catch(
-    Effect.gen(function* () {
-      const wctBin = resolveWctBin();
-
-      // Set status refresh interval
-      yield* executeCommand({
-        type: "set-option",
-        args: ["-t", sessionName, "status-interval", "5"],
-      });
-
-      const queueCount = `#(${formatShellCommand(wctBin, ["queue", "--count"])})`;
-      const sessionStatusRight = yield* getSessionLocalStatusRight(sessionName);
-      const globalStatusRight = yield* getGlobalStatusRight();
-      const statusRightUpdate = planQueueStatusRightUpdate(
-        queueCount,
-        sessionStatusRight,
-        globalStatusRight,
-      );
-
-      if (statusRightUpdate.action === "set") {
-        yield* executeCommand({
-          type: "set-option",
-          args: ["-t", sessionName, "status-right", statusRightUpdate.value],
-        });
-      } else if (statusRightUpdate.action === "unset") {
-        yield* executeCommand({
-          type: "set-option",
-          args: ["-u", "-t", sessionName, "status-right"],
-        });
-      }
-
-      // Bind C-q to interactive queue popup (root table, no prefix needed)
-      yield* execProcess("tmux", [
-        "bind-key",
-        "-T",
-        "root",
-        "C-q",
-        "display-popup",
-        "-E",
-        "-w",
-        "80%",
-        "-h",
-        "50%",
-        formatShellCommand(wctBin, ["queue", "--interactive"]),
-      ]);
-    }),
-    (error) =>
-      logger.warn(
-        `Failed to set up queue-status widget/popup: ${getProcessErrorMessage(error)}`,
-      ),
-  );
-}
-
 function createSessionImpl(
   name: string,
   workingDir: string,
@@ -458,7 +339,6 @@ function createSessionImpl(
 ) {
   return Effect.gen(function* () {
     if (yield* sessionExistsImpl(name)) {
-      yield* configureQueueStatusBar(name);
       return { _tag: "AlreadyExists" as const, sessionName: name };
     }
 
@@ -471,7 +351,6 @@ function createSessionImpl(
           return yield* Effect.fail(error);
         }),
     );
-    yield* configureQueueStatusBar(name);
     return { _tag: "Created" as const, sessionName: name };
   });
 }

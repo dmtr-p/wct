@@ -74,21 +74,6 @@ function removeItemsBySession(session: string) {
   );
 }
 
-function formatCount(count: number): string {
-  if (count === 0) return "";
-  return `\u{1F514} ${count}`;
-}
-
-describe("formatCount", () => {
-  test("returns empty string for 0", () => {
-    expect(formatCount(0)).toBe("");
-  });
-
-  test("returns bell emoji with count for positive number", () => {
-    expect(formatCount(3)).toBe("\u{1F514} 3");
-  });
-});
-
 describe("queue service", () => {
   let listSessionsSpy: MockInstance;
 

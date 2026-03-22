@@ -6,7 +6,7 @@
 
 **Architecture:** Ink/React TUI lazy-loaded behind a new `wct tui` Effect CLI subcommand. A unified SQLite database (`~/.wct/wct.db`) stores a repo registry and notification queue. The TUI discovers worktrees via `git worktree list`, enriches with live status, and controls a tmux client in an adjacent terminal pane.
 
-**Tech Stack:** Effect v4, Ink 5, React 18, Bun SQLite, vitest
+**Tech Stack:** Effect v4, Ink 6, React 19, Bun SQLite, vitest
 
 **Spec:** `docs/superpowers/specs/2026-03-21-tui-sidebar-design.md`
 
@@ -2399,3 +2399,62 @@ bun run /Users/dmtr/code/wct/src/index.ts unregister
 ```
 
 Verify repo disappears from TUI on next refresh.
+
+---
+
+## Post-Plan Refinements
+
+The following changes were made interactively after the initial 20 tasks were completed:
+
+### Fix: Alternate screen cursor position
+
+**Problem:** Each TUI launch added empty lines to the main terminal.
+**Fix:** Added `\x1b[H` (cursor home) after entering the alternate screen buffer in `startTui()`.
+**File:** `src/tui/App.tsx`
+
+### Fix: Auto-expand re-triggering on collapse
+
+**Problem:** Collapsing all repos (or the only repo) made `expandedRepos.size === 0`, which re-triggered the auto-expand effect.
+**Fix:** Added `didInitialExpand` state flag so auto-expand only runs once on first load.
+**File:** `src/tui/App.tsx`
+
+### Fix: `filteredRepos` vs `repos` index mismatch
+
+**Problem:** Tree item `repoIndex` values referred to indices in `filteredRepos`, but key handlers looked them up in `repos` (unfiltered). This caused wrong repo lookups, especially with search active.
+**Fix:** Changed all key handlers to use `filteredRepos` instead of `repos`.
+**File:** `src/tui/App.tsx`
+
+### Enhancement: Selection visibility
+
+**Problem:** Selected items only changed text color to cyan, making them hard to distinguish.
+**Fix:** Added `❯` cursor prefix and `inverse` (reverse video) + `bold` styling on selected items.
+**Files:** `src/tui/components/RepoNode.tsx`, `src/tui/components/WorktreeItem.tsx`
+
+### Enhancement: OpenModal — all `wct open` flags
+
+**Problem:** Original modal only supported branch, base, PR, and profile fields.
+**Changes:**
+- Added toggle fields: `--existing`, `--no-ide`, `--no-attach`
+- Added multiline textarea for `--prompt` (Enter = newline, Tab = next field)
+- Profile field only shown when profiles exist in repo's `.wct.yaml` (loaded via `getProfileNames()` in `useRegistry`)
+- Base field pre-filled with the selected worktree's branch when `o` is pressed
+- Added `[ Open Worktree ]` submit button at the bottom (green inverse when focused)
+- Added `Ctrl+S` as universal submit shortcut from any field
+**Files:** `src/tui/components/OpenModal.tsx`, `src/tui/App.tsx`, `src/tui/hooks/useRegistry.ts`
+
+### Enhancement: Enter on worktree without session runs `wct up`
+
+**Problem:** Pressing Enter on a worktree that had no active tmux session did nothing (the `switchSession` call failed silently).
+**Fix:** Check if session exists first; if yes, switch to it; if no, run `wct up` in the worktree's directory.
+**File:** `src/tui/App.tsx`
+
+### Enhancement: Switch session before closing active one
+
+**Problem:** Closing the active tmux session via `c` key could leave the tmux client with no session.
+**Fix:** Before running `wct close`, check if the closing session is the one the tmux client is currently on. If so, switch to another available session first.
+**File:** `src/tui/App.tsx`
+
+### Data model: `profileNames` in `RepoInfo`
+
+Added `profileNames: string[]` to `RepoInfo` interface. Populated by reading `.wct.yaml` from the repo path (falling back to global `~/.wct.yaml`) and extracting profile keys. Used to conditionally show the Profile field in the OpenModal.
+**File:** `src/tui/hooks/useRegistry.ts`

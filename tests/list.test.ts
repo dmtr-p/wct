@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { listCommand } from "../src/commands/list";
+import { runBunPromise } from "../src/effect/runtime";
+import { provideWctServices } from "../src/effect/services";
 import {
   formatSync,
   getAheadBehind,
   getChangedFilesCount,
   getDefaultBranch,
-  listCommand,
-} from "../src/commands/list";
-import { runBunPromise } from "../src/effect/runtime";
-import { provideWctServices } from "../src/effect/services";
+} from "../src/services/worktree-status";
 
 async function runCommand(options?: { short?: boolean }) {
   await runBunPromise(provideWctServices(listCommand(options)));

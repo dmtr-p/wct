@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, type Effect as EffectType } from "effect";
+import type { Effect as EffectType } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import {
   type BunServices as BunServicesType,

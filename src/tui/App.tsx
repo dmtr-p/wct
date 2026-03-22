@@ -11,7 +11,7 @@ import { useQueue } from "./hooks/useQueue";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
 import { useTmux } from "./hooks/useTmux";
-import { Mode, pendingKey, type TreeItem } from "./types";
+import { Mode, type PendingAction, pendingKey, type TreeItem } from "./types";
 
 function buildTreeItems(
   repos: RepoInfo[],
@@ -55,6 +55,9 @@ export function App() {
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
+  const [_pendingActions, setPendingActions] = useState<
+    Map<string, PendingAction>
+  >(new Map());
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -156,13 +159,28 @@ export function App() {
     if (hasSession) {
       switchSession(sessionName);
     } else {
-      // Will be fleshed out in Task 3 with pending action tracking
+      // Create session with wct up, then switch
+      const key = pendingKey(repo.project, wt.branch);
+      setPendingActions((prev) =>
+        new Map(prev).set(key, {
+          type: "starting",
+          branch: wt.branch,
+          project: repo.project,
+        }),
+      );
       const proc = Bun.spawn(["wct", "up", "--no-attach"], {
         cwd: wt.path,
         stdio: ["ignore", "ignore", "ignore"],
       });
       proc.exited.then((code) => {
-        if (code === 0) switchSession(sessionName);
+        if (code === 0) {
+          switchSession(sessionName);
+        }
+        setPendingActions((prev) => {
+          const next = new Map(prev);
+          next.delete(key);
+          return next;
+        });
       });
     }
   }

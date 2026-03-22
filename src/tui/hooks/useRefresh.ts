@@ -16,13 +16,15 @@ export function useRefresh(onRefresh: () => void | Promise<void>) {
     // Watch ~/.wct/ directory for DB changes
     const wctDir = `${process.env.HOME ?? "/tmp"}/.wct`;
     let watcher: ReturnType<typeof watch> | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     try {
       watcher = watch(wctDir, (_eventType, filename) => {
         if (
           filename &&
           (filename.endsWith(".db") || filename.endsWith("-wal"))
         ) {
-          refreshRef.current();
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => refreshRef.current(), 150);
         }
       });
     } catch {
@@ -31,6 +33,7 @@ export function useRefresh(onRefresh: () => void | Promise<void>) {
 
     return () => {
       clearInterval(interval);
+      if (debounceTimer) clearTimeout(debounceTimer);
       watcher?.close();
     };
   }, []);

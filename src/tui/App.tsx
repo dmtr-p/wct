@@ -1,7 +1,7 @@
 // src/tui/App.tsx
 
 import { basename } from "node:path";
-import { Box, render, Text, useApp, useInput } from "ink";
+import { Box, type Key, render, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
@@ -11,7 +11,7 @@ import { useQueue } from "./hooks/useQueue";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
 import { useTmux } from "./hooks/useTmux";
-import type { TreeItem } from "./types";
+import { Mode, pendingKey, type TreeItem } from "./types";
 
 function buildTreeItems(
   repos: RepoInfo[],
@@ -51,10 +51,9 @@ export function App() {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [didInitialExpand, setDidInitialExpand] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [showOpenModal, setShowOpenModal] = useState(false);
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
-  const [mode, setMode] = useState<"normal" | "search">("normal");
+  const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Auto-expand all repos on first load
@@ -118,7 +117,7 @@ export function App() {
   }, []);
 
   const handleOpen = useCallback(async (opts: OpenModalResult) => {
-    setShowOpenModal(false);
+    setMode(Mode.Navigate);
     const args = ["open", opts.branch];
     if (opts.base) args.push("--base", opts.base);
     if (opts.pr) args.push("--pr", opts.pr);
@@ -135,146 +134,239 @@ export function App() {
     await proc.exited;
   }, []);
 
-  useInput(
-    (input, key) => {
-      if (showOpenModal) return;
+  /** Move selection up or down in the flat tree list */
+  function navigateTree(direction: 1 | -1) {
+    setSelectedIndex((prev) => {
+      const next = prev + direction;
+      if (next < 0 || next >= treeItems.length) return prev;
+      return next;
+    });
+  }
 
-      if (mode === "search") {
-        if (key.escape) {
-          setMode("normal");
-          setSearchQuery("");
-        } else if (key.backspace || key.delete) {
-          setSearchQuery((q) => q.slice(0, -1));
-        } else if (key.return) {
-          setMode("normal");
-        } else if (input && !key.ctrl && !key.meta) {
-          setSearchQuery((q) => q + input);
+  /** Switch to worktree's tmux session, creating one if needed */
+  function handleSpaceSwitch() {
+    const item = treeItems[selectedIndex];
+    if (item?.type !== "worktree") return;
+    const repo = filteredRepos[item.repoIndex];
+    if (!repo) return;
+    const wt = repo.worktrees[item.worktreeIndex];
+    if (!wt) return;
+    const sessionName = formatSessionName(basename(wt.path));
+    const hasSession = sessions.some((s) => s.name === sessionName);
+    if (hasSession) {
+      switchSession(sessionName);
+    } else {
+      // Will be fleshed out in Task 3 with pending action tracking
+      const proc = Bun.spawn(["wct", "up", "--no-attach"], {
+        cwd: wt.path,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      proc.exited.then((code) => {
+        if (code === 0) switchSession(sessionName);
+      });
+    }
+  }
+
+  function handleNavigateInput(input: string, key: Key) {
+    if (input === "/") {
+      setMode(Mode.Search);
+      setSearchQuery("");
+      return;
+    }
+
+    if (input === "o") {
+      const selected = treeItems[selectedIndex];
+      let base: string | undefined;
+      let profiles: string[] = [];
+      if (selected) {
+        const repo = filteredRepos[selected.repoIndex];
+        if (repo) {
+          profiles = repo.profileNames;
         }
-        return;
-      }
-
-      if (input === "q") {
-        exit();
-        return;
-      }
-
-      if (input === "/") {
-        setMode("search");
-        setSearchQuery("");
-        return;
-      }
-
-      if (input === "o") {
-        // Determine default base from selected item
-        const selected = treeItems[selectedIndex];
-        let base: string | undefined;
-        let profiles: string[] = [];
-        if (selected) {
-          const repo = filteredRepos[selected.repoIndex];
-          if (repo) {
-            profiles = repo.profileNames;
+        if (repo && selected.type === "worktree") {
+          const worktreeIndex = selected.worktreeIndex;
+          const wt =
+            worktreeIndex === undefined
+              ? undefined
+              : repo.worktrees[worktreeIndex];
+          if (wt) {
+            base = wt.branch;
           }
-          if (repo && selected.type === "worktree") {
-            const worktreeIndex = selected.worktreeIndex;
-            const wt =
-              worktreeIndex === undefined
-                ? undefined
-                : repo.worktrees[worktreeIndex];
-            if (wt) {
-              base = wt.branch;
-            }
-          }
         }
-        setOpenModalBase(base);
-        setOpenModalProfiles(profiles);
-        setShowOpenModal(true);
-        return;
       }
+      setOpenModalBase(base);
+      setOpenModalProfiles(profiles);
+      setMode(Mode.OpenModal);
+      return;
+    }
 
-      if (key.upArrow) {
-        setSelectedIndex((i) => Math.max(0, i - 1));
-        return;
+    if (input === " ") {
+      handleSpaceSwitch();
+      return;
+    }
+
+    if (key.upArrow) {
+      navigateTree(-1);
+      return;
+    }
+
+    if (key.downArrow) {
+      navigateTree(1);
+      return;
+    }
+
+    const currentItem = treeItems[selectedIndex];
+    if (!currentItem) return;
+
+    const currentRepo = filteredRepos[currentItem.repoIndex];
+    if (!currentRepo) return;
+
+    const currentWorktree =
+      currentItem.type === "worktree" && currentItem.worktreeIndex !== undefined
+        ? currentRepo.worktrees[currentItem.worktreeIndex]
+        : undefined;
+
+    if (key.leftArrow && currentItem.type === "repo") {
+      if (expandedRepos.has(currentRepo.id)) {
+        toggleExpanded(currentRepo.id);
       }
+      return;
+    }
 
-      if (key.downArrow) {
-        setSelectedIndex((i) => Math.min(treeItems.length - 1, i + 1));
-        return;
-      }
-
-      const currentItem = treeItems[selectedIndex];
-      if (!currentItem) return;
-
-      const currentRepo = filteredRepos[currentItem.repoIndex];
-      if (!currentRepo) return;
-
-      const currentWorktree =
-        currentItem.type === "worktree" &&
-        currentItem.worktreeIndex !== undefined
-          ? currentRepo.worktrees[currentItem.worktreeIndex]
-          : undefined;
-
-      if (key.leftArrow && currentItem.type === "repo") {
-        if (expandedRepos.has(currentRepo.id)) {
-          toggleExpanded(currentRepo.id);
-        }
-        return;
-      }
-
-      if (key.rightArrow && currentItem.type === "repo") {
+    if (key.rightArrow) {
+      if (currentItem.type === "repo") {
         if (!expandedRepos.has(currentRepo.id)) {
           toggleExpanded(currentRepo.id);
         }
         return;
       }
-
-      if (key.return) {
-        if (currentItem.type === "repo") {
-          toggleExpanded(currentRepo.id);
-        } else if (currentWorktree) {
-          const sessionName = formatSessionName(basename(currentWorktree.path));
-          const hasSession = sessions.some((s) => s.name === sessionName);
-          if (hasSession) {
-            switchSession(sessionName);
-          } else {
-            Bun.spawn(["wct", "up"], {
-              cwd: currentWorktree.path,
-              stdout: "ignore",
-              stderr: "ignore",
-            });
-          }
-        }
-        return;
-      }
-
-      if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
-        const closingSession = formatSessionName(
-          basename(currentWorktree.path),
+      if (currentItem.type === "worktree" && currentWorktree) {
+        setMode(
+          Mode.Expanded(
+            pendingKey(currentRepo.project, currentWorktree.branch),
+          ),
         );
-        // If closing the active session, switch to another one first
-        if (client && client.session === closingSession) {
-          const other = sessions.find((s) => s.name !== closingSession);
-          if (other) {
-            switchSession(other.name);
+        return;
+      }
+    }
+
+    if (key.return) {
+      if (currentItem.type === "repo") {
+        toggleExpanded(currentRepo.id);
+      }
+      return;
+    }
+
+    if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
+      const closingSession = formatSessionName(basename(currentWorktree.path));
+      if (client && client.session === closingSession) {
+        const other = sessions.find((s) => s.name !== closingSession);
+        if (other) {
+          switchSession(other.name);
+        }
+      }
+      Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      return;
+    }
+
+    if (input === "j") {
+      const [item] = queueItems;
+      if (item) {
+        jumpToPane(item.session, item.pane);
+      }
+      return;
+    }
+  }
+
+  function handleSearchInput(input: string, key: Key) {
+    if (key.escape) {
+      setMode(Mode.Navigate);
+      setSearchQuery("");
+    } else if (key.backspace || key.delete) {
+      setSearchQuery((q) => q.slice(0, -1));
+    } else if (key.return) {
+      setMode(Mode.Navigate);
+    } else if (input && !key.ctrl && !key.meta) {
+      setSearchQuery((q) => q + input);
+    }
+  }
+
+  function handleExpandedInput(input: string, key: Key) {
+    if (key.leftArrow || key.escape) {
+      setMode(Mode.Navigate);
+      return;
+    }
+
+    if (key.upArrow) {
+      navigateTree(-1);
+      return;
+    }
+
+    if (key.downArrow) {
+      navigateTree(1);
+      return;
+    }
+
+    if (input === " ") {
+      handleSpaceSwitch();
+      return;
+    }
+
+    if (input === "o") {
+      const selected = treeItems[selectedIndex];
+      let base: string | undefined;
+      let profiles: string[] = [];
+      if (selected) {
+        const repo = filteredRepos[selected.repoIndex];
+        if (repo) {
+          profiles = repo.profileNames;
+        }
+        if (repo && selected.type === "worktree") {
+          const worktreeIndex = selected.worktreeIndex;
+          const wt =
+            worktreeIndex === undefined
+              ? undefined
+              : repo.worktrees[worktreeIndex];
+          if (wt) {
+            base = wt.branch;
           }
         }
-        Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
-          stdout: "ignore",
-          stderr: "ignore",
-        });
-        return;
       }
+      setOpenModalBase(base);
+      setOpenModalProfiles(profiles);
+      setMode(Mode.OpenModal);
+      return;
+    }
 
-      if (input === "j") {
-        // Jump to first notification's pane
-        const [item] = queueItems;
-        if (item) {
-          jumpToPane(item.session, item.pane);
-        }
+    if (input === "/") {
+      setMode(Mode.Search);
+      setSearchQuery("");
+      return;
+    }
+  }
+
+  useInput((input, key) => {
+    // Global keys (work in any mode)
+    if (input === "q" && mode.type !== "OpenModal" && mode.type !== "Search") {
+      exit();
+      return;
+    }
+
+    switch (mode.type) {
+      case "Navigate":
+        return handleNavigateInput(input, key);
+      case "Search":
+        return handleSearchInput(input, key);
+      case "OpenModal":
+        // Modal handles its own input
         return;
-      }
-    },
-    { isActive: !showOpenModal },
-  );
+      case "Expanded":
+        return handleExpandedInput(input, key);
+    }
+  });
 
   if (loading) {
     return (
@@ -309,11 +401,11 @@ export function App() {
       <Text> </Text>
       <StatusBar mode={mode} searchQuery={searchQuery} />
       <OpenModal
-        visible={showOpenModal}
+        visible={mode.type === "OpenModal"}
         defaultBase={openModalBase}
         profileNames={openModalProfiles}
         onSubmit={handleOpen}
-        onCancel={() => setShowOpenModal(false)}
+        onCancel={() => setMode(Mode.Navigate)}
       />
     </Box>
   );

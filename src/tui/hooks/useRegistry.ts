@@ -75,7 +75,7 @@ async function getDefaultBranch(repoPath: string): Promise<string | null> {
     const branch = text.trim();
     if (branch) return branch;
   } catch {
-    // Fall through to candidate check
+    // symbolic-ref failed, try common defaults
   }
 
   for (const candidate of ["main", "master"]) {
@@ -88,7 +88,7 @@ async function getDefaultBranch(repoPath: string): Promise<string | null> {
       await proc.exited;
       if (proc.exitCode === 0) return candidate;
     } catch {
-      // Continue to next candidate
+      // try next
     }
   }
   return null;
@@ -181,13 +181,19 @@ export function useRegistry() {
               error: "Directory not found",
             };
           }
-          const worktrees = await discoverWorktrees(item.repo_path);
-          const defaultBranch = await getDefaultBranch(item.repo_path);
+          const [worktrees, defaultBranch] = await Promise.all([
+            discoverWorktrees(item.repo_path),
+            getDefaultBranch(item.repo_path),
+          ]);
           const profileNames = getProfileNames(item.repo_path);
           await Promise.all(
             worktrees.map(async (wt) => {
-              wt.changedFiles = await getChangedCount(wt.path);
-              wt.sync = await getSync(wt.path, defaultBranch);
+              const [changedFiles, sync] = await Promise.all([
+                getChangedCount(wt.path),
+                getSync(wt.path, defaultBranch),
+              ]);
+              wt.changedFiles = changedFiles;
+              wt.sync = sync;
             }),
           );
           return {

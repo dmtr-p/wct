@@ -19,8 +19,9 @@ export function unregisterCommand(
     const originalCwd = process.cwd();
     if (path) process.chdir(repoPath);
 
-    const mainDir = yield* WorktreeService.use((service) =>
-      service.getMainRepoPath(),
+    const mainDir = yield* Effect.catch(
+      WorktreeService.use((service) => service.getMainRepoPath()),
+      () => Effect.succeed(null),
     );
     if (path) process.chdir(originalCwd);
 

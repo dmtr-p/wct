@@ -17,9 +17,12 @@ export function registerCommand(
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
     const repoPath = path ?? process.cwd();
+    const originalCwd = process.cwd();
+    if (path) process.chdir(repoPath);
 
     const isRepo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!isRepo) {
+      if (path) process.chdir(originalCwd);
       return yield* Effect.fail(
         commandError("not_git_repo", `Not a git repository: ${repoPath}`),
       );
@@ -28,6 +31,7 @@ export function registerCommand(
     const mainDir = yield* WorktreeService.use((service) =>
       service.getMainRepoPath(),
     );
+    if (path) process.chdir(originalCwd);
     if (!mainDir) {
       return yield* Effect.fail(
         commandError("worktree_error", "Could not determine repository root"),

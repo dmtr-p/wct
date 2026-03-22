@@ -16,10 +16,13 @@ export function unregisterCommand(
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
     const repoPath = path ?? process.cwd();
+    const originalCwd = process.cwd();
+    if (path) process.chdir(repoPath);
 
     const mainDir = yield* WorktreeService.use((service) =>
       service.getMainRepoPath(),
     );
+    if (path) process.chdir(originalCwd);
 
     const targetPath = mainDir ?? repoPath;
 

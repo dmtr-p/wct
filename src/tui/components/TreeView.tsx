@@ -4,7 +4,12 @@ import type { QueueItem } from "../../services/queue-storage";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-status";
 import type { RepoInfo } from "../hooks/useRegistry";
-import { type PendingAction, pendingKey, type TreeItem } from "../types";
+import {
+  type PendingAction,
+  type PRInfo,
+  pendingKey,
+  type TreeItem,
+} from "../types";
 import { RepoNode } from "./RepoNode";
 import { WorktreeItem } from "./WorktreeItem";
 
@@ -16,6 +21,7 @@ interface Props {
   selectedIndex: number;
   items: TreeItem[];
   pendingActions: Map<string, PendingAction>;
+  prData: Map<string, PRInfo>;
 }
 
 export function TreeView({
@@ -26,6 +32,7 @@ export function TreeView({
   selectedIndex,
   items,
   pendingActions,
+  prData: _prData,
 }: Props) {
   const sessionMap = new Map(sessions.map((s) => [s.name, s]));
   const notifCounts = new Map<string, number>();

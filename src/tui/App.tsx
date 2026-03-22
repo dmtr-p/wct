@@ -7,6 +7,7 @@ import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
+import { useGitHub } from "./hooks/useGitHub";
 import { useQueue } from "./hooks/useQueue";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
@@ -38,6 +39,7 @@ export function App() {
   const { exit } = useApp();
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { items: queueItems, refresh: refreshQueue } = useQueue();
+  const { prData } = useGitHub(repos);
   const {
     client,
     sessions,
@@ -473,6 +475,7 @@ export function App() {
         selectedIndex={selectedIndex}
         items={treeItems}
         pendingActions={pendingActions}
+        prData={prData}
       />
       <Text> </Text>
       <StatusBar mode={mode} searchQuery={searchQuery} />

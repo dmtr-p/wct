@@ -206,6 +206,8 @@ export function useRegistry() {
         }),
       );
       setRepos(repoInfos);
+    } catch {
+      // Swallow — previous repos preserved, next poll/watch will retry
     } finally {
       setLoading(false);
     }

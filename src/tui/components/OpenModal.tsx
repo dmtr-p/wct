@@ -1,6 +1,9 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { useBlink } from "../hooks/useBlink";
+import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
+import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 
 export interface OpenModalResult {
   branch: string;
@@ -13,326 +16,717 @@ export interface OpenModalResult {
   noAttach: boolean;
 }
 
-interface Props {
+type ModalStep = "selector" | "newBranch" | "fromPR" | "existingBranch";
+
+export interface OpenModalProps {
   visible: boolean;
-  defaultBase?: string;
-  profileNames: string[];
-  onSubmit: (opts: OpenModalResult) => void;
+  onSubmit: (result: OpenModalResult) => void;
   onCancel: () => void;
+  defaultBase: string;
+  profileNames: string[];
+  repoProject: string;
+  repoPath: string;
+  prList: PRInfo[];
+  onStepChange: (step: "selector" | "form" | "list") => void;
 }
 
-type TextField = "branch" | "base" | "pr" | "profile";
-type ToggleField = "existing" | "noIde" | "noAttach";
-type FieldDef =
-  | { kind: "text"; key: TextField; label: string; placeholder: string }
-  | { kind: "toggle"; key: ToggleField; label: string }
-  | { kind: "textarea"; key: "prompt"; label: string; placeholder: string }
-  | { kind: "submit" };
+// ─── Sub-components ───────────────────────────────────────────────
 
-function buildFields(hasProfiles: boolean): FieldDef[] {
-  const fields: FieldDef[] = [
-    {
-      kind: "text",
-      key: "branch",
-      label: "Branch",
-      placeholder: "feature/my-branch",
-    },
-    { kind: "text", key: "base", label: "Base", placeholder: "(optional)" },
-    {
-      kind: "text",
-      key: "pr",
-      label: "PR",
-      placeholder: "(optional) number or URL",
-    },
+function ModeSelector({
+  onSelect,
+  onCancel,
+}: {
+  onSelect: (step: ModalStep) => void;
+  onCancel: () => void;
+}) {
+  const [selected, setSelected] = useState(0);
+  const cursorVisible = useBlink();
+  const options: { label: string; step: ModalStep }[] = [
+    { label: "New Branch", step: "newBranch" },
+    { label: "Open from PR", step: "fromPR" },
+    { label: "Existing Branch", step: "existingBranch" },
   ];
-  if (hasProfiles) {
-    fields.push({
-      kind: "text",
-      key: "profile",
-      label: "Profile",
-      placeholder: "(optional)",
-    });
-  }
-  fields.push(
-    {
-      kind: "textarea",
-      key: "prompt",
-      label: "Prompt",
-      placeholder: "(optional) multiline text",
+
+  useInput(
+    (_input, key) => {
+      if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
+      if (key.downArrow)
+        setSelected((s) => Math.min(options.length - 1, s + 1));
+      if (key.return) onSelect(options[selected].step);
+      if (key.escape) onCancel();
     },
-    { kind: "toggle", key: "existing", label: "Existing branch" },
-    { kind: "toggle", key: "noIde", label: "No IDE" },
-    { kind: "toggle", key: "noAttach", label: "No attach" },
-    { kind: "submit" },
+    { isActive: true },
   );
-  return fields;
+
+  return (
+    <Box flexDirection="column">
+      <Text dimColor>Open Worktree</Text>
+      <Box height={1} />
+      {options.map((opt, i) => {
+        const isSel = i === selected;
+        return (
+          <Text key={opt.step} color={isSel ? "cyan" : "dim"}>
+            {"["} {opt.label}
+            {isSel && cursorVisible ? "▎" : " "}
+            {"]"}
+          </Text>
+        );
+      })}
+    </Box>
+  );
 }
 
-const EMPTY_TEXT: Record<TextField, string> = {
-  branch: "",
-  base: "",
-  pr: "",
-  profile: "",
-};
+function BracketInput({
+  label,
+  value,
+  isFocused,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  isFocused: boolean;
+  onChange: (v: string) => void;
+}) {
+  const cursorVisible = useBlink();
 
-const EMPTY_TOGGLES: Record<ToggleField, boolean> = {
-  existing: false,
-  noIde: false,
-  noAttach: false,
-};
+  useInput(
+    (input, key) => {
+      if (!isFocused) return;
+      if (key.backspace || key.delete) {
+        onChange(value.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        onChange(value + input);
+      }
+    },
+    { isActive: isFocused },
+  );
 
-export function OpenModal({
-  visible,
+  return (
+    <Box flexDirection="column">
+      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
+        {label}
+      </Text>
+      <Text color={isFocused ? "cyan" : "dim"}>
+        {"[ "}
+        <Text color={isFocused ? undefined : "dim"}>{value}</Text>
+        {isFocused && cursorVisible ? "▎" : " "}
+        {" ]"}
+      </Text>
+    </Box>
+  );
+}
+
+function PromptArea({
+  value,
+  isFocused,
+  onChange,
+}: {
+  value: string;
+  isFocused: boolean;
+  onChange: (v: string) => void;
+}) {
+  const cursorVisible = useBlink();
+
+  useInput(
+    (input, key) => {
+      if (!isFocused) return;
+      if (key.backspace || key.delete) {
+        onChange(value.slice(0, -1));
+      } else if (key.return) {
+        onChange(`${value}\n`);
+      } else if (input && !key.ctrl && !key.meta) {
+        onChange(value + input);
+      }
+    },
+    { isActive: isFocused },
+  );
+
+  return (
+    <Box flexDirection="column">
+      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
+        Prompt
+      </Text>
+      <Text dimColor>───────────────────────────────</Text>
+      <Text color={isFocused ? undefined : "dim"}>
+        {value || (isFocused ? "" : "optional")}
+        {isFocused && cursorVisible ? "▎" : ""}
+      </Text>
+      <Text dimColor>───────────────────────────────</Text>
+    </Box>
+  );
+}
+
+function ToggleRow({
+  label,
+  checked,
+  isFocused,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  isFocused: boolean;
+  onToggle: () => void;
+}) {
+  useInput(
+    (input) => {
+      if (input === " ") onToggle();
+    },
+    { isActive: isFocused },
+  );
+
+  return (
+    <Text color={isFocused ? "cyan" : "dim"}>
+      {checked ? "[x]" : "[ ]"} {label}
+    </Text>
+  );
+}
+
+// ─── NewBranchForm ───────────────────────────────────────────────
+
+type NewBranchField =
+  | "branch"
+  | "base"
+  | "profile"
+  | "prompt"
+  | "noIde"
+  | "noAttach";
+
+function NewBranchForm({
   defaultBase,
   profileNames,
   onSubmit,
-  onCancel,
-}: Props) {
-  const fields = useMemo(
-    () => buildFields(profileNames.length > 0),
-    [profileNames.length],
-  );
+  onBack,
+}: {
+  defaultBase: string;
+  profileNames: string[];
+  onSubmit: (result: OpenModalResult) => void;
+  onBack: () => void;
+}) {
+  const [branch, setBranch] = useState("");
+  const [base, setBase] = useState(defaultBase);
+  const [profile, setProfile] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [noIde, setNoIde] = useState(false);
+  const [noAttach, setNoAttach] = useState(false);
 
-  const [textValues, setTextValues] = useState<Record<TextField, string>>({
-    ...EMPTY_TEXT,
-  });
-  const [promptValue, setPromptValue] = useState("");
-  const [toggleValues, setToggleValues] = useState<
-    Record<ToggleField, boolean>
-  >({
-    ...EMPTY_TOGGLES,
-  });
+  const fields = useMemo(() => {
+    const f: NewBranchField[] = ["branch", "base"];
+    if (profileNames.length > 0) f.push("profile");
+    f.push("prompt", "noIde", "noAttach");
+    return f;
+  }, [profileNames.length]);
+
   const [focusIndex, setFocusIndex] = useState(0);
+  const currentField = fields[focusIndex];
 
-  // Set default base when modal opens
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on visibility change
-  useEffect(() => {
-    if (visible && defaultBase) {
-      setTextValues((prev) => ({ ...prev, base: defaultBase }));
-    }
-  }, [visible]);
-
-  const reset = () => {
-    setTextValues({ ...EMPTY_TEXT });
-    setPromptValue("");
-    setToggleValues({ ...EMPTY_TOGGLES });
-    setFocusIndex(0);
+  const moveFocus = (delta: number) => {
+    setFocusIndex((prev) => {
+      const next = (prev + delta + fields.length) % fields.length;
+      return next;
+    });
   };
 
   const submit = () => {
-    if (!textValues.branch.trim()) return;
+    if (!branch.trim()) return;
     onSubmit({
-      branch: textValues.branch.trim(),
-      base: textValues.base.trim() || undefined,
-      pr: textValues.pr.trim() || undefined,
-      profile: textValues.profile.trim() || undefined,
-      prompt: promptValue.trim() || undefined,
-      existing: toggleValues.existing,
-      noIde: toggleValues.noIde,
-      noAttach: toggleValues.noAttach,
+      branch: branch.trim(),
+      base: base.trim() || undefined,
+      profile: profile.trim() || undefined,
+      prompt: prompt.trim() || undefined,
+      existing: false,
+      noIde,
+      noAttach,
     });
-    reset();
-  };
-
-  const moveFocus = (delta: number) => {
-    setFocusIndex((focusIndex + delta + fields.length) % fields.length);
   };
 
   useInput(
     (input, key) => {
-      if (!visible) return;
-      const currentField = fields[focusIndex];
-      if (!currentField) return;
-
       if (key.escape) {
-        onCancel();
-        reset();
+        onBack();
         return;
       }
-
-      // Ctrl+S submits from any field
       if (input === "s" && key.ctrl) {
         submit();
         return;
       }
-
-      // Submit button handling
-      if (currentField.kind === "submit") {
-        if (key.return || input === " ") {
-          submit();
-          return;
-        }
-        if (key.tab || key.downArrow) {
-          moveFocus(1);
-          return;
-        }
-        if (key.upArrow) {
-          moveFocus(-1);
-          return;
-        }
+      if (key.tab) {
+        moveFocus(key.shift ? -1 : 1);
         return;
       }
-
-      // Toggle field handling
-      if (currentField.kind === "toggle") {
-        if (input === " ") {
-          setToggleValues((prev) => ({
-            ...prev,
-            [currentField.key]: !prev[currentField.key],
-          }));
-          return;
-        }
-        if (key.return) {
-          moveFocus(1);
-          return;
-        }
-        if (key.tab || key.downArrow) {
-          moveFocus(1);
-          return;
-        }
-        if (key.upArrow) {
-          moveFocus(-1);
-          return;
-        }
+      // Up/down on toggle fields
+      if (
+        (currentField === "noIde" || currentField === "noAttach") &&
+        (key.upArrow || key.downArrow)
+      ) {
+        moveFocus(key.upArrow ? -1 : 1);
         return;
-      }
-
-      // Textarea field handling (prompt)
-      if (currentField.kind === "textarea") {
-        if (key.backspace || key.delete) {
-          setPromptValue((prev) => prev.slice(0, -1));
-          return;
-        }
-        // Enter adds newline in textarea
-        if (key.return) {
-          if (key.ctrl || key.meta) {
-            // Ctrl+Enter submits from textarea
-            submit();
-          } else {
-            setPromptValue((prev) => `${prev}\n`);
-          }
-          return;
-        }
-        if (key.tab) {
-          moveFocus(1);
-          return;
-        }
-        if (key.upArrow && key.ctrl) {
-          moveFocus(-1);
-          return;
-        }
-        if (input && !key.ctrl && !key.meta) {
-          setPromptValue((prev) => prev + input);
-        }
-        return;
-      }
-
-      // Text field handling
-      if (key.backspace || key.delete) {
-        setTextValues((prev) => ({
-          ...prev,
-          [currentField.key]: prev[currentField.key].slice(0, -1),
-        }));
-        return;
-      }
-
-      if (key.return) {
-        if (focusIndex < fields.length - 1) {
-          moveFocus(1);
-        } else {
-          submit();
-        }
-        return;
-      }
-
-      if (key.tab || key.downArrow) {
-        moveFocus(1);
-        return;
-      }
-
-      if (key.upArrow) {
-        moveFocus(-1);
-        return;
-      }
-
-      if (input && !key.ctrl && !key.meta) {
-        setTextValues((prev) => ({
-          ...prev,
-          [currentField.key]: prev[currentField.key] + input,
-        }));
       }
     },
-    { isActive: visible },
+    { isActive: true },
   );
 
   return (
-    <Modal title="Open Worktree" visible={visible}>
-      {fields.map((field, idx) => {
-        const isFocused = idx === focusIndex;
-        if (field.kind === "submit") {
-          return (
-            <Box key="submit" marginTop={1}>
-              <Text
-                bold={isFocused}
-                color={isFocused ? "green" : "gray"}
-                inverse={isFocused}
-              >
-                {" Open Worktree "}
-              </Text>
-            </Box>
-          );
+    <Box flexDirection="column" gap={0}>
+      <Text dimColor>New Branch</Text>
+      <Box height={1} />
+      <BracketInput
+        label="Branch"
+        value={branch}
+        isFocused={currentField === "branch"}
+        onChange={setBranch}
+      />
+      <BracketInput
+        label="Base"
+        value={base}
+        isFocused={currentField === "base"}
+        onChange={setBase}
+      />
+      {profileNames.length > 0 && (
+        <BracketInput
+          label="Profile"
+          value={profile}
+          isFocused={currentField === "profile"}
+          onChange={setProfile}
+        />
+      )}
+      <PromptArea
+        value={prompt}
+        isFocused={currentField === "prompt"}
+        onChange={setPrompt}
+      />
+      <ToggleRow
+        label="No IDE"
+        checked={noIde}
+        isFocused={currentField === "noIde"}
+        onToggle={() => setNoIde((v) => !v)}
+      />
+      <ToggleRow
+        label="No attach"
+        checked={noAttach}
+        isFocused={currentField === "noAttach"}
+        onToggle={() => setNoAttach((v) => !v)}
+      />
+    </Box>
+  );
+}
+
+// ─── FromPRForm ──────────────────────────────────────────────────
+
+type FromPRField = "prList" | "profile" | "prompt" | "noIde" | "noAttach";
+
+function FromPRForm({
+  prList,
+  profileNames,
+  onSubmit,
+  onBack,
+  onStepChange,
+}: {
+  prList: PRInfo[];
+  profileNames: string[];
+  onSubmit: (result: OpenModalResult) => void;
+  onBack: () => void;
+  onStepChange: (step: "selector" | "form" | "list") => void;
+}) {
+  const [selectedPRIndex, setSelectedPRIndex] = useState(0);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [profile, setProfile] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [noIde, setNoIde] = useState(false);
+  const [noAttach, setNoAttach] = useState(false);
+
+  const fields = useMemo(() => {
+    const f: FromPRField[] = ["prList"];
+    if (profileNames.length > 0) f.push("profile");
+    f.push("prompt", "noIde", "noAttach");
+    return f;
+  }, [profileNames.length]);
+
+  const [focusIndex, setFocusIndex] = useState(0);
+  const currentField = fields[focusIndex];
+
+  // Notify parent about step change
+  useEffect(() => {
+    onStepChange(currentField === "prList" ? "list" : "form");
+  }, [currentField, onStepChange]);
+
+  const prItems: ListItem[] = useMemo(
+    () =>
+      prList.map((pr) => ({
+        label: `#${pr.number} ${pr.headRefName}`,
+        value: String(pr.number),
+        description: pr.title,
+      })),
+    [prList],
+  );
+
+  const filteredPRItems = useMemo(
+    () => filterItems(prItems, filterQuery),
+    [prItems, filterQuery],
+  );
+
+  const moveFocus = (delta: number) => {
+    setFocusIndex((prev) => {
+      const next = (prev + delta + fields.length) % fields.length;
+      return next;
+    });
+  };
+
+  const submit = () => {
+    const selectedPR = filteredPRItems[selectedPRIndex];
+    if (!selectedPR) return;
+    const pr = prList.find((p) => String(p.number) === selectedPR.value);
+    if (!pr) return;
+    onSubmit({
+      branch: pr.headRefName,
+      pr: String(pr.number),
+      profile: profile.trim() || undefined,
+      prompt: prompt.trim() || undefined,
+      existing: false,
+      noIde,
+      noAttach,
+    });
+  };
+
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onBack();
+        return;
+      }
+      if (input === "s" && key.ctrl) {
+        submit();
+        return;
+      }
+      if (key.tab) {
+        moveFocus(key.shift ? -1 : 1);
+        return;
+      }
+      // PR list navigation
+      if (currentField === "prList") {
+        if (key.upArrow) {
+          setSelectedPRIndex((s) => Math.max(0, s - 1));
+          return;
         }
-        if (field.kind === "toggle") {
-          const checked = toggleValues[field.key];
-          return (
-            <Box key={field.key}>
-              <Text color={isFocused ? "cyan" : "gray"}>
-                {checked ? "[x]" : "[ ]"} {field.label}
-              </Text>
-            </Box>
+        if (key.downArrow) {
+          setSelectedPRIndex((s) =>
+            Math.min(filteredPRItems.length - 1, s + 1),
           );
+          return;
         }
-        if (field.kind === "textarea") {
-          const lines = promptValue.split("\n");
-          return (
-            <Box key={field.key} flexDirection="column">
-              <Text color={isFocused ? "cyan" : "gray"}>{field.label}:</Text>
-              <Box marginLeft={2} flexDirection="column">
-                {promptValue ? (
-                  lines.map((line, li) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: stable line ordering
-                    <Text key={li}>
-                      {line}
-                      {isFocused && li === lines.length - 1 ? (
-                        <Text color="cyan">|</Text>
-                      ) : null}
-                    </Text>
-                  ))
-                ) : (
-                  <Text>
-                    <Text dimColor>{field.placeholder}</Text>
-                    {isFocused ? <Text color="cyan">|</Text> : null}
-                  </Text>
-                )}
-              </Box>
-            </Box>
-          );
+        if (key.backspace || key.delete) {
+          setFilterQuery((q) => q.slice(0, -1));
+          return;
         }
-        const value = textValues[field.key];
-        return (
-          <Box key={field.key}>
-            <Text color={isFocused ? "cyan" : "gray"}>{field.label}: </Text>
-            <Text>
-              {value || <Text dimColor>{field.placeholder}</Text>}
-              {isFocused ? <Text color="cyan">|</Text> : null}
-            </Text>
-          </Box>
-        );
-      })}
-      <Text dimColor>
-        Tab/↑↓: navigate | Ctrl+↑: prev from prompt | Ctrl+S: submit | Esc:
-        cancel
+        if (input && !key.ctrl && !key.meta && !key.return) {
+          setFilterQuery((q) => q + input);
+          return;
+        }
+      }
+      // Toggle navigation
+      if (
+        (currentField === "noIde" || currentField === "noAttach") &&
+        (key.upArrow || key.downArrow)
+      ) {
+        moveFocus(key.upArrow ? -1 : 1);
+        return;
+      }
+    },
+    { isActive: true },
+  );
+
+  return (
+    <Box flexDirection="column" gap={0}>
+      <Text dimColor>Open from PR</Text>
+      <Box height={1} />
+      <Text
+        color={currentField === "prList" ? "cyan" : "dim"}
+        bold={currentField === "prList"}
+      >
+        Select PR
       </Text>
+      <ScrollableList
+        items={prItems}
+        selectedIndex={selectedPRIndex}
+        filterQuery={filterQuery}
+        maxVisible={8}
+        isFocused={currentField === "prList"}
+      />
+      {profileNames.length > 0 && (
+        <BracketInput
+          label="Profile"
+          value={profile}
+          isFocused={currentField === "profile"}
+          onChange={setProfile}
+        />
+      )}
+      <PromptArea
+        value={prompt}
+        isFocused={currentField === "prompt"}
+        onChange={setPrompt}
+      />
+      <ToggleRow
+        label="No IDE"
+        checked={noIde}
+        isFocused={currentField === "noIde"}
+        onToggle={() => setNoIde((v) => !v)}
+      />
+      <ToggleRow
+        label="No attach"
+        checked={noAttach}
+        isFocused={currentField === "noAttach"}
+        onToggle={() => setNoAttach((v) => !v)}
+      />
+    </Box>
+  );
+}
+
+// ─── ExistingBranchForm ──────────────────────────────────────────
+
+type ExistingBranchField = "branchList" | "prompt" | "noIde" | "noAttach";
+
+function ExistingBranchForm({
+  repoPath,
+  onSubmit,
+  onBack,
+  onStepChange,
+}: {
+  repoPath: string;
+  onSubmit: (result: OpenModalResult) => void;
+  onBack: () => void;
+  onStepChange: (step: "selector" | "form" | "list") => void;
+}) {
+  const [branches, setBranches] = useState<string[]>([]);
+  const [selectedBranchIndex, setSelectedBranchIndex] = useState(0);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [noIde, setNoIde] = useState(false);
+  const [noAttach, setNoAttach] = useState(false);
+
+  const fields: ExistingBranchField[] = [
+    "branchList",
+    "prompt",
+    "noIde",
+    "noAttach",
+  ];
+  const [focusIndex, setFocusIndex] = useState(0);
+  const currentField = fields[focusIndex];
+
+  // Notify parent about step change
+  useEffect(() => {
+    onStepChange(currentField === "branchList" ? "list" : "form");
+  }, [currentField, onStepChange]);
+
+  // Fetch branches on mount
+  useEffect(() => {
+    const proc = Bun.spawn(
+      ["git", "branch", "-r", "--format=%(refname:short)"],
+      { cwd: repoPath, stdout: "pipe", stderr: "ignore" },
+    );
+    new Response(proc.stdout).text().then((text) => {
+      setBranches(
+        text
+          .split("\n")
+          .filter(Boolean)
+          .map((b) => b.replace(/^origin\//, ""))
+          .filter((b) => b !== "HEAD"),
+      );
+    });
+  }, [repoPath]);
+
+  const branchItems: ListItem[] = useMemo(
+    () => branches.map((b) => ({ label: b, value: b })),
+    [branches],
+  );
+
+  const filteredBranchItems = useMemo(
+    () => filterItems(branchItems, filterQuery),
+    [branchItems, filterQuery],
+  );
+
+  const moveFocus = (delta: number) => {
+    setFocusIndex((prev) => {
+      const next = (prev + delta + fields.length) % fields.length;
+      return next;
+    });
+  };
+
+  const submit = () => {
+    const selectedBranch = filteredBranchItems[selectedBranchIndex];
+    if (!selectedBranch) return;
+    onSubmit({
+      branch: selectedBranch.value,
+      prompt: prompt.trim() || undefined,
+      existing: true,
+      noIde,
+      noAttach,
+    });
+  };
+
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onBack();
+        return;
+      }
+      if (input === "s" && key.ctrl) {
+        submit();
+        return;
+      }
+      if (key.tab) {
+        moveFocus(key.shift ? -1 : 1);
+        return;
+      }
+      // Branch list navigation
+      if (currentField === "branchList") {
+        if (key.upArrow) {
+          setSelectedBranchIndex((s) => Math.max(0, s - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setSelectedBranchIndex((s) =>
+            Math.min(filteredBranchItems.length - 1, s + 1),
+          );
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setFilterQuery((q) => q.slice(0, -1));
+          return;
+        }
+        if (input && !key.ctrl && !key.meta && !key.return) {
+          setFilterQuery((q) => q + input);
+          return;
+        }
+      }
+      // Toggle navigation
+      if (
+        (currentField === "noIde" || currentField === "noAttach") &&
+        (key.upArrow || key.downArrow)
+      ) {
+        moveFocus(key.upArrow ? -1 : 1);
+        return;
+      }
+    },
+    { isActive: true },
+  );
+
+  return (
+    <Box flexDirection="column" gap={0}>
+      <Text dimColor>Existing Branch</Text>
+      <Box height={1} />
+      <Text
+        color={currentField === "branchList" ? "cyan" : "dim"}
+        bold={currentField === "branchList"}
+      >
+        Select Branch
+      </Text>
+      <ScrollableList
+        items={branchItems}
+        selectedIndex={selectedBranchIndex}
+        filterQuery={filterQuery}
+        maxVisible={10}
+        isFocused={currentField === "branchList"}
+      />
+      <PromptArea
+        value={prompt}
+        isFocused={currentField === "prompt"}
+        onChange={setPrompt}
+      />
+      <ToggleRow
+        label="No IDE"
+        checked={noIde}
+        isFocused={currentField === "noIde"}
+        onToggle={() => setNoIde((v) => !v)}
+      />
+      <ToggleRow
+        label="No attach"
+        checked={noAttach}
+        isFocused={currentField === "noAttach"}
+        onToggle={() => setNoAttach((v) => !v)}
+      />
+    </Box>
+  );
+}
+
+// ─── Main OpenModal ──────────────────────────────────────────────
+
+export function OpenModal({
+  visible,
+  onSubmit,
+  onCancel,
+  defaultBase,
+  profileNames,
+  repoProject: _repoProject,
+  repoPath,
+  prList,
+  onStepChange,
+}: OpenModalProps) {
+  const [step, setStep] = useState<ModalStep>("selector");
+
+  // Reset to selector when modal opens
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on visibility change
+  useEffect(() => {
+    if (visible) {
+      setStep("selector");
+      onStepChange("selector");
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const handleBack = () => {
+    setStep("selector");
+    onStepChange("selector");
+  };
+
+  const handleSelectStep = (nextStep: ModalStep) => {
+    setStep(nextStep);
+    onStepChange(nextStep === "selector" ? "selector" : "form");
+  };
+
+  const titleMap: Record<ModalStep, string> = {
+    selector: "Open Worktree",
+    newBranch: "Open Worktree — New Branch",
+    fromPR: "Open Worktree — From PR",
+    existingBranch: "Open Worktree — Existing Branch",
+  };
+
+  return (
+    <Modal title={titleMap[step]} visible={visible}>
+      {step === "selector" && (
+        <ModeSelector onSelect={handleSelectStep} onCancel={onCancel} />
+      )}
+      {step === "newBranch" && (
+        <NewBranchForm
+          defaultBase={defaultBase}
+          profileNames={profileNames}
+          onSubmit={onSubmit}
+          onBack={handleBack}
+        />
+      )}
+      {step === "fromPR" && (
+        <FromPRForm
+          prList={prList}
+          profileNames={profileNames}
+          onSubmit={onSubmit}
+          onBack={handleBack}
+          onStepChange={onStepChange}
+        />
+      )}
+      {step === "existingBranch" && (
+        <ExistingBranchForm
+          repoPath={repoPath}
+          onSubmit={onSubmit}
+          onBack={handleBack}
+          onStepChange={onStepChange}
+        />
+      )}
+      <Box marginTop={1}>
+        <Text dimColor>
+          {step === "selector"
+            ? "↑↓:select  enter:confirm  esc:cancel"
+            : "tab:next  shift+tab:prev  ctrl+s:submit  esc:back"}
+        </Text>
+      </Box>
     </Modal>
   );
 }

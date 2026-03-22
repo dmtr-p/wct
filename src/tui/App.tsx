@@ -159,8 +159,13 @@ export function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
+  const [openModalRepoProject, setOpenModalRepoProject] = useState("");
+  const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
+  const [modalStep, setModalStep] = useState<"selector" | "form" | "list">(
+    "selector",
+  );
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
@@ -244,6 +249,53 @@ export function App() {
       return next;
     });
   }, []);
+
+  /** Compute PR list for the currently-selected repo */
+  const openModalPRList = useMemo(() => {
+    const selected = treeItems[selectedIndex];
+    if (!selected) return [];
+    const repo = filteredRepos[selected.repoIndex];
+    if (!repo) return [];
+    const result: PRInfo[] = [];
+    for (const [key, pr] of prData) {
+      if (key.startsWith(`${repo.project}/`)) {
+        result.push(pr);
+      }
+    }
+    return result;
+  }, [treeItems, selectedIndex, filteredRepos, prData]);
+
+  /** Prepare and open the OpenModal with context from current selection */
+  function prepareOpenModal() {
+    const selected = treeItems[selectedIndex];
+    let base: string | undefined;
+    let profiles: string[] = [];
+    let project = "";
+    let repoPath = "";
+    if (selected) {
+      const repo = filteredRepos[selected.repoIndex];
+      if (repo) {
+        profiles = repo.profileNames;
+        project = repo.project;
+        repoPath = repo.repoPath;
+      }
+      if (repo && selected.type === "worktree") {
+        const worktreeIndex = selected.worktreeIndex;
+        const wt =
+          worktreeIndex === undefined
+            ? undefined
+            : repo.worktrees[worktreeIndex];
+        if (wt) {
+          base = wt.branch;
+        }
+      }
+    }
+    setOpenModalBase(base);
+    setOpenModalProfiles(profiles);
+    setOpenModalRepoProject(project);
+    setOpenModalRepoPath(repoPath);
+    setMode(Mode.OpenModal);
+  }
 
   function handleOpen(opts: OpenModalResult) {
     setMode(Mode.Navigate);
@@ -354,28 +406,7 @@ export function App() {
     }
 
     if (input === "o") {
-      const selected = treeItems[selectedIndex];
-      let base: string | undefined;
-      let profiles: string[] = [];
-      if (selected) {
-        const repo = filteredRepos[selected.repoIndex];
-        if (repo) {
-          profiles = repo.profileNames;
-        }
-        if (repo && selected.type === "worktree") {
-          const worktreeIndex = selected.worktreeIndex;
-          const wt =
-            worktreeIndex === undefined
-              ? undefined
-              : repo.worktrees[worktreeIndex];
-          if (wt) {
-            base = wt.branch;
-          }
-        }
-      }
-      setOpenModalBase(base);
-      setOpenModalProfiles(profiles);
-      setMode(Mode.OpenModal);
+      prepareOpenModal();
       return;
     }
 
@@ -517,28 +548,7 @@ export function App() {
     }
 
     if (input === "o") {
-      const selected = treeItems[selectedIndex];
-      let base: string | undefined;
-      let profiles: string[] = [];
-      if (selected) {
-        const repo = filteredRepos[selected.repoIndex];
-        if (repo) {
-          profiles = repo.profileNames;
-        }
-        if (repo && selected.type === "worktree") {
-          const worktreeIndex = selected.worktreeIndex;
-          const wt =
-            worktreeIndex === undefined
-              ? undefined
-              : repo.worktrees[worktreeIndex];
-          if (wt) {
-            base = wt.branch;
-          }
-        }
-      }
-      setOpenModalBase(base);
-      setOpenModalProfiles(profiles);
-      setMode(Mode.OpenModal);
+      prepareOpenModal();
       return;
     }
 
@@ -612,13 +622,17 @@ export function App() {
         expandedWorktreeKey={expandedWorktreeKey}
       />
       <Text> </Text>
-      <StatusBar mode={mode} searchQuery={searchQuery} />
+      <StatusBar mode={mode} searchQuery={searchQuery} modalStep={modalStep} />
       <OpenModal
         visible={mode.type === "OpenModal"}
-        defaultBase={openModalBase}
+        defaultBase={openModalBase ?? ""}
         profileNames={openModalProfiles}
+        repoProject={openModalRepoProject}
+        repoPath={openModalRepoPath}
+        prList={openModalPRList}
         onSubmit={handleOpen}
         onCancel={() => setMode(Mode.Navigate)}
+        onStepChange={setModalStep}
       />
     </Box>
   );

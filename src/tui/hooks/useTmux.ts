@@ -38,11 +38,10 @@ export function useTmux() {
       const parsed = output
         .split("\n")
         .filter(Boolean)
-        .map((line) => {
+        .flatMap((line) => {
           const [name, attached] = line.split("\t");
-          return name ? { name, attached: attached === "1" } : null;
-        })
-        .filter((session): session is TmuxSessionInfo => session !== null);
+          return name ? [{ name, attached: attached === "1" }] : [];
+        });
       setSessions(parsed);
     } catch {
       setSessions([]);
@@ -59,11 +58,10 @@ export function useTmux() {
       const clients = output
         .split("\n")
         .filter(Boolean)
-        .map((line) => {
+        .flatMap((line) => {
           const [tty, session] = line.split("\t");
-          return tty && session ? { tty, session } : null;
-        })
-        .filter((entry): entry is TmuxClient => entry !== null);
+          return tty && session ? [{ tty, session }] : [];
+        });
 
       if (clients.length === 0) {
         setError("No tmux client found — start tmux in the other pane");

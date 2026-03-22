@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { Effect } from "effect";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
@@ -15,7 +16,7 @@ export function unregisterCommand(
   path?: string,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const repoPath = path ?? process.cwd();
+    const repoPath = resolve(path ?? process.cwd());
     const originalCwd = process.cwd();
     if (path) process.chdir(repoPath);
 

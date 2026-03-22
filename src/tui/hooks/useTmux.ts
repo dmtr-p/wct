@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { PaneInfo } from "../types";
 
 interface TmuxClient {
   tty: string;
@@ -26,7 +27,41 @@ async function runTmux(args: string[]): Promise<string> {
 export function useTmux() {
   const [client, setClient] = useState<TmuxClient | null>(null);
   const [sessions, setSessions] = useState<TmuxSessionInfo[]>([]);
+  const [panes, setPanes] = useState<Map<string, PaneInfo[]>>(new Map());
   const [error, setError] = useState<string | null>(null);
+
+  const refreshPanes = useCallback(async (sessionList: TmuxSessionInfo[]) => {
+    const paneMap = new Map<string, PaneInfo[]>();
+    await Promise.all(
+      sessionList.map(async (session) => {
+        try {
+          const result = await runTmux([
+            "list-panes",
+            "-s",
+            "-t",
+            session.name,
+            "-F",
+            "#{pane_index}:#{pane_current_command}:#{window_name}",
+          ]);
+          const lines = result.split("\n").filter(Boolean);
+          paneMap.set(
+            session.name,
+            lines.map((line) => {
+              const [idx, cmd, win] = line.split(":");
+              return {
+                index: Number(idx),
+                command: cmd || "",
+                window: win || "",
+              };
+            }),
+          );
+        } catch {
+          // Ignore pane fetch errors
+        }
+      }),
+    );
+    setPanes(paneMap);
+  }, []);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -43,10 +78,11 @@ export function useTmux() {
           return name ? [{ name, attached: attached === "1" }] : [];
         });
       setSessions(parsed);
+      refreshPanes(parsed);
     } catch {
       setSessions([]);
     }
-  }, []);
+  }, [refreshPanes]);
 
   const discoverClient = useCallback(async () => {
     try {
@@ -117,6 +153,7 @@ export function useTmux() {
   return {
     client,
     sessions,
+    panes,
     error,
     switchSession,
     jumpToPane,

@@ -136,7 +136,7 @@ export function useTmux() {
       if (!client) return false;
       try {
         await runTmux(["switch-client", "-c", client.tty, "-t", `=${sessionName}`]);
-        await runTmux(["select-pane", "-t", pane]);
+        await runTmux(["select-pane", "-t", `=${sessionName}:${pane}`]);
         return true;
       } catch {
         return false;

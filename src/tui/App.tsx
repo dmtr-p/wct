@@ -578,6 +578,18 @@ export function App() {
       return;
     }
 
+    if (key.rightArrow) {
+      const current = treeItems[selectedIndex];
+      if (current?.type === "worktree") {
+        const repo = filteredRepos[current.repoIndex];
+        const wt = repo?.worktrees[current.worktreeIndex];
+        if (repo && wt) {
+          setMode(Mode.Expanded(pendingKey(repo.project, wt.branch)));
+        }
+      }
+      return;
+    }
+
     if (input === " ") {
       handleSpaceSwitch();
       return;

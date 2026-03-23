@@ -363,7 +363,18 @@ export function App() {
   function handleSpaceSwitch() {
     const item = treeItems[selectedIndex];
     if (!item) return;
-    // For detail rows, resolve the parent worktree
+
+    // For pane/notification detail rows, jump directly to that pane
+    if (
+      item.type === "detail" &&
+      (item.detailKind === "pane" || item.detailKind === "notification") &&
+      item.action
+    ) {
+      item.action();
+      return;
+    }
+
+    // For other detail rows, resolve the parent worktree
     const resolvedItem =
       item.type === "detail"
         ? {

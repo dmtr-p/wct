@@ -671,18 +671,25 @@ export function App() {
           expandedWorktreeKey={expandedWorktreeKey}
         />
       </Box>
-      <StatusBar mode={mode} searchQuery={searchQuery} modalStep={modalStep} />
-      <OpenModal
-        visible={mode.type === "OpenModal"}
-        defaultBase={openModalBase ?? ""}
-        profileNames={openModalProfiles}
-        repoProject={openModalRepoProject}
-        repoPath={openModalRepoPath}
-        prList={openModalPRList}
-        onSubmit={handleOpen}
-        onCancel={() => setMode(Mode.Navigate)}
-        onStepChange={setModalStep}
-      />
+      {mode.type === "OpenModal" ? (
+        <OpenModal
+          visible
+          defaultBase={openModalBase ?? ""}
+          profileNames={openModalProfiles}
+          repoProject={openModalRepoProject}
+          repoPath={openModalRepoPath}
+          prList={openModalPRList}
+          onSubmit={handleOpen}
+          onCancel={() => setMode(Mode.Navigate)}
+          onStepChange={setModalStep}
+        />
+      ) : (
+        <StatusBar
+          mode={mode}
+          searchQuery={searchQuery}
+          modalStep={modalStep}
+        />
+      )}
     </Box>
   );
 }

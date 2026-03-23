@@ -1,5 +1,5 @@
 // src/tui/components/StatusBar.tsx
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import type { Mode } from "../types";
 
 interface Props {
@@ -41,14 +41,14 @@ function getHints(
 }
 
 export function StatusBar({ mode, searchQuery, modalStep }: Props) {
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 50;
+  const divider = "─".repeat(Math.max(1, cols));
+
   if (mode.type === "Search") {
     return (
-      <Box flexDirection="column" marginTop={1}>
-        <Box>
-          <Text dimColor>
-            ─────────────────────────────────────────────────
-          </Text>
-        </Box>
+      <Box flexDirection="column">
+        <Text dimColor>{divider}</Text>
         <Text color="cyan">/{searchQuery}</Text>
         <Text dimColor>{getHints(mode)[1]}</Text>
       </Box>
@@ -57,10 +57,8 @@ export function StatusBar({ mode, searchQuery, modalStep }: Props) {
 
   const [line1, line2] = getHints(mode, modalStep);
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        <Text dimColor>─────────────────────────────────────────────────</Text>
-      </Box>
+    <Box flexDirection="column">
+      <Text dimColor>{divider}</Text>
       <Text dimColor>{line1}</Text>
       <Text dimColor>{line2}</Text>
     </Box>

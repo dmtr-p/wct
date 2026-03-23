@@ -1,7 +1,7 @@
 // src/tui/App.tsx
 
 import { basename } from "node:path";
-import { Box, type Key, render, Text, useApp, useInput } from "ink";
+import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { QueueItem } from "../services/queue-storage";
 import { formatSessionName } from "../services/tmux";
@@ -140,6 +140,8 @@ function buildTreeItems({
 
 export function App() {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const termRows = stdout?.rows ?? 24;
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { items: queueItems, refresh: refreshQueue } = useQueue();
   const { prData } = useGitHub(repos);
@@ -640,22 +642,23 @@ export function App() {
   }
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={termRows}>
       <Text bold>wct</Text>
       <Text> </Text>
-      <TreeView
-        repos={filteredRepos}
-        sessions={sessions}
-        queueItems={queueItems}
-        expandedRepos={expandedRepos}
-        selectedIndex={selectedIndex}
-        items={treeItems}
-        pendingActions={pendingActions}
-        prData={prData}
-        panes={panes}
-        expandedWorktreeKey={expandedWorktreeKey}
-      />
-      <Text> </Text>
+      <Box flexDirection="column" flexGrow={1}>
+        <TreeView
+          repos={filteredRepos}
+          sessions={sessions}
+          queueItems={queueItems}
+          expandedRepos={expandedRepos}
+          selectedIndex={selectedIndex}
+          items={treeItems}
+          pendingActions={pendingActions}
+          prData={prData}
+          panes={panes}
+          expandedWorktreeKey={expandedWorktreeKey}
+        />
+      </Box>
       <StatusBar mode={mode} searchQuery={searchQuery} modalStep={modalStep} />
       <OpenModal
         visible={mode.type === "OpenModal"}

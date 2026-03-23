@@ -362,10 +362,20 @@ export function App() {
   /** Switch to worktree's tmux session, creating one if needed */
   function handleSpaceSwitch() {
     const item = treeItems[selectedIndex];
-    if (item?.type !== "worktree") return;
-    const repo = filteredRepos[item.repoIndex];
+    if (!item) return;
+    // For detail rows, resolve the parent worktree
+    const resolvedItem =
+      item.type === "detail"
+        ? {
+            type: "worktree" as const,
+            repoIndex: item.repoIndex,
+            worktreeIndex: item.worktreeIndex,
+          }
+        : item;
+    if (resolvedItem.type !== "worktree") return;
+    const repo = filteredRepos[resolvedItem.repoIndex];
     if (!repo) return;
-    const wt = repo.worktrees[item.worktreeIndex];
+    const wt = repo.worktrees[resolvedItem.worktreeIndex];
     if (!wt) return;
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = sessions.some((s) => s.name === sessionName);
@@ -528,6 +538,19 @@ export function App() {
 
   function handleExpandedInput(input: string, key: Key) {
     if (key.leftArrow || key.escape) {
+      // Move selection back to the parent worktree before collapsing,
+      // so selectedIndex doesn't point past the end of the new tree.
+      const current = treeItems[selectedIndex];
+      if (current && current.type === "detail") {
+        // Find the worktree item that owns this detail
+        for (let i = selectedIndex - 1; i >= 0; i--) {
+          const candidate = treeItems[i];
+          if (candidate?.type === "worktree") {
+            setSelectedIndex(i);
+            break;
+          }
+        }
+      }
       setMode(Mode.Navigate);
       return;
     }

@@ -135,8 +135,10 @@ export function useTmux() {
     async (sessionName: string, pane: string) => {
       if (!client) return false;
       try {
+        const target = `=${sessionName}:${pane}`;
         await runTmux(["switch-client", "-c", client.tty, "-t", `=${sessionName}`]);
-        await runTmux(["select-pane", "-t", `=${sessionName}:${pane}`]);
+        await runTmux(["select-window", "-t", target]);
+        await runTmux(["select-pane", "-t", target]);
         return true;
       } catch {
         return false;

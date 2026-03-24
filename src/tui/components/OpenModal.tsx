@@ -149,7 +149,7 @@ function PromptArea({
       <Text dimColor>───────────────────────────────</Text>
       <Text color={isFocused ? undefined : "dim"}>
         {value || (isFocused ? "" : "optional")}
-        {isFocused && cursorVisible ? "▎" : ""}
+        {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>
       <Text dimColor>───────────────────────────────</Text>
     </Box>

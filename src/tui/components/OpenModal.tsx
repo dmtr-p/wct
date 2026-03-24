@@ -40,7 +40,6 @@ function ModeSelector({
   onCancel: () => void;
 }) {
   const [selected, setSelected] = useState(0);
-  const cursorVisible = useBlink();
   const options: { label: string; step: ModalStep }[] = [
     { label: "New Branch", step: "newBranch" },
     { label: "Open from PR", step: "fromPR" },
@@ -60,15 +59,12 @@ function ModeSelector({
 
   return (
     <Box flexDirection="column">
-      <Text dimColor>Open Worktree</Text>
-      <Box height={1} />
       {options.map((opt, i) => {
         const isSel = i === selected;
         return (
-          <Text key={opt.step} color={isSel ? "cyan" : "dim"}>
-            {"["} {opt.label}
-            {isSel && cursorVisible ? "▎" : " "}
-            {"]"}
+          <Text key={opt.step} color={isSel ? "cyan" : "dim"} bold={isSel}>
+            {isSel ? "▸ " : "  "}
+            {opt.label}
           </Text>
         );
       })}

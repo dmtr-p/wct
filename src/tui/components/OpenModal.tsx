@@ -27,7 +27,6 @@ export interface OpenModalProps {
   repoProject: string;
   repoPath: string;
   prList: PRInfo[];
-  onStepChange: (step: "selector" | "form" | "list") => void;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────
@@ -315,13 +314,11 @@ function FromPRForm({
   profileNames,
   onSubmit,
   onBack,
-  onStepChange,
 }: {
   prList: PRInfo[];
   profileNames: string[];
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
-  onStepChange: (step: "selector" | "form" | "list") => void;
 }) {
   const [selectedPRIndex, setSelectedPRIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
@@ -339,11 +336,6 @@ function FromPRForm({
 
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
-
-  // Notify parent about step change
-  useEffect(() => {
-    onStepChange(currentField === "prList" ? "list" : "form");
-  }, [currentField, onStepChange]);
 
   const prItems: ListItem[] = useMemo(
     () =>
@@ -484,12 +476,10 @@ function ExistingBranchForm({
   repoPath,
   onSubmit,
   onBack,
-  onStepChange,
 }: {
   repoPath: string;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
-  onStepChange: (step: "selector" | "form" | "list") => void;
 }) {
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranchIndex, setSelectedBranchIndex] = useState(0);
@@ -507,18 +497,14 @@ function ExistingBranchForm({
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
 
-  // Notify parent about step change
   useEffect(() => {
-    onStepChange(currentField === "branchList" ? "list" : "form");
-  }, [currentField, onStepChange]);
-
-  // Fetch branches on mount
-  useEffect(() => {
+    let cancelled = false;
     const proc = Bun.spawn(
       ["git", "branch", "-r", "--format=%(refname:short)"],
       { cwd: repoPath, stdout: "pipe", stderr: "ignore" },
     );
     new Response(proc.stdout).text().then((text) => {
+      if (cancelled) return;
       setBranches(
         text
           .split("\n")
@@ -527,6 +513,10 @@ function ExistingBranchForm({
           .filter((b) => b !== "HEAD"),
       );
     });
+    return () => {
+      cancelled = true;
+      proc.kill();
+    };
   }, [repoPath]);
 
   const branchItems: ListItem[] = useMemo(
@@ -654,30 +644,14 @@ export function OpenModal({
   repoProject: _repoProject,
   repoPath,
   prList,
-  onStepChange,
 }: OpenModalProps) {
   const [step, setStep] = useState<ModalStep>("selector");
 
-  // Reset to selector when modal opens
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on visibility change
   useEffect(() => {
-    if (visible) {
-      setStep("selector");
-      onStepChange("selector");
-    }
+    if (visible) setStep("selector");
   }, [visible]);
 
   if (!visible) return null;
-
-  const handleBack = () => {
-    setStep("selector");
-    onStepChange("selector");
-  };
-
-  const handleSelectStep = (nextStep: ModalStep) => {
-    setStep(nextStep);
-    onStepChange(nextStep === "selector" ? "selector" : "form");
-  };
 
   const titleMap: Record<ModalStep, string> = {
     selector: "Open Worktree",
@@ -689,14 +663,14 @@ export function OpenModal({
   return (
     <Modal title={titleMap[step]} visible={visible}>
       {step === "selector" && (
-        <ModeSelector onSelect={handleSelectStep} onCancel={onCancel} />
+        <ModeSelector onSelect={setStep} onCancel={onCancel} />
       )}
       {step === "newBranch" && (
         <NewBranchForm
           defaultBase={defaultBase}
           profileNames={profileNames}
           onSubmit={onSubmit}
-          onBack={handleBack}
+          onBack={() => setStep("selector")}
         />
       )}
       {step === "fromPR" && (
@@ -704,16 +678,14 @@ export function OpenModal({
           prList={prList}
           profileNames={profileNames}
           onSubmit={onSubmit}
-          onBack={handleBack}
-          onStepChange={onStepChange}
+          onBack={() => setStep("selector")}
         />
       )}
       {step === "existingBranch" && (
         <ExistingBranchForm
           repoPath={repoPath}
           onSubmit={onSubmit}
-          onBack={handleBack}
-          onStepChange={onStepChange}
+          onBack={() => setStep("selector")}
         />
       )}
       <Box marginTop={1}>

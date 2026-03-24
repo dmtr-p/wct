@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { Box } from "ink";
+import { useMemo } from "react";
 import type { QueueItem } from "../../services/queue-storage";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-status";
@@ -40,30 +41,37 @@ export function TreeView({
   panes,
   expandedWorktreeKey,
 }: Props) {
-  const sessionMap = new Map(sessions.map((s) => [s.name, s]));
-  const notifCounts = new Map<string, number>();
-  for (const item of queueItems) {
-    const key = `${item.project}/${item.branch}`;
-    notifCounts.set(key, (notifCounts.get(key) ?? 0) + 1);
-  }
+  const sessionMap = useMemo(
+    () => new Map(sessions.map((s) => [s.name, s])),
+    [sessions],
+  );
 
-  // Build a set of existing worktree keys per repo for phantom detection
-  const existingKeys = new Set<string>();
-  for (const repo of repos) {
-    for (const wt of repo.worktrees) {
-      existingKeys.add(pendingKey(repo.project, wt.branch));
+  const notifCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of queueItems) {
+      const key = pendingKey(item.project, item.branch);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-  }
+    return counts;
+  }, [queueItems]);
 
-  // Collect phantom (opening) items per repo project
-  const phantomsByProject = new Map<string, PendingAction[]>();
-  for (const [key, action] of pendingActions) {
-    if (action.type === "opening" && !existingKeys.has(key)) {
-      const existing = phantomsByProject.get(action.project) ?? [];
-      existing.push(action);
-      phantomsByProject.set(action.project, existing);
+  const { phantomsByProject } = useMemo(() => {
+    const keys = new Set<string>();
+    for (const repo of repos) {
+      for (const wt of repo.worktrees) {
+        keys.add(pendingKey(repo.project, wt.branch));
+      }
     }
-  }
+    const phantoms = new Map<string, PendingAction[]>();
+    for (const [key, action] of pendingActions) {
+      if (action.type === "opening" && !keys.has(key)) {
+        const existing = phantoms.get(action.project) ?? [];
+        existing.push(action);
+        phantoms.set(action.project, existing);
+      }
+    }
+    return { phantomsByProject: phantoms };
+  }, [repos, pendingActions]);
 
   const elements: React.ReactNode[] = [];
 
@@ -84,10 +92,6 @@ export function TreeView({
           worktreeCount={repo.worktrees.length}
         />,
       );
-
-      // If expanded and this is the last item for this repo (or next item is a different repo),
-      // append phantom items after the last worktree
-      // We handle phantoms after the worktree items below
       continue;
     }
 
@@ -112,19 +116,14 @@ export function TreeView({
 
     const sessionName = formatSessionName(basename(wt.path));
     const session = sessionMap.get(sessionName);
-    const notifKey = `${repo.project}/${wt.branch}`;
-    const notifications = notifCounts.get(notifKey) ?? 0;
-
     const wtKey = pendingKey(repo.project, wt.branch);
+    const notifications = notifCounts.get(wtKey) ?? 0;
     const pending = pendingActions.get(wtKey);
 
-    // Determine if this worktree has expandable data
     const wtPr = prData.get(wtKey);
     const wtPanes = panes.get(sessionName);
-    const wtNotifCount = notifCounts.get(notifKey) ?? 0;
     const hasExpandableData =
-      !!wtPr || (wtPanes && wtPanes.length > 0) || wtNotifCount > 0;
-    const isExpanded = expandedWorktreeKey === wtKey;
+      !!wtPr || (wtPanes && wtPanes.length > 0) || notifications > 0;
 
     elements.push(
       <WorktreeItem
@@ -137,12 +136,11 @@ export function TreeView({
         notifications={notifications}
         isSelected={idx === selectedIndex}
         pendingStatus={pending?.type}
-        isExpanded={isExpanded}
+        isExpanded={expandedWorktreeKey === wtKey}
         hasExpandableData={!!hasExpandableData}
       />,
     );
 
-    // Check if this is the last worktree for this repo — append phantoms
     const nextItem = items[idx + 1];
     const isLastWorktreeForRepo =
       !nextItem ||
@@ -171,15 +169,12 @@ export function TreeView({
     }
   }
 
-  // Handle phantoms for repos that are collapsed (no worktree items rendered)
-  // by checking repos with expanded state and phantoms
+  // Phantoms for expanded repos with no worktrees
   for (const repo of repos) {
     if (!expandedRepos.has(repo.id)) continue;
-    if (repo.worktrees.length > 0) continue; // already handled above
+    if (repo.worktrees.length > 0) continue;
     const phantoms = phantomsByProject.get(repo.project);
     if (!phantoms) continue;
-    // Find the repo element index and insert phantoms after it
-    // Since we're building elements array, just append them
     for (const phantom of phantoms) {
       elements.push(
         <WorktreeItem

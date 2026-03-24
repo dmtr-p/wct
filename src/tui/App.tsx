@@ -165,9 +165,6 @@ export function App() {
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
-  const [modalStep, setModalStep] = useState<"selector" | "form" | "list">(
-    "selector",
-  );
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
@@ -252,22 +249,8 @@ export function App() {
     });
   }, []);
 
-  /** Compute PR list for the currently-selected repo */
-  const openModalPRList = useMemo(() => {
-    const selected = treeItems[selectedIndex];
-    if (!selected) return [];
-    const repo = filteredRepos[selected.repoIndex];
-    if (!repo) return [];
-    const result: PRInfo[] = [];
-    for (const [key, pr] of prData) {
-      if (key.startsWith(`${repo.project}/`)) {
-        result.push(pr);
-      }
-    }
-    return result;
-  }, [treeItems, selectedIndex, filteredRepos, prData]);
+  const [openModalPRList, setOpenModalPRList] = useState<PRInfo[]>([]);
 
-  /** Prepare and open the OpenModal with context from current selection */
   function prepareOpenModal() {
     const selected = treeItems[selectedIndex];
     let base: string | undefined;
@@ -282,11 +265,7 @@ export function App() {
         repoPath = repo.repoPath;
       }
       if (repo && selected.type === "worktree") {
-        const worktreeIndex = selected.worktreeIndex;
-        const wt =
-          worktreeIndex === undefined
-            ? undefined
-            : repo.worktrees[worktreeIndex];
+        const wt = repo.worktrees[selected.worktreeIndex];
         if (wt) {
           base = wt.branch;
         }
@@ -296,6 +275,13 @@ export function App() {
     setOpenModalProfiles(profiles);
     setOpenModalRepoProject(project);
     setOpenModalRepoPath(repoPath);
+    const prs: PRInfo[] = [];
+    for (const [key, pr] of prData) {
+      if (key.startsWith(`${project}/`)) {
+        prs.push(pr);
+      }
+    }
+    setOpenModalPRList(prs);
     setMode(Mode.OpenModal);
   }
 
@@ -310,11 +296,7 @@ export function App() {
     if (opts.noIde) args.push("--no-ide");
     if (opts.noAttach) args.push("--no-attach");
 
-    // Determine project from current selection
-    const selected = treeItems[selectedIndex];
-    const repo = selected ? filteredRepos[selected.repoIndex] : undefined;
-    const project = repo?.project ?? "unknown";
-
+    const project = openModalRepoProject || "unknown";
     const key = pendingKey(project, opts.branch);
     setPendingActions((prev) =>
       new Map(prev).set(key, {
@@ -551,11 +533,10 @@ export function App() {
 
   function handleExpandedInput(input: string, key: Key) {
     if (key.leftArrow || key.escape) {
-      // Move selection back to the parent worktree before collapsing,
-      // so selectedIndex doesn't point past the end of the new tree.
+      // Move selection back to parent worktree so selectedIndex
+      // doesn't point past the end after detail rows are removed.
       const current = treeItems[selectedIndex];
       if (current && current.type === "detail") {
-        // Find the worktree item that owns this detail
         for (let i = selectedIndex - 1; i >= 0; i--) {
           const candidate = treeItems[i];
           if (candidate?.type === "worktree") {
@@ -681,14 +662,9 @@ export function App() {
           prList={openModalPRList}
           onSubmit={handleOpen}
           onCancel={() => setMode(Mode.Navigate)}
-          onStepChange={setModalStep}
         />
       ) : (
-        <StatusBar
-          mode={mode}
-          searchQuery={searchQuery}
-          modalStep={modalStep}
-        />
+        <StatusBar mode={mode} searchQuery={searchQuery} />
       )}
     </Box>
   );

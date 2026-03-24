@@ -5,14 +5,9 @@ import type { Mode } from "../types";
 interface Props {
   mode: Mode;
   searchQuery?: string;
-  /** Sub-mode context for OpenModal: which step the user is on */
-  modalStep?: "selector" | "form" | "list";
 }
 
-function getHints(
-  mode: Mode,
-  modalStep?: "selector" | "form" | "list",
-): [string, string] {
+function getHints(mode: Mode): [string, string] {
   switch (mode.type) {
     case "Navigate":
       return [
@@ -22,16 +17,7 @@ function getHints(
     case "Search":
       return ["type to filter", "esc:cancel  enter:done"];
     case "OpenModal":
-      if (modalStep === "selector") {
-        return ["↑↓:select  enter:confirm", "esc:cancel"];
-      }
-      if (modalStep === "list") {
-        return [
-          "↑↓:select  type:filter  tab:next field",
-          "ctrl+s:submit  esc:cancel",
-        ];
-      }
-      return ["tab:next  shift+tab:prev", "ctrl+s:submit  esc:cancel"];
+      return ["", ""];
     case "Expanded":
       return [
         "↑↓:navigate  enter:action  ←:collapse  space:switch",
@@ -40,7 +26,7 @@ function getHints(
   }
 }
 
-export function StatusBar({ mode, searchQuery, modalStep }: Props) {
+export function StatusBar({ mode, searchQuery }: Props) {
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 50;
   const divider = "─".repeat(Math.max(1, cols));
@@ -55,7 +41,7 @@ export function StatusBar({ mode, searchQuery, modalStep }: Props) {
     );
   }
 
-  const [line1, line2] = getHints(mode, modalStep);
+  const [line1, line2] = getHints(mode);
   return (
     <Box flexDirection="column">
       <Text dimColor>{divider}</Text>

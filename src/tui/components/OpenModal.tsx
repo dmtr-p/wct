@@ -171,7 +171,7 @@ function ToggleRow({
   );
 
   return (
-    <Text color={isFocused ? "cyan" : "dim"}>
+    <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
       {checked ? "[x]" : "[ ]"} {label}
     </Text>
   );

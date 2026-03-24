@@ -20,10 +20,9 @@
 | `src/tui/App.tsx` | Mode state, keyboard dispatch, pendingActions, expanded worktree state |
 | `src/tui/components/TreeView.tsx` | Render detail rows, phantom items |
 | `src/tui/components/WorktreeItem.tsx` | Expanded indicator, inline pending status, color change (blue→yellow) |
-| `src/tui/components/StatusBar.tsx` | Accept mode + submode, render context-aware 2-line hints |
-| `src/tui/components/OpenModal.tsx` | Complete redesign: mode selector → three form paths |
-| `src/tui/components/Modal.tsx` | Minor: support wider content for scrollable lists |
-| `src/tui/hooks/useTmux.ts` | Add per-session pane data fetching |
+| `src/tui/components/StatusBar.tsx` | Accept mode, render context-aware 2-line hints, dynamic divider width via `useStdout().columns` |
+| `src/tui/components/OpenModal.tsx` | Complete redesign: plain `▸` mode selector → three form paths, renders in place of StatusBar |
+| `src/tui/hooks/useTmux.ts` | Add per-session pane data fetching, exact session matching, session-qualified pane targets |
 
 **New files:**
 | File | Responsibility |
@@ -31,8 +30,9 @@
 | `src/tui/types.ts` | Shared types: Mode enum, TreeItem (extended with detail variant), PendingAction, PRInfo, PaneInfo |
 | `src/tui/hooks/useGitHub.ts` | Background GitHub data fetching (60s cadence) |
 | `src/tui/hooks/useBlink.ts` | Blinking cursor toggle hook (500ms setInterval) |
-| `src/tui/components/DetailRow.tsx` | Renders a single expanded detail row (notification, PR, check, pane) |
+| `src/tui/components/DetailRow.tsx` | Renders a single expanded detail row (notification, PR, check, pane) with 6 detail kinds |
 | `src/tui/components/ScrollableList.tsx` | Reusable filterable scrollable list for modal |
+| `src/tui/hooks/useBlink.ts` | Blinking cursor toggle hook (500ms setInterval) |
 | `tests/tui/types.test.ts` | Tests for shared type utilities |
 | `tests/tui/scrollable-list.test.ts` | Tests for scrollable list logic (filtering, windowing) |
 | `tests/tui/use-github.test.ts` | Tests for GitHub data parsing |
@@ -47,7 +47,7 @@
 - Modify: `src/tui/components/TreeView.tsx` (remove `TreeItem` export, import from `../types` instead)
 - Modify: `src/tui/App.tsx` (update `TreeItem` import from `./components/TreeView` to `./types`)
 
-- [ ] **Step 1: Create `src/tui/types.ts` with mode enum and TreeItem types**
+- [x] **Step 1: Create `src/tui/types.ts` with mode enum and TreeItem types**
 
 ```typescript
 // src/tui/types.ts
@@ -79,6 +79,7 @@ export type TreeItem =
       worktreeIndex: number;
       detailKind: DetailKind;
       label: string;
+      meta?: { state?: string; paneRef?: string };
       action?: () => void;
     };
 
@@ -162,7 +163,7 @@ export function checkColor(
 }
 ```
 
-- [ ] **Step 2: Write tests for utility functions**
+- [x] **Step 2: Write tests for utility functions**
 
 ```typescript
 // tests/tui/types.test.ts
@@ -209,12 +210,12 @@ describe("checkColor", () => {
 });
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `bun test tests/tui/types.test.ts`
 Expected: All tests PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/tui/types.ts tests/tui/types.test.ts
@@ -230,26 +231,23 @@ git commit -m "feat(tui): add shared types for mode system, tree items, and GitH
 - Modify: `src/tui/App.tsx`
 - Read: `src/tui/types.ts` (uses Mode type from Task 1)
 
-- [ ] **Step 1: Rewrite StatusBar to accept Mode and render context-aware hints**
+- [x] **Step 1: Rewrite StatusBar to accept Mode and render context-aware hints**
 
 Replace the entire content of `src/tui/components/StatusBar.tsx`:
 
+Note: The `modalStep` prop was removed during implementation — OpenModal renders in place of StatusBar, so StatusBar never renders during OpenModal mode.
+
 ```tsx
 // src/tui/components/StatusBar.tsx
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import type { Mode } from "../types";
 
 interface Props {
   mode: Mode;
   searchQuery?: string;
-  /** Sub-mode context for OpenModal: which step the user is on */
-  modalStep?: "selector" | "form" | "list";
 }
 
-function getHints(
-  mode: Mode,
-  modalStep?: "selector" | "form" | "list",
-): [string, string] {
+function getHints(mode: Mode): [string, string] {
   switch (mode.type) {
     case "Navigate":
       return [
@@ -259,16 +257,7 @@ function getHints(
     case "Search":
       return ["type to filter", "esc:cancel  enter:done"];
     case "OpenModal":
-      if (modalStep === "selector") {
-        return ["↑↓:select  enter:confirm", "esc:cancel"];
-      }
-      if (modalStep === "list") {
-        return [
-          "↑↓:select  type:filter  tab:next field",
-          "ctrl+s:submit  esc:cancel",
-        ];
-      }
-      return ["tab:next  shift+tab:prev", "ctrl+s:submit  esc:cancel"];
+      return ["", ""];
     case "Expanded":
       return [
         "↑↓:navigate  enter:action  ←:collapse  space:switch",
@@ -277,26 +266,25 @@ function getHints(
   }
 }
 
-export function StatusBar({ mode, searchQuery, modalStep }: Props) {
+export function StatusBar({ mode, searchQuery }: Props) {
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 50;
+  const divider = "─".repeat(Math.max(1, cols));
+
   if (mode.type === "Search") {
     return (
-      <Box flexDirection="column" marginTop={1}>
-        <Box>
-          <Text dimColor>
-            ─────────────────────────────────────────────────
-          </Text>
-        </Box>
+      <Box flexDirection="column">
+        <Text dimColor>{divider}</Text>
         <Text color="cyan">/{searchQuery}</Text>
         <Text dimColor>{getHints(mode)[1]}</Text>
       </Box>
     );
   }
 
-  const [line1, line2] = getHints(mode, modalStep);
+  const [line1, line2] = getHints(mode);
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        <Text dimColor>
+    <Box flexDirection="column">
+      <Text dimColor>{divider}</Text>
           ─────────────────────────────────────────────────
         </Text>
       </Box>
@@ -307,7 +295,7 @@ export function StatusBar({ mode, searchQuery, modalStep }: Props) {
 }
 ```
 
-- [ ] **Step 2: Refactor App.tsx to use Mode type and dispatch pattern**
+- [x] **Step 2: Refactor App.tsx to use Mode type and dispatch pattern**
 
 In `src/tui/App.tsx`, make the following changes:
 
@@ -393,7 +381,7 @@ useInput((input, key) => {
 <StatusBar mode={mode} searchQuery={searchQuery} />
 ```
 
-- [ ] **Step 3: Verify existing functionality still works**
+- [x] **Step 3: Verify existing functionality still works**
 
 Run: `bun test`
 Expected: All existing tests PASS
@@ -401,7 +389,7 @@ Expected: All existing tests PASS
 Run manually: `bun run src/index.ts tui`
 Verify: Navigation, search, quit, open modal all still work. Status bar shows correct hints per mode.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/tui/App.tsx src/tui/components/StatusBar.tsx
@@ -415,7 +403,7 @@ git commit -m "feat(tui): refactor mode system with typed dispatch and context-a
 **Files:**
 - Modify: `src/tui/App.tsx` (keyboard handler from Task 2)
 
-- [ ] **Step 1: Update space handler in `handleNavigateInput`**
+- [x] **Step 1: Update space handler in `handleNavigateInput`**
 
 In `src/tui/App.tsx`, within `handleNavigateInput`, add space handling:
 
@@ -456,16 +444,16 @@ if (input === " ") {
 }
 ```
 
-- [ ] **Step 2: Remove old `key.return` switch logic in Navigate mode**
+- [x] **Step 2: Remove old `key.return` switch logic in Navigate mode**
 
 Remove the existing `key.return` handler for worktree items in Navigate mode that calls `switchSession` / spawns `wct up`. Keep `key.return` only for repo node expand/collapse.
 
-- [ ] **Step 3: Test manually**
+- [x] **Step 3: Test manually**
 
 Run: `bun run src/index.ts tui`
 Verify: Space on a worktree with session switches to it. Space on a worktree without session starts one.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/tui/App.tsx
@@ -481,7 +469,7 @@ git commit -m "feat(tui): use space to switch/create tmux sessions"
 - Modify: `src/tui/components/WorktreeItem.tsx` (render pending status)
 - Modify: `src/tui/components/TreeView.tsx` (render phantom items)
 
-- [ ] **Step 1: Add pendingActions state to App.tsx**
+- [x] **Step 1: Add pendingActions state to App.tsx**
 
 In `src/tui/App.tsx`:
 
@@ -491,7 +479,7 @@ const [pendingActions, setPendingActions] = useState<Map<string, PendingAction>>
 
 Import `PendingAction` and `pendingKey` from `../types`.
 
-- [ ] **Step 2: Update `handleOpen` to add phantom worktree**
+- [x] **Step 2: Update `handleOpen` to add phantom worktree**
 
 Modify the existing `handleOpen` function in App.tsx. After spawning `wct open`, add:
 
@@ -530,11 +518,11 @@ proc.exited.then((code) => {
 });
 ```
 
-- [ ] **Step 3: Update close handler similarly**
+- [x] **Step 3: Update close handler similarly**
 
 In the `c` key handler, add pending "closing" state before spawning `wct close`.
 
-- [ ] **Step 4: Update WorktreeItem to show pending status**
+- [x] **Step 4: Update WorktreeItem to show pending status**
 
 Add `pendingStatus` prop to `WorktreeItem`:
 
@@ -557,15 +545,15 @@ In the render, when `pendingStatus` is set:
 - `"closing"`: render with `dimColor` and "closing..." suffix
 - `"starting"`: render "starting..." next to the `○` indicator
 
-- [ ] **Step 5: Update TreeView to inject phantom items**
+- [x] **Step 5: Update TreeView to inject phantom items**
 
 In `TreeView.tsx`, accept a `pendingActions` prop. After the real worktrees for each repo, append phantom `TreeItem` entries for any `pendingActions` with `type: "opening"` matching that repo's project. Render phantom items as `WorktreeItem` with `pendingStatus="opening"`.
 
-- [ ] **Step 6: Change WorktreeItem changed files color from blue to yellow**
+- [x] **Step 6: Change WorktreeItem changed files color from blue to yellow**
 
 In `src/tui/components/WorktreeItem.tsx`, change `color="blue"` to `color="yellow"` for the changed files count indicator.
 
-- [ ] **Step 7: Test manually**
+- [x] **Step 7: Test manually**
 
 Run: `bun run src/index.ts tui`
 Verify:
@@ -573,7 +561,7 @@ Verify:
 - Press `c` on a worktree → see it dim with "closing..."
 - Press space on worktree without session → see "starting..."
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/tui/App.tsx src/tui/components/WorktreeItem.tsx src/tui/components/TreeView.tsx
@@ -587,7 +575,7 @@ git commit -m "feat(tui): inline optimistic updates for open, close, and session
 **Files:**
 - Create: `src/tui/hooks/useBlink.ts`
 
-- [ ] **Step 1: Create the useBlink hook**
+- [x] **Step 1: Create the useBlink hook**
 
 ```typescript
 // src/tui/hooks/useBlink.ts
@@ -609,7 +597,7 @@ export function useBlink(intervalMs = 500): boolean {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add src/tui/hooks/useBlink.ts
@@ -624,7 +612,7 @@ git commit -m "feat(tui): add useBlink hook for cursor animation"
 - Create: `src/tui/components/ScrollableList.tsx`
 - Create: `tests/tui/scrollable-list.test.ts`
 
-- [ ] **Step 1: Write tests for scrollable list logic**
+- [x] **Step 1: Write tests for scrollable list logic**
 
 ```typescript
 // tests/tui/scrollable-list.test.ts
@@ -685,12 +673,12 @@ describe("getVisibleWindow", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `bun test tests/tui/scrollable-list.test.ts`
 Expected: FAIL (module not found)
 
-- [ ] **Step 3: Create ScrollableList component with exported logic functions**
+- [x] **Step 3: Create ScrollableList component with exported logic functions**
 
 ```tsx
 // src/tui/components/ScrollableList.tsx
@@ -794,12 +782,12 @@ export function ScrollableList({
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `bun test tests/tui/scrollable-list.test.ts`
 Expected: All tests PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tui/components/ScrollableList.tsx tests/tui/scrollable-list.test.ts
@@ -813,7 +801,7 @@ git commit -m "feat(tui): add ScrollableList component with filtering and window
 **Files:**
 - Modify: `src/tui/hooks/useTmux.ts`
 
-- [ ] **Step 1: Add PaneInfo to useTmux state and fetching**
+- [x] **Step 1: Add PaneInfo to useTmux state and fetching**
 
 Import `PaneInfo` from `../types`. Add state:
 
@@ -858,12 +846,12 @@ Call `refreshPanes(sessionList)` inside `refreshSessions` after parsing sessions
 
 Return `panes` from the hook alongside existing values.
 
-- [ ] **Step 2: Test manually**
+- [x] **Step 2: Test manually**
 
 Run: `bun run src/index.ts tui`
 Verify: No visible change yet (pane data is fetched but not rendered).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/tui/hooks/useTmux.ts
@@ -878,7 +866,7 @@ git commit -m "feat(tui): fetch per-session tmux pane data"
 - Create: `src/tui/hooks/useGitHub.ts`
 - Create: `tests/tui/use-github.test.ts`
 
-- [ ] **Step 1: Write tests for GitHub data parsing**
+- [x] **Step 1: Write tests for GitHub data parsing**
 
 ```typescript
 // tests/tui/use-github.test.ts
@@ -923,12 +911,12 @@ describe("parseGhPrChecks", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `bun test tests/tui/use-github.test.ts`
 Expected: FAIL (module not found)
 
-- [ ] **Step 3: Create useGitHub hook**
+- [x] **Step 3: Create useGitHub hook**
 
 ```typescript
 // src/tui/hooks/useGitHub.ts
@@ -1042,12 +1030,12 @@ export function useGitHub(repos: RepoInfo[]) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `bun test tests/tui/use-github.test.ts`
 Expected: All tests PASS
 
-- [ ] **Step 5: Wire useGitHub into App.tsx**
+- [x] **Step 5: Wire useGitHub into App.tsx**
 
 In `src/tui/App.tsx`, add:
 
@@ -1057,7 +1045,7 @@ const { prData } = useGitHub(repos);
 
 Pass `prData` down to `TreeView` (will be used in Task 9).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/tui/hooks/useGitHub.ts tests/tui/use-github.test.ts src/tui/App.tsx
@@ -1074,7 +1062,7 @@ git commit -m "feat(tui): add useGitHub hook for background PR/checks fetching"
 - Modify: `src/tui/components/TreeView.tsx` (render detail rows)
 - Modify: `src/tui/components/WorktreeItem.tsx` (expand indicator)
 
-- [ ] **Step 1: Create DetailRow component**
+- [x] **Step 1: Create DetailRow component**
 
 ```tsx
 // src/tui/components/DetailRow.tsx
@@ -1157,7 +1145,7 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
 }
 ```
 
-- [ ] **Step 2: Add expanded worktree state to App.tsx**
+- [x] **Step 2: Add expanded worktree state to App.tsx**
 
 In `src/tui/App.tsx`:
 
@@ -1166,7 +1154,7 @@ In `src/tui/App.tsx`:
 const [expandedWorktree, setExpandedWorktree] = useState<string | null>(null);
 ```
 
-- [ ] **Step 3: Update tree item building to include detail rows**
+- [x] **Step 3: Update tree item building to include detail rows**
 
 Modify the `buildTreeItems` function (or equivalent logic in App.tsx) to insert detail `TreeItem` entries after an expanded worktree. For the expanded worktree, look up:
 - Queue items matching that worktree's branch + project → notification rows
@@ -1179,7 +1167,7 @@ Each detail row gets an `action` callback:
 - Check: no action
 - Pane: `() => jumpToPane(session, paneIndex)`
 
-- [ ] **Step 4: Handle → key in Navigate mode to expand worktree**
+- [x] **Step 4: Handle → key in Navigate mode to expand worktree**
 
 In `handleNavigateInput`, when `key.rightArrow` is pressed on a worktree item:
 
@@ -1199,7 +1187,7 @@ if (key.rightArrow) {
 }
 ```
 
-- [ ] **Step 5: Handle Expanded mode input**
+- [x] **Step 5: Handle Expanded mode input**
 
 ```typescript
 function handleExpandedInput(input: string, key: Key) {
@@ -1240,7 +1228,7 @@ function handleExpandedInput(input: string, key: Key) {
 }
 ```
 
-- [ ] **Step 6: Update WorktreeItem to show expand indicator**
+- [x] **Step 6: Update WorktreeItem to show expand indicator**
 
 Add `isExpanded` and `hasExpandableData` props to WorktreeItem. `hasExpandableData` is computed by `TreeView` — it is `true` when the worktree has any notifications, PR data, or pane data available. When `isExpanded` is true, show `▼` before the session indicator. When collapsed but expandable, show `▶`.
 
@@ -1253,11 +1241,11 @@ hasExpandableData?: boolean;
 const expandArrow = isExpanded ? "▼ " : hasExpandableData ? "▶ " : "  ";
 ```
 
-- [ ] **Step 7: Update TreeView to render DetailRow**
+- [x] **Step 7: Update TreeView to render DetailRow**
 
 Import `DetailRow` and render it for `type: "detail"` items in the tree.
 
-- [ ] **Step 8: Test manually**
+- [x] **Step 8: Test manually**
 
 Run: `bun run src/index.ts tui`
 Verify:
@@ -1267,7 +1255,7 @@ Verify:
 - `enter` on a PR opens in browser
 - Only one worktree expanded at a time
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/tui/components/DetailRow.tsx src/tui/App.tsx src/tui/components/TreeView.tsx src/tui/components/WorktreeItem.tsx
@@ -1284,7 +1272,7 @@ git commit -m "feat(tui): expandable worktree items with PR, checks, panes, noti
 
 This is the largest task. The current OpenModal (339 lines) is replaced with a two-step flow.
 
-- [ ] **Step 1: Define modal types and props**
+- [x] **Step 1: Define modal types and props**
 
 ```typescript
 // At top of OpenModal.tsx
@@ -1299,13 +1287,14 @@ export interface OpenModalProps {
   repoProject: string;
   repoPath: string;
   prList: PRInfo[];
-  onStepChange: (step: "selector" | "form" | "list") => void;
 }
 ```
 
 **OpenModalResult** stays the same shape but `pr` is now the full PR number string.
 
-- [ ] **Step 2: Implement ModeSelector sub-component**
+- [x] **Step 2: Implement ModeSelector sub-component**
+
+Note: Changed from bracket-style to plain `▸` indicator per user preference.
 
 ```tsx
 function ModeSelector({ onSelect, onCancel }: {
@@ -1313,7 +1302,6 @@ function ModeSelector({ onSelect, onCancel }: {
   onCancel: () => void;
 }) {
   const [selected, setSelected] = useState(0);
-  const cursorVisible = useBlink();
   const options: { label: string; step: ModalStep }[] = [
     { label: "New Branch", step: "newBranch" },
     { label: "Open from PR", step: "fromPR" },
@@ -1335,8 +1323,7 @@ function ModeSelector({ onSelect, onCancel }: {
         const isSel = i === selected;
         return (
           <Text key={opt.step} color={isSel ? "cyan" : "dim"}>
-            {isSel ? "[" : "["} {isSel ? "" : ""}{opt.label}
-            {isSel && cursorVisible ? "▎" : " "}{isSel ? "]" : "]"}
+            {isSel ? "▸ " : "  "}{opt.label}
           </Text>
         );
       })}
@@ -1345,7 +1332,7 @@ function ModeSelector({ onSelect, onCancel }: {
 }
 ```
 
-- [ ] **Step 3: Implement BracketInput sub-component for text fields**
+- [x] **Step 3: Implement BracketInput sub-component for text fields**
 
 ```tsx
 function BracketInput({ label, value, isFocused, onChange }: {
@@ -1377,7 +1364,7 @@ function BracketInput({ label, value, isFocused, onChange }: {
 }
 ```
 
-- [ ] **Step 4: Implement PromptArea sub-component (horizontal lines style)**
+- [x] **Step 4: Implement PromptArea sub-component (horizontal lines style)**
 
 ```tsx
 function PromptArea({ value, isFocused, onChange }: {
@@ -1404,7 +1391,7 @@ function PromptArea({ value, isFocused, onChange }: {
       <Text dimColor>───────────────────────────────</Text>
       <Text color={isFocused ? undefined : "dim"}>
         {value || (isFocused ? "" : "optional")}
-        {isFocused && cursorVisible ? "▎" : ""}
+        {isFocused && cursorVisible ? "▎" : " "}
       </Text>
       <Text dimColor>───────────────────────────────</Text>
     </Box>
@@ -1412,15 +1399,15 @@ function PromptArea({ value, isFocused, onChange }: {
 }
 ```
 
-- [ ] **Step 5: Implement NewBranchForm**
+- [x] **Step 5: Implement NewBranchForm**
 
 Uses BracketInput for branch/base/profile, PromptArea for prompt, toggle checkboxes. Tab cycles through fields. Ctrl+S submits. Esc cancels back to selector or closes modal.
 
-- [ ] **Step 6: Implement FromPRForm**
+- [x] **Step 6: Implement FromPRForm**
 
-Uses ScrollableList (from Task 6) for PR selection, with PR items built from `prList` prop. When a PR is selected and user tabs to next field, the PR number is stored. BracketInput for profile (if applicable). PromptArea for prompt. Toggles. Notifies parent `onStepChange("list")` when PR list is focused, `onStepChange("form")` when other fields are focused.
+Uses ScrollableList (from Task 6) for PR selection, with PR items built from `prList` prop. When a PR is selected and user tabs to next field, the PR number is stored. BracketInput for profile (if applicable). PromptArea for prompt. Toggles.
 
-- [ ] **Step 7: Implement ExistingBranchForm**
+- [x] **Step 7: Implement ExistingBranchForm**
 
 Fetches branches on mount via:
 ```typescript
@@ -1441,21 +1428,21 @@ useEffect(() => {
 
 Uses ScrollableList for branch selection. PromptArea for prompt. Toggles. No base field.
 
-- [ ] **Step 8: Wire OpenModal to dispatch by ModalStep**
+- [x] **Step 8: Wire OpenModal to dispatch by ModalStep**
 
 The main `OpenModal` component manages `step` state. When `visible` becomes true, reset to `"selector"`. Render `ModeSelector` or the appropriate form based on `step`. The parent App.tsx `useInput` returns early when `mode.type === "OpenModal"` (from Task 2), so the modal's `useInput` hooks are the only active ones.
 
 All text inputs use bracket `[ value▎ ]` focus style with blinking cursor from `useBlink`.
 Prompt uses horizontal lines (two `Text` lines of `───`).
 
-- [ ] **Step 2: Update App.tsx to pass new props**
+- [x] **Step 2: Update App.tsx to pass new props**
 
 When mode is OpenModal:
-- Determine repo context from selected tree item
+- Determine repo context from selected tree item via `prepareOpenModal()` which stores context in state
 - Pass `defaultBase`, `profileNames`, `repoProject`, `repoPath`, `prList` (from prData filtered to this repo)
-- Pass `onStepChange` to update StatusBar's `modalStep` prop
+- OpenModal renders in place of StatusBar (conditional ternary), no `onStepChange` needed
 
-- [ ] **Step 3: Test manually**
+- [x] **Step 3: Test manually**
 
 Run: `bun run src/index.ts tui`
 Verify:
@@ -1468,12 +1455,12 @@ Verify:
 - Esc cancels at any step
 - Status bar shows correct hints per modal step
 
-- [ ] **Step 4: Run lint**
+- [x] **Step 4: Run lint**
 
 Run: `bunx biome check --write`
 Expected: No errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tui/components/OpenModal.tsx src/tui/App.tsx
@@ -1488,7 +1475,7 @@ git commit -m "feat(tui): redesign open modal with three-path flow and scrollabl
 - Modify: `src/tui/App.tsx` (final wiring)
 - All modified files (lint pass)
 
-- [ ] **Step 1: Verify all modes transition correctly**
+- [x] **Step 1: Verify all modes transition correctly**
 
 Test each transition from the spec's mode transition table:
 - Navigate → Search (via `/`)
@@ -1500,17 +1487,17 @@ Test each transition from the spec's mode transition table:
 - Expanded → OpenModal (via `o`)
 - Expanded → Search (via `/`, collapses expanded view)
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run: `bun test`
 Expected: All tests PASS
 
-- [ ] **Step 3: Run lint and format**
+- [x] **Step 3: Run lint and format**
 
 Run: `bunx biome check --write`
 Expected: No errors
 
-- [ ] **Step 4: Manual smoke test**
+- [x] **Step 4: Manual smoke test**
 
 Run: `bun run src/index.ts tui`
 Full walkthrough:
@@ -1526,9 +1513,44 @@ Full walkthrough:
 10. Close worktree → see "closing..." indicator
 11. Verify status bar changes per mode
 
-- [ ] **Step 5: Commit any final fixes**
+- [x] **Step 5: Commit any final fixes**
 
 ```bash
 git add src/tui/ tests/tui/
 git commit -m "feat(tui): final integration and polish for UX improvements"
 ```
+
+---
+
+## Implementation Notes (Post-Completion)
+
+All 11 tasks were completed. The following deviations from the original plan were made during implementation based on user testing and bug fixes:
+
+### Design Changes
+- **Mode selector**: Changed from bracket-style `[ New Branch ]` to plain `▸` indicator list per user preference
+- **OpenModal rendering**: Renders in place of StatusBar (conditional ternary), not inside `Modal.tsx` wrapper — simpler layout
+- **`Modal.tsx`**: No changes needed (OpenModal doesn't use it)
+- **`ExpandedView.tsx`**: Not created as a separate component; `DetailRow.tsx` handles all detail row rendering directly in `TreeView.tsx`
+- **StatusBar `modalStep` prop and `onStepChange` callback**: Removed as dead code — since OpenModal replaces StatusBar, the status bar never renders during OpenModal mode
+- **Checkbox labels**: Made bold when focused for better visibility of active element
+
+### Layout Fixes
+- **Dynamic divider width**: StatusBar uses `useStdout().columns` instead of hardcoded dashes (wraps on narrow terminals)
+- **Pinned status bar**: Outer layout uses `height={termRows}` with `flexGrow={1}` on TreeView wrapper
+- **Prompt area cursor**: Blink alternates `"▎"` / `" "` (not empty string) to prevent height jump
+
+### tmux Fixes
+- **Exact session matching**: `switchSession` uses `=sessionName` prefix for exact matching (prevents prefix collisions)
+- **Unambiguous pane targeting**: `jumpToPane` uses `=session:window.pane` format
+- **Window switching**: `select-window` must precede `select-pane` to change the active window, not just the pane
+
+### Navigation Fixes
+- **Space on detail rows**: Resolves to parent worktree session; pane/notification details invoke `item.action()` (jumpToPane) directly
+- **Cursor preservation on collapse**: Walks `selectedIndex` back to parent worktree item before collapsing, preventing cursor from pointing past end of tree
+- **Expand different worktree in Expanded mode**: Right arrow on a different worktree switches the expanded worktree
+
+### Code Quality (from /simplify pass)
+- Removed ~60 lines of dead `modalStep`/`onStepChange` plumbing
+- Moved `openModalPRList` computation from `useMemo` (recomputed every keypress) to `prepareOpenModal()`
+- Wrapped TreeView derived data (`sessionMap`, `notifCounts`, `phantomsByProject`) in `useMemo`
+- Added subprocess cleanup (`cancelled` flag + `proc.kill()`) in ExistingBranchForm

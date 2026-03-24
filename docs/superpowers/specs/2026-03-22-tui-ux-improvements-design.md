@@ -48,14 +48,12 @@ Note: `space` works in both Navigate and Expanded modes (switches/creates tmux s
 - **OpenModal:** Confirms selection (mode selector) or submits form.
 - **Expanded:** Context action on selected detail row (jump to notification pane, open PR in browser, etc.).
 
-**Status bar:** Two lines pinned to the bottom (plus a separator line above), content driven by current mode:
+**Status bar:** Two lines pinned to the bottom (plus a dynamic-width separator line above using `useStdout().columns`), content driven by current mode. The outer layout uses `height={termRows}` with `flexGrow={1}` on the TreeView wrapper to pin the status bar to the terminal bottom.
 
-- **Navigate:** `↑↓:navigate  ←→:expand/collapse  space:switch  o:open  c:close  j:jump  /:search  q:quit`
-- **Search:** `type to filter  esc:cancel  enter:done`
-- **OpenModal (mode selector):** `↑↓:select  enter:confirm  esc:cancel`
-- **OpenModal (form):** `tab:next  shift+tab:prev  ctrl+s:submit  esc:cancel`
-- **OpenModal (PR/branch list):** `↑↓:select  type:filter  tab:next field  ctrl+s:submit  esc:cancel`
-- **Expanded:** `↑↓:navigate  enter:action  ←:collapse  space:switch  o:open  q:quit`
+- **Navigate:** `↑↓:navigate  ←→:expand/collapse  space:switch  o:open` / `c:close  j:jump  /:search  q:quit`
+- **Search:** `type to filter` / `esc:cancel  enter:done`
+- **OpenModal:** Status bar is replaced by the OpenModal component itself (conditional rendering via ternary)
+- **Expanded:** `↑↓:navigate  enter:action  ←:collapse  space:switch` / `o:open  q:quit`
 
 ## 2. Inline Optimistic Updates & Action Progress
 
@@ -185,12 +183,12 @@ Three-path flow: mode selector → mode-specific form.
 **Step 1 — Mode selection** (when user presses `o`):
 
 ```
-[ New Branch      ]
-[ Open from PR    ]
-[ Existing Branch ]
+▸ New Branch
+  Open from PR
+  Existing Branch
 ```
 
-Bracket-style list with blinking cursor on the selected option. `↑↓` to select, `enter` to confirm, `esc` to cancel.
+Plain list with `▸` indicator on the selected option. `↑↓` to select, `enter` to confirm, `esc` to cancel.
 
 **Step 2 — Mode-specific forms:**
 
@@ -222,7 +220,7 @@ Bracket-style list with blinking cursor on the selected option. `↑↓` to sele
 - **Lists:** Plain rows, `▸` cursor on selected item, no brackets.
 - **Textarea (prompt):** Horizontal lines top and bottom (Claude Code style), not brackets.
 - **Labels:** Bold + accent color when focused, dim when unfocused.
-- **Blinking cursor implementation:** Use a `setInterval` toggle (500ms) flipping a boolean that controls cursor character visibility, since Ink does not expose ANSI blink natively.
+- **Blinking cursor implementation:** Use a `setInterval` toggle (500ms) flipping a boolean that controls cursor character visibility (`"▎"` / `" "` — always a character to prevent height jump), since Ink does not expose ANSI blink natively. Implemented via `useBlink` hook.
 
 ### Cursor characters
 
@@ -262,16 +260,17 @@ All colors use standard ANSI names (cyan, dim, bold, etc.) so terminal themes co
 
 | Component | Changes |
 |-----------|---------|
-| `App.tsx` | Mode enum + transitions, keyboard dispatch refactor, pendingActions state, expanded worktree state |
-| `TreeView.tsx` | Render expanded worktree detail rows (as TreeItem entries), phantom items for optimistic updates |
+| `App.tsx` | Mode enum + transitions, keyboard dispatch refactor, pendingActions state, expanded worktree state, `buildTreeItems()` extracted as standalone function, `prepareOpenModal()` consolidates modal context, layout uses `height={termRows}` to pin status bar |
+| `TreeView.tsx` | Render expanded worktree detail rows (as TreeItem entries), phantom items for optimistic updates, `useMemo` for derived data |
 | `WorktreeItem.tsx` | Support expanded state indicator (`▼`/`▶`), inline status text for pending actions |
-| `StatusBar.tsx` | Accept mode prop, render context-aware 2-line hints per mode |
-| `OpenModal.tsx` | Complete redesign: mode selector + three form variants with scrollable lists |
-| `Modal.tsx` | Minor updates to support new content |
+| `StatusBar.tsx` | Accept mode prop, render context-aware 2-line hints per mode, dynamic divider width via `useStdout().columns` |
+| `OpenModal.tsx` | Complete redesign: plain `▸` mode selector → three form paths (NewBranch, FromPR, ExistingBranch), renders in place of StatusBar |
+| `Modal.tsx` | No changes (OpenModal renders directly, not inside Modal) |
 | `RepoNode.tsx` | No changes |
 | **New:** `useGitHub.ts` | Background GitHub data fetching hook (own 60s setInterval) |
-| **New:** `ExpandedView.tsx` | Notifications, PR/checks, panes detail row components |
+| **New:** `DetailRow.tsx` | Renders a single expanded detail row (notification, PR, check, pane) |
 | **New:** `ScrollableList.tsx` | Reusable scrollable filterable list component for modal |
+| **New:** `useBlink.ts` | Blinking cursor toggle hook (500ms setInterval) |
 
 ## New Hooks
 
@@ -283,15 +282,15 @@ All colors use standard ANSI names (cyan, dim, bold, etc.) so terminal themes co
 
 | Hook | Changes |
 |------|---------|
-| `useTmux` | Extended to also fetch per-session pane data via `tmux list-panes` on the existing 5s cadence |
+| `useTmux` | Extended to also fetch per-session pane data via `tmux list-panes` on the existing 5s cadence. `switchSession` uses `=sessionName` for exact matching. `jumpToPane` uses `switch-client` → `select-window -t =session:window.pane` → `select-pane -t =session:window.pane` for unambiguous pane targeting. |
 
 ## Data Flow
 
 ```
 useRegistry (5s) ──→ repos + worktrees ──→ TreeView
-useQueue (5s) ──────→ notifications ─────→ TreeView (counts) + ExpandedView (details)
-useTmux (5s) ──────→ sessions/panes ────→ TreeView (indicators) + ExpandedView (pane list)
-useGitHub (60s) ───→ PRs + checks ──────→ ExpandedView (PR info, check status)
+useQueue (5s) ──────→ notifications ─────→ TreeView (counts) + DetailRow (details)
+useTmux (5s) ──────→ sessions/panes ────→ TreeView (indicators) + DetailRow (pane list)
+useGitHub (60s) ───→ PRs + checks ──────→ DetailRow (PR info, check status)
                                           OpenModal (PR list for "Open from PR")
 useRefresh ────────→ orchestrates useRegistry, useQueue, useTmux via poll + fs.watch
 useGitHub ─────────→ independent 60s setInterval (not part of useRefresh)

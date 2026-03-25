@@ -381,9 +381,9 @@ export function App() {
       switchSession(sessionName);
     } else {
       // Create session with wct up, then switch
-      const key = pendingKey(repo.project, wt.branch);
+      const pendingActionKey = pendingKey(repo.project, wt.branch);
       setPendingActions((prev) =>
-        new Map(prev).set(key, {
+        new Map(prev).set(pendingActionKey, {
           type: "starting",
           branch: wt.branch,
           project: repo.project,
@@ -400,7 +400,7 @@ export function App() {
         }
         setPendingActions((prev) => {
           const next = new Map(prev);
-          next.delete(key);
+          next.delete(pendingActionKey);
           return next;
         });
       });
@@ -485,9 +485,12 @@ export function App() {
         }
       }
 
-      const key = pendingKey(currentRepo.project, currentWorktree.branch);
+      const pendingActionKey = pendingKey(
+        currentRepo.project,
+        currentWorktree.branch,
+      );
       setPendingActions((prev) =>
-        new Map(prev).set(key, {
+        new Map(prev).set(pendingActionKey, {
           type: "closing",
           branch: currentWorktree.branch,
           project: currentRepo.project,
@@ -506,7 +509,7 @@ export function App() {
         refreshAll().then(() => {
           setPendingActions((prev) => {
             const next = new Map(prev);
-            next.delete(key);
+            next.delete(pendingActionKey);
             return next;
           });
         });

@@ -43,13 +43,13 @@ export function useTmux() {
             "-t",
             `=${session.name}`,
             "-F",
-            "#{pane_index}:#{pane_current_command}:#{window_name}",
+            "#{pane_index}\t#{pane_current_command}\t#{window_name}",
           ]);
           const lines = result.split("\n").filter(Boolean);
           paneMap.set(
             session.name,
             lines.map((line) => {
-              const [idx, cmd, win] = line.split(":");
+              const [idx, cmd, win] = line.split("\t");
               return {
                 index: Number(idx),
                 command: cmd || "",

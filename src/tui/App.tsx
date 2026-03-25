@@ -29,7 +29,7 @@ interface BuildTreeOptions {
   queueItems: QueueItem[];
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
-  jumpToPane: (session: string, pane: string) => void;
+  jumpToPane: (paneId: string) => void;
 }
 
 function buildTreeItems({
@@ -79,7 +79,7 @@ function buildTreeItems({
               worktreeIndex: wi,
               detailKind: "notification",
               label: notif.message,
-              action: () => jumpToPane(notif.session, notif.pane),
+              action: () => jumpToPane(notif.pane),
             });
           }
         }
@@ -126,9 +126,8 @@ function buildTreeItems({
               repoIndex: ri,
               worktreeIndex: wi,
               detailKind: "pane",
-              label: `${pane.window}:${pane.index} ${pane.command}`,
-              action: () =>
-                jumpToPane(sessionName, `${pane.window}.${pane.index}`),
+              label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
+              action: () => jumpToPane(pane.paneId),
             });
           }
         }
@@ -518,7 +517,7 @@ export function App() {
     if (input === "j") {
       const [item] = queueItems;
       if (item) {
-        jumpToPane(item.session, item.pane);
+        jumpToPane(item.pane);
       }
       return;
     }

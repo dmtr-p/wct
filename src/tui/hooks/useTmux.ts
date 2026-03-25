@@ -43,15 +43,16 @@ export function useTmux() {
             "-t",
             `=${session.name}`,
             "-F",
-            "#{pane_index}\t#{pane_current_command}\t#{window_name}",
+            "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}",
           ]);
           const lines = result.split("\n").filter(Boolean);
           paneMap.set(
             session.name,
             lines.map((line) => {
-              const [idx, cmd, win] = line.split("\t");
+              const [pid, pIdx, cmd, win] = line.split("\t");
               return {
-                index: Number(idx),
+                paneId: pid || "",
+                paneIndex: Number(pIdx),
                 command: cmd || "",
                 window: win || "",
               };
@@ -141,19 +142,10 @@ export function useTmux() {
   );
 
   const jumpToPane = useCallback(
-    async (sessionName: string, pane: string) => {
+    async (paneId: string) => {
       if (!client) return false;
       try {
-        const target = `=${sessionName}:${pane}`;
-        await runTmux([
-          "switch-client",
-          "-c",
-          client.tty,
-          "-t",
-          `=${sessionName}`,
-        ]);
-        await runTmux(["select-window", "-t", target]);
-        await runTmux(["select-pane", "-t", target]);
+        await runTmux(["switch-client", "-c", client.tty, "-t", paneId]);
         return true;
       } catch {
         return false;

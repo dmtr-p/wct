@@ -62,7 +62,8 @@ export interface CheckInfo {
 
 /** Tmux pane info */
 export interface PaneInfo {
-  index: number;
+  paneId: string;
+  paneIndex: number;
   command: string;
   window: string;
 }

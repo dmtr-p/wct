@@ -80,7 +80,7 @@ export function useTmux() {
           return name ? [{ name, attached: attached === "1" }] : [];
         });
       setSessions(parsed);
-      refreshPanes(parsed);
+      await refreshPanes(parsed);
     } catch {
       setSessions([]);
       setPanes(EMPTY_PANES);

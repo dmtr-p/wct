@@ -143,17 +143,6 @@ export function openCommand(
       );
     }
 
-    if (existing) {
-      const exists = yield* WorktreeService.use((service) =>
-        service.branchExists(branch),
-      );
-      if (!exists) {
-        return yield* Effect.fail(
-          commandError("branch_not_found", `Branch '${branch}' does not exist`),
-        );
-      }
-    }
-
     if (base) {
       const baseExists = yield* WorktreeService.use((service) =>
         service.branchExists(base),

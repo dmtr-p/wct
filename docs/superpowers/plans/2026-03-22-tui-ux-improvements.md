@@ -28,7 +28,7 @@
 | File | Responsibility |
 |------|---------------|
 | `src/tui/types.ts` | Shared types: Mode enum, TreeItem (extended with detail variant), PendingAction, PRInfo, PaneInfo |
-| `src/tui/hooks/useGitHub.ts` | Background GitHub data fetching (60s cadence) |
+| `src/tui/hooks/useGitHub.ts` | Background GitHub data fetching (30s cadence) |
 | `src/tui/hooks/useBlink.ts` | Blinking cursor toggle hook (500ms setInterval) |
 | `src/tui/components/DetailRow.tsx` | Renders a single expanded detail row (notification, PR, check, pane) with 6 detail kinds |
 | `src/tui/components/ScrollableList.tsx` | Reusable filterable scrollable list for modal |
@@ -923,7 +923,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CheckInfo, PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
-const GITHUB_POLL_INTERVAL = 60_000; // 60 seconds
+const GITHUB_POLL_INTERVAL = 30_000; // 30 seconds
 
 /** Parse `gh pr list --json ...` output */
 export function parseGhPrList(stdout: string): Omit<PRInfo, "checks">[] {
@@ -1400,7 +1400,7 @@ function PromptArea({ value, isFocused, onChange }: {
 
 - [x] **Step 5: Implement NewBranchForm**
 
-Uses BracketInput for branch/base/profile, PromptArea for prompt, toggle checkboxes. Tab cycles through fields. Ctrl+S submits. Esc cancels back to selector or closes modal.
+Uses BracketInput for branch/base/profile, PromptArea for prompt, toggle checkboxes. Tab cycles through fields to a focusable Submit button (Enter/Space to activate). Esc cancels back to selector or closes modal.
 
 - [x] **Step 6: Implement FromPRForm**
 
@@ -1408,19 +1408,15 @@ Uses ScrollableList (from Task 6) for PR selection, with PR items built from `pr
 
 - [x] **Step 7: Implement ExistingBranchForm**
 
-Fetches branches on mount via:
+Fetches local branches on mount via:
 ```typescript
 useEffect(() => {
   const proc = Bun.spawn(
-    ["git", "branch", "-r", "--format=%(refname:short)"],
+    ["git", "branch", "--format=%(refname:short)"],
     { cwd: repoPath, stdout: "pipe", stderr: "ignore" },
   );
   new Response(proc.stdout).text().then((text) => {
-    setBranches(
-      text.split("\n").filter(Boolean)
-        .map((b) => b.replace(/^origin\//, ""))
-        .filter((b) => b !== "HEAD")
-    );
+    setBranches(text.split("\n").filter(Boolean));
   });
 }, [repoPath]);
 ```
@@ -1450,7 +1446,7 @@ Verify:
 - Selecting "Open from PR" shows scrollable PR list
 - Selecting "Existing Branch" shows scrollable branch list
 - Tab navigates between fields
-- Ctrl+S submits
+- Tab to Submit button, Enter/Space to submit
 - Esc cancels at any step
 - Status bar shows correct hints per modal step
 

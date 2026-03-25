@@ -206,7 +206,7 @@ Plain list with `▸` indicator on the selected option. `↑↓` to select, `ent
 - Toggles: ☐ No IDE, ☐ No Attach
 
 **Existing Branch:**
-- Branch: scrollable list from `git branch -r` run with `cwd: repoPath` (plain rows with `▸` cursor, no brackets). Type to filter. Strips `origin/` prefix for display.
+- Branch: scrollable list from `git branch` (local branches) run with `cwd: repoPath` (plain rows with `▸` cursor, no brackets). Type to filter.
 - Profile: text input (only shown if profiles exist)
 - Prompt: textarea (horizontal lines)
 - Toggles: ☐ No IDE, ☐ No Attach

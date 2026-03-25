@@ -535,19 +535,14 @@ function ExistingBranchForm({
 
   useEffect(() => {
     let cancelled = false;
-    const proc = Bun.spawn(
-      ["git", "branch", "-r", "--format=%(refname:short)"],
-      { cwd: repoPath, stdout: "pipe", stderr: "ignore" },
-    );
+    const proc = Bun.spawn(["git", "branch", "--format=%(refname:short)"], {
+      cwd: repoPath,
+      stdout: "pipe",
+      stderr: "ignore",
+    });
     new Response(proc.stdout).text().then((text) => {
       if (cancelled) return;
-      setBranches(
-        text
-          .split("\n")
-          .filter(Boolean)
-          .map((b) => b.replace(/^origin\//, ""))
-          .filter((b) => b !== "HEAD"),
-      );
+      setBranches(text.split("\n").filter(Boolean));
     });
     return () => {
       cancelled = true;

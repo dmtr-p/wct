@@ -310,6 +310,7 @@ export function App() {
     );
 
     const proc = Bun.spawn(["wct", ...args], {
+      cwd: openModalRepoPath || undefined,
       stdout: "ignore",
       stderr: "ignore",
     });
@@ -393,8 +394,9 @@ export function App() {
         cwd: wt.path,
         stdio: ["ignore", "ignore", "ignore"],
       });
-      proc.exited.then((code) => {
+      proc.exited.then(async (code) => {
         if (code === 0) {
+          await refreshSessions();
           switchSession(sessionName);
         }
         setPendingActions((prev) => {
@@ -496,6 +498,7 @@ export function App() {
       const proc = Bun.spawn(
         ["wct", "close", currentWorktree.branch, "--yes"],
         {
+          cwd: currentRepo.repoPath,
           stdout: "ignore",
           stderr: "ignore",
         },

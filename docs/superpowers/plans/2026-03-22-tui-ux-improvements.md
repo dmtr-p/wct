@@ -32,7 +32,6 @@
 | `src/tui/hooks/useBlink.ts` | Blinking cursor toggle hook (500ms setInterval) |
 | `src/tui/components/DetailRow.tsx` | Renders a single expanded detail row (notification, PR, check, pane) with 6 detail kinds |
 | `src/tui/components/ScrollableList.tsx` | Reusable filterable scrollable list for modal |
-| `src/tui/hooks/useBlink.ts` | Blinking cursor toggle hook (500ms setInterval) |
 | `tests/tui/types.test.ts` | Tests for shared type utilities |
 | `tests/tui/scrollable-list.test.ts` | Tests for scrollable list logic (filtering, windowing) |
 | `tests/tui/use-github.test.ts` | Tests for GitHub data parsing |

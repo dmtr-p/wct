@@ -176,6 +176,29 @@ function ToggleRow({
   );
 }
 
+function SubmitButton({
+  isFocused,
+  onSubmit,
+}: {
+  isFocused: boolean;
+  onSubmit: () => void;
+}) {
+  useInput(
+    (input, key) => {
+      if (key.return || input === " ") onSubmit();
+    },
+    { isActive: isFocused },
+  );
+
+  return (
+    <Box marginTop={1}>
+      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
+        {isFocused ? "▸ " : "  "}Submit
+      </Text>
+    </Box>
+  );
+}
+
 // ─── NewBranchForm ───────────────────────────────────────────────
 
 type NewBranchField =
@@ -184,7 +207,8 @@ type NewBranchField =
   | "profile"
   | "prompt"
   | "noIde"
-  | "noAttach";
+  | "noAttach"
+  | "submit";
 
 function NewBranchForm({
   defaultBase,
@@ -207,7 +231,7 @@ function NewBranchForm({
   const fields = useMemo(() => {
     const f: NewBranchField[] = ["branch", "base"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "noAttach");
+    f.push("prompt", "noIde", "noAttach", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -235,22 +259,20 @@ function NewBranchForm({
   };
 
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (key.escape) {
         onBack();
-        return;
-      }
-      if (input === "s" && key.ctrl) {
-        submit();
         return;
       }
       if (key.tab) {
         moveFocus(key.shift ? -1 : 1);
         return;
       }
-      // Up/down on toggle fields
+      // Up/down on toggle fields and submit
       if (
-        (currentField === "noIde" || currentField === "noAttach") &&
+        (currentField === "noIde" ||
+          currentField === "noAttach" ||
+          currentField === "submit") &&
         (key.upArrow || key.downArrow)
       ) {
         moveFocus(key.upArrow ? -1 : 1);
@@ -301,13 +323,20 @@ function NewBranchForm({
         isFocused={currentField === "noAttach"}
         onToggle={() => setNoAttach((v) => !v)}
       />
+      <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
 }
 
 // ─── FromPRForm ──────────────────────────────────────────────────
 
-type FromPRField = "prList" | "profile" | "prompt" | "noIde" | "noAttach";
+type FromPRField =
+  | "prList"
+  | "profile"
+  | "prompt"
+  | "noIde"
+  | "noAttach"
+  | "submit";
 
 function FromPRForm({
   prList,
@@ -330,7 +359,7 @@ function FromPRForm({
   const fields = useMemo(() => {
     const f: FromPRField[] = ["prList"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "noAttach");
+    f.push("prompt", "noIde", "noAttach", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -381,10 +410,6 @@ function FromPRForm({
         onBack();
         return;
       }
-      if (input === "s" && key.ctrl) {
-        submit();
-        return;
-      }
       if (key.tab) {
         moveFocus(key.shift ? -1 : 1);
         return;
@@ -403,16 +428,20 @@ function FromPRForm({
         }
         if (key.backspace || key.delete) {
           setFilterQuery((q) => q.slice(0, -1));
+          setSelectedPRIndex(0);
           return;
         }
         if (input && !key.ctrl && !key.meta && !key.return) {
           setFilterQuery((q) => q + input);
+          setSelectedPRIndex(0);
           return;
         }
       }
-      // Toggle navigation
+      // Toggle and submit navigation
       if (
-        (currentField === "noIde" || currentField === "noAttach") &&
+        (currentField === "noIde" ||
+          currentField === "noAttach" ||
+          currentField === "submit") &&
         (key.upArrow || key.downArrow)
       ) {
         moveFocus(key.upArrow ? -1 : 1);
@@ -464,13 +493,19 @@ function FromPRForm({
         isFocused={currentField === "noAttach"}
         onToggle={() => setNoAttach((v) => !v)}
       />
+      <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
 }
 
 // ─── ExistingBranchForm ──────────────────────────────────────────
 
-type ExistingBranchField = "branchList" | "prompt" | "noIde" | "noAttach";
+type ExistingBranchField =
+  | "branchList"
+  | "prompt"
+  | "noIde"
+  | "noAttach"
+  | "submit";
 
 function ExistingBranchForm({
   repoPath,
@@ -493,6 +528,7 @@ function ExistingBranchForm({
     "prompt",
     "noIde",
     "noAttach",
+    "submit",
   ];
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
@@ -554,10 +590,6 @@ function ExistingBranchForm({
         onBack();
         return;
       }
-      if (input === "s" && key.ctrl) {
-        submit();
-        return;
-      }
       if (key.tab) {
         moveFocus(key.shift ? -1 : 1);
         return;
@@ -576,16 +608,20 @@ function ExistingBranchForm({
         }
         if (key.backspace || key.delete) {
           setFilterQuery((q) => q.slice(0, -1));
+          setSelectedBranchIndex(0);
           return;
         }
         if (input && !key.ctrl && !key.meta && !key.return) {
           setFilterQuery((q) => q + input);
+          setSelectedBranchIndex(0);
           return;
         }
       }
-      // Toggle navigation
+      // Toggle and submit navigation
       if (
-        (currentField === "noIde" || currentField === "noAttach") &&
+        (currentField === "noIde" ||
+          currentField === "noAttach" ||
+          currentField === "submit") &&
         (key.upArrow || key.downArrow)
       ) {
         moveFocus(key.upArrow ? -1 : 1);
@@ -629,6 +665,7 @@ function ExistingBranchForm({
         isFocused={currentField === "noAttach"}
         onToggle={() => setNoAttach((v) => !v)}
       />
+      <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
 }
@@ -692,7 +729,7 @@ export function OpenModal({
         <Text dimColor>
           {step === "selector"
             ? "↑↓:select  enter:confirm  esc:cancel"
-            : "tab:next  shift+tab:prev  ctrl+s:submit  esc:back"}
+            : "tab:next  shift+tab:prev  esc:back"}
         </Text>
       </Box>
     </Modal>

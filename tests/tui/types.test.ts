@@ -20,6 +20,15 @@ describe("checkIcon", () => {
   test("returns ◌ for IN_PROGRESS", () => {
     expect(checkIcon("IN_PROGRESS")).toBe("◌");
   });
+  test("returns ◌ for QUEUED", () => {
+    expect(checkIcon("QUEUED")).toBe("◌");
+  });
+  test("returns ⊘ for SKIPPED", () => {
+    expect(checkIcon("SKIPPED")).toBe("⊘");
+  });
+  test("returns ⊘ for CANCELLED", () => {
+    expect(checkIcon("CANCELLED")).toBe("⊘");
+  });
   test("returns ? for unknown state", () => {
     expect(checkIcon("UNKNOWN")).toBe("?");
   });
@@ -35,7 +44,16 @@ describe("checkColor", () => {
   test("returns yellow for PENDING", () => {
     expect(checkColor("PENDING")).toBe("yellow");
   });
-  test("returns dim for unknown", () => {
+  test("returns yellow for QUEUED", () => {
+    expect(checkColor("QUEUED")).toBe("yellow");
+  });
+  test("returns yellow for IN_PROGRESS", () => {
+    expect(checkColor("IN_PROGRESS")).toBe("yellow");
+  });
+  test("returns dim for SKIPPED", () => {
     expect(checkColor("SKIPPED")).toBe("dim");
+  });
+  test("returns dim for CANCELLED", () => {
+    expect(checkColor("CANCELLED")).toBe("dim");
   });
 });

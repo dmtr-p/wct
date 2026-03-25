@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CheckInfo, PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
-const GITHUB_POLL_INTERVAL = 60_000; // 60 seconds
+const GITHUB_POLL_INTERVAL = 30_000; // 30 seconds
 
 /** Parse `gh pr list --json ...` output */
 export function parseGhPrList(stdout: string): Omit<PRInfo, "checks">[] {

@@ -264,7 +264,10 @@ export function App() {
         project = repo.project;
         repoPath = repo.repoPath;
       }
-      if (repo && selected.type === "worktree") {
+      if (
+        repo &&
+        (selected.type === "worktree" || selected.type === "detail")
+      ) {
         const wt = repo.worktrees[selected.worktreeIndex];
         if (wt) {
           base = wt.branch;

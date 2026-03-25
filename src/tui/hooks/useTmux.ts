@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PaneInfo } from "../types";
 
+const EMPTY_PANES: Map<string, PaneInfo[]> = new Map();
+
 interface TmuxClient {
   tty: string;
   session: string;
@@ -39,7 +41,7 @@ export function useTmux() {
             "list-panes",
             "-s",
             "-t",
-            session.name,
+            `=${session.name}`,
             "-F",
             "#{pane_index}:#{pane_current_command}:#{window_name}",
           ]);
@@ -81,6 +83,7 @@ export function useTmux() {
       refreshPanes(parsed);
     } catch {
       setSessions([]);
+      setPanes(EMPTY_PANES);
     }
   }, [refreshPanes]);
 

@@ -1,63 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
-import type { PaneInfo } from "../types";
+import {
+  type TmuxClient,
+  type TmuxPaneInfo,
+  TmuxService,
+} from "../../services/tmux";
+import { tuiRuntime } from "../runtime";
 
-const EMPTY_PANES: Map<string, PaneInfo[]> = new Map();
-
-interface TmuxClient {
-  tty: string;
-  session: string;
-}
+const EMPTY_PANES: Map<string, TmuxPaneInfo[]> = new Map();
 
 export interface TmuxSessionInfo {
   name: string;
   attached: boolean;
 }
 
-async function runTmux(args: string[]): Promise<string> {
-  const proc = Bun.spawn(["tmux", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const text = await new Response(proc.stdout).text();
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    throw new Error(`tmux ${args[0]} failed`);
-  }
-  return text.trim();
-}
-
 export function useTmux() {
   const [client, setClient] = useState<TmuxClient | null>(null);
   const [sessions, setSessions] = useState<TmuxSessionInfo[]>([]);
-  const [panes, setPanes] = useState<Map<string, PaneInfo[]>>(new Map());
+  const [panes, setPanes] = useState<Map<string, TmuxPaneInfo[]>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const refreshPanes = useCallback(async (sessionList: TmuxSessionInfo[]) => {
-    const paneMap = new Map<string, PaneInfo[]>();
+    const paneMap = new Map<string, TmuxPaneInfo[]>();
     await Promise.all(
       sessionList.map(async (session) => {
         try {
-          const result = await runTmux([
-            "list-panes",
-            "-s",
-            "-t",
-            `=${session.name}`,
-            "-F",
-            "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}",
-          ]);
-          const lines = result.split("\n").filter(Boolean);
-          paneMap.set(
-            session.name,
-            lines.map((line) => {
-              const [pid, pIdx, cmd, win] = line.split("\t");
-              return {
-                paneId: pid || "",
-                paneIndex: Number(pIdx),
-                command: cmd || "",
-                window: win || "",
-              };
-            }),
+          const result = await tuiRuntime.runPromise(
+            TmuxService.use((service) => service.listPanes(session.name)),
           );
+          paneMap.set(session.name, result);
         } catch {
           // Ignore pane fetch errors
         }
@@ -68,18 +38,18 @@ export function useTmux() {
 
   const refreshSessions = useCallback(async () => {
     try {
-      const output = await runTmux([
-        "list-sessions",
-        "-F",
-        "#{session_name}\t#{session_attached}",
-      ]);
-      const parsed = output
-        .split("\n")
-        .filter(Boolean)
-        .flatMap((line) => {
-          const [name, attached] = line.split("\t");
-          return name ? [{ name, attached: attached === "1" }] : [];
-        });
+      const result = await tuiRuntime.runPromise(
+        TmuxService.use((service) => service.listSessions()),
+      );
+      if (!result) {
+        setSessions([]);
+        setPanes(EMPTY_PANES);
+        return;
+      }
+      const parsed = result.map((session) => ({
+        name: session.name,
+        attached: session.attached,
+      }));
       setSessions(parsed);
       await refreshPanes(parsed);
     } catch {
@@ -90,18 +60,9 @@ export function useTmux() {
 
   const discoverClient = useCallback(async () => {
     try {
-      const output = await runTmux([
-        "list-clients",
-        "-F",
-        "#{client_tty}\t#{client_session}",
-      ]);
-      const clients = output
-        .split("\n")
-        .filter(Boolean)
-        .flatMap((line) => {
-          const [tty, session] = line.split("\t");
-          return tty && session ? [{ tty, session }] : [];
-        });
+      const clients = await tuiRuntime.runPromise(
+        TmuxService.use((service) => service.listClients()),
+      );
 
       if (clients.length === 0) {
         setError("No tmux client found — start tmux in the other pane");
@@ -126,13 +87,11 @@ export function useTmux() {
     async (sessionName: string) => {
       if (!client) return false;
       try {
-        await runTmux([
-          "switch-client",
-          "-c",
-          client.tty,
-          "-t",
-          `=${sessionName}`,
-        ]);
+        await tuiRuntime.runPromise(
+          TmuxService.use((service) =>
+            service.switchClientToPane(client.tty, `=${sessionName}`),
+          ),
+        );
         return true;
       } catch {
         return false;
@@ -145,7 +104,11 @@ export function useTmux() {
     async (paneId: string) => {
       if (!client) return false;
       try {
-        await runTmux(["switch-client", "-c", client.tty, "-t", paneId]);
+        await tuiRuntime.runPromise(
+          TmuxService.use((service) =>
+            service.switchClientToPane(client.tty, paneId),
+          ),
+        );
         return true;
       } catch {
         return false;

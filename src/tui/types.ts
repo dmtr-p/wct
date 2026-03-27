@@ -60,13 +60,7 @@ export interface CheckInfo {
   state: string; // SUCCESS, FAILURE, PENDING, IN_PROGRESS, etc.
 }
 
-/** Tmux pane info */
-export interface PaneInfo {
-  paneId: string;
-  paneIndex: number;
-  command: string;
-  window: string;
-}
+export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
 
 /** Format a pending action key */
 export function pendingKey(project: string, branch: string): string {

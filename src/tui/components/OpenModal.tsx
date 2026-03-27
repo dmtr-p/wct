@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
+import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
@@ -515,18 +517,16 @@ function ExistingBranchForm({
 
   useEffect(() => {
     let cancelled = false;
-    const proc = Bun.spawn(["git", "branch", "--format=%(refname:short)"], {
-      cwd: repoPath,
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    new Response(proc.stdout).text().then((text) => {
-      if (cancelled) return;
-      setBranches(text.split("\n").filter(Boolean));
-    });
+    tuiRuntime
+      .runPromise(WorktreeService.use((s) => s.listBranches(repoPath)))
+      .then((result) => {
+        if (!cancelled) setBranches(result);
+      })
+      .catch(() => {
+        // Ignore branch listing errors
+      });
     return () => {
       cancelled = true;
-      proc.kill();
     };
   }, [repoPath]);
 

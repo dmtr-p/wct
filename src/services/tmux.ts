@@ -22,6 +22,18 @@ export type CreateSessionResult =
   | { _tag: "Created"; sessionName: string }
   | { _tag: "AlreadyExists"; sessionName: string };
 
+export interface TmuxPaneInfo {
+  paneId: string;
+  paneIndex: number;
+  command: string;
+  window: string;
+}
+
+export interface TmuxClient {
+  tty: string;
+  session: string;
+}
+
 export interface TmuxService {
   listSessions: () => Effect.Effect<
     TmuxSession[] | null,
@@ -47,6 +59,16 @@ export interface TmuxService {
   getCurrentSession: () => Effect.Effect<string | null, WctError, WctServices>;
   switchSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
   attachSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
+  listPanes: (
+    sessionName: string,
+  ) => Effect.Effect<TmuxPaneInfo[], WctError, WctServices>;
+  listClients: () => Effect.Effect<TmuxClient[], WctError, WctServices>;
+  switchClientToPane: (
+    clientTty: string,
+    target: string,
+  ) => Effect.Effect<void, WctError, WctServices>;
+  selectPane: (pane: string) => Effect.Effect<void, WctError, WctServices>;
+  refreshClient: () => Effect.Effect<void, WctError, WctServices>;
 }
 
 export const TmuxService = ServiceMap.Service<TmuxService>("wct/TmuxService");
@@ -77,6 +99,37 @@ function listSessionsImpl() {
     ),
     () => Effect.succeed(null),
   );
+}
+
+export function parsePaneListOutput(output: string): TmuxPaneInfo[] {
+  if (!output) return [];
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [pid, pIdx, cmd, win] = line.split("\t");
+      return pid
+        ? [
+            {
+              paneId: pid,
+              paneIndex: Number(pIdx),
+              command: cmd || "",
+              window: win || "",
+            },
+          ]
+        : [];
+    });
+}
+
+export function parseClientListOutput(output: string): TmuxClient[] {
+  if (!output) return [];
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [tty, session] = line.split("\t");
+      return tty && session ? [{ tty, session }] : [];
+    });
 }
 
 export function isMissingPaneError(error: unknown): boolean {
@@ -406,6 +459,51 @@ function attachSessionImpl(name: string) {
   });
 }
 
+function listPanesImpl(sessionName: string) {
+  return Effect.catch(
+    execProcess("tmux", [
+      "list-panes",
+      "-s",
+      "-t",
+      `=${sessionName}`,
+      "-F",
+      "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}",
+    ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout.trim()))),
+    () => Effect.succeed([] as TmuxPaneInfo[]),
+  );
+}
+
+function listClientsImpl() {
+  return Effect.catch(
+    execProcess("tmux", [
+      "list-clients",
+      "-F",
+      "#{client_tty}\t#{client_session}",
+    ]).pipe(
+      Effect.map((result) => parseClientListOutput(result.stdout.trim())),
+    ),
+    () => Effect.succeed([] as TmuxClient[]),
+  );
+}
+
+function switchClientToPaneImpl(clientTty: string, target: string) {
+  return execProcess("tmux", [
+    "switch-client",
+    "-c",
+    clientTty,
+    "-t",
+    target,
+  ]).pipe(Effect.asVoid);
+}
+
+function selectPaneImpl(pane: string) {
+  return execProcess("tmux", ["select-pane", "-t", pane]).pipe(Effect.asVoid);
+}
+
+function refreshClientImpl() {
+  return execProcess("tmux", ["refresh-client", "-S"]).pipe(Effect.asVoid);
+}
+
 export const liveTmuxService: TmuxService = TmuxService.of({
   listSessions: () =>
     Effect.mapError(listSessionsImpl(), (error) =>
@@ -474,6 +572,34 @@ export const liveTmuxService: TmuxService = TmuxService.of({
         `Failed to attach to session '${name}': ${getProcessErrorMessage(error)}`,
         error,
       ),
+    ),
+  listPanes: (sessionName) =>
+    Effect.mapError(listPanesImpl(sessionName), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to list panes for session '${sessionName}'`,
+        error,
+      ),
+    ),
+  listClients: () =>
+    Effect.mapError(listClientsImpl(), (error) =>
+      commandError("tmux_error", "Failed to list tmux clients", error),
+    ),
+  switchClientToPane: (clientTty, target) =>
+    Effect.mapError(switchClientToPaneImpl(clientTty, target), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to switch client to '${target}'`,
+        error,
+      ),
+    ),
+  selectPane: (pane) =>
+    Effect.mapError(selectPaneImpl(pane), (error) =>
+      commandError("tmux_error", `Failed to select pane '${pane}'`, error),
+    ),
+  refreshClient: () =>
+    Effect.mapError(refreshClientImpl(), (error) =>
+      commandError("tmux_error", "Failed to refresh tmux client", error),
     ),
 });
 

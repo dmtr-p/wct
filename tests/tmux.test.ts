@@ -3,6 +3,8 @@ import {
   buildWindowsPaneCommands,
   formatSessionName,
   getCurrentSession,
+  parseClientListOutput,
+  parsePaneListOutput,
   parseSessionListOutput,
   switchSession,
 } from "../src/services/tmux";
@@ -527,5 +529,49 @@ describe("buildWindowsPaneCommands", () => {
 describe("switchSession", () => {
   test("switchSession function is defined", () => {
     expect(typeof switchSession).toBe("function");
+  });
+});
+
+describe("parsePaneListOutput", () => {
+  test("parses pane list output", () => {
+    const output = "%0\t0\tbash\tshell\n%1\t1\tvim\teditor";
+    const panes = parsePaneListOutput(output);
+    expect(panes).toHaveLength(2);
+    expect(panes[0]).toEqual({
+      paneId: "%0",
+      paneIndex: 0,
+      command: "bash",
+      window: "shell",
+    });
+    expect(panes[1]).toEqual({
+      paneId: "%1",
+      paneIndex: 1,
+      command: "vim",
+      window: "editor",
+    });
+  });
+
+  test("handles empty output", () => {
+    expect(parsePaneListOutput("")).toEqual([]);
+  });
+});
+
+describe("parseClientListOutput", () => {
+  test("parses client list output", () => {
+    const output = "/dev/ttys001\tmain\n/dev/ttys002\tfeature";
+    const clients = parseClientListOutput(output);
+    expect(clients).toHaveLength(2);
+    expect(clients[0]).toEqual({ tty: "/dev/ttys001", session: "main" });
+    expect(clients[1]).toEqual({ tty: "/dev/ttys002", session: "feature" });
+  });
+
+  test("handles empty output", () => {
+    expect(parseClientListOutput("")).toEqual([]);
+  });
+
+  test("skips malformed lines", () => {
+    const output = "/dev/ttys001\tmain\nbadline\n/dev/ttys002\tfeature";
+    const clients = parseClientListOutput(output);
+    expect(clients).toHaveLength(2);
   });
 });

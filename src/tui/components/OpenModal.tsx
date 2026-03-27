@@ -1,6 +1,9 @@
+import { Effect, Fiber } from "effect";
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
+import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
@@ -50,7 +53,7 @@ function ModeSelector({
       if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
       if (key.downArrow)
         setSelected((s) => Math.min(options.length - 1, s + 1));
-      if (key.return) onSelect(options[selected].step);
+      if (key.return) onSelect(options[selected]?.step ?? "newBranch");
       if (key.escape) onCancel();
     },
     { isActive: true },
@@ -515,18 +518,23 @@ function ExistingBranchForm({
 
   useEffect(() => {
     let cancelled = false;
-    const proc = Bun.spawn(["git", "branch", "--format=%(refname:short)"], {
-      cwd: repoPath,
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    new Response(proc.stdout).text().then((text) => {
-      if (cancelled) return;
-      setBranches(text.split("\n").filter(Boolean));
-    });
+    const fiber = tuiRuntime.runFork(
+      Effect.catch(
+        WorktreeService.use((s) => s.listBranches(repoPath)).pipe(
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              if (!cancelled) {
+                setBranches(result);
+              }
+            }),
+          ),
+        ),
+        () => Effect.void,
+      ),
+    );
     return () => {
       cancelled = true;
-      proc.kill();
+      tuiRuntime.runFork(Fiber.interrupt(fiber));
     };
   }, [repoPath]);
 

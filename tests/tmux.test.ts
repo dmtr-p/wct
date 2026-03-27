@@ -2,11 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   buildWindowsPaneCommands,
   formatSessionName,
-  getCurrentSession,
   parseClientListOutput,
   parsePaneListOutput,
   parseSessionListOutput,
-  switchSession,
 } from "../src/services/tmux";
 
 const TEST_ENV = {
@@ -64,20 +62,6 @@ myapp-fix-login:0:1`;
   test("handles empty session list", () => {
     const sessions = parseSessionListOutput("");
     expect(sessions).toHaveLength(0);
-  });
-});
-
-describe("getCurrentSession", () => {
-  test("returns null when TMUX env is not set", async () => {
-    const originalTmux = process.env.TMUX;
-    delete process.env.TMUX;
-
-    const result = await getCurrentSession();
-    expect(result).toBeNull();
-
-    if (originalTmux !== undefined) {
-      process.env.TMUX = originalTmux;
-    }
   });
 });
 
@@ -523,12 +507,6 @@ describe("buildWindowsPaneCommands", () => {
     // Should have layout command
     const layoutCmd = commands.find((c) => c.type === "select-layout");
     expect(layoutCmd?.args[2]).toBe("main-vertical");
-  });
-});
-
-describe("switchSession", () => {
-  test("switchSession function is defined", () => {
-    expect(typeof switchSession).toBe("function");
   });
 });
 

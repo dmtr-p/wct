@@ -1,7 +1,6 @@
 import { Effect, ServiceMap } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
-import { runBunPromise } from "../effect/runtime";
-import { provideWctServices, type WctServices } from "../effect/services";
+import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import {
@@ -602,84 +601,3 @@ export const liveTmuxService: TmuxService = TmuxService.of({
       commandError("tmux_error", "Failed to refresh tmux client", error),
     ),
 });
-
-function provideTmuxService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return provideWctServices(
-    Effect.provideService(effect, TmuxService, liveTmuxService),
-  );
-}
-
-export async function listSessions(): Promise<TmuxSession[] | null> {
-  return runBunPromise(
-    provideTmuxService(TmuxService.use((service) => service.listSessions())),
-  );
-}
-
-export async function isPaneAlive(pane: string): Promise<boolean | null> {
-  return runBunPromise(
-    provideTmuxService(TmuxService.use((service) => service.isPaneAlive(pane))),
-  );
-}
-
-export async function sessionExists(name: string): Promise<boolean> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.sessionExists(name)),
-    ),
-  );
-}
-
-export async function getSessionStatus(
-  name: string,
-): Promise<"attached" | "detached" | null> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.getSessionStatus(name)),
-    ),
-  );
-}
-
-export async function createSession(
-  name: string,
-  workingDir: string,
-  config?: TmuxConfig,
-  env?: WctEnv,
-): Promise<CreateSessionResult> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) =>
-        service.createSession(name, workingDir, config, env),
-      ),
-    ),
-  );
-}
-
-export async function killSession(name: string): Promise<void> {
-  return runBunPromise(
-    provideTmuxService(TmuxService.use((service) => service.killSession(name))),
-  );
-}
-
-export async function getCurrentSession(): Promise<string | null> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.getCurrentSession()),
-    ),
-  );
-}
-
-export async function switchSession(name: string): Promise<void> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.switchSession(name)),
-    ),
-  );
-}
-
-export async function attachSession(name: string): Promise<void> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.attachSession(name)),
-    ),
-  );
-}

@@ -7,7 +7,7 @@ import {
   readStdinText,
 } from "../services/process";
 import { QueueStorage } from "../services/queue-storage";
-import { formatSessionName, isMissingPaneError } from "../services/tmux";
+import { formatSessionName, TmuxService } from "../services/tmux";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -72,31 +72,37 @@ export function notifyCommand(): Effect.Effect<void, WctError, WctServices> {
 
     let session = formatSessionName(`${project}-${branch}`);
     const inspectOutcome = yield* Effect.catch(
-      Effect.mapError(
-        execProcess("tmux", [
-          "display-message",
-          "-p",
-          "-t",
-          tmuxPane,
-          "#{pane_active}:#{window_visible}:#{session_attached}:#{session_name}",
-        ]),
-        (error) =>
-          commandError("notify_error", "Failed to inspect tmux pane", error),
-      ).pipe(Effect.map((result) => ({ _tag: "Ok" as const, result }))),
+      TmuxService.use((service) =>
+        service.isPaneAlive(tmuxPane).pipe(
+          Effect.flatMap((alive) => {
+            if (alive === false) {
+              return Effect.succeed({ _tag: "MissingPane" as const });
+            }
+            return execProcess("tmux", [
+              "display-message",
+              "-p",
+              "-t",
+              tmuxPane,
+              "#{pane_active}:#{window_visible}:#{session_attached}:#{session_name}",
+            ]).pipe(
+              Effect.map((result) => ({
+                _tag: "Ok" as const,
+                result,
+              })),
+            );
+          }),
+        ),
+      ),
       (error) =>
-        isMissingPaneError(error)
-          ? Effect.succeed({ _tag: "MissingPane" as const } as
+        logger
+          .warn(
+            `Failed to inspect tmux pane '${tmuxPane}' for queued notification: ${getProcessErrorMessage(error)}`,
+          )
+          .pipe(
+            Effect.as({ _tag: "InspectionFailed" as const } as
               | { _tag: "MissingPane" }
-              | { _tag: "InspectionFailed" })
-          : logger
-              .warn(
-                `Failed to inspect tmux pane '${tmuxPane}' for queued notification: ${getProcessErrorMessage(error)}`,
-              )
-              .pipe(
-                Effect.as({ _tag: "InspectionFailed" as const } as
-                  | { _tag: "MissingPane" }
-                  | { _tag: "InspectionFailed" }),
-              ),
+              | { _tag: "InspectionFailed" }),
+          ),
     );
 
     if (inspectOutcome._tag === "MissingPane") {
@@ -139,9 +145,7 @@ export function notifyCommand(): Effect.Effect<void, WctError, WctServices> {
     }
 
     yield* Effect.catch(
-      Effect.mapError(execProcess("tmux", ["refresh-client", "-S"]), (error) =>
-        commandError("notify_error", "Failed to refresh tmux client", error),
-      ),
+      TmuxService.use((service) => service.refreshClient()),
       (error) =>
         logger.warn(
           `Failed to refresh tmux status after queueing notification session='${session}' pane='${tmuxPane}': ${getProcessErrorMessage(error)}`,

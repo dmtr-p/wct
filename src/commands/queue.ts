@@ -1,13 +1,14 @@
 import { Console, Effect } from "effect";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { execProcess, getProcessErrorMessage } from "../services/process";
+import { getProcessErrorMessage } from "../services/process";
 import {
   type ListItemsOptions,
   type QueueItem,
   QueueStorage,
   type QueueStorageService,
 } from "../services/queue-storage";
+import { TmuxService } from "../services/tmux";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -63,24 +64,10 @@ export const queueInternals = {
   ): Effect.Effect<boolean, never, WctServices> =>
     Effect.catch(
       Effect.gen(function* () {
-        yield* Effect.mapError(
-          execProcess("tmux", ["switch-client", "-t", `=${item.session}`]),
-          (error) =>
-            commandError(
-              "queue_error",
-              `Failed to switch to session '${item.session}'`,
-              error,
-            ),
+        yield* TmuxService.use((service) =>
+          service.switchSession(item.session),
         );
-        yield* Effect.mapError(
-          execProcess("tmux", ["select-pane", "-t", item.pane]),
-          (error) =>
-            commandError(
-              "queue_error",
-              `Failed to select pane '${item.pane}'`,
-              error,
-            ),
-        );
+        yield* TmuxService.use((service) => service.selectPane(item.pane));
         yield* queueStorage.removeItem(item.id);
         return true;
       }),

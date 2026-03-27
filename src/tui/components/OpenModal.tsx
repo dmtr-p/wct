@@ -1,4 +1,3 @@
-import { Effect, Fiber } from "effect";
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
@@ -518,23 +517,18 @@ function ExistingBranchForm({
 
   useEffect(() => {
     let cancelled = false;
-    const fiber = tuiRuntime.runFork(
-      Effect.catch(
-        WorktreeService.use((s) => s.listBranches(repoPath)).pipe(
-          Effect.tap((result) =>
-            Effect.sync(() => {
-              if (!cancelled) {
-                setBranches(result);
-              }
-            }),
-          ),
-        ),
-        () => Effect.void,
-      ),
-    );
+    tuiRuntime
+      .runPromise(WorktreeService.use((s) => s.listBranches(repoPath)))
+      .then((result) => {
+        if (!cancelled) {
+          setBranches(result);
+        }
+      })
+      .catch(() => {
+        // Ignore branch listing errors
+      });
     return () => {
       cancelled = true;
-      tuiRuntime.runFork(Fiber.interrupt(fiber));
     };
   }, [repoPath]);
 

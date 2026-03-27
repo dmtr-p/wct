@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { parseGhPrChecks, parseGhPrList } from "../../src/tui/hooks/useGitHub";
+import {
+  parseGhPrChecks,
+  parseGhPrList,
+} from "../../src/services/github-service";
 
 describe("parseGhPrList", () => {
   test("parses JSON output from gh pr list", () => {

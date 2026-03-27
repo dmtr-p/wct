@@ -7,9 +7,7 @@ import {
   beforeEach,
   describe,
   expect,
-  type MockInstance,
   test,
-  vi,
 } from "vitest";
 import { runBunPromise, runBunSync } from "../src/effect/runtime";
 import {
@@ -19,22 +17,54 @@ import {
   QueueStorage,
   type QueueStorageService,
 } from "../src/services/queue-storage";
-import * as tmux from "../src/services/tmux";
+import {
+  TmuxService,
+  type TmuxService as TmuxServiceApi,
+} from "../src/services/tmux";
 
 const originalHome = process.env.HOME;
 const testHome = join("/tmp", `wct-test-queue-${Date.now()}`);
 
 process.env.HOME = testHome;
 
-function provideQueueStorage<A>(
-  effect: Effect.Effect<A, unknown, QueueStorageService>,
+function stubTmuxService(
+  overrides: Partial<TmuxServiceApi> = {},
+): TmuxServiceApi {
+  const noop = () => Effect.succeed(undefined as never);
+  return TmuxService.of({
+    listSessions: () => Effect.succeed(null),
+    isPaneAlive: () => Effect.succeed(null),
+    sessionExists: () => Effect.succeed(false),
+    getSessionStatus: () => Effect.succeed(null),
+    createSession: noop,
+    killSession: noop,
+    getCurrentSession: () => Effect.succeed(null),
+    switchSession: noop,
+    attachSession: noop,
+    listPanes: () => Effect.succeed([]),
+    listClients: () => Effect.succeed([]),
+    switchClientToPane: noop,
+    selectPane: noop,
+    refreshClient: noop,
+    ...overrides,
+  });
+}
+
+let currentTmuxStub: TmuxServiceApi = stubTmuxService();
+
+function provideServices<A>(
+  effect: Effect.Effect<A, unknown, QueueStorageService | TmuxServiceApi>,
 ) {
-  return Effect.provideService(effect, QueueStorage, liveQueueStorage);
+  return Effect.provideService(
+    Effect.provideService(effect, QueueStorage, liveQueueStorage),
+    TmuxService,
+    currentTmuxStub,
+  );
 }
 
 function addItem(item: Omit<QueueItem, "id" | "timestamp">) {
   return runBunSync(
-    provideQueueStorage(
+    provideServices(
       QueueStorage.use((queueStorage) => queueStorage.addItem(item)),
     ),
   );
@@ -42,7 +72,7 @@ function addItem(item: Omit<QueueItem, "id" | "timestamp">) {
 
 function clearAll() {
   return runBunSync(
-    provideQueueStorage(
+    provideServices(
       QueueStorage.use((queueStorage) => queueStorage.clearAll()),
     ),
   );
@@ -50,7 +80,7 @@ function clearAll() {
 
 function listItems(options: ListItemsOptions = {}) {
   return runBunPromise(
-    provideQueueStorage(
+    provideServices(
       QueueStorage.use((queueStorage) => queueStorage.listItems(options)),
     ),
   );
@@ -58,7 +88,7 @@ function listItems(options: ListItemsOptions = {}) {
 
 function removeItem(id: string) {
   return runBunSync(
-    provideQueueStorage(
+    provideServices(
       QueueStorage.use((queueStorage) => queueStorage.removeItem(id)),
     ),
   );
@@ -66,7 +96,7 @@ function removeItem(id: string) {
 
 function removeItemsBySession(session: string) {
   return runBunSync(
-    provideQueueStorage(
+    provideServices(
       QueueStorage.use((queueStorage) =>
         queueStorage.removeItemsBySession(session),
       ),
@@ -75,19 +105,14 @@ function removeItemsBySession(session: string) {
 }
 
 describe("queue service", () => {
-  let listSessionsSpy: MockInstance;
-
   beforeEach(async () => {
     await $`mkdir -p ${testHome}`.quiet();
     clearAll();
-    // Mock listSessions to return null so real tmux sessions don't cause
-    // test items (with fake session names) to be deleted as stale.
-    listSessionsSpy = vi.spyOn(tmux, "listSessions").mockResolvedValue(null);
+    currentTmuxStub = stubTmuxService();
   });
 
   afterEach(() => {
     clearAll();
-    listSessionsSpy.mockRestore();
   });
 
   test("addItem returns item with generated id and timestamp", () => {
@@ -150,157 +175,127 @@ describe("queue service", () => {
   });
 
   test("listItems returns items sorted by timestamp and removes stale", async () => {
-    const listSessionsSpy = vi
-      .spyOn(tmux, "listSessions")
-      .mockResolvedValue([
-        { name: "live-session", attached: false, windows: 1 },
-      ]);
-    const isPaneAliveSpy = vi
-      .spyOn(tmux, "isPaneAlive")
-      .mockImplementation(async (pane) => pane === "%301");
+    currentTmuxStub = stubTmuxService({
+      listSessions: () =>
+        Effect.succeed([{ name: "live-session", attached: false, windows: 1 }]),
+      isPaneAlive: (pane) => Effect.succeed(pane === "%301"),
+    });
 
-    try {
-      addItem({
-        branch: "a",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "live-session",
-        pane: "%301",
-      });
-      addItem({
-        branch: "b",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "dead-session",
-        pane: "%302",
-      });
+    addItem({
+      branch: "a",
+      project: "p",
+      type: "t",
+      message: "m",
+      session: "live-session",
+      pane: "%301",
+    });
+    addItem({
+      branch: "b",
+      project: "p",
+      type: "t",
+      message: "m",
+      session: "dead-session",
+      pane: "%302",
+    });
 
-      const items = await listItems();
+    const items = await listItems();
 
-      expect(items).toHaveLength(1);
-      expect(items[0]?.session).toBe("live-session");
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
-    } finally {
-      isPaneAliveSpy.mockRestore();
-      listSessionsSpy.mockRestore();
-    }
+    expect(items).toHaveLength(1);
+    expect(items[0]?.session).toBe("live-session");
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
   });
 
   test("listItems keeps entries when tmux session discovery fails", async () => {
-    const listSessionsSpy = vi
-      .spyOn(tmux, "listSessions")
-      .mockResolvedValue(null);
+    currentTmuxStub = stubTmuxService({
+      listSessions: () => Effect.succeed(null),
+    });
 
-    try {
-      addItem({
-        branch: "a",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "possibly-live-session",
-        pane: "%250",
-      });
+    addItem({
+      branch: "a",
+      project: "p",
+      type: "t",
+      message: "m",
+      session: "possibly-live-session",
+      pane: "%250",
+    });
 
-      const items = await listItems();
+    const items = await listItems();
 
-      expect(items).toHaveLength(1);
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
-    } finally {
-      listSessionsSpy.mockRestore();
-    }
+    expect(items).toHaveLength(1);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
   });
 
   test("listItems removes all entries when tmux has zero sessions", async () => {
-    const listSessionsSpy = vi
-      .spyOn(tmux, "listSessions")
-      .mockResolvedValue([]);
+    currentTmuxStub = stubTmuxService({
+      listSessions: () => Effect.succeed([]),
+    });
 
-    try {
-      addItem({
-        branch: "a",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "old-session",
-        pane: "%251",
-      });
+    addItem({
+      branch: "a",
+      project: "p",
+      type: "t",
+      message: "m",
+      session: "old-session",
+      pane: "%251",
+    });
 
-      const items = await listItems();
+    const items = await listItems();
 
-      expect(items).toHaveLength(0);
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(0);
-    } finally {
-      listSessionsSpy.mockRestore();
-    }
+    expect(items).toHaveLength(0);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(0);
   });
 
   test("listItems removes entries whose pane no longer exists in a live session", async () => {
-    const listSessionsSpy = vi
-      .spyOn(tmux, "listSessions")
-      .mockResolvedValue([
-        { name: "live-session", attached: false, windows: 1 },
-      ]);
-    const isPaneAliveSpy = vi
-      .spyOn(tmux, "isPaneAlive")
-      .mockImplementation(async (pane) => pane === "%311" || false);
+    currentTmuxStub = stubTmuxService({
+      listSessions: () =>
+        Effect.succeed([{ name: "live-session", attached: false, windows: 1 }]),
+      isPaneAlive: (pane) => Effect.succeed(pane === "%311" || false),
+    });
 
-    try {
-      addItem({
-        branch: "a",
-        project: "p",
-        type: "t",
-        message: "live",
-        session: "live-session",
-        pane: "%311",
-      });
-      addItem({
-        branch: "b",
-        project: "p",
-        type: "t",
-        message: "stale-pane",
-        session: "live-session",
-        pane: "%312",
-      });
+    addItem({
+      branch: "a",
+      project: "p",
+      type: "t",
+      message: "live",
+      session: "live-session",
+      pane: "%311",
+    });
+    addItem({
+      branch: "b",
+      project: "p",
+      type: "t",
+      message: "stale-pane",
+      session: "live-session",
+      pane: "%312",
+    });
 
-      const items = await listItems();
+    const items = await listItems();
 
-      expect(items).toHaveLength(1);
-      expect(items[0]?.pane).toBe("%311");
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
-    } finally {
-      isPaneAliveSpy.mockRestore();
-      listSessionsSpy.mockRestore();
-    }
+    expect(items).toHaveLength(1);
+    expect(items[0]?.pane).toBe("%311");
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
   });
 
   test("listItems skips stale cleanup when all items are live", async () => {
-    const listSessionsSpy = vi
-      .spyOn(tmux, "listSessions")
-      .mockResolvedValue([{ name: "s1", attached: false, windows: 1 }]);
-    const isPaneAliveSpy = vi
-      .spyOn(tmux, "isPaneAlive")
-      .mockResolvedValue(true);
+    currentTmuxStub = stubTmuxService({
+      listSessions: () =>
+        Effect.succeed([{ name: "s1", attached: false, windows: 1 }]),
+      isPaneAlive: () => Effect.succeed(true),
+    });
 
-    try {
-      addItem({
-        branch: "a",
-        project: "p",
-        type: "t",
-        message: "m",
-        session: "s1",
-        pane: "%311",
-      });
+    addItem({
+      branch: "a",
+      project: "p",
+      type: "t",
+      message: "m",
+      session: "s1",
+      pane: "%311",
+    });
 
-      const items = await listItems();
+    const items = await listItems();
 
-      expect(items).toHaveLength(1);
-      expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
-    } finally {
-      isPaneAliveSpy.mockRestore();
-      listSessionsSpy.mockRestore();
-    }
+    expect(items).toHaveLength(1);
+    expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
   });
 
   test("removeItem returns true for existing item", async () => {

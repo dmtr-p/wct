@@ -8,6 +8,8 @@ import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import {
   liveWorktreeService,
+  parseAheadBehind,
+  parseGitStatusCount,
   parseWorktreeListOutput,
   WorktreeService,
 } from "../src/services/worktree-service";
@@ -62,6 +64,33 @@ bare
   test("handles empty output", () => {
     const worktrees = parseWorktreeListOutput("");
     expect(worktrees).toHaveLength(0);
+  });
+});
+
+describe("parseGitStatusCount", () => {
+  test("counts lines", () => {
+    expect(parseGitStatusCount(" M file1.ts\n M file2.ts\n?? file3.ts")).toBe(
+      3,
+    );
+  });
+
+  test("returns 0 for empty output", () => {
+    expect(parseGitStatusCount("")).toBe(0);
+    expect(parseGitStatusCount("  ")).toBe(0);
+  });
+});
+
+describe("parseAheadBehind", () => {
+  test("parses ahead/behind counts", () => {
+    expect(parseAheadBehind("3\t5")).toEqual({ ahead: 3, behind: 5 });
+  });
+
+  test("handles zero counts", () => {
+    expect(parseAheadBehind("0\t0")).toEqual({ ahead: 0, behind: 0 });
+  });
+
+  test("returns null for invalid output", () => {
+    expect(parseAheadBehind("")).toBeNull();
   });
 });
 

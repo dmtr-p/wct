@@ -2,9 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   buildWindowsPaneCommands,
   formatSessionName,
-  getCurrentSession,
+  parseClientListOutput,
+  parsePaneListOutput,
   parseSessionListOutput,
-  switchSession,
 } from "../src/services/tmux";
 
 const TEST_ENV = {
@@ -62,20 +62,6 @@ myapp-fix-login:0:1`;
   test("handles empty session list", () => {
     const sessions = parseSessionListOutput("");
     expect(sessions).toHaveLength(0);
-  });
-});
-
-describe("getCurrentSession", () => {
-  test("returns null when TMUX env is not set", async () => {
-    const originalTmux = process.env.TMUX;
-    delete process.env.TMUX;
-
-    const result = await getCurrentSession();
-    expect(result).toBeNull();
-
-    if (originalTmux !== undefined) {
-      process.env.TMUX = originalTmux;
-    }
   });
 });
 
@@ -524,8 +510,46 @@ describe("buildWindowsPaneCommands", () => {
   });
 });
 
-describe("switchSession", () => {
-  test("switchSession function is defined", () => {
-    expect(typeof switchSession).toBe("function");
+describe("parsePaneListOutput", () => {
+  test("parses pane list output", () => {
+    const output = "%0\t0\tbash\tshell\n%1\t1\tvim\teditor";
+    const panes = parsePaneListOutput(output);
+    expect(panes).toHaveLength(2);
+    expect(panes[0]).toEqual({
+      paneId: "%0",
+      paneIndex: 0,
+      command: "bash",
+      window: "shell",
+    });
+    expect(panes[1]).toEqual({
+      paneId: "%1",
+      paneIndex: 1,
+      command: "vim",
+      window: "editor",
+    });
+  });
+
+  test("handles empty output", () => {
+    expect(parsePaneListOutput("")).toEqual([]);
+  });
+});
+
+describe("parseClientListOutput", () => {
+  test("parses client list output", () => {
+    const output = "/dev/ttys001\tmain\n/dev/ttys002\tfeature";
+    const clients = parseClientListOutput(output);
+    expect(clients).toHaveLength(2);
+    expect(clients[0]).toEqual({ tty: "/dev/ttys001", session: "main" });
+    expect(clients[1]).toEqual({ tty: "/dev/ttys002", session: "feature" });
+  });
+
+  test("handles empty output", () => {
+    expect(parseClientListOutput("")).toEqual([]);
+  });
+
+  test("skips malformed lines", () => {
+    const output = "/dev/ttys001\tmain\nbadline\n/dev/ttys002\tfeature";
+    const clients = parseClientListOutput(output);
+    expect(clients).toHaveLength(2);
   });
 });

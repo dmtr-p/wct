@@ -1,81 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CheckInfo, PRInfo } from "../types";
+import {
+  GitHubService,
+  type PrCheckInfo,
+  type PrListItem,
+} from "../../services/github-service";
+import { tuiRuntime } from "../runtime";
+import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
-const GITHUB_POLL_INTERVAL = 30_000; // 30 seconds
-
-/** Parse `gh pr list --json ...` output */
-export function parseGhPrList(stdout: string): Omit<PRInfo, "checks">[] {
-  try {
-    const data = JSON.parse(stdout);
-    if (!Array.isArray(data)) return [];
-    return data.map((pr: Record<string, unknown>) => ({
-      number: pr.number as number,
-      title: pr.title as string,
-      state: pr.state as PRInfo["state"],
-      headRefName: pr.headRefName as string,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-/** Parse `gh pr checks --json ...` output */
-export function parseGhPrChecks(stdout: string): CheckInfo[] {
-  try {
-    const data = JSON.parse(stdout);
-    if (!Array.isArray(data)) return [];
-    return data.map((c: Record<string, unknown>) => ({
-      name: c.name as string,
-      state: c.state as string,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-async function runGh(args: string[], cwd: string): Promise<string> {
-  const proc = Bun.spawn(["gh", ...args], {
-    cwd,
-    stdout: "pipe",
-    stderr: "ignore",
-  });
-  const text = await new Response(proc.stdout).text();
-  const code = await proc.exited;
-  if (code !== 0) throw new Error(`gh exited with ${code}`);
-  return text.trim();
-}
+const GITHUB_POLL_INTERVAL = 30_000;
 
 async function fetchRepoData(repo: RepoInfo): Promise<[string, PRInfo][]> {
   const entries: [string, PRInfo][] = [];
   try {
-    const prJson = await runGh(
-      [
-        "pr",
-        "list",
-        "--json",
-        "number,title,state,headRefName",
-        "--limit",
-        "20",
-      ],
-      repo.repoPath,
+    const prs = await tuiRuntime.runPromise(
+      GitHubService.use((s) => s.listPrs(repo.repoPath)),
     );
-    const prs = parseGhPrList(prJson);
 
     await Promise.all(
-      prs.map(async (pr) => {
-        let checks: CheckInfo[] = [];
+      prs.map(async (pr: PrListItem) => {
+        let checks: PrCheckInfo[] = [];
         try {
-          const checksJson = await runGh(
-            ["pr", "checks", String(pr.number), "--json", "name,state"],
-            repo.repoPath,
+          checks = await tuiRuntime.runPromise(
+            GitHubService.use((s) => s.listPrChecks(repo.repoPath, pr.number)),
           );
-          checks = parseGhPrChecks(checksJson);
         } catch {
           // Checks may not be available
         }
         const key = `${repo.project}/${pr.headRefName}`;
-        entries.push([key, { ...pr, checks }]);
+        entries.push([
+          key,
+          {
+            number: pr.number,
+            title: pr.title,
+            state: pr.state as PRInfo["state"],
+            headRefName: pr.headRefName,
+            checks,
+          },
+        ]);
       }),
     );
   } catch {

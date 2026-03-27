@@ -11,6 +11,8 @@ export const commandDef: CommandDef = {
 export function tuiCommand(): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
     const { startTui } = yield* Effect.promise(() => import("../tui/App"));
+    // The TUI runtime is process-scoped here; we intentionally omit an
+    // explicit runtime disposal call because command exit tears down the process.
     yield* Effect.promise(() => startTui());
   });
 }

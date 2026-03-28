@@ -259,24 +259,36 @@ describe("createWorktree with base branch", () => {
   });
 
   test("supports explicit cwd when reading current branch", async () => {
-    const result = await runBunPromise(
-      withWorktreeService(
-        WorktreeService.use((service) => service.getCurrentBranch(repoDir)),
-      ),
-    );
+    process.chdir(originalDir);
+    try {
+      const result = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) => service.getCurrentBranch(repoDir)),
+        ),
+      );
 
-    expect(result).toBe("main");
+      expect(result).toBe("main");
+    } finally {
+      process.chdir(repoDir);
+    }
   });
 
   test("supports explicit cwd when resolving the main worktree path", async () => {
-    const result = await runBunPromise(
-      withWorktreeService(
-        WorktreeService.use((service) => service.getMainWorktreePath(repoDir)),
-      ),
-    );
+    process.chdir(originalDir);
+    try {
+      const result = await runBunPromise(
+        withWorktreeService(
+          WorktreeService.use((service) =>
+            service.getMainWorktreePath(repoDir),
+          ),
+        ),
+      );
 
-    expect(result?.replace(/^\/private/, "")).toBe(
-      repoDir.replace(/^\/private/, ""),
-    );
+      expect(result?.replace(/^\/private/, "")).toBe(
+        repoDir.replace(/^\/private/, ""),
+      );
+    } finally {
+      process.chdir(repoDir);
+    }
   });
 });

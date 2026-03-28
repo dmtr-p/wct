@@ -35,7 +35,9 @@ export function parseGhPrList(stdout: string): PrListItem[] {
       if (
         typeof pr.number === "number" &&
         typeof pr.title === "string" &&
-        typeof pr.state === "string" &&
+        (pr.state === "OPEN" ||
+          pr.state === "MERGED" ||
+          pr.state === "CLOSED") &&
         typeof pr.headRefName === "string"
       ) {
         results.push({
@@ -185,7 +187,14 @@ export const liveGitHubService: GitHubService = GitHubService.of({
           ],
           cwd ? { cwd } : undefined,
         );
-        const data = JSON.parse(result.stdout.trim());
+        const data = yield* Effect.try({
+          try: () => JSON.parse(result.stdout.trim()),
+          catch: () =>
+            commandError(
+              "pr_error",
+              `Failed to parse PR #${prNumber} response`,
+            ),
+        });
 
         const pr: PrInfo = {
           branch: data.headRefName,
@@ -199,7 +208,9 @@ export const liveGitHubService: GitHubService = GitHubService.of({
         }
 
         if (!pr.branch) {
-          throw new Error(`PR #${prNumber} has no head branch`);
+          return yield* Effect.fail(
+            commandError("pr_error", `PR #${prNumber} has no head branch`),
+          );
         }
 
         return pr;

@@ -1,9 +1,11 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { Effect, ServiceMap } from "effect";
+import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import * as logger from "../utils/logger";
-import { isPaneAlive, listSessions } from "./tmux";
+import type { TmuxSession } from "./tmux";
+import { TmuxService } from "./tmux";
 
 function getQueueDir(): string {
   return `${process.env.HOME ?? "/tmp"}/.wct`;
@@ -35,7 +37,7 @@ export interface QueueStorageService {
   ) => Effect.Effect<QueueItem, WctError>;
   listItems: (
     options?: ListItemsOptions,
-  ) => Effect.Effect<QueueItem[], WctError>;
+  ) => Effect.Effect<QueueItem[], WctError, WctServices>;
   removeItem: (id: string) => Effect.Effect<boolean, WctError>;
   removeItemsBySession: (session: string) => Effect.Effect<number, WctError>;
   clearAll: () => Effect.Effect<number, WctError>;
@@ -150,15 +152,10 @@ export const liveQueueStorage: QueueStorageService = QueueStorage.of({
           .all() as QueueItem[];
       });
 
-      const sessionList = yield* Effect.tryPromise({
-        try: () => listSessions(),
-        catch: (error) =>
-          commandError(
-            "queue_error",
-            "Failed to inspect tmux sessions for queue cleanup",
-            error,
-          ),
-      });
+      const sessionList = yield* Effect.catch(
+        TmuxService.use((service) => service.listSessions()),
+        () => Effect.succeed(null as TmuxSession[] | null),
+      );
 
       if (sessionList === null) {
         if (logWarnings && rows.length > 0) {
@@ -180,15 +177,10 @@ export const liveQueueStorage: QueueStorageService = QueueStorage.of({
         }
 
         if (validatePanes) {
-          const paneAlive = yield* Effect.tryPromise({
-            try: () => isPaneAlive(row.pane),
-            catch: (error) =>
-              commandError(
-                "queue_error",
-                `Failed to inspect tmux pane '${row.pane}'`,
-                error,
-              ),
-          });
+          const paneAlive = yield* Effect.catch(
+            TmuxService.use((service) => service.isPaneAlive(row.pane)),
+            () => Effect.succeed(null as boolean | null),
+          );
 
           if (paneAlive === false) {
             staleIds.push(row.id);

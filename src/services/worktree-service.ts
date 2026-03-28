@@ -204,7 +204,12 @@ function getDefaultBranchImpl(cwd: string) {
     );
     if (symbolicRef) return symbolicRef;
 
-    for (const candidate of ["origin/main", "origin/master"]) {
+    for (const candidate of [
+      "origin/main",
+      "origin/master",
+      "main",
+      "master",
+    ]) {
       const exists = yield* runProcess(
         "git",
         ["rev-parse", "--verify", candidate],

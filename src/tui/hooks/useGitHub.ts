@@ -6,11 +6,16 @@ import type { RepoInfo } from "./useRegistry";
 
 const GITHUB_POLL_INTERVAL = 30_000; // 30 seconds
 
-async function fetchRepoData(repo: RepoInfo): Promise<[string, PRInfo][]> {
+async function fetchRepoData(
+  repo: RepoInfo,
+  signal?: AbortSignal,
+): Promise<[string, PRInfo][]> {
   const entries: [string, PRInfo][] = [];
+  const opts = signal ? { signal } : undefined;
   try {
     const prs = await tuiRuntime.runPromise(
       GitHubService.use((s) => s.listPrs(repo.repoPath)),
+      opts,
     );
 
     await Promise.all(
@@ -19,6 +24,7 @@ async function fetchRepoData(repo: RepoInfo): Promise<[string, PRInfo][]> {
         try {
           checks = await tuiRuntime.runPromise(
             GitHubService.use((s) => s.listPrChecks(repo.repoPath, pr.number)),
+            opts,
           );
         } catch {
           // Checks may not be available
@@ -39,11 +45,13 @@ export function useGitHub(repos: RepoInfo[]) {
   const reposRef = useRef(repos);
   reposRef.current = repos;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal?: AbortSignal) => {
     if (reposRef.current.length === 0) return;
     setLoading(true);
     try {
-      const allEntries = await Promise.all(reposRef.current.map(fetchRepoData));
+      const allEntries = await Promise.all(
+        reposRef.current.map((repo) => fetchRepoData(repo, signal)),
+      );
       setPrData(new Map(allEntries.flat()));
     } finally {
       setLoading(false);
@@ -51,9 +59,16 @@ export function useGitHub(repos: RepoInfo[]) {
   }, []);
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, GITHUB_POLL_INTERVAL);
-    return () => clearInterval(id);
+    const controller = new AbortController();
+    refresh(controller.signal);
+    const id = setInterval(
+      () => refresh(controller.signal),
+      GITHUB_POLL_INTERVAL,
+    );
+    return () => {
+      controller.abort();
+      clearInterval(id);
+    };
   }, [refresh]);
 
   return { prData, loading, refresh };

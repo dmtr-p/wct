@@ -202,9 +202,9 @@ function getDefaultBranchImpl(cwd: string) {
       ).pipe(Effect.map((result) => result.stdout.trim())),
       () => Effect.succeed(""),
     );
-    if (symbolicRef) return normalizeDefaultBranchRef(symbolicRef);
+    if (symbolicRef) return symbolicRef;
 
-    for (const candidate of ["main", "master"]) {
+    for (const candidate of ["origin/main", "origin/master"]) {
       const exists = yield* runProcess(
         "git",
         ["rev-parse", "--verify", candidate],

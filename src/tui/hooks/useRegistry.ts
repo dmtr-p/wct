@@ -133,10 +133,12 @@ export function useRegistry() {
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const opts = signal ? { signal } : undefined;
     try {
       const items = await tuiRuntime.runPromise(
         RegistryService.use((s) => s.listRepos()),
+        opts,
       );
       const repoInfos: RepoInfo[] = await Promise.all(
         items.map((item) =>
@@ -146,18 +148,22 @@ export function useRegistry() {
             listWorktrees: (repoPath) =>
               tuiRuntime.runPromise(
                 WorktreeService.use((s) => s.listWorktrees(repoPath)),
+                opts,
               ),
             getDefaultBranch: (repoPath) =>
               tuiRuntime.runPromise(
                 WorktreeService.use((s) => s.getDefaultBranch(repoPath)),
+                opts,
               ),
             getChangedFileCount: (worktreePath) =>
               tuiRuntime.runPromise(
                 WorktreeService.use((s) => s.getChangedFileCount(worktreePath)),
+                opts,
               ),
             getAheadBehind: (worktreePath, ref) =>
               tuiRuntime.runPromise(
                 WorktreeService.use((s) => s.getAheadBehind(worktreePath, ref)),
+                opts,
               ),
           }),
         ),
@@ -171,7 +177,9 @@ export function useRegistry() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    const controller = new AbortController();
+    refresh(controller.signal);
+    return () => controller.abort();
   }, [refresh]);
 
   return { repos, loading, refresh };

@@ -516,19 +516,22 @@ function ExistingBranchForm({
   const currentField = fields[focusIndex];
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     tuiRuntime
-      .runPromise(WorktreeService.use((s) => s.listBranches(repoPath)))
+      .runPromise(
+        WorktreeService.use((s) => s.listBranches(repoPath)),
+        {
+          signal: controller.signal,
+        },
+      )
       .then((result) => {
-        if (!cancelled) {
-          setBranches(result);
-        }
+        setBranches(result);
       })
       .catch(() => {
         // Ignore branch listing errors
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [repoPath]);
 

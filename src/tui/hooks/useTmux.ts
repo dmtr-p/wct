@@ -19,49 +19,61 @@ export function useTmux() {
   const [panes, setPanes] = useState<Map<string, TmuxPaneInfo[]>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
-  const refreshPanes = useCallback(async (sessionList: TmuxSessionInfo[]) => {
-    const paneMap = new Map<string, TmuxPaneInfo[]>();
-    await Promise.all(
-      sessionList.map(async (session) => {
-        try {
-          const result = await tuiRuntime.runPromise(
-            TmuxService.use((service) => service.listPanes(session.name)),
-          );
-          paneMap.set(session.name, result);
-        } catch {
-          // Ignore pane fetch errors
-        }
-      }),
-    );
-    setPanes(paneMap);
-  }, []);
-
-  const refreshSessions = useCallback(async () => {
-    try {
-      const result = await tuiRuntime.runPromise(
-        TmuxService.use((service) => service.listSessions()),
+  const refreshPanes = useCallback(
+    async (sessionList: TmuxSessionInfo[], signal?: AbortSignal) => {
+      const opts = signal ? { signal } : undefined;
+      const paneMap = new Map<string, TmuxPaneInfo[]>();
+      await Promise.all(
+        sessionList.map(async (session) => {
+          try {
+            const result = await tuiRuntime.runPromise(
+              TmuxService.use((service) => service.listPanes(session.name)),
+              opts,
+            );
+            paneMap.set(session.name, result);
+          } catch {
+            // Ignore pane fetch errors
+          }
+        }),
       );
-      if (!result) {
+      setPanes(paneMap);
+    },
+    [],
+  );
+
+  const refreshSessions = useCallback(
+    async (signal?: AbortSignal) => {
+      const opts = signal ? { signal } : undefined;
+      try {
+        const result = await tuiRuntime.runPromise(
+          TmuxService.use((service) => service.listSessions()),
+          opts,
+        );
+        if (!result) {
+          setSessions([]);
+          setPanes(EMPTY_PANES);
+          return;
+        }
+        const parsed = result.map((session) => ({
+          name: session.name,
+          attached: session.attached,
+        }));
+        setSessions(parsed);
+        await refreshPanes(parsed, signal);
+      } catch {
         setSessions([]);
         setPanes(EMPTY_PANES);
-        return;
       }
-      const parsed = result.map((session) => ({
-        name: session.name,
-        attached: session.attached,
-      }));
-      setSessions(parsed);
-      await refreshPanes(parsed);
-    } catch {
-      setSessions([]);
-      setPanes(EMPTY_PANES);
-    }
-  }, [refreshPanes]);
+    },
+    [refreshPanes],
+  );
 
-  const discoverClient = useCallback(async () => {
+  const discoverClient = useCallback(async (signal?: AbortSignal) => {
+    const opts = signal ? { signal } : undefined;
     try {
       const clients = await tuiRuntime.runPromise(
         TmuxService.use((service) => service.listClients()),
+        opts,
       );
 
       if (clients.length === 0) {
@@ -118,8 +130,10 @@ export function useTmux() {
   );
 
   useEffect(() => {
-    discoverClient();
-    refreshSessions();
+    const controller = new AbortController();
+    discoverClient(controller.signal);
+    refreshSessions(controller.signal);
+    return () => controller.abort();
   }, [discoverClient, refreshSessions]);
 
   return {

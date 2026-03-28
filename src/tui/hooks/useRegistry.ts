@@ -97,27 +97,24 @@ export async function loadRepoInfo(
     };
   }
 
-  const worktrees: WorktreeInfo[] = worktreeList
-    .filter((wt) => !wt.isBare)
-    .map((wt, index) => ({
-      branch: wt.branch,
-      path: wt.path,
-      isMainWorktree: index === 0,
-      changedFiles: 0,
-      sync: null,
-    }));
-
-  await Promise.all(
-    worktrees.map(async (wt) => {
-      const [changedFiles, sync] = await Promise.all([
-        deps.getChangedFileCount(wt.path).catch(() => 0),
-        defaultBranch
-          ? deps.getAheadBehind(wt.path, defaultBranch).catch(() => null)
-          : Promise.resolve(null),
-      ]);
-      wt.changedFiles = changedFiles;
-      wt.sync = sync;
-    }),
+  const worktrees: WorktreeInfo[] = await Promise.all(
+    worktreeList
+      .filter((wt) => !wt.isBare)
+      .map(async (wt, index) => {
+        const [changedFiles, sync] = await Promise.all([
+          deps.getChangedFileCount(wt.path).catch(() => 0),
+          defaultBranch
+            ? deps.getAheadBehind(wt.path, defaultBranch).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        return {
+          branch: wt.branch,
+          path: wt.path,
+          isMainWorktree: index === 0,
+          changedFiles,
+          sync,
+        };
+      }),
   );
 
   return {

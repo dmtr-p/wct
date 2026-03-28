@@ -1,5 +1,7 @@
 // src/tui/types.ts
 
+import type { PrCheckInfo } from "../services/github-service";
+
 /** TUI interaction modes */
 export type Mode =
   | { type: "Navigate" }
@@ -52,12 +54,7 @@ export interface PRInfo {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   headRefName: string;
-  checks: CheckInfo[];
-}
-
-export interface CheckInfo {
-  name: string;
-  state: string; // SUCCESS, FAILURE, PENDING, IN_PROGRESS, etc.
+  checks: PrCheckInfo[];
 }
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";

@@ -30,12 +30,23 @@ export function parseGhPrList(stdout: string): PrListItem[] {
   try {
     const data = JSON.parse(stdout);
     if (!Array.isArray(data)) return [];
-    return data.map((pr: Record<string, unknown>) => ({
-      number: pr.number as number,
-      title: pr.title as string,
-      state: pr.state as PrListItem["state"],
-      headRefName: pr.headRefName as string,
-    }));
+    const results: PrListItem[] = [];
+    for (const pr of data) {
+      if (
+        typeof pr.number === "number" &&
+        typeof pr.title === "string" &&
+        typeof pr.state === "string" &&
+        typeof pr.headRefName === "string"
+      ) {
+        results.push({
+          number: pr.number,
+          title: pr.title,
+          state: pr.state as PrListItem["state"],
+          headRefName: pr.headRefName,
+        });
+      }
+    }
+    return results;
   } catch {
     return [];
   }
@@ -45,10 +56,13 @@ export function parseGhPrChecks(stdout: string): PrCheckInfo[] {
   try {
     const data = JSON.parse(stdout);
     if (!Array.isArray(data)) return [];
-    return data.map((c: Record<string, unknown>) => ({
-      name: c.name as string,
-      state: c.state as string,
-    }));
+    const results: PrCheckInfo[] = [];
+    for (const c of data) {
+      if (typeof c.name === "string" && typeof c.state === "string") {
+        results.push({ name: c.name, state: c.state });
+      }
+    }
+    return results;
   } catch {
     return [];
   }

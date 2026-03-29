@@ -14,18 +14,84 @@ export interface PrInfo {
   forkRepo?: string;
 }
 
+export interface PrListItem {
+  number: number;
+  title: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  headRefName: string;
+}
+
+export interface PrCheckInfo {
+  name: string;
+  state: string;
+}
+
+export function parseGhPrList(stdout: string): PrListItem[] {
+  try {
+    const data = JSON.parse(stdout);
+    if (!Array.isArray(data)) return [];
+    const results: PrListItem[] = [];
+    for (const pr of data) {
+      if (
+        typeof pr.number === "number" &&
+        typeof pr.title === "string" &&
+        (pr.state === "OPEN" ||
+          pr.state === "MERGED" ||
+          pr.state === "CLOSED") &&
+        typeof pr.headRefName === "string"
+      ) {
+        results.push({
+          number: pr.number,
+          title: pr.title,
+          state: pr.state as PrListItem["state"],
+          headRefName: pr.headRefName,
+        });
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+export function parseGhPrChecks(stdout: string): PrCheckInfo[] {
+  try {
+    const data = JSON.parse(stdout);
+    if (!Array.isArray(data)) return [];
+    const results: PrCheckInfo[] = [];
+    for (const c of data) {
+      if (typeof c.name === "string" && typeof c.state === "string") {
+        results.push({ name: c.name, state: c.state });
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 export interface GitHubService {
   isGhInstalled: () => Effect.Effect<boolean, WctError, WctServices>;
-  resolvePr: (prNumber: number) => Effect.Effect<PrInfo, WctError, WctServices>;
+  resolvePr: (
+    prNumber: number,
+    cwd?: string,
+  ) => Effect.Effect<PrInfo, WctError, WctServices>;
   addForkRemote: (
     remoteName: string,
     owner: string,
     repo: string,
+    cwd?: string,
   ) => Effect.Effect<void, WctError, WctServices>;
   fetchBranch: (
     branch: string,
     remote?: string,
+    cwd?: string,
   ) => Effect.Effect<void, WctError, WctServices>;
+  listPrs: (cwd: string) => Effect.Effect<PrListItem[], WctError, WctServices>;
+  listPrChecks: (
+    cwd: string,
+    prNumber: number,
+  ) => Effect.Effect<PrCheckInfo[], WctError, WctServices>;
 }
 
 export const GitHubService =
@@ -49,12 +115,14 @@ export function parsePrArg(value: string): number | null {
   return null;
 }
 
-function detectRemoteUrl(owner: string, repo: string) {
+function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
   return Effect.gen(function* () {
     const originUrl = yield* Effect.catch(
-      execProcess("git", ["remote", "get-url", "origin"]).pipe(
-        Effect.map((result) => result.stdout.trim()),
-      ),
+      execProcess(
+        "git",
+        ["remote", "get-url", "origin"],
+        cwd ? { cwd } : undefined,
+      ).pipe(Effect.map((result) => result.stdout.trim())),
       () => Effect.succeed(null),
     );
 
@@ -69,6 +137,35 @@ function detectRemoteUrl(owner: string, repo: string) {
   });
 }
 
+function listPrsImpl(cwd: string) {
+  return Effect.catch(
+    execProcess(
+      "gh",
+      [
+        "pr",
+        "list",
+        "--json",
+        "number,title,state,headRefName",
+        "--limit",
+        "20",
+      ],
+      { cwd },
+    ).pipe(Effect.map((result) => parseGhPrList(result.stdout.trim()))),
+    () => Effect.succeed([] as PrListItem[]),
+  );
+}
+
+function listPrChecksImpl(cwd: string, prNumber: number) {
+  return Effect.catch(
+    execProcess(
+      "gh",
+      ["pr", "checks", String(prNumber), "--json", "name,state"],
+      { cwd },
+    ).pipe(Effect.map((result) => parseGhPrChecks(result.stdout.trim()))),
+    () => Effect.succeed([] as PrCheckInfo[]),
+  );
+}
+
 export const liveGitHubService: GitHubService = GitHubService.of({
   isGhInstalled: () =>
     Effect.mapError(
@@ -76,17 +173,28 @@ export const liveGitHubService: GitHubService = GitHubService.of({
       (error) =>
         commandError("gh_not_installed", "Failed to run GitHub CLI", error),
     ),
-  resolvePr: (prNumber) =>
+  resolvePr: (prNumber, cwd) =>
     Effect.catch(
       Effect.gen(function* () {
-        const result = yield* execProcess("gh", [
-          "pr",
-          "view",
-          String(prNumber),
-          "--json",
-          "headRefName,isCrossRepository,headRepositoryOwner,headRepository",
-        ]);
-        const data = JSON.parse(result.stdout.trim());
+        const result = yield* execProcess(
+          "gh",
+          [
+            "pr",
+            "view",
+            String(prNumber),
+            "--json",
+            "headRefName,isCrossRepository,headRepositoryOwner,headRepository",
+          ],
+          cwd ? { cwd } : undefined,
+        );
+        const data = yield* Effect.try({
+          try: () => JSON.parse(result.stdout.trim()),
+          catch: () =>
+            commandError(
+              "pr_error",
+              `Failed to parse PR #${prNumber} response`,
+            ),
+        });
 
         const pr: PrInfo = {
           branch: data.headRefName,
@@ -100,7 +208,9 @@ export const liveGitHubService: GitHubService = GitHubService.of({
         }
 
         if (!pr.branch) {
-          throw new Error(`PR #${prNumber} has no head branch`);
+          return yield* Effect.fail(
+            commandError("pr_error", `PR #${prNumber} has no head branch`),
+          );
         }
 
         return pr;
@@ -116,14 +226,16 @@ export const liveGitHubService: GitHubService = GitHubService.of({
               ),
         ),
     ),
-  addForkRemote: (remoteName, owner, repo) =>
+  addForkRemote: (remoteName, owner, repo, cwd) =>
     Effect.gen(function* () {
-      const url = yield* detectRemoteUrl(owner, repo);
+      const url = yield* detectRemoteUrl(owner, repo, cwd);
 
       const existingRemote = yield* Effect.catch(
-        execProcess("git", ["remote", "get-url", remoteName]).pipe(
-          Effect.map((result) => result.stdout.trim()),
-        ),
+        execProcess(
+          "git",
+          ["remote", "get-url", remoteName],
+          cwd ? { cwd } : undefined,
+        ).pipe(Effect.map((result) => result.stdout.trim())),
         () => Effect.succeed(null),
       );
 
@@ -143,7 +255,11 @@ export const liveGitHubService: GitHubService = GitHubService.of({
       }
 
       yield* Effect.mapError(
-        execProcess("git", ["remote", "add", remoteName, url]),
+        execProcess(
+          "git",
+          ["remote", "add", remoteName, url],
+          cwd ? { cwd } : undefined,
+        ),
         (error) =>
           error instanceof Error && "code" in error
             ? toWctError(error)
@@ -154,14 +270,30 @@ export const liveGitHubService: GitHubService = GitHubService.of({
               ),
       );
     }),
-  fetchBranch: (branch, remote = "origin") =>
+  fetchBranch: (branch, remote = "origin", cwd) =>
     Effect.mapError(
-      execProcess("git", ["fetch", remote, branch]).pipe(Effect.asVoid),
+      execProcess(
+        "git",
+        ["fetch", remote, branch],
+        cwd ? { cwd } : undefined,
+      ).pipe(Effect.asVoid),
       (error) =>
         commandError(
           "pr_error",
           `Failed to fetch branch '${branch}': ${extractShellError(error)}`,
           error,
         ),
+    ),
+  listPrs: (cwd) =>
+    Effect.mapError(listPrsImpl(cwd), (error) =>
+      commandError("pr_error", "Failed to list PRs", error),
+    ),
+  listPrChecks: (cwd, prNumber) =>
+    Effect.mapError(listPrChecksImpl(cwd, prNumber), (error) =>
+      commandError(
+        "pr_error",
+        `Failed to list checks for PR #${prNumber}`,
+        error,
+      ),
     ),
 });

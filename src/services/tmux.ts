@@ -1,7 +1,6 @@
 import { Effect, ServiceMap } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
-import { runBunPromise } from "../effect/runtime";
-import { provideWctServices, type WctServices } from "../effect/services";
+import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import {
@@ -16,6 +15,18 @@ export interface TmuxSession {
   name: string;
   attached: boolean;
   windows: number;
+}
+
+export interface TmuxPaneInfo {
+  paneId: string;
+  paneIndex: number;
+  command: string;
+  window: string;
+}
+
+export interface TmuxClient {
+  tty: string;
+  session: string;
 }
 
 export type CreateSessionResult =
@@ -47,6 +58,16 @@ export interface TmuxService {
   getCurrentSession: () => Effect.Effect<string | null, WctError, WctServices>;
   switchSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
   attachSession: (name: string) => Effect.Effect<void, WctError, WctServices>;
+  listPanes: (
+    sessionName: string,
+  ) => Effect.Effect<TmuxPaneInfo[], WctError, WctServices>;
+  listClients: () => Effect.Effect<TmuxClient[], WctError, WctServices>;
+  switchClientToPane: (
+    clientTty: string,
+    target: string,
+  ) => Effect.Effect<void, WctError, WctServices>;
+  selectPane: (pane: string) => Effect.Effect<void, WctError, WctServices>;
+  refreshClient: () => Effect.Effect<void, WctError, WctServices>;
 }
 
 export const TmuxService = ServiceMap.Service<TmuxService>("wct/TmuxService");
@@ -64,6 +85,37 @@ export function parseSessionListOutput(output: string): TmuxSession[] {
       windows: parseInt(windows ?? "0", 10),
     };
   });
+}
+
+export function parsePaneListOutput(output: string): TmuxPaneInfo[] {
+  if (!output) return [];
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [pid, pIdx, cmd, win] = line.split("\t");
+      return pid
+        ? [
+            {
+              paneId: pid,
+              paneIndex: Number(pIdx),
+              command: cmd || "",
+              window: win || "",
+            },
+          ]
+        : [];
+    });
+}
+
+export function parseClientListOutput(output: string): TmuxClient[] {
+  if (!output) return [];
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [tty, session] = line.split("\t");
+      return tty && session ? [{ tty, session }] : [];
+    });
 }
 
 function listSessionsImpl() {
@@ -406,6 +458,51 @@ function attachSessionImpl(name: string) {
   });
 }
 
+function listPanesImpl(sessionName: string) {
+  return Effect.catch(
+    execProcess("tmux", [
+      "list-panes",
+      "-s",
+      "-t",
+      `=${sessionName}`,
+      "-F",
+      "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}",
+    ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout.trim()))),
+    () => Effect.succeed([] as TmuxPaneInfo[]),
+  );
+}
+
+function listClientsImpl() {
+  return Effect.catch(
+    execProcess("tmux", [
+      "list-clients",
+      "-F",
+      "#{client_tty}\t#{client_session}",
+    ]).pipe(
+      Effect.map((result) => parseClientListOutput(result.stdout.trim())),
+    ),
+    () => Effect.succeed([] as TmuxClient[]),
+  );
+}
+
+function switchClientToPaneImpl(clientTty: string, target: string) {
+  return execProcess("tmux", [
+    "switch-client",
+    "-c",
+    clientTty,
+    "-t",
+    target,
+  ]).pipe(Effect.asVoid);
+}
+
+function selectPaneImpl(pane: string) {
+  return execProcess("tmux", ["select-pane", "-t", pane]).pipe(Effect.asVoid);
+}
+
+function refreshClientImpl() {
+  return execProcess("tmux", ["refresh-client", "-S"]).pipe(Effect.asVoid);
+}
+
 export const liveTmuxService: TmuxService = TmuxService.of({
   listSessions: () =>
     Effect.mapError(listSessionsImpl(), (error) =>
@@ -475,85 +572,32 @@ export const liveTmuxService: TmuxService = TmuxService.of({
         error,
       ),
     ),
-});
-
-function provideTmuxService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return provideWctServices(
-    Effect.provideService(effect, TmuxService, liveTmuxService),
-  );
-}
-
-export async function listSessions(): Promise<TmuxSession[] | null> {
-  return runBunPromise(
-    provideTmuxService(TmuxService.use((service) => service.listSessions())),
-  );
-}
-
-export async function isPaneAlive(pane: string): Promise<boolean | null> {
-  return runBunPromise(
-    provideTmuxService(TmuxService.use((service) => service.isPaneAlive(pane))),
-  );
-}
-
-export async function sessionExists(name: string): Promise<boolean> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.sessionExists(name)),
-    ),
-  );
-}
-
-export async function getSessionStatus(
-  name: string,
-): Promise<"attached" | "detached" | null> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.getSessionStatus(name)),
-    ),
-  );
-}
-
-export async function createSession(
-  name: string,
-  workingDir: string,
-  config?: TmuxConfig,
-  env?: WctEnv,
-): Promise<CreateSessionResult> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) =>
-        service.createSession(name, workingDir, config, env),
+  listPanes: (sessionName) =>
+    Effect.mapError(listPanesImpl(sessionName), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to list panes for session '${sessionName}'`,
+        error,
       ),
     ),
-  );
-}
-
-export async function killSession(name: string): Promise<void> {
-  return runBunPromise(
-    provideTmuxService(TmuxService.use((service) => service.killSession(name))),
-  );
-}
-
-export async function getCurrentSession(): Promise<string | null> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.getCurrentSession()),
+  listClients: () =>
+    Effect.mapError(listClientsImpl(), (error) =>
+      commandError("tmux_error", "Failed to list tmux clients", error),
     ),
-  );
-}
-
-export async function switchSession(name: string): Promise<void> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.switchSession(name)),
+  switchClientToPane: (clientTty, target) =>
+    Effect.mapError(switchClientToPaneImpl(clientTty, target), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to switch client to '${target}'`,
+        error,
+      ),
     ),
-  );
-}
-
-export async function attachSession(name: string): Promise<void> {
-  return runBunPromise(
-    provideTmuxService(
-      TmuxService.use((service) => service.attachSession(name)),
+  selectPane: (pane) =>
+    Effect.mapError(selectPaneImpl(pane), (error) =>
+      commandError("tmux_error", `Failed to select pane '${pane}'`, error),
     ),
-  );
-}
+  refreshClient: () =>
+    Effect.mapError(refreshClientImpl(), (error) =>
+      commandError("tmux_error", "Failed to refresh tmux client", error),
+    ),
+});

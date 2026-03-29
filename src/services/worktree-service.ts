@@ -22,15 +22,19 @@ export type RemoveWorktreeResult =
   | { _tag: "BlockedByChanges"; path: string };
 
 export interface WorktreeService {
-  getMainRepoPath: () => Effect.Effect<string | null, WctError, WctServices>;
-  getCurrentBranch: () => Effect.Effect<string | null, WctError, WctServices>;
-  getMainWorktreePath: () => Effect.Effect<
-    string | null,
-    WctError,
-    WctServices
-  >;
-  isGitRepo: () => Effect.Effect<boolean, WctError, WctServices>;
-  listWorktrees: () => Effect.Effect<Worktree[], WctError, WctServices>;
+  getMainRepoPath: (
+    cwd?: string,
+  ) => Effect.Effect<string | null, WctError, WctServices>;
+  getCurrentBranch: (
+    cwd?: string,
+  ) => Effect.Effect<string | null, WctError, WctServices>;
+  getMainWorktreePath: (
+    cwd?: string,
+  ) => Effect.Effect<string | null, WctError, WctServices>;
+  isGitRepo: (cwd?: string) => Effect.Effect<boolean, WctError, WctServices>;
+  listWorktrees: (
+    cwd?: string,
+  ) => Effect.Effect<Worktree[], WctError, WctServices>;
   createWorktree: (
     path: string,
     branch: string,
@@ -39,9 +43,11 @@ export interface WorktreeService {
   ) => Effect.Effect<CreateWorktreeResult, WctError, WctServices>;
   branchExists: (
     branch: string,
+    cwd?: string,
   ) => Effect.Effect<boolean, WctError, WctServices>;
   remoteBranchExists: (
     branch: string,
+    cwd?: string,
   ) => Effect.Effect<boolean, WctError, WctServices>;
   removeWorktree: (
     path: string,
@@ -49,7 +55,23 @@ export interface WorktreeService {
   ) => Effect.Effect<RemoveWorktreeResult, WctError, WctServices>;
   findWorktreeByBranch: (
     branch: string,
+    cwd?: string,
   ) => Effect.Effect<Worktree | null, WctError, WctServices>;
+  getChangedFileCount: (
+    cwd: string,
+  ) => Effect.Effect<number, WctError, WctServices>;
+  getAheadBehind: (
+    cwd: string,
+    ref: string,
+  ) => Effect.Effect<
+    { ahead: number; behind: number } | null,
+    WctError,
+    WctServices
+  >;
+  getDefaultBranch: (
+    cwd: string,
+  ) => Effect.Effect<string | null, WctError, WctServices>;
+  listBranches: (cwd: string) => Effect.Effect<string[], WctError, WctServices>;
 }
 
 export const WorktreeService = ServiceMap.Service<WorktreeService>(
@@ -69,10 +91,12 @@ function extractShellError(error: unknown): string {
   return message;
 }
 
-function listWorktreesImpl() {
-  return execProcess("git", ["worktree", "list", "--porcelain"]).pipe(
-    Effect.map((result) => parseWorktreeListOutput(result.stdout)),
-  );
+function listWorktreesImpl(cwd?: string) {
+  return execProcess(
+    "git",
+    ["worktree", "list", "--porcelain"],
+    cwd ? { cwd } : undefined,
+  ).pipe(Effect.map((result) => parseWorktreeListOutput(result.stdout)));
 }
 
 function resolveMainRepoPathFromGitDirs(
@@ -126,10 +150,90 @@ export function parseWorktreeListOutput(output: string): Worktree[] {
   return worktrees;
 }
 
+export function parseGitStatusCount(output: string): number {
+  const trimmed = output.trim();
+  return trimmed ? trimmed.split("\n").length : 0;
+}
+
+export function parseAheadBehind(
+  output: string,
+): { ahead: number; behind: number } | null {
+  const parts = output.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const ahead = Number.parseInt(parts[0] ?? "0", 10);
+  const behind = Number.parseInt(parts[1] ?? "0", 10);
+  return {
+    ahead: Number.isNaN(ahead) ? 0 : ahead,
+    behind: Number.isNaN(behind) ? 0 : behind,
+  };
+}
+
+export function normalizeDefaultBranchRef(ref: string): string {
+  return ref.replace(/^origin\//, "");
+}
+
+function getChangedFileCountImpl(cwd: string) {
+  return Effect.catch(
+    execProcess("git", ["status", "--porcelain"], { cwd }).pipe(
+      Effect.map((result) => parseGitStatusCount(result.stdout)),
+    ),
+    () => Effect.succeed(0),
+  );
+}
+
+function getAheadBehindImpl(cwd: string, ref: string) {
+  return Effect.catch(
+    execProcess(
+      "git",
+      ["rev-list", "--left-right", "--count", `HEAD...${ref}`],
+      { cwd },
+    ).pipe(Effect.map((result) => parseAheadBehind(result.stdout))),
+    () => Effect.succeed(null),
+  );
+}
+
+function getDefaultBranchImpl(cwd: string) {
+  return Effect.gen(function* () {
+    const symbolicRef = yield* Effect.catch(
+      execProcess(
+        "git",
+        ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+        { cwd },
+      ).pipe(Effect.map((result) => result.stdout.trim())),
+      () => Effect.succeed(""),
+    );
+    if (symbolicRef) return symbolicRef;
+
+    for (const candidate of [
+      "origin/main",
+      "origin/master",
+      "main",
+      "master",
+    ]) {
+      const exists = yield* runProcess(
+        "git",
+        ["rev-parse", "--verify", candidate],
+        { cwd },
+      ).pipe(Effect.map((result) => result.success));
+      if (exists) return candidate;
+    }
+    return null;
+  });
+}
+
+function listBranchesImpl(cwd: string) {
+  return Effect.catch(
+    execProcess("git", ["branch", "--format=%(refname:short)"], { cwd }).pipe(
+      Effect.map((result) => result.stdout.split("\n").filter(Boolean)),
+    ),
+    () => Effect.succeed([] as string[]),
+  );
+}
+
 export const liveWorktreeService: WorktreeService = WorktreeService.of({
-  getMainRepoPath: () =>
+  getMainRepoPath: (cwd) =>
     Effect.gen(function* () {
-      const worktrees = yield* Effect.catch(listWorktreesImpl(), () =>
+      const worktrees = yield* Effect.catch(listWorktreesImpl(cwd), () =>
         Effect.succeed([]),
       );
       const mainWorktreePath = worktrees[0]?.path ?? null;
@@ -139,15 +243,19 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
 
       const [topLevelPath, gitCommonDir] = yield* Effect.all([
         Effect.catch(
-          execProcess("git", ["rev-parse", "--show-toplevel"]).pipe(
-            Effect.map((result) => result.stdout.trim()),
-          ),
+          execProcess(
+            "git",
+            ["rev-parse", "--show-toplevel"],
+            cwd ? { cwd } : undefined,
+          ).pipe(Effect.map((result) => result.stdout.trim())),
           () => Effect.succeed(null),
         ),
         Effect.catch(
-          execProcess("git", ["rev-parse", "--git-common-dir"]).pipe(
-            Effect.map((result) => result.stdout.trim()),
-          ),
+          execProcess(
+            "git",
+            ["rev-parse", "--git-common-dir"],
+            cwd ? { cwd } : undefined,
+          ).pipe(Effect.map((result) => result.stdout.trim())),
           () => Effect.succeed(null),
         ),
       ]);
@@ -162,12 +270,14 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  getCurrentBranch: () =>
+  getCurrentBranch: (cwd) =>
     Effect.gen(function* () {
       const branch = yield* Effect.catch(
-        execProcess("git", ["rev-parse", "--abbrev-ref", "HEAD"]).pipe(
-          Effect.map((result) => result.stdout.trim()),
-        ),
+        execProcess(
+          "git",
+          ["rev-parse", "--abbrev-ref", "HEAD"],
+          cwd ? { cwd } : undefined,
+        ).pipe(Effect.map((result) => result.stdout.trim())),
         () => Effect.succeed(null),
       );
       if (!branch || branch === "HEAD") {
@@ -183,24 +293,28 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  getMainWorktreePath: () =>
+  getMainWorktreePath: (cwd) =>
     Effect.gen(function* () {
-      const worktrees = yield* listWorktreesImpl();
+      const worktrees = yield* listWorktreesImpl(cwd);
       return worktrees[0]?.path ?? null;
     }).pipe(
       Effect.mapError((error) =>
         commandError("worktree_error", "Failed to list worktrees", error),
       ),
     ),
-  isGitRepo: () =>
-    runProcess("git", ["rev-parse", "--git-dir"]).pipe(
+  isGitRepo: (cwd) =>
+    runProcess(
+      "git",
+      ["rev-parse", "--git-dir"],
+      cwd ? { cwd } : undefined,
+    ).pipe(
       Effect.map((result) => result.success),
       Effect.mapError((error) =>
         commandError("not_git_repo", "Failed to inspect git repository", error),
       ),
     ),
-  listWorktrees: () =>
-    listWorktreesImpl().pipe(
+  listWorktrees: (cwd) =>
+    listWorktreesImpl(cwd).pipe(
       Effect.mapError((error) =>
         commandError("worktree_error", "Failed to list worktrees", error),
       ),
@@ -263,8 +377,12 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  branchExists: (branch) =>
-    runProcess("git", ["rev-parse", "--verify", branch]).pipe(
+  branchExists: (branch, cwd) =>
+    runProcess(
+      "git",
+      ["rev-parse", "--verify", branch],
+      cwd ? { cwd } : undefined,
+    ).pipe(
       Effect.map((result) => result.success),
       Effect.mapError((error) =>
         commandError(
@@ -274,8 +392,12 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  remoteBranchExists: (branch) =>
-    runProcess("git", ["rev-parse", "--verify", `origin/${branch}`]).pipe(
+  remoteBranchExists: (branch, cwd) =>
+    runProcess(
+      "git",
+      ["rev-parse", "--verify", `origin/${branch}`],
+      cwd ? { cwd } : undefined,
+    ).pipe(
       Effect.map((result) => result.success),
       Effect.mapError((error) =>
         commandError(
@@ -310,9 +432,9 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  findWorktreeByBranch: (branch) =>
+  findWorktreeByBranch: (branch, cwd) =>
     Effect.gen(function* () {
-      const worktrees = yield* listWorktreesImpl();
+      const worktrees = yield* listWorktreesImpl(cwd);
       return worktrees.find((worktree) => worktree.branch === branch) ?? null;
     }).pipe(
       Effect.mapError((error) =>
@@ -322,5 +444,29 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
           error,
         ),
       ),
+    ),
+  getChangedFileCount: (cwd) =>
+    Effect.mapError(getChangedFileCountImpl(cwd), (error) =>
+      commandError("worktree_error", "Failed to get changed file count", error),
+    ),
+  getAheadBehind: (cwd, ref) =>
+    Effect.mapError(getAheadBehindImpl(cwd, ref), (error) =>
+      commandError(
+        "worktree_error",
+        "Failed to get ahead/behind counts",
+        error,
+      ),
+    ),
+  getDefaultBranch: (cwd) =>
+    Effect.mapError(getDefaultBranchImpl(cwd), (error) =>
+      commandError(
+        "worktree_error",
+        "Failed to determine default branch",
+        error,
+      ),
+    ),
+  listBranches: (cwd) =>
+    Effect.mapError(listBranchesImpl(cwd), (error) =>
+      commandError("worktree_error", "Failed to list branches", error),
     ),
 });

@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to AI Agents when working with code in this repository.
-
 ## Project Overview
 
 `wct` is a CLI tool that automates git worktree workflows. It enables developers to quickly create isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
@@ -11,13 +7,11 @@ This file provides guidance to AI Agents when working with code in this reposito
 ```bash
 bun install              # Install dependencies
 bun run src/index.ts     # Run the CLI
-bun test                 # Run tests (vitest)
+bun run test             # Run tests (vitest)
 bunx biome check --write # Format and lint code
 ```
 
 ## Architecture
-
-The file structure follows this layout:
 
 ```
 src/
@@ -39,6 +33,9 @@ src/
 │   ├── notify.ts         # Native Effect implementation of wct notify
 │   ├── queue.ts          # Native Effect implementation of wct queue
 │   ├── hooks.ts          # Native Effect implementation of wct hooks
+│   ├── register.ts       # Native Effect implementation of wct register
+│   ├── unregister.ts     # Native Effect implementation of wct unregister
+│   ├── session.ts        # Native Effect implementation of wct session
 │   └── tui.ts            # Native Effect implementation of wct tui
 ├── config/
 │   ├── loader.ts         # Effect-based config loading and merge flow
@@ -64,18 +61,24 @@ src/
 │   └── worktree-status.ts  # Helpers for computing worktree status
 ├── tui/
 │   ├── App.tsx            # Root Ink component, data fetching, keyboard routing
+│   ├── runtime.ts         # ManagedRuntime for TUI-specific Effect services
+│   ├── types.ts           # TUI mode, detail kind, and PR info type definitions
 │   ├── components/
 │   │   ├── TreeView.tsx   # Collapsible repo/worktree list
 │   │   ├── RepoNode.tsx   # Single repo group
 │   │   ├── WorktreeItem.tsx # Branch line with status indicators
 │   │   ├── OpenModal.tsx  # Modal for wct open
 │   │   ├── StatusBar.tsx  # Bottom keybinding hints
-│   │   └── Modal.tsx      # Generic modal wrapper
+│   │   ├── Modal.tsx      # Generic modal wrapper
+│   │   ├── DetailRow.tsx  # Single row in detail/status views
+│   │   └── ScrollableList.tsx # Scrollable list with cursor blinking
 │   └── hooks/
 │       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
 │       ├── useQueue.ts    # Fetch notifications from DB
 │       ├── useRefresh.ts  # Hybrid poll + fs.watch
-│       └── useTmux.ts     # switch-client, list-clients
+│       ├── useTmux.ts     # switch-client, list-clients
+│       ├── useBlink.ts    # Toggling boolean for cursor blink animation
+│       └── useGitHub.ts   # Fetch PR and check status from GitHub
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/
@@ -102,36 +105,3 @@ Leverage Bun built-in APIs where they are still the right primitive:
 The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. Exception: `ink` and `react` are runtime dependencies used exclusively by the `wct tui` subcommand. They are lazy-imported so they are never loaded for other commands. The only dev dependency exceptions are `@biomejs/biome`, `@types/bun`, and `vitest`.
 
 This project uses **Effect v4**. If your training data covers Effect v3, read [EFFECT_V4.md](./EFFECT_V4.md) for the correct v4 APIs and patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
-
-## Config System
-
-Config files (`.wct.yaml`) are loaded from:
-
-1. Project root (takes precedence)
-2. `~/.wct.yaml` (global defaults)
-
-Environment variables available in config commands:
-
-- `WCT_WORKTREE_DIR` - worktree path
-- `WCT_MAIN_DIR` - main repo path
-- `WCT_BRANCH` - branch name
-- `WCT_PROJECT` - project name
-
-## Code Style
-
-- Indentation: spaces
-- Quotes: double quotes
-- Biome handles linting and formatting
-- Use warning-based error handling (log and continue on non-critical failures)
-
-## Testing
-
-Tests use [vitest](https://vitest.dev/) as the test runner. Run tests with `bun test` (which invokes `vitest run`).
-
-```ts
-import { test, expect } from "vitest";
-
-test("example", () => {
-  expect(1).toBe(1);
-});
-```

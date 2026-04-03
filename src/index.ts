@@ -3,11 +3,13 @@ import {
   generateCompletionScript,
   getCustomCompletionShell,
 } from "./cli/completions";
+import { JsonFlag } from "./cli/json-flag";
 import { rootCommand } from "./cli/root-command";
-import { Command } from "./effect/cli";
+import { CliError, Command } from "./effect/cli";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
 import { provideWctServices } from "./effect/services";
 import { toWctError } from "./errors";
+import { jsonError } from "./utils/json-output";
 
 const { version: VERSION } = require("../package.json");
 const args = process.argv.slice(2);
@@ -25,12 +27,31 @@ if (customCompletionShell) {
 
 const program = provideBunServices(
   provideWctServices(
-    Effect.catch(Command.run(rootCommand, { version: VERSION }), (error) =>
-      Effect.sync(() => {
-        process.stderr.write(`${toWctError(error).message}\n`);
+    Effect.catch(Command.run(rootCommand, { version: VERSION }), (error) => {
+      const wctError = toWctError(error);
+
+      return Effect.gen(function* () {
+        let json = false;
+
+        try {
+          json = yield* JsonFlag;
+        } catch {
+          // JsonFlag may not be in context if CLI parsing failed.
+        }
+
+        if (!json && !CliError.isCliError(error) && args.includes("--json")) {
+          json = true;
+        }
+
+        if (json) {
+          yield* jsonError(wctError.code, wctError.message);
+        } else {
+          process.stderr.write(`${wctError.message}\n`);
+        }
+
         process.exitCode = 1;
-      }),
-    ),
+      });
+    }),
   ),
 );
 

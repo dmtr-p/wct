@@ -9,6 +9,10 @@ import { listCommand } from "../src/commands/list";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import {
+  liveWorktreeService,
+  WorktreeService,
+} from "../src/services/worktree-service";
+import {
   formatSync,
   getAheadBehind,
   getChangedFilesCount,
@@ -331,6 +335,83 @@ describe("listCommand integration", () => {
       expect(featureEntry.changes).toBe(2);
       expect(featureEntry.sync).toEqual({ ahead: 0, behind: 3 });
       expect(featureEntry.tmux).toBeNull();
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+    }
+  });
+
+  test("--json outputs exact empty success envelope when no non-bare worktrees exist", async () => {
+    const lines: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(
+            Effect.provideService(
+              listCommand({ short: false }),
+              JsonFlag,
+              true,
+            ),
+            WorktreeService,
+            WorktreeService.of({
+              ...liveWorktreeService,
+              listWorktrees: () =>
+                Effect.succeed([
+                  {
+                    path: "/tmp/bare.git",
+                    branch: "bare",
+                    commit: "deadbeef",
+                    isBare: true,
+                  },
+                ]),
+            }),
+          ),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      expect(JSON.parse(jsonLine ?? "")).toEqual({ ok: true, data: [] });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("--json takes precedence over short output", async () => {
+    process.chdir(repoDir);
+    const lines: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(listCommand({ short: true }), JsonFlag, true),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      const output = JSON.parse(jsonLine ?? "");
+      expect(output.ok).toBe(true);
+      expect(Array.isArray(output.data)).toBe(true);
+      expect(
+        output.data.some((e: { branch: string }) => e.branch === "main"),
+      ).toBe(true);
+      expect(
+        output.data.some(
+          (e: { branch: string }) => e.branch === "feature-test",
+        ),
+      ).toBe(true);
     } finally {
       spy.mockRestore();
       process.chdir(originalDir);

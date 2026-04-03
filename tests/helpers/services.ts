@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { JsonFlag } from "../../src/cli/json-flag";
 import type { WctServices } from "../../src/effect/services";
 import {
   GitHubService,
@@ -45,6 +46,7 @@ export interface ServiceOverrides {
   github?: GitHubServiceApi;
   hooks?: HooksServiceApi;
   ide?: IdeServiceApi;
+  json?: boolean;
   queueStorage?: QueueStorageService;
   setup?: SetupServiceApi;
   tmux?: TmuxServiceApi;
@@ -97,6 +99,11 @@ export function withTestServices<A, E, R>(
     provided,
     WorktreeService,
     overrides.worktree ?? liveWorktreeService,
+  );
+  provided = Effect.provideService(
+    provided,
+    JsonFlag,
+    overrides.json ?? false,
   );
 
   return provided as Effect.Effect<A, E, Exclude<R, WctServices>>;

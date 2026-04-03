@@ -11,6 +11,10 @@ bun run test             # Run tests (vitest)
 bunx biome check --write # Format and lint code
 ```
 
+**Do not run tests or linting manually.** Claude Code hooks handle this automatically:
+- **PostToolUse**: `biome format --write` runs on every file edit
+- **Stop**: `biome lint --write` and `bun run test` run when the session stops, waking the agent on failure (exit code 2)
+
 ## Architecture
 
 ```

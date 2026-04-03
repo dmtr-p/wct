@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; bunx biome format --write \"$f\"; }",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bunx biome lint --error-on-warnings --write src/ && bun run test -- --reporter=agent || exit 2",
+            "timeout": 120,
+            "statusMessage": "Running lint fix + tests..."
+          }
+        ]
+      }
+    ]
+  }
+}

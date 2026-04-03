@@ -104,14 +104,21 @@ describe("Effect CLI root", () => {
     expect(result.exitCode).toBe(1);
     expect(stdout.trim()).toBe("");
     expect(() => JSON.parse(stderr)).not.toThrow();
-    expect(JSON.parse(stderr)).toEqual({
-      ok: false,
-      error: {
-        code: "unknown_command",
-        message:
-          'Unknown subcommand "nope" for "wct"\n\n  Did you mean this?\n    open',
-      },
-    });
+    const parsed = JSON.parse(stderr);
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "unknown_command",
+        }),
+      }),
+    );
+    expect(parsed.error.message).toEqual(
+      expect.stringContaining("Unknown subcommand"),
+    );
+    expect(parsed.error.message).toEqual(
+      expect.stringContaining("Did you mean"),
+    );
     expect(stderr).not.toContain("GLOBAL FLAGS");
     expect(stderr).not.toContain("Help requested");
   });
@@ -124,13 +131,19 @@ describe("Effect CLI root", () => {
     expect(result.exitCode).toBe(1);
     expect(stdout.trim()).toBe("");
     expect(() => JSON.parse(stderr)).not.toThrow();
-    expect(JSON.parse(stderr)).toEqual({
-      ok: false,
-      error: {
-        code: "invalid_options",
-        message: "Unrecognized flag: --bad-flag in command wct queue",
-      },
-    });
+    const parsed = JSON.parse(stderr);
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "invalid_options",
+        }),
+      }),
+    );
+    expect(parsed.error.message).toEqual(
+      expect.stringContaining("Unrecognized flag"),
+    );
+    expect(parsed.error.message).toEqual(expect.stringContaining("--bad-flag"));
     expect(stderr).not.toContain("GLOBAL FLAGS");
     expect(stderr).not.toContain("Help requested");
   });

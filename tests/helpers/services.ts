@@ -102,5 +102,9 @@ export function withTestServices<A, E, R>(
   );
   provided = Effect.provideService(provided, JsonFlag, overrides.json ?? false);
 
-  return provided as Effect.Effect<A, E, Exclude<R, WctServices | typeof JsonFlag>>;
+  return provided as Effect.Effect<
+    A,
+    E,
+    Exclude<R, WctServices | typeof JsonFlag>
+  >;
 }

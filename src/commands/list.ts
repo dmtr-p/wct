@@ -75,7 +75,7 @@ export function listCommand(opts?: {
       : null;
 
     const cwd = process.cwd();
-    const rows = yield* Effect.mapError(
+    const worktreeData = yield* Effect.mapError(
       Effect.forEach(nonBareWorktrees, (wt) =>
         Effect.gen(function* () {
           const branch = wt.branch || "(unknown)";
@@ -86,30 +86,13 @@ export function listCommand(opts?: {
             getAheadBehind(wt.path, defaultBranch),
           ]);
 
-          let tmux = "";
-          let tmuxRaw = "";
-          if (session) {
-            if (session.attached) {
-              tmuxRaw = `* ${sessionName}`;
-              tmux = logger.green(tmuxRaw);
-            } else {
-              tmuxRaw = `  ${sessionName}`;
-              tmux = tmuxRaw;
-            }
-          }
-
           return {
             branch,
             path: relative(cwd, wt.path) || ".",
-            tmux,
-            tmuxRaw,
-            tmuxJson: session
-              ? { session: session.name, attached: session.attached }
-              : null,
+            session,
+            sessionName,
             changesCount,
-            changes: formatChanges(changesCount),
             syncStatus,
-            sync: formatSync(syncStatus),
           };
         }),
       ),
@@ -123,16 +106,41 @@ export function listCommand(opts?: {
 
     if (json) {
       yield* jsonSuccess(
-        rows.map((row) => ({
+        worktreeData.map((row) => ({
           branch: row.branch,
           path: row.path,
-          tmux: row.tmuxJson,
+          tmux: row.session
+            ? { session: row.session.name, attached: row.session.attached }
+            : null,
           changes: row.changesCount,
           sync: row.syncStatus,
         })),
       );
       return;
     }
+
+    const rows = worktreeData.map((row) => {
+      let tmux = "";
+      let tmuxRaw = "";
+      if (row.session) {
+        if (row.session.attached) {
+          tmuxRaw = `* ${row.sessionName}`;
+          tmux = logger.green(tmuxRaw);
+        } else {
+          tmuxRaw = `  ${row.sessionName}`;
+          tmux = tmuxRaw;
+        }
+      }
+
+      return {
+        branch: row.branch,
+        path: row.path,
+        tmux,
+        tmuxRaw,
+        changes: formatChanges(row.changesCount),
+        sync: formatSync(row.syncStatus),
+      };
+    });
 
     const headers = ["BRANCH", "PATH", "TMUX", "CHANGES", "SYNC"] as const;
     const colWidths = [

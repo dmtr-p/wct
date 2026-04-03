@@ -154,18 +154,7 @@ export function queueCommand(
       }
 
       if (json) {
-        yield* jsonSuccess(
-          items.map((item) => ({
-            id: item.id,
-            type: item.type,
-            project: item.project,
-            branch: item.branch,
-            session: item.session,
-            pane: item.pane,
-            timestamp: item.timestamp,
-            message: item.message,
-          })),
-        );
+        yield* jsonSuccess(items);
         return;
       }
 

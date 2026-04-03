@@ -104,8 +104,10 @@ Edge case: CLI parse errors (e.g. `wct --json=foo`) happen before our code runs 
     {
       "id": "abc123",
       "type": "permission_prompt",
-      "repo": "my-repo",
+      "project": "my-repo",
       "branch": "feature-x",
+      "session": "my-repo-feature-x",
+      "pane": "%1",
       "timestamp": 1712150400000,
       "message": "Claude needs permission"
     }

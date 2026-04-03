@@ -28,6 +28,17 @@ describe("jsonSuccess", () => {
       spy.mockRestore();
     }
   });
+
+  test("normalizes undefined data to null", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await Effect.runPromise(jsonSuccess(undefined));
+      const output = JSON.parse(spy.mock.calls[0]?.[0] as string);
+      expect(output).toEqual({ ok: true, data: null });
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("jsonError", () => {

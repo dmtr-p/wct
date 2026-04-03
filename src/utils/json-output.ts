@@ -2,7 +2,8 @@ import { Console, Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 
 export function jsonSuccess<T>(data: T) {
-  return Console.log(JSON.stringify({ ok: true, data }, null, 2));
+  const normalizedData = data === undefined ? null : data;
+  return Console.log(JSON.stringify({ ok: true, data: normalizedData }, null, 2));
 }
 
 export function jsonError(code: string, message: string) {

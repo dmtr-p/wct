@@ -2,7 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { JsonFlag } from "../src/cli/json-flag";
 import { listCommand } from "../src/commands/list";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
@@ -292,6 +294,41 @@ describe("listCommand integration", () => {
       expect(lines.some((l) => l.includes("BRANCH"))).toBe(false);
       expect(lines.some((l) => l.includes("main"))).toBe(true);
       expect(lines.some((l) => l.includes("feature-test"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+    }
+  });
+
+  test("--json outputs structured JSON envelope", async () => {
+    process.chdir(repoDir);
+    const lines: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(listCommand({ short: false }), JsonFlag, true),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const output = JSON.parse(lines[0]!);
+      expect(output.ok).toBe(true);
+      expect(Array.isArray(output.data)).toBe(true);
+
+      const featureEntry = output.data.find(
+        (e: { branch: string }) => e.branch === "feature-test",
+      );
+      expect(featureEntry).toBeDefined();
+      expect(featureEntry.path).toBeDefined();
+      expect(typeof featureEntry.changes).toBe("number");
+      expect(featureEntry.changes).toBe(2);
+      expect(featureEntry.sync).toEqual({ ahead: 0, behind: 3 });
+      expect(featureEntry.tmux).toBeNull();
     } finally {
       spy.mockRestore();
       process.chdir(originalDir);

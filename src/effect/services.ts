@@ -1,5 +1,6 @@
 import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,
@@ -68,7 +69,11 @@ export type WctRuntimeServices =
 
 export function provideWctServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, Exclude<R, WctServices>> {
+): Effect.Effect<
+  A,
+  E,
+  Exclude<R, WctServices | "effect/unstable/cli/GlobalFlag/json">
+> {
   return Effect.provideService(
     Effect.provideService(
       Effect.provideService(
@@ -105,5 +110,11 @@ export function provideWctServices<A, E, R>(
     ),
     RegistryService,
     liveRegistryService,
-  ) as Effect.Effect<A, E, Exclude<R, WctServices>>;
+  ).pipe(
+    Effect.provideService(JsonFlag, false),
+  ) as Effect.Effect<
+    A,
+    E,
+    Exclude<R, WctServices | "effect/unstable/cli/GlobalFlag/json">
+  >;
 }

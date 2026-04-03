@@ -1,5 +1,6 @@
 import { basename, relative } from "node:path";
 import { Console, Effect } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
@@ -11,6 +12,7 @@ import {
   getChangedFilesCount,
   getDefaultBranch,
 } from "../services/worktree-status";
+import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -29,19 +31,28 @@ export const commandDef: CommandDef = {
 
 export function listCommand(opts?: {
   short?: boolean;
-}): Effect.Effect<void, WctError, WctServices> {
+}): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
+    const json = yield* JsonFlag;
     const worktrees = yield* WorktreeService.use((service) =>
       service.listWorktrees(),
     );
     const nonBareWorktrees = worktrees.filter((wt) => !wt.isBare);
 
     if (nonBareWorktrees.length === 0) {
+      if (json) {
+        yield* jsonSuccess([]);
+        return;
+      }
       yield* logger.info("No worktrees found");
       return;
     }
 
-    if (opts?.short) {
+    if (!json && opts?.short) {
       for (const wt of nonBareWorktrees) {
         yield* Console.log(wt.branch || "(unknown)");
       }
@@ -92,7 +103,12 @@ export function listCommand(opts?: {
             path: relative(cwd, wt.path) || ".",
             tmux,
             tmuxRaw,
+            tmuxJson: session
+              ? { session: session.name, attached: session.attached }
+              : null,
+            changesCount,
             changes: formatChanges(changesCount),
+            syncStatus,
             sync: formatSync(syncStatus),
           };
         }),
@@ -104,6 +120,19 @@ export function listCommand(opts?: {
           error,
         ),
     );
+
+    if (json) {
+      yield* jsonSuccess(
+        rows.map((row) => ({
+          branch: row.branch,
+          path: row.path,
+          tmux: row.tmuxJson,
+          changes: row.changesCount,
+          sync: row.syncStatus,
+        })),
+      );
+      return;
+    }
 
     const headers = ["BRANCH", "PATH", "TMUX", "CHANGES", "SYNC"] as const;
     const colWidths = [

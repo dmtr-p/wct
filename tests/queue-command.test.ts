@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { JsonFlag } from "../src/cli/json-flag";
 import * as queueCommandModule from "../src/commands/queue";
 import { runBunPromise } from "../src/effect/runtime";
 import {
@@ -17,7 +18,12 @@ async function runCommand(
     queueStorage?: QueueStorageService;
   } = {},
 ) {
-  await runBunPromise(withTestServices(queueCommand(options), overrides));
+  await runBunPromise(
+    withTestServices(
+      Effect.provideService(queueCommand(options), JsonFlag, false),
+      overrides,
+    ),
+  );
 }
 
 function makeItem(id: string, overrides: Partial<QueueItem> = {}): QueueItem {
@@ -167,6 +173,83 @@ describe("queueCommand", () => {
       const call1 = consoleSpy.mock.calls[1]?.[0] as string;
       expect(call1).toContain("[question]");
       expect(call1).toContain("5s ago");
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  test("default with items in --json mode outputs structured JSON", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const now = Date.now();
+    queueStorage = {
+      ...queueStorage,
+      listItems: () =>
+        Effect.succeed([
+          makeItem("test-1", {
+            branch: "feature-x",
+            project: "myapp",
+            type: "permission_prompt",
+            message: "Allow?",
+            session: "myapp-feature-x",
+            pane: "%1",
+            timestamp: now - 90_000,
+          }),
+          makeItem("test-2", {
+            branch: "feature-y",
+            project: "myapp",
+            type: "idle_prompt",
+            message: "Done",
+            session: "myapp-feature-y",
+            pane: "%2",
+            timestamp: now - 5000,
+          }),
+        ]),
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          Effect.provideService(queueCommand({}), JsonFlag, true),
+          { queueStorage, json: true },
+        ),
+      );
+      expect(consoleSpy).toHaveBeenCalledOnce();
+      const firstCall = consoleSpy.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const output = JSON.parse(firstCall?.[0] as string);
+      expect(output.ok).toBe(true);
+      expect(output.data).toHaveLength(2);
+      expect(output.data[0]).toEqual({
+        id: "test-1",
+        type: "permission_prompt",
+        project: "myapp",
+        branch: "feature-x",
+        session: "myapp-feature-x",
+        pane: "%1",
+        timestamp: now - 90_000,
+        message: "Allow?",
+      });
+      expect(output.data[1].id).toBe("test-2");
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  test("default with no items in --json mode outputs empty array", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          Effect.provideService(queueCommand({}), JsonFlag, true),
+          { queueStorage, json: true },
+        ),
+      );
+      expect(consoleSpy).toHaveBeenCalledOnce();
+      const firstCall = consoleSpy.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const output = JSON.parse(firstCall?.[0] as string);
+      expect(output).toEqual({ ok: true, data: [] });
     } finally {
       consoleSpy.mockRestore();
     }

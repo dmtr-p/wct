@@ -199,9 +199,11 @@ export const liveQueueStorage: QueueStorageService = QueueStorage.of({
 
       if (staleIds.length > 0) {
         yield* Effect.catch(deleteItemsByIds(staleIds), (error) =>
-          logger.warn(
-            `Failed to remove stale queue items: ${error instanceof Error ? error.message : String(error)}`,
-          ),
+          logWarnings
+            ? logger.warn(
+                `Failed to remove stale queue items: ${error instanceof Error ? error.message : String(error)}`,
+              )
+            : Effect.void,
         );
       }
 

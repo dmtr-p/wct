@@ -4,8 +4,8 @@ import { JsonFlag } from "../src/cli/json-flag";
 import * as queueCommandModule from "../src/commands/queue";
 import { runBunPromise } from "../src/effect/runtime";
 import {
-  liveQueueStorage,
   type ListItemsOptions,
+  liveQueueStorage,
   type QueueItem,
   type QueueStorageService,
 } from "../src/services/queue-storage";

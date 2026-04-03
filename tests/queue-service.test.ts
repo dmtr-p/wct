@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
@@ -285,6 +286,41 @@ describe("queue service", () => {
 
     expect(items).toHaveLength(1);
     expect(listItems({ validatePanes: false })).resolves.toHaveLength(1);
+  });
+
+  test("listItems suppresses stale cleanup failure warnings when logWarnings is false", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const dbPath = join(testHome, ".wct", "wct.db");
+    listSessionsMock.mockImplementation(() =>
+      Effect.sync(() => {
+        if (existsSync(dbPath)) {
+          rmSync(dbPath, { force: true, recursive: true });
+        }
+        mkdirSync(dbPath, { recursive: true });
+        return [] satisfies TmuxSession[];
+      }),
+    );
+
+    addItem({
+      branch: "a",
+      project: "p",
+      type: "t",
+      message: "stale",
+      session: "old-session",
+      pane: "%399",
+    });
+
+    try {
+      const items = await listItems({ logWarnings: false });
+
+      expect(items).toHaveLength(0);
+      expect(consoleSpy).not.toHaveBeenCalled();
+    } finally {
+      if (existsSync(dbPath)) {
+        rmSync(dbPath, { force: true, recursive: true });
+      }
+      consoleSpy.mockRestore();
+    }
   });
 
   test("removeItem returns true for existing item", async () => {

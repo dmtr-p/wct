@@ -19,6 +19,29 @@ describe("Effect CLI root", () => {
     expect(output).not.toContain("\n  completions");
   });
 
+  test("renders built-in help for the short -h alias even when --json is present", () => {
+    const result = runCliProcess(["--json", "-h"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(output).toContain("GLOBAL FLAGS");
+    expect(output).toContain("--json");
+    expect(output).toContain("switch, sw");
+  });
+
+  test("renders subcommand help for the short -h alias even when --json is present", () => {
+    const result = runCliProcess(["open", "--json", "-h"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(output).toContain("USAGE");
+    expect(output).toContain("wct open");
+    expect(output).toContain("--base");
+    expect(output).toContain("--json");
+  });
+
   test("renders built-in version output", () => {
     const result = runCliProcess(["--version"]);
 
@@ -71,6 +94,45 @@ describe("Effect CLI root", () => {
     expect(result.stderr.toString()).toContain(
       'Unknown subcommand "completions"',
     );
+  });
+
+  test("emits JSON for unknown subcommands when --json is present", () => {
+    const result = runCliProcess(["--json", "nope"]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    expect(JSON.parse(stderr)).toEqual({
+      ok: false,
+      error: {
+        code: "unknown_command",
+        message:
+          'Unknown subcommand "nope" for "wct"\n\n  Did you mean this?\n    open',
+      },
+    });
+    expect(stderr).not.toContain("GLOBAL FLAGS");
+    expect(stderr).not.toContain("Help requested");
+  });
+
+  test("emits JSON for unrecognized flags when --json is present", () => {
+    const result = runCliProcess(["--json", "queue", "--bad-flag"]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    expect(JSON.parse(stderr)).toEqual({
+      ok: false,
+      error: {
+        code: "invalid_options",
+        message: "Unrecognized flag: --bad-flag in command wct queue",
+      },
+    });
+    expect(stderr).not.toContain("GLOBAL FLAGS");
+    expect(stderr).not.toContain("Help requested");
   });
 
   test("renders command validation failures without a stack trace", () => {

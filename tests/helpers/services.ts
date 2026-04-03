@@ -42,6 +42,9 @@ import {
   type WorktreeService as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
+type JsonFlagRequirement =
+  typeof JsonFlag extends Effect.Effect<unknown, unknown, infer R> ? R : never;
+
 export interface ServiceOverrides {
   github?: GitHubServiceApi;
   hooks?: HooksServiceApi;
@@ -57,7 +60,7 @@ export interface ServiceOverrides {
 export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   overrides: ServiceOverrides = {},
-): Effect.Effect<A, E, Exclude<R, WctServices | typeof JsonFlag>> {
+): Effect.Effect<A, E, Exclude<R, WctServices | JsonFlagRequirement>> {
   let provided = effect;
 
   provided = Effect.provideService(
@@ -105,6 +108,6 @@ export function withTestServices<A, E, R>(
   return provided as Effect.Effect<
     A,
     E,
-    Exclude<R, WctServices | typeof JsonFlag>
+    Exclude<R, WctServices | JsonFlagRequirement>
   >;
 }

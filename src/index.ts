@@ -5,15 +5,42 @@ import {
 } from "./cli/completions";
 import { JsonFlag } from "./cli/json-flag";
 import { rootCommand } from "./cli/root-command";
-import { CliError, Command } from "./effect/cli";
+import { CliError, CliOutput, Command } from "./effect/cli";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
 import { provideWctServices } from "./effect/services";
-import { toWctError } from "./errors";
+import { commandError, toWctError } from "./errors";
 import { jsonError } from "./utils/json-output";
 
 const { version: VERSION } = require("../package.json");
 const args = process.argv.slice(2);
 const customCompletionShell = getCustomCompletionShell(args);
+const helpRequested = args.includes("--help") || args.includes("-h");
+const suppressCliOutputForJson = args.includes("--json") && !helpRequested;
+
+function toJsonModeWctError(
+  error: unknown,
+): ReturnType<typeof toWctError> | null {
+  if (!CliError.isCliError(error)) {
+    return toWctError(error);
+  }
+
+  switch (error._tag) {
+    case "UnknownSubcommand":
+      return commandError("unknown_command", error.message, error);
+    case "UnrecognizedOption":
+    case "DuplicateOption":
+    case "MissingOption":
+    case "MissingArgument":
+    case "InvalidValue":
+      return commandError("invalid_options", error.message, error);
+    case "UserError":
+      return toWctError(error.cause);
+    case "ShowHelp": {
+      const firstError = error.errors[0];
+      return firstError ? toJsonModeWctError(firstError) : null;
+    }
+  }
+}
 
 if (args.length === 1 && args[0] === "-v") {
   process.stdout.write(`wct v${VERSION}\n`);
@@ -28,8 +55,6 @@ if (customCompletionShell) {
 const program = provideBunServices(
   provideWctServices(
     Effect.catch(Command.run(rootCommand, { version: VERSION }), (error) => {
-      const wctError = toWctError(error);
-
       return Effect.gen(function* () {
         let json = false;
 
@@ -39,14 +64,16 @@ const program = provideBunServices(
           // JsonFlag may not be in context if CLI parsing failed.
         }
 
-        if (!json && !CliError.isCliError(error) && args.includes("--json")) {
+        if (!json && args.includes("--json")) {
           json = true;
         }
 
-        if (json) {
+        const wctError = json ? toJsonModeWctError(error) : toWctError(error);
+
+        if (json && wctError) {
           yield* jsonError(wctError.code, wctError.message);
         } else {
-          process.stderr.write(`${wctError.message}\n`);
+          process.stderr.write(`${toWctError(error).message}\n`);
         }
 
         process.exitCode = 1;
@@ -55,4 +82,16 @@ const program = provideBunServices(
   ),
 );
 
-BunRuntime.runMain(program);
+const runnableProgram = suppressCliOutputForJson
+  ? program.pipe(
+      Effect.provide(
+        CliOutput.layer({
+          ...CliOutput.defaultFormatter(),
+          formatHelpDoc: () => "",
+          formatErrors: () => "",
+        }),
+      ),
+    )
+  : program;
+
+BunRuntime.runMain(runnableProgram);

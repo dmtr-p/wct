@@ -209,7 +209,10 @@ describe("queueCommand", () => {
 
     try {
       await runBunPromise(
-        withTestServices(queueCommand({}), { queueStorage, json: true }),
+        withTestServices(
+          Effect.provideService(queueCommand({}), JsonFlag, true),
+          { queueStorage },
+        ),
       );
       expect(consoleSpy).toHaveBeenCalledOnce();
       const firstCall = consoleSpy.mock.calls[0];
@@ -238,7 +241,10 @@ describe("queueCommand", () => {
 
     try {
       await runBunPromise(
-        withTestServices(queueCommand({}), { queueStorage, json: true }),
+        withTestServices(
+          Effect.provideService(queueCommand({}), JsonFlag, true),
+          { queueStorage },
+        ),
       );
       expect(consoleSpy).toHaveBeenCalledOnce();
       const firstCall = consoleSpy.mock.calls[0];
@@ -267,7 +273,10 @@ describe("queueCommand", () => {
 
     try {
       await runBunPromise(
-        withTestServices(queueCommand({}), { queueStorage, json: true }),
+        withTestServices(
+          Effect.provideService(queueCommand({}), JsonFlag, true),
+          { queueStorage },
+        ),
       );
       expect(seenOptions).toEqual({ logWarnings: false });
       expect(consoleSpy).toHaveBeenCalledOnce();

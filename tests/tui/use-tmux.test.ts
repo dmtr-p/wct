@@ -14,19 +14,25 @@ const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useTmux } = await import("../../src/tui/hooks/useTmux");
 
 const mockRunPromise = tuiRuntime.runPromise as Mock;
+type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
+type TestStdin = NodeJS.ReadStream & {
+  isTTY: boolean;
+  setRawMode: (mode: boolean) => NodeJS.ReadStream;
+};
+type TmuxHookValue = ReturnType<typeof useTmux>;
 
 function createStdoutStdin() {
-  const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
-  (stdout as any).columns = 80;
-  (stdout as any).rows = 24;
-  const stdin = new PassThrough() as unknown as NodeJS.ReadStream;
-  (stdin as any).isTTY = false;
-  (stdin as any).setRawMode = () => stdin;
+  const stdout = new PassThrough() as unknown as TestStdout;
+  stdout.columns = 80;
+  stdout.rows = 24;
+  const stdin = new PassThrough() as unknown as TestStdin;
+  stdin.isTTY = false;
+  stdin.setRawMode = () => stdin;
   return { stdout, stdin };
 }
 
 async function renderUseTmux() {
-  let latest: ReturnType<typeof useTmux> | undefined;
+  let latest: TmuxHookValue | undefined;
   const Wrapper: FC = () => {
     latest = useTmux();
     return null;

@@ -15,6 +15,18 @@ const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useGitHub } = await import("../../src/tui/hooks/useGitHub");
 
 const mockRunPromise = tuiRuntime.runPromise as Mock;
+type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
+type TestStdin = NodeJS.ReadStream & {
+  isTTY: boolean;
+  setRawMode: (mode: boolean) => NodeJS.ReadStream;
+};
+type GitHubHookValue = ReturnType<typeof useGitHub>;
+type PrListResult = Array<{
+  number: number;
+  title: string;
+  state: "OPEN";
+  headRefName: string;
+}>;
 
 function makeRepo(overrides: Partial<RepoInfo> = {}): RepoInfo {
   return {
@@ -28,13 +40,19 @@ function makeRepo(overrides: Partial<RepoInfo> = {}): RepoInfo {
 }
 
 function createStdoutStdin() {
-  const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
-  (stdout as any).columns = 80;
-  (stdout as any).rows = 24;
-  const stdin = new PassThrough() as unknown as NodeJS.ReadStream;
-  (stdin as any).isTTY = false;
-  (stdin as any).setRawMode = () => stdin;
+  const stdout = new PassThrough() as unknown as TestStdout;
+  stdout.columns = 80;
+  stdout.rows = 24;
+  const stdin = new PassThrough() as unknown as TestStdin;
+  stdin.isTTY = false;
+  stdin.setRawMode = () => stdin;
   return { stdout, stdin };
+}
+
+function expectDefined<T>(value: T | undefined, message: string): T {
+  expect(value).toBeDefined();
+  if (value === undefined) throw new Error(message);
+  return value;
 }
 
 async function flush(n = 4) {
@@ -48,7 +66,7 @@ async function flush(n = 4) {
  * and exposes its return value.
  */
 async function renderUseGitHub(repos: RepoInfo[]) {
-  let latest: ReturnType<typeof useGitHub> | undefined;
+  let latest: GitHubHookValue | undefined;
 
   const Wrapper: FC = () => {
     latest = useGitHub(repos);
@@ -129,22 +147,26 @@ describe("useGitHub hook", () => {
     const data = harness.value.prData;
     expect(data.size).toBe(2);
 
-    const pr10 = data.get("myproject/feat/something");
-    expect(pr10).toBeDefined();
-    expect(pr10!.number).toBe(10);
-    expect(pr10!.checks).toEqual([{ name: "build", state: "SUCCESS" }]);
+    const pr10 = expectDefined(
+      data.get("myproject/feat/something"),
+      "Expected feat/something PR data",
+    );
+    expect(pr10.number).toBe(10);
+    expect(pr10.checks).toEqual([{ name: "build", state: "SUCCESS" }]);
 
-    const pr11 = data.get("myproject/fix/other");
-    expect(pr11).toBeDefined();
-    expect(pr11!.number).toBe(11);
-    expect(pr11!.checks).toEqual([]);
+    const pr11 = expectDefined(
+      data.get("myproject/fix/other"),
+      "Expected fix/other PR data",
+    );
+    expect(pr11.number).toBe(11);
+    expect(pr11.checks).toEqual([]);
 
     harness.unmount();
   });
 
   test("clears loading after refresh completes", async () => {
     const repo = makeRepo();
-    let resolveListPrs: ((v: any) => void) | undefined;
+    let resolveListPrs: ((value: PrListResult) => void) | undefined;
 
     mockRunPromise.mockImplementation(() => {
       return new Promise((resolve) => {
@@ -159,7 +181,11 @@ describe("useGitHub hook", () => {
     expect(harness.value.loading).toBe(true);
 
     // Resolve the listPrs call with empty array (no PRs = no check calls)
-    resolveListPrs!([]);
+    const resolvePendingListPrs = expectDefined(
+      resolveListPrs,
+      "Expected pending listPrs resolver",
+    );
+    resolvePendingListPrs([]);
     await flush(10);
 
     // Loading should now be false

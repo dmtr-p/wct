@@ -1,11 +1,5 @@
-import {
-  type Console,
-  Effect,
-  type FileSystem,
-  type Path,
-  type Terminal,
-} from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
+import { BunServices } from "@effect/platform-bun";
+import { Effect } from "effect";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,
@@ -53,19 +47,23 @@ import {
 } from "../services/worktree-service";
 
 export type WctServices =
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Console.Console
-  | FileSystem.FileSystem
+  | BunServices.BunServices
   | GitHubServiceApi
   | HooksServiceApi
   | IdeServiceApi
-  | Path.Path
   | QueueStorageService
   | RegistryServiceApi
   | SetupServiceApi
-  | Terminal.Terminal
   | TmuxServiceApi
   | VSCodeWorkspaceServiceApi
+  | WorktreeServiceApi;
+
+export type WctRuntimeServices =
+  | BunServices.BunServices
+  | GitHubServiceApi
+  | QueueStorageService
+  | RegistryServiceApi
+  | TmuxServiceApi
   | WorktreeServiceApi;
 
 export function provideWctServices<A, E, R>(

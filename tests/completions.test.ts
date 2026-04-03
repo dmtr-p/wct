@@ -30,6 +30,17 @@ describe("Effect CLI root", () => {
     expect(output).toContain("switch, sw");
   });
 
+  test("renders built-in help for bare --json invocations", () => {
+    const result = runCliProcess(["--json"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(output).toContain("GLOBAL FLAGS");
+    expect(output).toContain("--json");
+    expect(output).toContain("switch, sw");
+  });
+
   test("renders subcommand help for the short -h alias even when --json is present", () => {
     const result = runCliProcess(["open", "--json", "-h"]);
     const output = result.stdout.toString();

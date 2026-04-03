@@ -15,7 +15,9 @@ const { version: VERSION } = require("../package.json");
 const args = process.argv.slice(2);
 const customCompletionShell = getCustomCompletionShell(args);
 const helpRequested = args.includes("--help") || args.includes("-h");
-const suppressCliOutputForJson = args.includes("--json") && !helpRequested;
+const jsonRequested = args.includes("--json");
+const builtInActionRequested =
+  args.includes("--version") || args.includes("--completions");
 
 function toJsonModeWctError(
   error: unknown,
@@ -68,6 +70,15 @@ const program = provideBunServices(
           json = true;
         }
 
+        if (
+          CliError.isCliError(error) &&
+          error._tag === "ShowHelp" &&
+          error.errors.length === 0
+        ) {
+          process.exitCode = 0;
+          return;
+        }
+
         const wctError = json ? toJsonModeWctError(error) : toWctError(error);
 
         if (json && wctError) {
@@ -82,7 +93,13 @@ const program = provideBunServices(
   ),
 );
 
-const runnableProgram = suppressCliOutputForJson
+const shouldSuppressCliOutputForJson =
+  jsonRequested &&
+  !helpRequested &&
+  !builtInActionRequested &&
+  args.some((arg) => arg !== "--json");
+
+const runnableProgram = shouldSuppressCliOutputForJson
   ? program.pipe(
       Effect.provide(
         CliOutput.layer({

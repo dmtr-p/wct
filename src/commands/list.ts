@@ -81,9 +81,10 @@ export function listCommand(opts?: {
           const branch = wt.branch || "(unknown)";
           const sessionName = formatSessionName(basename(wt.path));
           const session = sessions.find((s) => s.name === sessionName);
+          const statusOptions = json ? { logWarnings: false } : undefined;
           const [changesCount, syncStatus] = yield* Effect.all([
-            getChangedFilesCount(wt.path),
-            getAheadBehind(wt.path, defaultBranch),
+            getChangedFilesCount(wt.path, statusOptions),
+            getAheadBehind(wt.path, defaultBranch, statusOptions),
           ]);
 
           return {

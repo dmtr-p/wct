@@ -74,6 +74,20 @@ describe("getChangedFilesCount", () => {
     );
     expect(count).toBe(0);
   });
+
+  test("returns 0 for invalid path without warning output when logWarnings is false", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const count = await runBunPromise(
+        getChangedFilesCount("/nonexistent/path", { logWarnings: false }),
+      );
+      expect(count).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("getAheadBehind", () => {
@@ -140,6 +154,20 @@ describe("getAheadBehind", () => {
       getAheadBehind("/nonexistent/path", "main"),
     );
     expect(status).toBeNull();
+  });
+
+  test("returns null for invalid path without warning output when logWarnings is false", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const status = await runBunPromise(
+        getAheadBehind("/nonexistent/path", "main", { logWarnings: false }),
+      );
+      expect(status).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -414,6 +442,32 @@ describe("listCommand integration", () => {
       ).toBe(true);
     } finally {
       spy.mockRestore();
+      process.chdir(originalDir);
+    }
+  });
+
+  test("--json suppresses recoverable worktree status warnings", async () => {
+    process.chdir(repoDir);
+    const lines: string[] = [];
+    const consoleSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(listCommand({ short: false }), JsonFlag, true),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      expect(() => JSON.parse(jsonLine ?? "")).not.toThrow();
+      expect(stripAnsi(jsonLine ?? "")).not.toContain("warn ");
+    } finally {
+      consoleSpy.mockRestore();
       process.chdir(originalDir);
     }
   });

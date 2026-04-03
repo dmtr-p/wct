@@ -2,7 +2,15 @@ import { Effect } from "effect";
 import * as logger from "../utils/logger";
 import { execProcess } from "./process";
 
-export function getChangedFilesCount(worktreePath: string) {
+interface WorktreeStatusOptions {
+  logWarnings?: boolean;
+}
+
+export function getChangedFilesCount(
+  worktreePath: string,
+  options: WorktreeStatusOptions = {},
+) {
+  const logWarnings = options.logWarnings ?? true;
   return Effect.catch(
     execProcess("git", ["status", "--porcelain"], {
       cwd: worktreePath,
@@ -13,12 +21,17 @@ export function getChangedFilesCount(worktreePath: string) {
         return output.split("\n").length;
       }),
     ),
-    (error) =>
-      logger
+    (error) => {
+      if (!logWarnings) {
+        return Effect.succeed(0);
+      }
+
+      return logger
         .warn(
           `Failed to get changes for ${worktreePath}: ${error instanceof Error ? error.message : String(error)}`,
         )
-        .pipe(Effect.as(0)),
+        .pipe(Effect.as(0));
+    },
   );
 }
 
@@ -52,7 +65,9 @@ export function getDefaultBranch(repoPath: string) {
 export function getAheadBehind(
   worktreePath: string,
   defaultBranch: string | null,
+  options: WorktreeStatusOptions = {},
 ) {
+  const logWarnings = options.logWarnings ?? true;
   if (!defaultBranch) {
     return Effect.succeed(null);
   }
@@ -74,12 +89,17 @@ export function getAheadBehind(
         return { ahead: ahead ?? 0, behind: behind ?? 0 };
       }),
     ),
-    (error) =>
-      logger
+    (error) => {
+      if (!logWarnings) {
+        return Effect.succeed(null);
+      }
+
+      return logger
         .warn(
           `Failed to get sync status for ${worktreePath}: ${error instanceof Error ? error.message : String(error)}`,
         )
-        .pipe(Effect.as(null)),
+        .pipe(Effect.as(null));
+    },
   );
 }
 

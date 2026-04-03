@@ -316,7 +316,9 @@ describe("listCommand integration", () => {
         ),
       );
       expect(lines).toHaveLength(1);
-      const output = JSON.parse(lines[0]!);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      const output = JSON.parse(jsonLine ?? "");
       expect(output.ok).toBe(true);
       expect(Array.isArray(output.data)).toBe(true);
 

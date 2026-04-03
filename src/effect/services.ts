@@ -110,9 +110,7 @@ export function provideWctServices<A, E, R>(
     ),
     RegistryService,
     liveRegistryService,
-  ).pipe(
-    Effect.provideService(JsonFlag, false),
-  ) as Effect.Effect<
+  ).pipe(Effect.provideService(JsonFlag, false)) as Effect.Effect<
     A,
     E,
     Exclude<R, WctServices | "effect/unstable/cli/GlobalFlag/json">

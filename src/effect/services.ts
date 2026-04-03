@@ -1,4 +1,4 @@
-import { BunServices } from "@effect/platform-bun";
+import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 import {
   GitHubService,

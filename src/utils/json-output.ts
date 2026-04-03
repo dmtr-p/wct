@@ -3,7 +3,9 @@ import { JsonFlag } from "../cli/json-flag";
 
 export function jsonSuccess<T>(data: T) {
   const normalizedData = data === undefined ? null : data;
-  return Console.log(JSON.stringify({ ok: true, data: normalizedData }, null, 2));
+  return Console.log(
+    JSON.stringify({ ok: true, data: normalizedData }, null, 2),
+  );
 }
 
 export function jsonError(code: string, message: string) {

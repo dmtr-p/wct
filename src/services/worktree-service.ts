@@ -31,7 +31,9 @@ export interface WorktreeService {
   getMainWorktreePath: (
     cwd?: string,
   ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
-  isGitRepo: (cwd?: string) => Effect.Effect<boolean, WctError, WctRuntimeServices>;
+  isGitRepo: (
+    cwd?: string,
+  ) => Effect.Effect<boolean, WctError, WctRuntimeServices>;
   listWorktrees: (
     cwd?: string,
   ) => Effect.Effect<Worktree[], WctError, WctRuntimeServices>;
@@ -71,7 +73,9 @@ export interface WorktreeService {
   getDefaultBranch: (
     cwd: string,
   ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
-  listBranches: (cwd: string) => Effect.Effect<string[], WctError, WctRuntimeServices>;
+  listBranches: (
+    cwd: string,
+  ) => Effect.Effect<string[], WctError, WctRuntimeServices>;
 }
 
 export const WorktreeService = ServiceMap.Service<WorktreeService>(

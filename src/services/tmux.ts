@@ -58,10 +58,20 @@ export interface TmuxService {
     config?: TmuxConfig,
     env?: WctEnv,
   ) => Effect.Effect<CreateSessionResult, WctError, WctRuntimeServices>;
-  killSession: (name: string) => Effect.Effect<void, WctError, WctRuntimeServices>;
-  getCurrentSession: () => Effect.Effect<string | null, WctError, WctRuntimeServices>;
-  switchSession: (name: string) => Effect.Effect<void, WctError, WctRuntimeServices>;
-  attachSession: (name: string) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  killSession: (
+    name: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  getCurrentSession: () => Effect.Effect<
+    string | null,
+    WctError,
+    WctRuntimeServices
+  >;
+  switchSession: (
+    name: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  attachSession: (
+    name: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
   listPanes: (
     sessionName: string,
   ) => Effect.Effect<TmuxPaneInfo[], WctError, WctRuntimeServices>;
@@ -70,7 +80,9 @@ export interface TmuxService {
     clientTty: string,
     target: string,
   ) => Effect.Effect<void, WctError, WctRuntimeServices>;
-  selectPane: (pane: string) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  selectPane: (
+    pane: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
   refreshClient: () => Effect.Effect<void, WctError, WctRuntimeServices>;
 }
 

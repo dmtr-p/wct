@@ -5,6 +5,7 @@ import * as queueCommandModule from "../src/commands/queue";
 import { runBunPromise } from "../src/effect/runtime";
 import {
   liveQueueStorage,
+  type ListItemsOptions,
   type QueueItem,
   type QueueStorageService,
 } from "../src/services/queue-storage";
@@ -245,6 +246,39 @@ describe("queueCommand", () => {
           { queueStorage, json: true },
         ),
       );
+      expect(consoleSpy).toHaveBeenCalledOnce();
+      const firstCall = consoleSpy.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const output = JSON.parse(firstCall?.[0] as string);
+      expect(output).toEqual({ ok: true, data: [] });
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  test("default in --json mode disables queue warning logs when listing", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    let seenOptions: ListItemsOptions | undefined;
+    queueStorage = {
+      ...queueStorage,
+      listItems: (options) =>
+        Effect.sync(() => {
+          seenOptions = options;
+          if (options?.logWarnings !== false) {
+            throw new Error("expected logWarnings to be false in json mode");
+          }
+          return [];
+        }),
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          Effect.provideService(queueCommand({}), JsonFlag, true),
+          { queueStorage, json: true },
+        ),
+      );
+      expect(seenOptions).toEqual({ logWarnings: false });
       expect(consoleSpy).toHaveBeenCalledOnce();
       const firstCall = consoleSpy.mock.calls[0];
       expect(firstCall).toBeDefined();

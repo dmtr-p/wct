@@ -91,7 +91,11 @@ function listQueueItems(
 
 export function queueCommand(
   options: QueueOptions,
-): Effect.Effect<void, WctError, WctServices | "effect/unstable/cli/GlobalFlag/json"> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return QueueStorage.use((queueStorage) =>
     Effect.gen(function* () {
       if (options.jump) {
@@ -136,7 +140,10 @@ export function queueCommand(
       }
 
       const json = yield* JsonFlag;
-      const items = yield* listQueueItems(queueStorage);
+      const items = yield* listQueueItems(
+        queueStorage,
+        json ? { logWarnings: false } : undefined,
+      );
       if (items.length === 0) {
         if (json) {
           yield* jsonSuccess([]);

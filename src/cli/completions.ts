@@ -235,13 +235,36 @@ function generateBashCompletions(): string {
     '    local cur="${COMP_WORDS[COMP_CWORD]}"',
     '    local prev="${COMP_WORDS[COMP_CWORD-1]}"',
     '    local cword="$COMP_CWORD"',
+    '    local cmd="${COMP_WORDS[1]}"',
+    "    local cmd_index=1",
+    "    local scan_index=1",
     "",
-    "    if [[ $cword -eq 1 ]]; then",
-    `        COMPREPLY=($(compgen -W '${commandNames}' -- "$cur"))`,
+    '    if [[ "$cmd" == -* ]]; then',
+    "        while [[ $scan_index -lt $cword ]]; do",
+    '            local scan_word="${COMP_WORDS[scan_index]}"',
+    '            if [[ "$scan_word" == "--completions" || "$scan_word" == "--log-level" ]]; then',
+    "                ((scan_index += 2))",
+    "                continue",
+    "            fi",
+    '            if [[ "$scan_word" == -* ]]; then',
+    "                ((scan_index++))",
+    "                continue",
+    "            fi",
+    '            cmd="$scan_word"',
+    "            cmd_index=$scan_index",
+    "            break",
+    "        done",
+    "    fi",
+    "",
+    '    if [[ -z "$cmd" || "$cmd" == -* ]]; then',
+    '        if [[ "$cur" == -* ]]; then',
+    `            COMPREPLY=($(compgen -W '${globalFlags}' -- "$cur"))`,
+    "        else",
+    `            COMPREPLY=($(compgen -W '${commandNames}' -- "$cur"))`,
+    "        fi",
     "        return",
     "    fi",
     "",
-    '    local cmd="${COMP_WORDS[1]}"',
     '    case "$cmd" in',
   ];
 
@@ -314,12 +337,24 @@ function generateBashCompletions(): string {
     if (!command.subcommands) continue;
     const subNames = command.subcommands.map((s) => s.name).join(" ");
     lines.push(`        ${command.name})`);
-    lines.push("            if [[ $cword -eq 2 ]]; then");
+    lines.push('            local subcmd=""');
+    lines.push("            local subcmd_index=$((cmd_index + 1))");
+    lines.push("            while [[ $subcmd_index -lt $cword ]]; do");
+    lines.push(
+      '                local subcmd_word="${COMP_WORDS[subcmd_index]}"',
+    );
+    lines.push('                if [[ "$subcmd_word" == -* ]]; then');
+    lines.push("                    ((subcmd_index++))");
+    lines.push("                    continue");
+    lines.push("                fi");
+    lines.push('                subcmd="$subcmd_word"');
+    lines.push("                break");
+    lines.push("            done");
+    lines.push('            if [[ -z "$subcmd" ]]; then');
     lines.push(
       `                COMPREPLY=($(compgen -W '${subNames}' -- "$cur"))`,
     );
     lines.push("            else");
-    lines.push('                local subcmd="${COMP_WORDS[2]}"');
     lines.push('                case "$subcmd" in');
     for (const sub of command.subcommands) {
       const subFlags = (sub.options ?? [])
@@ -423,17 +458,52 @@ function generateZshCompletions(): string {
   lines.push("        '1:command:->command' \\");
   lines.push("        '*::arg:->args'");
   lines.push("");
+  lines.push('    local command_word=""');
+  lines.push("    local command_index=1");
+  lines.push("    local scan_index=1");
+  lines.push("    while (( scan_index < CURRENT )); do");
+  lines.push('        local scan_word="$words[scan_index]"');
+  lines.push(
+    '        if [[ "$scan_word" == "--completions" || "$scan_word" == "--log-level" ]]; then',
+  );
+  lines.push("            (( scan_index += 2 ))");
+  lines.push("            continue");
+  lines.push("        fi");
+  lines.push('        if [[ "$scan_word" == -* ]]; then');
+  lines.push("            (( scan_index++ ))");
+  lines.push("            continue");
+  lines.push("        fi");
+  lines.push('        command_word="$scan_word"');
+  lines.push("        command_index=$scan_index");
+  lines.push("        break");
+  lines.push("    done");
+  lines.push("");
   lines.push('    case "$state" in');
   lines.push("        command)");
   lines.push("            _describe 'wct command' commands");
   lines.push("            ;;");
   lines.push("        args)");
-  lines.push('            case "$words[1]" in');
+  lines.push('            case "$command_word" in');
 
   for (const command of COMMANDS) {
     if (command.subcommands) {
       lines.push(`                ${command.name})`);
-      lines.push("                    if (( CURRENT == 2 )); then");
+      lines.push('                    local subcmd=""');
+      lines.push(
+        "                    local subcmd_index=$((command_index + 1))",
+      );
+      lines.push("                    while (( subcmd_index < CURRENT )); do");
+      lines.push(
+        '                        local subcmd_word="$words[subcmd_index]"',
+      );
+      lines.push('                        if [[ "$subcmd_word" == -* ]]; then');
+      lines.push("                            (( subcmd_index++ ))");
+      lines.push("                            continue");
+      lines.push("                        fi");
+      lines.push('                        subcmd="$subcmd_word"');
+      lines.push("                        break");
+      lines.push("                    done");
+      lines.push('                    if [[ -z "$subcmd" ]]; then');
       lines.push("                        local -a subcmds");
       lines.push("                        subcmds=(");
       for (const sub of command.subcommands) {
@@ -446,7 +516,7 @@ function generateZshCompletions(): string {
         `                        _describe '${command.name} subcommand' subcmds`,
       );
       lines.push("                    else");
-      lines.push('                        case "$words[2]" in');
+      lines.push('                        case "$subcmd" in');
       for (const sub of command.subcommands) {
         const hasSubOptions = sub.options && sub.options.length > 0;
         const isPathSub = sub.completionType === "path";

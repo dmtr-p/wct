@@ -105,9 +105,23 @@ describe("Effect CLI root", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
+    expect(output).toContain("local cmd_index=1");
+    expect(output).toContain("local subcmd_index=$((cmd_index + 1))");
+    expect(output).toContain("while [[ $subcmd_index -lt $cword ]]");
     expect(output).toContain(
       "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --no-attach --pr --prompt -p --profile -P' -- \"$cur\"))",
     );
+  });
+
+  test("renders zsh completions that scan for nested subcommands after the group command", () => {
+    const result = runCliProcess(["--completions", "zsh"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain('case "$command_word" in');
+    expect(output).toContain("local subcmd_index=$((command_index + 1))");
+    expect(output).toContain("while (( subcmd_index < CURRENT ))");
+    expect(output).toContain('case "$subcmd" in');
   });
 
   test("falls back to Effect built-in completions for sh", () => {

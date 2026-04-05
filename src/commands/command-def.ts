@@ -13,6 +13,6 @@ export interface CommandDef {
   description: string;
   args?: string;
   options?: CommandOption[];
-  completionType?: "branch" | "worktree";
+  completionType?: "branch" | "worktree" | "path";
   subcommands?: CommandDef[];
 }

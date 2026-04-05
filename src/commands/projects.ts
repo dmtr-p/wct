@@ -17,6 +17,7 @@ export const commandDef: CommandDef = {
     {
       name: "add",
       description: "Add a project to the registry",
+      completionType: "path",
       options: [
         {
           name: "name",
@@ -29,6 +30,7 @@ export const commandDef: CommandDef = {
     {
       name: "remove",
       description: "Remove a project from the registry",
+      completionType: "path",
     },
     {
       name: "list",
@@ -75,27 +77,17 @@ export function projectsAddCommand(opts?: {
       yield* changeDirectory(repoPath);
     }
 
-    const { isRepo, mainDir } = yield* Effect.ensuring(
-      Effect.gen(function* () {
-        const isRepo = yield* WorktreeService.use((service) =>
-          service.isGitRepo(),
-        );
-        const mainDir = isRepo
-          ? yield* WorktreeService.use((service) => service.getMainRepoPath())
-          : null;
-        return { isRepo, mainDir };
-      }),
+    const mainDir = yield* Effect.ensuring(
+      Effect.catch(
+        WorktreeService.use((service) => service.getMainRepoPath()),
+        () => Effect.succeed(null),
+      ),
       opts?.path ? changeDirectory(originalCwd) : Effect.void,
     );
 
-    if (!isRepo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", `Not a git repository: ${repoPath}`),
-      );
-    }
     if (!mainDir) {
       return yield* Effect.fail(
-        commandError("worktree_error", "Could not determine repository root"),
+        commandError("not_git_repo", `Not a git repository: ${repoPath}`),
       );
     }
 

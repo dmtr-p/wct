@@ -115,11 +115,7 @@ function generateFishCompletions(): string {
           lines.push(parts.join(" "));
         }
 
-        const acceptsPath =
-          command.name === "projects" &&
-          (sub.name === "add" || sub.name === "remove");
-
-        if (acceptsPath) {
+        if (sub.completionType === "path") {
           lines.push(
             `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}' -a '(__fish_complete_directories)' -d 'Path to repo'`,
           );
@@ -333,11 +329,8 @@ function generateBashCompletions(): string {
         ])
         .join(" ");
       const allFlags = subFlags ? `${globalFlags} ${subFlags}` : globalFlags;
-      const acceptsPath =
-        command.name === "projects" &&
-        (sub.name === "add" || sub.name === "remove");
       lines.push(`                    ${sub.name})`);
-      if (acceptsPath) {
+      if (sub.completionType === "path") {
         lines.push('                        if [[ "$cur" != -* ]]; then');
         lines.push(
           '                            COMPREPLY=($(compgen -d -- "$cur"))',
@@ -437,32 +430,71 @@ function generateZshCompletions(): string {
   lines.push("        args)");
   lines.push('            case "$words[1]" in');
 
-  lines.push("                projects)");
-  lines.push("                    if (( CURRENT == 2 )); then");
-  lines.push("                        local -a subcmds");
-  lines.push("                        subcmds=(");
-  lines.push("                            'add:Add a project to the registry'");
-  lines.push(
-    "                            'remove:Remove a project from the registry'",
-  );
-  lines.push("                            'list:List registered projects'");
-  lines.push("                        )");
-  lines.push("                        _describe 'projects subcommand' subcmds");
-  lines.push("                    else");
-  lines.push('                        case "$words[2]" in');
-  lines.push("                            add)");
-  lines.push("                                _arguments \\");
-  lines.push(
-    "                                    '(-n --name)'{-n,--name}'[Override project name]:name:' \\",
-  );
-  lines.push("                                    '*:path:_files -/'");
-  lines.push("                                ;;");
-  lines.push("                            remove)");
-  lines.push("                                _arguments '*:path:_files -/'");
-  lines.push("                                ;;");
-  lines.push("                        esac");
-  lines.push("                    fi");
-  lines.push("                    ;;");
+  for (const command of COMMANDS) {
+    if (command.subcommands) {
+      lines.push(`                ${command.name})`);
+      lines.push("                    if (( CURRENT == 2 )); then");
+      lines.push("                        local -a subcmds");
+      lines.push("                        subcmds=(");
+      for (const sub of command.subcommands) {
+        lines.push(
+          `                            '${sub.name}:${sub.description}'`,
+        );
+      }
+      lines.push("                        )");
+      lines.push(
+        `                        _describe '${command.name} subcommand' subcmds`,
+      );
+      lines.push("                    else");
+      lines.push('                        case "$words[2]" in');
+      for (const sub of command.subcommands) {
+        const hasSubOptions = sub.options && sub.options.length > 0;
+        const isPathSub = sub.completionType === "path";
+        if (!hasSubOptions && !isPathSub) continue;
+        lines.push(`                            ${sub.name})`);
+        const argParts: Array<string> = [];
+        for (const option of sub.options ?? []) {
+          if (option.short) {
+            if (option.type === "string") {
+              const completionAction = option.completionValues
+                ? option.completionValues.replace(/^__/, "_")
+                : "";
+              argParts.push(
+                `                                    '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
+              );
+            } else {
+              argParts.push(
+                `                                    '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]'`,
+              );
+            }
+          } else if (option.type === "string") {
+            const completionAction = option.completionValues
+              ? option.completionValues.replace(/^__/, "_")
+              : "";
+            argParts.push(
+              `                                    '--${option.name}[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
+            );
+          } else {
+            argParts.push(
+              `                                    '--${option.name}[${option.description}]'`,
+            );
+          }
+        }
+        if (isPathSub) {
+          argParts.push(
+            "                                    '*:path:_files -/'",
+          );
+        }
+        lines.push(
+          `                                _arguments \\\n${argParts.join(" \\\n")}`,
+        );
+        lines.push("                                ;;");
+      }
+      lines.push("                        esac");
+      lines.push("                    fi");
+      lines.push("                    ;;");
+    }
+  }
 
   for (const command of COMMANDS) {
     if (command.subcommands) continue;

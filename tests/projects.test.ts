@@ -1,10 +1,14 @@
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-function runCliProcess(args: string[]) {
-  return Bun.spawnSync(["bun", "run", "src/index.ts", ...args], {
+const CLI_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+
+function runCliProcess(args: string[], cwd?: string) {
+  return Bun.spawnSync(["bun", "run", CLI_ENTRY, ...args], {
+    cwd,
     env: {
       ...process.env,
     },
@@ -43,6 +47,18 @@ describe("projects command", () => {
 
   test("projects list --json returns an empty success envelope when registry is empty", () => {
     const result = runCliProcess(["projects", "list", "--json"]);
+    const stdout = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(JSON.parse(stdout)).toEqual({
+      ok: true,
+      data: [],
+    });
+  });
+
+  test("global --json before projects list returns the same empty success envelope", () => {
+    const result = runCliProcess(["--json", "projects", "list"]);
     const stdout = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
@@ -121,6 +137,61 @@ describe("projects command", () => {
     expect(listResult.exitCode).toBe(0);
     expect(listResult.stderr.toString()).toBe("");
     expect(JSON.parse(listResult.stdout.toString())).toEqual({
+      ok: true,
+      data: [],
+    });
+  });
+
+  test("projects add and remove use process.cwd() when no repo path is provided", () => {
+    const addResult = runCliProcess(
+      ["--json", "projects", "add", "--name", "cwd-project"],
+      repoDir,
+    );
+
+    expect(addResult.exitCode).toBe(0);
+    expect(addResult.stderr.toString()).toBe("");
+    expect(JSON.parse(addResult.stdout.toString())).toEqual({
+      ok: true,
+      data: expect.objectContaining({
+        repo_path: resolvedRepoDir,
+        project: "cwd-project",
+      }),
+    });
+
+    const listAfterAdd = runCliProcess(["--json", "projects", "list"]);
+
+    expect(listAfterAdd.exitCode).toBe(0);
+    expect(listAfterAdd.stderr.toString()).toBe("");
+    expect(JSON.parse(listAfterAdd.stdout.toString())).toEqual({
+      ok: true,
+      data: [
+        expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "cwd-project",
+        }),
+      ],
+    });
+
+    const removeResult = runCliProcess(
+      ["--json", "projects", "remove"],
+      repoDir,
+    );
+
+    expect(removeResult.exitCode).toBe(0);
+    expect(removeResult.stderr.toString()).toBe("");
+    expect(JSON.parse(removeResult.stdout.toString())).toEqual({
+      ok: true,
+      data: {
+        repo_path: resolvedRepoDir,
+        removed: true,
+      },
+    });
+
+    const listAfterRemove = runCliProcess(["--json", "projects", "list"]);
+
+    expect(listAfterRemove.exitCode).toBe(0);
+    expect(listAfterRemove.stderr.toString()).toBe("");
+    expect(JSON.parse(listAfterRemove.stdout.toString())).toEqual({
       ok: true,
       data: [],
     });

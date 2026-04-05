@@ -80,6 +80,14 @@ describe("Effect CLI root", () => {
     expect(output).toContain("git branch --format='%(refname:short)'");
     expect(output).toContain("git worktree list --porcelain");
     expect(output).toContain("-a 'projects'");
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and not __fish_seen_subcommand_from add remove list",
+    );
+    expect(output).toContain("-a 'add' -d 'Add a project to the registry'");
+    expect(output).toContain(
+      "-a 'remove' -d 'Remove a project from the registry'",
+    );
+    expect(output).toContain("-a 'list' -d 'List registered projects'");
     expect(output).toContain("-a 'switch'");
     expect(output).not.toContain("-a 'register'");
     expect(output).not.toContain("-a 'unregister'");

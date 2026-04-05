@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -194,6 +194,23 @@ describe("projects command", () => {
     expect(JSON.parse(listAfterRemove.stdout.toString())).toEqual({
       ok: true,
       data: [],
+    });
+  });
+
+  test("projects add falls back to basename when config is malformed", () => {
+    writeFileSync(join(repoDir, ".wct.yaml"), "project_name: [\n");
+
+    const result = runCliProcess(["--json", "projects", "add", repoDir]);
+    const stdout = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(JSON.parse(stdout)).toEqual({
+      ok: true,
+      data: expect.objectContaining({
+        repo_path: resolvedRepoDir,
+        project: "repo",
+      }),
     });
   });
 

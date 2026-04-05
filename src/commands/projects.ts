@@ -93,10 +93,12 @@ export function projectsAddCommand(opts?: {
       const loadResult = yield* Effect.catch(
         Effect.tryPromise({
           try: () => loadConfig(mainDir),
-          catch: () => commandError("config_error", "Failed to load config"),
+          catch: (error) =>
+            commandError("config_error", "Failed to load config", error),
         }),
         () => Effect.succeed(null),
       );
+
       if (loadResult?.config?.project_name) {
         projectName = loadResult.config.project_name;
       }

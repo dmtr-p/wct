@@ -94,6 +94,9 @@ describe("Effect CLI root", () => {
     expect(output).toContain(
       "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from remove' -a '(__fish_complete_directories)' -d 'Path to repo'",
     );
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from add' -s n -l name -r -d 'Override project name'",
+    );
     expect(output).toContain("-a 'switch'");
     expect(output).not.toContain("-a 'register'");
     expect(output).not.toContain("-a 'unregister'");
@@ -112,6 +115,7 @@ describe("Effect CLI root", () => {
     expect(output).toContain("add)");
     expect(output).toContain("remove)");
     expect(output).toContain("list)");
+    expect(output).toContain("--name -n");
     expect(output).toContain("local cmd_index=1");
     expect(output).toContain("local subcmd_index=$((cmd_index + 1))");
     expect(output).toContain("while [[ $subcmd_index -lt $cword ]]");
@@ -129,6 +133,9 @@ describe("Effect CLI root", () => {
     expect(output).toContain("'add:Add a project to the registry'");
     expect(output).toContain("'remove:Remove a project from the registry'");
     expect(output).toContain("'list:List registered projects'");
+    expect(output).toContain(
+      "'(-n --name)'{-n,--name}'[Override project name]:name:'",
+    );
     expect(output).toContain('case "$command_word" in');
     expect(output).toContain("local subcmd_index=$((command_index + 1))");
     expect(output).toContain("while (( subcmd_index < CURRENT ))");

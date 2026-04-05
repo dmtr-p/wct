@@ -6,6 +6,8 @@
 
 **Architecture:** A `GlobalFlag.setting("json")` on the root command propagates a boolean to all subcommands via Effect's service map. Commands that support JSON check the flag, collect raw data, and emit a `{ ok: true, data }` envelope. Errors emit `{ ok: false, error: { code, message } }`. Two utility functions (`jsonSuccess`, `jsonError`) handle serialization.
 
+**Post-implementation notes:** Follow-up hardening added JSON envelopes for CLI parse/validation failures, preserved normal help output for bare `wct --json` / `-h`, and suppressed recoverable warning logs in `list --json` so stdout remains a single JSON document.
+
 **Tech Stack:** Effect v4 (`GlobalFlag`, `Flag`, `Console`), Bun, Vitest
 
 ---

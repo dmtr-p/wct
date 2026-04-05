@@ -62,6 +62,7 @@ Key principles:
 - **Raw data in JSON mode** -- numbers not formatted strings, objects not display text
 - **No ANSI codes** in JSON output
 - **No logger calls** (`logger.info`, `logger.step`) in JSON mode
+- **No recoverable warning logs** in JSON mode; commands should degrade values silently if needed
 - **Existing human-readable code untouched**
 
 ### Error Handling
@@ -70,7 +71,9 @@ The error wrapper in `index.ts` checks `JsonFlag`:
 - If JSON mode: emits `jsonError(code, message)` to stderr, sets exit code 1
 - If normal mode: existing `process.stderr.write` behavior unchanged
 
-Edge case: CLI parse errors (e.g. `wct --json=foo`) happen before our code runs and use the framework's default error output. This is acceptable since malformed invocations are not the programmatic use case.
+CLI parse / validation failures under `--json` also use the JSON error envelope.
+
+Bare `wct --json` preserves normal help output and exits 0 rather than returning a JSON envelope.
 
 ## Commands In Scope
 

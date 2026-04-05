@@ -19,7 +19,7 @@
 
 ```typescript
 import { resolve } from "node:path";
-import { Effect } from "effect";
+import { Console, Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import { loadConfig } from "../config/loader";
 import type { WctServices } from "../effect/services";
@@ -181,7 +181,6 @@ export function projectsListCommand(): Effect.Effect<
       Math.max(headers[1].length, ...repos.map((r) => r.repo_path.length)),
     ] as const;
 
-    const { Console } = yield* Effect.promise(() => import("effect"));
     yield* Console.log(
       logger.bold(
         headers
@@ -202,7 +201,7 @@ export function projectsListCommand(): Effect.Effect<
 }
 ```
 
-Note: Import `Console` from `effect` at the top of the file alongside the existing `Effect` import. The dynamic import above is just for illustration — use the static import.
+Note: `Console` is imported from `effect` at the top of the file alongside `Effect` (shown in Step 1's import block).
 
 - [ ] **Step 4: Commit**
 
@@ -400,13 +399,13 @@ for (const command of COMMANDS) {
         `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and not __fish_seen_subcommand_from ${subNames}' -a ${quoteFish(sub.name)} -d ${quoteFish(sub.description)}`,
       );
     }
-    // Show per-subcommand options only when that subcommand is active
+    // Show per-subcommand options scoped to both parent and subcommand
     for (const sub of command.subcommands) {
       if (!sub.options) continue;
       for (const option of sub.options) {
         const parts = [
           "complete -c wct",
-          `-n '__fish_seen_subcommand_from ${sub.name}'`,
+          `-n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}'`,
         ];
         if (option.short) {
           parts.push(`-s ${option.short}`);
@@ -428,30 +427,48 @@ for (const command of COMMANDS) {
 
 - [ ] **Step 4: Update Bash completions generator for nested subcommands**
 
-In `generateBashCompletions()`, add `projects` to the command names. Then in the case statement, add a case for `projects` that completes its subcommands, and cases for `projects` subcommand options:
+In `generateBashCompletions()`, add `projects` to the command names. Then handle subcommand dispatch.
 
-In the case loop, the `projects` entry should complete subcommand names when no subcommand is selected yet. Add special handling:
+**Important:** In the existing `for (const command of COMMANDS)` loop that generates per-command `case` entries, skip commands that have `subcommands` to avoid duplicate cases:
 
 ```typescript
-// After the main command case entries, handle projects subcommands
-lines.push(`        projects)`);
-lines.push(`            if [[ $cword -eq 2 ]]; then`);
-lines.push(`                COMPREPLY=($(compgen -W 'add remove list' -- "$cur"))`);
-lines.push(`            else`);
-lines.push(`                local subcmd="\${COMP_WORDS[2]}"`);
-lines.push(`                case "$subcmd" in`);
-lines.push(`                    add)`);
-lines.push(`                        COMPREPLY=($(compgen -W '${globalFlags} --name -n' -- "$cur"))`);
-lines.push(`                        ;;`);
-lines.push(`                    remove|list)`);
-lines.push(`                        COMPREPLY=($(compgen -W '${globalFlags}' -- "$cur"))`);
-lines.push(`                        ;;`);
-lines.push(`                esac`);
-lines.push(`            fi`);
-lines.push(`            ;;`);
+for (const command of COMMANDS) {
+  if (command.subcommands) continue; // handled separately below
+  // ... existing per-command case generation ...
+}
 ```
 
-This replaces the auto-generated entries for `projects` — skip `projects` in the normal command loop iteration.
+Then after the loop, add the projects subcommand handling:
+
+```typescript
+// Handle commands with subcommands
+for (const command of COMMANDS) {
+  if (!command.subcommands) continue;
+  const subNames = command.subcommands.map((s) => s.name).join(" ");
+  lines.push(`        ${command.name})`);
+  lines.push(`            if [[ $cword -eq 2 ]]; then`);
+  lines.push(`                COMPREPLY=($(compgen -W '${subNames}' -- "$cur"))`);
+  lines.push(`            else`);
+  lines.push(`                local subcmd="\${COMP_WORDS[2]}"`);
+  lines.push(`                case "$subcmd" in`);
+  for (const sub of command.subcommands) {
+    const subFlags = (sub.options ?? [])
+      .flatMap((o) => [`--${o.name}`, ...(o.short ? [`-${o.short}`] : [])])
+      .join(" ");
+    const allFlags = subFlags
+      ? `${globalFlags} ${subFlags}`
+      : globalFlags;
+    lines.push(`                    ${sub.name})`);
+    lines.push(`                        COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`);
+    lines.push(`                        ;;`);
+  }
+  lines.push(`                esac`);
+  lines.push(`            fi`);
+  lines.push(`            ;;`);
+}
+```
+
+This ensures each command appears exactly once in the bash `case` statement.
 
 - [ ] **Step 5: Update Zsh completions generator with two-level subcommand dispatch**
 
@@ -549,9 +566,91 @@ expect(output).toContain("-a 'projects'");
 
 - [ ] **Step 3: Update Bash completions test**
 
-The test at line 83 checks for a specific `COMPREPLY` line. The `register` and `unregister` entries in the command names list will be replaced with `projects`. Update the expected string in the assertion to match the new command list (replacing `register` and `unregister` with `projects` in the compgen -W string at line 88).
+The test at line 83 (`"renders bash completions with command-specific options after a subcommand"`) asserts a specific `COMPREPLY` line. This test checks the `open` subcommand's options line, which is not affected by the rename. However, the top-level command names `compgen -W` line (generated by `if [[ $cword -eq 1 ]]`) changes because `register` and `unregister` are replaced with `projects`. If any test assertion checks the top-level command list string, update it. Currently none do — so verify the test still passes as-is.
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 4: Add JSON output tests for projects subcommands**
+
+Add a new test file `tests/projects.test.ts`:
+
+```typescript
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
+function runCliProcess(args: string[]) {
+  return Bun.spawnSync(["bun", "run", "src/index.ts", ...args]);
+}
+
+describe("projects command", () => {
+  let tempDir: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    tempDir = join(tmpdir(), `wct-test-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    originalHome = process.env.HOME;
+    process.env.HOME = tempDir;
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("projects list --json returns envelope with empty array", () => {
+    const result = runCliProcess(["--json", "projects", "list"]);
+    const stdout = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed).toEqual({ ok: true, data: [] });
+  });
+
+  test("projects add --json returns envelope with registry item", () => {
+    const result = runCliProcess(["--json", "projects", "add"]);
+    const stdout = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data).toEqual(
+      expect.objectContaining({
+        repo_path: expect.any(String),
+        project: expect.any(String),
+        id: expect.any(String),
+        created_at: expect.any(Number),
+      }),
+    );
+  });
+
+  test("projects remove --json returns envelope with removed status", () => {
+    // First add a project
+    runCliProcess(["projects", "add"]);
+
+    const result = runCliProcess(["--json", "projects", "remove"]);
+    const stdout = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.removed).toBe(true);
+    expect(parsed.data.repo_path).toEqual(expect.any(String));
+  });
+
+  test("projects --help shows subcommands", () => {
+    const result = runCliProcess(["projects", "--help"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("add");
+    expect(output).toContain("remove");
+    expect(output).toContain("list");
+  });
+});
+```
+
+- [ ] **Step 5: Run tests**
 
 ```bash
 bun run test
@@ -559,11 +658,11 @@ bun run test
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add tests/completions.test.ts
-git commit -m "test: update completions tests for projects command"
+git add tests/completions.test.ts tests/projects.test.ts
+git commit -m "test: update completions tests and add projects command tests"
 ```
 
 ---

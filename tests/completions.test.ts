@@ -88,6 +88,12 @@ describe("Effect CLI root", () => {
       "-a 'remove' -d 'Remove a project from the registry'",
     );
     expect(output).toContain("-a 'list' -d 'List registered projects'");
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from add' -a '(__fish_complete_directories)' -d 'Path to repo'",
+    );
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from remove' -a '(__fish_complete_directories)' -d 'Path to repo'",
+    );
     expect(output).toContain("-a 'switch'");
     expect(output).not.toContain("-a 'register'");
     expect(output).not.toContain("-a 'unregister'");

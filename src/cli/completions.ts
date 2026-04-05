@@ -96,8 +96,7 @@ function generateFishCompletions(): string {
         );
       }
       for (const sub of command.subcommands) {
-        if (!sub.options) continue;
-        for (const option of sub.options) {
+        for (const option of sub.options ?? []) {
           const parts = [
             "complete -c wct",
             `-n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}'`,

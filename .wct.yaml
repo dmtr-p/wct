@@ -33,3 +33,15 @@ tmux:
       panes:
         - command: "lazygit"
         - {}
+
+profiles:
+  codex:
+    tmux:
+      windows:
+        - name: "ai"
+          command: "codex $WCT_PROMPT"
+        - name: "dev"
+          split: "vertical"
+          panes:
+            - command: "lazygit"
+            - {}

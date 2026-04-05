@@ -78,10 +78,7 @@ export function projectsAddCommand(opts?: {
     }
 
     const mainDir = yield* Effect.ensuring(
-      Effect.catch(
-        WorktreeService.use((service) => service.getMainRepoPath()),
-        () => Effect.succeed(null),
-      ),
+      WorktreeService.use((service) => service.getMainRepoPath()),
       opts?.path ? changeDirectory(originalCwd) : Effect.void,
     );
 
@@ -133,10 +130,7 @@ export function projectsRemoveCommand(
     }
 
     const mainDir = yield* Effect.ensuring(
-      Effect.catch(
-        WorktreeService.use((service) => service.getMainRepoPath()),
-        () => Effect.succeed(null),
-      ),
+      WorktreeService.use((service) => service.getMainRepoPath()),
       path ? changeDirectory(originalCwd) : Effect.void,
     );
 

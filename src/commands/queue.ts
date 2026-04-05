@@ -1,4 +1,5 @@
 import { Console, Effect } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { getProcessErrorMessage } from "../services/process";
@@ -9,6 +10,7 @@ import {
   type QueueStorageService,
 } from "../services/queue-storage";
 import { TmuxService } from "../services/tmux";
+import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -89,7 +91,11 @@ function listQueueItems(
 
 export function queueCommand(
   options: QueueOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return QueueStorage.use((queueStorage) =>
     Effect.gen(function* () {
       if (options.jump) {
@@ -133,9 +139,22 @@ export function queueCommand(
         return;
       }
 
-      const items = yield* listQueueItems(queueStorage);
+      const json = yield* JsonFlag;
+      const items = yield* listQueueItems(
+        queueStorage,
+        json ? { logWarnings: false } : undefined,
+      );
       if (items.length === 0) {
+        if (json) {
+          yield* jsonSuccess([]);
+          return;
+        }
         yield* logger.info("No pending notifications");
+        return;
+      }
+
+      if (json) {
+        yield* jsonSuccess(items);
         return;
       }
 

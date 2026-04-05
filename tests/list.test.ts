@@ -2,10 +2,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { JsonFlag } from "../src/cli/json-flag";
 import { listCommand } from "../src/commands/list";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
+import {
+  liveWorktreeService,
+  WorktreeService,
+} from "../src/services/worktree-service";
+import * as worktreeStatus from "../src/services/worktree-status";
 import {
   formatSync,
   getAheadBehind,
@@ -67,6 +74,20 @@ describe("getChangedFilesCount", () => {
       getChangedFilesCount("/nonexistent/path"),
     );
     expect(count).toBe(0);
+  });
+
+  test("returns 0 for invalid path without warning output when logWarnings is false", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const count = await runBunPromise(
+        getChangedFilesCount("/nonexistent/path", { logWarnings: false }),
+      );
+      expect(count).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -134,6 +155,20 @@ describe("getAheadBehind", () => {
       getAheadBehind("/nonexistent/path", "main"),
     );
     expect(status).toBeNull();
+  });
+
+  test("returns null for invalid path without warning output when logWarnings is false", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const status = await runBunPromise(
+        getAheadBehind("/nonexistent/path", "main", { logWarnings: false }),
+      );
+      expect(status).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -294,6 +329,159 @@ describe("listCommand integration", () => {
       expect(lines.some((l) => l.includes("feature-test"))).toBe(true);
     } finally {
       spy.mockRestore();
+      process.chdir(originalDir);
+    }
+  });
+
+  test("--json outputs structured JSON envelope", async () => {
+    process.chdir(repoDir);
+    const lines: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(listCommand({ short: false }), JsonFlag, true),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      const output = JSON.parse(jsonLine ?? "");
+      expect(output.ok).toBe(true);
+      expect(Array.isArray(output.data)).toBe(true);
+
+      const featureEntry = output.data.find(
+        (e: { branch: string }) => e.branch === "feature-test",
+      );
+      expect(featureEntry).toBeDefined();
+      expect(featureEntry.path).toBeDefined();
+      expect(typeof featureEntry.changes).toBe("number");
+      expect(featureEntry.changes).toBe(2);
+      expect(featureEntry.sync).toEqual({ ahead: 0, behind: 3 });
+      expect(featureEntry.tmux).toBeNull();
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+    }
+  });
+
+  test("--json outputs exact empty success envelope when no non-bare worktrees exist", async () => {
+    const lines: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(
+            Effect.provideService(
+              listCommand({ short: false }),
+              JsonFlag,
+              true,
+            ),
+            WorktreeService,
+            WorktreeService.of({
+              ...liveWorktreeService,
+              listWorktrees: () =>
+                Effect.succeed([
+                  {
+                    path: "/tmp/bare.git",
+                    branch: "bare",
+                    commit: "deadbeef",
+                    isBare: true,
+                  },
+                ]),
+            }),
+          ),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      expect(JSON.parse(jsonLine ?? "")).toEqual({ ok: true, data: [] });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("--json takes precedence over short output", async () => {
+    process.chdir(repoDir);
+    const lines: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(listCommand({ short: true }), JsonFlag, true),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      const output = JSON.parse(jsonLine ?? "");
+      expect(output.ok).toBe(true);
+      expect(Array.isArray(output.data)).toBe(true);
+      expect(
+        output.data.some((e: { branch: string }) => e.branch === "main"),
+      ).toBe(true);
+      expect(
+        output.data.some(
+          (e: { branch: string }) => e.branch === "feature-test",
+        ),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+      process.chdir(originalDir);
+    }
+  });
+
+  test("--json suppresses recoverable worktree status warnings", async () => {
+    process.chdir(repoDir);
+    const lines: string[] = [];
+    const originalGetChangedFilesCount = worktreeStatus.getChangedFilesCount;
+    const consoleSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+    const changesSpy = vi
+      .spyOn(worktreeStatus, "getChangedFilesCount")
+      .mockImplementation((worktreePath, options) => {
+        if (worktreePath.includes("feature-test")) {
+          if (options?.logWarnings === false) {
+            return Effect.succeed(0);
+          }
+          throw new Error("expected logWarnings to be false in json mode");
+        }
+        return originalGetChangedFilesCount(worktreePath, options);
+      });
+
+    try {
+      await runBunPromise(
+        provideWctServices(
+          Effect.provideService(listCommand({ short: false }), JsonFlag, true),
+        ),
+      );
+      expect(lines).toHaveLength(1);
+      const [jsonLine] = lines;
+      expect(jsonLine).toBeDefined();
+      expect(() => JSON.parse(jsonLine ?? "")).not.toThrow();
+      expect(stripAnsi(jsonLine ?? "")).not.toContain("warn ");
+    } finally {
+      changesSpy.mockRestore();
+      consoleSpy.mockRestore();
       process.chdir(originalDir);
     }
   });

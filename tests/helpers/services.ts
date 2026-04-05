@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { JsonFlag } from "../../src/cli/json-flag";
 import type { WctServices } from "../../src/effect/services";
 import {
   GitHubService,
@@ -41,10 +42,14 @@ import {
   type WorktreeService as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
+type JsonFlagRequirement =
+  typeof JsonFlag extends Effect.Effect<unknown, unknown, infer R> ? R : never;
+
 export interface ServiceOverrides {
   github?: GitHubServiceApi;
   hooks?: HooksServiceApi;
   ide?: IdeServiceApi;
+  json?: boolean;
   queueStorage?: QueueStorageService;
   setup?: SetupServiceApi;
   tmux?: TmuxServiceApi;
@@ -55,7 +60,7 @@ export interface ServiceOverrides {
 export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   overrides: ServiceOverrides = {},
-): Effect.Effect<A, E, Exclude<R, WctServices>> {
+): Effect.Effect<A, E, Exclude<R, WctServices | JsonFlagRequirement>> {
   let provided = effect;
 
   provided = Effect.provideService(
@@ -98,6 +103,11 @@ export function withTestServices<A, E, R>(
     WorktreeService,
     overrides.worktree ?? liveWorktreeService,
   );
+  provided = Effect.provideService(provided, JsonFlag, overrides.json ?? false);
 
-  return provided as Effect.Effect<A, E, Exclude<R, WctServices>>;
+  return provided as Effect.Effect<
+    A,
+    E,
+    Exclude<R, WctServices | JsonFlagRequirement>
+  >;
 }

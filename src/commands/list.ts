@@ -1,5 +1,6 @@
 import { basename, relative } from "node:path";
 import { Console, Effect } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
@@ -11,6 +12,7 @@ import {
   getChangedFilesCount,
   getDefaultBranch,
 } from "../services/worktree-status";
+import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -29,19 +31,28 @@ export const commandDef: CommandDef = {
 
 export function listCommand(opts?: {
   short?: boolean;
-}): Effect.Effect<void, WctError, WctServices> {
+}): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
+    const json = yield* JsonFlag;
     const worktrees = yield* WorktreeService.use((service) =>
       service.listWorktrees(),
     );
     const nonBareWorktrees = worktrees.filter((wt) => !wt.isBare);
 
     if (nonBareWorktrees.length === 0) {
+      if (json) {
+        yield* jsonSuccess([]);
+        return;
+      }
       yield* logger.info("No worktrees found");
       return;
     }
 
-    if (opts?.short) {
+    if (!json && opts?.short) {
       for (const wt of nonBareWorktrees) {
         yield* Console.log(wt.branch || "(unknown)");
       }
@@ -64,36 +75,25 @@ export function listCommand(opts?: {
       : null;
 
     const cwd = process.cwd();
-    const rows = yield* Effect.mapError(
+    const worktreeData = yield* Effect.mapError(
       Effect.forEach(nonBareWorktrees, (wt) =>
         Effect.gen(function* () {
           const branch = wt.branch || "(unknown)";
           const sessionName = formatSessionName(basename(wt.path));
           const session = sessions.find((s) => s.name === sessionName);
+          const statusOptions = json ? { logWarnings: false } : undefined;
           const [changesCount, syncStatus] = yield* Effect.all([
-            getChangedFilesCount(wt.path),
-            getAheadBehind(wt.path, defaultBranch),
+            getChangedFilesCount(wt.path, statusOptions),
+            getAheadBehind(wt.path, defaultBranch, statusOptions),
           ]);
-
-          let tmux = "";
-          let tmuxRaw = "";
-          if (session) {
-            if (session.attached) {
-              tmuxRaw = `* ${sessionName}`;
-              tmux = logger.green(tmuxRaw);
-            } else {
-              tmuxRaw = `  ${sessionName}`;
-              tmux = tmuxRaw;
-            }
-          }
 
           return {
             branch,
             path: relative(cwd, wt.path) || ".",
-            tmux,
-            tmuxRaw,
-            changes: formatChanges(changesCount),
-            sync: formatSync(syncStatus),
+            session,
+            sessionName,
+            changesCount,
+            syncStatus,
           };
         }),
       ),
@@ -104,6 +104,44 @@ export function listCommand(opts?: {
           error,
         ),
     );
+
+    if (json) {
+      yield* jsonSuccess(
+        worktreeData.map((row) => ({
+          branch: row.branch,
+          path: row.path,
+          tmux: row.session
+            ? { session: row.session.name, attached: row.session.attached }
+            : null,
+          changes: row.changesCount,
+          sync: row.syncStatus,
+        })),
+      );
+      return;
+    }
+
+    const rows = worktreeData.map((row) => {
+      let tmux = "";
+      let tmuxRaw = "";
+      if (row.session) {
+        if (row.session.attached) {
+          tmuxRaw = `* ${row.sessionName}`;
+          tmux = logger.green(tmuxRaw);
+        } else {
+          tmuxRaw = `  ${row.sessionName}`;
+          tmux = tmuxRaw;
+        }
+      }
+
+      return {
+        branch: row.branch,
+        path: row.path,
+        tmux,
+        tmuxRaw,
+        changes: formatChanges(row.changesCount),
+        sync: formatSync(row.syncStatus),
+      };
+    });
 
     const headers = ["BRANCH", "PATH", "TMUX", "CHANGES", "SYNC"] as const;
     const colWidths = [

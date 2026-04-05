@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { Effect, ServiceMap } from "effect";
-import type { WctServices } from "../effect/services";
+import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import * as logger from "../utils/logger";
 import type { TmuxSession } from "./tmux";
@@ -37,7 +37,7 @@ export interface QueueStorageService {
   ) => Effect.Effect<QueueItem, WctError>;
   listItems: (
     options?: ListItemsOptions,
-  ) => Effect.Effect<QueueItem[], WctError, WctServices>;
+  ) => Effect.Effect<QueueItem[], WctError, WctRuntimeServices>;
   removeItem: (id: string) => Effect.Effect<boolean, WctError>;
   removeItemsBySession: (session: string) => Effect.Effect<number, WctError>;
   clearAll: () => Effect.Effect<number, WctError>;
@@ -199,9 +199,11 @@ export const liveQueueStorage: QueueStorageService = QueueStorage.of({
 
       if (staleIds.length > 0) {
         yield* Effect.catch(deleteItemsByIds(staleIds), (error) =>
-          logger.warn(
-            `Failed to remove stale queue items: ${error instanceof Error ? error.message : String(error)}`,
-          ),
+          logWarnings
+            ? logger.warn(
+                `Failed to remove stale queue items: ${error instanceof Error ? error.message : String(error)}`,
+              )
+            : Effect.void,
         );
       }
 

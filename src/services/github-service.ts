@@ -1,5 +1,5 @@
 import { Effect, ServiceMap } from "effect";
-import type { WctServices } from "../effect/services";
+import type { WctRuntimeServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
 
@@ -71,27 +71,29 @@ export function parseGhPrChecks(stdout: string): PrCheckInfo[] {
 }
 
 export interface GitHubService {
-  isGhInstalled: () => Effect.Effect<boolean, WctError, WctServices>;
+  isGhInstalled: () => Effect.Effect<boolean, WctError, WctRuntimeServices>;
   resolvePr: (
     prNumber: number,
     cwd?: string,
-  ) => Effect.Effect<PrInfo, WctError, WctServices>;
+  ) => Effect.Effect<PrInfo, WctError, WctRuntimeServices>;
   addForkRemote: (
     remoteName: string,
     owner: string,
     repo: string,
     cwd?: string,
-  ) => Effect.Effect<void, WctError, WctServices>;
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
   fetchBranch: (
     branch: string,
     remote?: string,
     cwd?: string,
-  ) => Effect.Effect<void, WctError, WctServices>;
-  listPrs: (cwd: string) => Effect.Effect<PrListItem[], WctError, WctServices>;
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  listPrs: (
+    cwd: string,
+  ) => Effect.Effect<PrListItem[], WctError, WctRuntimeServices>;
   listPrChecks: (
     cwd: string,
     prNumber: number,
-  ) => Effect.Effect<PrCheckInfo[], WctError, WctServices>;
+  ) => Effect.Effect<PrCheckInfo[], WctError, WctRuntimeServices>;
 }
 
 export const GitHubService =

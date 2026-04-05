@@ -17,6 +17,7 @@ import { Argument, Command, Flag } from "../effect/cli";
 import { WctCommandError, type WctError } from "../errors";
 import { GitHubService, parsePrArg } from "../services/github-service";
 import { WorktreeService } from "../services/worktree-service";
+import { JsonFlag } from "./json-flag";
 
 const branchArgument = Argument.string("branch").pipe(
   Argument.withDescription("Branch name"),
@@ -339,6 +340,7 @@ const unregisterCliCommand = Command.make(
 
 export const rootCommand = Command.make("wct").pipe(
   Command.withDescription("Git worktree workflow automation"),
+  Command.withGlobalFlags([JsonFlag]),
   Command.withExamples([
     {
       command: "wct init",

@@ -9,7 +9,6 @@ import { commandDef as initCommandDef } from "../commands/init";
 import { commandDef as listCommandDef } from "../commands/list";
 import { commandDef as notifyCommandDef } from "../commands/notify";
 import { commandDef as openCommandDef } from "../commands/open";
-import { commandDef as queueCommandDef } from "../commands/queue";
 import { commandDef as registerCommandDef } from "../commands/register";
 import { commandDef as switchCommandDef } from "../commands/switch";
 import { commandDef as tuiCommandDef } from "../commands/tui";
@@ -25,7 +24,6 @@ const COMMANDS: ReadonlyArray<CommandDef> = [
   listCommandDef,
   notifyCommandDef,
   openCommandDef,
-  queueCommandDef,
   registerCommandDef,
   switchCommandDef,
   tuiCommandDef,

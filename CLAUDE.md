@@ -35,7 +35,6 @@ src/
 │   ├── cd.ts             # Native Effect implementation of wct cd
 │   ├── init.ts           # Native Effect implementation of wct init
 │   ├── notify.ts         # Native Effect implementation of wct notify
-│   ├── queue.ts          # Native Effect implementation of wct queue
 │   ├── hooks.ts          # Native Effect implementation of wct hooks
 │   ├── register.ts       # Native Effect implementation of wct register
 │   ├── unregister.ts     # Native Effect implementation of wct unregister

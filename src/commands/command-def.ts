@@ -14,4 +14,5 @@ export interface CommandDef {
   args?: string;
   options?: CommandOption[];
   completionType?: "branch" | "worktree";
+  subcommands?: CommandDef[];
 }

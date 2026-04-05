@@ -15,7 +15,10 @@ describe("Effect CLI root", () => {
     expect(result.exitCode).toBe(0);
     expect(output).toContain("GLOBAL FLAGS");
     expect(output).toContain("--completions choice");
+    expect(output).toContain("projects");
     expect(output).toContain("switch, sw");
+    expect(output).not.toContain("\n  register");
+    expect(output).not.toContain("\n  unregister");
     expect(output).not.toContain("\n  completions");
   });
 
@@ -76,7 +79,10 @@ describe("Effect CLI root", () => {
     expect(output).toContain("function __wct_worktree_branches");
     expect(output).toContain("git branch --format='%(refname:short)'");
     expect(output).toContain("git worktree list --porcelain");
+    expect(output).toContain("-a 'projects'");
     expect(output).toContain("-a 'switch'");
+    expect(output).not.toContain("-a 'register'");
+    expect(output).not.toContain("-a 'unregister'");
     expect(output).not.toContain("-a 'completions'");
   });
 

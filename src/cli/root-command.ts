@@ -7,10 +7,13 @@ import { initCommand } from "../commands/init";
 import { listCommand } from "../commands/list";
 import { notifyCommand } from "../commands/notify";
 import { openCommand } from "../commands/open";
-import { registerCommand } from "../commands/register";
+import {
+  projectsAddCommand,
+  projectsListCommand,
+  projectsRemoveCommand,
+} from "../commands/projects";
 import { switchCommand } from "../commands/switch";
 import { tuiCommand } from "../commands/tui";
-import { unregisterCommand } from "../commands/unregister";
 import { upCommand } from "../commands/up";
 import { Argument, Command, Flag } from "../effect/cli";
 import { WctCommandError, type WctError } from "../errors";
@@ -286,31 +289,49 @@ const openCliCommand = Command.make(
   ),
 );
 
-const registerCliCommand = Command.make(
-  "register",
+const projectsAddCliCommand = Command.make(
+  "add",
+  {
+    path: Argument.string("path").pipe(
+      Argument.withDescription("Path to repo"),
+      Argument.optional,
+    ),
+    name: optionalStringFlag("name", "Override project name", "n", "NAME"),
+  },
+  ({ path, name }) =>
+    projectsAddCommand({
+      path: optionToUndefined(path),
+      name: optionToUndefined(name),
+    }),
+).pipe(Command.withDescription("Add a project to the registry"));
+
+const projectsRemoveCliCommand = Command.make(
+  "remove",
   {
     path: Argument.string("path").pipe(
       Argument.withDescription("Path to repo"),
       Argument.optional,
     ),
   },
-  ({ path }) => registerCommand(optionToUndefined(path)),
-).pipe(Command.withDescription("Register a repo in the TUI registry"));
+  ({ path }) => projectsRemoveCommand(optionToUndefined(path)),
+).pipe(Command.withDescription("Remove a project from the registry"));
+
+const projectsListCliCommand = Command.make("list", {}, () =>
+  projectsListCommand(),
+).pipe(Command.withDescription("List registered projects"));
+
+const projectsCliCommand = Command.make("projects").pipe(
+  Command.withDescription("Manage the project registry"),
+  Command.withSubcommands([
+    projectsAddCliCommand,
+    projectsRemoveCliCommand,
+    projectsListCliCommand,
+  ]),
+);
 
 const tuiCliCommand = Command.make("tui", {}, () => tuiCommand()).pipe(
   Command.withDescription("Interactive TUI sidebar for managing worktrees"),
 );
-
-const unregisterCliCommand = Command.make(
-  "unregister",
-  {
-    path: Argument.string("path").pipe(
-      Argument.withDescription("Path to repo"),
-      Argument.optional,
-    ),
-  },
-  ({ path }) => unregisterCommand(optionToUndefined(path)),
-).pipe(Command.withDescription("Remove a repo from the TUI registry"));
 
 export const rootCommand = Command.make("wct").pipe(
   Command.withDescription("Git worktree workflow automation"),
@@ -338,10 +359,9 @@ export const rootCommand = Command.make("wct").pipe(
     listCliCommand,
     notifyCliCommand,
     openCliCommand,
-    registerCliCommand,
+    projectsCliCommand,
     switchCliCommand,
     tuiCliCommand,
-    unregisterCliCommand,
     upCliCommand,
   ]),
 );

@@ -9,10 +9,9 @@ import { commandDef as initCommandDef } from "../commands/init";
 import { commandDef as listCommandDef } from "../commands/list";
 import { commandDef as notifyCommandDef } from "../commands/notify";
 import { commandDef as openCommandDef } from "../commands/open";
-import { commandDef as registerCommandDef } from "../commands/register";
+import { commandDef as projectsCommandDef } from "../commands/projects";
 import { commandDef as switchCommandDef } from "../commands/switch";
 import { commandDef as tuiCommandDef } from "../commands/tui";
-import { commandDef as unregisterCommandDef } from "../commands/unregister";
 import { commandDef as upCommandDef } from "../commands/up";
 
 const COMMANDS: ReadonlyArray<CommandDef> = [
@@ -24,10 +23,9 @@ const COMMANDS: ReadonlyArray<CommandDef> = [
   listCommandDef,
   notifyCommandDef,
   openCommandDef,
-  registerCommandDef,
+  projectsCommandDef,
   switchCommandDef,
   tuiCommandDef,
-  unregisterCommandDef,
   upCommandDef,
 ];
 
@@ -88,6 +86,46 @@ function generateFishCompletions(): string {
       lines.push(
         `complete -c wct -n '__fish_use_subcommand' -a ${quoteFish(name)} -d ${quoteFish(command.description)}`,
       );
+    }
+
+    if (command.subcommands) {
+      const subNames = command.subcommands.map((s) => s.name).join(" ");
+      for (const sub of command.subcommands) {
+        lines.push(
+          `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and not __fish_seen_subcommand_from ${subNames}' -a ${quoteFish(sub.name)} -d ${quoteFish(sub.description)}`,
+        );
+      }
+      for (const sub of command.subcommands) {
+        if (!sub.options) continue;
+        for (const option of sub.options) {
+          const parts = [
+            "complete -c wct",
+            `-n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}'`,
+          ];
+          if (option.short) {
+            parts.push(`-s ${option.short}`);
+          }
+          parts.push(`-l ${option.name}`);
+          if (option.type === "string") {
+            parts.push("-r");
+          }
+          parts.push(`-d ${quoteFish(option.description)}`);
+          if (option.completionValues) {
+            parts.push(`-a '(${option.completionValues})'`);
+          }
+          lines.push(parts.join(" "));
+        }
+
+        const acceptsPath =
+          command.name === "projects" &&
+          (sub.name === "add" || sub.name === "remove");
+
+        if (acceptsPath) {
+          lines.push(
+            `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}' -a '(__fish_complete_directories)' -d 'Path to repo'`,
+          );
+        }
+      }
     }
   }
 
@@ -213,6 +251,7 @@ function generateBashCompletions(): string {
   ];
 
   for (const command of COMMANDS) {
+    if (command.subcommands) continue;
     const options: Array<string> = [];
     if (command.options) {
       for (const option of command.options) {
@@ -273,6 +312,51 @@ function generateBashCompletions(): string {
         );
       }
     }
+    lines.push("            ;;");
+  }
+
+  for (const command of COMMANDS) {
+    if (!command.subcommands) continue;
+    const subNames = command.subcommands.map((s) => s.name).join(" ");
+    lines.push(`        ${command.name})`);
+    lines.push("            if [[ $cword -eq 2 ]]; then");
+    lines.push(
+      `                COMPREPLY=($(compgen -W '${subNames}' -- "$cur"))`,
+    );
+    lines.push("            else");
+    lines.push('                local subcmd="${COMP_WORDS[2]}"');
+    lines.push('                case "$subcmd" in');
+    for (const sub of command.subcommands) {
+      const subFlags = (sub.options ?? [])
+        .flatMap((option) => [
+          `--${option.name}`,
+          ...(option.short ? [`-${option.short}`] : []),
+        ])
+        .join(" ");
+      const allFlags = subFlags ? `${globalFlags} ${subFlags}` : globalFlags;
+      const acceptsPath =
+        command.name === "projects" &&
+        (sub.name === "add" || sub.name === "remove");
+      lines.push(`                    ${sub.name})`);
+      if (acceptsPath) {
+        lines.push('                        if [[ "$cur" != -* ]]; then');
+        lines.push(
+          '                            COMPREPLY=($(compgen -d -- "$cur"))',
+        );
+        lines.push("                        else");
+        lines.push(
+          `                            COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
+        );
+        lines.push("                        fi");
+      } else {
+        lines.push(
+          `                        COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
+        );
+      }
+      lines.push("                        ;;");
+    }
+    lines.push("                esac");
+    lines.push("            fi");
     lines.push("            ;;");
   }
 
@@ -354,7 +438,35 @@ function generateZshCompletions(): string {
   lines.push("        args)");
   lines.push('            case "$words[1]" in');
 
+  lines.push("                projects)");
+  lines.push("                    if (( CURRENT == 2 )); then");
+  lines.push("                        local -a subcmds");
+  lines.push("                        subcmds=(");
+  lines.push("                            'add:Add a project to the registry'");
+  lines.push(
+    "                            'remove:Remove a project from the registry'",
+  );
+  lines.push("                            'list:List registered projects'");
+  lines.push("                        )");
+  lines.push("                        _describe 'projects subcommand' subcmds");
+  lines.push("                    else");
+  lines.push('                        case "$words[2]" in');
+  lines.push("                            add)");
+  lines.push("                                _arguments \\");
+  lines.push(
+    "                                    '(-n --name)'{-n,--name}'[Override project name]:name:' \\",
+  );
+  lines.push("                                    '*:path:_files -/'");
+  lines.push("                                ;;");
+  lines.push("                            remove)");
+  lines.push("                                _arguments '*:path:_files -/'");
+  lines.push("                                ;;");
+  lines.push("                        esac");
+  lines.push("                    fi");
+  lines.push("                    ;;");
+
   for (const command of COMMANDS) {
+    if (command.subcommands) continue;
     const allNames = getAllNames(command);
     const isBranchCommand = allNames.some((name) =>
       branchCommands.includes(name),

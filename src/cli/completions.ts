@@ -363,10 +363,26 @@ function generateBashCompletions(): string {
           ...(option.short ? [`-${option.short}`] : []),
         ])
         .join(" ");
+      const stringValuePrevCheck = (sub.options ?? [])
+        .filter((option) => option.type === "string")
+        .map((option) =>
+          option.short
+            ? `"$prev" == "--${option.name}" || "$prev" == "-${option.short}"`
+            : `"$prev" == "--${option.name}"`,
+        )
+        .join(" || ");
       const allFlags = subFlags ? `${globalFlags} ${subFlags}` : globalFlags;
       lines.push(`                    ${sub.name})`);
       if (sub.completionType === "path") {
-        lines.push('                        if [[ "$cur" != -* ]]; then');
+        if (stringValuePrevCheck) {
+          lines.push(
+            `                        if [[ ${stringValuePrevCheck} ]]; then`,
+          );
+          lines.push("                            COMPREPLY=()");
+          lines.push('                        elif [[ "$cur" != -* ]]; then');
+        } else {
+          lines.push('                        if [[ "$cur" != -* ]]; then');
+        }
         lines.push(
           '                            COMPREPLY=($(compgen -d -- "$cur"))',
         );

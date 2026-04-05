@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import packageJson from "../package.json";
 
@@ -5,6 +8,47 @@ const VERSION = packageJson.version;
 
 function runCliProcess(args: string[]) {
   return Bun.spawnSync(["bun", "run", "src/index.ts", ...args]);
+}
+
+function runBashCompletion(words: string[], cwd: string) {
+  const tempDir = mkdtempSync(join(tmpdir(), "wct-bash-completion-"));
+  const scriptPath = join(tempDir, "wct-completion.bash");
+  const completionScript = runCliProcess([
+    "--completions",
+    "bash",
+  ]).stdout.toString();
+
+  writeFileSync(scriptPath, completionScript);
+
+  try {
+    return Bun.spawnSync(
+      [
+        "bash",
+        "-lc",
+        [
+          'source "$1"',
+          "shift",
+          'cd "$1"',
+          "shift",
+          `COMP_WORDS=(${words.map((word) => JSON.stringify(word)).join(" ")})`,
+          `COMP_CWORD=${words.length - 1}`,
+          "COMPREPLY=()",
+          "_wct",
+          `printf "%s\\n" "\${COMPREPLY[@]}"`,
+        ].join("\n"),
+        "bash",
+        scriptPath,
+        cwd,
+      ],
+      {
+        env: {
+          ...process.env,
+        },
+      },
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 describe("Effect CLI root", () => {
@@ -122,6 +166,37 @@ describe("Effect CLI root", () => {
     expect(output).toContain(
       "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --no-attach --pr --prompt -p --profile -P' -- \"$cur\"))",
     );
+  });
+
+  test("bash completions do not offer directories for projects add --name or -n values", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "wct-bash-completion-repo-"));
+    mkdirSync(join(repoRoot, "alpha"), { recursive: true });
+    mkdirSync(join(repoRoot, "beta"), { recursive: true });
+
+    try {
+      const longFlagResult = runBashCompletion(
+        ["wct", "projects", "add", "--name", ""],
+        repoRoot,
+      );
+      const shortFlagResult = runBashCompletion(
+        ["wct", "projects", "add", "-n", ""],
+        repoRoot,
+      );
+      const positionalResult = runBashCompletion(
+        ["wct", "projects", "add", ""],
+        repoRoot,
+      );
+
+      expect(longFlagResult.exitCode).toBe(0);
+      expect(shortFlagResult.exitCode).toBe(0);
+      expect(positionalResult.exitCode).toBe(0);
+      expect(longFlagResult.stdout.toString().trim()).toBe("");
+      expect(shortFlagResult.stdout.toString().trim()).toBe("");
+      expect(positionalResult.stdout.toString()).toContain("alpha");
+      expect(positionalResult.stdout.toString()).toContain("beta");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 
   test("renders zsh completions that scan for nested subcommands after the group command", () => {

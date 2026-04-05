@@ -1,8 +1,14 @@
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  projectsAddCommand,
+  projectsRemoveCommand,
+} from "../src/commands/projects";
+import { runBunPromise } from "../src/effect/runtime";
+import { withTestServices } from "./helpers/services";
 
 const CLI_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 
@@ -17,6 +23,15 @@ function runCliProcess(args: string[], cwd?: string) {
 
 function runProcess(cmd: string[], cwd: string) {
   return Bun.spawnSync(cmd, { cwd });
+}
+
+const ANSI_ESCAPE_PATTERN = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-9;]*m`,
+  "g",
+);
+
+function stripAnsi(value: string) {
+  return value.replace(ANSI_ESCAPE_PATTERN, "");
 }
 
 describe("projects command", () => {
@@ -55,6 +70,15 @@ describe("projects command", () => {
       ok: true,
       data: [],
     });
+  });
+
+  test("projects list prints a human-readable empty state when registry is empty", () => {
+    const result = runCliProcess(["projects", "list"]);
+    const stdout = stripAnsi(result.stdout.toString());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(stdout).toContain("No projects registered");
   });
 
   test("global --json before projects list returns the same empty success envelope", () => {
@@ -107,6 +131,21 @@ describe("projects command", () => {
     });
   });
 
+  test("projects add prints a human-readable success message", () => {
+    const result = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "example-project",
+    ]);
+    const stdout = stripAnsi(result.stdout.toString());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(stdout).toContain(`Added ${resolvedRepoDir} as 'example-project'`);
+  });
+
   test("projects remove --json returns removed metadata for the repo path", () => {
     const addResult = runCliProcess([
       "projects",
@@ -139,6 +178,43 @@ describe("projects command", () => {
     expect(JSON.parse(listResult.stdout.toString())).toEqual({
       ok: true,
       data: [],
+    });
+  });
+
+  test("projects remove prints a human-readable success message", () => {
+    const addResult = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "example-project",
+      "--json",
+    ]);
+
+    expect(addResult.exitCode).toBe(0);
+
+    const result = runCliProcess(["projects", "remove", repoDir]);
+    const stdout = stripAnsi(result.stdout.toString());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(stdout).toContain(`Removed ${resolvedRepoDir}`);
+  });
+
+  test("global --json projects remove returns a JSON error when the repo is unregistered", () => {
+    const result = runCliProcess(["--json", "projects", "remove", repoDir]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    expect(JSON.parse(stderr)).toEqual({
+      ok: false,
+      error: {
+        code: "registry_error",
+        message: `Project not found in registry: ${resolvedRepoDir}`,
+      },
     });
   });
 
@@ -197,6 +273,96 @@ describe("projects command", () => {
     });
   });
 
+  test("projects list prints a populated table with headers and the registered row", () => {
+    const addResult = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "example-project",
+      "--json",
+    ]);
+
+    expect(addResult.exitCode).toBe(0);
+
+    const result = runCliProcess(["projects", "list"]);
+    const stdoutLines = stripAnsi(result.stdout.toString())
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length > 0);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(stdoutLines.length).toBeGreaterThanOrEqual(2);
+    expect(stdoutLines[0]).toContain("PROJECT");
+    expect(stdoutLines[0]).toContain("PATH");
+    expect(
+      stdoutLines.some(
+        (line) =>
+          line.includes("example-project") && line.includes(resolvedRepoDir),
+      ),
+    ).toBe(true);
+  });
+
+  test("projects add --json returns an invalid_options error for an invalid path", () => {
+    const badPath = join(tempDir, "missing-project-repo");
+
+    const result = runCliProcess(["--json", "projects", "add", badPath]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    expect(JSON.parse(stderr)).toEqual({
+      ok: false,
+      error: {
+        code: "invalid_options",
+        message: `Invalid path: ${badPath}`,
+      },
+    });
+  });
+
+  test("projects add --json returns not_git_repo for an existing non-git directory", () => {
+    const nonGitDir = join(tempDir, "plain-directory");
+    mkdirSync(nonGitDir, { recursive: true });
+    const resolvedNonGitDir = resolve(nonGitDir);
+
+    const result = runCliProcess(["--json", "projects", "add", nonGitDir]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    expect(JSON.parse(stderr)).toEqual({
+      ok: false,
+      error: {
+        code: "not_git_repo",
+        message: `Not a git repository: ${resolvedNonGitDir}`,
+      },
+    });
+  });
+
+  test("projects remove --json returns an invalid_options error for an invalid path", () => {
+    const badPath = join(tempDir, "missing-project-repo");
+
+    const result = runCliProcess(["--json", "projects", "remove", badPath]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    expect(JSON.parse(stderr)).toEqual({
+      ok: false,
+      error: {
+        code: "invalid_options",
+        message: `Invalid path: ${badPath}`,
+      },
+    });
+  });
+
   test("projects add falls back to basename when config is malformed", () => {
     writeFileSync(join(repoDir, ".wct.yaml"), "project_name: [\n");
 
@@ -212,6 +378,40 @@ describe("projects command", () => {
         project: "repo",
       }),
     });
+  });
+
+  test("projectsAddCommand fails with worktree_error when process.cwd() throws", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("cwd unavailable");
+    });
+
+    try {
+      await expect(
+        runBunPromise(withTestServices(projectsAddCommand())),
+      ).rejects.toMatchObject({
+        code: "worktree_error",
+        details: "Could not determine current directory",
+      });
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
+  test("projectsRemoveCommand fails with worktree_error when process.cwd() throws", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("cwd unavailable");
+    });
+
+    try {
+      await expect(
+        runBunPromise(withTestServices(projectsRemoveCommand())),
+      ).rejects.toMatchObject({
+        code: "worktree_error",
+        details: "Could not determine current directory",
+      });
+    } finally {
+      cwdSpy.mockRestore();
+    }
   });
 
   test("projects --help shows add, remove, and list subcommands", () => {

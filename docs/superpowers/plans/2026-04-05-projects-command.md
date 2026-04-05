@@ -393,27 +393,14 @@ for (const command of COMMANDS) {
   }
 
   if (command.subcommands) {
+    const subNames = command.subcommands.map((s) => s.name).join(" ");
+    // Only show subcommand names when parent is seen but no subcommand yet
     for (const sub of command.subcommands) {
       lines.push(
-        `complete -c wct -n '__fish_seen_subcommand_from ${command.name}' -a ${quoteFish(sub.name)} -d ${quoteFish(sub.description)}`,
+        `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and not __fish_seen_subcommand_from ${subNames}' -a ${quoteFish(sub.name)} -d ${quoteFish(sub.description)}`,
       );
     }
-  }
-}
-```
-
-Also in the per-command options section, add options for subcommands:
-
-```typescript
-for (const command of COMMANDS) {
-  if (command.options) {
-    const names = getAllNames(command);
-    for (const option of command.options) {
-      // ... existing option logic
-    }
-  }
-
-  if (command.subcommands) {
+    // Show per-subcommand options only when that subcommand is active
     for (const sub of command.subcommands) {
       if (!sub.options) continue;
       for (const option of sub.options) {

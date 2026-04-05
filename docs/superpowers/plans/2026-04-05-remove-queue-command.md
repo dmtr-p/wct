@@ -162,11 +162,11 @@ Keeping `queue_error` avoids breaking the preserved queue-storage path and match
 
 - [ ] **Step 1: Update the unrecognized flags JSON test**
 
-In `tests/completions.test.ts`, the test at line 137 uses `"queue"` as the subcommand. Replace it with `"list"` (another subcommand that exists and takes flags):
+In `tests/completions.test.ts`, the test at line 162 uses `"queue"` as the subcommand. Replace it with `"open"` (another subcommand that exists and takes flags):
 
 ```typescript
   test("emits JSON for unrecognized flags when --json is present", () => {
-    const result = runCliProcess(["--json", "list", "--bad-flag"]);
+    const result = runCliProcess(["--json", "open", "--bad-flag"]);
 ```
 
 Everything else in the test stays the same — it's testing JSON error shape, not queue-specific behavior.

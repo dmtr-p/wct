@@ -105,6 +105,13 @@ describe("Effect CLI root", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
+    expect(output).toContain("projects)");
+    expect(output).toContain(
+      "COMPREPLY=($(compgen -W 'add remove list' -- \"$cur\"))",
+    );
+    expect(output).toContain("add)");
+    expect(output).toContain("remove)");
+    expect(output).toContain("list)");
     expect(output).toContain("local cmd_index=1");
     expect(output).toContain("local subcmd_index=$((cmd_index + 1))");
     expect(output).toContain("while [[ $subcmd_index -lt $cword ]]");
@@ -118,6 +125,10 @@ describe("Effect CLI root", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
+    expect(output).toContain("projects:Manage the project registry");
+    expect(output).toContain("'add:Add a project to the registry'");
+    expect(output).toContain("'remove:Remove a project from the registry'");
+    expect(output).toContain("'list:List registered projects'");
     expect(output).toContain('case "$command_word" in');
     expect(output).toContain("local subcmd_index=$((command_index + 1))");
     expect(output).toContain("while (( subcmd_index < CURRENT ))");

@@ -54,8 +54,8 @@ No changes to `RegistryService`. The existing API (`register`, `unregister`, `li
 
 ## JSON Output
 
-All subcommands respect the `--json` global flag via `JsonFlag`:
+All subcommands respect the `--json` global flag via `JsonFlag` and use the repo-wide `jsonSuccess()` envelope (`{ ok: true, data: ... }`):
 
-- **add**: `{ id, repo_path, project, created_at }`
-- **remove**: `{ repo_path, removed: true }`
-- **list**: `[{ id, repo_path, project, created_at }, ...]`
+- **add**: `{ ok: true, data: { id, repo_path, project, created_at } }`
+- **remove**: `{ ok: true, data: { repo_path, removed: true } }`
+- **list**: `{ ok: true, data: [{ id, repo_path, project, created_at }, ...] }`

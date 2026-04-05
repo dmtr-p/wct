@@ -466,19 +466,32 @@ lines.push(`            ;;`);
 
 This replaces the auto-generated entries for `projects` — skip `projects` in the normal command loop iteration.
 
-- [ ] **Step 5: Update Zsh completions generator for nested subcommands**
+- [ ] **Step 5: Update Zsh completions generator with two-level subcommand dispatch**
 
-In `generateZshCompletions()`, add `projects` to the commands list and handle its subcommands in the case statement. In the `args` case, add:
+In `generateZshCompletions()`, add `projects` to the commands list and handle its subcommands with a proper two-level state machine. In the `args` case, add a `projects)` branch that dispatches on `$words[2]` — showing subcommand names at level 1, and per-subcommand options at level 2:
 
 ```typescript
 lines.push(`                projects)`);
-lines.push(`                    local -a subcmds`);
-lines.push(`                    subcmds=(`);
-lines.push(`                        'add:Add a project to the registry'`);
-lines.push(`                        'remove:Remove a project from the registry'`);
-lines.push(`                        'list:List registered projects'`);
-lines.push(`                    )`);
-lines.push(`                    _describe 'projects subcommand' subcmds`);
+lines.push(`                    if (( CURRENT == 2 )); then`);
+lines.push(`                        local -a subcmds`);
+lines.push(`                        subcmds=(`);
+lines.push(`                            'add:Add a project to the registry'`);
+lines.push(`                            'remove:Remove a project from the registry'`);
+lines.push(`                            'list:List registered projects'`);
+lines.push(`                        )`);
+lines.push(`                        _describe 'projects subcommand' subcmds`);
+lines.push(`                    else`);
+lines.push(`                        case "$words[2]" in`);
+lines.push(`                            add)`);
+lines.push(`                                _arguments \\`);
+lines.push(`                                    '(-n --name)'{-n,--name}'[Override project name]:name:' \\`);
+lines.push(`                                    '*:path:_files -/'`);
+lines.push(`                                ;;`);
+lines.push(`                            remove)`);
+lines.push(`                                _arguments '*:path:_files -/'`);
+lines.push(`                                ;;`);
+lines.push(`                        esac`);
+lines.push(`                    fi`);
 lines.push(`                    ;;`);
 ```
 
@@ -600,7 +613,7 @@ Expected: shows the registered project in a table.
 bun run src/index.ts --json projects list
 ```
 
-Expected: JSON array of registry items.
+Expected: `{ ok: true, data: [...] }` envelope wrapping registry items.
 
 - [ ] **Step 5: Verify remove**
 

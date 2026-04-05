@@ -12,6 +12,7 @@ import {
   liveWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
+import * as worktreeStatus from "../src/services/worktree-status";
 import {
   formatSync,
   getAheadBehind,
@@ -449,10 +450,22 @@ describe("listCommand integration", () => {
   test("--json suppresses recoverable worktree status warnings", async () => {
     process.chdir(repoDir);
     const lines: string[] = [];
+    const originalGetChangedFilesCount = worktreeStatus.getChangedFilesCount;
     const consoleSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...args: unknown[]) => {
         lines.push(String(args[0]));
+      });
+    const changesSpy = vi
+      .spyOn(worktreeStatus, "getChangedFilesCount")
+      .mockImplementation((worktreePath, options) => {
+        if (worktreePath.includes("feature-test")) {
+          if (options?.logWarnings === false) {
+            return Effect.succeed(0);
+          }
+          throw new Error("expected logWarnings to be false in json mode");
+        }
+        return originalGetChangedFilesCount(worktreePath, options);
       });
 
     try {
@@ -467,6 +480,7 @@ describe("listCommand integration", () => {
       expect(() => JSON.parse(jsonLine ?? "")).not.toThrow();
       expect(stripAnsi(jsonLine ?? "")).not.toContain("warn ");
     } finally {
+      changesSpy.mockRestore();
       consoleSpy.mockRestore();
       process.chdir(originalDir);
     }

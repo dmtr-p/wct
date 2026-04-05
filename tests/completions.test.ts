@@ -134,8 +134,33 @@ describe("Effect CLI root", () => {
     expect(stderr).not.toContain("Help requested");
   });
 
+  test("emits JSON for the removed queue subcommand when --json is present", () => {
+    const result = runCliProcess(["--json", "queue"]);
+    const stdout = result.stdout.toString();
+    const stderr = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(stdout.trim()).toBe("");
+    expect(() => JSON.parse(stderr)).not.toThrow();
+    const parsed = JSON.parse(stderr);
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "unknown_command",
+        }),
+      }),
+    );
+    expect(parsed.error.message).toEqual(
+      expect.stringContaining("Unknown subcommand"),
+    );
+    expect(parsed.error.message).toEqual(expect.stringContaining("queue"));
+    expect(stderr).not.toContain("GLOBAL FLAGS");
+    expect(stderr).not.toContain("Help requested");
+  });
+
   test("emits JSON for unrecognized flags when --json is present", () => {
-    const result = runCliProcess(["--json", "queue", "--bad-flag"]);
+    const result = runCliProcess(["--json", "open", "--bad-flag"]);
     const stdout = result.stdout.toString();
     const stderr = result.stderr.toString();
 

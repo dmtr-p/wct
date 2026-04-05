@@ -7,7 +7,6 @@ import { initCommand } from "../commands/init";
 import { listCommand } from "../commands/list";
 import { notifyCommand } from "../commands/notify";
 import { openCommand } from "../commands/open";
-import { queueCommand } from "../commands/queue";
 import { registerCommand } from "../commands/register";
 import { switchCommand } from "../commands/switch";
 import { tuiCommand } from "../commands/tui";
@@ -126,31 +125,6 @@ const listCliCommand = Command.make(
 const notifyCliCommand = Command.make("notify", {}, () => notifyCommand()).pipe(
   Command.withDescription("Queue a notification from Claude Code hooks"),
 );
-
-const queueCliCommand = Command.make(
-  "queue",
-  {
-    jump: optionalStringFlag(
-      "jump",
-      "Jump to item's tmux session/pane",
-      undefined,
-      "ID",
-    ),
-    dismiss: optionalStringFlag(
-      "dismiss",
-      "Remove item from queue",
-      undefined,
-      "ID",
-    ),
-    clear: booleanFlag("clear", "Clear all queue items"),
-  },
-  ({ jump, dismiss, clear }) =>
-    queueCommand({
-      jump: optionToUndefined(jump),
-      dismiss: optionToUndefined(dismiss),
-      clear,
-    }),
-).pipe(Command.withDescription("Manage the agent notification queue"));
 
 const switchCliCommand = Command.make(
   "switch",
@@ -364,7 +338,6 @@ export const rootCommand = Command.make("wct").pipe(
     listCliCommand,
     notifyCliCommand,
     openCliCommand,
-    queueCliCommand,
     registerCliCommand,
     switchCliCommand,
     tuiCliCommand,

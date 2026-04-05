@@ -4,13 +4,15 @@
 
 **Goal:** Remove the `wct queue` CLI subcommand while keeping queue-storage service and notification infrastructure intact.
 
-**Architecture:** Delete the command module and its tests, then remove all references from the CLI root, completions, and error codes. The queue storage service, `notify`, `close`, `down`, and TUI queue hooks remain untouched.
+**Architecture:** Delete the command module and its tests, then remove all CLI-surface references from the CLI root and completions. The queue storage service, `notify`, `close`, `down`, and TUI queue hooks remain untouched, so shared queue error handling stays in place.
 
 **Tech Stack:** Effect CLI, TypeScript, Vitest
 
 ---
 
 ### Task 1: Remove queue command module and tests
+
+**Note:** This task is coupled to Tasks 2 and 3 in practice. Deleting `src/commands/queue.ts` leaves stale imports in the CLI root and completions until those follow-up tasks land, so these tasks should be treated as one logical change for implementation and review.
 
 **Files:**
 - Delete: `src/commands/queue.ts`
@@ -138,33 +140,18 @@ git commit -m "remove queue from shell completions"
 
 ---
 
-### Task 4: Remove `queue_error` error code
+### Task 4: Keep `queue_error` error code
 
 **Files:**
-- Modify: `src/errors.ts`
+- No changes required
 
-- [ ] **Step 1: Remove `queue_error` from the ErrorCode union**
+- [ ] **Step 1: Confirm `queue_error` is still part of preserved queue infrastructure**
 
-In `src/errors.ts`, remove line 23:
+`queue_error` remains valid because `src/services/queue-storage.ts` still uses it, and that service is intentionally kept for `notify`, `close`, `down`, and the TUI queue hooks.
 
-```typescript
-  | "queue_error"
-```
+- [ ] **Step 2: Do not modify `src/errors.ts`**
 
-- [ ] **Step 2: Run tests to verify no remaining references**
-
-```bash
-bun run test
-```
-
-Expected: All tests pass. No code outside the deleted `queue.ts` uses `queue_error`.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/errors.ts
-git commit -m "remove unused queue_error error code"
-```
+Keeping `queue_error` avoids breaking the preserved queue-storage path and matches the goal of removing only the `wct queue` CLI subcommand.
 
 ---
 

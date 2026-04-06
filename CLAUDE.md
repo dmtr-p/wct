@@ -36,8 +36,7 @@ src/
 │   ├── init.ts           # Native Effect implementation of wct init
 │   ├── notify.ts         # Native Effect implementation of wct notify
 │   ├── hooks.ts          # Native Effect implementation of wct hooks
-│   ├── register.ts       # Native Effect implementation of wct register
-│   ├── unregister.ts     # Native Effect implementation of wct unregister
+│   ├── projects.ts       # Native Effect implementation of wct projects add/remove/list
 │   ├── session.ts        # Native Effect implementation of wct session
 │   └── tui.ts            # Native Effect implementation of wct tui
 ├── config/

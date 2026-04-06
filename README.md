@@ -11,6 +11,9 @@ wct down                # Kill tmux session for current directory
 wct close <branch...>   # Kill tmux session and remove one or more worktrees
 wct list                # Show active worktrees with tmux session status
 wct init                # Generate a starter .wct.yaml config file
+wct projects add [path] [--name NAME]  # Add a repo to the project registry
+wct projects remove [path]             # Remove a repo from the project registry
+wct projects list                      # List registered projects
 ```
 
 Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).

@@ -716,3 +716,27 @@ bun run src/index.ts register
 ```
 
 Expected: `Unknown subcommand "register"` error.
+
+---
+
+### Post-Implementation Notes
+
+- `src/commands/projects.ts` diverged from the literal plan in a few places for robustness:
+  - `projectsAddCommand` and `projectsRemoveCommand` now wrap `process.cwd()` / `process.chdir()` in typed `Effect.try(...)` helpers so invalid cwd/path failures stay in the `WctError` channel instead of escaping as defects.
+  - `projectsAddCommand` now calls `WorktreeService.getMainRepoPath()` directly and treats `null` as the non-repo case, instead of using the plan's broader outer `Effect.catch(... => Effect.succeed(null))`. This preserves real `worktree_error` failures.
+  - `projectsRemoveCommand` currently also calls `WorktreeService.getMainRepoPath()` directly without the plan's broader outer catch. This is an implementation difference that affects whether Git-resolution failures fall back to raw `repoPath` unregister behavior.
+  - `projectsAddCommand` still falls back to `basename(mainDir)` when config loading or validation fails, matching the original plan's behavior after a later regression fix. Invalid config is not treated as a hard blocker for registration.
+
+- `src/commands/command-def.ts` was extended beyond the plan's literal type snippet:
+  - `completionType` now supports `"path"` in addition to `"branch"` and `"worktree"`, so nested subcommands can drive path completions from metadata.
+
+- `src/cli/completions.ts` diverged from the literal plan in service of correctness and coverage:
+  - Fish and Bash now emit path completions for `projects add` and `projects remove` based on `completionType: "path"`.
+  - Bash and Zsh no longer assume the nested subcommand is always at `COMP_WORDS[2]` / `words[2]`; they scan for the first non-flag token after the grouped command so global flags before `projects` do not break nested completion dispatch.
+  - Zsh completions are now generated from command metadata rather than hardcoded to `projects`, even though the original plan showed a hardcoded branch.
+
+- Test coverage in `tests/projects.test.ts` and `tests/completions.test.ts` also extends beyond the original plan:
+  - Added coverage for `--json projects list`.
+  - Added end-to-end coverage for `projects add` / `projects remove` when no repo path is passed and the commands rely on `process.cwd()`.
+  - Added regression coverage for malformed config fallback behavior in `projects add`.
+  - Added assertions for nested fish, bash, and zsh completion fragments, including `projects add` option/path completion output.

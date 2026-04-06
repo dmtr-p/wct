@@ -9,10 +9,9 @@ import { commandDef as initCommandDef } from "../commands/init";
 import { commandDef as listCommandDef } from "../commands/list";
 import { commandDef as notifyCommandDef } from "../commands/notify";
 import { commandDef as openCommandDef } from "../commands/open";
-import { commandDef as registerCommandDef } from "../commands/register";
+import { commandDef as projectsCommandDef } from "../commands/projects";
 import { commandDef as switchCommandDef } from "../commands/switch";
 import { commandDef as tuiCommandDef } from "../commands/tui";
-import { commandDef as unregisterCommandDef } from "../commands/unregister";
 import { commandDef as upCommandDef } from "../commands/up";
 
 const COMMANDS: ReadonlyArray<CommandDef> = [
@@ -24,10 +23,9 @@ const COMMANDS: ReadonlyArray<CommandDef> = [
   listCommandDef,
   notifyCommandDef,
   openCommandDef,
-  registerCommandDef,
+  projectsCommandDef,
   switchCommandDef,
   tuiCommandDef,
-  unregisterCommandDef,
   upCommandDef,
 ];
 
@@ -88,6 +86,41 @@ function generateFishCompletions(): string {
       lines.push(
         `complete -c wct -n '__fish_use_subcommand' -a ${quoteFish(name)} -d ${quoteFish(command.description)}`,
       );
+    }
+
+    if (command.subcommands) {
+      const subNames = command.subcommands.map((s) => s.name).join(" ");
+      for (const sub of command.subcommands) {
+        lines.push(
+          `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and not __fish_seen_subcommand_from ${subNames}' -a ${quoteFish(sub.name)} -d ${quoteFish(sub.description)}`,
+        );
+      }
+      for (const sub of command.subcommands) {
+        for (const option of sub.options ?? []) {
+          const parts = [
+            "complete -c wct",
+            `-n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}'`,
+          ];
+          if (option.short) {
+            parts.push(`-s ${option.short}`);
+          }
+          parts.push(`-l ${option.name}`);
+          if (option.type === "string") {
+            parts.push("-r");
+          }
+          parts.push(`-d ${quoteFish(option.description)}`);
+          if (option.completionValues) {
+            parts.push(`-a '(${option.completionValues})'`);
+          }
+          lines.push(parts.join(" "));
+        }
+
+        if (sub.completionType === "path") {
+          lines.push(
+            `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}' -a '(__fish_complete_directories)' -d 'Path to repo'`,
+          );
+        }
+      }
     }
   }
 
@@ -202,17 +235,41 @@ function generateBashCompletions(): string {
     '    local cur="${COMP_WORDS[COMP_CWORD]}"',
     '    local prev="${COMP_WORDS[COMP_CWORD-1]}"',
     '    local cword="$COMP_CWORD"',
+    '    local cmd="${COMP_WORDS[1]}"',
+    "    local cmd_index=1",
+    "    local scan_index=1",
     "",
-    "    if [[ $cword -eq 1 ]]; then",
-    `        COMPREPLY=($(compgen -W '${commandNames}' -- "$cur"))`,
+    '    if [[ "$cmd" == -* ]]; then',
+    "        while [[ $scan_index -lt $cword ]]; do",
+    '            local scan_word="${COMP_WORDS[scan_index]}"',
+    '            if [[ "$scan_word" == "--completions" || "$scan_word" == "--log-level" ]]; then',
+    "                ((scan_index += 2))",
+    "                continue",
+    "            fi",
+    '            if [[ "$scan_word" == -* ]]; then',
+    "                ((scan_index++))",
+    "                continue",
+    "            fi",
+    '            cmd="$scan_word"',
+    "            cmd_index=$scan_index",
+    "            break",
+    "        done",
+    "    fi",
+    "",
+    '    if [[ -z "$cmd" || "$cmd" == -* ]]; then',
+    '        if [[ "$cur" == -* ]]; then',
+    `            COMPREPLY=($(compgen -W '${globalFlags}' -- "$cur"))`,
+    "        else",
+    `            COMPREPLY=($(compgen -W '${commandNames}' -- "$cur"))`,
+    "        fi",
     "        return",
     "    fi",
     "",
-    '    local cmd="${COMP_WORDS[1]}"',
     '    case "$cmd" in',
   ];
 
   for (const command of COMMANDS) {
+    if (command.subcommands) continue;
     const options: Array<string> = [];
     if (command.options) {
       for (const option of command.options) {
@@ -273,6 +330,76 @@ function generateBashCompletions(): string {
         );
       }
     }
+    lines.push("            ;;");
+  }
+
+  for (const command of COMMANDS) {
+    if (!command.subcommands) continue;
+    const subNames = command.subcommands.map((s) => s.name).join(" ");
+    lines.push(`        ${command.name})`);
+    lines.push('            local subcmd=""');
+    lines.push("            local subcmd_index=$((cmd_index + 1))");
+    lines.push("            while [[ $subcmd_index -lt $cword ]]; do");
+    lines.push(
+      '                local subcmd_word="${COMP_WORDS[subcmd_index]}"',
+    );
+    lines.push('                if [[ "$subcmd_word" == -* ]]; then');
+    lines.push("                    ((subcmd_index++))");
+    lines.push("                    continue");
+    lines.push("                fi");
+    lines.push('                subcmd="$subcmd_word"');
+    lines.push("                break");
+    lines.push("            done");
+    lines.push('            if [[ -z "$subcmd" ]]; then');
+    lines.push(
+      `                COMPREPLY=($(compgen -W '${subNames}' -- "$cur"))`,
+    );
+    lines.push("            else");
+    lines.push('                case "$subcmd" in');
+    for (const sub of command.subcommands) {
+      const subFlags = (sub.options ?? [])
+        .flatMap((option) => [
+          `--${option.name}`,
+          ...(option.short ? [`-${option.short}`] : []),
+        ])
+        .join(" ");
+      const stringValuePrevCheck = (sub.options ?? [])
+        .filter((option) => option.type === "string")
+        .map((option) =>
+          option.short
+            ? `"$prev" == "--${option.name}" || "$prev" == "-${option.short}"`
+            : `"$prev" == "--${option.name}"`,
+        )
+        .join(" || ");
+      const allFlags = subFlags ? `${globalFlags} ${subFlags}` : globalFlags;
+      lines.push(`                    ${sub.name})`);
+      if (sub.completionType === "path") {
+        if (stringValuePrevCheck) {
+          lines.push(
+            `                        if [[ ${stringValuePrevCheck} ]]; then`,
+          );
+          lines.push("                            COMPREPLY=()");
+          lines.push('                        elif [[ "$cur" != -* ]]; then');
+        } else {
+          lines.push('                        if [[ "$cur" != -* ]]; then');
+        }
+        lines.push(
+          '                            COMPREPLY=($(compgen -d -- "$cur"))',
+        );
+        lines.push("                        else");
+        lines.push(
+          `                            COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
+        );
+        lines.push("                        fi");
+      } else {
+        lines.push(
+          `                        COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
+        );
+      }
+      lines.push("                        ;;");
+    }
+    lines.push("                esac");
+    lines.push("            fi");
     lines.push("            ;;");
   }
 
@@ -347,14 +474,116 @@ function generateZshCompletions(): string {
   lines.push("        '1:command:->command' \\");
   lines.push("        '*::arg:->args'");
   lines.push("");
+  lines.push('    local command_word=""');
+  lines.push("    local command_index=1");
+  lines.push("    local scan_index=1");
+  lines.push("    while (( scan_index < CURRENT )); do");
+  lines.push('        local scan_word="$words[scan_index]"');
+  lines.push(
+    '        if [[ "$scan_word" == "--completions" || "$scan_word" == "--log-level" ]]; then',
+  );
+  lines.push("            (( scan_index += 2 ))");
+  lines.push("            continue");
+  lines.push("        fi");
+  lines.push('        if [[ "$scan_word" == -* ]]; then');
+  lines.push("            (( scan_index++ ))");
+  lines.push("            continue");
+  lines.push("        fi");
+  lines.push('        command_word="$scan_word"');
+  lines.push("        command_index=$scan_index");
+  lines.push("        break");
+  lines.push("    done");
+  lines.push("");
   lines.push('    case "$state" in');
   lines.push("        command)");
   lines.push("            _describe 'wct command' commands");
   lines.push("            ;;");
   lines.push("        args)");
-  lines.push('            case "$words[1]" in');
+  lines.push('            case "$command_word" in');
 
   for (const command of COMMANDS) {
+    if (command.subcommands) {
+      lines.push(`                ${command.name})`);
+      lines.push('                    local subcmd=""');
+      lines.push(
+        "                    local subcmd_index=$((command_index + 1))",
+      );
+      lines.push("                    while (( subcmd_index < CURRENT )); do");
+      lines.push(
+        '                        local subcmd_word="$words[subcmd_index]"',
+      );
+      lines.push('                        if [[ "$subcmd_word" == -* ]]; then');
+      lines.push("                            (( subcmd_index++ ))");
+      lines.push("                            continue");
+      lines.push("                        fi");
+      lines.push('                        subcmd="$subcmd_word"');
+      lines.push("                        break");
+      lines.push("                    done");
+      lines.push('                    if [[ -z "$subcmd" ]]; then');
+      lines.push("                        local -a subcmds");
+      lines.push("                        subcmds=(");
+      for (const sub of command.subcommands) {
+        lines.push(
+          `                            '${sub.name}:${sub.description}'`,
+        );
+      }
+      lines.push("                        )");
+      lines.push(
+        `                        _describe '${command.name} subcommand' subcmds`,
+      );
+      lines.push("                    else");
+      lines.push('                        case "$subcmd" in');
+      for (const sub of command.subcommands) {
+        const hasSubOptions = sub.options && sub.options.length > 0;
+        const isPathSub = sub.completionType === "path";
+        if (!hasSubOptions && !isPathSub) continue;
+        lines.push(`                            ${sub.name})`);
+        const argParts: Array<string> = [];
+        for (const option of sub.options ?? []) {
+          if (option.short) {
+            if (option.type === "string") {
+              const completionAction = option.completionValues
+                ? option.completionValues.replace(/^__/, "_")
+                : "";
+              argParts.push(
+                `                                    '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
+              );
+            } else {
+              argParts.push(
+                `                                    '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]'`,
+              );
+            }
+          } else if (option.type === "string") {
+            const completionAction = option.completionValues
+              ? option.completionValues.replace(/^__/, "_")
+              : "";
+            argParts.push(
+              `                                    '--${option.name}[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
+            );
+          } else {
+            argParts.push(
+              `                                    '--${option.name}[${option.description}]'`,
+            );
+          }
+        }
+        if (isPathSub) {
+          argParts.push(
+            "                                    '*:path:_files -/'",
+          );
+        }
+        lines.push(
+          `                                _arguments \\\n${argParts.join(" \\\n")}`,
+        );
+        lines.push("                                ;;");
+      }
+      lines.push("                        esac");
+      lines.push("                    fi");
+      lines.push("                    ;;");
+    }
+  }
+
+  for (const command of COMMANDS) {
+    if (command.subcommands) continue;
     const allNames = getAllNames(command);
     const isBranchCommand = allNames.some((name) =>
       branchCommands.includes(name),

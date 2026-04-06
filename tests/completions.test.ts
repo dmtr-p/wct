@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import packageJson from "../package.json";
 
@@ -5,6 +8,47 @@ const VERSION = packageJson.version;
 
 function runCliProcess(args: string[]) {
   return Bun.spawnSync(["bun", "run", "src/index.ts", ...args]);
+}
+
+function runBashCompletion(words: string[], cwd: string) {
+  const tempDir = mkdtempSync(join(tmpdir(), "wct-bash-completion-"));
+  const scriptPath = join(tempDir, "wct-completion.bash");
+  const completionScript = runCliProcess([
+    "--completions",
+    "bash",
+  ]).stdout.toString();
+
+  writeFileSync(scriptPath, completionScript);
+
+  try {
+    return Bun.spawnSync(
+      [
+        "bash",
+        "-lc",
+        [
+          'source "$1"',
+          "shift",
+          'cd "$1"',
+          "shift",
+          `COMP_WORDS=(${words.map((word) => JSON.stringify(word)).join(" ")})`,
+          `COMP_CWORD=${words.length - 1}`,
+          "COMPREPLY=()",
+          "_wct",
+          `printf "%s\\n" "\${COMPREPLY[@]}"`,
+        ].join("\n"),
+        "bash",
+        scriptPath,
+        cwd,
+      ],
+      {
+        env: {
+          ...process.env,
+        },
+      },
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 describe("Effect CLI root", () => {
@@ -15,7 +59,10 @@ describe("Effect CLI root", () => {
     expect(result.exitCode).toBe(0);
     expect(output).toContain("GLOBAL FLAGS");
     expect(output).toContain("--completions choice");
+    expect(output).toContain("projects");
     expect(output).toContain("switch, sw");
+    expect(output).not.toContain("\n  register");
+    expect(output).not.toContain("\n  unregister");
     expect(output).not.toContain("\n  completions");
   });
 
@@ -76,7 +123,27 @@ describe("Effect CLI root", () => {
     expect(output).toContain("function __wct_worktree_branches");
     expect(output).toContain("git branch --format='%(refname:short)'");
     expect(output).toContain("git worktree list --porcelain");
+    expect(output).toContain("-a 'projects'");
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and not __fish_seen_subcommand_from add remove list",
+    );
+    expect(output).toContain("-a 'add' -d 'Add a project to the registry'");
+    expect(output).toContain(
+      "-a 'remove' -d 'Remove a project from the registry'",
+    );
+    expect(output).toContain("-a 'list' -d 'List registered projects'");
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from add' -a '(__fish_complete_directories)' -d 'Path to repo'",
+    );
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from remove' -a '(__fish_complete_directories)' -d 'Path to repo'",
+    );
+    expect(output).toContain(
+      "__fish_seen_subcommand_from projects; and __fish_seen_subcommand_from add' -s n -l name -r -d 'Override project name'",
+    );
     expect(output).toContain("-a 'switch'");
+    expect(output).not.toContain("-a 'register'");
+    expect(output).not.toContain("-a 'unregister'");
     expect(output).not.toContain("-a 'completions'");
   });
 
@@ -85,9 +152,69 @@ describe("Effect CLI root", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
+    expect(output).toContain("projects)");
+    expect(output).toContain(
+      "COMPREPLY=($(compgen -W 'add remove list' -- \"$cur\"))",
+    );
+    expect(output).toContain("add)");
+    expect(output).toContain("remove)");
+    expect(output).toContain("list)");
+    expect(output).toContain("--name -n");
+    expect(output).toContain("local cmd_index=1");
+    expect(output).toContain("local subcmd_index=$((cmd_index + 1))");
+    expect(output).toContain("while [[ $subcmd_index -lt $cword ]]");
     expect(output).toContain(
       "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --no-attach --pr --prompt -p --profile -P' -- \"$cur\"))",
     );
+  });
+
+  test("bash completions do not offer directories for projects add --name or -n values", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "wct-bash-completion-repo-"));
+    mkdirSync(join(repoRoot, "alpha"), { recursive: true });
+    mkdirSync(join(repoRoot, "beta"), { recursive: true });
+
+    try {
+      const longFlagResult = runBashCompletion(
+        ["wct", "projects", "add", "--name", ""],
+        repoRoot,
+      );
+      const shortFlagResult = runBashCompletion(
+        ["wct", "projects", "add", "-n", ""],
+        repoRoot,
+      );
+      const positionalResult = runBashCompletion(
+        ["wct", "projects", "add", ""],
+        repoRoot,
+      );
+
+      expect(longFlagResult.exitCode).toBe(0);
+      expect(shortFlagResult.exitCode).toBe(0);
+      expect(positionalResult.exitCode).toBe(0);
+      expect(longFlagResult.stdout.toString().trim()).toBe("");
+      expect(shortFlagResult.stdout.toString().trim()).toBe("");
+      expect(positionalResult.stdout.toString()).toContain("alpha");
+      expect(positionalResult.stdout.toString()).toContain("beta");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("renders zsh completions that scan for nested subcommands after the group command", () => {
+    const result = runCliProcess(["--completions", "zsh"]);
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("projects:Manage the project registry");
+    expect(output).toContain("'add:Add a project to the registry'");
+    expect(output).toContain("'remove:Remove a project from the registry'");
+    expect(output).toContain("'list:List registered projects'");
+    expect(output).toContain(
+      "'(-n --name)'{-n,--name}'[Override project name]:name:'",
+    );
+    expect(output).toContain('case "$command_word" in');
+    expect(output).toContain("local subcmd_index=$((command_index + 1))");
+    expect(output).toContain("while (( subcmd_index < CURRENT ))");
+    expect(output).toContain('case "$subcmd" in');
   });
 
   test("falls back to Effect built-in completions for sh", () => {

@@ -24,4 +24,8 @@ describe("truncateBranch", () => {
     expect(truncateBranch("feature/branch", 2)).toBe("..");
     expect(truncateBranch("feature/branch", 1)).toBe(".");
   });
+
+  test("returns empty string when no space is available", () => {
+    expect(truncateBranch("feature/branch", 0)).toBe("");
+  });
 });

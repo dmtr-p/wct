@@ -21,7 +21,7 @@ export function truncateBranch(branch: string, available: number): string {
 }
 
 function branchBudget(maxWidth: number, overhead: number): number {
-  return Math.max(10, maxWidth - overhead);
+  return Math.max(0, maxWidth - overhead);
 }
 
 export function WorktreeItem({

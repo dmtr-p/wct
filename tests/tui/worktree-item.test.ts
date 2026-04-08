@@ -21,7 +21,7 @@ describe("truncateBranch", () => {
   });
 
   test("handles available less than 3", () => {
-    const result = truncateBranch("feature/branch", 2);
-    expect(result.length).toBeLessThanOrEqual(2);
+    expect(truncateBranch("feature/branch", 2)).toBe("..");
+    expect(truncateBranch("feature/branch", 1)).toBe(".");
   });
 });

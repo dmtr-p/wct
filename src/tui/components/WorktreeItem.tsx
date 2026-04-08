@@ -11,6 +11,13 @@ interface Props {
   pendingStatus?: "opening" | "closing" | "starting";
   isExpanded?: boolean;
   hasExpandableData?: boolean;
+  maxWidth: number;
+}
+
+function truncateBranch(branch: string, available: number): string {
+  if (branch.length <= available) return branch;
+  if (available <= 3) return branch.slice(0, Math.max(1, available));
+  return `${branch.slice(0, available - 3)}...`;
 }
 
 export function WorktreeItem({
@@ -24,6 +31,7 @@ export function WorktreeItem({
   pendingStatus,
   isExpanded,
   hasExpandableData,
+  maxWidth,
 }: Props) {
   const indicator = hasSession ? "\u25CF" : "\u25CB";
   const indicatorColor = hasSession ? "green" : "gray";
@@ -37,6 +45,10 @@ export function WorktreeItem({
       : "";
 
   const prefix = isSelected ? "❯   " : "    ";
+  // prefix=4, indicator=2, expandIcon=0or2, attached=0or2, margin=2
+  const overhead = 4 + 2 + (expandIcon ? 2 : 0) + (isAttached ? 2 : 0) + 2;
+  const available = Math.max(10, maxWidth - overhead);
+  const displayBranch = truncateBranch(branch, available);
 
   if (pendingStatus === "opening") {
     return (
@@ -44,7 +56,7 @@ export function WorktreeItem({
         <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
         <Text color="yellow">
           <Text italic>
-            {"\u25CB"} {branch} opening...
+            {"\u25CB"} {displayBranch} opening...
           </Text>
         </Text>
       </Box>
@@ -56,7 +68,7 @@ export function WorktreeItem({
       <Box>
         <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
         <Text dimColor>
-          {indicator} {branch} closing...
+          {indicator} {displayBranch} closing...
         </Text>
       </Box>
     );
@@ -72,13 +84,9 @@ export function WorktreeItem({
           <Text dimColor> starting...</Text>
         ) : null}
       </Text>
-      <Text
-        color={isSelected ? "cyan" : undefined}
-        bold={isSelected}
-        inverse={isSelected}
-      >
+      <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
         {" "}
-        {branch}
+        {displayBranch}
       </Text>
       <Text dimColor>{attached}</Text>
       {sync && sync !== "\u2713" ? <Text dimColor> {sync}</Text> : null}

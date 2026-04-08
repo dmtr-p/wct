@@ -20,6 +20,10 @@ function truncateBranch(branch: string, available: number): string {
   return `${branch.slice(0, available - 3)}...`;
 }
 
+function branchBudget(maxWidth: number, overhead: number): number {
+  return Math.max(10, maxWidth - overhead);
+}
+
 export function WorktreeItem({
   branch,
   hasSession,
@@ -45,10 +49,37 @@ export function WorktreeItem({
       : "";
 
   const prefix = isSelected ? "❯   " : "    ";
-  // prefix=4, indicator=2, expandIcon=0or2, attached=0or2, margin=2
-  const overhead = 4 + 2 + (expandIcon ? 2 : 0) + (isAttached ? 2 : 0) + 2;
-  const available = Math.max(10, maxWidth - overhead);
-  const displayBranch = truncateBranch(branch, available);
+  const openingDisplayBranch = truncateBranch(
+    branch,
+    branchBudget(
+      maxWidth,
+      prefix.length + "\u25CB ".length + " opening...".length,
+    ),
+  );
+  const closingDisplayBranch = truncateBranch(
+    branch,
+    branchBudget(
+      maxWidth,
+      prefix.length + `${indicator} `.length + " closing...".length,
+    ),
+  );
+  const mainSuffix =
+    attached +
+    (sync && sync !== "\u2713" ? ` ${sync}` : "") +
+    changesText +
+    notifText +
+    (pendingStatus === "starting" ? " starting..." : "");
+  const mainDisplayBranch = truncateBranch(
+    branch,
+    branchBudget(
+      maxWidth,
+      prefix.length +
+        expandIcon.length +
+        indicator.length +
+        1 +
+        mainSuffix.length,
+    ),
+  );
 
   if (pendingStatus === "opening") {
     return (
@@ -56,7 +87,7 @@ export function WorktreeItem({
         <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
         <Text color="yellow">
           <Text italic>
-            {"\u25CB"} {displayBranch} opening...
+            {"\u25CB"} {openingDisplayBranch} opening...
           </Text>
         </Text>
       </Box>
@@ -68,7 +99,7 @@ export function WorktreeItem({
       <Box>
         <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
         <Text dimColor>
-          {indicator} {displayBranch} closing...
+          {indicator} {closingDisplayBranch} closing...
         </Text>
       </Box>
     );
@@ -86,7 +117,7 @@ export function WorktreeItem({
       </Text>
       <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
         {" "}
-        {displayBranch}
+        {mainDisplayBranch}
       </Text>
       <Text dimColor>{attached}</Text>
       {sync && sync !== "\u2713" ? <Text dimColor> {sync}</Text> : null}

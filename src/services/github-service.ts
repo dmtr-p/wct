@@ -10,8 +10,8 @@ export interface PrInfo {
   branch: string;
   prNumber: number;
   isCrossRepository: boolean;
-  forkOwner?: string;
-  forkRepo?: string;
+  headOwner?: string;
+  headRepo?: string;
 }
 
 export interface PrListItem {
@@ -94,6 +94,11 @@ export interface GitHubService {
     cwd: string,
     prNumber: number,
   ) => Effect.Effect<PrCheckInfo[], WctError, WctRuntimeServices>;
+  findRemoteForRepo: (
+    owner: string,
+    repo: string,
+    cwd?: string,
+  ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
 }
 
 export const GitHubService =
@@ -115,6 +120,45 @@ export function parsePrArg(value: string): number | null {
   }
 
   return null;
+}
+
+const GITHUB_REMOTE_PATTERN =
+  /(?:^git@github\.com:|\/\/(?:[^@]+@)?github\.com(?::\d+)?[:/])([^/]+)\/([^/\s]+?)(?:\.git)?$/;
+
+export function parseRemoteOwnerRepo(
+  url: string,
+): { owner: string; repo: string } | null {
+  const match = url.match(GITHUB_REMOTE_PATTERN);
+  if (match) return { owner: match[1], repo: match[2] };
+  return null;
+}
+
+export function findMatchingRemote(
+  remoteOutput: string,
+  owner: string,
+  repo: string,
+): string | null {
+  const lowerOwner = owner.toLowerCase();
+  const lowerRepo = repo.toLowerCase();
+  let bestMatch: string | null = null;
+
+  for (const line of remoteOutput.split("\n")) {
+    const parts = line.split(/\s+/);
+    if (parts.length >= 3 && parts[2] === "(fetch)") {
+      const parsed = parseRemoteOwnerRepo(parts[1]);
+      if (
+        parsed &&
+        parsed.owner.toLowerCase() === lowerOwner &&
+        parsed.repo.toLowerCase() === lowerRepo
+      ) {
+        const name = parts[0];
+        if (name === "origin") return "origin";
+        if (name === "upstream" && bestMatch !== "origin") bestMatch = name;
+        bestMatch ??= name;
+      }
+    }
+  }
+  return bestMatch;
 }
 
 function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
@@ -204,10 +248,8 @@ export const liveGitHubService: GitHubService = GitHubService.of({
           isCrossRepository: data.isCrossRepository ?? false,
         };
 
-        if (pr.isCrossRepository) {
-          pr.forkOwner = data.headRepositoryOwner?.login;
-          pr.forkRepo = data.headRepository?.name;
-        }
+        pr.headOwner = data.headRepositoryOwner?.login;
+        pr.headRepo = data.headRepository?.name;
 
         if (!pr.branch) {
           return yield* Effect.fail(
@@ -298,4 +340,13 @@ export const liveGitHubService: GitHubService = GitHubService.of({
         error,
       ),
     ),
+  findRemoteForRepo: (owner, repo, cwd) =>
+    Effect.gen(function* () {
+      const result = yield* Effect.catch(
+        execProcess("git", ["remote", "-v"], cwd ? { cwd } : undefined),
+        () => Effect.succeed(null),
+      );
+      if (!result) return null;
+      return findMatchingRemote(result.stdout, owner, repo);
+    }),
 });

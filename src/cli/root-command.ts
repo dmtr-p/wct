@@ -237,17 +237,22 @@ const openCliCommand = Command.make(
         const resolvedBranch = resolvedPr.branch;
         let remote = "origin";
 
-        if (
-          resolvedPr.isCrossRepository &&
-          resolvedPr.forkOwner &&
-          resolvedPr.forkRepo
-        ) {
-          const { forkOwner, forkRepo } = resolvedPr;
-          remote = resolvedPr.forkOwner;
-
-          yield* GitHubService.use((service) =>
-            service.addForkRemote(remote, forkOwner, forkRepo),
+        if (resolvedPr.headOwner && resolvedPr.headRepo) {
+          const { headOwner, headRepo } = resolvedPr;
+          const existingRemote = yield* GitHubService.use((service) =>
+            service.findRemoteForRepo(headOwner, headRepo),
           );
+
+          if (existingRemote) {
+            remote = existingRemote;
+          } else if (resolvedPr.isCrossRepository) {
+            // Only add a new remote for cross-repo (fork) PRs.
+            // For same-repo PRs, origin should have the branch.
+            remote = headOwner;
+            yield* GitHubService.use((service) =>
+              service.addForkRemote(remote, headOwner, headRepo),
+            );
+          }
         }
 
         yield* GitHubService.use((service) =>

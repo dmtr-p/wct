@@ -1,14 +1,8 @@
-## Project Overview
-
-`wct` is a CLI tool that automates git worktree workflows. It enables developers to quickly create isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
-
 ## Commands
 
 ```bash
-bun install              # Install dependencies
 bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
-bunx biome check --write # Format and lint code
 ```
 
 **Do not run tests or linting manually.** Claude Code hooks handle this automatically:

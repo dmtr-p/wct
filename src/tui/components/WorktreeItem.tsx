@@ -14,9 +14,9 @@ interface Props {
   maxWidth: number;
 }
 
-function truncateBranch(branch: string, available: number): string {
+export function truncateBranch(branch: string, available: number): string {
   if (branch.length <= available) return branch;
-  if (available <= 3) return branch.slice(0, Math.max(1, available));
+  if (available <= 3) return ".".repeat(Math.max(0, available));
   return `${branch.slice(0, available - 3)}...`;
 }
 

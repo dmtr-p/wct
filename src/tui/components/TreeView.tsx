@@ -27,6 +27,7 @@ interface Props {
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   expandedWorktreeKey: string | null;
+  maxWidth: number;
 }
 
 export function TreeView({
@@ -40,6 +41,7 @@ export function TreeView({
   prData,
   panes,
   expandedWorktreeKey,
+  maxWidth,
 }: Props) {
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.name, s])),
@@ -138,6 +140,7 @@ export function TreeView({
         pendingStatus={pending?.type}
         isExpanded={expandedWorktreeKey === wtKey}
         hasExpandableData={!!hasExpandableData}
+        maxWidth={maxWidth}
       />,
     );
 
@@ -162,6 +165,7 @@ export function TreeView({
               notifications={0}
               isSelected={false}
               pendingStatus="opening"
+              maxWidth={maxWidth}
             />,
           );
         }
@@ -187,6 +191,7 @@ export function TreeView({
           notifications={0}
           isSelected={false}
           pendingStatus="opening"
+          maxWidth={maxWidth}
         />,
       );
     }

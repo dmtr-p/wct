@@ -140,6 +140,7 @@ function buildTreeItems({
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const termCols = stdout?.columns ?? 80;
   const termRows = stdout?.rows ?? 24;
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { items: queueItems, refresh: refreshQueue } = useQueue();
@@ -658,6 +659,7 @@ export function App() {
           prData={prData}
           panes={panes}
           expandedWorktreeKey={expandedWorktreeKey}
+          maxWidth={termCols}
         />
       </Box>
       {mode.type === "OpenModal" ? (

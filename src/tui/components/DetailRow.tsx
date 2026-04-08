@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function DetailRow({ kind, label, isSelected, meta }: Props) {
-  const prefix = isSelected ? "❯ " : "  ";
+  const prefix = isSelected ? "▸ " : "  ";
   const indent =
     kind === "notification-header" || kind === "pr" || kind === "pane-header"
       ? "      " // section header: 6 spaces
@@ -38,7 +38,7 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
       return (
         <Box>
           <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : "red"}>
+          <Text color={isSelected ? "cyan" : "red"} bold={isSelected}>
             {prefix}! {label}
           </Text>
           {meta?.paneRef && <Text dimColor> (pane {meta.paneRef})</Text>}
@@ -62,9 +62,14 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
       return (
         <Box>
           <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
+          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
+            {prefix}
+          </Text>
           <Text color={color}>{icon}</Text>
-          <Text color={isSelected ? "cyan" : "dim"}> {label}</Text>
+          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
+            {" "}
+            {label}
+          </Text>
         </Box>
       );
     }
@@ -73,7 +78,7 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
       return (
         <Box>
           <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : "dim"}>
+          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
             {prefix}
             {label}
           </Text>

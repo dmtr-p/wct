@@ -40,8 +40,6 @@ export function WorktreeItem({
   const indicator = hasSession ? "\u25CF" : "\u25CB";
   const indicatorColor = hasSession ? "green" : "gray";
   const attached = isAttached ? " *" : "";
-  const notifText = notifications > 0 ? ` !${notifications}` : "";
-  const changesText = changedFiles > 0 ? ` ~${changedFiles}` : "";
   const expandIcon = isExpanded
     ? "\u25BC "
     : hasExpandableData
@@ -64,11 +62,7 @@ export function WorktreeItem({
     ),
   );
   const mainSuffix =
-    attached +
-    (sync && sync !== "\u2713" ? ` ${sync}` : "") +
-    changesText +
-    notifText +
-    (pendingStatus === "starting" ? " starting..." : "");
+    attached + (pendingStatus === "starting" ? " starting..." : "");
   const mainDisplayBranch = truncateBranch(
     branch,
     branchBudget(

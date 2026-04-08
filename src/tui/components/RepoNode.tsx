@@ -21,11 +21,7 @@ export function RepoNode({
   return (
     <Box>
       <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
-      <Text
-        color={isSelected ? "cyan" : "yellow"}
-        bold={isSelected}
-        inverse={isSelected}
-      >
+      <Text color={isSelected ? "cyan" : "yellow"} bold={isSelected}>
         {arrow} {project}
       </Text>
       <Text dimColor>{suffix}</Text>

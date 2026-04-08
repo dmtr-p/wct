@@ -62,7 +62,7 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
       return (
         <Box>
           <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
+          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
             {prefix}
           </Text>
           <Text color={color}>{icon}</Text>

@@ -21,12 +21,8 @@ describe("getDetailRowKey", () => {
       meta: { paneId: "%2", zoomed: true, active: true },
     } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>;
 
-    expect(getDetailRowKey("repo-1", paneA)).toBe(
-      "detail-repo-1-0-pane-%1",
-    );
-    expect(getDetailRowKey("repo-1", paneB)).toBe(
-      "detail-repo-1-0-pane-%2",
-    );
+    expect(getDetailRowKey("repo-1", paneA)).toBe("detail-repo-1-0-pane-%1");
+    expect(getDetailRowKey("repo-1", paneB)).toBe("detail-repo-1-0-pane-%2");
     expect(getDetailRowKey("repo-1", paneA)).not.toBe(
       getDetailRowKey("repo-1", paneB),
     );
@@ -41,8 +37,6 @@ describe("getDetailRowKey", () => {
       label: "PR #42",
     } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>;
 
-    expect(getDetailRowKey("repo-1", prItem)).toBe(
-      "detail-repo-1-2-pr-PR #42",
-    );
+    expect(getDetailRowKey("repo-1", prItem)).toBe("detail-repo-1-2-pr-PR #42");
   });
 });

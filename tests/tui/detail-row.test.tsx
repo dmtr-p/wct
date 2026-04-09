@@ -19,9 +19,7 @@ function createStdoutStdin() {
   return { stdout, stdin };
 }
 
-async function renderDetailRow(
-  props: React.ComponentProps<typeof DetailRow>,
-) {
+async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
   const { stdout, stdin } = createStdoutStdin();
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {

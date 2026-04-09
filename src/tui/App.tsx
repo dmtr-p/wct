@@ -29,7 +29,7 @@ interface BuildTreeOptions {
   jumpToPane: (paneId: string) => void;
 }
 
-function buildTreeItems({
+export function buildTreeItems({
   repos,
   expandedRepos,
   expandedWorktreeKey,

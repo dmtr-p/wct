@@ -34,7 +34,6 @@ export const Mode = {
 /** Items in the flat tree list */
 export interface DetailMeta {
   state?: string;
-  paneRef?: string;
   zoomed?: boolean;
   active?: boolean;
 }

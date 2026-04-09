@@ -76,6 +76,7 @@ export function TreeView({
   }, [repos, pendingActions]);
 
   const elements: React.ReactNode[] = [];
+  const selectedItem = items[selectedIndex];
 
   for (let idx = 0; idx < items.length; idx++) {
     const item = items[idx];
@@ -85,12 +86,19 @@ export function TreeView({
     if (!repo) continue;
 
     if (item.type === "repo") {
+      const childSelected =
+        idx !== selectedIndex &&
+        !!selectedItem &&
+        selectedItem.type !== "repo" &&
+        selectedItem.repoIndex === item.repoIndex;
+
       elements.push(
         <RepoNode
           key={`repo-${repo.id}`}
           project={repo.project}
           expanded={expandedRepos.has(repo.id)}
           isSelected={idx === selectedIndex}
+          isChildSelected={childSelected}
           worktreeCount={repo.worktrees.length}
         />,
       );
@@ -127,6 +135,13 @@ export function TreeView({
     const hasExpandableData =
       !!wtPr || (wtPanes && wtPanes.length > 0) || notifications > 0;
 
+    const wtChildSelected =
+      idx !== selectedIndex &&
+      !!selectedItem &&
+      selectedItem.type === "detail" &&
+      selectedItem.repoIndex === item.repoIndex &&
+      selectedItem.worktreeIndex === worktreeIndex;
+
     elements.push(
       <WorktreeItem
         key={`wt-${repo.id}-${wt.branch}`}
@@ -137,6 +152,7 @@ export function TreeView({
         changedFiles={wt.changedFiles}
         notifications={notifications}
         isSelected={idx === selectedIndex}
+        isChildSelected={wtChildSelected}
         pendingStatus={pending?.type}
         isExpanded={expandedWorktreeKey === wtKey}
         hasExpandableData={!!hasExpandableData}

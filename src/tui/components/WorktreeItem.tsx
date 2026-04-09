@@ -8,6 +8,7 @@ interface Props {
   changedFiles: number;
   notifications: number;
   isSelected: boolean;
+  isChildSelected?: boolean;
   pendingStatus?: "opening" | "closing" | "starting";
   isExpanded?: boolean;
   hasExpandableData?: boolean;
@@ -32,11 +33,13 @@ export function WorktreeItem({
   changedFiles,
   notifications,
   isSelected,
+  isChildSelected,
   pendingStatus,
   isExpanded,
   hasExpandableData,
   maxWidth,
 }: Props) {
+  const active = isSelected || !!isChildSelected;
   const indicator = hasSession ? "\u25CF" : "\u25CB";
   const indicatorColor = hasSession ? "green" : "gray";
   const attached = isAttached ? " *" : "";
@@ -113,7 +116,7 @@ export function WorktreeItem({
             <Text dimColor> starting...</Text>
           ) : null}
         </Text>
-        <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
+        <Text color={isSelected ? "cyan" : undefined} bold={active}>
           {" "}
           {mainDisplayBranch}
         </Text>

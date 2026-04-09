@@ -10,11 +10,6 @@ import {
 } from "vitest";
 import { closeCommand, commandDef } from "../src/commands/close";
 import { runBunPromise } from "../src/effect/runtime";
-import { commandError } from "../src/errors";
-import {
-  liveQueueStorage,
-  type QueueStorageService,
-} from "../src/services/queue-storage";
 import {
   formatSessionName,
   liveTmuxService,
@@ -24,7 +19,6 @@ import {
   liveWorktreeService,
   type WorktreeService,
 } from "../src/services/worktree-service";
-import * as logger from "../src/utils/logger";
 import * as prompt from "../src/utils/prompt";
 import { withTestServices } from "./helpers/services";
 
@@ -35,7 +29,6 @@ async function runCommand(
     force?: boolean;
   },
   overrides: {
-    queueStorage?: QueueStorageService;
     tmux?: TmuxService;
     worktree?: WorktreeService;
   } = {},
@@ -45,12 +38,10 @@ async function runCommand(
 
 interface CloseCommandSpies {
   confirmSpy: MockInstance;
-  queueCalls: string[];
   tmuxCalls: string[];
   worktreeCalls: string[];
   tmux: TmuxService;
   worktree: WorktreeService;
-  queueStorage: QueueStorageService;
   restore: () => void;
 }
 
@@ -67,7 +58,6 @@ function setupMocks(): CloseCommandSpies {
   const confirmSpy = vi
     .spyOn(prompt, "confirm")
     .mockImplementation(() => Effect.succeed(true));
-  const queueCalls: string[] = [];
   const tmuxCalls: string[] = [];
   const worktreeCalls: string[] = [];
   const tmux = {
@@ -90,23 +80,13 @@ function setupMocks(): CloseCommandSpies {
         return { _tag: "Removed" as const, path };
       }),
   };
-  const queueStorage = {
-    ...liveQueueStorage,
-    removeItemsBySession: (session: string) =>
-      Effect.sync(() => {
-        queueCalls.push(session);
-        return 0;
-      }),
-  };
 
   return {
     confirmSpy,
-    queueCalls,
     tmuxCalls,
     worktreeCalls,
     tmux,
     worktree,
-    queueStorage,
     restore: () => {
       confirmSpy.mockRestore();
     },
@@ -137,7 +117,6 @@ describe("closeCommand", () => {
         {
           tmux: mocks.tmux,
           worktree: mocks.worktree,
-          queueStorage: mocks.queueStorage,
         },
       ),
     ).resolves.toBeUndefined();
@@ -167,7 +146,6 @@ describe("closeCommand", () => {
         {
           tmux: mocks.tmux,
           worktree: mocks.worktree,
-          queueStorage: mocks.queueStorage,
         },
       ),
     ).rejects.toThrow("No worktree found for branch 'missing'");
@@ -200,7 +178,6 @@ describe("closeCommand", () => {
       {
         tmux: mocks.tmux,
         worktree: mocks.worktree,
-        queueStorage: mocks.queueStorage,
       },
     );
     // 3 branch confirmations + 1 force-remove confirmation
@@ -239,7 +216,6 @@ describe("closeCommand", () => {
       {
         tmux: mocks.tmux,
         worktree: mocks.worktree,
-        queueStorage: mocks.queueStorage,
       },
     );
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(3);
@@ -269,7 +245,6 @@ describe("closeCommand", () => {
       {
         tmux: mocks.tmux,
         worktree: mocks.worktree,
-        queueStorage: mocks.queueStorage,
       },
     );
     // --force skips the dirty-worktree prompt (only the branch confirmation remains)
@@ -306,7 +281,6 @@ describe("closeCommand", () => {
       {
         tmux: mocks.tmux,
         worktree: mocks.worktree,
-        queueStorage: mocks.queueStorage,
       },
     );
     expect(mocks.confirmSpy).not.toHaveBeenCalled();
@@ -329,7 +303,6 @@ describe("closeCommand", () => {
         {
           tmux: mocks.tmux,
           worktree: mocks.worktree,
-          queueStorage: mocks.queueStorage,
         },
       ),
     ).resolves.toBeUndefined();
@@ -357,7 +330,6 @@ describe("closeCommand", () => {
         {
           tmux: mocks.tmux,
           worktree: mocks.worktree,
-          queueStorage: mocks.queueStorage,
         },
       ),
     ).resolves.toBeUndefined();
@@ -370,81 +342,6 @@ describe("closeCommand", () => {
     expect(prompts[1]).toContain("feature-a");
     expect(prompts[2]).toContain("inside this tmux session");
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(3);
-  });
-
-  test("removes queue items only after a successful session kill", async () => {
-    await expect(
-      runCommand(
-        {
-          branches: ["feature-a"],
-          yes: true,
-        },
-        {
-          tmux: mocks.tmux,
-          worktree: mocks.worktree,
-          queueStorage: mocks.queueStorage,
-        },
-      ),
-    ).resolves.toBeUndefined();
-    expect(mocks.tmuxCalls).toEqual(["myapp-feature-a"]);
-    expect(mocks.queueCalls).toEqual(["myapp-feature-a"]);
-  });
-
-  test("does not remove queue items when killSession fails", async () => {
-    mocks.tmux = {
-      ...mocks.tmux,
-      killSession: () => Effect.fail(commandError("tmux_error", "tmux failed")),
-    };
-
-    await expect(
-      runCommand(
-        {
-          branches: ["feature-a"],
-          yes: true,
-        },
-        {
-          tmux: mocks.tmux,
-          worktree: mocks.worktree,
-          queueStorage: mocks.queueStorage,
-        },
-      ),
-    ).resolves.toBeUndefined();
-    expect(mocks.queueCalls).toEqual([]);
-  });
-
-  test("warns separately when queue cleanup fails after tmux kill", async () => {
-    const warnSpy = vi
-      .spyOn(logger, "warn")
-      .mockImplementation(() => Effect.void);
-    mocks.queueStorage = {
-      ...mocks.queueStorage,
-      removeItemsBySession: () =>
-        Effect.fail(commandError("queue_error", "queue locked")),
-    };
-
-    try {
-      await expect(
-        runCommand(
-          {
-            branches: ["feature-a"],
-            yes: true,
-          },
-          {
-            tmux: mocks.tmux,
-            worktree: mocks.worktree,
-            queueStorage: mocks.queueStorage,
-          },
-        ),
-      ).resolves.toBeUndefined();
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to clean queue entries"),
-      );
-      expect(warnSpy).not.toHaveBeenCalledWith(
-        expect.stringContaining("Failed to kill tmux session"),
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
   });
 });
 

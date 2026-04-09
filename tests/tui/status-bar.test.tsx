@@ -20,14 +20,10 @@ function createStdoutStdin() {
   return { stdout, stdin };
 }
 
-async function waitForOutput(chunks: string[], attempts = 20) {
+async function waitForOutput(chunks: string[], attempts = 50) {
   for (let i = 0; i < attempts; i++) {
-    if (chunks.length > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (chunks.length > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
 

@@ -42,6 +42,17 @@ interface SelectedPaneResolution {
   worktreeKey: string;
 }
 
+interface ResolveStatusBarPropsOptions {
+  mode: Mode;
+  items: TreeItem[];
+  selectedIndex: number;
+}
+
+export interface ResolvedStatusBarProps {
+  mode: Mode;
+  selectedPaneRow?: boolean;
+}
+
 export function buildTreeItems({
   repos,
   expandedRepos,
@@ -199,6 +210,19 @@ export function resolveSelectedPane({
   };
 }
 
+export function resolveStatusBarProps({
+  mode,
+  items,
+  selectedIndex,
+}: ResolveStatusBarPropsOptions): ResolvedStatusBarProps {
+  return {
+    mode,
+    selectedPaneRow:
+      items[selectedIndex]?.type === "detail" &&
+      items[selectedIndex]?.detailKind === "pane",
+  };
+}
+
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -288,9 +312,11 @@ export function App() {
       jumpToPane,
     ],
   );
-  const selectedPaneRow =
-    treeItems[selectedIndex]?.type === "detail" &&
-    treeItems[selectedIndex]?.detailKind === "pane";
+  const statusBarProps = resolveStatusBarProps({
+    mode,
+    items: treeItems,
+    selectedIndex,
+  });
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -768,9 +794,8 @@ export function App() {
         />
       ) : (
         <StatusBar
-          mode={mode}
+          {...statusBarProps}
           searchQuery={searchQuery}
-          selectedPaneRow={selectedPaneRow}
         />
       )}
     </Box>

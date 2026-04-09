@@ -28,8 +28,6 @@ src/
 │   ├── switch.ts         # Native Effect implementation of wct switch
 │   ├── cd.ts             # Native Effect implementation of wct cd
 │   ├── init.ts           # Native Effect implementation of wct init
-│   ├── notify.ts         # Native Effect implementation of wct notify
-│   ├── hooks.ts          # Native Effect implementation of wct hooks
 │   ├── projects.ts       # Native Effect implementation of wct projects add/remove/list
 │   ├── session.ts        # Native Effect implementation of wct session
 │   └── tui.ts            # Native Effect implementation of wct tui
@@ -50,8 +48,6 @@ src/
 │   ├── tmux.ts           # Tmux session management
 │   ├── ide-service.ts    # Effect service for IDE launching
 │   ├── github-service.ts # Effect service for GitHub PR integration
-│   ├── hooks-service.ts  # Effect service for git hook installation
-│   ├── queue-storage.ts  # SQLite-backed queue persistence service
 │   ├── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
 │   ├── registry-service.ts # Effect service for multi-repo registry
 │   └── worktree-status.ts  # Helpers for computing worktree status
@@ -70,7 +66,6 @@ src/
 │   │   └── ScrollableList.tsx # Scrollable list with cursor blinking
 │   └── hooks/
 │       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
-│       ├── useQueue.ts    # Fetch notifications from DB
 │       ├── useRefresh.ts  # Hybrid poll + fs.watch
 │       ├── useTmux.ts     # switch-client, list-clients
 │       ├── useBlink.ts    # Toggling boolean for cursor blink animation

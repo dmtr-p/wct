@@ -67,7 +67,7 @@ myapp-fix-login:0:1`;
 
 describe("parsePaneListOutput", () => {
   test("parses pane list output", () => {
-    const output = "%0\t0\tbash\tshell\n%1\t1\tvim\teditor";
+    const output = "%0\t0\tbash\tshell\t0\n%1\t1\tvim\teditor\t0";
     const panes = parsePaneListOutput(output);
     expect(panes).toHaveLength(2);
     expect(panes[0]).toEqual({
@@ -75,12 +75,47 @@ describe("parsePaneListOutput", () => {
       paneIndex: 0,
       command: "bash",
       window: "shell",
+      zoomed: false,
     });
     expect(panes[1]).toEqual({
       paneId: "%1",
       paneIndex: 1,
       command: "vim",
       window: "editor",
+      zoomed: false,
+    });
+  });
+
+  test("parses pane list output with zoom flag", () => {
+    const output = "%0\t0\tbash\tshell\t1\n%1\t1\tvim\teditor\t0";
+    const panes = parsePaneListOutput(output);
+    expect(panes).toHaveLength(2);
+    expect(panes[0]).toEqual({
+      paneId: "%0",
+      paneIndex: 0,
+      command: "bash",
+      window: "shell",
+      zoomed: true,
+    });
+    expect(panes[1]).toEqual({
+      paneId: "%1",
+      paneIndex: 1,
+      command: "vim",
+      window: "editor",
+      zoomed: false,
+    });
+  });
+
+  test("defaults zoomed to false when flag is missing", () => {
+    const output = "%0\t0\tbash\tshell";
+    const panes = parsePaneListOutput(output);
+    expect(panes).toHaveLength(1);
+    expect(panes[0]).toEqual({
+      paneId: "%0",
+      paneIndex: 0,
+      command: "bash",
+      window: "shell",
+      zoomed: false,
     });
   });
 

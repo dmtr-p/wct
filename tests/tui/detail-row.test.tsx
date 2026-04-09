@@ -20,6 +20,17 @@ function createStdoutStdin() {
   return { stdout, stdin };
 }
 
+async function waitForOutput(chunks: string[], attempts = 20) {
+  for (let i = 0; i < attempts; i++) {
+    if (chunks.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
   const { stdout, stdin } = createStdoutStdin();
   const chunks: string[] = [];
@@ -34,7 +45,7 @@ async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
     exitOnCtrlC: false,
   });
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitForOutput(chunks);
 
   return {
     output: chunks.join(""),

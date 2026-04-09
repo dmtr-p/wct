@@ -1,7 +1,6 @@
 import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
-import type { QueueItem } from "../../services/queue-storage";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-status";
 import type { RepoInfo } from "../hooks/useRegistry";
@@ -19,7 +18,6 @@ import { WorktreeItem } from "./WorktreeItem";
 interface Props {
   repos: RepoInfo[];
   sessions: Array<{ name: string; attached: boolean }>;
-  queueItems: QueueItem[];
   expandedRepos: Set<string>;
   selectedIndex: number;
   items: TreeItem[];
@@ -33,7 +31,6 @@ interface Props {
 export function TreeView({
   repos,
   sessions,
-  queueItems,
   expandedRepos,
   selectedIndex,
   items,
@@ -47,15 +44,6 @@ export function TreeView({
     () => new Map(sessions.map((s) => [s.name, s])),
     [sessions],
   );
-
-  const notifCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of queueItems) {
-      const key = pendingKey(item.project, item.branch);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  }, [queueItems]);
 
   const { phantomsByProject } = useMemo(() => {
     const keys = new Set<string>();
@@ -127,13 +115,11 @@ export function TreeView({
     const sessionName = formatSessionName(basename(wt.path));
     const session = sessionMap.get(sessionName);
     const wtKey = pendingKey(repo.project, wt.branch);
-    const notifications = notifCounts.get(wtKey) ?? 0;
     const pending = pendingActions.get(wtKey);
 
     const wtPr = prData.get(wtKey);
     const wtPanes = panes.get(sessionName);
-    const hasExpandableData =
-      !!wtPr || (wtPanes && wtPanes.length > 0) || notifications > 0;
+    const hasExpandableData = !!wtPr || (wtPanes && wtPanes.length > 0);
 
     const wtChildSelected =
       idx !== selectedIndex &&
@@ -150,7 +136,6 @@ export function TreeView({
         isAttached={session?.attached ?? false}
         sync={formatSync(wt.sync)}
         changedFiles={wt.changedFiles}
-        notifications={notifications}
         isSelected={idx === selectedIndex}
         isChildSelected={wtChildSelected}
         pendingStatus={pending?.type}
@@ -178,7 +163,6 @@ export function TreeView({
               isAttached={false}
               sync=""
               changedFiles={0}
-              notifications={0}
               isSelected={false}
               pendingStatus="opening"
               maxWidth={maxWidth}
@@ -204,7 +188,6 @@ export function TreeView({
           isAttached={false}
           sync=""
           changedFiles={0}
-          notifications={0}
           isSelected={false}
           pendingStatus="opening"
           maxWidth={maxWidth}

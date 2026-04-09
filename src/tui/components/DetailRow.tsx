@@ -13,12 +13,11 @@ interface Props {
 export function DetailRow({ kind, label, isSelected, meta }: Props) {
   const prefix = isSelected ? "▸ " : "  ";
   const indent =
-    kind === "notification-header" || kind === "pr" || kind === "pane-header"
+    kind === "pr" || kind === "pane-header"
       ? "      " // section header: 6 spaces
       : "        "; // section item: 8 spaces
 
   switch (kind) {
-    case "notification-header":
     case "pane-header":
       return (
         <Box>
@@ -31,17 +30,6 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
             {prefix}
             {label}
           </Text>
-        </Box>
-      );
-
-    case "notification":
-      return (
-        <Box>
-          <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : "red"} bold={isSelected}>
-            {prefix}! {label}
-          </Text>
-          {meta?.paneRef && <Text dimColor> (pane {meta.paneRef})</Text>}
         </Box>
       );
 

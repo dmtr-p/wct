@@ -85,7 +85,7 @@ export interface TmuxService {
   selectPane: (
     pane: string,
   ) => Effect.Effect<void, WctError, WctRuntimeServices>;
-  zoomPane: (
+  togglePaneZoom: (
     paneId: string,
   ) => Effect.Effect<void, WctError, WctRuntimeServices>;
   killPane: (
@@ -443,7 +443,7 @@ function killSessionImpl(name: string) {
   );
 }
 
-function zoomPaneImpl(paneId: string) {
+function togglePaneZoomImpl(paneId: string) {
   return execProcess("tmux", ["resize-pane", "-Z", "-t", paneId]).pipe(
     Effect.asVoid,
   );
@@ -632,9 +632,13 @@ export const liveTmuxService: TmuxService = TmuxService.of({
     Effect.mapError(selectPaneImpl(pane), (error) =>
       commandError("tmux_error", `Failed to select pane '${pane}'`, error),
     ),
-  zoomPane: (paneId) =>
-    Effect.mapError(zoomPaneImpl(paneId), (error) =>
-      commandError("tmux_error", `Failed to zoom pane '${paneId}'`, error),
+  togglePaneZoom: (paneId) =>
+    Effect.mapError(togglePaneZoomImpl(paneId), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to toggle zoom for pane '${paneId}': ${getProcessErrorMessage(error)}`,
+        error,
+      ),
     ),
   killPane: (paneId) =>
     Effect.mapError(killPaneImpl(paneId), (error) =>

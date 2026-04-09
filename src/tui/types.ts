@@ -7,7 +7,13 @@ export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
   | { type: "OpenModal" }
-  | { type: "Expanded"; worktreeKey: string };
+  | { type: "Expanded"; worktreeKey: string }
+  | {
+      type: "ConfirmKill";
+      paneId: string;
+      label: string;
+      worktreeKey: string;
+    };
 
 export const Mode = {
   Navigate: { type: "Navigate" } as Mode,
@@ -15,6 +21,16 @@ export const Mode = {
   OpenModal: { type: "OpenModal" } as Mode,
   Expanded: (worktreeKey: string): Mode => ({
     type: "Expanded",
+    worktreeKey,
+  }),
+  ConfirmKill: (
+    paneId: string,
+    label: string,
+    worktreeKey: string,
+  ): Mode => ({
+    type: "ConfirmKill",
+    paneId,
+    label,
     worktreeKey,
   }),
 };

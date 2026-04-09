@@ -2,10 +2,8 @@ import { Effect, Option } from "effect";
 import { cdCommand } from "../commands/cd";
 import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
-import { hooksCommand } from "../commands/hooks";
 import { initCommand } from "../commands/init";
 import { listCommand } from "../commands/list";
-import { notifyCommand } from "../commands/notify";
 import { openCommand } from "../commands/open";
 import {
   projectsAddCommand,
@@ -100,17 +98,6 @@ const downCliCommand = Command.make("down", {}, () => downCommand()).pipe(
   Command.withDescription("Kill tmux session for current directory"),
 );
 
-const hooksCliCommand = Command.make(
-  "hooks",
-  {
-    install: booleanFlag(
-      "install",
-      "Install hooks into .claude/settings.local.json",
-    ),
-  },
-  ({ install }) => hooksCommand({ install }),
-).pipe(Command.withDescription("Output or install Claude Code hooks config"));
-
 const initCliCommand = Command.make("init", {}, () => initCommand()).pipe(
   Command.withDescription("Generate a starter .wct.yaml config file"),
 );
@@ -123,10 +110,6 @@ const listCliCommand = Command.make(
   ({ short }) => listCommand({ short }),
 ).pipe(
   Command.withDescription("Show worktrees with tmux, changes, and sync status"),
-);
-
-const notifyCliCommand = Command.make("notify", {}, () => notifyCommand()).pipe(
-  Command.withDescription("Queue a notification from Claude Code hooks"),
 );
 
 const switchCliCommand = Command.make(
@@ -359,10 +342,8 @@ export const rootCommand = Command.make("wct").pipe(
     cdCliCommand,
     closeCliCommand,
     downCliCommand,
-    hooksCliCommand,
     initCliCommand,
     listCliCommand,
-    notifyCliCommand,
     openCliCommand,
     projectsCliCommand,
     switchCliCommand,

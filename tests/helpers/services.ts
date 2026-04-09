@@ -7,20 +7,10 @@ import {
   liveGitHubService,
 } from "../../src/services/github-service";
 import {
-  HooksService,
-  type HooksService as HooksServiceApi,
-  liveHooksService,
-} from "../../src/services/hooks-service";
-import {
   IdeService,
   type IdeService as IdeServiceApi,
   liveIdeService,
 } from "../../src/services/ide-service";
-import {
-  liveQueueStorage,
-  QueueStorage,
-  type QueueStorageService,
-} from "../../src/services/queue-storage";
 import {
   liveSetupService,
   SetupService,
@@ -47,10 +37,8 @@ type JsonFlagRequirement =
 
 export interface ServiceOverrides {
   github?: GitHubServiceApi;
-  hooks?: HooksServiceApi;
   ide?: IdeServiceApi;
   json?: boolean;
-  queueStorage?: QueueStorageService;
   setup?: SetupServiceApi;
   tmux?: TmuxServiceApi;
   vscodeWorkspace?: VSCodeWorkspaceServiceApi;
@@ -70,18 +58,8 @@ export function withTestServices<A, E, R>(
   );
   provided = Effect.provideService(
     provided,
-    HooksService,
-    overrides.hooks ?? liveHooksService,
-  );
-  provided = Effect.provideService(
-    provided,
     IdeService,
     overrides.ide ?? liveIdeService,
-  );
-  provided = Effect.provideService(
-    provided,
-    QueueStorage,
-    overrides.queueStorage ?? liveQueueStorage,
   );
   provided = Effect.provideService(
     provided,

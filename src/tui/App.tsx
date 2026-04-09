@@ -3,13 +3,11 @@
 import { basename } from "node:path";
 import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { QueueItem } from "../services/queue-storage";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { useGitHub } from "./hooks/useGitHub";
-import { useQueue } from "./hooks/useQueue";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
 import { useTmux } from "./hooks/useTmux";
@@ -26,7 +24,6 @@ interface BuildTreeOptions {
   repos: RepoInfo[];
   expandedRepos: Set<string>;
   expandedWorktreeKey: string | null;
-  queueItems: QueueItem[];
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
@@ -36,7 +33,6 @@ function buildTreeItems({
   repos,
   expandedRepos,
   expandedWorktreeKey,
-  queueItems,
   prData,
   panes,
   jumpToPane,
@@ -59,30 +55,6 @@ function buildTreeItems({
         if (wtKey !== expandedWorktreeKey) continue;
 
         const sessionName = formatSessionName(basename(wt.path));
-
-        // Notifications for this worktree
-        const wtNotifs = queueItems.filter(
-          (q) => q.branch === wt.branch && q.project === repo.project,
-        );
-        if (wtNotifs.length > 0) {
-          items.push({
-            type: "detail",
-            repoIndex: ri,
-            worktreeIndex: wi,
-            detailKind: "notification-header",
-            label: `Notifications (${wtNotifs.length})`,
-          });
-          for (const notif of wtNotifs) {
-            items.push({
-              type: "detail",
-              repoIndex: ri,
-              worktreeIndex: wi,
-              detailKind: "notification",
-              label: notif.message,
-              action: () => jumpToPane(notif.pane),
-            });
-          }
-        }
 
         // PR data for this worktree
         const pr = prData.get(wtKey);
@@ -143,7 +115,6 @@ export function App() {
   const termCols = stdout?.columns ?? 80;
   const termRows = stdout?.rows ?? 24;
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
-  const { items: queueItems, refresh: refreshQueue } = useQueue();
   const { prData } = useGitHub(repos);
   const {
     client,
@@ -210,7 +181,6 @@ export function App() {
         repos: filteredRepos,
         expandedRepos,
         expandedWorktreeKey,
-        queueItems,
         prData,
         panes,
         jumpToPane,
@@ -219,7 +189,6 @@ export function App() {
       filteredRepos,
       expandedRepos,
       expandedWorktreeKey,
-      queueItems,
       prData,
       panes,
       jumpToPane,
@@ -227,13 +196,8 @@ export function App() {
   );
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([
-      refreshRegistry(),
-      refreshQueue(),
-      refreshSessions(),
-      discoverClient(),
-    ]);
-  }, [refreshRegistry, refreshQueue, refreshSessions, discoverClient]);
+    await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
+  }, [refreshRegistry, refreshSessions, discoverClient]);
 
   useRefresh(refreshAll);
 
@@ -344,11 +308,7 @@ export function App() {
       let next = prev + direction;
       while (next >= 0 && next < treeItems.length) {
         const item = treeItems[next];
-        if (
-          item?.type === "detail" &&
-          (item.detailKind === "pane-header" ||
-            item.detailKind === "notification-header")
-        ) {
+        if (item?.type === "detail" && item.detailKind === "pane-header") {
           next += direction;
           continue;
         }
@@ -635,7 +595,6 @@ export function App() {
         <TreeView
           repos={filteredRepos}
           sessions={sessions}
-          queueItems={queueItems}
           expandedRepos={expandedRepos}
           selectedIndex={selectedIndex}
           items={treeItems}

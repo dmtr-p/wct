@@ -1,7 +1,6 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import { commandError, toWctError } from "../errors";
-import { QueueStorage } from "../services/queue-storage";
+import { commandError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
 import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
@@ -37,12 +36,5 @@ export function downCommand() {
     yield* TmuxService.use((service) => service.killSession(sessionName));
 
     yield* logger.success(`Killed tmux session '${sessionName}'`);
-    yield* Effect.catch(
-      QueueStorage.use((service) => service.removeItemsBySession(sessionName)),
-      (error) =>
-        logger.warn(
-          `Failed to clean queue entries for session '${sessionName}': ${toWctError(error).message}`,
-        ),
-    );
   });
 }

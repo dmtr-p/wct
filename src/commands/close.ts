@@ -2,7 +2,6 @@ import { basename } from "node:path";
 import { Effect } from "effect";
 import type { WctServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
-import { QueueStorage } from "../services/queue-storage";
 import { formatSessionName, TmuxService } from "../services/tmux";
 import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
@@ -141,15 +140,6 @@ export function closeCommand(
         );
         if (killed) {
           yield* logger.success(`Killed tmux session '${sessionName}'`);
-          yield* Effect.catch(
-            QueueStorage.use((service) =>
-              service.removeItemsBySession(sessionName),
-            ),
-            (error) =>
-              logger.warn(
-                `Failed to clean queue entries for session '${sessionName}': ${toWctError(error).message}`,
-              ),
-          );
         }
       } else {
         yield* logger.warn(`Tmux session '${sessionName}' does not exist`);

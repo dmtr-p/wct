@@ -4,10 +4,8 @@ import { commandDef as cdCommandDef } from "../commands/cd";
 import { commandDef as closeCommandDef } from "../commands/close";
 import type { CommandDef } from "../commands/command-def";
 import { commandDef as downCommandDef } from "../commands/down";
-import { commandDef as hooksCommandDef } from "../commands/hooks";
 import { commandDef as initCommandDef } from "../commands/init";
 import { commandDef as listCommandDef } from "../commands/list";
-import { commandDef as notifyCommandDef } from "../commands/notify";
 import { commandDef as openCommandDef } from "../commands/open";
 import { commandDef as projectsCommandDef } from "../commands/projects";
 import { commandDef as switchCommandDef } from "../commands/switch";
@@ -18,10 +16,8 @@ const COMMANDS: ReadonlyArray<CommandDef> = [
   cdCommandDef,
   closeCommandDef,
   downCommandDef,
-  hooksCommandDef,
   initCommandDef,
   listCommandDef,
-  notifyCommandDef,
   openCommandDef,
   projectsCommandDef,
   switchCommandDef,

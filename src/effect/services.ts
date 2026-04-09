@@ -7,20 +7,10 @@ import {
   liveGitHubService,
 } from "../services/github-service";
 import {
-  HooksService,
-  type HooksService as HooksServiceApi,
-  liveHooksService,
-} from "../services/hooks-service";
-import {
   IdeService,
   type IdeService as IdeServiceApi,
   liveIdeService,
 } from "../services/ide-service";
-import {
-  liveQueueStorage,
-  QueueStorage,
-  type QueueStorageService,
-} from "../services/queue-storage";
 import {
   liveRegistryService,
   RegistryService,
@@ -50,9 +40,7 @@ import {
 export type WctServices =
   | BunServices.BunServices
   | GitHubServiceApi
-  | HooksServiceApi
   | IdeServiceApi
-  | QueueStorageService
   | RegistryServiceApi
   | SetupServiceApi
   | TmuxServiceApi
@@ -62,7 +50,6 @@ export type WctServices =
 export type WctRuntimeServices =
   | BunServices.BunServices
   | GitHubServiceApi
-  | QueueStorageService
   | RegistryServiceApi
   | TmuxServiceApi
   | WorktreeServiceApi;
@@ -80,21 +67,9 @@ export function provideWctServices<A, E, R>(
         Effect.provideService(
           Effect.provideService(
             Effect.provideService(
-              Effect.provideService(
-                Effect.provideService(
-                  Effect.provideService(
-                    effect,
-                    GitHubService,
-                    liveGitHubService,
-                  ),
-                  HooksService,
-                  liveHooksService,
-                ),
-                IdeService,
-                liveIdeService,
-              ),
-              QueueStorage,
-              liveQueueStorage,
+              Effect.provideService(effect, GitHubService, liveGitHubService),
+              IdeService,
+              liveIdeService,
             ),
             SetupService,
             liveSetupService,

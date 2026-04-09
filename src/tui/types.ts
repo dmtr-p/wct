@@ -33,13 +33,7 @@ export type TreeItem =
       meta?: { state?: string; paneRef?: string };
     };
 
-export type DetailKind =
-  | "notification-header"
-  | "notification"
-  | "pr"
-  | "check"
-  | "pane-header"
-  | "pane";
+export type DetailKind = "pr" | "check" | "pane-header" | "pane";
 
 /** Pending action for optimistic UI */
 export interface PendingAction {

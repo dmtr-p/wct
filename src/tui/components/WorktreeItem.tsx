@@ -6,7 +6,6 @@ interface Props {
   isAttached: boolean;
   sync: string;
   changedFiles: number;
-  notifications: number;
   isSelected: boolean;
   isChildSelected?: boolean;
   pendingStatus?: "opening" | "closing" | "starting";
@@ -31,7 +30,6 @@ export function WorktreeItem({
   isAttached,
   sync,
   changedFiles,
-  notifications,
   isSelected,
   isChildSelected,
   pendingStatus,
@@ -78,8 +76,7 @@ export function WorktreeItem({
     ),
   );
   const showStats = isSelected || isExpanded;
-  const hasStats =
-    (sync && sync !== "\u2713") || changedFiles > 0 || notifications > 0;
+  const hasStats = (sync && sync !== "\u2713") || changedFiles > 0;
 
   if (pendingStatus === "opening") {
     return (
@@ -129,12 +126,6 @@ export function WorktreeItem({
           {changedFiles > 0 ? (
             <Text color="yellow">
               {sync && sync !== "\u2713" ? " " : ""}~{changedFiles}
-            </Text>
-          ) : null}
-          {notifications > 0 ? (
-            <Text color="yellow">
-              {(sync && sync !== "\u2713") || changedFiles > 0 ? " " : ""}!
-              {notifications}
             </Text>
           ) : null}
         </Box>

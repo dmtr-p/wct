@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
 import { DetailRow } from "../../src/tui/components/DetailRow";
+import type { TreeItem } from "../../src/tui/types";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -46,22 +47,37 @@ async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
 describe("DetailRow", () => {
   test("renders a zoom indicator only for the active zoomed pane", async () => {
     const zoomedActive = await renderDetailRow({
-      kind: "pane",
-      label: "main:0 bash",
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "main:0 bash",
+        meta: { zoomed: true, active: true },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
-      meta: { zoomed: true, active: true },
     });
     const zoomedInactive = await renderDetailRow({
-      kind: "pane",
-      label: "main:1 node",
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "main:1 node",
+        meta: { zoomed: true, active: false },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
-      meta: { zoomed: true, active: false },
     });
     const unzoomedActive = await renderDetailRow({
-      kind: "pane",
-      label: "main:2 zsh",
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "main:2 zsh",
+        meta: { zoomed: false, active: true },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
-      meta: { zoomed: false, active: true },
     });
 
     expect(zoomedActive.output).toContain("🔍");

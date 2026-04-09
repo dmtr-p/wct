@@ -97,10 +97,8 @@ export function TreeView({
       elements.push(
         <DetailRow
           key={`detail-${repo.id}-${item.worktreeIndex}-${item.detailKind}-${item.label}`}
-          kind={item.detailKind}
-          label={item.label}
+          item={item}
           isSelected={idx === selectedIndex}
-          meta={item.meta}
         />,
       );
       continue;

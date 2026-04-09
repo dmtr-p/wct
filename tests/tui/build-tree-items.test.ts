@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { describe, expect, test } from "vitest";
 import { formatSessionName } from "../../src/services/tmux";
 import { buildTreeItems } from "../../src/tui/App";
-import { pendingKey, type PaneInfo } from "../../src/tui/types";
+import { type PaneInfo, pendingKey } from "../../src/tui/types";
 
 describe("buildTreeItems", () => {
   test("passes zoomed and active pane metadata into pane detail rows", () => {

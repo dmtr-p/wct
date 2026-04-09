@@ -31,27 +31,37 @@ export const Mode = {
   }),
 };
 
-/** Items in the flat tree list */
-export interface DetailMeta {
-  state?: string;
-  zoomed?: boolean;
-  active?: boolean;
-}
-
 export type TreeItem =
   | { type: "repo"; repoIndex: number }
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
-  | {
+  | DetailItem<"pr">
+  | DetailItem<"check", { state?: string }>
+  | DetailItem<"pane-header">
+  | DetailItem<"pane", { zoomed?: boolean; active?: boolean }>;
+
+export type DetailKind = "pr" | "check" | "pane-header" | "pane";
+
+type DetailItem<
+  TKind extends DetailKind,
+  TMeta = undefined,
+> = TMeta extends undefined
+  ? {
       type: "detail";
       repoIndex: number;
       worktreeIndex: number;
-      detailKind: DetailKind;
+      detailKind: TKind;
       label: string;
       action?: () => void;
-      meta?: DetailMeta;
+    }
+  : {
+      type: "detail";
+      repoIndex: number;
+      worktreeIndex: number;
+      detailKind: TKind;
+      label: string;
+      action?: () => void;
+      meta?: TMeta;
     };
-
-export type DetailKind = "pr" | "check" | "pane-header" | "pane";
 
 /** Pending action for optimistic UI */
 export interface PendingAction {

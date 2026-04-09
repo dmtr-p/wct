@@ -129,6 +129,36 @@ export function useTmux() {
     [client],
   );
 
+  const zoomPane = useCallback(
+    async (paneId: string) => {
+      if (!client) return false;
+      try {
+        await tuiRuntime.runPromise(
+          TmuxService.use((service) => service.togglePaneZoom(paneId)),
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const killPane = useCallback(
+    async (paneId: string) => {
+      if (!client) return false;
+      try {
+        await tuiRuntime.runPromise(
+          TmuxService.use((service) => service.killPane(paneId)),
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [client],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
     discoverClient(controller.signal);
@@ -143,6 +173,8 @@ export function useTmux() {
     error,
     switchSession,
     jumpToPane,
+    zoomPane,
+    killPane,
     refreshSessions,
     discoverClient,
   };

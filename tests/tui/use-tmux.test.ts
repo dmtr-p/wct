@@ -162,4 +162,36 @@ describe("useTmux hook", () => {
 
     harness.unmount();
   });
+
+  test("zoomPane returns false when no active client exists", async () => {
+    mockRunPromise
+      .mockResolvedValueOnce([]) // listClients
+      .mockResolvedValueOnce(null); // listSessions
+
+    const harness = await renderUseTmux();
+    await flush(10);
+
+    expect(harness.value.client).toBeNull();
+
+    const result = await harness.value.zoomPane("pane-id");
+    expect(result).toBe(false);
+
+    harness.unmount();
+  });
+
+  test("killPane returns false when no active client exists", async () => {
+    mockRunPromise
+      .mockResolvedValueOnce([]) // listClients
+      .mockResolvedValueOnce(null); // listSessions
+
+    const harness = await renderUseTmux();
+    await flush(10);
+
+    expect(harness.value.client).toBeNull();
+
+    const result = await harness.value.killPane("pane-id");
+    expect(result).toBe(false);
+
+    harness.unmount();
+  });
 });

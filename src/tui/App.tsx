@@ -112,7 +112,11 @@ export function buildTreeItems({
               worktreeIndex: wi,
               detailKind: "pane",
               label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
-              meta: { zoomed: pane.zoomed, active: pane.active },
+              meta: {
+                paneId: pane.paneId,
+                zoomed: pane.zoomed,
+                active: pane.active,
+              },
               action: () => jumpToPane(pane.paneId),
             });
           }
@@ -121,6 +125,33 @@ export function buildTreeItems({
     }
   }
   return items;
+}
+
+export function findOwningWorktreeIndex(
+  items: TreeItem[],
+  selectedIndex: number,
+): number | null {
+  const selected = items[selectedIndex];
+  if (!selected) {
+    return null;
+  }
+
+  if (selected.type === "worktree") {
+    return selectedIndex;
+  }
+
+  if (selected.type !== "detail") {
+    return null;
+  }
+
+  for (let i = selectedIndex - 1; i >= 0; i--) {
+    const candidate = items[i];
+    if (candidate?.type === "worktree") {
+      return i;
+    }
+  }
+
+  return null;
 }
 
 export function resolveSelectedPane({
@@ -150,21 +181,12 @@ export function resolveSelectedPane({
     return null;
   }
 
-  const labelMatch = selected.label.match(/^(.*):(\d+)\s/);
-  if (!labelMatch) {
+  const paneId = selected.meta?.paneId;
+  if (!paneId) {
     return null;
   }
 
-  const [, window, paneIndexText] = labelMatch;
-  const paneIndex = Number(paneIndexText);
-  if (Number.isNaN(paneIndex)) {
-    return null;
-  }
-
-  const pane = sessionPanes.find(
-    (candidate) =>
-      candidate.window === window && candidate.paneIndex === paneIndex,
-  );
+  const pane = sessionPanes.find((candidate) => candidate.paneId === paneId);
 
   if (!pane) {
     return null;
@@ -568,17 +590,9 @@ export function App() {
 
   function handleExpandedInput(input: string, key: Key) {
     if (key.leftArrow || key.escape) {
-      // Move selection back to parent worktree so selectedIndex
-      // doesn't point past the end after detail rows are removed.
-      const current = treeItems[selectedIndex];
-      if (current && current.type === "detail") {
-        for (let i = selectedIndex - 1; i >= 0; i--) {
-          const candidate = treeItems[i];
-          if (candidate?.type === "worktree") {
-            setSelectedIndex(i);
-            break;
-          }
-        }
+      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+      if (parentIndex !== null) {
+        setSelectedIndex(parentIndex);
       }
       setMode(Mode.Navigate);
       return;
@@ -668,6 +682,10 @@ export function App() {
 
     if (key.return) {
       const { paneId, worktreeKey } = mode;
+      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+      if (parentIndex !== null) {
+        setSelectedIndex(parentIndex);
+      }
       setMode(Mode.Expanded(worktreeKey));
       killPane(paneId).then(() => refreshSessions());
     }

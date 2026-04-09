@@ -1,8 +1,12 @@
 import { basename } from "node:path";
 import { describe, expect, test } from "vitest";
 import { formatSessionName } from "../../src/services/tmux";
-import { buildTreeItems, resolveSelectedPane } from "../../src/tui/App";
-import { type PaneInfo, pendingKey } from "../../src/tui/types";
+import {
+  buildTreeItems,
+  findOwningWorktreeIndex,
+  resolveSelectedPane,
+} from "../../src/tui/App";
+import { type PaneInfo, pendingKey, type TreeItem } from "../../src/tui/types";
 
 describe("buildTreeItems", () => {
   test("passes zoomed and active pane metadata into pane detail rows", () => {
@@ -49,10 +53,14 @@ describe("buildTreeItems", () => {
       (item) => item.type === "detail" && item.detailKind === "pane",
     );
 
-    expect(paneItem?.meta).toEqual({ zoomed: true, active: true });
+    expect(paneItem?.meta).toEqual({
+      paneId: "%1",
+      zoomed: true,
+      active: true,
+    });
   });
 
-  test("resolves the selected pane from session/window/pane index data", () => {
+  test("resolves the selected pane from stable pane identity", () => {
     const branch = "feature/pane-actions";
     const repoPath = "/tmp/example-repo";
     const worktreePath = "/tmp/worktree-pane-actions";
@@ -105,7 +113,7 @@ describe("buildTreeItems", () => {
       (item) =>
         item.type === "detail" &&
         item.detailKind === "pane" &&
-        item.label === "editor:1 git status",
+        item.meta?.paneId === "%2",
     );
 
     const resolved = resolveSelectedPane({
@@ -132,7 +140,12 @@ describe("buildTreeItems", () => {
           sessionName,
           [
             { ...sessionPanes[0], paneId: "%9", zoomed: true, active: true },
-            { ...sessionPanes[1], command: "htop" },
+            {
+              ...sessionPanes[1],
+              command: "htop",
+              window: "renamed-window",
+              paneIndex: 4,
+            },
           ],
         ],
       ]),
@@ -140,9 +153,110 @@ describe("buildTreeItems", () => {
     });
 
     expect(resolved).toEqual({
-      pane: { ...sessionPanes[1], command: "htop" },
+      pane: {
+        ...sessionPanes[1],
+        command: "htop",
+        window: "renamed-window",
+        paneIndex: 4,
+      },
       label: "editor:1 git status",
       worktreeKey: pendingKey("example", branch),
     });
+  });
+
+  test("resolves the correct pane when multiple pane rows share the same label", () => {
+    const items: TreeItem[] = [
+      { type: "repo", repoIndex: 0 },
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+      {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "shared label",
+        meta: { paneId: "%1", zoomed: false, active: false },
+      },
+      {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "shared label",
+        meta: { paneId: "%2", zoomed: true, active: true },
+      },
+    ];
+
+    const resolved = resolveSelectedPane({
+      repos: [
+        {
+          id: "repo-1",
+          repoPath: "/tmp/example-repo",
+          project: "example",
+          worktrees: [
+            {
+              branch: "feature/duplicate-labels",
+              path: "/tmp/worktree-duplicate-labels",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+          profileNames: [],
+        },
+      ],
+      items,
+      panes: new Map([
+        [
+          formatSessionName(basename("/tmp/worktree-duplicate-labels")),
+          [
+            {
+              paneId: "%1",
+              paneIndex: 0,
+              command: "bash",
+              window: "main",
+              zoomed: false,
+              active: false,
+            },
+            {
+              paneId: "%2",
+              paneIndex: 1,
+              command: "top",
+              window: "main",
+              zoomed: true,
+              active: true,
+            },
+          ],
+        ],
+      ]),
+      selectedIndex: 3,
+    });
+
+    expect(resolved?.pane.paneId).toBe("%2");
+  });
+
+  test("finds the owning worktree row for a selected detail row", () => {
+    const items: TreeItem[] = [
+      { type: "repo", repoIndex: 0 },
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+      {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane-header",
+        label: "Panes (1)",
+      },
+      {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "editor:0 bash",
+        meta: { paneId: "%1", zoomed: false, active: true },
+      },
+    ];
+
+    expect(findOwningWorktreeIndex(items, 3)).toBe(1);
+    expect(findOwningWorktreeIndex(items, 1)).toBe(1);
+    expect(findOwningWorktreeIndex(items, 0)).toBeNull();
   });
 });

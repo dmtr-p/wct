@@ -37,7 +37,10 @@ export type TreeItem =
   | DetailItem<"pr">
   | DetailItem<"check", { state?: string }>
   | DetailItem<"pane-header">
-  | DetailItem<"pane", { zoomed?: boolean; active?: boolean }>;
+  | DetailItem<
+      "pane",
+      { paneId: string; zoomed?: boolean; active?: boolean }
+    >;
 
 export type DetailKind = "pr" | "check" | "pane-header" | "pane";
 

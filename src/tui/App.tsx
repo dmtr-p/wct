@@ -338,12 +338,23 @@ export function App() {
     });
   }
 
-  /** Move selection up or down in the flat tree list */
+  /** Move selection up or down in the flat tree list, skipping headers */
   function navigateTree(direction: 1 | -1) {
     setSelectedIndex((prev) => {
-      const next = prev + direction;
-      if (next < 0 || next >= treeItems.length) return prev;
-      return next;
+      let next = prev + direction;
+      while (next >= 0 && next < treeItems.length) {
+        const item = treeItems[next];
+        if (
+          item?.type === "detail" &&
+          (item.detailKind === "pane-header" ||
+            item.detailKind === "notification-header")
+        ) {
+          next += direction;
+          continue;
+        }
+        return next;
+      }
+      return prev;
     });
   }
 

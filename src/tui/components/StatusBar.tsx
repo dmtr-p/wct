@@ -12,7 +12,7 @@ function getHints(mode: Mode): [string, string] {
     case "Navigate":
       return [
         "↑↓:navigate  ←→:expand/collapse  space:switch  o:open",
-        "c:close  j:jump  /:search  q:quit",
+        "c:close  /:search  q:quit",
       ];
     case "Search":
       return ["type to filter", "esc:cancel  enter:done"];
@@ -20,8 +20,8 @@ function getHints(mode: Mode): [string, string] {
       return ["", ""];
     case "Expanded":
       return [
-        "↑↓:navigate  enter:action  ←:collapse  space:switch",
-        "o:open  q:quit",
+        "↑↓:navigate  ←:collapse  space:action  o:open",
+        "/:search  q:quit",
       ];
   }
 }

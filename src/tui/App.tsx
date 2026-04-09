@@ -363,12 +363,8 @@ export function App() {
     const item = treeItems[selectedIndex];
     if (!item) return;
 
-    // For pane/notification detail rows, jump directly to that pane
-    if (
-      item.type === "detail" &&
-      (item.detailKind === "pane" || item.detailKind === "notification") &&
-      item.action
-    ) {
+    // For any detail row with an action, fire it (pane jump, PR open, etc.)
+    if (item.type === "detail" && item.action) {
       item.action();
       return;
     }
@@ -481,13 +477,6 @@ export function App() {
       }
     }
 
-    if (key.return) {
-      if (currentItem.type === "repo") {
-        toggleExpanded(currentRepo.id);
-      }
-      return;
-    }
-
     if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
       const closingSession = formatSessionName(basename(currentWorktree.path));
       if (client && client.session === closingSession) {
@@ -526,14 +515,6 @@ export function App() {
           });
         });
       });
-      return;
-    }
-
-    if (input === "j") {
-      const [item] = queueItems;
-      if (item) {
-        jumpToPane(item.pane);
-      }
       return;
     }
   }
@@ -598,14 +579,6 @@ export function App() {
 
     if (input === "o") {
       prepareOpenModal();
-      return;
-    }
-
-    if (key.return) {
-      const item = treeItems[selectedIndex];
-      if (item?.type === "detail" && item.action) {
-        item.action();
-      }
       return;
     }
 

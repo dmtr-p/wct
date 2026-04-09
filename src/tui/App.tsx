@@ -29,6 +29,19 @@ interface BuildTreeOptions {
   jumpToPane: (paneId: string) => void;
 }
 
+interface ResolveSelectedPaneOptions {
+  repos: RepoInfo[];
+  items: TreeItem[];
+  panes: Map<string, PaneInfo[]>;
+  selectedIndex: number;
+}
+
+interface SelectedPaneResolution {
+  pane: PaneInfo;
+  label: string;
+  worktreeKey: string;
+}
+
 export function buildTreeItems({
   repos,
   expandedRepos,
@@ -110,6 +123,60 @@ export function buildTreeItems({
   return items;
 }
 
+export function resolveSelectedPane({
+  repos,
+  items,
+  panes,
+  selectedIndex,
+}: ResolveSelectedPaneOptions): SelectedPaneResolution | null {
+  const selected = items[selectedIndex];
+  if (
+    !selected ||
+    selected.type !== "detail" ||
+    selected.detailKind !== "pane"
+  ) {
+    return null;
+  }
+
+  const repo = repos[selected.repoIndex];
+  const worktree = repo?.worktrees[selected.worktreeIndex];
+  if (!repo || !worktree) {
+    return null;
+  }
+
+  const sessionName = formatSessionName(basename(worktree.path));
+  const sessionPanes = panes.get(sessionName);
+  if (!sessionPanes) {
+    return null;
+  }
+
+  const labelMatch = selected.label.match(/^(.*):(\d+)\s/);
+  if (!labelMatch) {
+    return null;
+  }
+
+  const [, window, paneIndexText] = labelMatch;
+  const paneIndex = Number(paneIndexText);
+  if (Number.isNaN(paneIndex)) {
+    return null;
+  }
+
+  const pane = sessionPanes.find(
+    (candidate) =>
+      candidate.window === window && candidate.paneIndex === paneIndex,
+  );
+
+  if (!pane) {
+    return null;
+  }
+
+  return {
+    pane,
+    label: selected.label,
+    worktreeKey: pendingKey(repo.project, worktree.branch),
+  };
+}
+
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -124,6 +191,8 @@ export function App() {
     error: tmuxError,
     switchSession,
     jumpToPane,
+    zoomPane,
+    killPane,
     refreshSessions,
     discoverClient,
   } = useTmux();
@@ -140,6 +209,8 @@ export function App() {
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
+  const statusMode =
+    mode.type === "ConfirmKill" ? Mode.Expanded(mode.worktreeKey) : mode;
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -174,7 +245,9 @@ export function App() {
   }, [repos, searchQuery]);
 
   const expandedWorktreeKey =
-    mode.type === "Expanded" ? mode.worktreeKey : null;
+    mode.type === "Expanded" || mode.type === "ConfirmKill"
+      ? mode.worktreeKey
+      : null;
 
   const treeItems = useMemo(
     () =>
@@ -548,11 +621,66 @@ export function App() {
       setSearchQuery("");
       return;
     }
+
+    if (input === "z") {
+      const selectedPane = resolveSelectedPane({
+        repos: filteredRepos,
+        items: treeItems,
+        panes,
+        selectedIndex,
+      });
+      if (!selectedPane) {
+        return;
+      }
+      zoomPane(selectedPane.pane.paneId).then(() => refreshSessions());
+      return;
+    }
+
+    if (input === "x") {
+      const selectedPane = resolveSelectedPane({
+        repos: filteredRepos,
+        items: treeItems,
+        panes,
+        selectedIndex,
+      });
+      if (!selectedPane) {
+        return;
+      }
+      setMode(
+        Mode.ConfirmKill(
+          selectedPane.pane.paneId,
+          selectedPane.label,
+          selectedPane.worktreeKey,
+        ),
+      );
+    }
+  }
+
+  function handleConfirmKillInput(_input: string, key: Key) {
+    if (mode.type !== "ConfirmKill") {
+      return;
+    }
+
+    if (key.escape) {
+      setMode(Mode.Expanded(mode.worktreeKey));
+      return;
+    }
+
+    if (key.return) {
+      const { paneId, worktreeKey } = mode;
+      setMode(Mode.Expanded(worktreeKey));
+      killPane(paneId).then(() => refreshSessions());
+    }
   }
 
   useInput((input, key) => {
     // Global keys (work in any mode)
-    if (input === "q" && mode.type !== "OpenModal" && mode.type !== "Search") {
+    if (
+      input === "q" &&
+      mode.type !== "OpenModal" &&
+      mode.type !== "Search" &&
+      mode.type !== "ConfirmKill"
+    ) {
       exit();
       return;
     }
@@ -567,6 +695,8 @@ export function App() {
         return;
       case "Expanded":
         return handleExpandedInput(input, key);
+      case "ConfirmKill":
+        return handleConfirmKillInput(input, key);
     }
   });
 
@@ -618,7 +748,7 @@ export function App() {
           onCancel={() => setMode(Mode.Navigate)}
         />
       ) : (
-        <StatusBar mode={mode} searchQuery={searchQuery} />
+        <StatusBar mode={statusMode} searchQuery={searchQuery} />
       )}
     </Box>
   );

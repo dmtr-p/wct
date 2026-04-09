@@ -99,6 +99,7 @@ function buildTreeItems({
               worktreeIndex: wi,
               detailKind: "pane",
               label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
+              meta: { zoomed: pane.zoomed, active: pane.active },
               action: () => jumpToPane(pane.paneId),
             });
           }

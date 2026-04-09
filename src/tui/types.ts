@@ -23,11 +23,7 @@ export const Mode = {
     type: "Expanded",
     worktreeKey,
   }),
-  ConfirmKill: (
-    paneId: string,
-    label: string,
-    worktreeKey: string,
-  ): Mode => ({
+  ConfirmKill: (paneId: string, label: string, worktreeKey: string): Mode => ({
     type: "ConfirmKill",
     paneId,
     label,
@@ -36,6 +32,13 @@ export const Mode = {
 };
 
 /** Items in the flat tree list */
+export interface DetailMeta {
+  state?: string;
+  paneRef?: string;
+  zoomed?: boolean;
+  active?: boolean;
+}
+
 export type TreeItem =
   | { type: "repo"; repoIndex: number }
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
@@ -46,7 +49,7 @@ export type TreeItem =
       detailKind: DetailKind;
       label: string;
       action?: () => void;
-      meta?: { state?: string; paneRef?: string };
+      meta?: DetailMeta;
     };
 
 export type DetailKind = "pr" | "check" | "pane-header" | "pane";

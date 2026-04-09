@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import type { DetailKind } from "../types";
+import type { DetailKind, DetailMeta } from "../types";
 import { checkColor, checkIcon } from "../types";
 
 interface Props {
@@ -7,7 +7,7 @@ interface Props {
   label: string;
   isSelected: boolean;
   /** Extra data for rendering (e.g., check state) */
-  meta?: { state?: string; paneRef?: string };
+  meta?: DetailMeta;
 }
 
 export function DetailRow({ kind, label, isSelected, meta }: Props) {
@@ -68,6 +68,7 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
           <Text>{indent}</Text>
           <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
             {prefix}
+            {meta?.zoomed && meta?.active ? "🔍 " : ""}
             {label}
           </Text>
         </Box>

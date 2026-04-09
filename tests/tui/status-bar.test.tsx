@@ -20,13 +20,6 @@ function createStdoutStdin() {
   return { stdout, stdin };
 }
 
-async function waitForOutput(chunks: string[], attempts = 50) {
-  for (let i = 0; i < attempts; i++) {
-    if (chunks.length > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
 async function renderStatusBar(props: React.ComponentProps<typeof StatusBar>) {
   const { stdout, stdin } = createStdoutStdin();
   const chunks: string[] = [];
@@ -37,11 +30,12 @@ async function renderStatusBar(props: React.ComponentProps<typeof StatusBar>) {
   const instance = render(React.createElement(StatusBar, props), {
     stdout,
     stdin,
+    debug: true,
     patchConsole: false,
     exitOnCtrlC: false,
   });
 
-  await waitForOutput(chunks);
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   return {
     output: chunks.join(""),

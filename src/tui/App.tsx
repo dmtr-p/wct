@@ -231,8 +231,6 @@ export function App() {
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
-  const statusMode =
-    mode.type === "ConfirmKill" ? Mode.Expanded(mode.worktreeKey) : mode;
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -290,6 +288,9 @@ export function App() {
       jumpToPane,
     ],
   );
+  const selectedPaneRow =
+    treeItems[selectedIndex]?.type === "detail" &&
+    treeItems[selectedIndex]?.detailKind === "pane";
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -766,7 +767,11 @@ export function App() {
           onCancel={() => setMode(Mode.Navigate)}
         />
       ) : (
-        <StatusBar mode={statusMode} searchQuery={searchQuery} />
+        <StatusBar
+          mode={mode}
+          searchQuery={searchQuery}
+          selectedPaneRow={selectedPaneRow}
+        />
       )}
     </Box>
   );

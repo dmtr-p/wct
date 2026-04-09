@@ -70,6 +70,22 @@ describe("downCommand behavior", () => {
     cwdSpy.mockRestore();
   });
 
+  test("kills tmux session derived from cwd basename", async () => {
+    const killCalls: string[] = [];
+    tmuxOverrides = {
+      ...tmuxOverrides,
+      killSession: (name: string) =>
+        Effect.sync(() => {
+          killCalls.push(name);
+        }),
+    };
+
+    await expect(
+      runCommand({ tmux: tmuxOverrides, worktree: worktreeOverrides }),
+    ).resolves.toBeUndefined();
+    expect(killCalls).toEqual(["myapp-feature-auth"]);
+  });
+
   test("propagates tmux kill failures", async () => {
     tmuxOverrides = {
       ...tmuxOverrides,

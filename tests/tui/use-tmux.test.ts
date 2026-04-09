@@ -2,12 +2,37 @@ import { PassThrough } from "node:stream";
 import React, { type FC } from "react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 
+const tmuxServiceMock = vi.hoisted(() => ({
+  listClients: vi.fn(),
+  listSessions: vi.fn(),
+  listPanes: vi.fn(),
+  switchClientToPane: vi.fn(),
+  togglePaneZoom: vi.fn(),
+  killPane: vi.fn(),
+  selectPane: vi.fn(),
+  refreshClient: vi.fn(),
+}));
+
 // Mock tuiRuntime before importing the hook
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
     runPromise: vi.fn(),
   },
 }));
+
+vi.mock("../../src/services/tmux", async () => {
+  const actual = await vi.importActual<typeof import("../../src/services/tmux")>(
+    "../../src/services/tmux",
+  );
+
+  return {
+    ...actual,
+    TmuxService: {
+      use: (selector: (service: typeof tmuxServiceMock) => unknown) =>
+        selector(tmuxServiceMock),
+    },
+  };
+});
 
 // Lazy imports so the mock is in place
 const { tuiRuntime } = await import("../../src/tui/runtime");
@@ -77,6 +102,7 @@ async function renderWithSingleClient() {
 
 describe("useTmux hook", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockRunPromise.mockReset();
   });
 
@@ -189,6 +215,7 @@ describe("useTmux hook", () => {
 
     const result = await harness.value.zoomPane("pane-id");
     expect(result).toBe(true);
+    expect(tmuxServiceMock.togglePaneZoom).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });
@@ -200,6 +227,7 @@ describe("useTmux hook", () => {
 
     const result = await harness.value.zoomPane("pane-id");
     expect(result).toBe(false);
+    expect(tmuxServiceMock.togglePaneZoom).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });
@@ -227,6 +255,7 @@ describe("useTmux hook", () => {
 
     const result = await harness.value.killPane("pane-id");
     expect(result).toBe(true);
+    expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });
@@ -238,6 +267,7 @@ describe("useTmux hook", () => {
 
     const result = await harness.value.killPane("pane-id");
     expect(result).toBe(false);
+    expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });

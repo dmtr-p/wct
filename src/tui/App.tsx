@@ -793,10 +793,7 @@ export function App() {
           onCancel={() => setMode(Mode.Navigate)}
         />
       ) : (
-        <StatusBar
-          {...statusBarProps}
-          searchQuery={searchQuery}
-        />
+        <StatusBar {...statusBarProps} searchQuery={searchQuery} />
       )}
     </Box>
   );

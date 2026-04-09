@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Mode, checkColor, checkIcon, pendingKey } from "../../src/tui/types";
+import { checkColor, checkIcon, Mode, pendingKey } from "../../src/tui/types";
 
 describe("pendingKey", () => {
   test("formats project/branch", () => {

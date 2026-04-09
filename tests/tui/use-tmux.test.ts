@@ -21,9 +21,9 @@ vi.mock("../../src/tui/runtime", () => ({
 }));
 
 vi.mock("../../src/services/tmux", async () => {
-  const actual = await vi.importActual<typeof import("../../src/services/tmux")>(
-    "../../src/services/tmux",
-  );
+  const actual = await vi.importActual<
+    typeof import("../../src/services/tmux")
+  >("../../src/services/tmux");
 
   return {
     ...actual,

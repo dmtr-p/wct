@@ -51,7 +51,9 @@ describe("StatusBar", () => {
       selectedPaneRow: true,
     });
 
-    expect(rendered.output).toContain("↑↓:navigate  ←:collapse  space:jump  z:zoom  x:kill");
+    expect(rendered.output).toContain(
+      "↑↓:navigate  ←:collapse  space:jump  z:zoom  x:kill",
+    );
     expect(rendered.output).toContain("/:search  q:quit");
 
     rendered.unmount();

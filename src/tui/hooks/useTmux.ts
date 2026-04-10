@@ -13,6 +13,17 @@ export interface TmuxSessionInfo {
   attached: boolean;
 }
 
+async function runPaneAction(
+  effect: Parameters<typeof tuiRuntime.runPromise>[0],
+) {
+  try {
+    await tuiRuntime.runPromise(effect);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function useTmux() {
   const [client, setClient] = useState<TmuxClient | null>(null);
   const [sessions, setSessions] = useState<TmuxSessionInfo[]>([]);
@@ -129,27 +140,19 @@ export function useTmux() {
     [client],
   );
 
-  const zoomPane = useCallback(async (paneId: string) => {
-    try {
-      await tuiRuntime.runPromise(
+  const zoomPane = useCallback(
+    async (paneId: string) =>
+      runPaneAction(
         TmuxService.use((service) => service.togglePaneZoom(paneId)),
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+      ),
+    [],
+  );
 
-  const killPane = useCallback(async (paneId: string) => {
-    try {
-      await tuiRuntime.runPromise(
-        TmuxService.use((service) => service.killPane(paneId)),
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+  const killPane = useCallback(
+    async (paneId: string) =>
+      runPaneAction(TmuxService.use((service) => service.killPane(paneId))),
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();

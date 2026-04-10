@@ -26,7 +26,7 @@ async function build(): Promise<void> {
     console.log(`Building ${outfile} (${target})...`);
 
     try {
-      await $`bun build src/index.ts --compile --target ${target} --outfile ${outpath} --external react-devtools-core`;
+      await $`bun build src/index.ts --compile --target ${target} --outfile ${outpath}`;
 
       // Get file size
       const stat = await Bun.file(outpath).stat();

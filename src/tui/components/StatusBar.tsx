@@ -31,7 +31,7 @@ function getHints(mode: Mode, selectedPaneRow?: boolean): [string, string] {
         "/:search  q:quit",
       ];
     case "ConfirmKill":
-      return ["Kill pane " + mode.label + "?", "enter:confirm  esc:cancel"];
+      return [`Kill pane ${mode.label}?`, "enter:confirm  esc:cancel"];
   }
 }
 

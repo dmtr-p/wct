@@ -10,6 +10,9 @@ wct up                  # Start tmux session and open IDE in current directory
 wct down                # Kill tmux session for current directory
 wct close <branch...>   # Kill tmux session and remove one or more worktrees
 wct list                # Show active worktrees with tmux session status
+wct switch <branch>     # Switch to another worktree's tmux session
+wct cd <branch>         # Open a shell in a worktree directory
+wct tui                 # Interactive TUI sidebar for managing worktrees
 wct init                # Generate a starter .wct.yaml config file
 wct projects add [path] [--name NAME]  # Add a repo to the project registry
 wct projects remove [path]             # Remove a repo from the project registry

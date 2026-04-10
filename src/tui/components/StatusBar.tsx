@@ -5,9 +5,10 @@ import type { Mode } from "../types";
 interface Props {
   mode: Mode;
   searchQuery?: string;
+  selectedPaneRow?: boolean;
 }
 
-function getHints(mode: Mode): [string, string] {
+function getHints(mode: Mode, selectedPaneRow?: boolean): [string, string] {
   switch (mode.type) {
     case "Navigate":
       return [
@@ -19,17 +20,38 @@ function getHints(mode: Mode): [string, string] {
     case "OpenModal":
       return ["", ""];
     case "Expanded":
+      if (selectedPaneRow) {
+        return [
+          "↑↓:navigate  ←:collapse  space:jump  z:zoom  x:kill",
+          "/:search  q:quit",
+        ];
+      }
       return [
         "↑↓:navigate  ←:collapse  space:action  o:open",
         "/:search  q:quit",
       ];
+    case "ConfirmKill":
+      return ["Kill pane " + mode.label + "?", "enter:confirm  esc:cancel"];
   }
 }
 
-export function StatusBar({ mode, searchQuery }: Props) {
+export function StatusBar({ mode, searchQuery, selectedPaneRow }: Props) {
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 50;
   const divider = "─".repeat(Math.max(1, cols));
+
+  if (mode.type === "ConfirmKill") {
+    const [line1, line2] = getHints(mode, selectedPaneRow);
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>{divider}</Text>
+        <Text color="red" bold>
+          {line1}
+        </Text>
+        <Text dimColor>{line2}</Text>
+      </Box>
+    );
+  }
 
   if (mode.type === "Search") {
     return (
@@ -41,7 +63,7 @@ export function StatusBar({ mode, searchQuery }: Props) {
     );
   }
 
-  const [line1, line2] = getHints(mode);
+  const [line1, line2] = getHints(mode, selectedPaneRow);
   return (
     <Box flexDirection="column">
       <Text dimColor>{divider}</Text>

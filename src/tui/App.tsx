@@ -29,7 +29,31 @@ interface BuildTreeOptions {
   jumpToPane: (paneId: string) => void;
 }
 
-function buildTreeItems({
+interface ResolveSelectedPaneOptions {
+  repos: RepoInfo[];
+  items: TreeItem[];
+  panes: Map<string, PaneInfo[]>;
+  selectedIndex: number;
+}
+
+interface SelectedPaneResolution {
+  pane: PaneInfo;
+  label: string;
+  worktreeKey: string;
+}
+
+interface ResolveStatusBarPropsOptions {
+  mode: Mode;
+  items: TreeItem[];
+  selectedIndex: number;
+}
+
+export interface ResolvedStatusBarProps {
+  mode: Mode;
+  selectedPaneRow?: boolean;
+}
+
+export function buildTreeItems({
   repos,
   expandedRepos,
   expandedWorktreeKey,
@@ -99,6 +123,11 @@ function buildTreeItems({
               worktreeIndex: wi,
               detailKind: "pane",
               label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
+              meta: {
+                paneId: pane.paneId,
+                zoomed: pane.zoomed,
+                active: pane.active,
+              },
               action: () => jumpToPane(pane.paneId),
             });
           }
@@ -107,6 +136,91 @@ function buildTreeItems({
     }
   }
   return items;
+}
+
+export function findOwningWorktreeIndex(
+  items: TreeItem[],
+  selectedIndex: number,
+): number | null {
+  const selected = items[selectedIndex];
+  if (!selected) {
+    return null;
+  }
+
+  if (selected.type === "worktree") {
+    return selectedIndex;
+  }
+
+  if (selected.type !== "detail") {
+    return null;
+  }
+
+  for (let i = selectedIndex - 1; i >= 0; i--) {
+    const candidate = items[i];
+    if (candidate?.type === "worktree") {
+      return i;
+    }
+  }
+
+  return null;
+}
+
+export function resolveSelectedPane({
+  repos,
+  items,
+  panes,
+  selectedIndex,
+}: ResolveSelectedPaneOptions): SelectedPaneResolution | null {
+  const selected = items[selectedIndex];
+  if (
+    !selected ||
+    selected.type !== "detail" ||
+    selected.detailKind !== "pane"
+  ) {
+    return null;
+  }
+
+  const repo = repos[selected.repoIndex];
+  const worktree = repo?.worktrees[selected.worktreeIndex];
+  if (!repo || !worktree) {
+    return null;
+  }
+
+  const sessionName = formatSessionName(basename(worktree.path));
+  const sessionPanes = panes.get(sessionName);
+  if (!sessionPanes) {
+    return null;
+  }
+
+  const paneId = selected.meta?.paneId;
+  if (!paneId) {
+    return null;
+  }
+
+  const pane = sessionPanes.find((candidate) => candidate.paneId === paneId);
+
+  if (!pane) {
+    return null;
+  }
+
+  return {
+    pane,
+    label: selected.label,
+    worktreeKey: pendingKey(repo.project, worktree.branch),
+  };
+}
+
+export function resolveStatusBarProps({
+  mode,
+  items,
+  selectedIndex,
+}: ResolveStatusBarPropsOptions): ResolvedStatusBarProps {
+  return {
+    mode,
+    selectedPaneRow:
+      items[selectedIndex]?.type === "detail" &&
+      items[selectedIndex]?.detailKind === "pane",
+  };
 }
 
 export function App() {
@@ -123,6 +237,8 @@ export function App() {
     error: tmuxError,
     switchSession,
     jumpToPane,
+    zoomPane,
+    killPane,
     refreshSessions,
     discoverClient,
   } = useTmux();
@@ -173,7 +289,9 @@ export function App() {
   }, [repos, searchQuery]);
 
   const expandedWorktreeKey =
-    mode.type === "Expanded" ? mode.worktreeKey : null;
+    mode.type === "Expanded" || mode.type === "ConfirmKill"
+      ? mode.worktreeKey
+      : null;
 
   const treeItems = useMemo(
     () =>
@@ -194,6 +312,11 @@ export function App() {
       jumpToPane,
     ],
   );
+  const statusBarProps = resolveStatusBarProps({
+    mode,
+    items: treeItems,
+    selectedIndex,
+  });
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -494,17 +617,9 @@ export function App() {
 
   function handleExpandedInput(input: string, key: Key) {
     if (key.leftArrow || key.escape) {
-      // Move selection back to parent worktree so selectedIndex
-      // doesn't point past the end after detail rows are removed.
-      const current = treeItems[selectedIndex];
-      if (current && current.type === "detail") {
-        for (let i = selectedIndex - 1; i >= 0; i--) {
-          const candidate = treeItems[i];
-          if (candidate?.type === "worktree") {
-            setSelectedIndex(i);
-            break;
-          }
-        }
+      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+      if (parentIndex !== null) {
+        setSelectedIndex(parentIndex);
       }
       setMode(Mode.Navigate);
       return;
@@ -547,11 +662,70 @@ export function App() {
       setSearchQuery("");
       return;
     }
+
+    if (input === "z") {
+      const selectedPane = resolveSelectedPane({
+        repos: filteredRepos,
+        items: treeItems,
+        panes,
+        selectedIndex,
+      });
+      if (!selectedPane) {
+        return;
+      }
+      zoomPane(selectedPane.pane.paneId).then(() => refreshSessions());
+      return;
+    }
+
+    if (input === "x") {
+      const selectedPane = resolveSelectedPane({
+        repos: filteredRepos,
+        items: treeItems,
+        panes,
+        selectedIndex,
+      });
+      if (!selectedPane) {
+        return;
+      }
+      setMode(
+        Mode.ConfirmKill(
+          selectedPane.pane.paneId,
+          selectedPane.label,
+          selectedPane.worktreeKey,
+        ),
+      );
+    }
+  }
+
+  function handleConfirmKillInput(_input: string, key: Key) {
+    if (mode.type !== "ConfirmKill") {
+      return;
+    }
+
+    if (key.escape) {
+      setMode(Mode.Expanded(mode.worktreeKey));
+      return;
+    }
+
+    if (key.return) {
+      const { paneId, worktreeKey } = mode;
+      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+      if (parentIndex !== null) {
+        setSelectedIndex(parentIndex);
+      }
+      setMode(Mode.Expanded(worktreeKey));
+      killPane(paneId).then(() => refreshSessions());
+    }
   }
 
   useInput((input, key) => {
     // Global keys (work in any mode)
-    if (input === "q" && mode.type !== "OpenModal" && mode.type !== "Search") {
+    if (
+      input === "q" &&
+      mode.type !== "OpenModal" &&
+      mode.type !== "Search" &&
+      mode.type !== "ConfirmKill"
+    ) {
       exit();
       return;
     }
@@ -566,6 +740,8 @@ export function App() {
         return;
       case "Expanded":
         return handleExpandedInput(input, key);
+      case "ConfirmKill":
+        return handleConfirmKillInput(input, key);
     }
   });
 
@@ -617,7 +793,7 @@ export function App() {
           onCancel={() => setMode(Mode.Navigate)}
         />
       ) : (
-        <StatusBar mode={mode} searchQuery={searchQuery} />
+        <StatusBar {...statusBarProps} searchQuery={searchQuery} />
       )}
     </Box>
   );

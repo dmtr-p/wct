@@ -2,12 +2,37 @@ import { PassThrough } from "node:stream";
 import React, { type FC } from "react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 
+const tmuxServiceMock = vi.hoisted(() => ({
+  listClients: vi.fn(),
+  listSessions: vi.fn(),
+  listPanes: vi.fn(),
+  switchClientToPane: vi.fn(),
+  togglePaneZoom: vi.fn(),
+  killPane: vi.fn(),
+  selectPane: vi.fn(),
+  refreshClient: vi.fn(),
+}));
+
 // Mock tuiRuntime before importing the hook
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
     runPromise: vi.fn(),
   },
 }));
+
+vi.mock("../../src/services/tmux", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/services/tmux")
+  >("../../src/services/tmux");
+
+  return {
+    ...actual,
+    TmuxService: {
+      use: (selector: (service: typeof tmuxServiceMock) => unknown) =>
+        selector(tmuxServiceMock),
+    },
+  };
+});
 
 // Lazy imports so the mock is in place
 const { tuiRuntime } = await import("../../src/tui/runtime");
@@ -62,8 +87,22 @@ async function flush(n = 5) {
   }
 }
 
+async function renderWithSingleClient() {
+  const singleClient = { tty: "/dev/ttys001", session: "main" };
+  mockRunPromise
+    .mockResolvedValueOnce([singleClient]) // listClients
+    .mockResolvedValueOnce(null); // listSessions
+
+  const harness = await renderUseTmux();
+  await flush(10);
+
+  expect(harness.value.client).toEqual(singleClient);
+  return harness;
+}
+
 describe("useTmux hook", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockRunPromise.mockReset();
   });
 
@@ -142,23 +181,97 @@ describe("useTmux hook", () => {
   });
 
   test("jumpToPane returns false when runtime navigation fails", async () => {
-    const singleClient = { tty: "/dev/ttys001", session: "main" };
-
-    // Mount with one client so client is set
-    mockRunPromise
-      .mockResolvedValueOnce([singleClient]) // listClients
-      .mockResolvedValueOnce(null); // listSessions
-
-    const harness = await renderUseTmux();
-    await flush(10);
-
-    expect(harness.value.client).toEqual(singleClient);
+    const harness = await renderWithSingleClient();
 
     // Make the next runPromise call reject (switchClientToPane failure)
     mockRunPromise.mockRejectedValueOnce(new Error("tmux switch failed"));
 
     const result = await harness.value.jumpToPane("pane-id");
     expect(result).toBe(false);
+
+    harness.unmount();
+  });
+
+  test("zoomPane still runs when no active client exists", async () => {
+    mockRunPromise
+      .mockResolvedValueOnce([]) // listClients
+      .mockResolvedValueOnce(null) // listSessions
+      .mockResolvedValueOnce(undefined); // togglePaneZoom
+
+    const harness = await renderUseTmux();
+    await flush(10);
+
+    expect(harness.value.client).toBeNull();
+
+    const result = await harness.value.zoomPane("pane-id");
+    expect(result).toBe(true);
+    expect(tmuxServiceMock.togglePaneZoom).toHaveBeenCalledWith("pane-id");
+
+    harness.unmount();
+  });
+
+  test("zoomPane returns true when the runtime call succeeds", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise.mockResolvedValueOnce(undefined);
+
+    const result = await harness.value.zoomPane("pane-id");
+    expect(result).toBe(true);
+    expect(tmuxServiceMock.togglePaneZoom).toHaveBeenCalledWith("pane-id");
+
+    harness.unmount();
+  });
+
+  test("zoomPane returns false when the runtime call rejects", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise.mockRejectedValueOnce(new Error("tmux zoom failed"));
+
+    const result = await harness.value.zoomPane("pane-id");
+    expect(result).toBe(false);
+    expect(tmuxServiceMock.togglePaneZoom).toHaveBeenCalledWith("pane-id");
+
+    harness.unmount();
+  });
+
+  test("killPane still runs when no active client exists", async () => {
+    mockRunPromise
+      .mockResolvedValueOnce([]) // listClients
+      .mockResolvedValueOnce(null) // listSessions
+      .mockResolvedValueOnce(undefined); // killPane
+
+    const harness = await renderUseTmux();
+    await flush(10);
+
+    expect(harness.value.client).toBeNull();
+
+    const result = await harness.value.killPane("pane-id");
+    expect(result).toBe(true);
+    expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
+
+    harness.unmount();
+  });
+
+  test("killPane returns true when the runtime call succeeds", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise.mockResolvedValueOnce(undefined);
+
+    const result = await harness.value.killPane("pane-id");
+    expect(result).toBe(true);
+    expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
+
+    harness.unmount();
+  });
+
+  test("killPane returns false when the runtime call rejects", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise.mockRejectedValueOnce(new Error("tmux kill failed"));
+
+    const result = await harness.value.killPane("pane-id");
+    expect(result).toBe(false);
+    expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });

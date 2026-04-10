@@ -1,23 +1,21 @@
 import { Box, Text } from "ink";
-import type { DetailKind } from "../types";
+import type { TreeItem } from "../types";
 import { checkColor, checkIcon } from "../types";
 
 interface Props {
-  kind: DetailKind;
-  label: string;
+  item: Extract<TreeItem, { type: "detail" }>;
   isSelected: boolean;
-  /** Extra data for rendering (e.g., check state) */
-  meta?: { state?: string; paneRef?: string };
 }
 
-export function DetailRow({ kind, label, isSelected, meta }: Props) {
+export function DetailRow({ item, isSelected }: Props) {
+  const { detailKind, label, meta } = item;
   const prefix = isSelected ? "▸ " : "  ";
   const indent =
-    kind === "pr" || kind === "pane-header"
+    detailKind === "pr" || detailKind === "pane-header"
       ? "      " // section header: 6 spaces
       : "        "; // section item: 8 spaces
 
-  switch (kind) {
+  switch (detailKind) {
     case "pane-header":
       return (
         <Box>
@@ -68,6 +66,7 @@ export function DetailRow({ kind, label, isSelected, meta }: Props) {
           <Text>{indent}</Text>
           <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
             {prefix}
+            {meta?.zoomed && meta?.active ? "🔍 " : ""}
             {label}
           </Text>
         </Box>

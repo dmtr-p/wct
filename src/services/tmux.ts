@@ -22,6 +22,8 @@ export interface TmuxPaneInfo {
   paneIndex: number;
   command: string;
   window: string;
+  zoomed: boolean;
+  active: boolean;
 }
 
 export interface TmuxClient {
@@ -83,6 +85,12 @@ export interface TmuxService {
   selectPane: (
     pane: string,
   ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  togglePaneZoom: (
+    paneId: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  killPane: (
+    paneId: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
   refreshClient: () => Effect.Effect<void, WctError, WctRuntimeServices>;
 }
 
@@ -109,7 +117,7 @@ export function parsePaneListOutput(output: string): TmuxPaneInfo[] {
     .split("\n")
     .filter(Boolean)
     .flatMap((line) => {
-      const [pid, pIdx, cmd, win] = line.split("\t");
+      const [pid, pIdx, cmd, win, zoom, active] = line.split("\t");
       return pid
         ? [
             {
@@ -117,6 +125,8 @@ export function parsePaneListOutput(output: string): TmuxPaneInfo[] {
               paneIndex: Number(pIdx),
               command: cmd || "",
               window: win || "",
+              zoomed: zoom === "1",
+              active: active === "1",
             },
           ]
         : [];
@@ -433,6 +443,16 @@ function killSessionImpl(name: string) {
   );
 }
 
+function togglePaneZoomImpl(paneId: string) {
+  return execProcess("tmux", ["resize-pane", "-Z", "-t", paneId]).pipe(
+    Effect.asVoid,
+  );
+}
+
+function killPaneImpl(paneId: string) {
+  return execProcess("tmux", ["kill-pane", "-t", paneId]).pipe(Effect.asVoid);
+}
+
 function getCurrentSessionImpl() {
   if (!process.env.TMUX) {
     return Effect.succeed(null);
@@ -482,7 +502,7 @@ function listPanesImpl(sessionName: string) {
       "-t",
       `=${sessionName}`,
       "-F",
-      "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}",
+      "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}\t#{window_zoomed_flag}\t#{pane_active}",
     ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout.trim()))),
     () => Effect.succeed([] as TmuxPaneInfo[]),
   );
@@ -611,6 +631,22 @@ export const liveTmuxService: TmuxService = TmuxService.of({
   selectPane: (pane) =>
     Effect.mapError(selectPaneImpl(pane), (error) =>
       commandError("tmux_error", `Failed to select pane '${pane}'`, error),
+    ),
+  togglePaneZoom: (paneId) =>
+    Effect.mapError(togglePaneZoomImpl(paneId), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to toggle zoom for pane '${paneId}': ${getProcessErrorMessage(error)}`,
+        error,
+      ),
+    ),
+  killPane: (paneId) =>
+    Effect.mapError(killPaneImpl(paneId), (error) =>
+      commandError(
+        "tmux_error",
+        `Failed to kill pane '${paneId}': ${getProcessErrorMessage(error)}`,
+        error,
+      ),
     ),
   refreshClient: () =>
     Effect.mapError(refreshClientImpl(), (error) =>

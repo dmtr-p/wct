@@ -28,6 +28,17 @@ interface Props {
   maxWidth: number;
 }
 
+export function getDetailRowKey(
+  repoId: string,
+  item: Extract<TreeItem, { type: "detail" }>,
+): string {
+  const base = `detail-${repoId}-${item.worktreeIndex}-${item.detailKind}`;
+  if (item.detailKind === "pane") {
+    return `${base}-${item.meta?.paneId ?? item.label}`;
+  }
+  return `${base}-${item.label}`;
+}
+
 export function TreeView({
   repos,
   sessions,
@@ -96,11 +107,9 @@ export function TreeView({
     if (item.type === "detail") {
       elements.push(
         <DetailRow
-          key={`detail-${repo.id}-${item.worktreeIndex}-${item.detailKind}-${item.label}`}
-          kind={item.detailKind}
-          label={item.label}
+          key={getDetailRowKey(repo.id, item)}
+          item={item}
           isSelected={idx === selectedIndex}
-          meta={item.meta}
         />,
       );
       continue;

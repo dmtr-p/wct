@@ -7,7 +7,13 @@ export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
   | { type: "OpenModal" }
-  | { type: "Expanded"; worktreeKey: string };
+  | { type: "Expanded"; worktreeKey: string }
+  | {
+      type: "ConfirmKill";
+      paneId: string;
+      label: string;
+      worktreeKey: string;
+    };
 
 export const Mode = {
   Navigate: { type: "Navigate" } as Mode,
@@ -17,23 +23,45 @@ export const Mode = {
     type: "Expanded",
     worktreeKey,
   }),
+  ConfirmKill: (paneId: string, label: string, worktreeKey: string): Mode => ({
+    type: "ConfirmKill",
+    paneId,
+    label,
+    worktreeKey,
+  }),
 };
 
-/** Items in the flat tree list */
 export type TreeItem =
   | { type: "repo"; repoIndex: number }
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
-  | {
+  | DetailItem<"pr">
+  | DetailItem<"check", { state?: string }>
+  | DetailItem<"pane-header">
+  | DetailItem<"pane", { paneId: string; zoomed?: boolean; active?: boolean }>;
+
+export type DetailKind = "pr" | "check" | "pane-header" | "pane";
+
+type DetailItem<
+  TKind extends DetailKind,
+  TMeta = undefined,
+> = TMeta extends undefined
+  ? {
       type: "detail";
       repoIndex: number;
       worktreeIndex: number;
-      detailKind: DetailKind;
+      detailKind: TKind;
       label: string;
       action?: () => void;
-      meta?: { state?: string; paneRef?: string };
+    }
+  : {
+      type: "detail";
+      repoIndex: number;
+      worktreeIndex: number;
+      detailKind: TKind;
+      label: string;
+      action?: () => void;
+      meta?: TMeta;
     };
-
-export type DetailKind = "pr" | "check" | "pane-header" | "pane";
 
 /** Pending action for optimistic UI */
 export interface PendingAction {

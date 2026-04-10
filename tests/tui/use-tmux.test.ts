@@ -192,10 +192,11 @@ describe("useTmux hook", () => {
     harness.unmount();
   });
 
-  test("zoomPane returns false when no active client exists", async () => {
+  test("zoomPane still runs when no active client exists", async () => {
     mockRunPromise
       .mockResolvedValueOnce([]) // listClients
-      .mockResolvedValueOnce(null); // listSessions
+      .mockResolvedValueOnce(null) // listSessions
+      .mockResolvedValueOnce(undefined); // togglePaneZoom
 
     const harness = await renderUseTmux();
     await flush(10);
@@ -203,7 +204,8 @@ describe("useTmux hook", () => {
     expect(harness.value.client).toBeNull();
 
     const result = await harness.value.zoomPane("pane-id");
-    expect(result).toBe(false);
+    expect(result).toBe(true);
+    expect(tmuxServiceMock.togglePaneZoom).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });
@@ -232,10 +234,11 @@ describe("useTmux hook", () => {
     harness.unmount();
   });
 
-  test("killPane returns false when no active client exists", async () => {
+  test("killPane still runs when no active client exists", async () => {
     mockRunPromise
       .mockResolvedValueOnce([]) // listClients
-      .mockResolvedValueOnce(null); // listSessions
+      .mockResolvedValueOnce(null) // listSessions
+      .mockResolvedValueOnce(undefined); // killPane
 
     const harness = await renderUseTmux();
     await flush(10);
@@ -243,7 +246,8 @@ describe("useTmux hook", () => {
     expect(harness.value.client).toBeNull();
 
     const result = await harness.value.killPane("pane-id");
-    expect(result).toBe(false);
+    expect(result).toBe(true);
+    expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
   });

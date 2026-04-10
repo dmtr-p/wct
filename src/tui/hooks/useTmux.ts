@@ -129,35 +129,27 @@ export function useTmux() {
     [client],
   );
 
-  const zoomPane = useCallback(
-    async (paneId: string) => {
-      if (!client) return false;
-      try {
-        await tuiRuntime.runPromise(
-          TmuxService.use((service) => service.togglePaneZoom(paneId)),
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [client],
-  );
+  const zoomPane = useCallback(async (paneId: string) => {
+    try {
+      await tuiRuntime.runPromise(
+        TmuxService.use((service) => service.togglePaneZoom(paneId)),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
-  const killPane = useCallback(
-    async (paneId: string) => {
-      if (!client) return false;
-      try {
-        await tuiRuntime.runPromise(
-          TmuxService.use((service) => service.killPane(paneId)),
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [client],
-  );
+  const killPane = useCallback(async (paneId: string) => {
+    try {
+      await tuiRuntime.runPromise(
+        TmuxService.use((service) => service.killPane(paneId)),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

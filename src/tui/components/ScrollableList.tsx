@@ -77,11 +77,7 @@ export function ScrollableList({
             <Text color={isSelected && isFocused ? "cyan" : undefined}>
               {isSelected ? "▸ " : "  "}
             </Text>
-            <Text
-              bold={isSelected}
-              color={isSelected ? undefined : "dim"}
-              wrap="truncate"
-            >
+            <Text bold={isSelected} dimColor={!isSelected} wrap="truncate">
               {item.label}
             </Text>
             {item.description && (

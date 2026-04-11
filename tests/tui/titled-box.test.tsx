@@ -95,131 +95,155 @@ async function renderTitledBox(props: React.ComponentProps<typeof TitledBox>) {
 
 describe("TitledBox", () => {
   test("renders the top border with an embedded title and a bottom border", async () => {
-    const rendered = await renderTitledBox({
-      title: "Open Worktrees",
-      isFocused: true,
-      width: 28,
-      children: "content",
-    });
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 
-    const lines = rendered.output
-      .split("\n")
-      .map((line) => line.replace(/\s+$/, ""))
-      .filter((line) => line.length > 0);
+    try {
+      rendered = await renderTitledBox({
+        title: "Open Worktrees",
+        isFocused: true,
+        width: 28,
+        children: "content",
+      });
 
-    expect(lines[0].startsWith("╭ Open Worktrees ")).toBe(true);
-    expect(lines[0].endsWith("╮")).toBe(true);
-    expect(lines[0].length).toBe(28);
-    expect(lines[1]).toContain("content");
-    expect(lines[lines.length - 1].startsWith("╰")).toBe(true);
-    expect(lines[lines.length - 1].endsWith("╯")).toBe(true);
-    expect(lines[lines.length - 1].length).toBe(28);
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
 
-    rendered.unmount();
+      expect(lines[0].startsWith("╭ Open Worktrees ")).toBe(true);
+      expect(lines[0].endsWith("╮")).toBe(true);
+      expect(lines[0].length).toBe(28);
+      expect(lines[1]).toContain("content");
+      expect(lines[lines.length - 1].startsWith("╰")).toBe(true);
+      expect(lines[lines.length - 1].endsWith("╯")).toBe(true);
+      expect(lines[lines.length - 1].length).toBe(28);
+    } finally {
+      rendered?.unmount();
+    }
   });
 
   test("truncates the title with an ellipsis when the box is too narrow", async () => {
-    const rendered = await renderTitledBox({
-      title: "A very long title that will not fit",
-      isFocused: false,
-      width: 18,
-      children: "x",
-    });
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 
-    const lines = rendered.output
-      .split("\n")
-      .map((line) => line.replace(/\s+$/, ""))
-      .filter((line) => line.length > 0);
+    try {
+      rendered = await renderTitledBox({
+        title: "A very long title that will not fit",
+        isFocused: false,
+        width: 18,
+        children: "x",
+      });
 
-    expect(lines[0].startsWith("╭ ")).toBe(true);
-    expect(lines[0]).toContain("…");
-    expect(lines[0].length).toBe(18);
-    expect(lines[lines.length - 1].startsWith("╰")).toBe(true);
-    expect(lines[lines.length - 1].endsWith("╯")).toBe(true);
-    expect(lines[lines.length - 1].length).toBe(18);
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
 
-    rendered.unmount();
+      expect(lines[0].startsWith("╭ ")).toBe(true);
+      expect(lines[0]).toContain("…");
+      expect(lines[0].length).toBe(18);
+      expect(lines[lines.length - 1].startsWith("╰")).toBe(true);
+      expect(lines[lines.length - 1].endsWith("╯")).toBe(true);
+      expect(lines[lines.length - 1].length).toBe(18);
+    } finally {
+      rendered?.unmount();
+    }
   });
 
   test("keeps all rendered border lines within the requested width", async () => {
     const width = 26;
-    const rendered = await renderTitledBox({
-      title: "Status",
-      isFocused: true,
-      width,
-      children: "alpha\nbeta",
-    });
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 
-    const lines = rendered.output
-      .split("\n")
-      .map((line) => line.replace(/\s+$/, ""))
-      .filter((line) => line.length > 0);
+    try {
+      rendered = await renderTitledBox({
+        title: "Status",
+        isFocused: true,
+        width,
+        children: "alpha\nbeta",
+      });
 
-    expect(lines.every((line) => line.length <= width)).toBe(true);
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
 
-    rendered.unmount();
+      expect(lines.every((line) => line.length <= width)).toBe(true);
+    } finally {
+      rendered?.unmount();
+    }
   });
 
   test("truncates emoji titles without splitting grapheme clusters", async () => {
     const width = 6;
-    const rendered = await renderTitledBox({
-      title: "👨‍👩‍👧‍👦abc",
-      isFocused: false,
-      width,
-      children: "x",
-    });
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 
-    const lines = rendered.output
-      .split("\n")
-      .map((line) => line.replace(/\s+$/, ""))
-      .filter((line) => line.length > 0);
+    try {
+      rendered = await renderTitledBox({
+        title: "👨‍👩‍👧‍👦abc",
+        isFocused: false,
+        width,
+        children: "x",
+      });
 
-    expect(lines[0]).toContain("👨‍👩‍👧‍👦…");
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
 
-    rendered.unmount();
+      expect(lines[0]).toContain("👨‍👩‍👧‍👦…");
+    } finally {
+      rendered?.unmount();
+    }
   });
 
   test("keeps content lines aligned to the requested width", async () => {
     const width = 24;
-    const rendered = await renderTitledBox({
-      title: "Branch",
-      isFocused: true,
-      width,
-      children: "my-feature",
-    });
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 
-    const lines = rendered.output
-      .split("\n")
-      .map((line) => line.replace(/\s+$/, ""))
-      .filter((line) => line.length > 0);
+    try {
+      rendered = await renderTitledBox({
+        title: "Branch",
+        isFocused: true,
+        width,
+        children: "my-feature",
+      });
 
-    expect(lines.every((line) => line.length === width)).toBe(true);
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
 
-    rendered.unmount();
+      expect(lines.every((line) => line.length === width)).toBe(true);
+    } finally {
+      rendered?.unmount();
+    }
   });
 
   test("renders side borders for every line of multiline content", async () => {
-    const rendered = await renderTitledBox({
-      title: "Logs",
-      isFocused: false,
-      width: 20,
-      children: <Text>{`line one\nline two`}</Text>,
-    });
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 
-    const lines = rendered.output
-      .split("\n")
-      .map((line) => line.replace(/\s+$/, ""))
-      .filter((line) => line.length > 0);
+    try {
+      rendered = await renderTitledBox({
+        title: "Logs",
+        isFocused: false,
+        width: 20,
+        children: <Text>{`line one\nline two`}</Text>,
+      });
 
-    const contentLines = lines.filter(
-      (line) => line.includes("line one") || line.includes("line two"),
-    );
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
 
-    expect(contentLines).toHaveLength(2);
-    expect(contentLines.every((line) => line.startsWith("│"))).toBe(true);
-    expect(contentLines.every((line) => line.endsWith("│"))).toBe(true);
+      const contentLines = lines.filter(
+        (line) => line.includes("line one") || line.includes("line two"),
+      );
 
-    rendered.unmount();
+      expect(contentLines).toHaveLength(2);
+      expect(contentLines.every((line) => line.startsWith("│"))).toBe(true);
+      expect(contentLines.every((line) => line.endsWith("│"))).toBe(true);
+    } finally {
+      rendered?.unmount();
+    }
   });
 
   test("applies focused cyan bold styling and unfocused dim styling", async () => {

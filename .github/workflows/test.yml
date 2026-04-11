@@ -2,9 +2,6 @@ name: Test
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   test:
@@ -26,3 +23,7 @@ jobs:
 
       - name: Run tests
         run: bun run test
+
+      - name: Build binary
+        if: always()
+        run: bun run build

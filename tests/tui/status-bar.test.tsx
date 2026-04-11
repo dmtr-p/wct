@@ -67,7 +67,7 @@ describe("StatusBar", () => {
     });
 
     expect(rendered.output).toContain(
-      "↑↓:navigate  ←:collapse  space:action  o:open",
+      "↑↓:navigate  ←:collapse  space:action  o:open  c:close",
     );
     expect(rendered.output).toContain("/:search  q:quit");
 

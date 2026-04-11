@@ -6,6 +6,7 @@ import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
+import { TitledBox } from "./TitledBox";
 
 export interface OpenModalResult {
   branch: string;
@@ -99,17 +100,12 @@ function BracketInput({
   );
 
   return (
-    <Box flexDirection="column">
-      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
-        {label}
+    <TitledBox title={label} isFocused={isFocused}>
+      <Text color={isFocused ? undefined : "dim"}>
+        {value}
+        {isFocused && cursorVisible ? "▎" : ""}
       </Text>
-      <Text color={isFocused ? "cyan" : "dim"}>
-        {"[ "}
-        <Text color={isFocused ? undefined : "dim"}>{value}</Text>
-        {isFocused && cursorVisible ? "▎" : " "}
-        {" ]"}
-      </Text>
-    </Box>
+    </TitledBox>
   );
 }
 

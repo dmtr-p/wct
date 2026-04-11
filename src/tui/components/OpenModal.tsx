@@ -23,6 +23,7 @@ type ModalStep = "selector" | "newBranch" | "fromPR" | "existingBranch";
 
 export interface OpenModalProps {
   visible: boolean;
+  width?: number;
   onSubmit: (result: OpenModalResult) => void;
   onCancel: () => void;
   defaultBase: string;
@@ -630,6 +631,7 @@ function ExistingBranchForm({
 
 export function OpenModal({
   visible,
+  width,
   onSubmit,
   onCancel,
   defaultBase,
@@ -654,7 +656,7 @@ export function OpenModal({
   };
 
   return (
-    <Modal title={titleMap[step]} visible={visible}>
+    <Modal title={titleMap[step]} visible={visible} width={width}>
       {step === "selector" && (
         <ModeSelector onSelect={setStep} onCancel={onCancel} />
       )}

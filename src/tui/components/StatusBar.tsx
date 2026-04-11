@@ -27,7 +27,7 @@ function getHints(mode: Mode, selectedPaneRow?: boolean): [string, string] {
         ];
       }
       return [
-        "↑↓:navigate  ←:collapse  space:action  o:open",
+        "↑↓:navigate  ←:collapse  space:action  o:open  c:close",
         "/:search  q:quit",
       ];
     case "ConfirmKill":

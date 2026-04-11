@@ -2,7 +2,7 @@
 
 import { basename } from "node:path";
 import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
@@ -47,6 +47,44 @@ interface ResolveStatusBarPropsOptions {
   items: TreeItem[];
   selectedIndex: number;
 }
+
+interface ResolveExpandedRightArrowActionOptions {
+  repos: RepoInfo[];
+  items: TreeItem[];
+  selectedIndex: number;
+  expandedRepos: Set<string>;
+}
+
+interface ResolveRecoveredSelectionIndexOptions {
+  prevTree: TreeItem[];
+  treeItems: TreeItem[];
+  prevSelectionId: string | null;
+  selectedIndex: number;
+  repos: RepoInfo[];
+  skipIdentityRecovery?: boolean;
+}
+
+interface ResolveCloseSelectedWorktreeActionOptions {
+  mode: Mode;
+  repos: RepoInfo[];
+  items: TreeItem[];
+  selectedIndex: number;
+}
+
+type ExpandedRightArrowAction =
+  | { type: "noop" }
+  | { type: "expand-repo"; repoId: string }
+  | { type: "expand-worktree"; nextMode: Mode; nextSelectedIndex: number };
+
+type CloseSelectedWorktreeAction =
+  | { type: "noop" }
+  | {
+      type: "close-worktree";
+      worktreeIndex: number;
+      worktreeKey: string;
+      nextMode?: Mode;
+      nextSelectedIndex?: number;
+    };
 
 export interface ResolvedStatusBarProps {
   mode: Mode;
@@ -136,6 +174,186 @@ export function buildTreeItems({
     }
   }
   return items;
+}
+
+/**
+ * Compute a stable identity string for a tree item using repo id and branch,
+ * so selection can be recovered after background refreshes that shift indices.
+ */
+export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
+  const repo = repos[item.repoIndex];
+  if (!repo) return null;
+  if (item.type === "repo") return `repo:${repo.id}`;
+  const wt = repo.worktrees[item.worktreeIndex];
+  if (!wt) return null;
+  if (item.type === "worktree") return `wt:${repo.id}/${wt.branch}`;
+  const base = `detail:${repo.id}/${wt.branch}/${item.detailKind}`;
+  if (item.detailKind === "pane" && item.meta?.paneId)
+    return `${base}/${item.meta.paneId}`;
+  if (item.detailKind === "check") return `${base}/${item.label}`;
+  return base;
+}
+
+/**
+ * Compute the adjusted selectedIndex after all detail rows are removed from the
+ * tree (e.g. when exiting Expanded mode or switching expanded worktree).
+ *
+ * - If the cursor is on a detail row, snap to its parent worktree.
+ * - Otherwise subtract the number of detail rows before the cursor.
+ */
+export function adjustIndexForDetailCollapse(
+  items: TreeItem[],
+  selectedIndex: number,
+): number {
+  const current = items[selectedIndex];
+
+  if (current?.type === "detail") {
+    return findOwningWorktreeIndex(items, selectedIndex) ?? 0;
+  }
+
+  let detailsBefore = 0;
+  for (let i = 0; i < selectedIndex; i++) {
+    if (items[i]?.type === "detail") detailsBefore++;
+  }
+  return selectedIndex - detailsBefore;
+}
+
+export function resolveRecoveredSelectionIndex({
+  prevTree,
+  treeItems,
+  prevSelectionId,
+  selectedIndex,
+  repos,
+  skipIdentityRecovery = false,
+}: ResolveRecoveredSelectionIndexOptions): number | null {
+  if (prevTree === treeItems || !prevSelectionId || skipIdentityRecovery) {
+    return null;
+  }
+
+  const currentItem = treeItems[selectedIndex];
+  if (currentItem && treeItemId(currentItem, repos) === prevSelectionId) {
+    return null;
+  }
+
+  for (let i = 0; i < treeItems.length; i++) {
+    const candidate = treeItems[i];
+    if (candidate && treeItemId(candidate, repos) === prevSelectionId) {
+      return i;
+    }
+  }
+
+  if (treeItems.length === 0) {
+    return 0;
+  }
+
+  if (selectedIndex >= treeItems.length) {
+    return treeItems.length - 1;
+  }
+
+  return null;
+}
+
+export function resolveSelectedWorktreeIndex(
+  items: TreeItem[],
+  selectedIndex: number,
+): number | null {
+  const selected = items[selectedIndex];
+  if (!selected) {
+    return null;
+  }
+
+  if (selected.type === "worktree") {
+    return selectedIndex;
+  }
+
+  if (selected.type === "detail") {
+    return findOwningWorktreeIndex(items, selectedIndex);
+  }
+
+  return null;
+}
+
+export function resolveCloseSelectedWorktreeAction({
+  mode,
+  repos,
+  items,
+  selectedIndex,
+}: ResolveCloseSelectedWorktreeActionOptions): CloseSelectedWorktreeAction {
+  const worktreeIndex = resolveSelectedWorktreeIndex(items, selectedIndex);
+  if (worktreeIndex === null) {
+    return { type: "noop" };
+  }
+
+  const selectedWorktree = items[worktreeIndex];
+  if (!selectedWorktree || selectedWorktree.type !== "worktree") {
+    return { type: "noop" };
+  }
+
+  const repo = repos[selectedWorktree.repoIndex];
+  const worktree = repo?.worktrees[selectedWorktree.worktreeIndex];
+  if (!repo || !worktree) {
+    return { type: "noop" };
+  }
+
+  const worktreeKey = pendingKey(repo.project, worktree.branch);
+  if (
+    (mode.type === "Expanded" || mode.type === "ConfirmKill") &&
+    mode.worktreeKey === worktreeKey
+  ) {
+    return {
+      type: "close-worktree",
+      worktreeIndex,
+      worktreeKey,
+      nextMode: Mode.Navigate,
+      nextSelectedIndex: adjustIndexForDetailCollapse(items, selectedIndex),
+    };
+  }
+
+  return {
+    type: "close-worktree",
+    worktreeIndex,
+    worktreeKey,
+  };
+}
+
+export function resolveExpandedRightArrowAction({
+  repos,
+  items,
+  selectedIndex,
+  expandedRepos,
+}: ResolveExpandedRightArrowActionOptions): ExpandedRightArrowAction {
+  const current = items[selectedIndex];
+  if (!current) {
+    return { type: "noop" };
+  }
+
+  const repo = repos[current.repoIndex];
+  if (!repo) {
+    return { type: "noop" };
+  }
+
+  if (current.type === "repo") {
+    if (expandedRepos.has(repo.id)) {
+      return { type: "noop" };
+    }
+
+    return { type: "expand-repo", repoId: repo.id };
+  }
+
+  if (current.type !== "worktree") {
+    return { type: "noop" };
+  }
+
+  const worktree = repo.worktrees[current.worktreeIndex];
+  if (!worktree) {
+    return { type: "noop" };
+  }
+
+  return {
+    type: "expand-worktree",
+    nextMode: Mode.Expanded(pendingKey(repo.project, worktree.branch)),
+    nextSelectedIndex: adjustIndexForDetailCollapse(items, selectedIndex),
+  };
 }
 
 export function findOwningWorktreeIndex(
@@ -312,6 +530,45 @@ export function App() {
       jumpToPane,
     ],
   );
+
+  // Identity-based selection recovery: when the tree structure changes
+  // (background refresh, async worktree add/remove), find the previously-
+  // selected item by stable identity instead of blindly clamping by length.
+  const prevTreeRef = useRef(treeItems);
+  const prevSelectionIdRef = useRef<string | null>(null);
+  const prevSearchQueryRef = useRef(searchQuery);
+
+  useEffect(() => {
+    const prevTree = prevTreeRef.current;
+    const prevId = prevSelectionIdRef.current;
+    const prevSearchQuery = prevSearchQueryRef.current;
+    const searchQueryChanged = prevSearchQuery !== searchQuery;
+
+    // Snapshot current state for the next cycle before any mutations
+    prevTreeRef.current = treeItems;
+    prevSearchQueryRef.current = searchQuery;
+
+    if (searchQueryChanged) {
+      // Search transitions intentionally reset the cursor to the first match.
+      prevSelectionIdRef.current = null;
+      return;
+    }
+
+    const item = treeItems[selectedIndex];
+    prevSelectionIdRef.current = item ? treeItemId(item, filteredRepos) : null;
+
+    const recoveredIndex = resolveRecoveredSelectionIndex({
+      prevTree,
+      treeItems,
+      prevSelectionId: prevId,
+      selectedIndex,
+      repos: filteredRepos,
+    });
+    if (recoveredIndex !== null && recoveredIndex !== selectedIndex) {
+      setSelectedIndex(recoveredIndex);
+    }
+  }, [treeItems, selectedIndex, filteredRepos, searchQuery]);
+
   const statusBarProps = resolveStatusBarProps({
     mode,
     items: treeItems,
@@ -452,16 +709,14 @@ export function App() {
       return;
     }
 
-    // For other detail rows, resolve the parent worktree
-    const resolvedItem =
-      item.type === "detail"
-        ? {
-            type: "worktree" as const,
-            repoIndex: item.repoIndex,
-            worktreeIndex: item.worktreeIndex,
-          }
-        : item;
-    if (resolvedItem.type !== "worktree") return;
+    const worktreeIndex = resolveSelectedWorktreeIndex(
+      treeItems,
+      selectedIndex,
+    );
+    if (worktreeIndex === null) return;
+
+    const resolvedItem = treeItems[worktreeIndex];
+    if (!resolvedItem || resolvedItem.type !== "worktree") return;
     const repo = filteredRepos[resolvedItem.repoIndex];
     if (!repo) return;
     const wt = repo.worktrees[resolvedItem.worktreeIndex];
@@ -496,6 +751,75 @@ export function App() {
         });
       });
     }
+  }
+
+  function handleCloseSelectedWorktree() {
+    const action = resolveCloseSelectedWorktreeAction({
+      mode,
+      repos: filteredRepos,
+      items: treeItems,
+      selectedIndex,
+    });
+    if (action.type === "noop") {
+      return;
+    }
+
+    if (action.nextSelectedIndex !== undefined) {
+      setSelectedIndex(action.nextSelectedIndex);
+    }
+    if (action.nextMode) {
+      setMode(action.nextMode);
+    }
+
+    const currentItem = treeItems[action.worktreeIndex];
+    if (currentItem?.type !== "worktree") {
+      return;
+    }
+
+    const currentRepo = filteredRepos[currentItem.repoIndex];
+    if (!currentRepo) {
+      return;
+    }
+
+    const currentWorktree = currentRepo.worktrees[currentItem.worktreeIndex];
+    if (!currentWorktree) {
+      return;
+    }
+
+    const closingSession = formatSessionName(basename(currentWorktree.path));
+    if (client && client.session === closingSession) {
+      const other = sessions.find((s) => s.name !== closingSession);
+      if (other) {
+        switchSession(other.name);
+      }
+    }
+
+    const pendingActionKey = pendingKey(
+      currentRepo.project,
+      currentWorktree.branch,
+    );
+    setPendingActions((prev) =>
+      new Map(prev).set(pendingActionKey, {
+        type: "closing",
+        branch: currentWorktree.branch,
+        project: currentRepo.project,
+      }),
+    );
+
+    const proc = Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
+      cwd: currentRepo.repoPath,
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    proc.exited.then(() => {
+      refreshAll().then(() => {
+        setPendingActions((prev) => {
+          const next = new Map(prev);
+          next.delete(pendingActionKey);
+          return next;
+        });
+      });
+    });
   }
 
   function handleNavigateInput(input: string, key: Key) {
@@ -561,43 +885,7 @@ export function App() {
     }
 
     if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
-      const closingSession = formatSessionName(basename(currentWorktree.path));
-      if (client && client.session === closingSession) {
-        const other = sessions.find((s) => s.name !== closingSession);
-        if (other) {
-          switchSession(other.name);
-        }
-      }
-
-      const pendingActionKey = pendingKey(
-        currentRepo.project,
-        currentWorktree.branch,
-      );
-      setPendingActions((prev) =>
-        new Map(prev).set(pendingActionKey, {
-          type: "closing",
-          branch: currentWorktree.branch,
-          project: currentRepo.project,
-        }),
-      );
-
-      const proc = Bun.spawn(
-        ["wct", "close", currentWorktree.branch, "--yes"],
-        {
-          cwd: currentRepo.repoPath,
-          stdout: "ignore",
-          stderr: "ignore",
-        },
-      );
-      proc.exited.then(() => {
-        refreshAll().then(() => {
-          setPendingActions((prev) => {
-            const next = new Map(prev);
-            next.delete(pendingActionKey);
-            return next;
-          });
-        });
-      });
+      handleCloseSelectedWorktree();
       return;
     }
   }
@@ -617,10 +905,7 @@ export function App() {
 
   function handleExpandedInput(input: string, key: Key) {
     if (key.leftArrow || key.escape) {
-      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
-      if (parentIndex !== null) {
-        setSelectedIndex(parentIndex);
-      }
+      setSelectedIndex(adjustIndexForDetailCollapse(treeItems, selectedIndex));
       setMode(Mode.Navigate);
       return;
     }
@@ -636,14 +921,23 @@ export function App() {
     }
 
     if (key.rightArrow) {
-      const current = treeItems[selectedIndex];
-      if (current?.type === "worktree") {
-        const repo = filteredRepos[current.repoIndex];
-        const wt = repo?.worktrees[current.worktreeIndex];
-        if (repo && wt) {
-          setMode(Mode.Expanded(pendingKey(repo.project, wt.branch)));
-        }
+      const action = resolveExpandedRightArrowAction({
+        repos: filteredRepos,
+        items: treeItems,
+        selectedIndex,
+        expandedRepos,
+      });
+
+      if (action.type === "expand-repo") {
+        toggleExpanded(action.repoId);
+        return;
       }
+
+      if (action.type === "expand-worktree") {
+        setSelectedIndex(action.nextSelectedIndex);
+        setMode(action.nextMode);
+      }
+
       return;
     }
 
@@ -654,6 +948,11 @@ export function App() {
 
     if (input === "o") {
       prepareOpenModal();
+      return;
+    }
+
+    if (input === "c") {
+      handleCloseSelectedWorktree();
       return;
     }
 

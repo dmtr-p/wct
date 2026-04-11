@@ -60,7 +60,7 @@ function ModeSelector({
   );
 
   return (
-    <Box flexDirection="column">
+    <TitledBox title="Select mode" isFocused={true}>
       {options.map((opt, i) => {
         const isSel = i === selected;
         return (
@@ -70,7 +70,7 @@ function ModeSelector({
           </Text>
         );
       })}
-    </Box>
+    </TitledBox>
   );
 }
 

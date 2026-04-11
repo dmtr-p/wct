@@ -4,7 +4,7 @@
 
 **Goal:** Restyle the TUI open worktree modal with lazygit-inspired rounded boxes that embed titles in the top border.
 
-**Architecture:** A new `TitledBox` component renders `╭ Title ───╮ │ content │ ╰──────────╯` using box-drawing characters and Ink `Text` nodes. All modal sub-components (`BracketInput`, `PromptArea`, `ModeSelector`, `ScrollableList` wrappers, and the outer `Modal`) switch to using `TitledBox` instead of Ink's built-in border or manual bracket/separator styles.
+**Architecture:** A new `TitledBox` component renders `╭ Title ───╮ │ content │ ╰──────────╯` using a hybrid approach: the top and bottom borders are rendered manually with `Text` nodes (to embed the title), while the side borders use Ink's native `Box` with `borderStyle="round"` and `borderTop: false, borderBottom: false` (to correctly handle multiline content). All modal sub-components (`BracketInput`, `PromptArea`, `ModeSelector`, `ScrollableList` wrappers, and the outer `Modal`) switch to using `TitledBox`.
 
 **Tech Stack:** React, Ink, TypeScript, Vitest
 
@@ -20,49 +20,112 @@
 
 - [ ] **Step 1: Write the `TitledBox` rendering tests**
 
+Uses the same PassThrough-based Ink render pattern as existing TUI tests (see `tests/tui/detail-row.test.tsx` for reference).
+
 ```tsx
 // tests/tui/titled-box.test.tsx
-import { render } from "ink-testing-library";
-import { Text } from "ink";
+import { PassThrough } from "node:stream";
+import React from "react";
 import { describe, expect, test } from "vitest";
 import { TitledBox } from "../../src/tui/components/TitledBox";
 
+type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
+type TestStdin = NodeJS.ReadStream & {
+  isTTY: boolean;
+  setRawMode: (mode: boolean) => NodeJS.ReadStream;
+};
+
+function createStdoutStdin() {
+  const stdout = new PassThrough() as unknown as TestStdout;
+  stdout.columns = 60;
+  stdout.rows = 24;
+  const stdin = new PassThrough() as unknown as TestStdin;
+  stdin.isTTY = false;
+  stdin.setRawMode = () => stdin;
+  return { stdout, stdin };
+}
+
+async function renderTitledBox(props: React.ComponentProps<typeof TitledBox>) {
+  const { stdout, stdin } = createStdoutStdin();
+  const chunks: string[] = [];
+  stdout.on("data", (chunk) => {
+    chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+  });
+  const { render } = await import("ink");
+  const { Text } = await import("ink");
+  const instance = render(React.createElement(TitledBox, props), {
+    stdout,
+    stdin,
+    debug: true,
+    patchConsole: false,
+  });
+  await new Promise((r) => setTimeout(r, 50));
+  instance.unmount();
+  // Strip ANSI escape codes for assertion
+  return chunks.join("").replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 describe("TitledBox", () => {
-  test("renders top border with embedded title", () => {
-    const { lastFrame } = render(
-      <TitledBox title="Branch" isFocused={true} width={24}>
-        <Text>my-feature</Text>
-      </TitledBox>,
-    );
-    const frame = lastFrame()!;
+  test("renders top border with embedded title", async () => {
+    const { Text } = await import("ink");
+    const frame = await renderTitledBox({
+      title: "Branch",
+      isFocused: true,
+      width: 24,
+      children: React.createElement(Text, {}, "my-feature"),
+    });
     const lines = frame.split("\n");
-    // Top border should contain the title
-    expect(lines[0]).toContain("Branch");
     expect(lines[0]).toContain("╭");
+    expect(lines[0]).toContain("Branch");
     expect(lines[0]).toContain("╮");
   });
 
-  test("renders bottom border", () => {
-    const { lastFrame } = render(
-      <TitledBox title="Test" isFocused={false} width={24}>
-        <Text>content</Text>
-      </TitledBox>,
-    );
-    const frame = lastFrame()!;
-    const lines = frame.split("\n");
+  test("renders bottom border", async () => {
+    const { Text } = await import("ink");
+    const frame = await renderTitledBox({
+      title: "Test",
+      isFocused: false,
+      width: 24,
+      children: React.createElement(Text, {}, "content"),
+    });
+    const lines = frame.split("\n").filter((l) => l.trim());
     const lastLine = lines[lines.length - 1];
     expect(lastLine).toContain("╰");
     expect(lastLine).toContain("╯");
   });
 
-  test("renders children between borders", () => {
-    const { lastFrame } = render(
-      <TitledBox title="Test" isFocused={true} width={24}>
-        <Text>hello world</Text>
-      </TitledBox>,
-    );
-    const frame = lastFrame()!;
+  test("renders children between borders", async () => {
+    const { Text } = await import("ink");
+    const frame = await renderTitledBox({
+      title: "Test",
+      isFocused: true,
+      width: 24,
+      children: React.createElement(Text, {}, "hello world"),
+    });
     expect(frame).toContain("hello world");
+  });
+
+  test("renders side borders for every line of multiline content", async () => {
+    const { Text, Box } = await import("ink");
+    const frame = await renderTitledBox({
+      title: "Prompt",
+      isFocused: true,
+      width: 30,
+      children: React.createElement(
+        Box,
+        { flexDirection: "column" },
+        React.createElement(Text, {}, "line one"),
+        React.createElement(Text, {}, "line two"),
+        React.createElement(Text, {}, "line three"),
+      ),
+    });
+    const lines = frame.split("\n").filter((l) => l.trim());
+    // Lines 1, 2, 3 (between top and bottom border) should all have │
+    const contentLines = lines.slice(1, -1);
+    expect(contentLines.length).toBeGreaterThanOrEqual(3);
+    for (const line of contentLines) {
+      expect(line).toContain("│");
+    }
   });
 });
 ```
@@ -73,6 +136,8 @@ Run: `bun run test tests/tui/titled-box.test.tsx`
 Expected: FAIL — module not found
 
 - [ ] **Step 3: Implement `TitledBox`**
+
+Uses a hybrid approach: manual top/bottom borders (to embed the title) + Ink's native `Box` with `borderStyle="round"` and per-side border toggles for the side borders. This ensures multiline content is correctly enclosed — Ink handles the `│` on every content line automatically.
 
 ```tsx
 // src/tui/components/TitledBox.tsx
@@ -89,22 +154,25 @@ interface Props {
 export function TitledBox({ title, isFocused, width = 30, children }: Props) {
   const color = isFocused ? "cyan" : undefined;
   const dimColor = !isFocused;
-  const innerWidth = width - 2;
-  const dashCount = Math.max(0, innerWidth - title.length - 2);
+  const dashCount = Math.max(0, width - title.length - 4);
   const topBorder = `╭ ${title} ${"─".repeat(dashCount)}╮`;
-  const bottomBorder = `╰${"─".repeat(innerWidth)}╯`;
+  const bottomBorder = `╰${"─".repeat(width - 2)}╯`;
 
   return (
     <Box flexDirection="column">
       <Text color={color} dimColor={dimColor} bold={isFocused}>
         {topBorder}
       </Text>
-      <Box>
-        <Text color={color} dimColor={dimColor}>│ </Text>
-        <Box flexDirection="column" flexGrow={1}>
-          {children}
-        </Box>
-        <Text color={color} dimColor={dimColor}> │</Text>
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={isFocused ? "cyan" : undefined}
+        borderDimColor={!isFocused}
+        borderTop={false}
+        borderBottom={false}
+        width={width}
+      >
+        {children}
       </Box>
       <Text color={color} dimColor={dimColor}>
         {bottomBorder}

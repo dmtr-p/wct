@@ -428,19 +428,15 @@ function FromPRForm({
     <Box flexDirection="column" gap={0}>
       <Text dimColor>Open from PR</Text>
       <Box height={1} />
-      <Text
-        color={currentField === "prList" ? "cyan" : "dim"}
-        bold={currentField === "prList"}
-      >
-        Select PR
-      </Text>
-      <ScrollableList
-        items={prItems}
-        selectedIndex={selectedPRIndex}
-        filterQuery={filterQuery}
-        maxVisible={8}
-        isFocused={currentField === "prList"}
-      />
+      <TitledBox title="Select PR" isFocused={currentField === "prList"}>
+        <ScrollableList
+          items={prItems}
+          selectedIndex={selectedPRIndex}
+          filterQuery={filterQuery}
+          maxVisible={8}
+          isFocused={currentField === "prList"}
+        />
+      </TitledBox>
       {profileNames.length > 0 && (
         <BracketInput
           label="Profile"
@@ -596,19 +592,18 @@ function ExistingBranchForm({
     <Box flexDirection="column" gap={0}>
       <Text dimColor>Existing Branch</Text>
       <Box height={1} />
-      <Text
-        color={currentField === "branchList" ? "cyan" : "dim"}
-        bold={currentField === "branchList"}
-      >
-        Select Branch
-      </Text>
-      <ScrollableList
-        items={branchItems}
-        selectedIndex={selectedBranchIndex}
-        filterQuery={filterQuery}
-        maxVisible={10}
+      <TitledBox
+        title="Select Branch"
         isFocused={currentField === "branchList"}
-      />
+      >
+        <ScrollableList
+          items={branchItems}
+          selectedIndex={selectedBranchIndex}
+          filterQuery={filterQuery}
+          maxVisible={10}
+          isFocused={currentField === "branchList"}
+        />
+      </TitledBox>
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}

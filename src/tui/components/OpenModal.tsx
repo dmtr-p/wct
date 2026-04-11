@@ -38,9 +38,11 @@ export interface OpenModalProps {
 function ModeSelector({
   onSelect,
   onCancel,
+  width,
 }: {
   onSelect: (step: ModalStep) => void;
   onCancel: () => void;
+  width?: number;
 }) {
   const [selected, setSelected] = useState(0);
   const options: { label: string; step: ModalStep }[] = [
@@ -61,7 +63,7 @@ function ModeSelector({
   );
 
   return (
-    <TitledBox title="Select mode" isFocused={true}>
+    <TitledBox title="Select mode" isFocused={true} width={width}>
       {options.map((opt, i) => {
         const isSel = i === selected;
         return (
@@ -80,13 +82,16 @@ function BracketInput({
   value,
   isFocused,
   onChange,
+  width,
 }: {
   label: string;
   value: string;
   isFocused: boolean;
   onChange: (v: string) => void;
+  width?: number;
 }) {
   const cursorVisible = useBlink();
+  const displayValue = value || (!isFocused || !cursorVisible ? " " : "");
 
   useInput(
     (input, key) => {
@@ -101,9 +106,9 @@ function BracketInput({
   );
 
   return (
-    <TitledBox title={label} isFocused={isFocused}>
+    <TitledBox title={label} isFocused={isFocused} width={width}>
       <Text color={isFocused ? undefined : "dim"}>
-        {value}
+        {displayValue}
         {isFocused && cursorVisible ? "▎" : ""}
       </Text>
     </TitledBox>
@@ -114,10 +119,12 @@ function PromptArea({
   value,
   isFocused,
   onChange,
+  width,
 }: {
   value: string;
   isFocused: boolean;
   onChange: (v: string) => void;
+  width?: number;
 }) {
   const cursorVisible = useBlink();
 
@@ -136,7 +143,7 @@ function PromptArea({
   );
 
   return (
-    <TitledBox title="Prompt" isFocused={isFocused}>
+    <TitledBox title="Prompt" isFocused={isFocused} width={width}>
       <Text color={isFocused ? undefined : "dim"}>
         {value || (isFocused ? "" : "optional")}
         {isFocused ? (cursorVisible ? "▎" : " ") : ""}
@@ -209,11 +216,13 @@ function NewBranchForm({
   profileNames,
   onSubmit,
   onBack,
+  width,
 }: {
   defaultBase: string;
   profileNames: string[];
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
+  width?: number;
 }) {
   const [branch, setBranch] = useState("");
   const [base, setBase] = useState(defaultBase);
@@ -275,12 +284,14 @@ function NewBranchForm({
         value={branch}
         isFocused={currentField === "branch"}
         onChange={setBranch}
+        width={width}
       />
       <BracketInput
         label="Base"
         value={base}
         isFocused={currentField === "base"}
         onChange={setBase}
+        width={width}
       />
       {profileNames.length > 0 && (
         <BracketInput
@@ -288,12 +299,14 @@ function NewBranchForm({
           value={profile}
           isFocused={currentField === "profile"}
           onChange={setProfile}
+          width={width}
         />
       )}
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
+        width={width}
       />
       <ToggleRow
         label="No IDE"
@@ -327,11 +340,13 @@ function FromPRForm({
   profileNames,
   onSubmit,
   onBack,
+  width,
 }: {
   prList: PRInfo[];
   profileNames: string[];
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
+  width?: number;
 }) {
   const [selectedPRIndex, setSelectedPRIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
@@ -429,7 +444,11 @@ function FromPRForm({
     <Box flexDirection="column" gap={0}>
       <Text dimColor>Open from PR</Text>
       <Box height={1} />
-      <TitledBox title="Select PR" isFocused={currentField === "prList"}>
+      <TitledBox
+        title="Select PR"
+        isFocused={currentField === "prList"}
+        width={width}
+      >
         <ScrollableList
           items={prItems}
           selectedIndex={selectedPRIndex}
@@ -444,12 +463,14 @@ function FromPRForm({
           value={profile}
           isFocused={currentField === "profile"}
           onChange={setProfile}
+          width={width}
         />
       )}
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
+        width={width}
       />
       <ToggleRow
         label="No IDE"
@@ -481,10 +502,12 @@ function ExistingBranchForm({
   repoPath,
   onSubmit,
   onBack,
+  width,
 }: {
   repoPath: string;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
+  width?: number;
 }) {
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranchIndex, setSelectedBranchIndex] = useState(0);
@@ -596,6 +619,7 @@ function ExistingBranchForm({
       <TitledBox
         title="Select Branch"
         isFocused={currentField === "branchList"}
+        width={width}
       >
         <ScrollableList
           items={branchItems}
@@ -609,6 +633,7 @@ function ExistingBranchForm({
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
+        width={width}
       />
       <ToggleRow
         label="No IDE"
@@ -654,11 +679,16 @@ export function OpenModal({
     fromPR: "Open Worktree — From PR",
     existingBranch: "Open Worktree — Existing Branch",
   };
+  const innerWidth = width === undefined ? undefined : Math.max(width - 4, 0);
 
   return (
     <Modal title={titleMap[step]} visible={visible} width={width}>
       {step === "selector" && (
-        <ModeSelector onSelect={setStep} onCancel={onCancel} />
+        <ModeSelector
+          onSelect={setStep}
+          onCancel={onCancel}
+          width={innerWidth}
+        />
       )}
       {step === "newBranch" && (
         <NewBranchForm
@@ -666,6 +696,7 @@ export function OpenModal({
           profileNames={profileNames}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
+          width={innerWidth}
         />
       )}
       {step === "fromPR" && (
@@ -674,6 +705,7 @@ export function OpenModal({
           profileNames={profileNames}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
+          width={innerWidth}
         />
       )}
       {step === "existingBranch" && (
@@ -681,6 +713,7 @@ export function OpenModal({
           repoPath={repoPath}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
+          width={innerWidth}
         />
       )}
       <Box marginTop={1}>

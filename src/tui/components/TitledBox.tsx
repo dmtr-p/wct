@@ -8,19 +8,27 @@ interface Props {
   children: ReactNode;
 }
 
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+  granularity: "grapheme",
+});
+
+function getGraphemes(value: string) {
+  return Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment);
+}
+
 function visibleLength(value: string) {
-  return Array.from(value).length;
+  return getGraphemes(value).length;
 }
 
 function truncateTitle(title: string, width: number) {
   if (width <= 0) return "";
 
-  const chars = Array.from(title);
-  if (chars.length <= width) return title;
+  const graphemes = getGraphemes(title);
+  if (graphemes.length <= width) return title;
 
   if (width === 1) return "…";
 
-  return `${chars.slice(0, width - 1).join("")}…`;
+  return `${graphemes.slice(0, width - 1).join("")}…`;
 }
 
 function topBorder(width: number, title: string) {

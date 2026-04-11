@@ -160,6 +160,25 @@ describe("TitledBox", () => {
     rendered.unmount();
   });
 
+  test("truncates emoji titles without splitting grapheme clusters", async () => {
+    const width = 6;
+    const rendered = await renderTitledBox({
+      title: "👨‍👩‍👧‍👦abc",
+      isFocused: false,
+      width,
+      children: "x",
+    });
+
+    const lines = rendered.output
+      .split("\n")
+      .map((line) => line.replace(/\s+$/, ""))
+      .filter((line) => line.length > 0);
+
+    expect(lines[0]).toContain("👨‍👩‍👧‍👦…");
+
+    rendered.unmount();
+  });
+
   test("keeps content lines aligned to the requested width", async () => {
     const width = 24;
     const rendered = await renderTitledBox({

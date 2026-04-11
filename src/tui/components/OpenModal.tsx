@@ -109,7 +109,7 @@ function BracketInput({
     <TitledBox title={label} isFocused={isFocused} width={width}>
       <Text color={isFocused ? undefined : "dim"}>
         {displayValue}
-        {isFocused && cursorVisible ? "▎" : ""}
+        {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>
     </TitledBox>
   );

@@ -679,7 +679,7 @@ export function OpenModal({
     fromPR: "Open Worktree — From PR",
     existingBranch: "Open Worktree — Existing Branch",
   };
-  const innerWidth = width === undefined ? undefined : Math.max(width - 4, 0);
+  const innerWidth = width === undefined ? undefined : Math.max(width - 2, 0);
 
   return (
     <Modal title={titleMap[step]} visible={visible} width={width}>

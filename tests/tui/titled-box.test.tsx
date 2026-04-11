@@ -160,6 +160,25 @@ describe("TitledBox", () => {
     rendered.unmount();
   });
 
+  test("keeps content lines aligned to the requested width", async () => {
+    const width = 24;
+    const rendered = await renderTitledBox({
+      title: "Branch",
+      isFocused: true,
+      width,
+      children: "my-feature",
+    });
+
+    const lines = rendered.output
+      .split("\n")
+      .map((line) => line.replace(/\s+$/, ""))
+      .filter((line) => line.length > 0);
+
+    expect(lines.every((line) => line.length === width)).toBe(true);
+
+    rendered.unmount();
+  });
+
   test("renders side borders for every line of multiline content", async () => {
     const rendered = await renderTitledBox({
       title: "Logs",

@@ -105,6 +105,40 @@ describe("TitledBox", () => {
     expect(frame).toContain("hello world");
   });
 
+  test("truncates title with ellipsis when wider than box", async () => {
+    const { Text } = await import("ink");
+    const frame = await renderTitledBox({
+      title: "Open Worktree — Existing Branch",
+      isFocused: true,
+      width: 30,
+      children: React.createElement(Text, {}, "content"),
+    });
+    const lines = frame.split("\n").filter((l) => l.trim());
+    const topLine = lines[0];
+    // Top border must not exceed requested width
+    // Strip ANSI codes already done in renderTitledBox
+    expect(topLine).toContain("…");
+    expect(topLine).toContain("╭");
+    expect(topLine).toContain("╮");
+  });
+
+  test("all border lines stay within requested width", async () => {
+    const { Text } = await import("ink");
+    const width = 30;
+    const frame = await renderTitledBox({
+      title: "A Very Long Title That Overflows",
+      isFocused: true,
+      width,
+      children: React.createElement(Text, {}, "content"),
+    });
+    const lines = frame.split("\n").filter((l) => l.trim());
+    const topLine = lines[0];
+    const bottomLine = lines[lines.length - 1];
+    // Verify border lines don't exceed the requested width
+    expect(topLine.length).toBeLessThanOrEqual(width);
+    expect(bottomLine.length).toBeLessThanOrEqual(width);
+  });
+
   test("renders side borders for every line of multiline content", async () => {
     const { Text, Box } = await import("ink");
     const frame = await renderTitledBox({
@@ -151,11 +185,20 @@ interface Props {
   children: ReactNode;
 }
 
-export function TitledBox({ title, isFocused, width = 30, children }: Props) {
+export function TitledBox({ title, isFocused, width = 40, children }: Props) {
   const color = isFocused ? "cyan" : undefined;
   const dimColor = !isFocused;
-  const dashCount = Math.max(0, width - title.length - 4);
-  const topBorder = `╭ ${title} ${"─".repeat(dashCount)}╮`;
+
+  // Truncate title with ellipsis if it won't fit in the requested width.
+  // Top border layout: "╭ " + title + " " + dashes + "╮" → title can use at most width - 4 chars.
+  const maxTitleLen = Math.max(0, width - 4);
+  const displayTitle =
+    title.length > maxTitleLen
+      ? title.slice(0, Math.max(0, maxTitleLen - 1)) + "…"
+      : title;
+
+  const dashCount = Math.max(0, width - displayTitle.length - 4);
+  const topBorder = `╭ ${displayTitle} ${"─".repeat(dashCount)}╮`;
   const bottomBorder = `╰${"─".repeat(width - 2)}╯`;
 
   return (
@@ -415,12 +458,47 @@ git commit -m "refactor(tui): wrap ModeSelector in TitledBox"
 
 ---
 
-### Task 6: Wrap `ScrollableList` in `TitledBox` for PR and Branch select forms
+### Task 6: Wrap `ScrollableList` in `TitledBox` and truncate long items
 
 **Files:**
+- Modify: `src/tui/components/ScrollableList.tsx`
 - Modify: `src/tui/components/OpenModal.tsx` (the `FromPRForm` and `ExistingBranchForm` sub-components)
 
-- [ ] **Step 1: Wrap the PR list in `FromPRForm` with `TitledBox`**
+- [ ] **Step 1: Add `wrap="truncate"` to ScrollableList item labels**
+
+In `src/tui/components/ScrollableList.tsx`, update the item rendering (lines 72–87) to use Ink's `wrap="truncate"` on the `Text` nodes so that long PR titles and branch names are truncated to a single line instead of wrapping. Replace the `{visible.map(...)` block:
+
+```tsx
+      {visible.map((item, i) => {
+        const actualIndex = start + i;
+        const isSelected = actualIndex === selectedIndex;
+        return (
+          <Box key={item.value}>
+            <Text color={isSelected && isFocused ? "cyan" : undefined}>
+              {isSelected ? "▸ " : "  "}
+            </Text>
+            <Text bold={isSelected} color={isSelected ? undefined : "dim"} wrap="truncate">
+              {item.label}
+            </Text>
+            {item.description && <Text dimColor wrap="truncate"> {item.description}</Text>}
+          </Box>
+        );
+      })}
+```
+
+- [ ] **Step 2: Run existing ScrollableList tests**
+
+Run: `bun run test tests/tui/scrollable-list.test.ts`
+Expected: All pass (tests are for `filterItems`/`getVisibleWindow`, not rendering)
+
+- [ ] **Step 3: Commit truncation fix**
+
+```bash
+git add src/tui/components/ScrollableList.tsx
+git commit -m "fix(tui): truncate long items in ScrollableList to prevent line wrapping"
+```
+
+- [ ] **Step 4: Wrap the PR list in `FromPRForm` with `TitledBox`**
 
 In `FromPRForm`, replace the separate `<Text>Select PR</Text>` label and bare `<ScrollableList>` (lines 441–452) with:
 
@@ -438,7 +516,7 @@ In `FromPRForm`, replace the separate `<Text>Select PR</Text>` label and bare `<
 
 Remove the standalone `<Text>Select PR</Text>` label since the title is now in the box border.
 
-- [ ] **Step 2: Wrap the branch list in `ExistingBranchForm` with `TitledBox`**
+- [ ] **Step 5: Wrap the branch list in `ExistingBranchForm` with `TitledBox`**
 
 In `ExistingBranchForm`, replace the separate `<Text>Select Branch</Text>` label and bare `<ScrollableList>` (lines 609–619) with:
 
@@ -456,16 +534,16 @@ In `ExistingBranchForm`, replace the separate `<Text>Select Branch</Text>` label
 
 Remove the standalone `<Text>Select Branch</Text>` label.
 
-- [ ] **Step 3: Run tests to verify nothing broke**
+- [ ] **Step 6: Run tests to verify nothing broke**
 
 Run: `bun run test`
 Expected: All existing tests pass
 
-- [ ] **Step 4: Visually verify in TUI**
+- [ ] **Step 7: Visually verify in TUI**
 
-Run: `bun run src/index.ts tui`, press `o`, select "From PR" and "Existing Branch" modes, and confirm the select lists render inside titled boxes.
+Run: `bun run src/index.ts tui`, press `o`, select "From PR" and "Existing Branch" modes, and confirm the select lists render inside titled boxes with long items truncated.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/tui/components/OpenModal.tsx
@@ -507,12 +585,12 @@ In the `OpenModal` function, forward it to `Modal`:
     <Modal title={titleMap[step]} visible={visible} width={width}>
 ```
 
-In `App.tsx`, pass `width={Math.min(termCols, 50)}` to `OpenModal`:
+In `App.tsx`, pass `width={Math.min(termCols, 60)}` to `OpenModal`. The longest modal title is "Open Worktree — Existing Branch" (31 chars), which needs `width >= 35` to render without truncation. 60 gives comfortable padding for inner content:
 
 ```tsx
         <OpenModal
           visible
-          width={Math.min(termCols, 50)}
+          width={Math.min(termCols, 60)}
           // ... rest of props
         />
 ```

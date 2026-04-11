@@ -135,17 +135,12 @@ function PromptArea({
   );
 
   return (
-    <Box flexDirection="column">
-      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
-        Prompt
-      </Text>
-      <Text dimColor>───────────────────────────────</Text>
+    <TitledBox title="Prompt" isFocused={isFocused}>
       <Text color={isFocused ? undefined : "dim"}>
         {value || (isFocused ? "" : "optional")}
         {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>
-      <Text dimColor>───────────────────────────────</Text>
-    </Box>
+    </TitledBox>
   );
 }
 

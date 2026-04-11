@@ -46,7 +46,7 @@ function bottomBorder(width: number) {
 }
 
 export function TitledBox({ title, isFocused, width, children }: Props) {
-  const boxWidth = Math.max(width ?? visibleLength(title) + 4, 0);
+  const boxWidth = Math.max(width ?? 40, 0);
   const contentWidth = Math.max(boxWidth - 2, 0);
   const normalizedChildren = Children.map(children, (child) =>
     typeof child === "string" || typeof child === "number" ? (

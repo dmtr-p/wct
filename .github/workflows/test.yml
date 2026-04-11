@@ -25,4 +25,5 @@ jobs:
         run: bun run test
 
       - name: Build binary
+        if: always()
         run: bun run build

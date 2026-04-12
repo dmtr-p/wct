@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
@@ -21,14 +21,16 @@ function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
 async function runResolveWorktreePath(
   options: Parameters<typeof resolveWorktreePath>[0],
 ) {
-  return await runBunPromise(
-    withWorktreeService(resolveWorktreePath(options)),
-  );
+  return await runBunPromise(withWorktreeService(resolveWorktreePath(options)));
 }
 
 async function createWorktreeFixture() {
-  const repoDir = await mkdtemp(join(tmpdir(), "wct-test-resolve-"));
-  const worktreeRoot = await mkdtemp(join(tmpdir(), "wct-test-resolve-wt-"));
+  const repoDir = await realpath(
+    await mkdtemp(join(tmpdir(), "wct-test-resolve-")),
+  );
+  const worktreeRoot = await realpath(
+    await mkdtemp(join(tmpdir(), "wct-test-resolve-wt-")),
+  );
 
   await $`git init -b main`.quiet().cwd(repoDir);
   await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
@@ -41,7 +43,11 @@ async function createWorktreeFixture() {
     .quiet()
     .cwd(repoDir);
 
-  return { repoDir, worktreeRoot, worktreePath };
+  return {
+    repoDir: await realpath(repoDir),
+    worktreeRoot: await realpath(worktreeRoot),
+    worktreePath: await realpath(worktreePath),
+  };
 }
 
 describe("resolveWorktreePath", () => {
@@ -66,7 +72,7 @@ describe("resolveWorktreePath", () => {
   test("returns cwd when no options given", async () => {
     process.chdir(repoDir);
 
-    await expect(runResolveWorktreePath({})).resolves.toBe(repoDir);
+    await expect(runResolveWorktreePath({})).resolves.toBe(process.cwd());
   });
 
   test("returns path directly when --path is given", async () => {

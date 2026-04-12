@@ -743,7 +743,7 @@ export function App() {
     proc.exited.then(async (code) => {
       if (code === 0 && result.autoSwitch) {
         const sessionName = formatSessionName(basename(worktreePath));
-        switchSession(sessionName);
+        await switchSession(sessionName);
         await refreshSessions();
       } else {
         await refreshAll();

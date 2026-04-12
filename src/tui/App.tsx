@@ -1083,6 +1083,7 @@ export function App() {
       {mode.type === "OpenModal" ? (
         <OpenModal
           visible
+          width={Math.min(termCols, 60)}
           defaultBase={openModalBase ?? ""}
           profileNames={openModalProfiles}
           repoProject={openModalRepoProject}

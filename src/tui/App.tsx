@@ -476,6 +476,7 @@ export function App() {
     Map<string, PendingAction>
   >(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const confirmDownReturnSelectedIndexRef = useRef<number>(0);
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -512,7 +513,8 @@ export function App() {
   const expandedWorktreeKey =
     mode.type === "Expanded" ||
     mode.type === "ConfirmKill" ||
-    mode.type === "ConfirmDown"
+    (mode.type === "ConfirmDown" &&
+      confirmDownReturnModeRef.current.type === "Expanded")
       ? mode.worktreeKey
       : null;
 
@@ -1051,6 +1053,7 @@ export function App() {
     if (!hasSession) return;
 
     const worktreeKey = pendingKey(repo.project, wt.branch);
+    confirmDownReturnSelectedIndexRef.current = selectedIndex;
     confirmDownReturnModeRef.current =
       mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
     setMode(Mode.ConfirmDown(sessionName, wt.branch, wt.path, worktreeKey));
@@ -1062,20 +1065,14 @@ export function App() {
     }
 
     if (key.escape) {
-      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
-      if (parentIndex !== null) {
-        setSelectedIndex(parentIndex);
-      }
+      setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
       setMode(confirmDownReturnModeRef.current);
       return;
     }
 
     if (key.return) {
       const { branch, worktreeKey, worktreePath } = mode;
-      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
-      if (parentIndex !== null) {
-        setSelectedIndex(parentIndex);
-      }
+      setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
       setMode(confirmDownReturnModeRef.current);
 
       const project = worktreeKey.split("/")[0] ?? "unknown";

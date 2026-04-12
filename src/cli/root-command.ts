@@ -154,9 +154,7 @@ const upCliCommand = Command.make(
       profile: optionToUndefined(profile),
     }),
 ).pipe(
-  Command.withDescription(
-    "Start tmux session and open IDE in current directory",
-  ),
+  Command.withDescription("Start tmux session and open IDE for a worktree"),
 );
 
 const openCliCommand = Command.make(

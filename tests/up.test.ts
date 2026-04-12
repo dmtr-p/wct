@@ -248,6 +248,62 @@ describe("upCommand", () => {
     expect(typeof upCommand).toBe("function");
   });
 
+  test("resolves worktree path via --path flag outside a git repo", async () => {
+    const fixture = await createLinkedWorktreeFixture(
+      "wct-up-path-flag-",
+      "wct-up-path-flag-wt-",
+    );
+    const outsideDir = await mkdtemp(join(tmpdir(), "wct-up-outside-"));
+    const originalDir = process.cwd();
+    const wtPath = join(fixture.worktreeDir, "feature-branch");
+
+    try {
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(outsideDir);
+
+      const createCalls: string[] = [];
+      await runBunPromise(
+        withTestServices(upCommand({ path: wtPath }), {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
+            getMainRepoPath: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
+            getCurrentBranch: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? "feature-branch" : null),
+          },
+          tmux: {
+            ...liveTmuxService,
+            createSession: (_name, workingDir) =>
+              Effect.sync(() => {
+                createCalls.push(workingDir);
+                return {
+                  _tag: "Created" as const,
+                  sessionName: "test",
+                };
+              }),
+          },
+        }),
+      );
+
+      expect(createCalls[0]).toBe(wtPath);
+    } finally {
+      process.chdir(originalDir);
+      await cleanupLinkedWorktreeFixture(fixture, originalDir);
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   test("resolves worktree path via --branch flag", async () => {
     const fixture = await createLinkedWorktreeFixture(
       "wct-up-branch-flag-",

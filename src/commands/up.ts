@@ -13,7 +13,7 @@ import { launchSessionAndIde } from "./session";
 
 export const commandDef: CommandDef = {
   name: "up",
-  description: "Start tmux session and open IDE in current directory",
+  description: "Start tmux session and open IDE for a worktree",
   options: [
     {
       name: "no-ide",
@@ -69,17 +69,19 @@ export function upCommand(
       path,
       branch: branchOption,
     } = options ?? {};
-    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
+    const cwd = yield* resolveWorktreePath({
+      path,
+      branch: branchOption,
+    });
+
+    const repo = yield* WorktreeService.use((service) =>
+      service.isGitRepo(cwd),
+    );
     if (!repo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),
       );
     }
-
-    const cwd = yield* resolveWorktreePath({
-      path,
-      branch: branchOption,
-    });
 
     const [mainRepoPath, branch] = yield* Effect.all([
       WorktreeService.use((service) => service.getMainRepoPath(cwd)),

@@ -35,11 +35,16 @@ export function UpModal({
   const [autoSwitch, setAutoSwitch] = useState(true);
 
   const profileItems = useMemo<ListItem[]>(
-    () =>
-      profileNames.map((profileName) => ({
+    () => [
+      {
+        label: "(default)",
+        value: "",
+      },
+      ...profileNames.map((profileName) => ({
         label: profileName,
         value: profileName,
       })),
+    ],
     [profileNames],
   );
   const filteredProfiles = useMemo(
@@ -57,12 +62,16 @@ export function UpModal({
   const currentField = fields[focusIndex];
 
   useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
     setProfileQuery("");
     setSelectedProfileIndex(0);
     setFocusIndex(0);
     setNoIde(false);
     setAutoSwitch(true);
-  }, [visible, profileNames.join("\0")]);
+  }, [visible]);
 
   useEffect(() => {
     setSelectedProfileIndex((prev) => {
@@ -83,7 +92,7 @@ export function UpModal({
         ? filteredProfiles[selectedProfileIndex]?.value
         : undefined;
     onSubmit({
-      profile: selectedProfile,
+      profile: selectedProfile || undefined,
       noIde,
       autoSwitch,
     });
@@ -168,6 +177,8 @@ export function UpModal({
           onToggle={() => setAutoSwitch((prev) => !prev)}
         />
         <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
+        <Box height={1} />
+        <Text dimColor>tab:next  shift+tab:prev  esc:cancel</Text>
       </Box>
     </Modal>
   );

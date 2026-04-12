@@ -26,10 +26,9 @@ export function resolveWorktreePath(
     if (path) return path;
 
     if (branch) {
-      const worktrees = yield* WorktreeService.use((service) =>
-        service.listWorktrees(),
+      const match = yield* WorktreeService.use((service) =>
+        service.findWorktreeByBranch(branch),
       );
-      const match = worktrees.find((worktree) => worktree.branch === branch);
 
       if (!match) {
         return yield* Effect.fail(

@@ -13,6 +13,12 @@ export type Mode =
       paneId: string;
       label: string;
       worktreeKey: string;
+    }
+  | {
+      type: "ConfirmDown";
+      sessionName: string;
+      branch: string;
+      worktreeKey: string;
     };
 
 export const Mode = {
@@ -27,6 +33,16 @@ export const Mode = {
     type: "ConfirmKill",
     paneId,
     label,
+    worktreeKey,
+  }),
+  ConfirmDown: (
+    sessionName: string,
+    branch: string,
+    worktreeKey: string,
+  ): Mode => ({
+    type: "ConfirmDown",
+    sessionName,
+    branch,
     worktreeKey,
   }),
 };
@@ -65,7 +81,7 @@ type DetailItem<
 
 /** Pending action for optimistic UI */
 export interface PendingAction {
-  type: "opening" | "closing" | "starting";
+  type: "opening" | "closing" | "starting" | "stopping";
   branch: string;
   project: string;
 }

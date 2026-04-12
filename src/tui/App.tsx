@@ -297,7 +297,9 @@ export function resolveCloseSelectedWorktreeAction({
 
   const worktreeKey = pendingKey(repo.project, worktree.branch);
   if (
-    (mode.type === "Expanded" || mode.type === "ConfirmKill") &&
+    (mode.type === "Expanded" ||
+      mode.type === "ConfirmKill" ||
+      mode.type === "ConfirmDown") &&
     mode.worktreeKey === worktreeKey
   ) {
     return {
@@ -473,6 +475,7 @@ export function App() {
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
+  const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -507,7 +510,9 @@ export function App() {
   }, [repos, searchQuery]);
 
   const expandedWorktreeKey =
-    mode.type === "Expanded" || mode.type === "ConfirmKill"
+    mode.type === "Expanded" ||
+    mode.type === "ConfirmKill" ||
+    mode.type === "ConfirmDown"
       ? mode.worktreeKey
       : null;
 
@@ -839,6 +844,11 @@ export function App() {
       return;
     }
 
+    if (input === "d") {
+      handleDownSelectedWorktree();
+      return;
+    }
+
     if (key.upArrow) {
       navigateTree(-1);
       return;
@@ -951,6 +961,11 @@ export function App() {
       return;
     }
 
+    if (input === "d") {
+      handleDownSelectedWorktree();
+      return;
+    }
+
     if (input === "c") {
       handleCloseSelectedWorktree();
       return;
@@ -1017,13 +1032,91 @@ export function App() {
     }
   }
 
+  function handleDownSelectedWorktree() {
+    const worktreeIndex = resolveSelectedWorktreeIndex(treeItems, selectedIndex);
+    if (worktreeIndex === null) return;
+
+    const item = treeItems[worktreeIndex];
+    if (!item || item.type !== "worktree") return;
+
+    const repo = filteredRepos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !wt) return;
+
+    const sessionName = formatSessionName(basename(wt.path));
+    const hasSession = sessions.some((s) => s.name === sessionName);
+    if (!hasSession) return;
+
+    const worktreeKey = pendingKey(repo.project, wt.branch);
+    confirmDownReturnModeRef.current =
+      mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
+    setMode(Mode.ConfirmDown(sessionName, wt.branch, worktreeKey));
+  }
+
+  function handleConfirmDownInput(_input: string, key: Key) {
+    if (mode.type !== "ConfirmDown") {
+      return;
+    }
+
+    if (key.escape) {
+      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+      if (parentIndex !== null) {
+        setSelectedIndex(parentIndex);
+      }
+      setMode(confirmDownReturnModeRef.current);
+      return;
+    }
+
+    if (key.return) {
+      const { sessionName, branch, worktreeKey } = mode;
+      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+      if (parentIndex !== null) {
+        setSelectedIndex(parentIndex);
+      }
+      setMode(confirmDownReturnModeRef.current);
+
+      const project = worktreeKey.split("/")[0] ?? "unknown";
+      setPendingActions((prev) =>
+        new Map(prev).set(worktreeKey, {
+          type: "stopping",
+          branch,
+          project,
+        }),
+      );
+
+      const worktreeIndex = resolveSelectedWorktreeIndex(treeItems, selectedIndex);
+      const item = worktreeIndex !== null ? treeItems[worktreeIndex] : null;
+      const repo =
+        item && item.type === "worktree" ? filteredRepos[item.repoIndex] : null;
+      const wt =
+        item && item.type === "worktree" && repo
+          ? repo.worktrees[item.worktreeIndex]
+          : null;
+
+      const proc = Bun.spawn(["wct", "down", "--path", wt?.path ?? sessionName], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      proc.exited.then(() => {
+        refreshAll().then(() => {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(worktreeKey);
+            return next;
+          });
+        });
+      });
+    }
+  }
+
   useInput((input, key) => {
     // Global keys (work in any mode)
     if (
       input === "q" &&
       mode.type !== "OpenModal" &&
       mode.type !== "Search" &&
-      mode.type !== "ConfirmKill"
+      mode.type !== "ConfirmKill" &&
+      mode.type !== "ConfirmDown"
     ) {
       exit();
       return;
@@ -1041,6 +1134,8 @@ export function App() {
         return handleExpandedInput(input, key);
       case "ConfirmKill":
         return handleConfirmKillInput(input, key);
+      case "ConfirmDown":
+        return handleConfirmDownInput(input, key);
     }
   });
 

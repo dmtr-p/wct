@@ -67,9 +67,9 @@ describe("StatusBar", () => {
     });
 
     expect(rendered.output).toContain(
-      "↑↓:navigate  ←:collapse  space:action  o:open  c:close",
+      "↑↓:navigate  ←:collapse  space:action  o:open",
     );
-    expect(rendered.output).toContain("/:search  q:quit");
+    expect(rendered.output).toContain("u:up  d:down  c:close  /:search  q:quit");
 
     rendered.unmount();
   });
@@ -80,6 +80,17 @@ describe("StatusBar", () => {
     });
 
     expect(rendered.output).toContain("Kill pane shell:1 vim?");
+    expect(rendered.output).toContain("enter:confirm  esc:cancel");
+
+    rendered.unmount();
+  });
+
+  test("shows the down confirmation prompt", async () => {
+    const rendered = await renderStatusBar({
+      mode: Mode.ConfirmDown("myapp-feature", "feature", "proj/feature"),
+    });
+
+    expect(rendered.output).toContain("Kill session for feature?");
     expect(rendered.output).toContain("enter:confirm  esc:cancel");
 
     rendered.unmount();

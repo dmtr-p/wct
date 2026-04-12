@@ -16,6 +16,17 @@ describe("Mode", () => {
       worktreeKey: "proj/branch",
     });
   });
+
+  test("constructs ConfirmDown mode", () => {
+    expect(Mode.ConfirmDown("myapp-feature", "feature", "proj/feature")).toEqual(
+      {
+        type: "ConfirmDown",
+        sessionName: "myapp-feature",
+        branch: "feature",
+        worktreeKey: "proj/feature",
+      },
+    );
+  });
 });
 
 describe("checkIcon", () => {

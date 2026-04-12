@@ -8,7 +8,7 @@ interface Props {
   changedFiles: number;
   isSelected: boolean;
   isChildSelected?: boolean;
-  pendingStatus?: "opening" | "closing" | "starting";
+  pendingStatus?: "opening" | "closing" | "starting" | "stopping";
   isExpanded?: boolean;
   hasExpandableData?: boolean;
   maxWidth: number;
@@ -62,6 +62,13 @@ export function WorktreeItem({
       prefix.length + `${indicator} `.length + " closing...".length,
     ),
   );
+  const stoppingDisplayBranch = truncateBranch(
+    branch,
+    branchBudget(
+      maxWidth,
+      prefix.length + `${indicator} `.length + " stopping...".length,
+    ),
+  );
   const mainSuffix =
     attached + (pendingStatus === "starting" ? " starting..." : "");
   const mainDisplayBranch = truncateBranch(
@@ -97,6 +104,17 @@ export function WorktreeItem({
         <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
         <Text dimColor>
           {indicator} {closingDisplayBranch} closing...
+        </Text>
+      </Box>
+    );
+  }
+
+  if (pendingStatus === "stopping") {
+    return (
+      <Box>
+        <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
+        <Text dimColor>
+          {indicator} {stoppingDisplayBranch} stopping...
         </Text>
       </Box>
     );

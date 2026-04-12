@@ -478,6 +478,8 @@ export function App() {
   >(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
+  const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const upModalReturnSelectedIndexRef = useRef<number>(0);
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -514,7 +516,8 @@ export function App() {
   const expandedWorktreeKey =
     mode.type === "Expanded" ||
     mode.type === "ConfirmKill" ||
-    mode.type === "UpModal" ||
+    (mode.type === "UpModal" &&
+      upModalReturnModeRef.current.type === "Expanded") ||
     (mode.type === "ConfirmDown" &&
       confirmDownReturnModeRef.current.type === "Expanded")
       ? mode.worktreeKey
@@ -706,6 +709,9 @@ export function App() {
     if (!repo || !wt) return;
 
     const worktreeKey = pendingKey(repo.project, wt.branch);
+    upModalReturnSelectedIndexRef.current = selectedIndex;
+    upModalReturnModeRef.current =
+      mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
     setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
   }
 
@@ -713,7 +719,8 @@ export function App() {
     if (mode.type !== "UpModal") return;
 
     const { worktreePath, worktreeKey } = mode;
-    setMode(Mode.Navigate);
+    setSelectedIndex(upModalReturnSelectedIndexRef.current);
+    setMode(upModalReturnModeRef.current);
 
     const branch = worktreeKey.split("/").slice(1).join("/");
     const project = worktreeKey.split("/")[0] ?? "unknown";
@@ -735,9 +742,9 @@ export function App() {
     });
     proc.exited.then(async (code) => {
       if (code === 0 && result.autoSwitch) {
-        await refreshSessions();
         const sessionName = formatSessionName(basename(worktreePath));
         switchSession(sessionName);
+        await refreshSessions();
       } else {
         await refreshAll();
       }
@@ -1258,7 +1265,10 @@ export function App() {
           width={Math.min(termCols, 60)}
           profileNames={mode.profileNames}
           onSubmit={handleUpSubmit}
-          onCancel={() => setMode(Mode.Navigate)}
+          onCancel={() => {
+            setSelectedIndex(upModalReturnSelectedIndexRef.current);
+            setMode(upModalReturnModeRef.current);
+          }}
         />
       ) : (
         <StatusBar {...statusBarProps} searchQuery={searchQuery} />

@@ -178,7 +178,7 @@ export function UpModal({
         />
         <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
         <Box height={1} />
-        <Text dimColor>tab:next  shift+tab:prev  esc:cancel</Text>
+        <Text dimColor>{"tab:next  shift+tab:prev  esc:cancel"}</Text>
       </Box>
     </Modal>
   );

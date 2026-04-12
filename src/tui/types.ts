@@ -18,6 +18,7 @@ export type Mode =
       type: "ConfirmDown";
       sessionName: string;
       branch: string;
+      worktreePath: string;
       worktreeKey: string;
     };
 
@@ -38,11 +39,13 @@ export const Mode = {
   ConfirmDown: (
     sessionName: string,
     branch: string,
+    worktreePath: string,
     worktreeKey: string,
   ): Mode => ({
     type: "ConfirmDown",
     sessionName,
     branch,
+    worktreePath,
     worktreeKey,
   }),
 };

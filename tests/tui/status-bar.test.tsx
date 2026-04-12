@@ -69,7 +69,9 @@ describe("StatusBar", () => {
     expect(rendered.output).toContain(
       "↑↓:navigate  ←:collapse  space:action  o:open",
     );
-    expect(rendered.output).toContain("u:up  d:down  c:close  /:search  q:quit");
+    expect(rendered.output).toContain(
+      "u:up  d:down  c:close  /:search  q:quit",
+    );
 
     rendered.unmount();
   });
@@ -87,7 +89,12 @@ describe("StatusBar", () => {
 
   test("shows the down confirmation prompt", async () => {
     const rendered = await renderStatusBar({
-      mode: Mode.ConfirmDown("myapp-feature", "feature", "proj/feature"),
+      mode: Mode.ConfirmDown(
+        "myapp-feature",
+        "feature",
+        "/tmp/myapp-feature",
+        "proj/feature",
+      ),
     });
 
     expect(rendered.output).toContain("Kill session for feature?");

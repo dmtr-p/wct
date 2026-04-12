@@ -18,14 +18,20 @@ describe("Mode", () => {
   });
 
   test("constructs ConfirmDown mode", () => {
-    expect(Mode.ConfirmDown("myapp-feature", "feature", "proj/feature")).toEqual(
-      {
-        type: "ConfirmDown",
-        sessionName: "myapp-feature",
-        branch: "feature",
-        worktreeKey: "proj/feature",
-      },
-    );
+    expect(
+      Mode.ConfirmDown(
+        "myapp-feature",
+        "feature",
+        "/tmp/myapp-feature",
+        "proj/feature",
+      ),
+    ).toEqual({
+      type: "ConfirmDown",
+      sessionName: "myapp-feature",
+      branch: "feature",
+      worktreePath: "/tmp/myapp-feature",
+      worktreeKey: "proj/feature",
+    });
   });
 });
 

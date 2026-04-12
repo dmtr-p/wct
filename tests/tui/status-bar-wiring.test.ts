@@ -75,6 +75,7 @@ describe("resolveStatusBarProps", () => {
     const confirmDown = Mode.ConfirmDown(
       "myapp-feature",
       "feature",
+      "/tmp/myapp-feature",
       "proj/feature",
     );
 

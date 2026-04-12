@@ -1033,7 +1033,10 @@ export function App() {
   }
 
   function handleDownSelectedWorktree() {
-    const worktreeIndex = resolveSelectedWorktreeIndex(treeItems, selectedIndex);
+    const worktreeIndex = resolveSelectedWorktreeIndex(
+      treeItems,
+      selectedIndex,
+    );
     if (worktreeIndex === null) return;
 
     const item = treeItems[worktreeIndex];
@@ -1050,7 +1053,7 @@ export function App() {
     const worktreeKey = pendingKey(repo.project, wt.branch);
     confirmDownReturnModeRef.current =
       mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
-    setMode(Mode.ConfirmDown(sessionName, wt.branch, worktreeKey));
+    setMode(Mode.ConfirmDown(sessionName, wt.branch, wt.path, worktreeKey));
   }
 
   function handleConfirmDownInput(_input: string, key: Key) {
@@ -1068,7 +1071,7 @@ export function App() {
     }
 
     if (key.return) {
-      const { sessionName, branch, worktreeKey } = mode;
+      const { branch, worktreeKey, worktreePath } = mode;
       const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
       if (parentIndex !== null) {
         setSelectedIndex(parentIndex);
@@ -1084,16 +1087,7 @@ export function App() {
         }),
       );
 
-      const worktreeIndex = resolveSelectedWorktreeIndex(treeItems, selectedIndex);
-      const item = worktreeIndex !== null ? treeItems[worktreeIndex] : null;
-      const repo =
-        item && item.type === "worktree" ? filteredRepos[item.repoIndex] : null;
-      const wt =
-        item && item.type === "worktree" && repo
-          ? repo.worktrees[item.worktreeIndex]
-          : null;
-
-      const proc = Bun.spawn(["wct", "down", "--path", wt?.path ?? sessionName], {
+      const proc = Bun.spawn(["wct", "down", "--path", worktreePath], {
         stdout: "ignore",
         stderr: "ignore",
       });

@@ -24,7 +24,7 @@ export const commandDef: CommandDef = {
       type: "string",
       placeholder: "name",
       description: "Branch name to resolve worktree from",
-      completionValues: "__wct_branches",
+      completionValues: "__wct_worktree_branches",
     },
   ],
 };

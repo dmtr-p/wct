@@ -8,7 +8,7 @@ import {
   test,
   vi,
 } from "vitest";
-import { downCommand } from "../src/commands/down";
+import { downCommand, type DownOptions } from "../src/commands/down";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import {
@@ -23,9 +23,10 @@ import {
 import { withTestServices } from "./helpers/services";
 
 async function runCommand(
+  options?: DownOptions,
   overrides: { tmux?: TmuxService; worktree?: WorktreeService } = {},
 ) {
-  await runBunPromise(withTestServices(downCommand(), overrides));
+  await runBunPromise(withTestServices(downCommand(options), overrides));
 }
 
 describe("downCommand", () => {
@@ -54,10 +55,11 @@ describe("downCommand behavior", () => {
   beforeEach(() => {
     cwdSpy = vi
       .spyOn(process, "cwd")
-      .mockReturnValue("/tmp/myapp-feature-auth");
+      .mockReturnValue("/tmp/outside-git-repo");
     worktreeOverrides = {
       ...liveWorktreeService,
       isGitRepo: () => Effect.succeed(true),
+      findWorktreeByBranch: () => Effect.succeed(null),
     };
     tmuxOverrides = {
       ...liveTmuxService,
@@ -72,6 +74,7 @@ describe("downCommand behavior", () => {
 
   test("kills tmux session derived from cwd basename", async () => {
     const killCalls: string[] = [];
+    let isGitRepoArg: string | undefined;
     tmuxOverrides = {
       ...tmuxOverrides,
       killSession: (name: string) =>
@@ -79,11 +82,92 @@ describe("downCommand behavior", () => {
           killCalls.push(name);
         }),
     };
+    worktreeOverrides = {
+      ...worktreeOverrides,
+      isGitRepo: (cwd?: string) =>
+        Effect.sync(() => {
+          isGitRepoArg = cwd;
+          return true;
+        }),
+    };
+    cwdSpy.mockReturnValue("/tmp/myapp-feature-auth");
 
     await expect(
-      runCommand({ tmux: tmuxOverrides, worktree: worktreeOverrides }),
+      runCommand(undefined, { tmux: tmuxOverrides, worktree: worktreeOverrides }),
     ).resolves.toBeUndefined();
+    expect(isGitRepoArg).toBe("/tmp/myapp-feature-auth");
     expect(killCalls).toEqual(["myapp-feature-auth"]);
+  });
+
+  test("kills tmux session for worktree specified by --path", async () => {
+    const killCalls: string[] = [];
+    let isGitRepoArg: string | undefined;
+    cwdSpy.mockReturnValue("/tmp/outside-git-repo");
+    const pathOverrides: TmuxService = {
+      ...liveTmuxService,
+      sessionExists: () => Effect.succeed(true),
+      killSession: (name: string) =>
+        Effect.sync(() => {
+          killCalls.push(name);
+        }),
+    };
+    const worktreePathOverrides: WorktreeService = {
+      ...liveWorktreeService,
+      isGitRepo: (cwd?: string) =>
+        Effect.sync(() => {
+          isGitRepoArg = cwd;
+          return true;
+        }),
+    };
+
+    await runCommand(
+      { path: "/tmp/myproject-feature-x" },
+      { tmux: pathOverrides, worktree: worktreePathOverrides },
+    );
+
+    expect(isGitRepoArg).toBe("/tmp/myproject-feature-x");
+    expect(killCalls).toEqual(["myproject-feature-x"]);
+  });
+
+  test("kills tmux session for worktree resolved by --branch", async () => {
+    const killCalls: string[] = [];
+    let isGitRepoArg: string | undefined;
+    cwdSpy.mockReturnValue("/tmp/outside-git-repo");
+    const tmuxOverridesByBranch: TmuxService = {
+      ...liveTmuxService,
+      sessionExists: () => Effect.succeed(true),
+      killSession: (name: string) =>
+        Effect.sync(() => {
+          killCalls.push(name);
+        }),
+    };
+    const worktreeOverridesByBranch: WorktreeService = {
+      ...liveWorktreeService,
+      isGitRepo: (cwd?: string) =>
+        Effect.sync(() => {
+          isGitRepoArg = cwd;
+          return true;
+        }),
+      findWorktreeByBranch: (branch: string) =>
+        Effect.succeed(
+          branch === "feat-y"
+            ? {
+                path: "/tmp/myproject-feat-y",
+                branch: "feat-y",
+                commit: "abc123",
+                isBare: false,
+              }
+            : null,
+        ),
+    };
+
+    await runCommand(
+      { branch: "feat-y" },
+      { tmux: tmuxOverridesByBranch, worktree: worktreeOverridesByBranch },
+    );
+
+    expect(isGitRepoArg).toBe("/tmp/myproject-feat-y");
+    expect(killCalls).toEqual(["myproject-feat-y"]);
   });
 
   test("propagates tmux kill failures", async () => {
@@ -93,7 +177,7 @@ describe("downCommand behavior", () => {
     };
 
     await expect(
-      runCommand({
+      runCommand(undefined, {
         tmux: tmuxOverrides,
         worktree: worktreeOverrides,
       }),

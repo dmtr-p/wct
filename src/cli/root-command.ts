@@ -94,9 +94,28 @@ const closeCliCommand = Command.make(
     }),
 ).pipe(Command.withDescription("Kill tmux session and remove worktree"));
 
-const downCliCommand = Command.make("down", {}, () => downCommand()).pipe(
-  Command.withDescription("Kill tmux session for current directory"),
-);
+const downCliCommand = Command.make(
+  "down",
+  {
+    path: optionalStringFlag(
+      "path",
+      "Path to worktree directory",
+      undefined,
+      "path",
+    ),
+    branch: optionalStringFlag(
+      "branch",
+      "Branch name to resolve worktree from",
+      "b",
+      "NAME",
+    ),
+  },
+  ({ path, branch }) =>
+    downCommand({
+      path: optionToUndefined(path),
+      branch: optionToUndefined(branch),
+    }),
+).pipe(Command.withDescription("Kill tmux session for a worktree"));
 
 const initCliCommand = Command.make("init", {}, () => initCommand()).pipe(
   Command.withDescription("Generate a starter .wct.yaml config file"),

@@ -272,29 +272,26 @@ tmux:
 
       const createCalls: string[] = [];
       await runBunPromise(
-        withTestServices(
-          upCommand({ branch: "feature-branch" }),
-          {
-            worktree: {
-              ...liveWorktreeService,
-              isGitRepo: () => Effect.succeed(true),
-              getMainRepoPath: () => Effect.succeed(fixture.repoDir),
-              getCurrentBranch: (cwd?: string) =>
-                Effect.succeed(cwd === wtPath ? "feature-branch" : "main"),
-            },
-            tmux: {
-              ...liveTmuxService,
-              createSession: (opts) =>
-                Effect.sync(() => {
-                  createCalls.push(opts.workingDir);
-                  return {
-                    _tag: "Created" as const,
-                    sessionName: "test",
-                  };
-                }),
-            },
+        withTestServices(upCommand({ branch: "feature-branch" }), {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+            getCurrentBranch: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? "feature-branch" : "main"),
           },
-        ),
+          tmux: {
+            ...liveTmuxService,
+            createSession: (_name, workingDir) =>
+              Effect.sync(() => {
+                createCalls.push(workingDir);
+                return {
+                  _tag: "Created" as const,
+                  sessionName: "test",
+                };
+              }),
+          },
+        }),
       );
 
       expect(createCalls[0]).toBe(wtPath);

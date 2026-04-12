@@ -1,9 +1,6 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import {
-  loadConfig,
-  resolveProfile,
-} from "../config/loader";
+import { loadConfig, resolveProfile } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { formatSessionName } from "../services/tmux";
@@ -65,8 +62,13 @@ export function upCommand(
   options?: UpOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { noIde, noAttach, profile, path, branch: branchOption } =
-      options ?? {};
+    const {
+      noIde,
+      noAttach,
+      profile,
+      path,
+      branch: branchOption,
+    } = options ?? {};
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
       return yield* Effect.fail(

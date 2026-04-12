@@ -126,7 +126,12 @@ const upCliCommand = Command.make(
   {
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
-    path: optionalStringFlag("path", "Path to worktree directory", undefined, "path"),
+    path: optionalStringFlag(
+      "path",
+      "Path to worktree directory",
+      undefined,
+      "path",
+    ),
     branch: optionalStringFlag(
       "branch",
       "Branch name to resolve worktree from",

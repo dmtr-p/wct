@@ -7,6 +7,7 @@ import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
+import { UpModal, type UpModalResult } from "./components/UpModal";
 import { useGitHub } from "./hooks/useGitHub";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
@@ -513,6 +514,7 @@ export function App() {
   const expandedWorktreeKey =
     mode.type === "Expanded" ||
     mode.type === "ConfirmKill" ||
+    mode.type === "UpModal" ||
     (mode.type === "ConfirmDown" &&
       confirmDownReturnModeRef.current.type === "Expanded")
       ? mode.worktreeKey
@@ -689,6 +691,64 @@ export function App() {
     });
   }
 
+  function prepareUpModal() {
+    const worktreeIndex = resolveSelectedWorktreeIndex(
+      treeItems,
+      selectedIndex,
+    );
+    if (worktreeIndex === null) return;
+
+    const item = treeItems[worktreeIndex];
+    if (!item || item.type !== "worktree") return;
+
+    const repo = filteredRepos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !wt) return;
+
+    const worktreeKey = pendingKey(repo.project, wt.branch);
+    setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
+  }
+
+  function handleUpSubmit(result: UpModalResult) {
+    if (mode.type !== "UpModal") return;
+
+    const { worktreePath, worktreeKey } = mode;
+    setMode(Mode.Navigate);
+
+    const branch = worktreeKey.split("/").slice(1).join("/");
+    const project = worktreeKey.split("/")[0] ?? "unknown";
+    setPendingActions((prev) =>
+      new Map(prev).set(worktreeKey, {
+        type: "starting",
+        branch,
+        project,
+      }),
+    );
+
+    const args = ["up", "--no-attach", "--path", worktreePath];
+    if (result.profile) args.push("--profile", result.profile);
+    if (result.noIde) args.push("--no-ide");
+
+    const proc = Bun.spawn(["wct", ...args], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    proc.exited.then(async (code) => {
+      if (code === 0 && result.autoSwitch) {
+        await refreshSessions();
+        const sessionName = formatSessionName(basename(worktreePath));
+        switchSession(sessionName);
+      } else {
+        await refreshAll();
+      }
+      setPendingActions((prev) => {
+        const next = new Map(prev);
+        next.delete(worktreeKey);
+        return next;
+      });
+    });
+  }
+
   /** Move selection up or down in the flat tree list, skipping headers */
   function navigateTree(direction: 1 | -1) {
     setSelectedIndex((prev) => {
@@ -851,6 +911,11 @@ export function App() {
       return;
     }
 
+    if (input === "u") {
+      prepareUpModal();
+      return;
+    }
+
     if (key.upArrow) {
       navigateTree(-1);
       return;
@@ -965,6 +1030,11 @@ export function App() {
 
     if (input === "d") {
       handleDownSelectedWorktree();
+      return;
+    }
+
+    if (input === "u") {
+      prepareUpModal();
       return;
     }
 
@@ -1105,6 +1175,7 @@ export function App() {
     if (
       input === "q" &&
       mode.type !== "OpenModal" &&
+      mode.type !== "UpModal" &&
       mode.type !== "Search" &&
       mode.type !== "ConfirmKill" &&
       mode.type !== "ConfirmDown"
@@ -1119,6 +1190,9 @@ export function App() {
       case "Search":
         return handleSearchInput(input, key);
       case "OpenModal":
+        // Modal handles its own input
+        return;
+      case "UpModal":
         // Modal handles its own input
         return;
       case "Expanded":
@@ -1176,6 +1250,14 @@ export function App() {
           repoPath={openModalRepoPath}
           prList={openModalPRList}
           onSubmit={handleOpen}
+          onCancel={() => setMode(Mode.Navigate)}
+        />
+      ) : mode.type === "UpModal" ? (
+        <UpModal
+          visible
+          width={Math.min(termCols, 60)}
+          profileNames={mode.profileNames}
+          onSubmit={handleUpSubmit}
           onCancel={() => setMode(Mode.Navigate)}
         />
       ) : (

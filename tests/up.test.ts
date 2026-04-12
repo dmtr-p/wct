@@ -248,6 +248,62 @@ describe("upCommand", () => {
     expect(typeof upCommand).toBe("function");
   });
 
+  test("resolves worktree path via --branch flag", async () => {
+    const fixture = await createLinkedWorktreeFixture(
+      "wct-up-branch-flag-",
+      "wct-up-branch-flag-wt-",
+    );
+    const originalDir = process.cwd();
+    const wtPath = join(fixture.worktreeDir, "feature-branch");
+
+    try {
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(fixture.repoDir);
+
+      const createCalls: string[] = [];
+      await runBunPromise(
+        withTestServices(
+          upCommand({ branch: "feature-branch" }),
+          {
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+              getCurrentBranch: (cwd?: string) =>
+                Effect.succeed(cwd === wtPath ? "feature-branch" : "main"),
+            },
+            tmux: {
+              ...liveTmuxService,
+              createSession: (opts) =>
+                Effect.sync(() => {
+                  createCalls.push(opts.workingDir);
+                  return {
+                    _tag: "Created" as const,
+                    sessionName: "test",
+                  };
+                }),
+            },
+          },
+        ),
+      );
+
+      expect(createCalls[0]).toBe(wtPath);
+    } finally {
+      process.chdir(originalDir);
+      await cleanupLinkedWorktreeFixture(fixture, originalDir);
+    }
+  });
+
   test("does not print attach guidance when tmux session creation fails", async () => {
     const repoDir = await mkdtemp(join(tmpdir(), "wct-up-tmux-fail-"));
     const originalDir = process.cwd();

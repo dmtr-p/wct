@@ -1,6 +1,9 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import { loadConfig, resolveProfile } from "../config/loader";
+import {
+  loadConfig,
+  resolveProfile,
+} from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { formatSessionName } from "../services/tmux";
@@ -8,6 +11,7 @@ import { WorktreeService } from "../services/worktree-service";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
+import { resolveWorktreePath } from "./resolve-worktree-path";
 import { launchSessionAndIde } from "./session";
 
 export const commandDef: CommandDef = {
@@ -32,6 +36,20 @@ export const commandDef: CommandDef = {
       description: "Use a named config profile",
       completionValues: "__wct_profiles",
     },
+    {
+      name: "path",
+      type: "string",
+      placeholder: "path",
+      description: "Path to worktree directory",
+    },
+    {
+      name: "branch",
+      short: "b",
+      type: "string",
+      placeholder: "name",
+      description: "Branch name to resolve worktree from",
+      completionValues: "__wct_branches",
+    },
   ],
 };
 
@@ -39,13 +57,16 @@ export interface UpOptions {
   noIde?: boolean;
   noAttach?: boolean;
   profile?: string;
+  path?: string;
+  branch?: string;
 }
 
 export function upCommand(
   options?: UpOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { noIde, noAttach, profile } = options ?? {};
+    const { noIde, noAttach, profile, path, branch: branchOption } =
+      options ?? {};
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
       return yield* Effect.fail(
@@ -53,11 +74,14 @@ export function upCommand(
       );
     }
 
-    const cwd = process.cwd();
+    const cwd = yield* resolveWorktreePath({
+      path,
+      branch: branchOption,
+    });
 
     const [mainRepoPath, branch] = yield* Effect.all([
-      WorktreeService.use((service) => service.getMainRepoPath()),
-      WorktreeService.use((service) => service.getCurrentBranch()),
+      WorktreeService.use((service) => service.getMainRepoPath(cwd)),
+      WorktreeService.use((service) => service.getCurrentBranch(cwd)),
     ]);
 
     if (!mainRepoPath) {

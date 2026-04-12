@@ -126,6 +126,13 @@ const upCliCommand = Command.make(
   {
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
+    path: optionalStringFlag("path", "Path to worktree directory", undefined, "path"),
+    branch: optionalStringFlag(
+      "branch",
+      "Branch name to resolve worktree from",
+      "b",
+      "NAME",
+    ),
     profile: optionalStringFlag(
       "profile",
       "Use a named config profile",
@@ -133,8 +140,14 @@ const upCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ noIde, noAttach, profile }) =>
-    upCommand({ noIde, noAttach, profile: optionToUndefined(profile) }),
+  ({ noIde, noAttach, path, branch, profile }) =>
+    upCommand({
+      noIde,
+      noAttach,
+      path: optionToUndefined(path),
+      branch: optionToUndefined(branch),
+      profile: optionToUndefined(profile),
+    }),
 ).pipe(
   Command.withDescription(
     "Start tmux session and open IDE in current directory",

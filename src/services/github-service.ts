@@ -129,7 +129,7 @@ export function parseRemoteOwnerRepo(
   url: string,
 ): { owner: string; repo: string } | null {
   const match = url.match(GITHUB_REMOTE_PATTERN);
-  if (match) return { owner: match[1], repo: match[2] };
+  if (match?.[1] && match[2]) return { owner: match[1], repo: match[2] };
   return null;
 }
 
@@ -144,14 +144,14 @@ export function findMatchingRemote(
 
   for (const line of remoteOutput.split("\n")) {
     const parts = line.split(/\s+/);
-    if (parts.length >= 3 && parts[2] === "(fetch)") {
-      const parsed = parseRemoteOwnerRepo(parts[1]);
+    const [name, url, fetchTag] = parts;
+    if (name && url && fetchTag === "(fetch)") {
+      const parsed = parseRemoteOwnerRepo(url);
       if (
         parsed &&
         parsed.owner.toLowerCase() === lowerOwner &&
         parsed.repo.toLowerCase() === lowerRepo
       ) {
-        const name = parts[0];
         if (name === "origin") return "origin";
         if (name === "upstream" && bestMatch !== "origin") bestMatch = name;
         bestMatch ??= name;

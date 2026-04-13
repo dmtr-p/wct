@@ -12,6 +12,11 @@ import {
   liveIdeService,
 } from "../../src/services/ide-service";
 import {
+  liveRegistryService,
+  RegistryService,
+  type RegistryServiceApi,
+} from "../../src/services/registry-service";
+import {
   liveSetupService,
   SetupService,
   type SetupService as SetupServiceApi,
@@ -32,13 +37,13 @@ import {
   type WorktreeService as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
-type JsonFlagRequirement =
-  typeof JsonFlag extends Effect.Effect<unknown, unknown, infer R> ? R : never;
+type JsonFlagRequirement = "effect/unstable/cli/GlobalFlag/json";
 
 export interface ServiceOverrides {
   github?: GitHubServiceApi;
   ide?: IdeServiceApi;
   json?: boolean;
+  registry?: RegistryServiceApi;
   setup?: SetupServiceApi;
   tmux?: TmuxServiceApi;
   vscodeWorkspace?: VSCodeWorkspaceServiceApi;
@@ -80,6 +85,11 @@ export function withTestServices<A, E, R>(
     provided,
     WorktreeService,
     overrides.worktree ?? liveWorktreeService,
+  );
+  provided = Effect.provideService(
+    provided,
+    RegistryService,
+    overrides.registry ?? liveRegistryService,
   );
   provided = Effect.provideService(provided, JsonFlag, overrides.json ?? false);
 

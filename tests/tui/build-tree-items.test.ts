@@ -139,9 +139,9 @@ describe("buildTreeItems", () => {
         [
           sessionName,
           [
-            { ...sessionPanes[0], paneId: "%9", zoomed: true, active: true },
+            { ...sessionPanes[0]!, paneId: "%9", zoomed: true, active: true },
             {
-              ...sessionPanes[1],
+              ...sessionPanes[1]!,
               command: "htop",
               window: "renamed-window",
               paneIndex: 4,
@@ -154,7 +154,7 @@ describe("buildTreeItems", () => {
 
     expect(resolved).toEqual({
       pane: {
-        ...sessionPanes[1],
+        ...sessionPanes[1]!,
         command: "htop",
         window: "renamed-window",
         paneIndex: 4,

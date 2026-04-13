@@ -23,10 +23,10 @@ function createStdoutStdin() {
 function stripAnsi(value: string) {
   let output = "";
   for (let i = 0; i < value.length; i += 1) {
-    const char = value[i]!;
-    if (char === "\u001B" && value[i + 1] === "[") {
+    const char = value.charAt(i);
+    if (char === "\u001B" && value.charAt(i + 1) === "[") {
       i += 2;
-      while (i < value.length && !/[A-Za-z@~]/.test(value[i]!)) {
+      while (i < value.length && !/[A-Za-z@~]/.test(value.charAt(i))) {
         i += 1;
       }
       continue;
@@ -140,7 +140,7 @@ describe("TitledBox", () => {
         .filter((line) => line.length > 0);
 
       expect(lines[0]?.startsWith("╭ ")).toBe(true);
-      expect(lines[0]!).toContain("…");
+      expect(lines[0]).toContain("…");
       expect(lines[0]?.length).toBe(18);
       expect(lines[lines.length - 1]?.startsWith("╰")).toBe(true);
       expect(lines[lines.length - 1]?.endsWith("╯")).toBe(true);
@@ -295,13 +295,17 @@ describe("TitledBox", () => {
       (node) => p(node).borderStyle === "round",
     );
 
-    expect(p(focusedBorder!).borderLeftColor).toBe("cyan");
-    expect(p(focusedBorder!).borderRightColor).toBe("cyan");
-    expect(p(focusedBorder!).borderLeftDimColor).toBe(false);
-    expect(p(focusedBorder!).borderRightDimColor).toBe(false);
-    expect(p(unfocusedBorder!).borderLeftDimColor).toBe(true);
-    expect(p(unfocusedBorder!).borderRightDimColor).toBe(true);
-    expect(p(unfocusedBorder!).borderLeftColor).toBeUndefined();
-    expect(p(unfocusedBorder!).borderRightColor).toBeUndefined();
+    expect(focusedBorder).toBeDefined();
+    expect(unfocusedBorder).toBeDefined();
+    const fb = p(focusedBorder as React.ReactElement);
+    const ub = p(unfocusedBorder as React.ReactElement);
+    expect(fb.borderLeftColor).toBe("cyan");
+    expect(fb.borderRightColor).toBe("cyan");
+    expect(fb.borderLeftDimColor).toBe(false);
+    expect(fb.borderRightDimColor).toBe(false);
+    expect(ub.borderLeftDimColor).toBe(true);
+    expect(ub.borderRightDimColor).toBe(true);
+    expect(ub.borderLeftColor).toBeUndefined();
+    expect(ub.borderRightColor).toBeUndefined();
   });
 });

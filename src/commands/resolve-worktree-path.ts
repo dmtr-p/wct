@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { WctServices } from "../effect/services";
+import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { WorktreeService } from "../services/worktree-service";
 
@@ -10,7 +10,7 @@ export interface ResolveWorktreePathOptions {
 
 export function resolveWorktreePath(
   options: ResolveWorktreePathOptions,
-): Effect.Effect<string, WctError, WctServices> {
+): Effect.Effect<string, WctError, WctRuntimeServices> {
   return Effect.gen(function* () {
     const { path, branch } = options;
 

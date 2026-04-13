@@ -13,6 +13,12 @@ export interface TmuxSessionInfo {
   attached: boolean;
 }
 
+export type TmuxClientDiscovery =
+  | { type: "none" }
+  | { type: "single"; client: TmuxClient }
+  | { type: "multiple" }
+  | { type: "error" };
+
 async function runPaneAction(
   effect: Parameters<typeof tuiRuntime.runPromise>[0],
 ) {
@@ -63,7 +69,7 @@ export function useTmux() {
         if (!result) {
           setSessions([]);
           setPanes(EMPTY_PANES);
-          return;
+          return [];
         }
         const parsed = result.map((session) => ({
           name: session.name,
@@ -71,9 +77,11 @@ export function useTmux() {
         }));
         setSessions(parsed);
         await refreshPanes(parsed, signal);
+        return parsed;
       } catch {
         setSessions([]);
         setPanes(EMPTY_PANES);
+        return [];
       }
     },
     [refreshPanes],
@@ -90,31 +98,41 @@ export function useTmux() {
       if (clients.length === 0) {
         setError("No tmux client found — start tmux in the other pane");
         setClient(null);
-      } else if (clients.length === 1) {
-        const [onlyClient] = clients;
-        setClient(onlyClient ?? null);
-        setError(null);
-      } else {
-        setError(
-          `Multiple tmux clients found (${clients.length}). Multi-client support coming soon.`,
-        );
-        setClient(null);
+        return { type: "none" } as const;
       }
+
+      if (clients.length === 1) {
+        const [onlyClient] = clients;
+        const client = onlyClient ?? null;
+        setClient(client);
+        setError(null);
+        return client
+          ? ({ type: "single", client } as const)
+          : ({ type: "none" } as const);
+      }
+
+      setError(
+        `Multiple tmux clients found (${clients.length}). Multi-client support coming soon.`,
+      );
+      setClient(null);
+      return { type: "multiple" } as const;
     } catch {
       setError("No tmux client found — start tmux in the other pane");
       setClient(null);
+      return { type: "error" } as const;
     }
   }, []);
 
   const switchSession = useCallback(
-    async (sessionName: string) => {
-      if (!client) return false;
+    async (sessionName: string, activeClient: TmuxClient | null = client) => {
+      if (!activeClient) return false;
       try {
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>
-            service.switchClientToPane(client.tty, `=${sessionName}`),
+            service.switchClientToPane(activeClient.tty, `=${sessionName}`),
           ),
         );
+        setClient({ ...activeClient, session: sessionName });
         return true;
       } catch {
         return false;
@@ -132,12 +150,13 @@ export function useTmux() {
             service.switchClientToPane(client.tty, paneId),
           ),
         );
+        await discoverClient();
         return true;
       } catch {
         return false;
       }
     },
-    [client],
+    [client, discoverClient],
   );
 
   const zoomPane = useCallback(

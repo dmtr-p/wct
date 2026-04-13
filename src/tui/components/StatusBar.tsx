@@ -33,10 +33,7 @@ function getHints(mode: Mode, selectedPaneRow?: boolean): [string, string] {
     case "ConfirmKill":
       return [`Kill pane ${mode.label}?`, "enter:confirm  esc:cancel"];
     case "ConfirmDown":
-      return [
-        `Kill session for ${mode.branch}?`,
-        "enter:confirm  esc:cancel",
-      ];
+      return [`Kill session for ${mode.branch}?`, "enter:confirm  esc:cancel"];
   }
 }
 

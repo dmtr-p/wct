@@ -1,12 +1,9 @@
-import { basename } from "node:path";
 import { Effect } from "effect";
 import type { WctServices } from "../effect/services";
-import { commandError, type WctError } from "../errors";
-import { formatSessionName, TmuxService } from "../services/tmux";
-import { WorktreeService } from "../services/worktree-service";
+import type { WctError } from "../errors";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
-import { resolveWorktreePath } from "./resolve-worktree-path";
+import { stopWorktreeSession } from "./worktree-session";
 
 export const commandDef: CommandDef = {
   name: "down",
@@ -38,34 +35,16 @@ export function downCommand(
   options?: DownOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const cwd = yield* resolveWorktreePath({
+    const result = yield* stopWorktreeSession({
       path: options?.path,
       branch: options?.branch,
     });
 
-    const isRepo = yield* WorktreeService.use((service) =>
-      service.isGitRepo(cwd),
-    );
-    if (!isRepo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
-    }
-
-    const sessionName = formatSessionName(basename(cwd));
-
-    const exists = yield* TmuxService.use((service) =>
-      service.sessionExists(sessionName),
-    );
-    if (!exists) {
-      yield* logger.warn(`No tmux session '${sessionName}' found`);
+    if (!result.existed) {
+      yield* logger.warn(`No tmux session '${result.sessionName}' found`);
       return;
     }
 
-    yield* logger.info(`Killing tmux session '${sessionName}'...`);
-
-    yield* TmuxService.use((service) => service.killSession(sessionName));
-
-    yield* logger.success(`Killed tmux session '${sessionName}'`);
+    yield* logger.success(`Killed tmux session '${result.sessionName}'`);
   });
 }

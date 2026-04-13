@@ -8,8 +8,8 @@ import {
   test,
   vi,
 } from "vitest";
-import { type DownOptions, downCommand } from "../src/commands/down";
 import { rootCommand } from "../src/cli/root-command";
+import { type DownOptions, downCommand } from "../src/commands/down";
 import { Command } from "../src/effect/cli";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
@@ -165,10 +165,10 @@ describe("downCommand behavior", () => {
         }),
     };
 
-    await runRootCommand(
-      ["down", "--path", "/tmp/myproject-feature-x"],
-      { tmux: tmuxOverridesViaRoot, worktree: worktreeOverridesViaRoot },
-    );
+    await runRootCommand(["down", "--path", "/tmp/myproject-feature-x"], {
+      tmux: tmuxOverridesViaRoot,
+      worktree: worktreeOverridesViaRoot,
+    });
 
     expect(isGitRepoArg).toBe("/tmp/myproject-feature-x");
     expect(killCalls).toEqual(["myproject-feature-x"]);

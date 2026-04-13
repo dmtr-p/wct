@@ -1,15 +1,10 @@
-import { basename } from "node:path";
 import { Effect } from "effect";
-import { loadConfig, resolveProfile } from "../config/loader";
 import type { WctServices } from "../effect/services";
-import { commandError, type WctError } from "../errors";
-import { formatSessionName } from "../services/tmux";
-import { WorktreeService } from "../services/worktree-service";
-import type { WctEnv } from "../types/env";
+import type { WctError } from "../errors";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
-import { resolveWorktreePath } from "./resolve-worktree-path";
-import { launchSessionAndIde } from "./session";
+import { maybeAttachSession } from "./session";
+import { startWorktreeSession } from "./worktree-session";
 
 export const commandDef: CommandDef = {
   name: "up",
@@ -45,7 +40,7 @@ export const commandDef: CommandDef = {
       type: "string",
       placeholder: "name",
       description: "Branch name to resolve worktree from",
-      completionValues: "__wct_branches",
+      completionValues: "__wct_worktree_branches",
     },
   ],
 };
@@ -62,88 +57,42 @@ export function upCommand(
   options?: UpOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const {
+    const { noIde, noAttach, profile, path, branch } = options ?? {};
+    const result = yield* startWorktreeSession({
       noIde,
-      noAttach,
       profile,
       path,
-      branch: branchOption,
-    } = options ?? {};
-    const cwd = yield* resolveWorktreePath({
-      path,
-      branch: branchOption,
+      branch,
     });
 
-    const repo = yield* WorktreeService.use((service) =>
-      service.isGitRepo(cwd),
-    );
-    if (!repo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+    if (result.profileName) {
+      yield* logger.info(`Using profile '${result.profileName}'`);
     }
 
-    const [mainRepoPath, branch] = yield* Effect.all([
-      WorktreeService.use((service) => service.getMainRepoPath(cwd)),
-      WorktreeService.use((service) => service.getCurrentBranch(cwd)),
-    ]);
-
-    if (!mainRepoPath) {
-      return yield* Effect.fail(
-        commandError("worktree_error", "Could not determine repository root"),
-      );
-    }
-    if (!branch) {
-      return yield* Effect.fail(
-        commandError(
-          "detached_head",
-          "Could not determine current branch (detached HEAD is not supported)",
-        ),
-      );
+    if (result.tmux.attempted) {
+      if (result.tmux.ok) {
+        yield* result.tmux.value._tag === "AlreadyExists"
+          ? logger.info(`Tmux session '${result.sessionName}' already exists`)
+          : logger.success(`Created tmux session '${result.sessionName}'`);
+      } else {
+        yield* logger.warn(
+          `Failed to create tmux session: ${result.tmux.error.message}`,
+        );
+      }
     }
 
-    const { config, errors } = yield* Effect.tryPromise({
-      try: () => loadConfig(mainRepoPath),
-      catch: (error) =>
-        commandError("config_error", "Failed to load configuration", error),
-    });
-    if (!config) {
-      return yield* Effect.fail(
-        commandError("config_error", errors.join("\n")),
-      );
+    if (result.ide.attempted) {
+      if (result.ide.ok) {
+        yield* logger.success("IDE opened");
+      } else {
+        yield* logger.warn(`Failed to open IDE: ${result.ide.error.message}`);
+      }
     }
 
-    const { config: resolved, profileName } = yield* Effect.try({
-      try: () => resolveProfile(config, branch, profile),
-      catch: (error) =>
-        commandError(
-          "config_error",
-          error instanceof Error ? error.message : String(error),
-        ),
-    });
-    if (profileName) {
-      yield* logger.info(`Using profile '${profileName}'`);
+    if (result.tmux.attempted && result.tmux.ok) {
+      yield* maybeAttachSession(result.sessionName, noAttach);
     }
 
-    const sessionName = formatSessionName(basename(cwd));
-
-    const env: WctEnv = {
-      WCT_WORKTREE_DIR: cwd,
-      WCT_MAIN_DIR: mainRepoPath,
-      WCT_BRANCH: branch,
-      WCT_PROJECT: config.project_name,
-    };
-
-    yield* launchSessionAndIde({
-      sessionName,
-      workingDir: cwd,
-      tmuxConfig: resolved.tmux,
-      env,
-      ideCommand: resolved.ide?.command,
-      noIde,
-      noAttach,
-    });
-
-    yield* logger.success(`Environment ready for '${branch}'`);
+    yield* logger.success(`Environment ready for '${result.branch}'`);
   });
 }

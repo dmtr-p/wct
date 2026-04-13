@@ -27,21 +27,23 @@ export function ToggleRow({
 
 export function SubmitButton({
   isFocused,
+  disabled = false,
   onSubmit,
 }: {
   isFocused: boolean;
+  disabled?: boolean;
   onSubmit: () => void;
 }) {
   useInput(
     (input, key) => {
       if (key.return || input === " ") onSubmit();
     },
-    { isActive: isFocused },
+    { isActive: isFocused && !disabled },
   );
 
   return (
     <Box marginTop={1}>
-      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
+      <Text color={!disabled && isFocused ? "cyan" : "dim"} bold={isFocused}>
         {isFocused ? "▸ " : "  "}Submit
       </Text>
     </Box>

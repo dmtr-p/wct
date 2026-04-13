@@ -4,8 +4,8 @@ import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
-import { Modal } from "./Modal";
 import { SubmitButton, ToggleRow } from "./form-controls";
+import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
 

@@ -21,6 +21,31 @@ export interface UpModalProps {
 
 type UpModalField = "profile" | "noIde" | "autoSwitch" | "submit";
 
+export interface UpModalSubmission {
+  canSubmit: boolean;
+  profile?: string;
+}
+
+export function resolveUpModalSubmission(
+  profileNames: string[],
+  filteredProfiles: ListItem[],
+  selectedProfileIndex: number,
+): UpModalSubmission {
+  if (profileNames.length === 0) {
+    return { canSubmit: true };
+  }
+
+  const selectedProfile = filteredProfiles[selectedProfileIndex];
+  if (!selectedProfile) {
+    return { canSubmit: false };
+  }
+
+  return {
+    canSubmit: true,
+    profile: selectedProfile.value || undefined,
+  };
+}
+
 export function UpModal({
   visible,
   width,
@@ -60,6 +85,15 @@ export function UpModal({
     return nextFields;
   }, [profileNames.length]);
   const currentField = fields[focusIndex];
+  const submission = useMemo(
+    () =>
+      resolveUpModalSubmission(
+        profileNames,
+        filteredProfiles,
+        selectedProfileIndex,
+      ),
+    [profileNames, filteredProfiles, selectedProfileIndex],
+  );
 
   useEffect(() => {
     if (!visible) {
@@ -87,12 +121,12 @@ export function UpModal({
   };
 
   const submit = () => {
-    const selectedProfile =
-      profileNames.length > 0
-        ? filteredProfiles[selectedProfileIndex]?.value
-        : undefined;
+    if (!submission.canSubmit) {
+      return;
+    }
+
     onSubmit({
-      profile: selectedProfile || undefined,
+      profile: submission.profile,
       noIde,
       autoSwitch,
     });
@@ -176,7 +210,11 @@ export function UpModal({
           isFocused={currentField === "autoSwitch"}
           onToggle={() => setAutoSwitch((prev) => !prev)}
         />
-        <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
+        <SubmitButton
+          isFocused={currentField === "submit"}
+          disabled={!submission.canSubmit}
+          onSubmit={submit}
+        />
         <Box height={1} />
         <Text dimColor>{"tab:next  shift+tab:prev  esc:cancel"}</Text>
       </Box>

@@ -1237,3 +1237,72 @@ git commit -m "feat: add u:up keybinding with UpModal in TUI (#54)"
 gh issue close 53 --comment "Implemented --path and --branch flags for up/down commands"
 gh issue close 54 --comment "Implemented u:up and d:down keybindings in TUI"
 ```
+
+---
+
+### Task 8: Address TUI review regressions
+
+**Files:**
+- Modify: `src/tui/App.tsx`
+- Modify: `src/tui/components/UpModal.tsx`
+- Modify: `src/tui/components/form-controls.tsx`
+- Modify: `tests/tui/adjust-index.test.ts`
+- Create: `tests/tui/up-modal.test.ts`
+
+- [ ] **Step 1: Add a shared session handoff helper before destructive TUI actions**
+
+Ensure the TUI computes a safe fallback tmux session for the tracked client and awaits the switch before spawning `wct down`. Reuse the same helper for the existing close flow so both destructive paths follow the same session-handoff behavior.
+
+- [ ] **Step 2: Block `UpModal` submit when the profile filter has no matches**
+
+Treat an empty filtered profile list as a non-submittable state. Keep the existing `No matches` list feedback, early-return in submit logic, and render the submit control as disabled until a real profile selection is available again.
+
+- [ ] **Step 3: Add regression tests for the new decision helpers**
+
+Cover the session fallback selection logic in `tests/tui/adjust-index.test.ts` and add a focused `tests/tui/up-modal.test.ts` suite for the `UpModal` submission resolver so the “no matches” case cannot silently fall back to the default configuration.
+
+- [ ] **Step 4: Let repository stop hooks perform verification**
+
+Do not run tests or lint manually in this repo. Rely on the configured stop hooks for `biome lint --write` and `bun run test`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/superpowers/plans/2026-04-12-up-down-enhancements.md \
+  src/tui/App.tsx \
+  src/tui/components/UpModal.tsx \
+  src/tui/components/form-controls.tsx \
+  tests/tui/adjust-index.test.ts \
+  tests/tui/up-modal.test.ts
+git commit -m "fix: address TUI review regressions"
+```
+
+---
+
+### Task 9: Address follow-up tmux handoff review gaps
+
+**Files:**
+- Modify: `src/tui/App.tsx`
+- Modify: `src/tui/hooks/useTmux.ts`
+- Modify: `tests/tui/adjust-index.test.ts`
+- Modify: `tests/tui/use-tmux.test.ts`
+
+- [ ] **Step 1: Distinguish blocked tmux handoff from no-op handoff**
+
+Replace the nullable handoff result in the TUI with an explicit three-state decision so destructive actions can refuse to proceed when the tracked client is still on the target session and there is no alternate session to switch to.
+
+- [ ] **Step 2: Keep tracked client state in sync after session switches**
+
+Update `useTmux.switchSession()` to persist the new session name into local hook state after a successful tmux client switch. This keeps later `close`/`down` safety checks aligned with the actual adjacent client session immediately after `u` auto-switch.
+
+- [ ] **Step 3: Refresh the tracked client after UpModal auto-switch**
+
+After a successful `u` auto-switch, refresh both sessions and the tracked client so the TUI re-renders against canonical tmux state.
+
+- [ ] **Step 4: Add regression coverage for the new states**
+
+Extend `tests/tui/adjust-index.test.ts` to cover the blocked handoff state and extend `tests/tui/use-tmux.test.ts` to cover immediate client-session updates after `switchSession()`.
+
+- [ ] **Step 5: Let repository stop hooks perform verification**
+
+Do not run tests or lint manually in this repo. Rely on the configured stop hooks for `biome lint --write` and `bun run test`.

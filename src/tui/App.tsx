@@ -3,6 +3,12 @@
 import { basename } from "node:path";
 import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type StartWorktreeSessionResult,
+  startWorktreeSession,
+  stopWorktreeSession,
+} from "../commands/worktree-session";
+import { toWctError } from "../errors";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
@@ -11,7 +17,8 @@ import { UpModal, type UpModalResult } from "./components/UpModal";
 import { useGitHub } from "./hooks/useGitHub";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
-import { useTmux } from "./hooks/useTmux";
+import { type TmuxClientDiscovery, useTmux } from "./hooks/useTmux";
+import { tuiRuntime } from "./runtime";
 import {
   Mode,
   type PaneInfo,
@@ -48,6 +55,17 @@ interface ResolveStatusBarPropsOptions {
   items: TreeItem[];
   selectedIndex: number;
 }
+
+interface ResolveSessionSwitchTargetOptions {
+  client: TmuxClientDiscovery;
+  targetSession: string;
+  sessions: Array<{ name: string }>;
+}
+
+type SessionHandoff =
+  | { type: "not-needed" }
+  | { type: "blocked" }
+  | { type: "switch"; sessionName: string };
 
 interface ResolveExpandedRightArrowActionOptions {
   repos: RepoInfo[];
@@ -444,6 +462,47 @@ export function resolveStatusBarProps({
   };
 }
 
+export function resolveSessionHandoff({
+  client,
+  targetSession,
+  sessions,
+}: ResolveSessionSwitchTargetOptions): SessionHandoff {
+  if (client.type === "multiple" || client.type === "error") {
+    return { type: "blocked" };
+  }
+
+  if (client.type !== "single" || client.client.session !== targetSession) {
+    return { type: "not-needed" };
+  }
+
+  const fallbackSession = sessions.find(
+    (session) => session.name !== targetSession,
+  )?.name;
+
+  if (!fallbackSession) {
+    return { type: "blocked" };
+  }
+
+  return {
+    type: "switch",
+    sessionName: fallbackSession,
+  };
+}
+
+function resolveStartActionMessage(
+  result: StartWorktreeSessionResult,
+): string | null {
+  if (result.tmux.attempted && !result.tmux.ok) {
+    return result.tmux.error.message;
+  }
+
+  if (result.ide.attempted && !result.ide.ok) {
+    return result.ide.error.message;
+  }
+
+  return null;
+}
+
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -452,7 +511,6 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { prData } = useGitHub(repos);
   const {
-    client,
     sessions,
     panes,
     error: tmuxError,
@@ -473,6 +531,7 @@ export function App() {
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
@@ -480,6 +539,9 @@ export function App() {
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
+  const actionErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -590,6 +652,92 @@ export function App() {
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
   }, [refreshRegistry, refreshSessions, discoverClient]);
+
+  const clearActionError = useCallback(() => {
+    if (actionErrorTimeoutRef.current) {
+      clearTimeout(actionErrorTimeoutRef.current);
+      actionErrorTimeoutRef.current = null;
+    }
+    setActionError(null);
+  }, []);
+
+  const showActionError = useCallback((message: string) => {
+    if (actionErrorTimeoutRef.current) {
+      clearTimeout(actionErrorTimeoutRef.current);
+    }
+    setActionError(message);
+    actionErrorTimeoutRef.current = setTimeout(() => {
+      actionErrorTimeoutRef.current = null;
+      setActionError(null);
+    }, 5000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (actionErrorTimeoutRef.current) {
+        clearTimeout(actionErrorTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const switchClientAwayFromSession = useCallback(
+    async (sessionName: string) => {
+      const [client, latestSessions] = await Promise.all([
+        discoverClient(),
+        refreshSessions(),
+      ]);
+      const handoff = resolveSessionHandoff({
+        client,
+        targetSession: sessionName,
+        sessions: latestSessions,
+      });
+
+      if (handoff.type === "not-needed") {
+        return true;
+      }
+
+      if (handoff.type === "blocked") {
+        return false;
+      }
+
+      return client.type === "single"
+        ? switchSession(handoff.sessionName, client.client)
+        : false;
+    },
+    [discoverClient, refreshSessions, switchSession],
+  );
+
+  const handleStartResult = useCallback(
+    async (result: StartWorktreeSessionResult, autoSwitch: boolean) => {
+      const actionMessage = resolveStartActionMessage(result);
+
+      if (result.tmux.attempted && result.tmux.ok && autoSwitch) {
+        const switched = await switchSession(result.sessionName);
+        await Promise.all([refreshSessions(), discoverClient()]);
+
+        if (!switched) {
+          showActionError(
+            `Started session '${result.sessionName}', but failed to switch client`,
+          );
+          return;
+        }
+      } else {
+        await refreshAll();
+      }
+
+      if (actionMessage) {
+        showActionError(actionMessage);
+      }
+    },
+    [
+      discoverClient,
+      refreshAll,
+      refreshSessions,
+      showActionError,
+      switchSession,
+    ],
+  );
 
   useRefresh(refreshAll);
 
@@ -719,6 +867,7 @@ export function App() {
     if (mode.type !== "UpModal") return;
 
     const { worktreePath, worktreeKey } = mode;
+    clearActionError();
     setSelectedIndex(upModalReturnSelectedIndexRef.current);
     setMode(upModalReturnModeRef.current);
 
@@ -732,28 +881,27 @@ export function App() {
       }),
     );
 
-    const args = ["up", "--no-attach", "--path", worktreePath];
-    if (result.profile) args.push("--profile", result.profile);
-    if (result.noIde) args.push("--no-ide");
-
-    const proc = Bun.spawn(["wct", ...args], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    proc.exited.then(async (code) => {
-      if (code === 0 && result.autoSwitch) {
-        const sessionName = formatSessionName(basename(worktreePath));
-        await switchSession(sessionName);
-        await refreshSessions();
-      } else {
+    void (async () => {
+      try {
+        const startResult = await tuiRuntime.runPromise(
+          startWorktreeSession({
+            path: worktreePath,
+            profile: result.profile,
+            noIde: result.noIde,
+          }),
+        );
+        await handleStartResult(startResult, result.autoSwitch);
+      } catch (error) {
+        showActionError(toWctError(error).message);
         await refreshAll();
+      } finally {
+        setPendingActions((prev) => {
+          const next = new Map(prev);
+          next.delete(worktreeKey);
+          return next;
+        });
       }
-      setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(worktreeKey);
-        return next;
-      });
-    });
+    })();
   }
 
   /** Move selection up or down in the flat tree list, skipping headers */
@@ -798,10 +946,15 @@ export function App() {
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = sessions.some((s) => s.name === sessionName);
     if (hasSession) {
-      switchSession(sessionName);
+      clearActionError();
+      void switchSession(sessionName).then((switched) => {
+        if (!switched) {
+          showActionError(`Failed to switch to tmux session '${sessionName}'`);
+        }
+      });
     } else {
-      // Create session with wct up, then switch
       const pendingActionKey = pendingKey(repo.project, wt.branch);
+      clearActionError();
       setPendingActions((prev) =>
         new Map(prev).set(pendingActionKey, {
           type: "starting",
@@ -809,21 +962,23 @@ export function App() {
           project: repo.project,
         }),
       );
-      const proc = Bun.spawn(["wct", "up", "--no-attach"], {
-        cwd: wt.path,
-        stdio: ["ignore", "ignore", "ignore"],
-      });
-      proc.exited.then(async (code) => {
-        if (code === 0) {
-          await refreshSessions();
-          switchSession(sessionName);
+      void (async () => {
+        try {
+          const startResult = await tuiRuntime.runPromise(
+            startWorktreeSession({ path: wt.path }),
+          );
+          await handleStartResult(startResult, true);
+        } catch (error) {
+          showActionError(toWctError(error).message);
+          await refreshAll();
+        } finally {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(pendingActionKey);
+            return next;
+          });
         }
-        setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(pendingActionKey);
-          return next;
-        });
-      });
+      })();
     }
   }
 
@@ -836,13 +991,6 @@ export function App() {
     });
     if (action.type === "noop") {
       return;
-    }
-
-    if (action.nextSelectedIndex !== undefined) {
-      setSelectedIndex(action.nextSelectedIndex);
-    }
-    if (action.nextMode) {
-      setMode(action.nextMode);
     }
 
     const currentItem = treeItems[action.worktreeIndex];
@@ -861,39 +1009,54 @@ export function App() {
     }
 
     const closingSession = formatSessionName(basename(currentWorktree.path));
-    if (client && client.session === closingSession) {
-      const other = sessions.find((s) => s.name !== closingSession);
-      if (other) {
-        switchSession(other.name);
-      }
-    }
-
     const pendingActionKey = pendingKey(
       currentRepo.project,
       currentWorktree.branch,
     );
-    setPendingActions((prev) =>
-      new Map(prev).set(pendingActionKey, {
-        type: "closing",
-        branch: currentWorktree.branch,
-        project: currentRepo.project,
-      }),
-    );
+    clearActionError();
 
-    const proc = Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
-      cwd: currentRepo.repoPath,
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    proc.exited.then(() => {
-      refreshAll().then(() => {
-        setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(pendingActionKey);
-          return next;
+    void (async () => {
+      const canProceed = await switchClientAwayFromSession(closingSession);
+      if (!canProceed) {
+        showActionError(
+          "Cannot safely close the worktree because the active tmux client could not be moved away",
+        );
+        return;
+      }
+
+      if (action.nextSelectedIndex !== undefined) {
+        setSelectedIndex(action.nextSelectedIndex);
+      }
+      if (action.nextMode) {
+        setMode(action.nextMode);
+      }
+
+      setPendingActions((prev) =>
+        new Map(prev).set(pendingActionKey, {
+          type: "closing",
+          branch: currentWorktree.branch,
+          project: currentRepo.project,
+        }),
+      );
+
+      const proc = Bun.spawn(
+        ["wct", "close", currentWorktree.branch, "--yes"],
+        {
+          cwd: currentRepo.repoPath,
+          stdout: "ignore",
+          stderr: "ignore",
+        },
+      );
+      proc.exited.then(() => {
+        refreshAll().then(() => {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(pendingActionKey);
+            return next;
+          });
         });
       });
-    });
+    })();
   }
 
   function handleNavigateInput(input: string, key: Key) {
@@ -1148,32 +1311,49 @@ export function App() {
     }
 
     if (key.return) {
-      const { branch, worktreeKey, worktreePath } = mode;
-      setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
-      setMode(confirmDownReturnModeRef.current);
+      const { branch, worktreeKey, worktreePath, sessionName } = mode;
+      clearActionError();
 
-      const project = worktreeKey.split("/")[0] ?? "unknown";
-      setPendingActions((prev) =>
-        new Map(prev).set(worktreeKey, {
-          type: "stopping",
-          branch,
-          project,
-        }),
-      );
+      void (async () => {
+        const canProceed = await switchClientAwayFromSession(sessionName);
+        if (!canProceed) {
+          showActionError(
+            "Cannot safely stop the tmux session because the active client could not be moved away",
+          );
+          return;
+        }
 
-      const proc = Bun.spawn(["wct", "down", "--path", worktreePath], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      proc.exited.then(() => {
-        refreshAll().then(() => {
+        setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
+        setMode(confirmDownReturnModeRef.current);
+
+        const project = worktreeKey.split("/")[0] ?? "unknown";
+        setPendingActions((prev) =>
+          new Map(prev).set(worktreeKey, {
+            type: "stopping",
+            branch,
+            project,
+          }),
+        );
+
+        try {
+          const result = await tuiRuntime.runPromise(
+            stopWorktreeSession({ path: worktreePath }),
+          );
+          if (!result.existed) {
+            showActionError(`No tmux session '${result.sessionName}' found`);
+          }
+          await refreshAll();
+        } catch (error) {
+          showActionError(toWctError(error).message);
+          await refreshAll();
+        } finally {
           setPendingActions((prev) => {
             const next = new Map(prev);
             next.delete(worktreeKey);
             return next;
           });
-        });
-      });
+        }
+      })();
     }
   }
 
@@ -1271,7 +1451,10 @@ export function App() {
           }}
         />
       ) : (
-        <StatusBar {...statusBarProps} searchQuery={searchQuery} />
+        <Box flexDirection="column">
+          {actionError ? <Text color="red">{actionError}</Text> : null}
+          <StatusBar {...statusBarProps} searchQuery={searchQuery} />
+        </Box>
       )}
     </Box>
   );

@@ -5,6 +5,7 @@ import {
   resolveExpandedRightArrowAction,
   resolveRecoveredSelectionIndex,
   resolveSelectedWorktreeIndex,
+  resolveSessionHandoff,
   treeItemId,
 } from "../../src/tui/App";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
@@ -401,5 +402,79 @@ describe("resolveExpandedRightArrowAction", () => {
       nextMode: Mode.Expanded(pendingKey("repo-a", "feature-b")),
       nextSelectedIndex: 2,
     });
+  });
+});
+
+describe("resolveSessionHandoff", () => {
+  test("returns a switch plan when the active client is on the target", () => {
+    expect(
+      resolveSessionHandoff({
+        client: {
+          type: "single",
+          client: { tty: "/dev/ttys001", session: "feature-a" },
+        },
+        targetSession: "feature-a",
+        sessions: [{ name: "feature-a" }, { name: "main" }],
+      }),
+    ).toEqual({
+      type: "switch",
+      sessionName: "main",
+    });
+  });
+
+  test("returns a no-op plan when the active client is on a different session", () => {
+    expect(
+      resolveSessionHandoff({
+        client: {
+          type: "single",
+          client: { tty: "/dev/ttys001", session: "main" },
+        },
+        targetSession: "feature-a",
+        sessions: [{ name: "feature-a" }, { name: "main" }],
+      }),
+    ).toEqual({ type: "not-needed" });
+  });
+
+  test("returns a no-op plan when there is no active client", () => {
+    expect(
+      resolveSessionHandoff({
+        client: { type: "none" },
+        targetSession: "feature-a",
+        sessions: [{ name: "feature-a" }, { name: "main" }],
+      }),
+    ).toEqual({ type: "not-needed" });
+  });
+
+  test("returns a blocked plan when there is no alternate session to switch to", () => {
+    expect(
+      resolveSessionHandoff({
+        client: {
+          type: "single",
+          client: { tty: "/dev/ttys001", session: "feature-a" },
+        },
+        targetSession: "feature-a",
+        sessions: [{ name: "feature-a" }],
+      }),
+    ).toEqual({ type: "blocked" });
+  });
+
+  test("returns a blocked plan when multiple tmux clients are attached", () => {
+    expect(
+      resolveSessionHandoff({
+        client: { type: "multiple" },
+        targetSession: "feature-a",
+        sessions: [{ name: "feature-a" }, { name: "main" }],
+      }),
+    ).toEqual({ type: "blocked" });
+  });
+
+  test("returns a blocked plan when client discovery fails", () => {
+    expect(
+      resolveSessionHandoff({
+        client: { type: "error" },
+        targetSession: "feature-a",
+        sessions: [{ name: "feature-a" }, { name: "main" }],
+      }),
+    ).toEqual({ type: "blocked" });
   });
 });

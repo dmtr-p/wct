@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { upCommand } from "../src/commands/up";
+import { commandDef, upCommand } from "../src/commands/up";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
@@ -246,6 +246,14 @@ exec "${realGit}" "$@"
 describe("upCommand", () => {
   test("is exported as a function", () => {
     expect(typeof upCommand).toBe("function");
+  });
+
+  test("completes --branch from worktree branches only", () => {
+    const branchOption = commandDef.options?.find(
+      (option) => option.name === "branch",
+    );
+
+    expect(branchOption?.completionValues).toBe("__wct_worktree_branches");
   });
 
   test("resolves worktree path via --path flag outside a git repo", async () => {

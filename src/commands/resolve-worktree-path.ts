@@ -42,6 +42,14 @@ export function resolveWorktreePath(
       return match.path;
     }
 
-    return process.cwd();
+    return yield* Effect.try({
+      try: () => process.cwd(),
+      catch: (err) =>
+        commandError(
+          "unexpected_error",
+          "Failed to resolve current working directory",
+          err,
+        ),
+    });
   });
 }

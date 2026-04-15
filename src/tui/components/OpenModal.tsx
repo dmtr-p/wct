@@ -4,6 +4,7 @@ import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
+import { SubmitButton, ToggleRow } from "./form-controls";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
@@ -149,54 +150,6 @@ function PromptArea({
         {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>
     </TitledBox>
-  );
-}
-
-function ToggleRow({
-  label,
-  checked,
-  isFocused,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  isFocused: boolean;
-  onToggle: () => void;
-}) {
-  useInput(
-    (input) => {
-      if (input === " ") onToggle();
-    },
-    { isActive: isFocused },
-  );
-
-  return (
-    <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
-      {checked ? "[x]" : "[ ]"} {label}
-    </Text>
-  );
-}
-
-function SubmitButton({
-  isFocused,
-  onSubmit,
-}: {
-  isFocused: boolean;
-  onSubmit: () => void;
-}) {
-  useInput(
-    (input, key) => {
-      if (key.return || input === " ") onSubmit();
-    },
-    { isActive: isFocused },
-  );
-
-  return (
-    <Box marginTop={1}>
-      <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
-        {isFocused ? "▸ " : "  "}Submit
-      </Text>
-    </Box>
   );
 }
 

@@ -7,11 +7,24 @@ export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
   | { type: "OpenModal" }
+  | {
+      type: "UpModal";
+      worktreePath: string;
+      worktreeKey: string;
+      profileNames: string[];
+    }
   | { type: "Expanded"; worktreeKey: string }
   | {
       type: "ConfirmKill";
       paneId: string;
       label: string;
+      worktreeKey: string;
+    }
+  | {
+      type: "ConfirmDown";
+      sessionName: string;
+      branch: string;
+      worktreePath: string;
       worktreeKey: string;
     };
 
@@ -19,6 +32,16 @@ export const Mode = {
   Navigate: { type: "Navigate" } as Mode,
   Search: { type: "Search" } as Mode,
   OpenModal: { type: "OpenModal" } as Mode,
+  UpModal: (
+    worktreePath: string,
+    worktreeKey: string,
+    profileNames: string[],
+  ): Mode => ({
+    type: "UpModal",
+    worktreePath,
+    worktreeKey,
+    profileNames,
+  }),
   Expanded: (worktreeKey: string): Mode => ({
     type: "Expanded",
     worktreeKey,
@@ -27,6 +50,18 @@ export const Mode = {
     type: "ConfirmKill",
     paneId,
     label,
+    worktreeKey,
+  }),
+  ConfirmDown: (
+    sessionName: string,
+    branch: string,
+    worktreePath: string,
+    worktreeKey: string,
+  ): Mode => ({
+    type: "ConfirmDown",
+    sessionName,
+    branch,
+    worktreePath,
     worktreeKey,
   }),
 };
@@ -65,7 +100,7 @@ type DetailItem<
 
 /** Pending action for optimistic UI */
 export interface PendingAction {
-  type: "opening" | "closing" | "starting";
+  type: "opening" | "closing" | "starting" | "stopping";
   branch: string;
   project: string;
 }

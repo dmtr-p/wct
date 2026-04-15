@@ -65,24 +65,23 @@ describe("buildTreeItems", () => {
     const repoPath = "/tmp/example-repo";
     const worktreePath = "/tmp/worktree-pane-actions";
     const sessionName = formatSessionName(basename(worktreePath));
-    const sessionPanes: PaneInfo[] = [
-      {
-        paneId: "%1",
-        paneIndex: 0,
-        command: "bun run dev",
-        window: "editor",
-        zoomed: false,
-        active: false,
-      },
-      {
-        paneId: "%2",
-        paneIndex: 1,
-        command: "git status",
-        window: "editor",
-        zoomed: true,
-        active: true,
-      },
-    ];
+    const pane0: PaneInfo = {
+      paneId: "%1",
+      paneIndex: 0,
+      command: "bun run dev",
+      window: "editor",
+      zoomed: false,
+      active: false,
+    };
+    const pane1: PaneInfo = {
+      paneId: "%2",
+      paneIndex: 1,
+      command: "git status",
+      window: "editor",
+      zoomed: true,
+      active: true,
+    };
+    const sessionPanes: PaneInfo[] = [pane0, pane1];
 
     const items = buildTreeItems({
       repos: [
@@ -139,9 +138,9 @@ describe("buildTreeItems", () => {
         [
           sessionName,
           [
-            { ...sessionPanes[0], paneId: "%9", zoomed: true, active: true },
+            { ...pane0, paneId: "%9", zoomed: true, active: true },
             {
-              ...sessionPanes[1],
+              ...pane1,
               command: "htop",
               window: "renamed-window",
               paneIndex: 4,
@@ -154,7 +153,7 @@ describe("buildTreeItems", () => {
 
     expect(resolved).toEqual({
       pane: {
-        ...sessionPanes[1],
+        ...pane1,
         command: "htop",
         window: "renamed-window",
         paneIndex: 4,

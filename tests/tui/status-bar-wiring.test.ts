@@ -70,4 +70,27 @@ describe("resolveStatusBarProps", () => {
       selectedPaneRow: true,
     });
   });
+
+  test("passes ConfirmDown mode through unchanged", () => {
+    const confirmDown = Mode.ConfirmDown(
+      "myapp-feature",
+      "feature",
+      "/tmp/myapp-feature",
+      "proj/feature",
+    );
+
+    expect(
+      resolveStatusBarProps({
+        mode: confirmDown,
+        items: [
+          { type: "repo", repoIndex: 0 },
+          { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+        ],
+        selectedIndex: 1,
+      }),
+    ).toEqual({
+      mode: confirmDown,
+      selectedPaneRow: false,
+    });
+  });
 });

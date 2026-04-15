@@ -156,9 +156,48 @@ describe("useTmux hook", () => {
     await flush(10);
 
     expect(harness.value.client).toBeNull();
-    expect(harness.value.error).toBe(
-      "Multiple tmux clients found (2). Multi-client support coming soon.",
-    );
+    expect(harness.value.error).toBeNull();
+
+    harness.unmount();
+  });
+
+  test("discoverClient returns multiple when client ownership is ambiguous", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise.mockResolvedValueOnce([
+      { tty: "/dev/ttys001", session: "main" },
+      { tty: "/dev/ttys002", session: "feature-a" },
+    ]);
+
+    const result = await harness.value.discoverClient();
+    await flush(2);
+
+    expect(result).toEqual({ type: "multiple" });
+    expect(harness.value.client).toBeNull();
+    expect(harness.value.error).toBeNull();
+
+    harness.unmount();
+  });
+
+  test("refreshSessions returns the latest parsed tmux sessions", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise
+      .mockResolvedValueOnce([
+        { name: "main", attached: true },
+        { name: "feature-a", attached: false },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await harness.value.refreshSessions();
+    await flush(2);
+
+    expect(result).toEqual([
+      { name: "main", attached: true },
+      { name: "feature-a", attached: false },
+    ]);
+    expect(harness.value.sessions).toEqual(result);
 
     harness.unmount();
   });
@@ -176,6 +215,65 @@ describe("useTmux hook", () => {
 
     const result = await harness.value.switchSession("foo");
     expect(result).toBe(false);
+
+    harness.unmount();
+  });
+
+  test("switchSession updates the tracked client session after success", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise.mockResolvedValueOnce(undefined);
+
+    const result = await harness.value.switchSession("feature-a");
+    await flush(2);
+
+    expect(result).toBe(true);
+    expect(harness.value.client).toEqual({
+      tty: "/dev/ttys001",
+      session: "feature-a",
+    });
+
+    harness.unmount();
+  });
+
+  test("switchSession can use an explicitly discovered client snapshot", async () => {
+    mockRunPromise
+      .mockResolvedValueOnce([]) // listClients
+      .mockResolvedValueOnce(null); // listSessions
+
+    const harness = await renderUseTmux();
+    await flush(10);
+
+    const result = await harness.value.switchSession("feature-a", {
+      tty: "/dev/ttys001",
+      session: "main",
+    });
+    await flush(2);
+
+    expect(result).toBe(true);
+    expect(harness.value.client).toEqual({
+      tty: "/dev/ttys001",
+      session: "feature-a",
+    });
+
+    harness.unmount();
+  });
+
+  test("jumpToPane refreshes the tracked client session after success", async () => {
+    const harness = await renderWithSingleClient();
+
+    mockRunPromise
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ tty: "/dev/ttys001", session: "feature-a" }]);
+
+    const result = await harness.value.jumpToPane("%42");
+    await flush(2);
+
+    expect(result).toBe(true);
+    expect(harness.value.client).toEqual({
+      tty: "/dev/ttys001",
+      session: "feature-a",
+    });
 
     harness.unmount();
   });

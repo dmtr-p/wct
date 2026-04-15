@@ -3,14 +3,22 @@
 import { basename } from "node:path";
 import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type StartWorktreeSessionResult,
+  startWorktreeSession,
+  stopWorktreeSession,
+} from "../commands/worktree-session";
+import { toWctError } from "../errors";
 import { formatSessionName } from "../services/tmux";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
+import { UpModal, type UpModalResult } from "./components/UpModal";
 import { useGitHub } from "./hooks/useGitHub";
 import { useRefresh } from "./hooks/useRefresh";
 import { type RepoInfo, useRegistry } from "./hooks/useRegistry";
-import { useTmux } from "./hooks/useTmux";
+import { type TmuxClientDiscovery, useTmux } from "./hooks/useTmux";
+import { tuiRuntime } from "./runtime";
 import {
   Mode,
   type PaneInfo,
@@ -47,6 +55,17 @@ interface ResolveStatusBarPropsOptions {
   items: TreeItem[];
   selectedIndex: number;
 }
+
+interface ResolveSessionSwitchTargetOptions {
+  client: TmuxClientDiscovery;
+  targetSession: string;
+  sessions: Array<{ name: string }>;
+}
+
+type SessionHandoff =
+  | { type: "not-needed" }
+  | { type: "blocked" }
+  | { type: "switch"; sessionName: string };
 
 interface ResolveExpandedRightArrowActionOptions {
   repos: RepoInfo[];
@@ -297,7 +316,9 @@ export function resolveCloseSelectedWorktreeAction({
 
   const worktreeKey = pendingKey(repo.project, worktree.branch);
   if (
-    (mode.type === "Expanded" || mode.type === "ConfirmKill") &&
+    (mode.type === "Expanded" ||
+      mode.type === "ConfirmKill" ||
+      mode.type === "ConfirmDown") &&
     mode.worktreeKey === worktreeKey
   ) {
     return {
@@ -441,6 +462,47 @@ export function resolveStatusBarProps({
   };
 }
 
+export function resolveSessionHandoff({
+  client,
+  targetSession,
+  sessions,
+}: ResolveSessionSwitchTargetOptions): SessionHandoff {
+  if (client.type === "multiple" || client.type === "error") {
+    return { type: "blocked" };
+  }
+
+  if (client.type !== "single" || client.client.session !== targetSession) {
+    return { type: "not-needed" };
+  }
+
+  const fallbackSession = sessions.find(
+    (session) => session.name !== targetSession,
+  )?.name;
+
+  if (!fallbackSession) {
+    return { type: "blocked" };
+  }
+
+  return {
+    type: "switch",
+    sessionName: fallbackSession,
+  };
+}
+
+function resolveStartActionMessage(
+  result: StartWorktreeSessionResult,
+): string | null {
+  if (result.tmux.attempted && !result.tmux.ok) {
+    return result.tmux.error.message;
+  }
+
+  if (result.ide.attempted && !result.ide.ok) {
+    return result.ide.error.message;
+  }
+
+  return null;
+}
+
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -449,7 +511,6 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { prData } = useGitHub(repos);
   const {
-    client,
     sessions,
     panes,
     error: tmuxError,
@@ -470,9 +531,17 @@ export function App() {
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
+  const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const confirmDownReturnSelectedIndexRef = useRef<number>(0);
+  const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const upModalReturnSelectedIndexRef = useRef<number>(0);
+  const actionErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -507,7 +576,12 @@ export function App() {
   }, [repos, searchQuery]);
 
   const expandedWorktreeKey =
-    mode.type === "Expanded" || mode.type === "ConfirmKill"
+    mode.type === "Expanded" ||
+    mode.type === "ConfirmKill" ||
+    (mode.type === "UpModal" &&
+      upModalReturnModeRef.current.type === "Expanded") ||
+    (mode.type === "ConfirmDown" &&
+      confirmDownReturnModeRef.current.type === "Expanded")
       ? mode.worktreeKey
       : null;
 
@@ -578,6 +652,92 @@ export function App() {
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
   }, [refreshRegistry, refreshSessions, discoverClient]);
+
+  const clearActionError = useCallback(() => {
+    if (actionErrorTimeoutRef.current) {
+      clearTimeout(actionErrorTimeoutRef.current);
+      actionErrorTimeoutRef.current = null;
+    }
+    setActionError(null);
+  }, []);
+
+  const showActionError = useCallback((message: string) => {
+    if (actionErrorTimeoutRef.current) {
+      clearTimeout(actionErrorTimeoutRef.current);
+    }
+    setActionError(message);
+    actionErrorTimeoutRef.current = setTimeout(() => {
+      actionErrorTimeoutRef.current = null;
+      setActionError(null);
+    }, 5000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (actionErrorTimeoutRef.current) {
+        clearTimeout(actionErrorTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const switchClientAwayFromSession = useCallback(
+    async (sessionName: string) => {
+      const [client, latestSessions] = await Promise.all([
+        discoverClient(),
+        refreshSessions(),
+      ]);
+      const handoff = resolveSessionHandoff({
+        client,
+        targetSession: sessionName,
+        sessions: latestSessions,
+      });
+
+      if (handoff.type === "not-needed") {
+        return true;
+      }
+
+      if (handoff.type === "blocked") {
+        return false;
+      }
+
+      return client.type === "single"
+        ? switchSession(handoff.sessionName, client.client)
+        : false;
+    },
+    [discoverClient, refreshSessions, switchSession],
+  );
+
+  const handleStartResult = useCallback(
+    async (result: StartWorktreeSessionResult, autoSwitch: boolean) => {
+      const actionMessage = resolveStartActionMessage(result);
+
+      if (result.tmux.attempted && result.tmux.ok && autoSwitch) {
+        const switched = await switchSession(result.sessionName);
+        await Promise.all([refreshSessions(), discoverClient()]);
+
+        if (!switched) {
+          showActionError(
+            `Started session '${result.sessionName}', but failed to switch client`,
+          );
+          return;
+        }
+      } else {
+        await refreshAll();
+      }
+
+      if (actionMessage) {
+        showActionError(actionMessage);
+      }
+    },
+    [
+      discoverClient,
+      refreshAll,
+      refreshSessions,
+      showActionError,
+      switchSession,
+    ],
+  );
 
   useRefresh(refreshAll);
 
@@ -682,6 +842,68 @@ export function App() {
     });
   }
 
+  function prepareUpModal() {
+    const worktreeIndex = resolveSelectedWorktreeIndex(
+      treeItems,
+      selectedIndex,
+    );
+    if (worktreeIndex === null) return;
+
+    const item = treeItems[worktreeIndex];
+    if (!item || item.type !== "worktree") return;
+
+    const repo = filteredRepos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !wt) return;
+
+    const worktreeKey = pendingKey(repo.project, wt.branch);
+    upModalReturnSelectedIndexRef.current = selectedIndex;
+    upModalReturnModeRef.current =
+      mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
+    setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
+  }
+
+  function handleUpSubmit(result: UpModalResult) {
+    if (mode.type !== "UpModal") return;
+
+    const { worktreePath, worktreeKey } = mode;
+    clearActionError();
+    setSelectedIndex(upModalReturnSelectedIndexRef.current);
+    setMode(upModalReturnModeRef.current);
+
+    const branch = worktreeKey.split("/").slice(1).join("/");
+    const project = worktreeKey.split("/")[0] ?? "unknown";
+    setPendingActions((prev) =>
+      new Map(prev).set(worktreeKey, {
+        type: "starting",
+        branch,
+        project,
+      }),
+    );
+
+    void (async () => {
+      try {
+        const startResult = await tuiRuntime.runPromise(
+          startWorktreeSession({
+            path: worktreePath,
+            profile: result.profile,
+            noIde: result.noIde,
+          }),
+        );
+        await handleStartResult(startResult, result.autoSwitch);
+      } catch (error) {
+        showActionError(toWctError(error).message);
+        await refreshAll();
+      } finally {
+        setPendingActions((prev) => {
+          const next = new Map(prev);
+          next.delete(worktreeKey);
+          return next;
+        });
+      }
+    })();
+  }
+
   /** Move selection up or down in the flat tree list, skipping headers */
   function navigateTree(direction: 1 | -1) {
     setSelectedIndex((prev) => {
@@ -724,10 +946,15 @@ export function App() {
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = sessions.some((s) => s.name === sessionName);
     if (hasSession) {
-      switchSession(sessionName);
+      clearActionError();
+      void switchSession(sessionName).then((switched) => {
+        if (!switched) {
+          showActionError(`Failed to switch to tmux session '${sessionName}'`);
+        }
+      });
     } else {
-      // Create session with wct up, then switch
       const pendingActionKey = pendingKey(repo.project, wt.branch);
+      clearActionError();
       setPendingActions((prev) =>
         new Map(prev).set(pendingActionKey, {
           type: "starting",
@@ -735,21 +962,23 @@ export function App() {
           project: repo.project,
         }),
       );
-      const proc = Bun.spawn(["wct", "up", "--no-attach"], {
-        cwd: wt.path,
-        stdio: ["ignore", "ignore", "ignore"],
-      });
-      proc.exited.then(async (code) => {
-        if (code === 0) {
-          await refreshSessions();
-          switchSession(sessionName);
+      void (async () => {
+        try {
+          const startResult = await tuiRuntime.runPromise(
+            startWorktreeSession({ path: wt.path }),
+          );
+          await handleStartResult(startResult, true);
+        } catch (error) {
+          showActionError(toWctError(error).message);
+          await refreshAll();
+        } finally {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(pendingActionKey);
+            return next;
+          });
         }
-        setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(pendingActionKey);
-          return next;
-        });
-      });
+      })();
     }
   }
 
@@ -762,13 +991,6 @@ export function App() {
     });
     if (action.type === "noop") {
       return;
-    }
-
-    if (action.nextSelectedIndex !== undefined) {
-      setSelectedIndex(action.nextSelectedIndex);
-    }
-    if (action.nextMode) {
-      setMode(action.nextMode);
     }
 
     const currentItem = treeItems[action.worktreeIndex];
@@ -787,39 +1009,54 @@ export function App() {
     }
 
     const closingSession = formatSessionName(basename(currentWorktree.path));
-    if (client && client.session === closingSession) {
-      const other = sessions.find((s) => s.name !== closingSession);
-      if (other) {
-        switchSession(other.name);
-      }
-    }
-
     const pendingActionKey = pendingKey(
       currentRepo.project,
       currentWorktree.branch,
     );
-    setPendingActions((prev) =>
-      new Map(prev).set(pendingActionKey, {
-        type: "closing",
-        branch: currentWorktree.branch,
-        project: currentRepo.project,
-      }),
-    );
+    clearActionError();
 
-    const proc = Bun.spawn(["wct", "close", currentWorktree.branch, "--yes"], {
-      cwd: currentRepo.repoPath,
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    proc.exited.then(() => {
-      refreshAll().then(() => {
-        setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(pendingActionKey);
-          return next;
+    void (async () => {
+      const canProceed = await switchClientAwayFromSession(closingSession);
+      if (!canProceed) {
+        showActionError(
+          "Cannot safely close the worktree because the active tmux client could not be moved away",
+        );
+        return;
+      }
+
+      if (action.nextSelectedIndex !== undefined) {
+        setSelectedIndex(action.nextSelectedIndex);
+      }
+      if (action.nextMode) {
+        setMode(action.nextMode);
+      }
+
+      setPendingActions((prev) =>
+        new Map(prev).set(pendingActionKey, {
+          type: "closing",
+          branch: currentWorktree.branch,
+          project: currentRepo.project,
+        }),
+      );
+
+      const proc = Bun.spawn(
+        ["wct", "close", currentWorktree.branch, "--yes"],
+        {
+          cwd: currentRepo.repoPath,
+          stdout: "ignore",
+          stderr: "ignore",
+        },
+      );
+      proc.exited.then(() => {
+        refreshAll().then(() => {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(pendingActionKey);
+            return next;
+          });
         });
       });
-    });
+    })();
   }
 
   function handleNavigateInput(input: string, key: Key) {
@@ -836,6 +1073,16 @@ export function App() {
 
     if (input === " ") {
       handleSpaceSwitch();
+      return;
+    }
+
+    if (input === "d") {
+      handleDownSelectedWorktree();
+      return;
+    }
+
+    if (input === "u") {
+      prepareUpModal();
       return;
     }
 
@@ -951,6 +1198,16 @@ export function App() {
       return;
     }
 
+    if (input === "d") {
+      handleDownSelectedWorktree();
+      return;
+    }
+
+    if (input === "u") {
+      prepareUpModal();
+      return;
+    }
+
     if (input === "c") {
       handleCloseSelectedWorktree();
       return;
@@ -1017,13 +1274,98 @@ export function App() {
     }
   }
 
+  function handleDownSelectedWorktree() {
+    const worktreeIndex = resolveSelectedWorktreeIndex(
+      treeItems,
+      selectedIndex,
+    );
+    if (worktreeIndex === null) return;
+
+    const item = treeItems[worktreeIndex];
+    if (!item || item.type !== "worktree") return;
+
+    const repo = filteredRepos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !wt) return;
+
+    const sessionName = formatSessionName(basename(wt.path));
+    const hasSession = sessions.some((s) => s.name === sessionName);
+    if (!hasSession) return;
+
+    const worktreeKey = pendingKey(repo.project, wt.branch);
+    confirmDownReturnSelectedIndexRef.current = selectedIndex;
+    confirmDownReturnModeRef.current =
+      mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
+    setMode(Mode.ConfirmDown(sessionName, wt.branch, wt.path, worktreeKey));
+  }
+
+  function handleConfirmDownInput(_input: string, key: Key) {
+    if (mode.type !== "ConfirmDown") {
+      return;
+    }
+
+    if (key.escape) {
+      setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
+      setMode(confirmDownReturnModeRef.current);
+      return;
+    }
+
+    if (key.return) {
+      const { branch, worktreeKey, worktreePath, sessionName } = mode;
+      clearActionError();
+
+      void (async () => {
+        const canProceed = await switchClientAwayFromSession(sessionName);
+        if (!canProceed) {
+          showActionError(
+            "Cannot safely stop the tmux session because the active client could not be moved away",
+          );
+          return;
+        }
+
+        setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
+        setMode(confirmDownReturnModeRef.current);
+
+        const project = worktreeKey.split("/")[0] ?? "unknown";
+        setPendingActions((prev) =>
+          new Map(prev).set(worktreeKey, {
+            type: "stopping",
+            branch,
+            project,
+          }),
+        );
+
+        try {
+          const result = await tuiRuntime.runPromise(
+            stopWorktreeSession({ path: worktreePath }),
+          );
+          if (!result.existed) {
+            showActionError(`No tmux session '${result.sessionName}' found`);
+          }
+          await refreshAll();
+        } catch (error) {
+          showActionError(toWctError(error).message);
+          await refreshAll();
+        } finally {
+          setPendingActions((prev) => {
+            const next = new Map(prev);
+            next.delete(worktreeKey);
+            return next;
+          });
+        }
+      })();
+    }
+  }
+
   useInput((input, key) => {
     // Global keys (work in any mode)
     if (
       input === "q" &&
       mode.type !== "OpenModal" &&
+      mode.type !== "UpModal" &&
       mode.type !== "Search" &&
-      mode.type !== "ConfirmKill"
+      mode.type !== "ConfirmKill" &&
+      mode.type !== "ConfirmDown"
     ) {
       exit();
       return;
@@ -1037,10 +1379,15 @@ export function App() {
       case "OpenModal":
         // Modal handles its own input
         return;
+      case "UpModal":
+        // Modal handles its own input
+        return;
       case "Expanded":
         return handleExpandedInput(input, key);
       case "ConfirmKill":
         return handleConfirmKillInput(input, key);
+      case "ConfirmDown":
+        return handleConfirmDownInput(input, key);
     }
   });
 
@@ -1092,8 +1439,22 @@ export function App() {
           onSubmit={handleOpen}
           onCancel={() => setMode(Mode.Navigate)}
         />
+      ) : mode.type === "UpModal" ? (
+        <UpModal
+          visible
+          width={Math.min(termCols, 60)}
+          profileNames={mode.profileNames}
+          onSubmit={handleUpSubmit}
+          onCancel={() => {
+            setSelectedIndex(upModalReturnSelectedIndexRef.current);
+            setMode(upModalReturnModeRef.current);
+          }}
+        />
       ) : (
-        <StatusBar {...statusBarProps} searchQuery={searchQuery} />
+        <Box flexDirection="column">
+          {actionError ? <Text color="red">{actionError}</Text> : null}
+          <StatusBar {...statusBarProps} searchQuery={searchQuery} />
+        </Box>
       )}
     </Box>
   );

@@ -1,5 +1,5 @@
 import { Effect, ServiceMap } from "effect";
-import type { WctServices } from "../effect/services";
+import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { execShell, getProcessErrorMessage } from "./process";
@@ -20,7 +20,7 @@ export interface IdeService {
   openIDE: (
     command: string,
     env: WctEnv,
-  ) => Effect.Effect<void, WctError, WctServices>;
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
 }
 
 export const IdeService = ServiceMap.Service<IdeService>("wct/IdeService");

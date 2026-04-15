@@ -8,14 +8,14 @@ interface Props {
 }
 
 export function DetailRow({ item, isSelected }: Props) {
-  const { detailKind, label, meta } = item;
+  const { detailKind, label } = item;
   const prefix = isSelected ? "▸ " : "  ";
   const indent =
     detailKind === "pr" || detailKind === "pane-header"
       ? "      " // section header: 6 spaces
       : "        "; // section item: 8 spaces
 
-  switch (detailKind) {
+  switch (item.detailKind) {
     case "pane-header":
       return (
         <Box>
@@ -43,8 +43,8 @@ export function DetailRow({ item, isSelected }: Props) {
       );
 
     case "check": {
-      const icon = checkIcon(meta?.state ?? "");
-      const color = checkColor(meta?.state ?? "");
+      const icon = checkIcon(item.meta?.state ?? "");
+      const color = checkColor(item.meta?.state ?? "");
       return (
         <Box>
           <Text>{indent}</Text>
@@ -66,7 +66,7 @@ export function DetailRow({ item, isSelected }: Props) {
           <Text>{indent}</Text>
           <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
             {prefix}
-            {meta?.zoomed && meta?.active ? "🔍 " : ""}
+            {item.meta?.zoomed && item.meta?.active ? "🔍 " : ""}
             {label}
           </Text>
         </Box>

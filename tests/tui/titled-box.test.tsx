@@ -23,10 +23,10 @@ function createStdoutStdin() {
 function stripAnsi(value: string) {
   let output = "";
   for (let i = 0; i < value.length; i += 1) {
-    const char = value[i];
-    if (char === "\u001B" && value[i + 1] === "[") {
+    const char = value.charAt(i);
+    if (char === "\u001B" && value.charAt(i + 1) === "[") {
       i += 2;
-      while (i < value.length && !/[A-Za-z@~]/.test(value[i])) {
+      while (i < value.length && !/[A-Za-z@~]/.test(value.charAt(i))) {
         i += 1;
       }
       continue;
@@ -58,7 +58,8 @@ function collectElements(
     results.push(node);
   }
 
-  const children = node.props.children as React.ReactNode;
+  const children = (node.props as Record<string, unknown>)
+    .children as React.ReactNode;
   if (children !== undefined) {
     collectElements(children, match, results);
   }
@@ -110,13 +111,13 @@ describe("TitledBox", () => {
         .map((line) => line.replace(/\s+$/, ""))
         .filter((line) => line.length > 0);
 
-      expect(lines[0].startsWith("╭ Open Worktrees ")).toBe(true);
-      expect(lines[0].endsWith("╮")).toBe(true);
-      expect(lines[0].length).toBe(28);
+      expect(lines[0]?.startsWith("╭ Open Worktrees ")).toBe(true);
+      expect(lines[0]?.endsWith("╮")).toBe(true);
+      expect(lines[0]?.length).toBe(28);
       expect(lines[1]).toContain("content");
-      expect(lines[lines.length - 1].startsWith("╰")).toBe(true);
-      expect(lines[lines.length - 1].endsWith("╯")).toBe(true);
-      expect(lines[lines.length - 1].length).toBe(28);
+      expect(lines[lines.length - 1]?.startsWith("╰")).toBe(true);
+      expect(lines[lines.length - 1]?.endsWith("╯")).toBe(true);
+      expect(lines[lines.length - 1]?.length).toBe(28);
     } finally {
       rendered?.unmount();
     }
@@ -138,12 +139,12 @@ describe("TitledBox", () => {
         .map((line) => line.replace(/\s+$/, ""))
         .filter((line) => line.length > 0);
 
-      expect(lines[0].startsWith("╭ ")).toBe(true);
+      expect(lines[0]?.startsWith("╭ ")).toBe(true);
       expect(lines[0]).toContain("…");
-      expect(lines[0].length).toBe(18);
-      expect(lines[lines.length - 1].startsWith("╰")).toBe(true);
-      expect(lines[lines.length - 1].endsWith("╯")).toBe(true);
-      expect(lines[lines.length - 1].length).toBe(18);
+      expect(lines[0]?.length).toBe(18);
+      expect(lines[lines.length - 1]?.startsWith("╰")).toBe(true);
+      expect(lines[lines.length - 1]?.endsWith("╯")).toBe(true);
+      expect(lines[lines.length - 1]?.length).toBe(18);
     } finally {
       rendered?.unmount();
     }
@@ -277,35 +278,34 @@ describe("TitledBox", () => {
       (element) => element.type === Box,
     );
 
+    // biome-ignore lint: test introspection requires any casts on React element props
+    const p = (node: React.ReactElement) => node.props as any;
+
     expect(
-      focusedTexts.some(
-        (node) => node.props.color === "cyan" && node.props.bold,
-      ),
+      focusedTexts.some((node) => p(node).color === "cyan" && p(node).bold),
     ).toBe(true);
-    expect(focusedTexts.every((node) => node.props.dimColor !== true)).toBe(
-      true,
-    );
-    expect(unfocusedTexts.some((node) => node.props.dimColor === true)).toBe(
-      true,
-    );
-    expect(unfocusedTexts.every((node) => node.props.color !== "cyan")).toBe(
-      true,
-    );
+    expect(focusedTexts.every((node) => p(node).dimColor !== true)).toBe(true);
+    expect(unfocusedTexts.some((node) => p(node).dimColor === true)).toBe(true);
+    expect(unfocusedTexts.every((node) => p(node).color !== "cyan")).toBe(true);
 
     const focusedBorder = focusedBoxes.find(
-      (node) => node.props.borderStyle === "round",
+      (node) => p(node).borderStyle === "round",
     );
     const unfocusedBorder = unfocusedBoxes.find(
-      (node) => node.props.borderStyle === "round",
+      (node) => p(node).borderStyle === "round",
     );
 
-    expect(focusedBorder?.props.borderLeftColor).toBe("cyan");
-    expect(focusedBorder?.props.borderRightColor).toBe("cyan");
-    expect(focusedBorder?.props.borderLeftDimColor).toBe(false);
-    expect(focusedBorder?.props.borderRightDimColor).toBe(false);
-    expect(unfocusedBorder?.props.borderLeftDimColor).toBe(true);
-    expect(unfocusedBorder?.props.borderRightDimColor).toBe(true);
-    expect(unfocusedBorder?.props.borderLeftColor).toBeUndefined();
-    expect(unfocusedBorder?.props.borderRightColor).toBeUndefined();
+    expect(focusedBorder).toBeDefined();
+    expect(unfocusedBorder).toBeDefined();
+    const fb = p(focusedBorder as React.ReactElement);
+    const ub = p(unfocusedBorder as React.ReactElement);
+    expect(fb.borderLeftColor).toBe("cyan");
+    expect(fb.borderRightColor).toBe("cyan");
+    expect(fb.borderLeftDimColor).toBe(false);
+    expect(fb.borderRightDimColor).toBe(false);
+    expect(ub.borderLeftDimColor).toBe(true);
+    expect(ub.borderRightDimColor).toBe(true);
+    expect(ub.borderLeftColor).toBeUndefined();
+    expect(ub.borderRightColor).toBeUndefined();
   });
 });

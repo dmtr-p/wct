@@ -445,7 +445,7 @@ describe("resolveSessionHandoff", () => {
     ).toEqual({ type: "not-needed" });
   });
 
-  test("returns a blocked plan when there is no alternate session to switch to", () => {
+  test("returns a detach plan when there is no alternate session to switch to", () => {
     expect(
       resolveSessionHandoff({
         client: {
@@ -455,7 +455,7 @@ describe("resolveSessionHandoff", () => {
         targetSession: "feature-a",
         sessions: [{ name: "feature-a" }],
       }),
-    ).toEqual({ type: "blocked" });
+    ).toEqual({ type: "detach" });
   });
 
   test("returns a blocked plan when multiple tmux clients are attached", () => {

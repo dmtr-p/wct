@@ -65,6 +65,7 @@ interface ResolveSessionSwitchTargetOptions {
 type SessionHandoff =
   | { type: "not-needed" }
   | { type: "blocked" }
+  | { type: "detach" }
   | { type: "switch"; sessionName: string };
 
 interface ResolveExpandedRightArrowActionOptions {
@@ -480,7 +481,7 @@ export function resolveSessionHandoff({
   )?.name;
 
   if (!fallbackSession) {
-    return { type: "blocked" };
+    return { type: "detach" };
   }
 
   return {
@@ -515,6 +516,7 @@ export function App() {
     panes,
     error: tmuxError,
     switchSession,
+    detachClient,
     jumpToPane,
     zoomPane,
     killPane,
@@ -701,11 +703,15 @@ export function App() {
         return false;
       }
 
+      if (handoff.type === "detach") {
+        return client.type === "single" ? detachClient(client.client) : false;
+      }
+
       return client.type === "single"
         ? switchSession(handoff.sessionName, client.client)
         : false;
     },
-    [discoverClient, refreshSessions, switchSession],
+    [detachClient, discoverClient, refreshSessions, switchSession],
   );
 
   const handleStartResult = useCallback(

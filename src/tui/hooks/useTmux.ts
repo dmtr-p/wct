@@ -138,6 +138,22 @@ export function useTmux() {
     [client],
   );
 
+  const detachClient = useCallback(
+    async (activeClient: TmuxClient | null = client) => {
+      if (!activeClient) return false;
+      try {
+        await tuiRuntime.runPromise(
+          TmuxService.use((service) => service.detachClient(activeClient.tty)),
+        );
+        setClient(null);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [client],
+  );
+
   const jumpToPane = useCallback(
     async (paneId: string) => {
       if (!client) return false;
@@ -183,6 +199,7 @@ export function useTmux() {
     panes,
     error,
     switchSession,
+    detachClient,
     jumpToPane,
     zoomPane,
     killPane,

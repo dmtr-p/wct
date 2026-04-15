@@ -78,6 +78,9 @@ export interface TmuxService {
     sessionName: string,
   ) => Effect.Effect<TmuxPaneInfo[], WctError, WctRuntimeServices>;
   listClients: () => Effect.Effect<TmuxClient[], WctError, WctRuntimeServices>;
+  detachClient: (
+    clientTty: string,
+  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
   switchClientToPane: (
     clientTty: string,
     target: string,
@@ -521,6 +524,12 @@ function listClientsImpl() {
   );
 }
 
+function detachClientImpl(clientTty: string) {
+  return execProcess("tmux", ["detach-client", "-t", clientTty]).pipe(
+    Effect.asVoid,
+  );
+}
+
 function switchClientToPaneImpl(clientTty: string, target: string) {
   return execProcess("tmux", [
     "switch-client",
@@ -619,6 +628,10 @@ export const liveTmuxService: TmuxService = TmuxService.of({
   listClients: () =>
     Effect.mapError(listClientsImpl(), (error) =>
       commandError("tmux_error", "Failed to list tmux clients", error),
+    ),
+  detachClient: (clientTty) =>
+    Effect.mapError(detachClientImpl(clientTty), (error) =>
+      commandError("tmux_error", "Failed to detach tmux client", error),
     ),
   switchClientToPane: (clientTty, target) =>
     Effect.mapError(switchClientToPaneImpl(clientTty, target), (error) =>

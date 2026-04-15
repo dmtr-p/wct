@@ -156,9 +156,7 @@ describe("useTmux hook", () => {
     await flush(10);
 
     expect(harness.value.client).toBeNull();
-    expect(harness.value.error).toBe(
-      "Multiple tmux clients found (2). Multi-client support coming soon.",
-    );
+    expect(harness.value.error).toBeNull();
 
     harness.unmount();
   });
@@ -176,9 +174,7 @@ describe("useTmux hook", () => {
 
     expect(result).toEqual({ type: "multiple" });
     expect(harness.value.client).toBeNull();
-    expect(harness.value.error).toBe(
-      "Multiple tmux clients found (2). Multi-client support coming soon.",
-    );
+    expect(harness.value.error).toBeNull();
 
     harness.unmount();
   });

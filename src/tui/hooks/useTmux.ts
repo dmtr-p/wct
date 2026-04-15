@@ -111,9 +111,6 @@ export function useTmux() {
           : ({ type: "none" } as const);
       }
 
-      setError(
-        `Multiple tmux clients found (${clients.length}). Multi-client support coming soon.`,
-      );
       setClient(null);
       return { type: "multiple" } as const;
     } catch {

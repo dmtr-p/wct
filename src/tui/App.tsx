@@ -512,6 +512,7 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const { prData } = useGitHub(repos);
   const {
+    client: tmuxClient,
     sessions,
     panes,
     error: tmuxError,
@@ -1077,17 +1078,17 @@ export function App() {
       return;
     }
 
-    if (input === " ") {
+    if (input === " " && tmuxClient) {
       handleSpaceSwitch();
       return;
     }
 
-    if (input === "d") {
+    if (input === "d" && tmuxClient) {
       handleDownSelectedWorktree();
       return;
     }
 
-    if (input === "u") {
+    if (input === "u" && tmuxClient) {
       prepareUpModal();
       return;
     }
@@ -1137,7 +1138,12 @@ export function App() {
       }
     }
 
-    if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
+    if (
+      input === "c" &&
+      tmuxClient &&
+      currentItem.type === "worktree" &&
+      currentWorktree
+    ) {
       handleCloseSelectedWorktree();
       return;
     }
@@ -1194,7 +1200,7 @@ export function App() {
       return;
     }
 
-    if (input === " ") {
+    if (input === " " && tmuxClient) {
       handleSpaceSwitch();
       return;
     }
@@ -1204,17 +1210,17 @@ export function App() {
       return;
     }
 
-    if (input === "d") {
+    if (input === "d" && tmuxClient) {
       handleDownSelectedWorktree();
       return;
     }
 
-    if (input === "u") {
+    if (input === "u" && tmuxClient) {
       prepareUpModal();
       return;
     }
 
-    if (input === "c") {
+    if (input === "c" && tmuxClient) {
       handleCloseSelectedWorktree();
       return;
     }
@@ -1225,7 +1231,7 @@ export function App() {
       return;
     }
 
-    if (input === "z") {
+    if (input === "z" && tmuxClient) {
       const selectedPane = resolveSelectedPane({
         repos: filteredRepos,
         items: treeItems,
@@ -1239,7 +1245,7 @@ export function App() {
       return;
     }
 
-    if (input === "x") {
+    if (input === "x" && tmuxClient) {
       const selectedPane = resolveSelectedPane({
         repos: filteredRepos,
         items: treeItems,
@@ -1406,15 +1412,6 @@ export function App() {
     );
   }
 
-  if (tmuxError) {
-    return (
-      <Box flexDirection="column">
-        <Text bold>wct</Text>
-        <Text color="yellow">{tmuxError}</Text>
-      </Box>
-    );
-  }
-
   return (
     <Box flexDirection="column" height={termRows}>
       <Text bold>wct</Text>
@@ -1458,8 +1455,15 @@ export function App() {
         />
       ) : (
         <Box flexDirection="column">
+          {tmuxError && !actionError ? (
+            <Text color="yellow">{tmuxError}</Text>
+          ) : null}
           {actionError ? <Text color="red">{actionError}</Text> : null}
-          <StatusBar {...statusBarProps} searchQuery={searchQuery} />
+          <StatusBar
+            {...statusBarProps}
+            searchQuery={searchQuery}
+            hasClient={tmuxClient !== null}
+          />
         </Box>
       )}
     </Box>

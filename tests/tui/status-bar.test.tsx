@@ -102,4 +102,52 @@ describe("StatusBar", () => {
 
     rendered.unmount();
   });
+
+  test("hides tmux-mutating hints in Navigate mode when no client", async () => {
+    const rendered = await renderStatusBar({
+      mode: Mode.Navigate,
+      hasClient: false,
+    });
+
+    expect(rendered.output).toContain("↑↓:navigate");
+    expect(rendered.output).toContain("o:open");
+    expect(rendered.output).not.toContain("space:switch");
+    expect(rendered.output).not.toContain("u:up");
+    expect(rendered.output).not.toContain("d:down");
+    expect(rendered.output).not.toContain("c:close");
+
+    rendered.unmount();
+  });
+
+  test("hides tmux-mutating hints in Expanded mode when no client", async () => {
+    const rendered = await renderStatusBar({
+      mode: Mode.Expanded("proj/branch"),
+      selectedPaneRow: false,
+      hasClient: false,
+    });
+
+    expect(rendered.output).toContain("↑↓:navigate");
+    expect(rendered.output).toContain("o:open");
+    expect(rendered.output).not.toContain("space:action");
+    expect(rendered.output).not.toContain("u:up");
+    expect(rendered.output).not.toContain("d:down");
+    expect(rendered.output).not.toContain("c:close");
+
+    rendered.unmount();
+  });
+
+  test("hides pane hints in Expanded pane row when no client", async () => {
+    const rendered = await renderStatusBar({
+      mode: Mode.Expanded("proj/branch"),
+      selectedPaneRow: true,
+      hasClient: false,
+    });
+
+    expect(rendered.output).toContain("↑↓:navigate");
+    expect(rendered.output).not.toContain("space:jump");
+    expect(rendered.output).not.toContain("z:zoom");
+    expect(rendered.output).not.toContain("x:kill");
+
+    rendered.unmount();
+  });
 });

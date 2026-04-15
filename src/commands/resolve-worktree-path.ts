@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { Effect } from "effect";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
@@ -23,7 +24,7 @@ export function resolveWorktreePath(
       );
     }
 
-    if (path) return path;
+    if (path) return resolve(path);
 
     if (branch) {
       const match = yield* WorktreeService.use((service) =>

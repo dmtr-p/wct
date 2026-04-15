@@ -1,6 +1,7 @@
 // src/tui/App.tsx
 
 import { basename } from "node:path";
+import { Effect } from "effect";
 import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,7 +10,8 @@ import {
   stopWorktreeSession,
 } from "../commands/worktree-session";
 import { toWctError } from "../errors";
-import { formatSessionName } from "../services/tmux";
+import { formatSessionName, TmuxService } from "../services/tmux";
+import { WorktreeService } from "../services/worktree-service";
 import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
@@ -319,7 +321,9 @@ export function resolveCloseSelectedWorktreeAction({
   if (
     (mode.type === "Expanded" ||
       mode.type === "ConfirmKill" ||
-      mode.type === "ConfirmDown") &&
+      mode.type === "ConfirmDown" ||
+      mode.type === "ConfirmClose" ||
+      mode.type === "ConfirmCloseForce") &&
     mode.worktreeKey === worktreeKey
   ) {
     return {
@@ -540,6 +544,8 @@ export function App() {
   >(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
+  const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const confirmCloseReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
   const actionErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -584,7 +590,9 @@ export function App() {
     (mode.type === "UpModal" &&
       upModalReturnModeRef.current.type === "Expanded") ||
     (mode.type === "ConfirmDown" &&
-      confirmDownReturnModeRef.current.type === "Expanded")
+      confirmDownReturnModeRef.current.type === "Expanded") ||
+    ((mode.type === "ConfirmClose" || mode.type === "ConfirmCloseForce") &&
+      confirmCloseReturnModeRef.current.type === "Expanded")
       ? mode.worktreeKey
       : null;
 
@@ -990,80 +998,157 @@ export function App() {
   }
 
   function handleCloseSelectedWorktree() {
-    const action = resolveCloseSelectedWorktreeAction({
-      mode,
-      repos: filteredRepos,
-      items: treeItems,
+    const worktreeIndex = resolveSelectedWorktreeIndex(
+      treeItems,
       selectedIndex,
-    });
-    if (action.type === "noop") {
-      return;
-    }
-
-    const currentItem = treeItems[action.worktreeIndex];
-    if (currentItem?.type !== "worktree") {
-      return;
-    }
-
-    const currentRepo = filteredRepos[currentItem.repoIndex];
-    if (!currentRepo) {
-      return;
-    }
-
-    const currentWorktree = currentRepo.worktrees[currentItem.worktreeIndex];
-    if (!currentWorktree) {
-      return;
-    }
-
-    const closingSession = formatSessionName(basename(currentWorktree.path));
-    const pendingActionKey = pendingKey(
-      currentRepo.project,
-      currentWorktree.branch,
     );
+    if (worktreeIndex === null) return;
+
+    const item = treeItems[worktreeIndex];
+    if (!item || item.type !== "worktree") return;
+
+    const repo = filteredRepos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !wt) return;
+
+    const sessionName = formatSessionName(basename(wt.path));
+    const worktreeKey = pendingKey(repo.project, wt.branch);
+    confirmCloseReturnSelectedIndexRef.current = selectedIndex;
+    confirmCloseReturnModeRef.current =
+      mode.type === "Expanded" ? Mode.Expanded(worktreeKey) : Mode.Navigate;
+    setMode(
+      Mode.ConfirmClose(
+        sessionName,
+        wt.branch,
+        wt.path,
+        worktreeKey,
+        repo.repoPath,
+        repo.project,
+        wt.changedFiles,
+      ),
+    );
+  }
+
+  async function executeClose(
+    sessionName: string,
+    branch: string,
+    worktreePath: string,
+    worktreeKey: string,
+    repoPath: string,
+    project: string,
+    force: boolean,
+  ) {
     clearActionError();
 
-    void (async () => {
-      const canProceed = await switchClientAwayFromSession(closingSession);
-      if (!canProceed) {
-        showActionError(
-          "Cannot safely close the worktree because the active tmux client could not be moved away",
+    const canProceed = await switchClientAwayFromSession(sessionName);
+    if (!canProceed) {
+      showActionError(
+        "Cannot safely close the worktree because the active tmux client could not be moved away",
+      );
+      return;
+    }
+
+    setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
+    setMode(confirmCloseReturnModeRef.current);
+
+    setPendingActions((prev) =>
+      new Map(prev).set(worktreeKey, {
+        type: "closing",
+        branch,
+        project,
+      }),
+    );
+
+    try {
+      await tuiRuntime.runPromise(
+        Effect.gen(function* () {
+          const exists = yield* TmuxService.use((service) =>
+            service.sessionExists(sessionName),
+          );
+          if (exists) {
+            yield* TmuxService.use((service) =>
+              service.killSession(sessionName),
+            );
+          }
+        }),
+      );
+
+      const removeResult = await tuiRuntime.runPromise(
+        WorktreeService.use((service) =>
+          service.removeWorktree(worktreePath, force, repoPath),
+        ),
+      );
+
+      if (removeResult._tag === "BlockedByChanges") {
+        setPendingActions((prev) => {
+          const next = new Map(prev);
+          next.delete(worktreeKey);
+          return next;
+        });
+        setMode(
+          Mode.ConfirmCloseForce(
+            sessionName,
+            branch,
+            worktreePath,
+            worktreeKey,
+            repoPath,
+            project,
+          ),
+        );
+        await refreshAll();
+        return;
+      }
+
+      await refreshAll();
+    } catch (error) {
+      showActionError(toWctError(error).message);
+      await refreshAll();
+    } finally {
+      setPendingActions((prev) => {
+        const next = new Map(prev);
+        next.delete(worktreeKey);
+        return next;
+      });
+    }
+  }
+
+  function handleConfirmCloseInput(_input: string, key: Key) {
+    if (mode.type !== "ConfirmClose" && mode.type !== "ConfirmCloseForce") {
+      return;
+    }
+
+    if (key.escape) {
+      setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
+      setMode(confirmCloseReturnModeRef.current);
+      return;
+    }
+
+    if (key.return) {
+      if (mode.type === "ConfirmClose" && mode.changedFiles > 0) {
+        setMode(
+          Mode.ConfirmCloseForce(
+            mode.sessionName,
+            mode.branch,
+            mode.worktreePath,
+            mode.worktreeKey,
+            mode.repoPath,
+            mode.project,
+          ),
         );
         return;
       }
 
-      if (action.nextSelectedIndex !== undefined) {
-        setSelectedIndex(action.nextSelectedIndex);
-      }
-      if (action.nextMode) {
-        setMode(action.nextMode);
-      }
-
-      setPendingActions((prev) =>
-        new Map(prev).set(pendingActionKey, {
-          type: "closing",
-          branch: currentWorktree.branch,
-          project: currentRepo.project,
-        }),
+      const force = mode.type === "ConfirmCloseForce";
+      void executeClose(
+        mode.sessionName,
+        mode.branch,
+        mode.worktreePath,
+        mode.worktreeKey,
+        mode.repoPath,
+        mode.project,
+        force,
       );
-
-      const proc = Bun.spawn(
-        ["wct", "close", currentWorktree.branch, "--yes"],
-        {
-          cwd: currentRepo.repoPath,
-          stdout: "ignore",
-          stderr: "ignore",
-        },
-      );
-      proc.exited.then(() => {
-        refreshAll().then(() => {
-          setPendingActions((prev) => {
-            const next = new Map(prev);
-            next.delete(pendingActionKey);
-            return next;
-          });
-        });
-      });
-    })();
+    }
   }
 
   function handleNavigateInput(input: string, key: Key) {
@@ -1377,7 +1462,9 @@ export function App() {
       mode.type !== "UpModal" &&
       mode.type !== "Search" &&
       mode.type !== "ConfirmKill" &&
-      mode.type !== "ConfirmDown"
+      mode.type !== "ConfirmDown" &&
+      mode.type !== "ConfirmClose" &&
+      mode.type !== "ConfirmCloseForce"
     ) {
       exit();
       return;
@@ -1400,6 +1487,9 @@ export function App() {
         return handleConfirmKillInput(input, key);
       case "ConfirmDown":
         return handleConfirmDownInput(input, key);
+      case "ConfirmClose":
+      case "ConfirmCloseForce":
+        return handleConfirmCloseInput(input, key);
     }
   });
 

@@ -45,6 +45,13 @@ function getHints(
       return [`Kill pane ${mode.label}?`, "enter:confirm  esc:cancel"];
     case "ConfirmDown":
       return [`Kill session for ${mode.branch}?`, "enter:confirm  esc:cancel"];
+    case "ConfirmClose":
+      return [`Close worktree ${mode.branch}?`, "enter:confirm  esc:cancel"];
+    case "ConfirmCloseForce":
+      return [
+        `${mode.branch} has uncommitted changes`,
+        "enter:force close  esc:cancel",
+      ];
     case "UpModal":
       return ["", ""];
   }
@@ -60,7 +67,12 @@ export function StatusBar({
   const cols = stdout?.columns ?? 50;
   const divider = "─".repeat(Math.max(1, cols));
 
-  if (mode.type === "ConfirmKill" || mode.type === "ConfirmDown") {
+  if (
+    mode.type === "ConfirmKill" ||
+    mode.type === "ConfirmDown" ||
+    mode.type === "ConfirmClose" ||
+    mode.type === "ConfirmCloseForce"
+  ) {
     const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
     return (
       <Box flexDirection="column">

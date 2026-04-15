@@ -26,6 +26,25 @@ export type Mode =
       branch: string;
       worktreePath: string;
       worktreeKey: string;
+    }
+  | {
+      type: "ConfirmClose";
+      sessionName: string;
+      branch: string;
+      worktreePath: string;
+      worktreeKey: string;
+      repoPath: string;
+      project: string;
+      changedFiles: number;
+    }
+  | {
+      type: "ConfirmCloseForce";
+      sessionName: string;
+      branch: string;
+      worktreePath: string;
+      worktreeKey: string;
+      repoPath: string;
+      project: string;
     };
 
 export const Mode = {
@@ -63,6 +82,40 @@ export const Mode = {
     branch,
     worktreePath,
     worktreeKey,
+  }),
+  ConfirmClose: (
+    sessionName: string,
+    branch: string,
+    worktreePath: string,
+    worktreeKey: string,
+    repoPath: string,
+    project: string,
+    changedFiles: number,
+  ): Mode => ({
+    type: "ConfirmClose",
+    sessionName,
+    branch,
+    worktreePath,
+    worktreeKey,
+    repoPath,
+    project,
+    changedFiles,
+  }),
+  ConfirmCloseForce: (
+    sessionName: string,
+    branch: string,
+    worktreePath: string,
+    worktreeKey: string,
+    repoPath: string,
+    project: string,
+  ): Mode => ({
+    type: "ConfirmCloseForce",
+    sessionName,
+    branch,
+    worktreePath,
+    worktreeKey,
+    repoPath,
+    project,
   }),
 };
 

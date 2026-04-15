@@ -54,6 +54,7 @@ export interface WorktreeService {
   removeWorktree: (
     path: string,
     force?: boolean,
+    cwd?: string,
   ) => Effect.Effect<RemoveWorktreeResult, WctError, WctRuntimeServices>;
   findWorktreeByBranch: (
     branch: string,
@@ -411,12 +412,12 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  removeWorktree: (path, force = false) =>
+  removeWorktree: (path, force = false, cwd) =>
     Effect.gen(function* () {
       const args = force
         ? ["worktree", "remove", "--force", path]
         : ["worktree", "remove", path];
-      yield* execProcess("git", args);
+      yield* execProcess("git", args, cwd ? { cwd } : undefined);
       return { _tag: "Removed" as const, path };
     }).pipe(
       Effect.catch((error) => {

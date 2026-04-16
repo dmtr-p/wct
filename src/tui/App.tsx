@@ -16,6 +16,7 @@ import { OpenModal, type OpenModalResult } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { UpModal, type UpModalResult } from "./components/UpModal";
+import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
 import { useRefresh } from "./hooks/useRefresh";
 import { useRegistry } from "./hooks/useRegistry";
@@ -68,7 +69,7 @@ export function App() {
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { actionError, showActionError, clearActionError } = useActionError();
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
@@ -78,9 +79,6 @@ export function App() {
   const confirmCloseReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
-  const actionErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
 
   // Auto-expand all repos on first load
   useEffect(() => {
@@ -193,34 +191,6 @@ export function App() {
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
   }, [refreshRegistry, refreshSessions, discoverClient]);
-
-  const clearActionError = useCallback(() => {
-    if (actionErrorTimeoutRef.current) {
-      clearTimeout(actionErrorTimeoutRef.current);
-      actionErrorTimeoutRef.current = null;
-    }
-    setActionError(null);
-  }, []);
-
-  const showActionError = useCallback((message: string) => {
-    if (actionErrorTimeoutRef.current) {
-      clearTimeout(actionErrorTimeoutRef.current);
-    }
-    setActionError(message);
-    actionErrorTimeoutRef.current = setTimeout(() => {
-      actionErrorTimeoutRef.current = null;
-      setActionError(null);
-    }, 5000);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (actionErrorTimeoutRef.current) {
-        clearTimeout(actionErrorTimeoutRef.current);
-      }
-    },
-    [],
-  );
 
   const switchClientAwayFromSession = useCallback(
     async (sessionName: string) => {

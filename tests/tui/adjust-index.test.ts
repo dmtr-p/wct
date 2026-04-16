@@ -5,9 +5,9 @@ import {
   resolveExpandedRightArrowAction,
   resolveRecoveredSelectionIndex,
   resolveSelectedWorktreeIndex,
-  resolveSessionHandoff,
   treeItemId,
-} from "../../src/tui/App";
+} from "../../src/tui/tree-helpers";
+import { resolveSessionHandoff } from "../../src/tui/session-utils";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 

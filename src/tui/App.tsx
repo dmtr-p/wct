@@ -728,18 +728,26 @@ export function App() {
       const actionMessage = resolveStartActionMessage(result);
 
       if (result.tmux.attempted && result.tmux.ok && autoSwitch) {
-        const switched = await switchSession(result.sessionName);
-        await Promise.all([refreshSessions(), discoverClient()]);
-
-        if (!switched) {
-          showActionError(
-            `Started session '${result.sessionName}', but failed to switch client`,
+        const liveClient = await discoverClient();
+        if (liveClient.type === "single") {
+          const switched = await switchSession(
+            result.sessionName,
+            liveClient.client,
           );
+          await refreshSessions();
+
+          if (!switched) {
+            showActionError(
+              `Started session '${result.sessionName}', but failed to switch client`,
+            );
+          } else if (actionMessage) {
+            showActionError(actionMessage);
+          }
           return;
         }
-      } else {
-        await refreshAll();
       }
+
+      await refreshAll();
 
       if (actionMessage) {
         showActionError(actionMessage);
@@ -1173,7 +1181,7 @@ export function App() {
       return;
     }
 
-    if (input === "u" && tmuxClient) {
+    if (input === "u") {
       prepareUpModal();
       return;
     }
@@ -1223,12 +1231,7 @@ export function App() {
       }
     }
 
-    if (
-      input === "c" &&
-      tmuxClient &&
-      currentItem.type === "worktree" &&
-      currentWorktree
-    ) {
+    if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
       handleCloseSelectedWorktree();
       return;
     }
@@ -1300,12 +1303,12 @@ export function App() {
       return;
     }
 
-    if (input === "u" && tmuxClient) {
+    if (input === "u") {
       prepareUpModal();
       return;
     }
 
-    if (input === "c" && tmuxClient) {
+    if (input === "c") {
       handleCloseSelectedWorktree();
       return;
     }

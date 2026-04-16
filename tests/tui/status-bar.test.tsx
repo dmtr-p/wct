@@ -112,9 +112,9 @@ describe("StatusBar", () => {
     expect(rendered.output).toContain("↑↓:navigate");
     expect(rendered.output).toContain("o:open");
     expect(rendered.output).not.toContain("space:switch");
-    expect(rendered.output).not.toContain("u:up");
+    expect(rendered.output).toContain("u:up");
     expect(rendered.output).not.toContain("d:down");
-    expect(rendered.output).not.toContain("c:close");
+    expect(rendered.output).toContain("c:close");
 
     rendered.unmount();
   });
@@ -129,9 +129,9 @@ describe("StatusBar", () => {
     expect(rendered.output).toContain("↑↓:navigate");
     expect(rendered.output).toContain("o:open");
     expect(rendered.output).not.toContain("space:action");
-    expect(rendered.output).not.toContain("u:up");
+    expect(rendered.output).toContain("u:up");
     expect(rendered.output).not.toContain("d:down");
-    expect(rendered.output).not.toContain("c:close");
+    expect(rendered.output).toContain("c:close");
 
     rendered.unmount();
   });

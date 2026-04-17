@@ -1,6 +1,7 @@
 // src/tui/input/navigate.ts
 
 import type { Key } from "ink";
+import type { TmuxClient } from "../../services/tmux";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { Mode, type TreeItem, pendingKey } from "../types";
 
@@ -9,7 +10,7 @@ export interface NavigateContext {
   filteredRepos: RepoInfo[];
   selectedIndex: number;
   expandedRepos: Set<string>;
-  tmuxClient: unknown | null;
+  tmuxClient: TmuxClient | null;
 
   setMode: (m: Mode) => void;
   setSearchQuery: (q: string) => void;

@@ -5,8 +5,7 @@ import {
   type ExpandedContext,
 } from "../../src/tui/input/expanded";
 import type { NavigateContext } from "../../src/tui/input/navigate";
-import { Mode, type TreeItem } from "../../src/tui/types";
-import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { Mode } from "../../src/tui/types";
 import {
   adjustIndexForDetailCollapse,
   resolveExpandedRightArrowAction,

@@ -16,17 +16,18 @@ import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useTmux } from "./hooks/useTmux";
 import { tuiRuntime } from "./runtime";
+import { handleExpandedInput } from "./input/expanded";
+import type { ExpandedContext } from "./input/expanded";
+import { handleNavigateInput } from "./input/navigate";
+import type { NavigateContext } from "./input/navigate";
 import {
   buildTreeItems,
   findOwningWorktreeIndex,
-  adjustIndexForDetailCollapse,
   resolveRecoveredSelectionIndex,
-  resolveExpandedRightArrowAction,
-  resolveSelectedPane,
   resolveStatusBarProps,
   treeItemId,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
+import { Mode, type PendingAction, type PRInfo } from "./types";
 
 export function App() {
   const { exit } = useApp();
@@ -282,83 +283,31 @@ export function App() {
     }
   }
 
-  function handleNavigateInput(input: string, key: Key) {
-    if (input === "/") {
-      setMode(Mode.Search);
-      setSearchQuery("");
-      return;
-    }
+  const navCtx: NavigateContext = {
+    treeItems,
+    filteredRepos,
+    selectedIndex,
+    expandedRepos,
+    tmuxClient,
+    setMode,
+    setSearchQuery,
+    navigateTree: sessionActions.navigateTree,
+    toggleExpanded,
+    prepareOpenModal: modalActions.prepareOpenModal,
+    prepareUpModal: modalActions.prepareUpModal,
+    handleSpaceSwitch: sessionActions.handleSpaceSwitch,
+    handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
+    handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
+  };
 
-    if (input === "o") {
-      modalActions.prepareOpenModal();
-      return;
-    }
-
-    if (input === " " && tmuxClient) {
-      sessionActions.handleSpaceSwitch();
-      return;
-    }
-
-    if (input === "d" && tmuxClient) {
-      sessionActions.handleDownSelectedWorktree();
-      return;
-    }
-
-    if (input === "u") {
-      modalActions.prepareUpModal();
-      return;
-    }
-
-    if (key.upArrow) {
-      sessionActions.navigateTree(-1);
-      return;
-    }
-
-    if (key.downArrow) {
-      sessionActions.navigateTree(1);
-      return;
-    }
-
-    const currentItem = treeItems[selectedIndex];
-    if (!currentItem) return;
-
-    const currentRepo = filteredRepos[currentItem.repoIndex];
-    if (!currentRepo) return;
-
-    const currentWorktree =
-      currentItem.type === "worktree" && currentItem.worktreeIndex !== undefined
-        ? currentRepo.worktrees[currentItem.worktreeIndex]
-        : undefined;
-
-    if (key.leftArrow && currentItem.type === "repo") {
-      if (expandedRepos.has(currentRepo.id)) {
-        toggleExpanded(currentRepo.id);
-      }
-      return;
-    }
-
-    if (key.rightArrow) {
-      if (currentItem.type === "repo") {
-        if (!expandedRepos.has(currentRepo.id)) {
-          toggleExpanded(currentRepo.id);
-        }
-        return;
-      }
-      if (currentItem.type === "worktree" && currentWorktree) {
-        setMode(
-          Mode.Expanded(
-            pendingKey(currentRepo.project, currentWorktree.branch),
-          ),
-        );
-        return;
-      }
-    }
-
-    if (input === "c" && currentItem.type === "worktree" && currentWorktree) {
-      sessionActions.handleCloseSelectedWorktree();
-      return;
-    }
-  }
+  const expCtx: ExpandedContext = {
+    ...navCtx,
+    panes,
+    setSelectedIndex,
+    zoomPane,
+    killPane,
+    refreshSessions,
+  };
 
   function handleSearchInput(input: string, key: Key) {
     if (key.escape) {
@@ -370,109 +319,6 @@ export function App() {
       setMode(Mode.Navigate);
     } else if (input && !key.ctrl && !key.meta) {
       setSearchQuery((q) => q + input);
-    }
-  }
-
-  function handleExpandedInput(input: string, key: Key) {
-    if (key.leftArrow || key.escape) {
-      setSelectedIndex(adjustIndexForDetailCollapse(treeItems, selectedIndex));
-      setMode(Mode.Navigate);
-      return;
-    }
-
-    if (key.upArrow) {
-      sessionActions.navigateTree(-1);
-      return;
-    }
-
-    if (key.downArrow) {
-      sessionActions.navigateTree(1);
-      return;
-    }
-
-    if (key.rightArrow) {
-      const action = resolveExpandedRightArrowAction({
-        repos: filteredRepos,
-        items: treeItems,
-        selectedIndex,
-        expandedRepos,
-      });
-
-      if (action.type === "expand-repo") {
-        toggleExpanded(action.repoId);
-        return;
-      }
-
-      if (action.type === "expand-worktree") {
-        setSelectedIndex(action.nextSelectedIndex);
-        setMode(action.nextMode);
-      }
-
-      return;
-    }
-
-    if (input === " " && tmuxClient) {
-      sessionActions.handleSpaceSwitch();
-      return;
-    }
-
-    if (input === "o") {
-      modalActions.prepareOpenModal();
-      return;
-    }
-
-    if (input === "d" && tmuxClient) {
-      sessionActions.handleDownSelectedWorktree();
-      return;
-    }
-
-    if (input === "u") {
-      modalActions.prepareUpModal();
-      return;
-    }
-
-    if (input === "c") {
-      sessionActions.handleCloseSelectedWorktree();
-      return;
-    }
-
-    if (input === "/") {
-      setMode(Mode.Search);
-      setSearchQuery("");
-      return;
-    }
-
-    if (input === "z" && tmuxClient) {
-      const selectedPane = resolveSelectedPane({
-        repos: filteredRepos,
-        items: treeItems,
-        panes,
-        selectedIndex,
-      });
-      if (!selectedPane) {
-        return;
-      }
-      zoomPane(selectedPane.pane.paneId).then(() => refreshSessions());
-      return;
-    }
-
-    if (input === "x" && tmuxClient) {
-      const selectedPane = resolveSelectedPane({
-        repos: filteredRepos,
-        items: treeItems,
-        panes,
-        selectedIndex,
-      });
-      if (!selectedPane) {
-        return;
-      }
-      setMode(
-        Mode.ConfirmKill(
-          selectedPane.pane.paneId,
-          selectedPane.label,
-          selectedPane.worktreeKey,
-        ),
-      );
     }
   }
 
@@ -574,17 +420,14 @@ export function App() {
 
     switch (mode.type) {
       case "Navigate":
-        return handleNavigateInput(input, key);
+        return handleNavigateInput(navCtx, input, key);
       case "Search":
         return handleSearchInput(input, key);
       case "OpenModal":
-        // Modal handles its own input
-        return;
       case "UpModal":
-        // Modal handles its own input
         return;
       case "Expanded":
-        return handleExpandedInput(input, key);
+        return handleExpandedInput(expCtx, input, key);
       case "ConfirmKill":
         return handleConfirmKillInput(input, key);
       case "ConfirmDown":

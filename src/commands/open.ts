@@ -100,13 +100,13 @@ export interface OpenWorktreeResult {
 }
 
 export function resolveOpenOptions(
-  input: OpenRequest,
+  _input: OpenRequest,
 ): Effect.Effect<OpenOptions, WctError, WctServices> {
   return Effect.fail(commandError("invalid_options", "not implemented"));
 }
 
 export function openWorktree(
-  options: OpenOptions,
+  _options: OpenOptions,
 ): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
   return Effect.fail(commandError("worktree_error", "not implemented"));
 }

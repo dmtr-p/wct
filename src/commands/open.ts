@@ -80,6 +80,37 @@ export interface OpenOptions {
   profile?: string;
 }
 
+export interface OpenRequest {
+  branch?: string;
+  existing?: boolean;
+  base?: string;
+  noIde?: boolean;
+  noAttach?: boolean;
+  pr?: string;
+  prompt?: string;
+  profile?: string;
+}
+
+export interface OpenWorktreeResult {
+  worktreePath: string;
+  branch: string;
+  sessionName: string;
+  projectName: string;
+  created: boolean;
+}
+
+export function resolveOpenOptions(
+  input: OpenRequest,
+): Effect.Effect<OpenOptions, WctError, WctServices> {
+  return Effect.fail(commandError("invalid_options", "not implemented"));
+}
+
+export function openWorktree(
+  options: OpenOptions,
+): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
+  return Effect.fail(commandError("worktree_error", "not implemented"));
+}
+
 export function openCommand(
   options: OpenOptions,
 ): Effect.Effect<void, WctError, WctServices> {

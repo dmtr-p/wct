@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream";
-import React from "react";
+import type React from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 const runPromiseMock = vi.hoisted(() => vi.fn());

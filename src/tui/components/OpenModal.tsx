@@ -272,12 +272,7 @@ export function NewBranchForm({
 
 // ─── FromPRForm ──────────────────────────────────────────────────
 
-type FromPRField =
-  | "prList"
-  | "profile"
-  | "prompt"
-  | "noIde"
-  | "submit";
+type FromPRField = "prList" | "profile" | "prompt" | "noIde" | "submit";
 
 export function FromPRForm({
   prList,
@@ -428,11 +423,7 @@ export function FromPRForm({
 
 // ─── ExistingBranchForm ──────────────────────────────────────────
 
-type ExistingBranchField =
-  | "branchList"
-  | "prompt"
-  | "noIde"
-  | "submit";
+type ExistingBranchField = "branchList" | "prompt" | "noIde" | "submit";
 
 export function ExistingBranchForm({
   repoPath,

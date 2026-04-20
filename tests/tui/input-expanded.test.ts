@@ -1,16 +1,16 @@
-import { describe, expect, test, vi } from "vitest";
 import type { Key } from "ink";
+import { describe, expect, test, vi } from "vitest";
 import {
-  handleExpandedInput,
   type ExpandedContext,
+  handleExpandedInput,
 } from "../../src/tui/input/expanded";
 import type { NavigateContext } from "../../src/tui/input/navigate";
-import { Mode } from "../../src/tui/types";
 import {
   adjustIndexForDetailCollapse,
   resolveExpandedRightArrowAction,
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
+import { Mode } from "../../src/tui/types";
 
 vi.mock("../../src/tui/tree-helpers", () => ({
   adjustIndexForDetailCollapse: vi.fn(() => 0),
@@ -23,16 +23,22 @@ const noKey: Key = {
   downArrow: false,
   leftArrow: false,
   rightArrow: false,
+  pageDown: false,
+  pageUp: false,
+  home: false,
+  end: false,
   return: false,
   escape: false,
   ctrl: false,
-  meta: false,
   shift: false,
   tab: false,
   backspace: false,
   delete: false,
-  pageDown: false,
-  pageUp: false,
+  meta: false,
+  super: false,
+  hyper: false,
+  capsLock: false,
+  numLock: false,
 };
 
 function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
@@ -41,7 +47,7 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     filteredRepos: [],
     selectedIndex: 0,
     expandedRepos: new Set<string>(),
-    tmuxClient: { id: "test" },
+    tmuxClient: { tty: "/dev/pts/1", session: "test" },
     setMode: vi.fn(),
     setSearchQuery: vi.fn(),
     navigateTree: vi.fn(),

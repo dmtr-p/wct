@@ -1,9 +1,9 @@
 import {
-  type Mock,
   afterEach,
   beforeEach,
   describe,
   expect,
+  type Mock,
   test,
   vi,
 } from "vitest";
@@ -17,8 +17,8 @@ import {
 import {
   Mode,
   type PRInfo,
-  type TreeItem,
   pendingKey,
+  type TreeItem,
 } from "../../src/tui/types";
 
 vi.mock("../../src/tui/runtime", () => ({
@@ -176,25 +176,33 @@ describe("createPrepareOpenModal", () => {
 });
 
 describe("createHandleOpen", () => {
+  type MutableBun = typeof Bun & { spawn: typeof Bun.spawn };
+  const mutableBun = Bun as MutableBun;
   let originalSpawn: typeof Bun.spawn;
 
   beforeEach(() => {
-    originalSpawn = Bun.spawn;
+    originalSpawn = mutableBun.spawn;
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     // Bun.spawn is writable but not configurable, so assign directly
-    (Bun as any).spawn = originalSpawn;
+    mutableBun.spawn = originalSpawn;
     vi.useRealTimers();
   });
 
   test("sets pending action and clears on success after refreshAll", async () => {
-    let resolveExited: (code: number) => void;
+    const exited: { resolve: (code: number) => void } = {
+      resolve: (_code: number) => {
+        throw new Error("expected exited resolver to be initialized");
+      },
+    };
     const exitedPromise = new Promise<number>((r) => {
-      resolveExited = r;
+      exited.resolve = r;
     });
-    (Bun as any).spawn = vi.fn().mockReturnValue({ exited: exitedPromise });
+    mutableBun.spawn = vi
+      .fn()
+      .mockReturnValue({ exited: exitedPromise }) as typeof Bun.spawn;
 
     const setPendingActions = vi.fn((fn) => {
       if (typeof fn === "function") fn(new Map());
@@ -223,18 +231,24 @@ describe("createHandleOpen", () => {
     expect(setPendingActions).toHaveBeenCalled();
 
     // Simulate success
-    resolveExited!(0);
+    exited.resolve(0);
     await vi.waitFor(() => {
       expect(refreshAll).toHaveBeenCalled();
     });
   });
 
   test("clears pending action after 5s delay on error", async () => {
-    let resolveExited: (code: number) => void;
+    const exited: { resolve: (code: number) => void } = {
+      resolve: (_code: number) => {
+        throw new Error("expected exited resolver to be initialized");
+      },
+    };
     const exitedPromise = new Promise<number>((r) => {
-      resolveExited = r;
+      exited.resolve = r;
     });
-    (Bun as any).spawn = vi.fn().mockReturnValue({ exited: exitedPromise });
+    mutableBun.spawn = vi
+      .fn()
+      .mockReturnValue({ exited: exitedPromise }) as typeof Bun.spawn;
 
     const setPendingActions = vi.fn((fn) => {
       if (typeof fn === "function") fn(new Map());
@@ -261,7 +275,7 @@ describe("createHandleOpen", () => {
     const initialCallCount = setPendingActions.mock.calls.length;
 
     // Simulate failure
-    resolveExited!(1);
+    exited.resolve(1);
 
     // Wait for the .then to execute
     await vi.waitFor(() => {

@@ -6,8 +6,8 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
-import { formatSessionName, TmuxService } from "../../services/tmux";
 import type { TmuxClient } from "../../services/tmux";
+import { formatSessionName, TmuxService } from "../../services/tmux";
 import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
 import {
@@ -15,7 +15,7 @@ import {
   resolveStartActionMessage,
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
-import { Mode, type PendingAction, type TreeItem, pendingKey } from "../types";
+import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 

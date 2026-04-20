@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { resolveSessionHandoff } from "../../src/tui/session-utils";
 import {
   adjustIndexForDetailCollapse,
   resolveCloseSelectedWorktreeAction,
@@ -7,8 +9,6 @@ import {
   resolveSelectedWorktreeIndex,
   treeItemId,
 } from "../../src/tui/tree-helpers";
-import { resolveSessionHandoff } from "../../src/tui/session-utils";
-import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 function repo(repoIndex: number): TreeItem {

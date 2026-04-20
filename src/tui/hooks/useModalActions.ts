@@ -12,8 +12,8 @@ import {
   Mode,
   type PendingAction,
   type PRInfo,
-  type TreeItem,
   pendingKey,
+  type TreeItem,
 } from "../types";
 import type { RepoInfo } from "./useRegistry";
 

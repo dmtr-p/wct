@@ -15,11 +15,11 @@ import { useRefresh } from "./hooks/useRefresh";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useTmux } from "./hooks/useTmux";
-import { tuiRuntime } from "./runtime";
-import { handleExpandedInput } from "./input/expanded";
 import type { ExpandedContext } from "./input/expanded";
-import { handleNavigateInput } from "./input/navigate";
+import { handleExpandedInput } from "./input/expanded";
 import type { NavigateContext } from "./input/navigate";
+import { handleNavigateInput } from "./input/navigate";
+import { tuiRuntime } from "./runtime";
 import {
   buildTreeItems,
   findOwningWorktreeIndex,

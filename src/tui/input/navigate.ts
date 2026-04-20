@@ -3,7 +3,7 @@
 import type { Key } from "ink";
 import type { TmuxClient } from "../../services/tmux";
 import type { RepoInfo } from "../hooks/useRegistry";
-import { Mode, type TreeItem, pendingKey } from "../types";
+import { Mode, pendingKey, type TreeItem } from "../types";
 
 export interface NavigateContext {
   treeItems: TreeItem[];

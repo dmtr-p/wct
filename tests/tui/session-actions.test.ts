@@ -1,5 +1,6 @@
-import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import type { StartWorktreeSessionResult } from "../../src/commands/worktree-session";
+import { commandError } from "../../src/errors";
 import type { SessionActionDeps } from "../../src/tui/hooks/useSessionActions";
 import {
   createExecuteClose,
@@ -8,7 +9,7 @@ import {
   createHandleStartResult,
   createSwitchClientAway,
 } from "../../src/tui/hooks/useSessionActions";
-import { Mode, type TreeItem, pendingKey } from "../../src/tui/types";
+import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
@@ -205,11 +206,7 @@ describe("createHandleStartResult", () => {
       tmux: {
         attempted: true,
         ok: false,
-        error: {
-          _tag: "WctCommandError",
-          message: "tmux failed",
-          code: "unexpected_error",
-        } as any,
+        error: commandError("unexpected_error", "tmux failed"),
       },
     });
 
@@ -279,9 +276,6 @@ describe("createHandleSpaceSwitch", () => {
 
   test("starts new session when none exists and sets pending action", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
-    const { startWorktreeSession } = await import(
-      "../../src/commands/worktree-session"
-    );
 
     const startResult = makeStartResult();
     (tuiRuntime.runPromise as Mock).mockResolvedValue(startResult);

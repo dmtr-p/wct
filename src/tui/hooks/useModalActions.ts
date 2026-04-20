@@ -91,6 +91,7 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
 export function createHandleOpen(deps: ModalActionDeps) {
   return (opts: OpenModalResult) => {
     deps.setMode(Mode.Navigate);
+    const requestedBranch = opts.pr ? undefined : opts.branch;
     const project = deps.openModalRepoProject || "unknown";
     const key = pendingKey(project, opts.branch);
     deps.setPendingActions((prev) =>
@@ -113,7 +114,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
       try {
         const resolved = await runTuiSilentPromise(
           resolveOpenOptions({
-            branch: opts.branch,
+            branch: requestedBranch,
             base: opts.base,
             cwd: deps.openModalRepoPath || undefined,
             pr: opts.pr,

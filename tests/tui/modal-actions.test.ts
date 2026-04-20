@@ -334,6 +334,66 @@ describe("createHandleOpen", () => {
     expect(setPendingActions).toHaveBeenCalledTimes(2);
     expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
+
+  test("omits branch when opening from a PR", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const { openWorktree, resolveOpenOptions } = await import(
+      "../../src/commands/open"
+    );
+
+    const resolvedOptions = {
+      branch: "pr-branch",
+      existing: false,
+      base: "origin/pr-branch",
+      cwd: "/repo",
+      noAttach: true,
+      pr: "123",
+    };
+    const openResult = {
+      worktreePath: "/repo/pr-branch",
+      branch: "pr-branch",
+      sessionName: "pr-branch",
+      projectName: "proj",
+      created: true,
+    };
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce(resolvedOptions)
+      .mockResolvedValueOnce(openResult);
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "pr-branch",
+      pr: "123",
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    expect(resolveOpenOptions).toHaveBeenCalledWith({
+      branch: undefined,
+      base: undefined,
+      cwd: "/repo",
+      pr: "123",
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+  });
 });
 
 describe("createPrepareUpModal", () => {

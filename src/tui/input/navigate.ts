@@ -1,5 +1,3 @@
-// src/tui/input/navigate.ts
-
 import type { Key } from "ink";
 import type { TmuxClient } from "../../services/tmux";
 import type { RepoInfo } from "../hooks/useRegistry";

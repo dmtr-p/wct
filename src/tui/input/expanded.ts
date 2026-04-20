@@ -1,5 +1,3 @@
-// src/tui/input/expanded.ts
-
 import type { Key } from "ink";
 import type { TmuxSessionInfo } from "../hooks/useTmux";
 import {
@@ -103,7 +101,9 @@ export function handleExpandedInput(
     if (!selectedPane) {
       return;
     }
-    ctx.zoomPane(selectedPane.pane.paneId).then(() => ctx.refreshSessions());
+    void ctx
+      .zoomPane(selectedPane.pane.paneId)
+      .then(() => ctx.refreshSessions());
     return;
   }
 

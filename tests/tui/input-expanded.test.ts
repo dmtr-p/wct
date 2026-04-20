@@ -182,7 +182,6 @@ describe("handleExpandedInput", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "z", noKey);
     expect(ctx.zoomPane).toHaveBeenCalledWith("%5");
-    // Wait for the promise chain
     await vi.waitFor(() => {
       expect(ctx.refreshSessions).toHaveBeenCalled();
     });

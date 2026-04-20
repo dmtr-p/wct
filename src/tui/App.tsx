@@ -403,7 +403,6 @@ export function App() {
   }
 
   useInput((input, key) => {
-    // Global keys (work in any mode)
     if (
       input === "q" &&
       mode.type !== "OpenModal" &&

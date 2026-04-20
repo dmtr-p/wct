@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { resolveStatusBarProps } from "../../src/tui/App";
+import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
 import { Mode, type TreeItem } from "../../src/tui/types";
 
 describe("resolveStatusBarProps", () => {

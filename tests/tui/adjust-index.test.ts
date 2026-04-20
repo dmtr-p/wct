@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vitest";
+import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { resolveSessionHandoff } from "../../src/tui/session-utils";
 import {
   adjustIndexForDetailCollapse,
   resolveCloseSelectedWorktreeAction,
   resolveExpandedRightArrowAction,
   resolveRecoveredSelectionIndex,
   resolveSelectedWorktreeIndex,
-  resolveSessionHandoff,
   treeItemId,
-} from "../../src/tui/App";
-import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+} from "../../src/tui/tree-helpers";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 function repo(repoIndex: number): TreeItem {

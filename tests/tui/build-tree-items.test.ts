@@ -5,7 +5,7 @@ import {
   buildTreeItems,
   findOwningWorktreeIndex,
   resolveSelectedPane,
-} from "../../src/tui/App";
+} from "../../src/tui/tree-helpers";
 import { type PaneInfo, pendingKey, type TreeItem } from "../../src/tui/types";
 
 describe("buildTreeItems", () => {

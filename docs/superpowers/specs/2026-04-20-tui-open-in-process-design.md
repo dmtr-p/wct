@@ -9,7 +9,7 @@ The TUI should behave like the existing `up` action:
 - execute the workflow in-process through `tuiRuntime.runPromise(...)`
 - refresh TUI state on success
 - show only an error banner on failure
-- avoid streaming CLI-oriented logs into the TUI
+- avoid rendering CLI-oriented logs in the TUI
 
 ## Current State
 
@@ -25,30 +25,55 @@ The CLI `open` implementation in `src/commands/open.ts` owns the full workflow:
 - run setup commands
 - launch tmux and IDE
 
-The TUI does not call that logic directly. Instead, `src/tui/hooks/useModalActions.ts` assembles CLI arguments and runs `wct open ...` as a child process with output ignored.
+PR-specific preprocessing does not live with that workflow today. It happens earlier in `src/cli/root-command.ts` and includes:
 
-That creates two problems:
+- validating `--pr` input
+- checking whether `gh` is installed
+- resolving the PR to a head branch
+- detecting or adding a fork remote
+- fetching the remote branch
+- probing whether a local branch already exists
+
+The TUI does not call any of this logic directly. Instead, `src/tui/hooks/useModalActions.ts` assembles CLI arguments and runs `wct open ...` as a child process with output ignored.
+
+That creates three problems:
 
 - the TUI cannot reuse the command's behavior except through a shell boundary
+- PR-based open behavior is only reusable through the CLI root command
 - future changes to `open` behavior are harder to keep consistent between CLI and TUI
 
 ## Chosen Approach
 
-Extract the current `openCommand(...)` workflow into a shared Effect operation and let both the CLI and TUI call that operation directly.
+Extract the current `openCommand(...)` workflow into a shared Effect operation and add a second shared preprocessing step for PR-based opens. Both the CLI and TUI will call those operations directly.
 
-This is intentionally the same pattern already used by the TUI `up` path, which calls `startWorktreeSession(...)` in-process instead of shelling out to `wct up`.
+This is intentionally the same pattern already used by the TUI `up` path, which calls `startWorktreeSession(...)` in-process instead of shelling out to `wct up`. `startWorktreeSession(...)` in `src/commands/worktree-session.ts` is the concrete template being mirrored: a shared command-level Effect operation consumed directly by the TUI.
 
-The shared operation will stay in `src/commands/open.ts` for this refactor to minimize churn. A larger architectural move into a separate service module is not needed for this change.
+The shared operations will stay in `src/commands/open.ts` for this refactor to minimize churn. A larger architectural move into a separate service module is not needed for this change.
 
 ## Design
 
-### Shared operation
+### Shared operations
 
-Add a new shared Effect entry point in `src/commands/open.ts`:
+Add two shared Effect entry points in `src/commands/open.ts`:
 
+- `resolveOpenOptions(input: OpenRequest): Effect.Effect<OpenOptions, WctError, WctServices>`
 - `openWorktree(options: OpenOptions): Effect.Effect<OpenWorktreeResult, WctError, WctServices>`
 
-This operation will contain the current orchestration logic from `openCommand(...)`, but it will not emit CLI logging.
+`resolveOpenOptions(...)` will own the PR-specific preprocessing that currently lives in `src/cli/root-command.ts`:
+
+- branch/`--pr` mutual exclusion rules
+- `--pr` plus `--base` validation
+- PR argument parsing
+- `gh` availability checks
+- PR resolution via `GitHubService`
+- fork remote detection and creation when needed
+- remote branch fetch
+- local branch existence probing
+- translation into `OpenOptions`
+
+This keeps `openWorktree(...)` focused on the actual open workflow after branch resolution is complete.
+
+`openWorktree(...)` will contain the current orchestration logic from `openCommand(...)` and will continue to emit progress logging through the existing `logger.*` helpers.
 
 It remains responsible for:
 
@@ -65,7 +90,7 @@ It remains responsible for:
 
 ### Result type
 
-Return a structured result instead of `void` so callers can react without re-deriving state.
+Return a small structured result instead of `void` so callers can react without re-deriving state.
 
 The result should include:
 
@@ -73,27 +98,40 @@ The result should include:
 - `branch`
 - `sessionName`
 - `projectName`
-- whether the worktree was newly created or already existed
-- enough summary information for the CLI to print current copy/setup messages without re-running logic
+- `created: boolean`
 
-The exact shape can stay small. The important part is that the boundary is reusable and not CLI-output-oriented.
+Copy and setup details should not be surfaced as part of the result contract. Those remain presentation concerns handled by the shared logger output during execution.
 
 ### CLI wrapper
 
 Keep `openCommand(...)` as a thin adapter that:
 
+- calls `resolveOpenOptions(...)`
 - calls `openWorktree(...)`
-- emits the existing informational and success/warn logs based on the returned result
+
+The CLI root command should also stop duplicating PR-resolution logic inline and instead delegate to `resolveOpenOptions(...)`.
 
 This preserves current CLI behavior while removing workflow duplication risk.
+
+### Logging strategy
+
+The shared `openWorktree(...)` operation should keep the existing `logger.*` calls in place.
+
+That is the correct boundary for the current workflow because copy/setup progress output is streamed and ordered. Reconstructing that from a result object would either lose fidelity or create an overly detailed result type that acts as a hidden logging protocol.
+
+TUI behavior should be achieved by silencing the logger's underlying `Console` dependency for this execution path rather than stripping logging from the shared operation.
+
+Because `src/utils/logger.ts` is already a thin wrapper over Effect `Console`, the TUI can provide a silent console/logger layer when running `resolveOpenOptions(...)` and `openWorktree(...)`.
 
 ### TUI integration
 
 Update `src/tui/hooks/useModalActions.ts` so `createHandleOpen(...)`:
 
-- stops building a `wct open ...` argv list
+- stops building a `wct open ...` argv list for subprocess execution
 - stops calling `Bun.spawn(...)`
-- calls `tuiRuntime.runPromise(openWorktree(...))`
+- calls `resolveOpenOptions(...)`
+- forces `noAttach: true` on the resolved options before calling `openWorktree(...)`
+- calls both operations through `tuiRuntime.runPromise(...)` with a silent console/logger layer
 
 The TUI should keep ownership of:
 
@@ -101,6 +139,8 @@ The TUI should keep ownership of:
 - immediate mode transition back to navigation
 - refresh timing
 - error banner rendering
+
+For tmux behavior, the TUI must remain in control of the current client. It should not allow `openWorktree(...)` to attach or switch away from the TUI's active session. For this refactor, the TUI path will always force `noAttach: true`, even if the modal option exists in the CLI surface area.
 
 Success path:
 
@@ -120,7 +160,7 @@ The shared operation should continue to fail with `WctError`.
 
 Caller behavior:
 
-- CLI: convert the result into the existing log output and let command-level error handling render failures as it does today
+- CLI: let shared logger output render progress as it does today, and let command-level error handling render failures
 - TUI: catch the failure, show only the final error message, and refresh only when needed for consistency
 
 No new TUI-specific error type is needed.
@@ -150,9 +190,11 @@ Project instructions say not to run tests or lint manually in-session; rely on t
 
 ## Risks
 
-The main risk is accidentally mixing CLI presentation concerns into the shared operation boundary. If logging remains embedded in the extracted workflow, the TUI will inherit behavior it does not want.
+The main risk is leaving PR resolution split across multiple layers. If PR preprocessing stays in the CLI root command, the TUI refactor will silently lose `--pr` support.
 
-The second risk is making the result type too detailed. The shared result should expose workflow outcomes, not become a second logging protocol.
+The second risk is tmux client handoff. If the TUI path allows `launchSessionAndIde(...)` to attach or switch the tmux client, the in-process flow may steal focus from the TUI itself.
+
+The third risk is making the result type too detailed. The shared result should expose workflow outcomes, not become a second logging protocol.
 
 ## Non-Goals
 

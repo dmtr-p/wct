@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import { Layer, ManagedRuntime } from "effect";
+import { Console, Effect, Layer, ManagedRuntime } from "effect";
 import { GitHubService, liveGitHubService } from "../services/github-service";
 import { IdeService, liveIdeService } from "../services/ide-service";
 import {
@@ -22,3 +22,36 @@ const tuiLayer = Layer.mergeAll(
 );
 
 export const tuiRuntime = ManagedRuntime.make(tuiLayer);
+
+const noop = () => {};
+
+const silentConsole: Console.Console = {
+  ...globalThis.console,
+  assert: noop,
+  clear: noop,
+  count: noop,
+  countReset: noop,
+  debug: noop,
+  dir: noop,
+  dirxml: noop,
+  error: noop,
+  group: noop,
+  groupCollapsed: noop,
+  groupEnd: noop,
+  info: noop,
+  log: noop,
+  table: noop,
+  time: noop,
+  timeEnd: noop,
+  timeLog: noop,
+  trace: noop,
+  warn: noop,
+};
+
+export function runTuiSilentPromise<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Promise<A> {
+  return tuiRuntime.runPromise(
+    Effect.provideService(effect, Console.Console, silentConsole),
+  );
+}

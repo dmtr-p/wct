@@ -1,12 +1,13 @@
 // src/tui/hooks/useModalActions.ts
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
-import { tuiRuntime } from "../runtime";
+import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import {
   Mode,
@@ -90,15 +91,6 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
 export function createHandleOpen(deps: ModalActionDeps) {
   return (opts: OpenModalResult) => {
     deps.setMode(Mode.Navigate);
-    const args = ["open", opts.branch];
-    if (opts.base) args.push("--base", opts.base);
-    if (opts.pr) args.push("--pr", opts.pr);
-    if (opts.profile) args.push("--profile", opts.profile);
-    if (opts.prompt) args.push("--prompt", opts.prompt);
-    if (opts.existing) args.push("--existing");
-    if (opts.noIde) args.push("--no-ide");
-    if (opts.noAttach) args.push("--no-attach");
-
     const project = deps.openModalRepoProject || "unknown";
     const key = pendingKey(project, opts.branch);
     deps.setPendingActions((prev) =>
@@ -117,38 +109,28 @@ export function createHandleOpen(deps: ModalActionDeps) {
       });
     };
 
-    let proc: ReturnType<typeof Bun.spawn>;
-    try {
-      proc = Bun.spawn(["wct", ...args], {
-        cwd: deps.openModalRepoPath || undefined,
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-    } catch (error) {
-      deps.showActionError(toWctError(error).message);
-      clearPending();
-      return;
-    }
-
-    proc.exited
-      .then((code) => {
-        if (code !== 0) {
-          // Show error briefly, then clear
-          setTimeout(clearPending, 5000);
-        } else {
-          // Success: trigger immediate refresh so real worktree appears
-          deps
-            .refreshAll()
-            .catch((error) => {
-              deps.showActionError(toWctError(error).message);
-            })
-            .finally(clearPending);
-        }
-      })
-      .catch((error) => {
+    void (async () => {
+      try {
+        const resolved = await runTuiSilentPromise(
+          resolveOpenOptions({
+            branch: opts.branch,
+            base: opts.base,
+            pr: opts.pr,
+            profile: opts.profile,
+            prompt: opts.prompt,
+            existing: opts.existing,
+            noIde: opts.noIde,
+            noAttach: true,
+          }),
+        );
+        await runTuiSilentPromise(openWorktree(resolved));
+        await deps.refreshAll();
+      } catch (error) {
         deps.showActionError(toWctError(error).message);
+      } finally {
         clearPending();
-      });
+      }
+    })();
   };
 }
 

@@ -4,7 +4,7 @@ import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
 import { initCommand } from "../commands/init";
 import { listCommand } from "../commands/list";
-import { openCommand } from "../commands/open";
+import { openCommand, resolveOpenOptions } from "../commands/open";
 import {
   projectsAddCommand,
   projectsListCommand,
@@ -14,9 +14,6 @@ import { switchCommand } from "../commands/switch";
 import { tuiCommand } from "../commands/tui";
 import { upCommand } from "../commands/up";
 import { Argument, Command, Flag } from "../effect/cli";
-import { WctCommandError, type WctError } from "../errors";
-import { GitHubService, parsePrArg } from "../services/github-service";
-import { WorktreeService } from "../services/worktree-service";
 import { JsonFlag } from "./json-flag";
 
 const branchArgument = Argument.string("branch").pipe(
@@ -64,13 +61,6 @@ function optionalStringFlag(
 
 function optionToUndefined<A>(option: Option.Option<A>): A | undefined {
   return Option.isSome(option) ? option.value : undefined;
-}
-
-function failCommand(
-  details: string,
-  code: WctError["code"] | "unexpected_error",
-): Effect.Effect<never, WctError> {
-  return Effect.fail(new WctCommandError({ code, details }));
 }
 
 const cdCliCommand = Command.make(
@@ -210,101 +200,18 @@ const openCliCommand = Command.make(
   },
   ({ branch, base, existing, noIde, noAttach, pr, prompt, profile }) =>
     Effect.gen(function* () {
-      const branchArg = optionToUndefined(branch);
-      const baseValue = optionToUndefined(base);
-      const prValue = optionToUndefined(pr);
-      const promptValue = optionToUndefined(prompt);
-
-      if (prValue && branchArg) {
-        return yield* failCommand(
-          "Cannot use --pr together with a branch argument",
-          "invalid_options",
-        );
-      }
-
-      if (prValue && baseValue) {
-        return yield* failCommand(
-          "Cannot use --pr together with --base",
-          "invalid_options",
-        );
-      }
-
-      if (prValue) {
-        const prNumber = parsePrArg(prValue);
-        if (prNumber === null) {
-          return yield* failCommand(
-            `Invalid --pr value: '${prValue}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
-            "pr_error",
-          );
-        }
-
-        const ghInstalled = yield* GitHubService.use((service) =>
-          service.isGhInstalled(),
-        );
-
-        if (!ghInstalled) {
-          return yield* failCommand(
-            "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
-            "gh_not_installed",
-          );
-        }
-
-        const resolvedPr = yield* GitHubService.use((service) =>
-          service.resolvePr(prNumber),
-        );
-        const resolvedBranch = resolvedPr.branch;
-        let remote = "origin";
-
-        if (resolvedPr.headOwner && resolvedPr.headRepo) {
-          const { headOwner, headRepo } = resolvedPr;
-          const existingRemote = yield* GitHubService.use((service) =>
-            service.findRemoteForRepo(headOwner, headRepo),
-          );
-
-          if (existingRemote) {
-            remote = existingRemote;
-          } else if (resolvedPr.isCrossRepository) {
-            // Only add a new remote for cross-repo (fork) PRs.
-            // For same-repo PRs, origin should have the branch.
-            remote = headOwner;
-            yield* GitHubService.use((service) =>
-              service.addForkRemote(remote, headOwner, headRepo),
-            );
-          }
-        }
-
-        yield* GitHubService.use((service) =>
-          service.fetchBranch(resolvedBranch, remote),
-        );
-
-        const localExists = yield* WorktreeService.use((service) =>
-          service.branchExists(resolvedBranch),
-        );
-
-        return yield* openCommand({
-          branch: resolvedBranch,
-          existing: localExists,
-          base: localExists ? undefined : `${remote}/${resolvedBranch}`,
-          noIde,
-          noAttach,
-          prompt: promptValue,
-          profile: optionToUndefined(profile),
-        });
-      }
-
-      if (!branchArg) {
-        return yield* failCommand("Missing branch name", "missing_branch_arg");
-      }
-
-      return yield* openCommand({
-        branch: branchArg,
+      const options = yield* resolveOpenOptions({
+        branch: optionToUndefined(branch),
+        base: optionToUndefined(base),
         existing,
-        base: baseValue,
         noIde,
         noAttach,
-        prompt: promptValue,
+        pr: optionToUndefined(pr),
+        prompt: optionToUndefined(prompt),
         profile: optionToUndefined(profile),
       });
+
+      return yield* openCommand(options);
     }),
 ).pipe(
   Command.withDescription(

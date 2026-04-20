@@ -65,33 +65,37 @@ export function createNavigateTree(deps: SessionActionDeps) {
 
 export function createSwitchClientAway(deps: SessionActionDeps) {
   return async (sessionName: string) => {
-    const [client, latestSessions] = await Promise.all([
-      deps.discoverClient(),
-      deps.refreshSessions(),
-    ]);
-    const handoff = resolveSessionHandoff({
-      client,
-      targetSession: sessionName,
-      sessions: latestSessions,
-    });
+    try {
+      const [client, latestSessions] = await Promise.all([
+        deps.discoverClient(),
+        deps.refreshSessions(),
+      ]);
+      const handoff = resolveSessionHandoff({
+        client,
+        targetSession: sessionName,
+        sessions: latestSessions,
+      });
 
-    if (handoff.type === "not-needed") {
-      return true;
-    }
+      if (handoff.type === "not-needed") {
+        return true;
+      }
 
-    if (handoff.type === "blocked") {
+      if (handoff.type === "blocked") {
+        return false;
+      }
+
+      if (handoff.type === "detach") {
+        return client.type === "single"
+          ? await deps.detachClient(client.client)
+          : false;
+      }
+
+      return client.type === "single"
+        ? await deps.switchSession(handoff.sessionName, client.client)
+        : false;
+    } catch {
       return false;
     }
-
-    if (handoff.type === "detach") {
-      return client.type === "single"
-        ? deps.detachClient(client.client)
-        : false;
-    }
-
-    return client.type === "single"
-      ? deps.switchSession(handoff.sessionName, client.client)
-      : false;
   };
 }
 
@@ -156,13 +160,20 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     const hasSession = deps.sessions.some((s) => s.name === sessionName);
     if (hasSession) {
       deps.clearActionError();
-      void deps.switchSession(sessionName).then((switched) => {
-        if (!switched) {
+      void deps
+        .switchSession(sessionName)
+        .then((switched) => {
+          if (!switched) {
+            deps.showActionError(
+              `Failed to switch to tmux session '${sessionName}'`,
+            );
+          }
+        })
+        .catch((error) => {
           deps.showActionError(
-            `Failed to switch to tmux session '${sessionName}'`,
+            `Failed to switch to tmux session '${sessionName}': ${toWctError(error).message}`,
           );
-        }
-      });
+        });
     } else {
       const pendingActionKey = pendingKey(repo.project, wt.branch);
       deps.clearActionError();

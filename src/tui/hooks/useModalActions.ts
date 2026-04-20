@@ -109,33 +109,46 @@ export function createHandleOpen(deps: ModalActionDeps) {
       }),
     );
 
-    const proc = Bun.spawn(["wct", ...args], {
-      cwd: deps.openModalRepoPath || undefined,
-      stdout: "ignore",
-      stderr: "ignore",
-    });
+    const clearPending = () => {
+      deps.setPendingActions((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    };
 
-    proc.exited.then((code) => {
-      if (code !== 0) {
-        // Show error briefly, then clear
-        setTimeout(() => {
-          deps.setPendingActions((prev) => {
-            const next = new Map(prev);
-            next.delete(key);
-            return next;
-          });
-        }, 5000);
-      } else {
-        // Success: trigger immediate refresh so real worktree appears
-        deps.refreshAll().then(() => {
-          deps.setPendingActions((prev) => {
-            const next = new Map(prev);
-            next.delete(key);
-            return next;
-          });
-        });
-      }
-    });
+    let proc: ReturnType<typeof Bun.spawn>;
+    try {
+      proc = Bun.spawn(["wct", ...args], {
+        cwd: deps.openModalRepoPath || undefined,
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+    } catch (error) {
+      deps.showActionError(toWctError(error).message);
+      clearPending();
+      return;
+    }
+
+    proc.exited
+      .then((code) => {
+        if (code !== 0) {
+          // Show error briefly, then clear
+          setTimeout(clearPending, 5000);
+        } else {
+          // Success: trigger immediate refresh so real worktree appears
+          deps
+            .refreshAll()
+            .catch((error) => {
+              deps.showActionError(toWctError(error).message);
+            })
+            .finally(clearPending);
+        }
+      })
+      .catch((error) => {
+        deps.showActionError(toWctError(error).message);
+        clearPending();
+      });
   };
 }
 

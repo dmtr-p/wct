@@ -1,5 +1,5 @@
 import type { Key } from "ink";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type ExpandedContext,
   handleExpandedInput,
@@ -74,6 +74,15 @@ function makeExpCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
 }
 
 describe("handleExpandedInput", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(adjustIndexForDetailCollapse).mockImplementation(() => 0);
+    vi.mocked(resolveExpandedRightArrowAction).mockImplementation(() => ({
+      type: "noop",
+    }));
+    vi.mocked(resolveSelectedPane).mockImplementation(() => null);
+  });
+
   test("left arrow calls adjustIndexForDetailCollapse and returns to Navigate", () => {
     vi.mocked(adjustIndexForDetailCollapse).mockReturnValue(2);
     const ctx = makeExpCtx();

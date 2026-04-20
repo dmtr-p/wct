@@ -45,13 +45,14 @@ export function resolveSessionHandoff({
 export function resolveStartActionMessage(
   result: StartWorktreeSessionResult,
 ): string | null {
-  if (result.tmux.attempted && !result.tmux.ok) {
-    return result.tmux.error.message;
+  const tmuxError =
+    result.tmux.attempted && !result.tmux.ok ? result.tmux.error.message : null;
+  const ideError =
+    result.ide.attempted && !result.ide.ok ? result.ide.error.message : null;
+
+  if (tmuxError && ideError) {
+    return `${tmuxError} (IDE also failed: ${ideError})`;
   }
 
-  if (result.ide.attempted && !result.ide.ok) {
-    return result.ide.error.message;
-  }
-
-  return null;
+  return tmuxError ?? ideError;
 }

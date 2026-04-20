@@ -199,6 +199,32 @@ describe("createWorktree with base branch", () => {
     expect(logText).not.toContain("develop commit");
   });
 
+  test("creates worktree using explicit cwd without relying on process cwd", async () => {
+    process.chdir(originalDir);
+    const wtPath = join(worktreeDir, "feature-from-explicit-cwd");
+    const result = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) =>
+          service.createWorktree(
+            wtPath,
+            "feature-from-explicit-cwd",
+            false,
+            undefined,
+            repoDir,
+          ),
+        ),
+      ),
+    );
+
+    expect(result._tag).toBe("Created");
+
+    const log = await $`git log --oneline feature-from-explicit-cwd`
+      .quiet()
+      .cwd(repoDir);
+    const logText = log.text();
+    expect(logText).not.toContain("develop commit");
+  });
+
   test("returns error when base branch does not exist", async () => {
     process.chdir(repoDir);
     const wtPath = join(worktreeDir, "feature-bad-base");

@@ -38,8 +38,12 @@ interface OpenWorkflowFixture {
 }
 
 async function createOpenWorkflowFixture(): Promise<OpenWorkflowFixture> {
-  const repoDir = await realpath(await mkdtemp(join(tmpdir(), "wct-open-repo-")));
-  const homeDir = await realpath(await mkdtemp(join(tmpdir(), "wct-open-home-")));
+  const repoDir = await realpath(
+    await mkdtemp(join(tmpdir(), "wct-open-repo-")),
+  );
+  const homeDir = await realpath(
+    await mkdtemp(join(tmpdir(), "wct-open-home-")),
+  );
   const worktreeDir = resolve(repoDir, "../worktrees");
 
   await $`git init -b main`.quiet().cwd(repoDir);
@@ -78,32 +82,36 @@ describe("resolveOpenOptions", () => {
   });
 
   test("normalizes PR options into branch and base after fetching", async () => {
-    const calls: Array<{ branch: string; remote?: string }> = [];
+    const calls: Array<{ branch: string; cwd?: string; remote?: string }> = [];
     const githubOverrides: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
-      resolvePr: (prNumber: number) =>
+      resolvePr: (prNumber: number, cwd?: string) =>
         Effect.succeed({
           branch: "feature-from-pr",
           prNumber,
+          cwd,
           isCrossRepository: false,
           headOwner: "acme",
           headRepo: "wct",
         }),
-      findRemoteForRepo: () => Effect.succeed("origin"),
-      fetchBranch: (branch: string, remote?: string) =>
+      findRemoteForRepo: (_owner: string, _repo: string, cwd?: string) =>
+        Effect.succeed(cwd ? "origin" : "missing-cwd"),
+      fetchBranch: (branch: string, remote?: string, cwd?: string) =>
         Effect.sync(() => {
-          calls.push({ branch, remote });
+          calls.push({ branch, remote, cwd });
         }),
     };
     const worktreeOverrides: WorktreeService = {
       ...liveWorktreeService,
-      branchExists: () => Effect.succeed(false),
+      branchExists: (_branch: string, cwd?: string) =>
+        Effect.succeed(cwd === "/repo"),
     };
 
     await expect(
       runResolveOpenOptions(
         {
+          cwd: "/repo",
           pr: "123",
           noIde: true,
           noAttach: true,
@@ -119,6 +127,7 @@ describe("resolveOpenOptions", () => {
       branch: "feature-from-pr",
       existing: false,
       base: "origin/feature-from-pr",
+      cwd: "/repo",
       noIde: true,
       noAttach: true,
       prompt: "focus",
@@ -128,6 +137,7 @@ describe("resolveOpenOptions", () => {
     expect(calls).toEqual([
       {
         branch: "feature-from-pr",
+        cwd: "/repo",
         remote: "origin",
       },
     ]);
@@ -151,16 +161,19 @@ describe("open workflow", () => {
   test("openWorktree returns created false when the worktree already exists", async () => {
     const createCalls: Array<{
       branch: string;
+      cwd?: string;
       existing: boolean;
       path: string;
       base?: string;
     }> = [];
+    const repoCalls: Array<{ cwd?: string; method: string }> = [];
     const registerCalls: Array<{ path: string; name: string }> = [];
 
     const result = await runBunPromise(
       withTestServices(
         openWorktree({
           branch: "feature-branch",
+          cwd: fixture.repoDir,
           existing: false,
         }),
         {
@@ -179,12 +192,24 @@ describe("open workflow", () => {
           } satisfies RegistryServiceApi,
           worktree: {
             ...liveWorktreeService,
-            isGitRepo: () => Effect.succeed(true),
-            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
-            branchExists: () => Effect.succeed(false),
-            createWorktree: (path, branch, existing, base) =>
+            isGitRepo: (cwd?: string) =>
               Effect.sync(() => {
-                createCalls.push({ path, branch, existing, base });
+                repoCalls.push({ method: "isGitRepo", cwd });
+                return true;
+              }),
+            getMainRepoPath: (cwd?: string) =>
+              Effect.sync(() => {
+                repoCalls.push({ method: "getMainRepoPath", cwd });
+                return fixture.repoDir;
+              }),
+            branchExists: (_branch: string, cwd?: string) =>
+              Effect.sync(() => {
+                repoCalls.push({ method: "branchExists", cwd });
+                return false;
+              }),
+            createWorktree: (path, branch, existing, base, cwd) =>
+              Effect.sync(() => {
+                createCalls.push({ path, branch, existing, base, cwd });
                 return {
                   _tag: "AlreadyExists" as const,
                   path,
@@ -206,9 +231,14 @@ describe("open workflow", () => {
       {
         path: join(fixture.worktreeDir, "myapp-feature-branch"),
         branch: "feature-branch",
+        cwd: fixture.repoDir,
         existing: false,
         base: undefined,
       },
+    ]);
+    expect(repoCalls).toEqual([
+      { method: "isGitRepo", cwd: fixture.repoDir },
+      { method: "getMainRepoPath", cwd: fixture.repoDir },
     ]);
     expect(registerCalls).toEqual([
       {

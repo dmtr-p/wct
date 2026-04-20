@@ -207,6 +207,7 @@ describe("createHandleOpen", () => {
       branch: "feat",
       existing: false,
       base: "main",
+      cwd: "/repo",
       noIde: true,
       noAttach: true,
       profile: "dev",
@@ -245,6 +246,7 @@ describe("createHandleOpen", () => {
     expect(resolveOpenOptions).toHaveBeenCalledWith({
       branch: "feat",
       base: "main",
+      cwd: "/repo",
       pr: "",
       profile: "dev",
       prompt: "ship it",
@@ -287,6 +289,7 @@ describe("createHandleOpen", () => {
     const resolvedOptions = {
       branch: "feat",
       existing: false,
+      cwd: "/repo",
       noAttach: true,
     };
     (runTuiSilentPromise as Mock)
@@ -314,6 +317,7 @@ describe("createHandleOpen", () => {
       expect(resolveOpenOptions).toHaveBeenCalledWith({
         branch: "feat",
         base: "",
+        cwd: "/repo",
         pr: "",
         profile: "",
         prompt: "",

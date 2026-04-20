@@ -75,6 +75,7 @@ export interface OpenOptions {
   branch: string;
   existing: boolean;
   base?: string;
+  cwd?: string;
   noIde?: boolean;
   noAttach?: boolean;
   prompt?: string;
@@ -85,6 +86,7 @@ export interface OpenRequest {
   branch?: string;
   existing?: boolean;
   base?: string;
+  cwd?: string;
   noIde?: boolean;
   noAttach?: boolean;
   pr?: string;
@@ -108,6 +110,7 @@ export function resolveOpenOptions(
       branch,
       existing = false,
       base,
+      cwd,
       noIde,
       noAttach,
       pr,
@@ -154,7 +157,7 @@ export function resolveOpenOptions(
       }
 
       const resolvedPr = yield* GitHubService.use((service) =>
-        service.resolvePr(prNumber),
+        service.resolvePr(prNumber, cwd),
       );
       const resolvedBranch = resolvedPr.branch;
       let remote = "origin";
@@ -162,7 +165,7 @@ export function resolveOpenOptions(
       if (resolvedPr.headOwner && resolvedPr.headRepo) {
         const { headOwner, headRepo } = resolvedPr;
         const existingRemote = yield* GitHubService.use((service) =>
-          service.findRemoteForRepo(headOwner, headRepo),
+          service.findRemoteForRepo(headOwner, headRepo, cwd),
         );
 
         if (existingRemote) {
@@ -170,23 +173,24 @@ export function resolveOpenOptions(
         } else if (resolvedPr.isCrossRepository) {
           remote = headOwner;
           yield* GitHubService.use((service) =>
-            service.addForkRemote(remote, headOwner, headRepo),
+            service.addForkRemote(remote, headOwner, headRepo, cwd),
           );
         }
       }
 
       yield* GitHubService.use((service) =>
-        service.fetchBranch(resolvedBranch, remote),
+        service.fetchBranch(resolvedBranch, remote, cwd),
       );
 
       const localExists = yield* WorktreeService.use((service) =>
-        service.branchExists(resolvedBranch),
+        service.branchExists(resolvedBranch, cwd),
       );
 
       return {
         branch: resolvedBranch,
         existing: localExists,
         base: localExists ? undefined : `${remote}/${resolvedBranch}`,
+        cwd,
         noIde,
         noAttach,
         prompt,
@@ -204,6 +208,7 @@ export function resolveOpenOptions(
       branch,
       existing,
       base,
+      cwd,
       noIde,
       noAttach,
       prompt,
@@ -216,10 +221,10 @@ export function openWorktree(
   options: OpenOptions,
 ): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { branch, existing, base, noIde, noAttach, prompt, profile } =
+    const { branch, existing, base, cwd, noIde, noAttach, prompt, profile } =
       options;
 
-    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
+    const repo = yield* WorktreeService.use((service) => service.isGitRepo(cwd));
     if (!repo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),
@@ -227,7 +232,7 @@ export function openWorktree(
     }
 
     const mainDir = yield* WorktreeService.use((service) =>
-      service.getMainRepoPath(),
+      service.getMainRepoPath(cwd),
     );
     if (!mainDir) {
       return yield* Effect.fail(
@@ -277,7 +282,7 @@ export function openWorktree(
 
     if (base) {
       const baseExists = yield* WorktreeService.use((service) =>
-        service.branchExists(base),
+        service.branchExists(base, cwd),
       );
       if (!baseExists) {
         return yield* Effect.fail(
@@ -309,7 +314,7 @@ export function openWorktree(
       `Creating worktree for '${branch}'${base ? ` based on '${base}'` : ""}`,
     );
     const worktreeResult = yield* WorktreeService.use((service) =>
-      service.createWorktree(worktreePath, branch, existing, base),
+      service.createWorktree(worktreePath, branch, existing, base, cwd),
     );
 
     if (worktreeResult._tag === "PathConflict") {

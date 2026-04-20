@@ -115,6 +115,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
           resolveOpenOptions({
             branch: opts.branch,
             base: opts.base,
+            cwd: deps.openModalRepoPath || undefined,
             pr: opts.pr,
             profile: opts.profile,
             prompt: opts.prompt,

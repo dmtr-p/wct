@@ -42,6 +42,7 @@ export interface WorktreeService {
     branch: string,
     useExisting: boolean,
     base?: string,
+    cwd?: string,
   ) => Effect.Effect<CreateWorktreeResult, WctError, WctRuntimeServices>;
   branchExists: (
     branch: string,
@@ -324,12 +325,12 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         commandError("worktree_error", "Failed to list worktrees", error),
       ),
     ),
-  createWorktree: (path, branch, useExisting, base) =>
+  createWorktree: (path, branch, useExisting, base, cwd) =>
     Effect.gen(function* () {
       const exists = yield* pathExists(path);
 
       if (exists) {
-        const worktrees = yield* listWorktreesImpl();
+        const worktrees = yield* listWorktreesImpl(cwd);
         const existing = worktrees.find((worktree) => worktree.path === path);
         if (existing?.branch === branch) {
           return {
@@ -353,18 +354,23 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
       }
 
       if (useExisting) {
-        yield* execProcess("git", ["worktree", "add", path, branch]);
+        yield* execProcess(
+          "git",
+          ["worktree", "add", path, branch],
+          cwd ? { cwd } : undefined,
+        );
       } else if (base) {
-        yield* execProcess("git", [
-          "worktree",
-          "add",
-          "-b",
-          branch,
-          path,
-          base,
-        ]);
+        yield* execProcess(
+          "git",
+          ["worktree", "add", "-b", branch, path, base],
+          cwd ? { cwd } : undefined,
+        );
       } else {
-        yield* execProcess("git", ["worktree", "add", "-b", branch, path]);
+        yield* execProcess(
+          "git",
+          ["worktree", "add", "-b", branch, path],
+          cwd ? { cwd } : undefined,
+        );
       }
 
       return { _tag: "Created" as const, path };

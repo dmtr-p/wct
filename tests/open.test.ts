@@ -83,6 +83,7 @@ describe("resolveOpenOptions", () => {
 
   test("normalizes PR options into branch and base after fetching", async () => {
     const calls: Array<{ branch: string; cwd?: string; remote?: string }> = [];
+    const branchExistsCalls: Array<{ branch: string; cwd?: string }> = [];
     const githubOverrides: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
@@ -104,8 +105,11 @@ describe("resolveOpenOptions", () => {
     };
     const worktreeOverrides: WorktreeService = {
       ...liveWorktreeService,
-      branchExists: (_branch: string, cwd?: string) =>
-        Effect.succeed(cwd === "/repo"),
+      branchExists: (branch: string, cwd?: string) =>
+        Effect.sync(() => {
+          branchExistsCalls.push({ branch, cwd });
+          return false;
+        }),
     };
 
     await expect(
@@ -139,6 +143,12 @@ describe("resolveOpenOptions", () => {
         branch: "feature-from-pr",
         cwd: "/repo",
         remote: "origin",
+      },
+    ]);
+    expect(branchExistsCalls).toEqual([
+      {
+        branch: "feature-from-pr",
+        cwd: "/repo",
       },
     ]);
   });

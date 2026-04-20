@@ -224,7 +224,9 @@ export function openWorktree(
     const { branch, existing, base, cwd, noIde, noAttach, prompt, profile } =
       options;
 
-    const repo = yield* WorktreeService.use((service) => service.isGitRepo(cwd));
+    const repo = yield* WorktreeService.use((service) =>
+      service.isGitRepo(cwd),
+    );
     if (!repo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),

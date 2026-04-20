@@ -126,10 +126,7 @@ export function resolveOpenOptions(
 
     if (pr && base) {
       return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Cannot use --pr together with --base",
-        ),
+        commandError("invalid_options", "Cannot use --pr together with --base"),
       );
     }
 
@@ -216,14 +213,8 @@ export function resolveOpenOptions(
 }
 
 export function openWorktree(
-  _options: OpenOptions,
-): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
-  return Effect.fail(commandError("worktree_error", "not implemented"));
-}
-
-export function openCommand(
   options: OpenOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
   return Effect.gen(function* () {
     const { branch, existing, base, noIde, noAttach, prompt, profile } =
       options;
@@ -404,5 +395,19 @@ export function openCommand(
     });
 
     yield* logger.success(`Worktree '${branch}' is ready`);
+
+    return {
+      worktreePath,
+      branch,
+      sessionName,
+      projectName: config.project_name,
+      created: worktreeResult._tag !== "AlreadyExists",
+    };
   });
+}
+
+export function openCommand(
+  options: OpenOptions,
+): Effect.Effect<void, WctError, WctServices> {
+  return Effect.asVoid(openWorktree(options));
 }

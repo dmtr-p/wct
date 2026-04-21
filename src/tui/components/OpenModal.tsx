@@ -161,8 +161,10 @@ type NewBranchField =
   | "profile"
   | "prompt"
   | "noIde"
+  | "noAttach"
   | "submit";
 
+/** @internal */
 export function NewBranchForm({
   defaultBase,
   profileNames,
@@ -181,11 +183,12 @@ export function NewBranchForm({
   const [profile, setProfile] = useState("");
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
+  const [noAttach, setNoAttach] = useState(false);
 
   const fields = useMemo(() => {
     const f: NewBranchField[] = ["branch", "base"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "submit");
+    f.push("prompt", "noIde", "noAttach", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -208,7 +211,7 @@ export function NewBranchForm({
       prompt: prompt.trim() || undefined,
       existing: false,
       noIde,
-      noAttach: false,
+      noAttach,
     });
   };
 
@@ -265,6 +268,12 @@ export function NewBranchForm({
         isFocused={currentField === "noIde"}
         onToggle={() => setNoIde((v) => !v)}
       />
+      <ToggleRow
+        label="No attach"
+        checked={noAttach}
+        isFocused={currentField === "noAttach"}
+        onToggle={() => setNoAttach((v) => !v)}
+      />
       <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
@@ -272,8 +281,15 @@ export function NewBranchForm({
 
 // ─── FromPRForm ──────────────────────────────────────────────────
 
-type FromPRField = "prList" | "profile" | "prompt" | "noIde" | "submit";
+type FromPRField =
+  | "prList"
+  | "profile"
+  | "prompt"
+  | "noIde"
+  | "noAttach"
+  | "submit";
 
+/** @internal */
 export function FromPRForm({
   prList,
   profileNames,
@@ -292,11 +308,12 @@ export function FromPRForm({
   const [profile, setProfile] = useState("");
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
+  const [noAttach, setNoAttach] = useState(false);
 
   const fields = useMemo(() => {
     const f: FromPRField[] = ["prList"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "submit");
+    f.push("prompt", "noIde", "noAttach", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -337,7 +354,7 @@ export function FromPRForm({
       prompt: prompt.trim() || undefined,
       existing: false,
       noIde,
-      noAttach: false,
+      noAttach,
     });
   };
 
@@ -416,6 +433,12 @@ export function FromPRForm({
         isFocused={currentField === "noIde"}
         onToggle={() => setNoIde((v) => !v)}
       />
+      <ToggleRow
+        label="No attach"
+        checked={noAttach}
+        isFocused={currentField === "noAttach"}
+        onToggle={() => setNoAttach((v) => !v)}
+      />
       <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
@@ -423,8 +446,14 @@ export function FromPRForm({
 
 // ─── ExistingBranchForm ──────────────────────────────────────────
 
-type ExistingBranchField = "branchList" | "prompt" | "noIde" | "submit";
+type ExistingBranchField =
+  | "branchList"
+  | "prompt"
+  | "noIde"
+  | "noAttach"
+  | "submit";
 
+/** @internal */
 export function ExistingBranchForm({
   repoPath,
   onSubmit,
@@ -441,11 +470,13 @@ export function ExistingBranchForm({
   const [filterQuery, setFilterQuery] = useState("");
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
+  const [noAttach, setNoAttach] = useState(false);
 
   const fields: ExistingBranchField[] = [
     "branchList",
     "prompt",
     "noIde",
+    "noAttach",
     "submit",
   ];
   const [focusIndex, setFocusIndex] = useState(0);
@@ -496,7 +527,7 @@ export function ExistingBranchForm({
       prompt: prompt.trim() || undefined,
       existing: true,
       noIde,
-      noAttach: false,
+      noAttach,
     });
   };
 
@@ -565,6 +596,12 @@ export function ExistingBranchForm({
         checked={noIde}
         isFocused={currentField === "noIde"}
         onToggle={() => setNoIde((v) => !v)}
+      />
+      <ToggleRow
+        label="No attach"
+        checked={noAttach}
+        isFocused={currentField === "noAttach"}
+        onToggle={() => setNoAttach((v) => !v)}
       />
       <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>

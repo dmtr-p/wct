@@ -5,6 +5,7 @@ import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
+import type { TmuxClient } from "../../services/tmux";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
@@ -17,6 +18,7 @@ import {
   type TreeItem,
 } from "../types";
 import type { RepoInfo } from "./useRegistry";
+import type { TmuxClientDiscovery } from "./useTmux";
 
 export interface ModalActionDeps {
   treeItems: TreeItem[];
@@ -39,6 +41,8 @@ export interface ModalActionDeps {
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
+  switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
+  discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   handleStartResult: (
     result: StartWorktreeSessionResult,
     autoSwitch: boolean,
@@ -111,24 +115,58 @@ export function createHandleOpen(deps: ModalActionDeps) {
     };
 
     void (async () => {
+      let warningMessage: string | undefined;
       try {
-        const resolved = await runTuiSilentPromise(
-          resolveOpenOptions({
-            branch: requestedBranch,
-            base: opts.base,
-            cwd: deps.openModalRepoPath || undefined,
-            pr: opts.pr,
-            profile: opts.profile,
-            prompt: opts.prompt,
-            existing: opts.existing,
-            noIde: opts.noIde,
-            noAttach: true,
-          }),
-        );
-        await runTuiSilentPromise(openWorktree(resolved));
-        await deps.refreshAll();
-      } catch (error) {
-        deps.showActionError(toWctError(error).message);
+        try {
+          const resolved = await runTuiSilentPromise(
+            resolveOpenOptions({
+              branch: requestedBranch,
+              base: opts.base,
+              cwd: deps.openModalRepoPath || undefined,
+              pr: opts.pr,
+              profile: opts.profile,
+              prompt: opts.prompt,
+              existing: opts.existing,
+              noIde: opts.noIde,
+              noAttach: true,
+            }),
+          );
+          const result = await runTuiSilentPromise(openWorktree(resolved));
+          if (result.warnings.length > 0) {
+            warningMessage = result.warnings.join("\n");
+          }
+
+          if (!opts.noAttach) {
+            const liveClient = await deps.discoverClient();
+            if (liveClient.type === "single") {
+              const switched = await deps.switchSession(
+                result.sessionName,
+                liveClient.client,
+              );
+              if (!switched) {
+                warningMessage = warningMessage
+                  ? `${warningMessage}\nStarted session '${result.sessionName}', but failed to switch client`
+                  : `Started session '${result.sessionName}', but failed to switch client`;
+              }
+            }
+          }
+        } catch (error) {
+          deps.showActionError(toWctError(error).message);
+          return;
+        }
+
+        try {
+          await deps.refreshAll();
+        } catch (error) {
+          const refreshMessage = `Refresh failed after open: ${toWctError(error).message}`;
+          warningMessage = warningMessage
+            ? `${warningMessage}\n${refreshMessage}`
+            : refreshMessage;
+        }
+
+        if (warningMessage) {
+          deps.showActionError(warningMessage);
+        }
       } finally {
         clearPending();
       }

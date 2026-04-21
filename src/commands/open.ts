@@ -100,6 +100,7 @@ export interface OpenWorktreeResult {
   sessionName: string;
   projectName: string;
   created: boolean;
+  warnings: string[];
 }
 
 export function resolveOpenOptions(
@@ -303,6 +304,7 @@ export function openWorktree(
       config.project_name,
     );
     const sessionName = formatSessionName(basename(worktreePath));
+    const warnings: string[] = [];
 
     const env: WctEnv = {
       WCT_WORKTREE_DIR: worktreePath,
@@ -349,9 +351,9 @@ export function openWorktree(
       } else if (syncResult.skipped) {
         yield* logger.info("VS Code workspace already exists, skipping sync");
       } else {
-        yield* logger.warn(
-          `VS Code workspace sync failed: ${syncResult.error}`,
-        );
+        const warning = `VS Code workspace sync failed: ${syncResult.error}`;
+        warnings.push(warning);
+        yield* logger.warn(warning);
       }
     }
 
@@ -389,6 +391,17 @@ export function openWorktree(
           `Setup completed with ${failedRequired.length} failure${failedRequired.length === 1 ? "" : "s"} and ${failedOptional.length} optional failure${failedOptional.length === 1 ? "" : "s"}`,
         );
       }
+
+      for (const failure of failedRequired) {
+        warnings.push(
+          `Setup failed: ${failure.name}: ${failure.error ?? "Unknown error"}`,
+        );
+      }
+      for (const failure of failedOptional) {
+        warnings.push(
+          `Optional setup failed: ${failure.name}: ${failure.error ?? "Unknown error"}`,
+        );
+      }
     }
 
     yield* launchSessionAndIde({
@@ -409,6 +422,7 @@ export function openWorktree(
       sessionName,
       projectName: config.project_name,
       created: worktreeResult._tag !== "AlreadyExists",
+      warnings,
     };
   });
 }

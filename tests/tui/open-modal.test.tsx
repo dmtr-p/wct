@@ -40,7 +40,7 @@ function stripAnsi(value: string) {
     const char = value.charAt(i);
     if (char === "\u001B" && value.charAt(i + 1) === "[") {
       i += 2;
-      while (i < value.length && !/[A-Za-z@~]/.test(value.charAt(i))) {
+      while (i < value.length && !/[\x40-\x7E]/.test(value.charAt(i))) {
         i += 1;
       }
       continue;
@@ -85,7 +85,7 @@ describe("OpenModal form variants", () => {
     runPromiseMock.mockReset();
   });
 
-  test("new branch form only shows the remaining No IDE toggle", async () => {
+  test("new branch form shows No IDE and No attach toggles", async () => {
     const rendered = await renderNode(
       <NewBranchForm
         defaultBase="main"
@@ -98,13 +98,13 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).not.toContain("No attach");
+      expect(rendered.output).toContain("No attach");
     } finally {
       rendered.unmount();
     }
   });
 
-  test("from PR form omits the stale No attach toggle", async () => {
+  test("from PR form shows No IDE and No attach toggles", async () => {
     const rendered = await renderNode(
       <FromPRForm
         prList={[
@@ -125,13 +125,13 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).not.toContain("No attach");
+      expect(rendered.output).toContain("No attach");
     } finally {
       rendered.unmount();
     }
   });
 
-  test("existing branch form omits the stale No attach toggle", async () => {
+  test("existing branch form shows No IDE and No attach toggles", async () => {
     runPromiseMock.mockResolvedValueOnce(["feature-a", "feature-b"]);
 
     const rendered = await renderNode(
@@ -145,7 +145,7 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).not.toContain("No attach");
+      expect(rendered.output).toContain("No attach");
     } finally {
       rendered.unmount();
     }

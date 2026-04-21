@@ -44,7 +44,7 @@ async function createOpenWorkflowFixture(): Promise<OpenWorkflowFixture> {
   const homeDir = await realpath(
     await mkdtemp(join(tmpdir(), "wct-open-home-")),
   );
-  const worktreeDir = resolve(repoDir, "../worktrees");
+  const worktreeDir = resolve(repoDir, "worktrees");
 
   await $`git init -b main`.quiet().cwd(repoDir);
   await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
@@ -55,7 +55,7 @@ async function createOpenWorkflowFixture(): Promise<OpenWorkflowFixture> {
   await Bun.write(
     join(repoDir, ".wct.yaml"),
     `version: 1
-worktree_dir: "../worktrees"
+worktree_dir: "worktrees"
 project_name: "myapp"
 `,
   );
@@ -236,6 +236,7 @@ describe("open workflow", () => {
       sessionName: "myapp-feature-branch",
       projectName: "myapp",
       created: false,
+      warnings: [],
     });
     expect(createCalls).toEqual([
       {

@@ -238,6 +238,8 @@ export function App() {
     setOpenModalPRList,
     showActionError,
     clearActionError,
+    switchSession,
+    discoverClient,
     handleStartResult: sessionActions.handleStartResult,
     refreshAll,
     upModalReturnModeRef,

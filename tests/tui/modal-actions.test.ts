@@ -14,6 +14,7 @@ import {
   createPrepareOpenModal,
   createPrepareUpModal,
 } from "../../src/tui/hooks/useModalActions";
+import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
 import {
   Mode,
   type PRInfo,
@@ -58,6 +59,8 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setOpenModalPRList: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
+    switchSession: vi.fn().mockResolvedValue(true),
+    discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
     handleStartResult: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue(undefined),
     upModalReturnModeRef: { current: Mode.Navigate },
@@ -190,7 +193,7 @@ describe("createHandleOpen", () => {
     vi.restoreAllMocks();
   });
 
-  test("runs open in process, forces noAttach, refreshes, and clears pending on success", async () => {
+  test("runs open in process detached, refreshes, and clears pending on success", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
     const { openWorktree, resolveOpenOptions } = await import(
       "../../src/commands/open"
@@ -219,6 +222,7 @@ describe("createHandleOpen", () => {
       sessionName: "feat",
       projectName: "proj",
       created: true,
+      warnings: [],
     };
     (runTuiSilentPromise as Mock)
       .mockResolvedValueOnce(resolvedOptions)
@@ -239,7 +243,7 @@ describe("createHandleOpen", () => {
       prompt: "ship it",
       existing: false,
       noIde: true,
-      noAttach: false,
+      noAttach: true,
     });
 
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
@@ -310,7 +314,7 @@ describe("createHandleOpen", () => {
       prompt: "",
       existing: false,
       noIde: false,
-      noAttach: false,
+      noAttach: true,
     });
 
     await vi.waitFor(() => {
@@ -355,6 +359,7 @@ describe("createHandleOpen", () => {
       sessionName: "pr-branch",
       projectName: "proj",
       created: true,
+      warnings: [],
     };
     (runTuiSilentPromise as Mock)
       .mockResolvedValueOnce(resolvedOptions)
@@ -374,7 +379,7 @@ describe("createHandleOpen", () => {
       prompt: undefined,
       existing: false,
       noIde: false,
-      noAttach: false,
+      noAttach: true,
     });
 
     expect(resolveOpenOptions).toHaveBeenCalledWith({
@@ -393,6 +398,213 @@ describe("createHandleOpen", () => {
       expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
       expect(deps.refreshAll).toHaveBeenCalled();
     });
+  });
+
+  test("shows structured warnings returned by openWorktree after a successful open", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: ["Optional setup failed: bootstrap: missing tool"],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Optional setup failed: bootstrap: missing tool",
+      );
+    });
+  });
+
+  test("handles refresh failures separately from open failures", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockRejectedValue(new Error("refresh blew up")),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Refresh failed after open: refresh blew up",
+      );
+    });
+  });
+
+  test("switches the detected client after open when noAttach is disabled", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const { openWorktree, resolveOpenOptions } = await import(
+      "../../src/commands/open"
+    );
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({
+        type: "single",
+        client: { tty: "/dev/pts/1", session: "main" },
+      });
+    const switchSession = vi.fn().mockResolvedValue(true);
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      switchSession,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    expect(resolveOpenOptions).toHaveBeenCalledWith({
+      branch: "feat",
+      base: undefined,
+      cwd: "/repo",
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(openWorktree).toHaveBeenCalled();
+      expect(discoverClient).toHaveBeenCalled();
+      expect(switchSession).toHaveBeenCalledWith("feat", {
+        tty: "/dev/pts/1",
+        session: "main",
+      });
+    });
+  });
+
+  test("does not switch the client after open when noAttach is enabled", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi.fn();
+    const switchSession = vi.fn();
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      switchSession,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+    expect(discoverClient).not.toHaveBeenCalled();
+    expect(switchSession).not.toHaveBeenCalled();
   });
 });
 

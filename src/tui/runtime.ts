@@ -34,7 +34,6 @@ export const tuiRuntime = ManagedRuntime.make(tuiLayer);
 const noop = () => {};
 
 const silentConsole: Console.Console = {
-  ...globalThis.console,
   assert: noop,
   clear: noop,
   count: noop,

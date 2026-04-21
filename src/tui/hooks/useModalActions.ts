@@ -116,6 +116,13 @@ export function createHandleOpen(deps: ModalActionDeps) {
 
     void (async () => {
       let warningMessage: string | undefined;
+
+      const appendWarning = (message: string) => {
+        warningMessage = warningMessage
+          ? `${warningMessage}\n${message}`
+          : message;
+      };
+
       try {
         try {
           const resolved = await runTuiSilentPromise(
@@ -133,7 +140,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
           );
           const result = await runTuiSilentPromise(openWorktree(resolved));
           if (result.warnings.length > 0) {
-            warningMessage = result.warnings.join("\n");
+            appendWarning(result.warnings.join("\n"));
           }
 
           if (!opts.noAttach) {
@@ -144,10 +151,21 @@ export function createHandleOpen(deps: ModalActionDeps) {
                 liveClient.client,
               );
               if (!switched) {
-                warningMessage = warningMessage
-                  ? `${warningMessage}\nStarted session '${result.sessionName}', but failed to switch client`
-                  : `Started session '${result.sessionName}', but failed to switch client`;
+                appendWarning(
+                  `Started session '${result.sessionName}', but failed to switch client`,
+                );
               }
+            } else if (
+              liveClient.type === "none" ||
+              liveClient.type === "error"
+            ) {
+              appendWarning(
+                "No tmux client found — start tmux in the other pane",
+              );
+            } else if (liveClient.type === "multiple") {
+              appendWarning(
+                "Cannot switch tmux client after open because multiple tmux clients are attached",
+              );
             }
           }
         } catch (error) {
@@ -158,10 +176,9 @@ export function createHandleOpen(deps: ModalActionDeps) {
         try {
           await deps.refreshAll();
         } catch (error) {
-          const refreshMessage = `Refresh failed after open: ${toWctError(error).message}`;
-          warningMessage = warningMessage
-            ? `${warningMessage}\n${refreshMessage}`
-            : refreshMessage;
+          appendWarning(
+            `Refresh failed after open: ${toWctError(error).message}`,
+          );
         }
 
         if (warningMessage) {

@@ -559,6 +559,150 @@ describe("createHandleOpen", () => {
     });
   });
 
+  test("shows the existing tmux warning when attach was requested but no client is found", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({ type: "none" });
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "No tmux client found — start tmux in the other pane",
+      );
+    });
+  });
+
+  test("shows the existing tmux warning when attach was requested but client discovery errors", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({ type: "error" });
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "No tmux client found — start tmux in the other pane",
+      );
+    });
+  });
+
+  test("shows an error when attach was requested but multiple tmux clients are attached", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({ type: "multiple" });
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+        noAttach: true,
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Cannot switch tmux client after open because multiple tmux clients are attached",
+      );
+    });
+  });
+
   test("does not switch the client after open when noAttach is enabled", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
 

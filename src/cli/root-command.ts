@@ -205,13 +205,12 @@ const openCliCommand = Command.make(
         base: optionToUndefined(base),
         existing,
         noIde,
-        noAttach,
         pr: optionToUndefined(pr),
         prompt: optionToUndefined(prompt),
         profile: optionToUndefined(profile),
       });
 
-      return yield* openCommand(options);
+      return yield* openCommand({ ...options, noAttach });
     }),
 ).pipe(
   Command.withDescription(

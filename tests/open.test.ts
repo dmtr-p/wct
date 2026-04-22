@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   openCommand,
   openWorktree,
@@ -18,6 +18,7 @@ import {
   liveRegistryService,
   type RegistryServiceApi,
 } from "../src/services/registry-service";
+import { liveTmuxService } from "../src/services/tmux";
 import {
   liveWorktreeService,
   type WorktreeService,
@@ -127,7 +128,6 @@ describe("resolveOpenOptions", () => {
           cwd: "/repo",
           pr: "123",
           noIde: true,
-          noAttach: true,
           prompt: "focus",
           profile: "default",
         },
@@ -142,7 +142,6 @@ describe("resolveOpenOptions", () => {
       base: "origin/feature-from-pr",
       cwd: "/repo",
       noIde: true,
-      noAttach: true,
       prompt: "focus",
       profile: "default",
     });
@@ -246,6 +245,7 @@ describe("open workflow", () => {
       projectName: "myapp",
       created: false,
       warnings: [],
+      tmuxSessionStarted: false,
     });
     expect(createCalls).toEqual([
       {
@@ -266,6 +266,155 @@ describe("open workflow", () => {
         name: "myapp",
       },
     ]);
+  });
+
+  test("openWorktree reports tmuxSessionStarted false when no tmux config exists", async () => {
+    const result = await runBunPromise(
+      withTestServices(
+        openWorktree({
+          branch: "feature-branch",
+          cwd: fixture.repoDir,
+          existing: false,
+        }),
+        {
+          registry: {
+            ...liveRegistryService,
+            register: (path: string, name: string) =>
+              Effect.succeed({
+                id: "registry-item",
+                repo_path: path,
+                project: name,
+                created_at: 1,
+              }),
+          } satisfies RegistryServiceApi,
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+            branchExists: () => Effect.succeed(false),
+            createWorktree: (path, branch, _existing, _base) =>
+              Effect.succeed({ _tag: "Created" as const, path }),
+          },
+        },
+      ),
+    );
+
+    expect(result.tmuxSessionStarted).toBe(false);
+  });
+
+  test("openCommand prints attach guidance when --no-attach is set and tmux started", async () => {
+    const originalTmux = process.env.TMUX;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    delete process.env.TMUX;
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(
+            openCommand({
+              branch: "no-attach-branch",
+              existing: false,
+              noAttach: true,
+              cwd: fixture.repoDir,
+            }),
+            {
+              registry: {
+                ...liveRegistryService,
+                register: (path: string, name: string) =>
+                  Effect.succeed({
+                    id: "registry-item",
+                    repo_path: path,
+                    project: name,
+                    created_at: 1,
+                  }),
+              } satisfies RegistryServiceApi,
+              worktree: {
+                ...liveWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+                branchExists: () => Effect.succeed(false),
+                createWorktree: (path, branch, _existing, _base) =>
+                  Effect.succeed({ _tag: "Created" as const, path }),
+              },
+              tmux: {
+                ...liveTmuxService,
+                createSession: () =>
+                  Effect.succeed({
+                    _tag: "Created" as const,
+                    sessionName: "myapp-no-attach-branch",
+                  }),
+              },
+            },
+          ),
+        ),
+      ).resolves.toBeUndefined();
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) => line.includes("Attach to tmux session")),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+      if (originalTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = originalTmux;
+      }
+    }
+  });
+
+  test("openCommand skips maybeAttachSession when tmuxSessionStarted is false", async () => {
+    const originalTmux = process.env.TMUX;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    delete process.env.TMUX;
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(
+            openCommand({
+              branch: "no-tmux-branch",
+              existing: false,
+              cwd: fixture.repoDir,
+            }),
+            {
+              registry: {
+                ...liveRegistryService,
+                register: (path: string, name: string) =>
+                  Effect.succeed({
+                    id: "registry-item",
+                    repo_path: path,
+                    project: name,
+                    created_at: 1,
+                  }),
+              } satisfies RegistryServiceApi,
+              worktree: {
+                ...liveWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+                branchExists: () => Effect.succeed(false),
+                createWorktree: (path, branch, _existing, _base) =>
+                  Effect.succeed({ _tag: "Created" as const, path }),
+              },
+            },
+          ),
+        ),
+      ).resolves.toBeUndefined();
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) => line.includes("Attach to tmux session")),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+      if (originalTmux === undefined) {
+        delete process.env.TMUX;
+      } else {
+        process.env.TMUX = originalTmux;
+      }
+    }
   });
 
   test("openCommand delegates to openWorktree and resolves void", async () => {

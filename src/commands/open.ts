@@ -17,7 +17,7 @@ import { WorktreeService } from "../services/worktree-service";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
-import { launchSessionAndIde } from "./session";
+import { launchSessionAndIde, maybeAttachSession } from "./session";
 
 export const commandDef: CommandDef = {
   name: "open",
@@ -77,7 +77,6 @@ export interface OpenOptions {
   base?: string;
   cwd?: string;
   noIde?: boolean;
-  noAttach?: boolean;
   prompt?: string;
   profile?: string;
 }
@@ -88,7 +87,6 @@ export interface OpenRequest {
   base?: string;
   cwd?: string;
   noIde?: boolean;
-  noAttach?: boolean;
   pr?: string;
   prompt?: string;
   profile?: string;
@@ -101,6 +99,7 @@ export interface OpenWorktreeResult {
   projectName: string;
   created: boolean;
   warnings: string[];
+  tmuxSessionStarted: boolean;
 }
 
 export function resolveOpenOptions(
@@ -113,7 +112,6 @@ export function resolveOpenOptions(
       base,
       cwd,
       noIde,
-      noAttach,
       pr,
       prompt,
       profile,
@@ -202,7 +200,6 @@ export function resolveOpenOptions(
         base: localExists ? undefined : `${remote}/${resolvedBranch}`,
         cwd,
         noIde,
-        noAttach,
         prompt,
         profile,
       };
@@ -220,7 +217,6 @@ export function resolveOpenOptions(
       base,
       cwd,
       noIde,
-      noAttach,
       prompt,
       profile,
     };
@@ -231,8 +227,7 @@ export function openWorktree(
   options: OpenOptions,
 ): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { branch, existing, base, cwd, noIde, noAttach, prompt, profile } =
-      options;
+    const { branch, existing, base, cwd, noIde, prompt, profile } = options;
 
     const repo = yield* WorktreeService.use((service) =>
       service.isGitRepo(cwd),
@@ -413,14 +408,13 @@ export function openWorktree(
       }
     }
 
-    yield* launchSessionAndIde({
+    const launchResult = yield* launchSessionAndIde({
       sessionName,
       workingDir: worktreePath,
       tmuxConfig: resolved.tmux,
       env,
       ideCommand: resolved.ide?.command,
       noIde,
-      noAttach,
     });
 
     yield* logger.success(`Worktree '${branch}' is ready`);
@@ -432,12 +426,22 @@ export function openWorktree(
       projectName: config.project_name,
       created: worktreeResult._tag !== "AlreadyExists",
       warnings,
+      tmuxSessionStarted: launchResult.tmuxSessionStarted,
     };
   });
 }
 
+export interface OpenCommandOptions extends OpenOptions {
+  noAttach?: boolean;
+}
+
 export function openCommand(
-  options: OpenOptions,
+  options: OpenCommandOptions,
 ): Effect.Effect<void, WctError, WctServices> {
-  return Effect.asVoid(openWorktree(options));
+  return Effect.gen(function* () {
+    const result = yield* openWorktree(options);
+    if (result.tmuxSessionStarted) {
+      yield* maybeAttachSession(result.sessionName, options.noAttach);
+    }
+  });
 }

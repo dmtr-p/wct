@@ -164,7 +164,8 @@ type NewBranchField =
   | "noAttach"
   | "submit";
 
-function NewBranchForm({
+/** @internal */
+export function NewBranchForm({
   defaultBase,
   profileNames,
   onSubmit,
@@ -288,7 +289,8 @@ type FromPRField =
   | "noAttach"
   | "submit";
 
-function FromPRForm({
+/** @internal */
+export function FromPRForm({
   prList,
   profileNames,
   onSubmit,
@@ -451,7 +453,8 @@ type ExistingBranchField =
   | "noAttach"
   | "submit";
 
-function ExistingBranchForm({
+/** @internal */
+export function ExistingBranchForm({
   repoPath,
   onSubmit,
   onBack,

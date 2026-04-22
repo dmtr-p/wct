@@ -14,6 +14,7 @@ import {
   createPrepareOpenModal,
   createPrepareUpModal,
 } from "../../src/tui/hooks/useModalActions";
+import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
 import {
   Mode,
   type PRInfo,
@@ -25,10 +26,16 @@ vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
     runPromise: vi.fn().mockResolvedValue(undefined),
   },
+  runTuiSilentPromise: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../src/commands/worktree-session", () => ({
   startWorktreeSession: vi.fn(() => "mock-effect"),
+}));
+
+vi.mock("../../src/commands/open", () => ({
+  resolveOpenOptions: vi.fn(() => "resolve-open-effect"),
+  openWorktree: vi.fn(() => "open-worktree-effect"),
 }));
 
 function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
@@ -52,6 +59,8 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setOpenModalPRList: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
+    switchSession: vi.fn().mockResolvedValue(true),
+    discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
     handleStartResult: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue(undefined),
     upModalReturnModeRef: { current: Mode.Navigate },
@@ -176,38 +185,48 @@ describe("createPrepareOpenModal", () => {
 });
 
 describe("createHandleOpen", () => {
-  type MutableBun = typeof Bun & { spawn: typeof Bun.spawn };
-  const mutableBun = Bun as MutableBun;
-  let originalSpawn: typeof Bun.spawn;
-
   beforeEach(() => {
-    originalSpawn = mutableBun.spawn;
-    vi.useFakeTimers();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    // Bun.spawn is writable but not configurable, so assign directly
-    mutableBun.spawn = originalSpawn;
-    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  test("sets pending action and clears on success after refreshAll", async () => {
-    const exited: { resolve: (code: number) => void } = {
-      resolve: (_code: number) => {
-        throw new Error("expected exited resolver to be initialized");
-      },
-    };
-    const exitedPromise = new Promise<number>((r) => {
-      exited.resolve = r;
-    });
-    mutableBun.spawn = vi
-      .fn()
-      .mockReturnValue({ exited: exitedPromise }) as typeof Bun.spawn;
+  test("runs open in process detached, refreshes, and clears pending on success", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const { openWorktree, resolveOpenOptions } = await import(
+      "../../src/commands/open"
+    );
 
-    const setPendingActions = vi.fn((fn) => {
-      if (typeof fn === "function") fn(new Map());
+    let pendingActions = new Map<string, unknown>();
+    const setPendingActions = vi.fn((update) => {
+      pendingActions =
+        typeof update === "function" ? update(pendingActions) : update;
+      return pendingActions;
     });
     const refreshAll = vi.fn().mockResolvedValue(undefined);
+    const resolvedOptions = {
+      branch: "feat",
+      existing: false,
+      base: "main",
+      cwd: "/repo",
+      noIde: true,
+      profile: "dev",
+      prompt: "ship it",
+    };
+    const openResult = {
+      worktreePath: "/repo/feat",
+      branch: "feat",
+      sessionName: "feat",
+      projectName: "proj",
+      created: true,
+      tmuxSessionStarted: true,
+      warnings: [],
+    };
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce(resolvedOptions)
+      .mockResolvedValueOnce(openResult);
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
@@ -218,41 +237,66 @@ describe("createHandleOpen", () => {
 
     handleOpen({
       branch: "feat",
-      base: "",
+      base: "main",
       pr: "",
-      profile: "",
-      prompt: "",
+      profile: "dev",
+      prompt: "ship it",
       existing: false,
-      noIde: false,
-      noAttach: false,
+      noIde: true,
+      noAttach: true,
     });
 
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    expect(setPendingActions).toHaveBeenCalled();
+    expect(resolveOpenOptions).toHaveBeenCalledWith({
+      branch: "feat",
+      base: "main",
+      cwd: "/repo",
+      pr: "",
+      profile: "dev",
+      prompt: "ship it",
+      existing: false,
+      noIde: true,
+    });
+    expect(runTuiSilentPromise).toHaveBeenNthCalledWith(
+      1,
+      "resolve-open-effect",
+    );
+    expect(pendingActions.has(pendingKey("proj", "feat"))).toBe(true);
 
-    // Simulate success
-    exited.resolve(0);
     await vi.waitFor(() => {
+      expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
+      expect(runTuiSilentPromise).toHaveBeenNthCalledWith(
+        2,
+        "open-worktree-effect",
+      );
       expect(refreshAll).toHaveBeenCalled();
     });
+    expect(deps.showActionError).not.toHaveBeenCalled();
+    expect(pendingActions.size).toBe(0);
+    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
-  test("clears pending action after 5s delay on error", async () => {
-    const exited: { resolve: (code: number) => void } = {
-      resolve: (_code: number) => {
-        throw new Error("expected exited resolver to be initialized");
-      },
-    };
-    const exitedPromise = new Promise<number>((r) => {
-      exited.resolve = r;
-    });
-    mutableBun.spawn = vi
-      .fn()
-      .mockReturnValue({ exited: exitedPromise }) as typeof Bun.spawn;
+  test("shows the effect error, skips refresh, and clears pending without waiting on process exit", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const { openWorktree, resolveOpenOptions } = await import(
+      "../../src/commands/open"
+    );
 
-    const setPendingActions = vi.fn((fn) => {
-      if (typeof fn === "function") fn(new Map());
+    let pendingActions = new Map<string, unknown>();
+    const setPendingActions = vi.fn((update) => {
+      pendingActions =
+        typeof update === "function" ? update(pendingActions) : update;
+      return pendingActions;
     });
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const resolvedOptions = {
+      branch: "feat",
+      existing: false,
+      cwd: "/repo",
+    };
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce(resolvedOptions)
+      .mockRejectedValueOnce(new Error("open failed"));
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
@@ -268,26 +312,484 @@ describe("createHandleOpen", () => {
       prompt: "",
       existing: false,
       noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(resolveOpenOptions).toHaveBeenCalledWith({
+        branch: "feat",
+        base: "",
+        cwd: "/repo",
+        pr: "",
+        profile: "",
+        prompt: "",
+        existing: false,
+        noIde: false,
+      });
+      expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
+      expect(deps.showActionError).toHaveBeenCalledWith("open failed");
+    });
+    expect(runTuiSilentPromise).toHaveBeenCalledTimes(2);
+    expect(deps.refreshAll).not.toHaveBeenCalled();
+    expect(pendingActions.size).toBe(0);
+    expect(setPendingActions).toHaveBeenCalledTimes(2);
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+  });
+
+  test("omits branch when opening from a PR", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const { openWorktree, resolveOpenOptions } = await import(
+      "../../src/commands/open"
+    );
+
+    const resolvedOptions = {
+      branch: "pr-branch",
+      existing: false,
+      base: "origin/pr-branch",
+      cwd: "/repo",
+      pr: "123",
+    };
+    const openResult = {
+      worktreePath: "/repo/pr-branch",
+      branch: "pr-branch",
+      sessionName: "pr-branch",
+      projectName: "proj",
+      created: true,
+      tmuxSessionStarted: true,
+      warnings: [],
+    };
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce(resolvedOptions)
+      .mockResolvedValueOnce(openResult);
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "pr-branch",
+      pr: "123",
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    expect(resolveOpenOptions).toHaveBeenCalledWith({
+      branch: undefined,
+      base: undefined,
+      cwd: "/repo",
+      pr: "123",
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+  });
+
+  test("shows structured warnings returned by openWorktree after a successful open", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: ["Optional setup failed: bootstrap: missing tool"],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Optional setup failed: bootstrap: missing tool",
+      );
+    });
+  });
+
+  test("handles refresh failures separately from open failures", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockRejectedValue(new Error("refresh blew up")),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Refresh failed after open: refresh blew up",
+      );
+    });
+  });
+
+  test("switches the detected client after open when noAttach is disabled", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const { openWorktree, resolveOpenOptions } = await import(
+      "../../src/commands/open"
+    );
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({
+        type: "single",
+        client: { tty: "/dev/pts/1", session: "main" },
+      });
+    const switchSession = vi.fn().mockResolvedValue(true);
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      switchSession,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
       noAttach: false,
     });
 
-    // Initial setPendingActions call to set the pending action
-    const initialCallCount = setPendingActions.mock.calls.length;
-
-    // Simulate failure
-    exited.resolve(1);
-
-    // Wait for the .then to execute
+    expect(resolveOpenOptions).toHaveBeenCalledWith({
+      branch: "feat",
+      base: undefined,
+      cwd: "/repo",
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+    });
     await vi.waitFor(() => {
-      // setTimeout should be scheduled now
+      expect(openWorktree).toHaveBeenCalled();
+      expect(discoverClient).toHaveBeenCalled();
+      expect(switchSession).toHaveBeenCalledWith("feat", {
+        tty: "/dev/pts/1",
+        session: "main",
+      });
+    });
+  });
+
+  test("shows the existing tmux warning when attach was requested but no client is found", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({ type: "none" });
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
     });
 
-    // Advance timer by 5s
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "No tmux client found — start tmux in the other pane",
+      );
+    });
+  });
 
-    // Should have had another call to clear
-    expect(setPendingActions.mock.calls.length).toBeGreaterThan(
-      initialCallCount,
+  test("shows the existing tmux warning when attach was requested but client discovery errors", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({ type: "error" });
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Opened session 'feat' but failed to query tmux clients to switch",
+      );
+    });
+  });
+
+  test("shows an error when attach was requested but multiple tmux clients are attached", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi
+      .fn<() => Promise<TmuxClientDiscovery>>()
+      .mockResolvedValue({ type: "multiple" });
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Cannot switch tmux client after open because multiple tmux clients are attached",
+      );
+    });
+  });
+
+  test("does not switch the client after open when noAttach is enabled", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    const discoverClient = vi.fn();
+    const switchSession = vi.fn();
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: true,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      switchSession,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+    expect(discoverClient).not.toHaveBeenCalled();
+    expect(switchSession).not.toHaveBeenCalled();
+  });
+
+  test("skips client discovery when open did not start tmux", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const discoverClient = vi.fn();
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: false,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+    expect(discoverClient).not.toHaveBeenCalled();
+    expect(deps.showActionError).not.toHaveBeenCalledWith(
+      expect.stringContaining("tmux client"),
     );
   });
 });

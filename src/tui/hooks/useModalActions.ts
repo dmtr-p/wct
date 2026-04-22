@@ -1,12 +1,14 @@
 // src/tui/hooks/useModalActions.ts
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
+import type { TmuxClient } from "../../services/tmux";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
-import { tuiRuntime } from "../runtime";
+import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import {
   Mode,
@@ -16,6 +18,7 @@ import {
   type TreeItem,
 } from "../types";
 import type { RepoInfo } from "./useRegistry";
+import type { TmuxClientDiscovery } from "./useTmux";
 
 export interface ModalActionDeps {
   treeItems: TreeItem[];
@@ -38,6 +41,8 @@ export interface ModalActionDeps {
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
+  switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
+  discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   handleStartResult: (
     result: StartWorktreeSessionResult,
     autoSwitch: boolean,
@@ -90,15 +95,7 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
 export function createHandleOpen(deps: ModalActionDeps) {
   return (opts: OpenModalResult) => {
     deps.setMode(Mode.Navigate);
-    const args = ["open", opts.branch];
-    if (opts.base) args.push("--base", opts.base);
-    if (opts.pr) args.push("--pr", opts.pr);
-    if (opts.profile) args.push("--profile", opts.profile);
-    if (opts.prompt) args.push("--prompt", opts.prompt);
-    if (opts.existing) args.push("--existing");
-    if (opts.noIde) args.push("--no-ide");
-    if (opts.noAttach) args.push("--no-attach");
-
+    const requestedBranch = opts.pr ? undefined : opts.branch;
     const project = deps.openModalRepoProject || "unknown";
     const key = pendingKey(project, opts.branch);
     deps.setPendingActions((prev) =>
@@ -117,38 +114,80 @@ export function createHandleOpen(deps: ModalActionDeps) {
       });
     };
 
-    let proc: ReturnType<typeof Bun.spawn>;
-    try {
-      proc = Bun.spawn(["wct", ...args], {
-        cwd: deps.openModalRepoPath || undefined,
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-    } catch (error) {
-      deps.showActionError(toWctError(error).message);
-      clearPending();
-      return;
-    }
+    void (async () => {
+      let warningMessage: string | undefined;
 
-    proc.exited
-      .then((code) => {
-        if (code !== 0) {
-          // Show error briefly, then clear
-          setTimeout(clearPending, 5000);
-        } else {
-          // Success: trigger immediate refresh so real worktree appears
-          deps
-            .refreshAll()
-            .catch((error) => {
-              deps.showActionError(toWctError(error).message);
-            })
-            .finally(clearPending);
+      const appendWarning = (message: string) => {
+        warningMessage = warningMessage
+          ? `${warningMessage}\n${message}`
+          : message;
+      };
+
+      try {
+        try {
+          const resolved = await runTuiSilentPromise(
+            resolveOpenOptions({
+              branch: requestedBranch,
+              base: opts.base,
+              cwd: deps.openModalRepoPath || undefined,
+              pr: opts.pr,
+              profile: opts.profile,
+              prompt: opts.prompt,
+              existing: opts.existing,
+              noIde: opts.noIde,
+            }),
+          );
+          const result = await runTuiSilentPromise(openWorktree(resolved));
+          if (result.warnings.length > 0) {
+            appendWarning(result.warnings.join("\n"));
+          }
+
+          if (!opts.noAttach && result.tmuxSessionStarted) {
+            const liveClient = await deps.discoverClient();
+            if (liveClient.type === "single") {
+              const switched = await deps.switchSession(
+                result.sessionName,
+                liveClient.client,
+              );
+              if (!switched) {
+                appendWarning(
+                  `Started session '${result.sessionName}', but failed to switch client`,
+                );
+              }
+            } else if (liveClient.type === "none") {
+              appendWarning(
+                "No tmux client found — start tmux in the other pane",
+              );
+            } else if (liveClient.type === "error") {
+              appendWarning(
+                `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
+              );
+            } else if (liveClient.type === "multiple") {
+              appendWarning(
+                "Cannot switch tmux client after open because multiple tmux clients are attached",
+              );
+            }
+          }
+        } catch (error) {
+          deps.showActionError(toWctError(error).message);
+          return;
         }
-      })
-      .catch((error) => {
-        deps.showActionError(toWctError(error).message);
+
+        try {
+          await deps.refreshAll();
+        } catch (error) {
+          appendWarning(
+            `Refresh failed after open: ${toWctError(error).message}`,
+          );
+        }
+
+        if (warningMessage) {
+          deps.showActionError(warningMessage);
+        }
+      } finally {
         clearPending();
-      });
+      }
+    })();
   };
 }
 

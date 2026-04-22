@@ -8,6 +8,7 @@ import {
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { copyEntries } from "../services/copy";
+import { GitHubService, parsePrArg } from "../services/github-service";
 import { RegistryService } from "../services/registry-service";
 import { SetupService } from "../services/setup-service";
 import { formatSessionName } from "../services/tmux";
@@ -16,7 +17,7 @@ import { WorktreeService } from "../services/worktree-service";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
-import { launchSessionAndIde } from "./session";
+import { launchSessionAndIde, maybeAttachSession } from "./session";
 
 export const commandDef: CommandDef = {
   name: "open",
@@ -74,20 +75,163 @@ export interface OpenOptions {
   branch: string;
   existing: boolean;
   base?: string;
+  cwd?: string;
   noIde?: boolean;
-  noAttach?: boolean;
   prompt?: string;
   profile?: string;
 }
 
-export function openCommand(
-  options: OpenOptions,
-): Effect.Effect<void, WctError, WctServices> {
-  return Effect.gen(function* () {
-    const { branch, existing, base, noIde, noAttach, prompt, profile } =
-      options;
+export interface OpenRequest {
+  branch?: string;
+  existing?: boolean;
+  base?: string;
+  cwd?: string;
+  noIde?: boolean;
+  pr?: string;
+  prompt?: string;
+  profile?: string;
+}
 
-    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
+export interface OpenWorktreeResult {
+  worktreePath: string;
+  branch: string;
+  sessionName: string;
+  projectName: string;
+  created: boolean;
+  warnings: string[];
+  tmuxSessionStarted: boolean;
+}
+
+export function resolveOpenOptions(
+  input: OpenRequest,
+): Effect.Effect<OpenOptions, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const {
+      branch,
+      existing = false,
+      base,
+      cwd,
+      noIde,
+      pr,
+      prompt,
+      profile,
+    } = input;
+
+    if (pr && branch) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Cannot use --pr together with a branch argument",
+        ),
+      );
+    }
+
+    if (pr && base) {
+      return yield* Effect.fail(
+        commandError("invalid_options", "Cannot use --pr together with --base"),
+      );
+    }
+
+    if (pr && existing) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Cannot use --pr together with --existing",
+        ),
+      );
+    }
+
+    if (pr) {
+      const prNumber = parsePrArg(pr);
+      if (prNumber === null) {
+        return yield* Effect.fail(
+          commandError(
+            "pr_error",
+            `Invalid --pr value: '${pr}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
+          ),
+        );
+      }
+
+      const ghInstalled = yield* GitHubService.use((service) =>
+        service.isGhInstalled(),
+      );
+      if (!ghInstalled) {
+        return yield* Effect.fail(
+          commandError(
+            "gh_not_installed",
+            "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
+          ),
+        );
+      }
+
+      const resolvedPr = yield* GitHubService.use((service) =>
+        service.resolvePr(prNumber, cwd),
+      );
+      const resolvedBranch = resolvedPr.branch;
+      let remote = "origin";
+
+      if (resolvedPr.headOwner && resolvedPr.headRepo) {
+        const { headOwner, headRepo } = resolvedPr;
+        const existingRemote = yield* GitHubService.use((service) =>
+          service.findRemoteForRepo(headOwner, headRepo, cwd),
+        );
+
+        if (existingRemote) {
+          remote = existingRemote;
+        } else if (resolvedPr.isCrossRepository) {
+          remote = headOwner;
+          yield* GitHubService.use((service) =>
+            service.addForkRemote(remote, headOwner, headRepo, cwd),
+          );
+        }
+      }
+
+      yield* GitHubService.use((service) =>
+        service.fetchBranch(resolvedBranch, remote, cwd),
+      );
+
+      const localExists = yield* WorktreeService.use((service) =>
+        service.branchExists(resolvedBranch, cwd),
+      );
+
+      return {
+        branch: resolvedBranch,
+        existing: localExists,
+        base: localExists ? undefined : `${remote}/${resolvedBranch}`,
+        cwd,
+        noIde,
+        prompt,
+        profile,
+      };
+    }
+
+    if (!branch) {
+      return yield* Effect.fail(
+        commandError("missing_branch_arg", "Missing branch name"),
+      );
+    }
+
+    return {
+      branch,
+      existing,
+      base,
+      cwd,
+      noIde,
+      prompt,
+      profile,
+    };
+  });
+}
+
+export function openWorktree(
+  options: OpenOptions,
+): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const { branch, existing, base, cwd, noIde, prompt, profile } = options;
+
+    const repo = yield* WorktreeService.use((service) =>
+      service.isGitRepo(cwd),
+    );
     if (!repo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),
@@ -95,7 +239,7 @@ export function openCommand(
     }
 
     const mainDir = yield* WorktreeService.use((service) =>
-      service.getMainRepoPath(),
+      service.getMainRepoPath(cwd),
     );
     if (!mainDir) {
       return yield* Effect.fail(
@@ -145,7 +289,7 @@ export function openCommand(
 
     if (base) {
       const baseExists = yield* WorktreeService.use((service) =>
-        service.branchExists(base),
+        service.branchExists(base, cwd),
       );
       if (!baseExists) {
         return yield* Effect.fail(
@@ -164,6 +308,7 @@ export function openCommand(
       config.project_name,
     );
     const sessionName = formatSessionName(basename(worktreePath));
+    const warnings: string[] = [];
 
     const env: WctEnv = {
       WCT_WORKTREE_DIR: worktreePath,
@@ -177,7 +322,7 @@ export function openCommand(
       `Creating worktree for '${branch}'${base ? ` based on '${base}'` : ""}`,
     );
     const worktreeResult = yield* WorktreeService.use((service) =>
-      service.createWorktree(worktreePath, branch, existing, base),
+      service.createWorktree(worktreePath, branch, existing, base, cwd),
     );
 
     if (worktreeResult._tag === "PathConflict") {
@@ -210,9 +355,9 @@ export function openCommand(
       } else if (syncResult.skipped) {
         yield* logger.info("VS Code workspace already exists, skipping sync");
       } else {
-        yield* logger.warn(
-          `VS Code workspace sync failed: ${syncResult.error}`,
-        );
+        const warning = `VS Code workspace sync failed: ${syncResult.error}`;
+        warnings.push(warning);
+        yield* logger.warn(warning);
       }
     }
 
@@ -250,18 +395,53 @@ export function openCommand(
           `Setup completed with ${failedRequired.length} failure${failedRequired.length === 1 ? "" : "s"} and ${failedOptional.length} optional failure${failedOptional.length === 1 ? "" : "s"}`,
         );
       }
+
+      for (const failure of failedRequired) {
+        warnings.push(
+          `Setup failed: ${failure.name}: ${failure.error ?? "Unknown error"}`,
+        );
+      }
+      for (const failure of failedOptional) {
+        warnings.push(
+          `Optional setup failed: ${failure.name}: ${failure.error ?? "Unknown error"}`,
+        );
+      }
     }
 
-    yield* launchSessionAndIde({
+    const launchResult = yield* launchSessionAndIde({
       sessionName,
       workingDir: worktreePath,
       tmuxConfig: resolved.tmux,
       env,
       ideCommand: resolved.ide?.command,
       noIde,
-      noAttach,
     });
 
     yield* logger.success(`Worktree '${branch}' is ready`);
+
+    return {
+      worktreePath,
+      branch,
+      sessionName,
+      projectName: config.project_name,
+      created: worktreeResult._tag !== "AlreadyExists",
+      warnings,
+      tmuxSessionStarted: launchResult.tmuxSessionStarted,
+    };
+  });
+}
+
+export interface OpenCommandOptions extends OpenOptions {
+  noAttach?: boolean;
+}
+
+export function openCommand(
+  options: OpenCommandOptions,
+): Effect.Effect<void, WctError, WctServices> {
+  return Effect.gen(function* () {
+    const result = yield* openWorktree(options);
+    if (result.tmuxSessionStarted) {
+      yield* maybeAttachSession(result.sessionName, options.noAttach);
+    }
   });
 }

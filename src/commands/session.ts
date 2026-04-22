@@ -52,6 +52,10 @@ export function maybeAttachSession(
   });
 }
 
+export interface LaunchSessionAndIdeResult {
+  tmuxSessionStarted: boolean;
+}
+
 export function launchSessionAndIde(opts: {
   sessionName: string;
   workingDir: string;
@@ -59,17 +63,8 @@ export function launchSessionAndIde(opts: {
   env: WctEnv;
   ideCommand?: string;
   noIde?: boolean;
-  noAttach?: boolean;
-}): Effect.Effect<void, WctError, WctServices> {
-  const {
-    sessionName,
-    workingDir,
-    tmuxConfig,
-    env,
-    ideCommand,
-    noIde,
-    noAttach,
-  } = opts;
+}): Effect.Effect<LaunchSessionAndIdeResult, WctError, WctServices> {
+  const { sessionName, workingDir, tmuxConfig, env, ideCommand, noIde } = opts;
 
   return Effect.gen(function* () {
     const [tmuxResult] = yield* Effect.all([
@@ -126,10 +121,6 @@ export function launchSessionAndIde(opts: {
         : Effect.void,
     ]);
 
-    if (!tmuxResult) {
-      return;
-    }
-
-    yield* maybeAttachSession(sessionName, noAttach);
+    return { tmuxSessionStarted: tmuxResult !== null };
   });
 }

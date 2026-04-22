@@ -306,6 +306,13 @@ describe("open workflow", () => {
     const originalTmux = process.env.TMUX;
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
+    const wctYamlPath = join(fixture.repoDir, ".wct.yaml");
+    const originalYaml = await Bun.file(wctYamlPath).text();
+    await Bun.write(
+      wctYamlPath,
+      `version: 1\nworktree_dir: "worktrees"\nproject_name: "myapp"\ntmux: {}\n`,
+    );
+
     delete process.env.TMUX;
 
     try {
@@ -356,6 +363,7 @@ describe("open workflow", () => {
       ).toBe(true);
     } finally {
       logSpy.mockRestore();
+      await Bun.write(wctYamlPath, originalYaml);
       if (originalTmux === undefined) {
         delete process.env.TMUX;
       } else {

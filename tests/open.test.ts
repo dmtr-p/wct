@@ -292,7 +292,7 @@ describe("open workflow", () => {
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(fixture.repoDir),
             branchExists: () => Effect.succeed(false),
-            createWorktree: (path, branch, _existing, _base) =>
+            createWorktree: (path, _branch, _existing, _base) =>
               Effect.succeed({ _tag: "Created" as const, path }),
           },
         },
@@ -341,7 +341,7 @@ describe("open workflow", () => {
                 isGitRepo: () => Effect.succeed(true),
                 getMainRepoPath: () => Effect.succeed(fixture.repoDir),
                 branchExists: () => Effect.succeed(false),
-                createWorktree: (path, branch, _existing, _base) =>
+                createWorktree: (path, _branch, _existing, _base) =>
                   Effect.succeed({ _tag: "Created" as const, path }),
               },
               tmux: {
@@ -403,7 +403,7 @@ describe("open workflow", () => {
                 isGitRepo: () => Effect.succeed(true),
                 getMainRepoPath: () => Effect.succeed(fixture.repoDir),
                 branchExists: () => Effect.succeed(false),
-                createWorktree: (path, branch, _existing, _base) =>
+                createWorktree: (path, _branch, _existing, _base) =>
                   Effect.succeed({ _tag: "Created" as const, path }),
               },
             },

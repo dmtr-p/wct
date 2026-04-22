@@ -338,8 +338,6 @@ export function openCommand(
     if (result.tmuxSessionStarted) {
       yield* maybeAttachSession(result.sessionName, options.noAttach);
     }
-
-    yield* logger.success(`Environment ready for '${result.branch}'`);
   });
 }
 ```
@@ -399,6 +397,23 @@ test("runs open in process, refreshes, and clears pending on success", async () 
       tmuxSessionStarted: true,
       warnings: [],
     });
+
+  const deps = makeDeps({
+    openModalRepoProject: "proj",
+    openModalRepoPath: "/repo",
+    refreshAll: vi.fn().mockResolvedValue(undefined),
+  });
+
+  createHandleOpen(deps)({
+    branch: "feat",
+    base: "main",
+    pr: "",
+    profile: "dev",
+    prompt: "ship it",
+    existing: false,
+    noIde: true,
+    noAttach: true,
+  });
 
   expect(resolveOpenOptions).toHaveBeenCalledWith({
     branch: "feat",

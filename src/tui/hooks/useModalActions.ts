@@ -135,7 +135,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
               prompt: opts.prompt,
               existing: opts.existing,
               noIde: opts.noIde,
-              noAttach: true,
             }),
           );
           const result = await runTuiSilentPromise(openWorktree(resolved));
@@ -143,7 +142,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
             appendWarning(result.warnings.join("\n"));
           }
 
-          if (!opts.noAttach) {
+          if (!opts.noAttach && result.tmuxSessionStarted) {
             const liveClient = await deps.discoverClient();
             if (liveClient.type === "single") {
               const switched = await deps.switchSession(

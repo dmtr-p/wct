@@ -212,7 +212,6 @@ describe("createHandleOpen", () => {
       base: "main",
       cwd: "/repo",
       noIde: true,
-      noAttach: true,
       profile: "dev",
       prompt: "ship it",
     };
@@ -222,6 +221,7 @@ describe("createHandleOpen", () => {
       sessionName: "feat",
       projectName: "proj",
       created: true,
+      tmuxSessionStarted: true,
       warnings: [],
     };
     (runTuiSilentPromise as Mock)
@@ -256,7 +256,6 @@ describe("createHandleOpen", () => {
       prompt: "ship it",
       existing: false,
       noIde: true,
-      noAttach: true,
     });
     expect(runTuiSilentPromise).toHaveBeenNthCalledWith(
       1,
@@ -294,7 +293,6 @@ describe("createHandleOpen", () => {
       branch: "feat",
       existing: false,
       cwd: "/repo",
-      noAttach: true,
     };
     (runTuiSilentPromise as Mock)
       .mockResolvedValueOnce(resolvedOptions)
@@ -327,7 +325,6 @@ describe("createHandleOpen", () => {
         prompt: "",
         existing: false,
         noIde: false,
-        noAttach: true,
       });
       expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
@@ -350,7 +347,6 @@ describe("createHandleOpen", () => {
       existing: false,
       base: "origin/pr-branch",
       cwd: "/repo",
-      noAttach: true,
       pr: "123",
     };
     const openResult = {
@@ -359,6 +355,7 @@ describe("createHandleOpen", () => {
       sessionName: "pr-branch",
       projectName: "proj",
       created: true,
+      tmuxSessionStarted: true,
       warnings: [],
     };
     (runTuiSilentPromise as Mock)
@@ -391,7 +388,6 @@ describe("createHandleOpen", () => {
       prompt: undefined,
       existing: false,
       noIde: false,
-      noAttach: true,
     });
 
     await vi.waitFor(() => {
@@ -408,7 +404,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -416,6 +411,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: ["Optional setup failed: bootstrap: missing tool"],
       });
 
@@ -453,7 +449,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -461,6 +456,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: [],
       });
 
@@ -507,7 +503,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -515,6 +510,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: [],
       });
 
@@ -547,7 +543,6 @@ describe("createHandleOpen", () => {
       prompt: undefined,
       existing: false,
       noIde: false,
-      noAttach: true,
     });
     await vi.waitFor(() => {
       expect(openWorktree).toHaveBeenCalled();
@@ -570,7 +565,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -578,6 +572,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: [],
       });
 
@@ -618,7 +613,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -626,6 +620,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: [],
       });
 
@@ -666,7 +661,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -674,6 +668,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: [],
       });
 
@@ -713,7 +708,6 @@ describe("createHandleOpen", () => {
         branch: "feat",
         existing: false,
         cwd: "/repo",
-        noAttach: true,
       })
       .mockResolvedValueOnce({
         worktreePath: "/repo/feat",
@@ -721,6 +715,7 @@ describe("createHandleOpen", () => {
         sessionName: "feat",
         projectName: "proj",
         created: true,
+        tmuxSessionStarted: true,
         warnings: [],
       });
 
@@ -749,6 +744,53 @@ describe("createHandleOpen", () => {
     });
     expect(discoverClient).not.toHaveBeenCalled();
     expect(switchSession).not.toHaveBeenCalled();
+  });
+
+  test("skips client discovery when open did not start tmux", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    const discoverClient = vi.fn();
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: false,
+        warnings: [],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      discoverClient,
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+    expect(discoverClient).not.toHaveBeenCalled();
+    expect(deps.showActionError).not.toHaveBeenCalledWith(
+      expect.stringContaining("tmux client"),
+    );
   });
 });
 

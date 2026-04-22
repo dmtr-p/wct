@@ -81,6 +81,15 @@ describe("resolveOpenOptions", () => {
     ).rejects.toThrow("Cannot use --pr together with a branch argument");
   });
 
+  test("rejects --existing together with --pr", async () => {
+    await expect(
+      runResolveOpenOptions({
+        pr: "123",
+        existing: true,
+      }),
+    ).rejects.toThrow("Cannot use --pr together with --existing");
+  });
+
   test("normalizes PR options into branch and base after fetching", async () => {
     const calls: Array<{ branch: string; cwd?: string; remote?: string }> = [];
     const branchExistsCalls: Array<{ branch: string; cwd?: string }> = [];

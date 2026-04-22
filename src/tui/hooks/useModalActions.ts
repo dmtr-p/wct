@@ -155,12 +155,13 @@ export function createHandleOpen(deps: ModalActionDeps) {
                   `Started session '${result.sessionName}', but failed to switch client`,
                 );
               }
-            } else if (
-              liveClient.type === "none" ||
-              liveClient.type === "error"
-            ) {
+            } else if (liveClient.type === "none") {
               appendWarning(
                 "No tmux client found — start tmux in the other pane",
+              );
+            } else if (liveClient.type === "error") {
+              appendWarning(
+                `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
               );
             } else if (liveClient.type === "multiple") {
               appendWarning(

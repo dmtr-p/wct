@@ -650,7 +650,7 @@ describe("createHandleOpen", () => {
 
     await vi.waitFor(() => {
       expect(deps.showActionError).toHaveBeenCalledWith(
-        "No tmux client found — start tmux in the other pane",
+        "Opened session 'feat' but failed to query tmux clients to switch",
       );
     });
   });

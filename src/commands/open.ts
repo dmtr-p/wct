@@ -134,6 +134,15 @@ export function resolveOpenOptions(
       );
     }
 
+    if (pr && existing) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Cannot use --pr together with --existing",
+        ),
+      );
+    }
+
     if (pr) {
       const prNumber = parsePrArg(pr);
       if (prNumber === null) {

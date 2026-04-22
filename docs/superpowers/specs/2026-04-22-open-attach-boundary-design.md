@@ -88,6 +88,7 @@ Update `src/commands/session.ts` so:
 
 - `launchSessionAndIde(...)` no longer accepts `noAttach`
 - `launchSessionAndIde(...)` no longer calls `maybeAttachSession(...)`
+- `launchSessionAndIde(...)` returns enough tmux startup information for `openWorktree(...)` to set `tmuxSessionStarted`
 - `maybeAttachSession(...)` stays exported for CLI command use
 
 `launchSessionAndIde(...)` continues to:
@@ -97,6 +98,8 @@ Update `src/commands/session.ts` so:
 - log non-fatal warnings for tmux or IDE startup failures
 
 It becomes a pure "start resources" helper instead of a "start and maybe steal the terminal" helper.
+
+For this refactor, `openWorktree(...)` should not infer tmux startup from config alone. It should derive `tmuxSessionStarted` from the actual tmux startup result returned by `launchSessionAndIde(...)`, so "configured but failed to create session" stays distinguishable from "session exists and is safe to target."
 
 ### TUI open flow
 
@@ -162,8 +165,6 @@ Expected files:
 - `src/commands/open.ts`
 - `src/commands/session.ts`
 - `src/tui/hooks/useModalActions.ts`
-- `src/cli/root-command.ts`
-  - likely no behavioral change, but it remains part of the wiring path
 - tests covering `open` command behavior and TUI modal actions
 
 `src/commands/up.ts` should not need behavior changes. It is only the reference pattern for the refactor.

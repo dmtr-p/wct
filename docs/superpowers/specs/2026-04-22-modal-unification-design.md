@@ -58,6 +58,11 @@ That gives the codebase one place to define how profile selection, IDE launch, a
 
 Add a reusable component in `src/tui/components` for the common session options area.
 
+Suggested files:
+
+- `src/tui/components/SessionOptionsSection.tsx`
+- `src/tui/components/session-options.ts` for shared option construction and selection helpers currently embedded in `UpModal.tsx`
+
 Responsibilities:
 
 - render the profile picker when `profileNames.length > 0`
@@ -75,6 +80,31 @@ The section should operate on the same concepts for both modals:
 - `autoSwitch: boolean`
 - `canSubmit: boolean`
 
+Minimum component contract:
+
+```ts
+interface SessionOptionsSectionProps {
+  profileNames: string[];
+  focusedField: "profile" | "noIde" | "autoSwitch" | "submit" | null;
+  noIde: boolean;
+  autoSwitch: boolean;
+  canSubmit: boolean;
+  onNoIdeToggle: () => void;
+  onAutoSwitchToggle: () => void;
+  onSubmit: () => void;
+  onProfileChange: (profile: string | undefined) => void;
+  resetKey: string;
+  width?: number;
+}
+```
+
+Notes:
+
+- `focusedField` is a single field from the parent-owned focus model
+- `resetKey` is the explicit profile-state reset mechanism
+- profile filter text and selected profile index stay local to the section
+- the section reports the resolved selected profile through `onProfileChange(...)`
+
 ### Controlled focus ownership
 
 To avoid keyboard conflicts, the parent form owns focus order.
@@ -87,6 +117,8 @@ That means:
 - tab and shift-tab stay owned by the parent form
 
 The shared section should not run an independent focus cycle. It can manage option-local state such as filter text and selected profile index, but only the currently focused field should react to input.
+
+This migration must also remove the current unconditional `useInput(..., { isActive: true })` pattern from the open subforms. Field-local handlers should be gated by focus, and subform-level handlers should only remain active while that form is the visible step. Without that change, adding a shared profile picker would preserve the same overlapping-listener bug under a new component boundary.
 
 This is the main guardrail against the current risk area: embedded controls listening at the same time.
 
@@ -105,6 +137,14 @@ Rules:
 - if there are no configured profiles, the profile control is omitted
 
 This preserves the actual config boundary: profile names are not free-form user input.
+
+Profile state ownership is intentionally split:
+
+- the section owns filter text and selected profile index
+- the parent owns the resolved selected profile value
+- the parent resets section-local profile state by changing `resetKey` on modal open and open-step changes
+
+Using `resetKey` is the chosen reset mechanism. The parent should not try to control filter text or selected index directly.
 
 ### Attach behavior
 
@@ -126,6 +166,8 @@ This keeps command-layer wiring stable while standardizing the TUI wording.
 ### `UpModal`
 
 `UpModal` becomes a thin wrapper around the shared options section.
+
+Unlike `OpenModal`, it has no task-specific fields before the shared section. In practice, the shared section becomes the full modal body beneath the title and description.
 
 It should keep:
 
@@ -155,6 +197,10 @@ Expected field layouts:
 
 The shared section supplies `profile`, `No IDE`, `Auto-switch`, and submit within those layouts. `prompt` stays before the toggles to match the current `OpenModal` mental flow. The important requirement is that profile, `No IDE`, `Auto-switch`, and submit behave the same way as `UpModal`.
 
+`ExistingBranchForm` continues to omit profile intentionally. That flow starts an already-created worktree on its current branch, so there is no new branch-opening decision to parameterize with a profile in the TUI design. This spec preserves that current product boundary rather than broadening the feature.
+
+`FromPRForm` will render two scrollable lists at once when profiles exist: the PR list and the profile picker. This is expected. Only the currently focused list may react to typing or arrow keys; the unfocused list remains visible but inert.
+
 ### Data flow
 
 Modal preparation does not need a new data source.
@@ -181,7 +227,6 @@ The modal layer should prevent ambiguous or invalid submission by:
 
 - hiding the profile field when no profiles exist
 - disabling submit when a profile filter yields no valid selection
-- mapping `(default)` to `undefined` instead of a synthetic profile name
 
 Operational failures after submit continue to surface through the existing TUI action handlers and error banners.
 
@@ -197,8 +242,9 @@ Expected coverage:
 - `OpenModal` submission maps `autoSwitch: false` to `noAttach: true`
 - `OpenModal` submission never emits arbitrary profile text when profiles are configured
 - `UpModal` still emits the same externally visible submission shape after the refactor
-
-Project instructions say not to run tests or lint manually in-session; rely on repo hooks for formatting, linting, and tests.
+- `resetKey` remounts the shared section and clears profile filter text and selected index on modal open or step change
+- `FromPRForm` keeps PR-list input and profile-list input isolated by focus
+- open subforms no longer rely on unconditional `useInput(..., { isActive: true })` listeners for field-specific behavior
 
 ## Risks
 
@@ -210,8 +256,9 @@ Mitigation:
 
 - keep one focus owner at the parent form level
 - gate all field-specific input on `currentField`
+- replace unconditional `useInput(..., { isActive: true })` listeners with focus-aware or step-aware activation
 - do not let the shared section own tab navigation
-- reset profile filter text and selected profile index when the modal opens or step changes
+- reset profile filter text and selected profile index by changing `resetKey` when the modal opens or step changes
 
 ### Over-abstraction
 

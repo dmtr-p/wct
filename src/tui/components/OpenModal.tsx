@@ -189,9 +189,9 @@ export function NewBranchForm({
   const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
-    const f: NewBranchField[] = ["branch", "base"];
+    const f: NewBranchField[] = ["branch", "base", "prompt"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "autoSwitch", "submit");
+    f.push("noIde", "autoSwitch", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -323,9 +323,9 @@ export function FromPRForm({
   const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
-    const f: FromPRField[] = ["prList"];
+    const f: FromPRField[] = ["prList", "prompt"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "autoSwitch", "submit");
+    f.push("noIde", "autoSwitch", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -466,6 +466,8 @@ export function FromPRForm({
 }
 
 // ─── ExistingBranchForm ──────────────────────────────────────────
+
+const noopProfileChange = () => {};
 
 type ExistingBranchField =
   | "branchList"
@@ -638,7 +640,7 @@ export function ExistingBranchForm({
             noAttach: !autoSwitch,
           });
         }}
-        onProfileChange={() => {}}
+        onProfileChange={noopProfileChange}
         resetKey="existing-branch"
         width={width}
       />

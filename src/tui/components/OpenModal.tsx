@@ -203,6 +203,12 @@ export function NewBranchForm({
     [profileNames, selectedProfileValue],
   );
 
+  useEffect(() => {
+    setSelectedProfileValue(undefined);
+    setNoIde(false);
+    setAutoSwitch(true);
+  }, []);
+
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
       const next = (prev + delta + fields.length) % fields.length;
@@ -345,6 +351,12 @@ export function FromPRForm({
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
+
+  useEffect(() => {
+    setSelectedProfileValue(undefined);
+    setNoIde(false);
+    setAutoSwitch(true);
+  }, []);
 
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
@@ -495,6 +507,11 @@ export function ExistingBranchForm({
   );
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
+
+  useEffect(() => {
+    setNoIde(false);
+    setAutoSwitch(true);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

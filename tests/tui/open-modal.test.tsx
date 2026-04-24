@@ -152,6 +152,8 @@ describe("OpenModal form variants", () => {
       expect(rendered.output).toContain("Auto-switch");
       expect(rendered.output).not.toContain("No attach");
       expect(rendered.output).not.toContain("Profile");
+      expect(rendered.output).not.toContain("Profile filter:");
+      expect(rendered.output).not.toContain("(default)");
     } finally {
       rendered.unmount();
     }

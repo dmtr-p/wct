@@ -104,6 +104,8 @@ Notes:
 - `resetKey` is the explicit profile-state reset mechanism
 - profile filter text and selected profile index stay local to the section
 - the section reports the resolved selected profile through `onProfileChange(...)`
+- `onProfileChange(...)` fires on every resolved selection change, including when filtering leaves no match, in which case it reports `undefined`
+- the parent derives `canSubmit`: when profiles exist, submit is enabled only if the latest reported profile value is defined or explicitly represents `(default)`; when profiles do not exist, profile validity does not block submit
 
 ### Controlled focus ownership
 
@@ -145,6 +147,8 @@ Profile state ownership is intentionally split:
 - the parent resets section-local profile state by changing `resetKey` on modal open and open-step changes
 
 Using `resetKey` is the chosen reset mechanism. The parent should not try to control filter text or selected index directly.
+
+On open-step changes, the parent should also reset its own option state for that step: resolved profile value, `noIde`, and `autoSwitch`. That prevents state from leaking between `newBranch`, `fromPR`, and `existingBranch`.
 
 ### Attach behavior
 

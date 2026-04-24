@@ -4,9 +4,10 @@ import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
-import { SubmitButton, ToggleRow } from "./form-controls";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
+import { resolveSessionOptionsSubmitState } from "./session-options";
+import { SessionOptionsSection } from "./SessionOptionsSection";
 import { TitledBox } from "./TitledBox";
 
 export interface OpenModalResult {
@@ -161,7 +162,7 @@ type NewBranchField =
   | "profile"
   | "prompt"
   | "noIde"
-  | "noAttach"
+  | "autoSwitch"
   | "submit";
 
 /** @internal */
@@ -180,38 +181,32 @@ export function NewBranchForm({
 }) {
   const [branch, setBranch] = useState("");
   const [base, setBase] = useState(defaultBase);
-  const [profile, setProfile] = useState("");
+  const [selectedProfileValue, setSelectedProfileValue] = useState<
+    string | undefined
+  >(undefined);
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
-  const [noAttach, setNoAttach] = useState(false);
+  const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
     const f: NewBranchField[] = ["branch", "base"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "noAttach", "submit");
+    f.push("prompt", "noIde", "autoSwitch", "submit");
     return f;
   }, [profileNames.length]);
 
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
 
+  const submission = useMemo(
+    () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
+    [profileNames, selectedProfileValue],
+  );
+
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
       const next = (prev + delta + fields.length) % fields.length;
       return next;
-    });
-  };
-
-  const submit = () => {
-    if (!branch.trim()) return;
-    onSubmit({
-      branch: branch.trim(),
-      base: base.trim() || undefined,
-      profile: profile.trim() || undefined,
-      prompt: prompt.trim() || undefined,
-      existing: false,
-      noIde,
-      noAttach,
     });
   };
 
@@ -247,34 +242,43 @@ export function NewBranchForm({
         onChange={setBase}
         width={width}
       />
-      {profileNames.length > 0 && (
-        <BracketInput
-          label="Profile"
-          value={profile}
-          isFocused={currentField === "profile"}
-          onChange={setProfile}
-          width={width}
-        />
-      )}
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
         width={width}
       />
-      <ToggleRow
-        label="No IDE"
-        checked={noIde}
-        isFocused={currentField === "noIde"}
-        onToggle={() => setNoIde((v) => !v)}
+      <SessionOptionsSection
+        profileNames={profileNames}
+        focusedField={
+          currentField === "profile" ||
+          currentField === "noIde" ||
+          currentField === "autoSwitch" ||
+          currentField === "submit"
+            ? currentField
+            : null
+        }
+        noIde={noIde}
+        autoSwitch={autoSwitch}
+        canSubmit={submission.canSubmit && branch.trim().length > 0}
+        onNoIdeToggle={() => setNoIde((prev) => !prev)}
+        onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
+        onSubmit={() => {
+          if (!branch.trim() || !submission.canSubmit) return;
+          onSubmit({
+            branch: branch.trim(),
+            base: base.trim() || undefined,
+            profile: submission.profile,
+            prompt: prompt.trim() || undefined,
+            existing: false,
+            noIde,
+            noAttach: !autoSwitch,
+          });
+        }}
+        onProfileChange={setSelectedProfileValue}
+        resetKey="new-branch"
+        width={width}
       />
-      <ToggleRow
-        label="No attach"
-        checked={noAttach}
-        isFocused={currentField === "noAttach"}
-        onToggle={() => setNoAttach((v) => !v)}
-      />
-      <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
 }
@@ -286,7 +290,7 @@ type FromPRField =
   | "profile"
   | "prompt"
   | "noIde"
-  | "noAttach"
+  | "autoSwitch"
   | "submit";
 
 /** @internal */
@@ -305,15 +309,17 @@ export function FromPRForm({
 }) {
   const [selectedPRIndex, setSelectedPRIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
-  const [profile, setProfile] = useState("");
+  const [selectedProfileValue, setSelectedProfileValue] = useState<
+    string | undefined
+  >(undefined);
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
-  const [noAttach, setNoAttach] = useState(false);
+  const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
     const f: FromPRField[] = ["prList"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("prompt", "noIde", "noAttach", "submit");
+    f.push("prompt", "noIde", "autoSwitch", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -335,26 +341,15 @@ export function FromPRForm({
     [prItems, filterQuery],
   );
 
+  const submission = useMemo(
+    () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
+    [profileNames, selectedProfileValue],
+  );
+
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
       const next = (prev + delta + fields.length) % fields.length;
       return next;
-    });
-  };
-
-  const submit = () => {
-    const selectedPR = filteredPRItems[selectedPRIndex];
-    if (!selectedPR) return;
-    const pr = prList.find((p) => String(p.number) === selectedPR.value);
-    if (!pr) return;
-    onSubmit({
-      branch: pr.headRefName,
-      pr: String(pr.number),
-      profile: profile.trim() || undefined,
-      prompt: prompt.trim() || undefined,
-      existing: false,
-      noIde,
-      noAttach,
     });
   };
 
@@ -412,34 +407,48 @@ export function FromPRForm({
           isFocused={currentField === "prList"}
         />
       </TitledBox>
-      {profileNames.length > 0 && (
-        <BracketInput
-          label="Profile"
-          value={profile}
-          isFocused={currentField === "profile"}
-          onChange={setProfile}
-          width={width}
-        />
-      )}
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
         width={width}
       />
-      <ToggleRow
-        label="No IDE"
-        checked={noIde}
-        isFocused={currentField === "noIde"}
-        onToggle={() => setNoIde((v) => !v)}
+      <SessionOptionsSection
+        profileNames={profileNames}
+        focusedField={
+          currentField === "profile" ||
+          currentField === "noIde" ||
+          currentField === "autoSwitch" ||
+          currentField === "submit"
+            ? currentField
+            : null
+        }
+        noIde={noIde}
+        autoSwitch={autoSwitch}
+        canSubmit={
+          submission.canSubmit && Boolean(filteredPRItems[selectedPRIndex])
+        }
+        onNoIdeToggle={() => setNoIde((prev) => !prev)}
+        onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
+        onSubmit={() => {
+          const selectedPR = filteredPRItems[selectedPRIndex];
+          if (!selectedPR || !submission.canSubmit) return;
+          const pr = prList.find((p) => String(p.number) === selectedPR.value);
+          if (!pr) return;
+          onSubmit({
+            branch: pr.headRefName,
+            pr: String(pr.number),
+            profile: submission.profile,
+            prompt: prompt.trim() || undefined,
+            existing: false,
+            noIde,
+            noAttach: !autoSwitch,
+          });
+        }}
+        onProfileChange={setSelectedProfileValue}
+        resetKey="from-pr"
+        width={width}
       />
-      <ToggleRow
-        label="No attach"
-        checked={noAttach}
-        isFocused={currentField === "noAttach"}
-        onToggle={() => setNoAttach((v) => !v)}
-      />
-      <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
 }
@@ -450,7 +459,7 @@ type ExistingBranchField =
   | "branchList"
   | "prompt"
   | "noIde"
-  | "noAttach"
+  | "autoSwitch"
   | "submit";
 
 /** @internal */
@@ -470,15 +479,20 @@ export function ExistingBranchForm({
   const [filterQuery, setFilterQuery] = useState("");
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
-  const [noAttach, setNoAttach] = useState(false);
+  const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields: ExistingBranchField[] = [
     "branchList",
     "prompt",
     "noIde",
-    "noAttach",
+    "autoSwitch",
     "submit",
   ];
+
+  const submission = useMemo(
+    () => resolveSessionOptionsSubmitState([], undefined),
+    [],
+  );
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
 
@@ -516,18 +530,6 @@ export function ExistingBranchForm({
     setFocusIndex((prev) => {
       const next = (prev + delta + fields.length) % fields.length;
       return next;
-    });
-  };
-
-  const submit = () => {
-    const selectedBranch = filteredBranchItems[selectedBranchIndex];
-    if (!selectedBranch) return;
-    onSubmit({
-      branch: selectedBranch.value,
-      prompt: prompt.trim() || undefined,
-      existing: true,
-      noIde,
-      noAttach,
     });
   };
 
@@ -591,19 +593,38 @@ export function ExistingBranchForm({
         onChange={setPrompt}
         width={width}
       />
-      <ToggleRow
-        label="No IDE"
-        checked={noIde}
-        isFocused={currentField === "noIde"}
-        onToggle={() => setNoIde((v) => !v)}
+      <SessionOptionsSection
+        profileNames={[]}
+        focusedField={
+          currentField === "noIde" ||
+          currentField === "autoSwitch" ||
+          currentField === "submit"
+            ? currentField
+            : null
+        }
+        noIde={noIde}
+        autoSwitch={autoSwitch}
+        canSubmit={
+          submission.canSubmit &&
+          Boolean(filteredBranchItems[selectedBranchIndex])
+        }
+        onNoIdeToggle={() => setNoIde((prev) => !prev)}
+        onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
+        onSubmit={() => {
+          const selectedBranch = filteredBranchItems[selectedBranchIndex];
+          if (!selectedBranch) return;
+          onSubmit({
+            branch: selectedBranch.value,
+            prompt: prompt.trim() || undefined,
+            existing: true,
+            noIde,
+            noAttach: !autoSwitch,
+          });
+        }}
+        onProfileChange={() => {}}
+        resetKey="existing-branch"
+        width={width}
       />
-      <ToggleRow
-        label="No attach"
-        checked={noAttach}
-        isFocused={currentField === "noAttach"}
-        onToggle={() => setNoAttach((v) => !v)}
-      />
-      <SubmitButton isFocused={currentField === "submit"} onSubmit={submit} />
     </Box>
   );
 }

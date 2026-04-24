@@ -1,12 +1,12 @@
 import { Box, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { ScrollableList, filterItems } from "./ScrollableList";
 import { SubmitButton, ToggleRow } from "./form-controls";
-import { TitledBox } from "./TitledBox";
+import { filterItems, ScrollableList } from "./ScrollableList";
 import {
   buildProfileItems,
   resolveSelectedProfileValue,
 } from "./session-options";
+import { TitledBox } from "./TitledBox";
 
 export interface SessionOptionsSectionProps {
   profileNames: string[];

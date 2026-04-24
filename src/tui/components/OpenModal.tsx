@@ -6,8 +6,8 @@ import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
-import { resolveSessionOptionsSubmitState } from "./session-options";
 import { SessionOptionsSection } from "./SessionOptionsSection";
+import { resolveSessionOptionsSubmitState } from "./session-options";
 import { TitledBox } from "./TitledBox";
 
 export interface OpenModalResult {

@@ -1,5 +1,4 @@
 import { PassThrough } from "node:stream";
-import React from "react";
 import { render } from "ink";
 import { describe, expect, test } from "vitest";
 import type { ListItem } from "../../src/tui/components/ScrollableList";

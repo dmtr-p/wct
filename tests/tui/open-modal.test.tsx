@@ -135,12 +135,13 @@ describe("OpenModal form variants", () => {
     }
   });
 
-  test("existing branch form shows No IDE and Auto-switch toggles", async () => {
+  test("existing branch form shows profiles when they are configured", async () => {
     runPromiseMock.mockResolvedValueOnce(["feature-a", "feature-b"]);
 
     const rendered = await renderNode(
       <ExistingBranchForm
         repoPath="/repo"
+        profileNames={["backend"]}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -151,9 +152,9 @@ describe("OpenModal form variants", () => {
       expect(rendered.output).toContain("No IDE");
       expect(rendered.output).toContain("Auto-switch");
       expect(rendered.output).not.toContain("No attach");
-      expect(rendered.output).not.toContain("Profile");
-      expect(rendered.output).not.toContain("Profile filter:");
-      expect(rendered.output).not.toContain("(default)");
+      expect(rendered.output).toContain("Profile");
+      expect(rendered.output).toContain("(default)");
+      expect(rendered.output).toContain("backend");
     } finally {
       rendered.unmount();
     }

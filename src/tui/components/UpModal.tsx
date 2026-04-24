@@ -2,7 +2,10 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal";
 import { SessionOptionsSection } from "./SessionOptionsSection";
-import { resolveSessionOptionsSubmitState } from "./session-options";
+import {
+  getInitialSelectedProfileValue,
+  resolveSessionOptionsSubmitState,
+} from "./session-options";
 
 export interface UpModalResult {
   profile?: string;
@@ -30,7 +33,7 @@ export function UpModal({
   const [focusIndex, setFocusIndex] = useState(0);
   const [selectedProfileValue, setSelectedProfileValue] = useState<
     string | undefined
-  >(undefined);
+  >(getInitialSelectedProfileValue(profileNames));
   const [noIde, setNoIde] = useState(false);
   const [autoSwitch, setAutoSwitch] = useState(true);
 
@@ -50,10 +53,10 @@ export function UpModal({
   useEffect(() => {
     if (!visible) return;
     setFocusIndex(0);
-    setSelectedProfileValue(undefined);
+    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
     setNoIde(false);
     setAutoSwitch(true);
-  }, [visible]);
+  }, [profileNames, visible]);
 
   useInput(
     (_input, key) => {

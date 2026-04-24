@@ -7,7 +7,10 @@ import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { SessionOptionsSection } from "./SessionOptionsSection";
-import { resolveSessionOptionsSubmitState } from "./session-options";
+import {
+  getInitialSelectedProfileValue,
+  resolveSessionOptionsSubmitState,
+} from "./session-options";
 import { TitledBox } from "./TitledBox";
 
 export interface OpenModalResult {
@@ -183,7 +186,7 @@ export function NewBranchForm({
   const [base, setBase] = useState(defaultBase);
   const [selectedProfileValue, setSelectedProfileValue] = useState<
     string | undefined
-  >(undefined);
+  >(getInitialSelectedProfileValue(profileNames));
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
   const [autoSwitch, setAutoSwitch] = useState(true);
@@ -204,10 +207,10 @@ export function NewBranchForm({
   );
 
   useEffect(() => {
-    setSelectedProfileValue(undefined);
+    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
     setNoIde(false);
     setAutoSwitch(true);
-  }, []);
+  }, [profileNames]);
 
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
@@ -317,7 +320,7 @@ export function FromPRForm({
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedProfileValue, setSelectedProfileValue] = useState<
     string | undefined
-  >(undefined);
+  >(getInitialSelectedProfileValue(profileNames));
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
   const [autoSwitch, setAutoSwitch] = useState(true);
@@ -353,10 +356,10 @@ export function FromPRForm({
   );
 
   useEffect(() => {
-    setSelectedProfileValue(undefined);
+    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
     setNoIde(false);
     setAutoSwitch(true);
-  }, []);
+  }, [profileNames]);
 
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
@@ -467,10 +470,9 @@ export function FromPRForm({
 
 // ─── ExistingBranchForm ──────────────────────────────────────────
 
-const noopProfileChange = () => {};
-
 type ExistingBranchField =
   | "branchList"
+  | "profile"
   | "prompt"
   | "noIde"
   | "autoSwitch"
@@ -479,11 +481,13 @@ type ExistingBranchField =
 /** @internal */
 export function ExistingBranchForm({
   repoPath,
+  profileNames,
   onSubmit,
   onBack,
   width,
 }: {
   repoPath: string;
+  profileNames: string[];
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -491,29 +495,32 @@ export function ExistingBranchForm({
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranchIndex, setSelectedBranchIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
+  const [selectedProfileValue, setSelectedProfileValue] = useState<
+    string | undefined
+  >(getInitialSelectedProfileValue(profileNames));
   const [prompt, setPrompt] = useState("");
   const [noIde, setNoIde] = useState(false);
   const [autoSwitch, setAutoSwitch] = useState(true);
 
-  const fields: ExistingBranchField[] = [
-    "branchList",
-    "prompt",
-    "noIde",
-    "autoSwitch",
-    "submit",
-  ];
+  const fields = useMemo(() => {
+    const nextFields: ExistingBranchField[] = ["branchList", "prompt"];
+    if (profileNames.length > 0) nextFields.push("profile");
+    nextFields.push("noIde", "autoSwitch", "submit");
+    return nextFields;
+  }, [profileNames.length]);
 
   const submission = useMemo(
-    () => resolveSessionOptionsSubmitState([], undefined),
-    [],
+    () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
+    [profileNames, selectedProfileValue],
   );
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
 
   useEffect(() => {
+    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
     setNoIde(false);
     setAutoSwitch(true);
-  }, []);
+  }, [profileNames]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -613,8 +620,9 @@ export function ExistingBranchForm({
         width={width}
       />
       <SessionOptionsSection
-        profileNames={[]}
+        profileNames={profileNames}
         focusedField={
+          currentField === "profile" ||
           currentField === "noIde" ||
           currentField === "autoSwitch" ||
           currentField === "submit"
@@ -631,16 +639,17 @@ export function ExistingBranchForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={() => {
           const selectedBranch = filteredBranchItems[selectedBranchIndex];
-          if (!selectedBranch) return;
+          if (!selectedBranch || !submission.canSubmit) return;
           onSubmit({
             branch: selectedBranch.value,
+            profile: submission.profile,
             prompt: prompt.trim() || undefined,
             existing: true,
             noIde,
             noAttach: !autoSwitch,
           });
         }}
-        onProfileChange={noopProfileChange}
+        onProfileChange={setSelectedProfileValue}
         resetKey="existing-branch"
         width={width}
       />
@@ -707,6 +716,7 @@ export function OpenModal({
       {step === "existingBranch" && (
         <ExistingBranchForm
           repoPath={repoPath}
+          profileNames={profileNames}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}

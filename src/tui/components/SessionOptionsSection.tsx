@@ -4,6 +4,7 @@ import { SubmitButton, ToggleRow } from "./form-controls";
 import { filterItems, ScrollableList } from "./ScrollableList";
 import {
   buildProfileItems,
+  isFilterInputCharacter,
   resolveSelectedProfileValue,
 } from "./session-options";
 import { TitledBox } from "./TitledBox";
@@ -87,7 +88,7 @@ export function SessionOptionsSection({
         setProfileQuery((prev) => prev.slice(0, -1));
         return;
       }
-      if (input && !key.ctrl && !key.meta && !key.return) {
+      if (isFilterInputCharacter(input, key)) {
         setProfileQuery((prev) => prev + input);
       }
     },

@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import type { ListItem } from "../../src/tui/components/ScrollableList";
 import {
   buildProfileItems,
+  getInitialSelectedProfileValue,
+  isFilterInputCharacter,
   resolveSelectedProfileValue,
   resolveSessionOptionsSubmitState,
 } from "../../src/tui/components/session-options";
@@ -14,6 +16,40 @@ const profileItems: ListItem[] = [
 describe("buildProfileItems", () => {
   test("prepends the default option", () => {
     expect(buildProfileItems(["backend"])).toEqual(profileItems);
+  });
+});
+
+describe("getInitialSelectedProfileValue", () => {
+  test("defaults to the raw default-profile option when profiles exist", () => {
+    expect(getInitialSelectedProfileValue(["backend"])).toBe("");
+  });
+
+  test("stays undefined when no profiles are configured", () => {
+    expect(getInitialSelectedProfileValue([])).toBeUndefined();
+  });
+});
+
+describe("isFilterInputCharacter", () => {
+  test("ignores tab input so focus navigation does not corrupt the filter", () => {
+    expect(
+      isFilterInputCharacter("\t", {
+        tab: true,
+        ctrl: false,
+        meta: false,
+        return: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("accepts regular printable characters", () => {
+    expect(
+      isFilterInputCharacter("a", {
+        tab: false,
+        ctrl: false,
+        meta: false,
+        return: false,
+      }),
+    ).toBe(true);
   });
 });
 

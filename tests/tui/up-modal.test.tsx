@@ -1,12 +1,31 @@
 import { PassThrough } from "node:stream";
-import { render } from "ink";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { ListItem } from "../../src/tui/components/ScrollableList";
+import type { SessionOptionsSectionProps } from "../../src/tui/components/SessionOptionsSection";
 import {
   resolveSelectedProfileValue,
   resolveSessionOptionsSubmitState,
 } from "../../src/tui/components/session-options";
-import { UpModal } from "../../src/tui/components/UpModal";
+
+const sessionOptionsSectionMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../src/tui/components/SessionOptionsSection", async () => {
+  const React = await import("react");
+
+  return {
+    SessionOptionsSection: (props: SessionOptionsSectionProps) => {
+      sessionOptionsSectionMock(props);
+
+      React.useEffect(() => {
+        props.onProfileChange("");
+      }, [props.onProfileChange]);
+
+      return null;
+    },
+  };
+});
+
+const { UpModal } = await import("../../src/tui/components/UpModal");
 
 const profileItems: ListItem[] = [
   { label: "(default)", value: "" },
@@ -69,41 +88,61 @@ describe("session-options submission semantics", () => {
   });
 });
 
-function createStreams() {
-  const stdout = new PassThrough() as NodeJS.WriteStream & {
-    columns: number;
-    rows: number;
-  };
-  stdout.columns = 100;
-  stdout.rows = 32;
-  const stdin = new PassThrough() as NodeJS.ReadStream & {
-    isTTY: boolean;
-    setRawMode: (mode: boolean) => NodeJS.ReadStream;
-  };
-  stdin.isTTY = false;
-  stdin.setRawMode = () => stdin;
-  return { stdout, stdin };
-}
+describe("UpModal", () => {
+  test("initially enables submit with the default profile when profiles exist", async () => {
+    sessionOptionsSectionMock.mockReset();
+    const { render } = await import("ink");
+    const stdout = new PassThrough() as NodeJS.WriteStream & {
+      columns: number;
+      rows: number;
+    };
+    stdout.columns = 100;
+    stdout.rows = 32;
+    const stdin = new PassThrough() as NodeJS.ReadStream & {
+      isTTY: boolean;
+      setRawMode: (mode: boolean) => NodeJS.ReadStream;
+    };
+    stdin.isTTY = false;
+    stdin.setRawMode = () => stdin;
 
-test("renders the shared Auto-switch wording", async () => {
-  const { stdout, stdin } = createStreams();
-  const instance = render(
-    <UpModal
-      visible
-      profileNames={["backend"]}
-      onSubmit={() => {}}
-      onCancel={() => {}}
-    />,
-    { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false },
-  );
+    let instance: ReturnType<typeof render> | undefined;
+    try {
+      instance = render(
+        <UpModal
+          visible
+          profileNames={["backend"]}
+          onSubmit={() => {}}
+          onCancel={() => {}}
+        />,
+        {
+          stdout,
+          stdin,
+          debug: true,
+          patchConsole: false,
+          exitOnCtrlC: false,
+        },
+      );
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const output = stdout.read()?.toString("utf8") ?? "";
+      for (let i = 0; i < 10; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const matchingCall = sessionOptionsSectionMock.mock.calls.find(
+          ([props]) => (props as SessionOptionsSectionProps).canSubmit,
+        );
+        if (matchingCall) {
+          expect(
+            (matchingCall[0] as SessionOptionsSectionProps).focusedField,
+          ).toBe("profile");
+          return;
+        }
+      }
 
-  try {
-    expect(output).toContain("Auto-switch");
-    expect(output).not.toContain("No attach");
-  } finally {
-    instance.unmount();
-  }
+      const lastCall = sessionOptionsSectionMock.mock.calls.at(-1)?.[0] as
+        | SessionOptionsSectionProps
+        | undefined;
+      expect(lastCall).toBeDefined();
+      expect(lastCall?.canSubmit).toBe(true);
+    } finally {
+      instance?.unmount();
+    }
+  });
 });

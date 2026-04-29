@@ -1,4 +1,4 @@
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
@@ -102,7 +102,7 @@ export interface GitHubService {
 }
 
 export const GitHubService =
-  ServiceMap.Service<GitHubService>("wct/GitHubService");
+  Context.Service<GitHubService>("wct/GitHubService");
 
 function extractShellError(error: unknown): string {
   return getProcessErrorMessage(error);

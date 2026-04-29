@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Effect, type FileSystem, ServiceMap } from "effect";
+import { Context, Effect, type FileSystem } from "effect";
 import * as logger from "../utils/logger";
 import {
   copyPath,
@@ -30,8 +30,9 @@ export interface VSCodeWorkspaceService {
   ) => Effect.Effect<SyncResult, never, FileSystem.FileSystem>;
 }
 
-export const VSCodeWorkspaceService =
-  ServiceMap.Service<VSCodeWorkspaceService>("wct/VSCodeWorkspaceService");
+export const VSCodeWorkspaceService = Context.Service<VSCodeWorkspaceService>(
+  "wct/VSCodeWorkspaceService",
+);
 
 function withDatabase<A, E, R>(
   dbPath: string,

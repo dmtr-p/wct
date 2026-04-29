@@ -1,4 +1,4 @@
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
@@ -97,7 +97,7 @@ export interface TmuxService {
   refreshClient: () => Effect.Effect<void, WctError, WctRuntimeServices>;
 }
 
-export const TmuxService = ServiceMap.Service<TmuxService>("wct/TmuxService");
+export const TmuxService = Context.Service<TmuxService>("wct/TmuxService");
 
 export function parseSessionListOutput(output: string): TmuxSession[] {
   if (!output) {

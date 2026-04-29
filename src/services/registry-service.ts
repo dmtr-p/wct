@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import { commandError, type WctError } from "../errors";
 
 function getWctDir(): string {
@@ -30,7 +30,7 @@ export interface RegistryServiceApi {
   ) => Effect.Effect<RegistryItem | null, WctError>;
 }
 
-export const RegistryService = ServiceMap.Service<RegistryServiceApi>(
+export const RegistryService = Context.Service<RegistryServiceApi>(
   "wct/RegistryService",
 );
 

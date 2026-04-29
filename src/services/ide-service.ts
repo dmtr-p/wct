@@ -1,4 +1,4 @@
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
@@ -23,7 +23,7 @@ export interface IdeService {
   ) => Effect.Effect<void, WctError, WctRuntimeServices>;
 }
 
-export const IdeService = ServiceMap.Service<IdeService>("wct/IdeService");
+export const IdeService = Context.Service<IdeService>("wct/IdeService");
 
 export const liveIdeService: IdeService = IdeService.of({
   openIDE: (command, env) =>

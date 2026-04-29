@@ -1,4 +1,4 @@
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import type { SetupCommand } from "../config/schema";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
@@ -20,8 +20,7 @@ export interface SetupService {
   ) => Effect.Effect<SetupResult[], WctError, WctServices>;
 }
 
-export const SetupService =
-  ServiceMap.Service<SetupService>("wct/SetupService");
+export const SetupService = Context.Service<SetupService>("wct/SetupService");
 
 export const liveSetupService: SetupService = SetupService.of({
   runSetupCommands: (commands, workingDir, env) =>

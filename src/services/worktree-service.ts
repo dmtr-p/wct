@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, resolve } from "node:path";
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { pathExists } from "./filesystem";
@@ -80,7 +80,7 @@ export interface WorktreeService {
   ) => Effect.Effect<string[], WctError, WctRuntimeServices>;
 }
 
-export const WorktreeService = ServiceMap.Service<WorktreeService>(
+export const WorktreeService = Context.Service<WorktreeService>(
   "wct/WorktreeService",
 );
 

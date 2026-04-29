@@ -1,7 +1,10 @@
 import { BunServices } from "@effect/platform-bun";
 import { Layer } from "effect";
 import { JsonFlag } from "../../src/cli/json-flag";
-import { GitHubService, liveGitHubService } from "../../src/services/github-service";
+import {
+  GitHubService,
+  liveGitHubService,
+} from "../../src/services/github-service";
 import { IdeService, liveIdeService } from "../../src/services/ide-service";
 import {
   liveRegistryService,

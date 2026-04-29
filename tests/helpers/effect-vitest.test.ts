@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { afterAll, beforeAll, expect } from "vitest";
 import { JsonFlag } from "../../src/cli/json-flag";
 import { WorktreeService } from "../../src/services/worktree-service";
-import { wctTestLayer, WctTestLayer } from "./effect-vitest";
+import { WctTestLayer, wctTestLayer } from "./effect-vitest";
 
 describe("WctTestLayer", () => {
   let nonGitDir: string;

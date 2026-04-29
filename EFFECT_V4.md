@@ -542,12 +542,14 @@ describe("getCurrentBranch", () => {
 });
 ```
 
+Adjust the relative import paths when the test file lives in a nested directory.
+
 For per-test service overrides, use `wctTestLayer({ tmux: fakeTmux })` instead of `WctTestLayer`. The overrides shape matches the existing `withTestServices` helper.
 
 ### `runBunPromise` + `withTestServices` — keep using when
 
 - The test mixes imperative `vi.spyOn` mocks with the Effect call (e.g. spying on `console.log`).
-- The test composes multiple `Effect.runPromise` calls with intervening synchronous mutation.
+- The test composes multiple `runBunPromise(...)` calls with intervening synchronous mutation.
 - You're touching an existing test file and don't want to expand the diff.
 
 Both patterns are correct; do not bulk-migrate. Migrate opportunistically when editing an Effect-aware file.

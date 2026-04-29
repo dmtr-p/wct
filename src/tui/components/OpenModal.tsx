@@ -2,15 +2,13 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
+import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { SessionOptionsSection } from "./SessionOptionsSection";
-import {
-  getInitialSelectedProfileValue,
-  resolveSessionOptionsSubmitState,
-} from "./session-options";
+import { resolveSessionOptionsSubmitState } from "./session-options";
 import { TitledBox } from "./TitledBox";
 
 export interface OpenModalResult {
@@ -184,12 +182,15 @@ export function NewBranchForm({
 }) {
   const [branch, setBranch] = useState("");
   const [base, setBase] = useState(defaultBase);
-  const [selectedProfileValue, setSelectedProfileValue] = useState<
-    string | undefined
-  >(getInitialSelectedProfileValue(profileNames));
+  const {
+    selectedProfileValue,
+    setSelectedProfileValue,
+    noIde,
+    setNoIde,
+    autoSwitch,
+    setAutoSwitch,
+  } = useSessionOptionsState(profileNames);
   const [prompt, setPrompt] = useState("");
-  const [noIde, setNoIde] = useState(false);
-  const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
     const f: NewBranchField[] = ["branch", "base", "prompt"];
@@ -205,12 +206,6 @@ export function NewBranchForm({
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
-
-  useEffect(() => {
-    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
-    setNoIde(false);
-    setAutoSwitch(true);
-  }, [profileNames]);
 
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
@@ -318,12 +313,15 @@ export function FromPRForm({
 }) {
   const [selectedPRIndex, setSelectedPRIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
-  const [selectedProfileValue, setSelectedProfileValue] = useState<
-    string | undefined
-  >(getInitialSelectedProfileValue(profileNames));
+  const {
+    selectedProfileValue,
+    setSelectedProfileValue,
+    noIde,
+    setNoIde,
+    autoSwitch,
+    setAutoSwitch,
+  } = useSessionOptionsState(profileNames);
   const [prompt, setPrompt] = useState("");
-  const [noIde, setNoIde] = useState(false);
-  const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
     const f: FromPRField[] = ["prList", "prompt"];
@@ -354,12 +352,6 @@ export function FromPRForm({
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
-
-  useEffect(() => {
-    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
-    setNoIde(false);
-    setAutoSwitch(true);
-  }, [profileNames]);
 
   const moveFocus = (delta: number) => {
     setFocusIndex((prev) => {
@@ -495,12 +487,15 @@ export function ExistingBranchForm({
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranchIndex, setSelectedBranchIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
-  const [selectedProfileValue, setSelectedProfileValue] = useState<
-    string | undefined
-  >(getInitialSelectedProfileValue(profileNames));
+  const {
+    selectedProfileValue,
+    setSelectedProfileValue,
+    noIde,
+    setNoIde,
+    autoSwitch,
+    setAutoSwitch,
+  } = useSessionOptionsState(profileNames);
   const [prompt, setPrompt] = useState("");
-  const [noIde, setNoIde] = useState(false);
-  const [autoSwitch, setAutoSwitch] = useState(true);
 
   const fields = useMemo(() => {
     const nextFields: ExistingBranchField[] = ["branchList", "prompt"];
@@ -515,12 +510,6 @@ export function ExistingBranchForm({
   );
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
-
-  useEffect(() => {
-    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
-    setNoIde(false);
-    setAutoSwitch(true);
-  }, [profileNames]);
 
   useEffect(() => {
     const controller = new AbortController();

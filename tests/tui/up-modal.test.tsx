@@ -32,6 +32,22 @@ const profileItems: ListItem[] = [
   { label: "backend", value: "backend" },
 ];
 
+type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
+type TestStdin = NodeJS.ReadStream & {
+  isTTY: boolean;
+  setRawMode: (mode: boolean) => NodeJS.ReadStream;
+};
+
+function createStdoutStdin() {
+  const stdout = new PassThrough() as unknown as TestStdout;
+  stdout.columns = 100;
+  stdout.rows = 32;
+  const stdin = new PassThrough() as unknown as TestStdin;
+  stdin.isTTY = false;
+  stdin.setRawMode = () => stdin;
+  return { stdout, stdin };
+}
+
 describe("session-options submission semantics", () => {
   test("allows submit without a profile when none are configured", () => {
     const selectedProfileValue = resolveSelectedProfileValue([], [], 0);
@@ -92,18 +108,7 @@ describe("UpModal", () => {
   test("initially enables submit with the default profile when profiles exist", async () => {
     sessionOptionsSectionMock.mockReset();
     const { render } = await import("ink");
-    const stdout = new PassThrough() as NodeJS.WriteStream & {
-      columns: number;
-      rows: number;
-    };
-    stdout.columns = 100;
-    stdout.rows = 32;
-    const stdin = new PassThrough() as NodeJS.ReadStream & {
-      isTTY: boolean;
-      setRawMode: (mode: boolean) => NodeJS.ReadStream;
-    };
-    stdin.isTTY = false;
-    stdin.setRawMode = () => stdin;
+    const { stdout, stdin } = createStdoutStdin();
 
     let instance: ReturnType<typeof render> | undefined;
     try {
@@ -123,24 +128,15 @@ describe("UpModal", () => {
         },
       );
 
-      for (let i = 0; i < 10; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        const matchingCall = sessionOptionsSectionMock.mock.calls.find(
+      await vi.waitFor(() => {
+        const call = sessionOptionsSectionMock.mock.calls.find(
           ([props]) => (props as SessionOptionsSectionProps).canSubmit,
         );
-        if (matchingCall) {
-          expect(
-            (matchingCall[0] as SessionOptionsSectionProps).focusedField,
-          ).toBe("profile");
-          return;
-        }
-      }
-
-      const lastCall = sessionOptionsSectionMock.mock.calls.at(-1)?.[0] as
-        | SessionOptionsSectionProps
-        | undefined;
-      expect(lastCall).toBeDefined();
-      expect(lastCall?.canSubmit).toBe(true);
+        expect(call).toBeDefined();
+        expect((call?.[0] as SessionOptionsSectionProps).focusedField).toBe(
+          "profile",
+        );
+      });
     } finally {
       instance?.unmount();
     }

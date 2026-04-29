@@ -1,11 +1,9 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { Modal } from "./Modal";
 import { SessionOptionsSection } from "./SessionOptionsSection";
-import {
-  getInitialSelectedProfileValue,
-  resolveSessionOptionsSubmitState,
-} from "./session-options";
+import { resolveSessionOptionsSubmitState } from "./session-options";
 
 export interface UpModalResult {
   profile?: string;
@@ -31,11 +29,14 @@ export function UpModal({
   onCancel,
 }: UpModalProps) {
   const [focusIndex, setFocusIndex] = useState(0);
-  const [selectedProfileValue, setSelectedProfileValue] = useState<
-    string | undefined
-  >(getInitialSelectedProfileValue(profileNames));
-  const [noIde, setNoIde] = useState(false);
-  const [autoSwitch, setAutoSwitch] = useState(true);
+  const {
+    selectedProfileValue,
+    setSelectedProfileValue,
+    noIde,
+    setNoIde,
+    autoSwitch,
+    setAutoSwitch,
+  } = useSessionOptionsState(profileNames, visible);
 
   const fields = useMemo<UpModalField[]>(() => {
     const nextFields: UpModalField[] = [];
@@ -51,12 +52,8 @@ export function UpModal({
   );
 
   useEffect(() => {
-    if (!visible) return;
-    setFocusIndex(0);
-    setSelectedProfileValue(getInitialSelectedProfileValue(profileNames));
-    setNoIde(false);
-    setAutoSwitch(true);
-  }, [profileNames, visible]);
+    if (visible) setFocusIndex(0);
+  }, [visible]);
 
   useInput(
     (_input, key) => {

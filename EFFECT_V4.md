@@ -515,3 +515,39 @@ Result.err("error");
 | `Either`           | `Result`                                                |
 | `ParseResult`      | `SchemaIssue`                                           |
 | `@effect/platform` | `effect` (many modules moved to `effect/unstable/*`)    |
+
+## Testing with @effect/vitest
+
+We use `@effect/vitest@4.0.0-beta.59` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
+
+### `it.effect` + `it.layer` — preferred for new tests
+
+```ts
+import { describe, it } from "@effect/vitest";
+import { Effect } from "effect";
+import { expect } from "vitest";
+import { WorktreeService } from "../src/services/worktree-service";
+import { WctTestLayer } from "./helpers/effect-vitest";
+
+describe("getCurrentBranch", () => {
+  it.layer(WctTestLayer)("in a temp git repo", (it) => {
+    it.effect("returns the active branch", () =>
+      Effect.gen(function* () {
+        const wt = yield* WorktreeService;
+        const branch = yield* wt.getCurrentBranch();
+        expect(branch).toBe("main");
+      }),
+    );
+  });
+});
+```
+
+For per-test service overrides, use `wctTestLayer({ tmux: fakeTmux })` instead of `WctTestLayer`. The overrides shape matches the existing `withTestServices` helper.
+
+### `runBunPromise` + `withTestServices` — keep using when
+
+- The test mixes imperative `vi.spyOn` mocks with the Effect call (e.g. spying on `console.log`).
+- The test composes multiple `Effect.runPromise` calls with intervening synchronous mutation.
+- You're touching an existing test file and don't want to expand the diff.
+
+Both patterns are correct; do not bulk-migrate. Migrate opportunistically when editing an Effect-aware file.

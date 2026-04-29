@@ -1,9 +1,9 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { SubmitButton, ToggleRow } from "./form-controls";
+import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { Modal } from "./Modal";
-import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
-import { TitledBox } from "./TitledBox";
+import { SessionOptionsSection } from "./SessionOptionsSection";
+import { resolveSessionOptionsSubmitState } from "./session-options";
 
 export interface UpModalResult {
   profile?: string;
@@ -21,29 +21,9 @@ export interface UpModalProps {
 
 type UpModalField = "profile" | "noIde" | "autoSwitch" | "submit";
 
-export interface UpModalSubmission {
-  canSubmit: boolean;
-  profile?: string;
-}
-
-export function resolveUpModalSubmission(
-  profileNames: string[],
-  filteredProfiles: ListItem[],
-  selectedProfileIndex: number,
-): UpModalSubmission {
-  if (profileNames.length === 0) {
-    return { canSubmit: true };
-  }
-
-  const selectedProfile = filteredProfiles[selectedProfileIndex];
-  if (!selectedProfile) {
-    return { canSubmit: false };
-  }
-
-  return {
-    canSubmit: true,
-    profile: selectedProfile.value || undefined,
-  };
+function clampFocusIndex(index: number, fields: readonly UpModalField[]) {
+  if (fields.length === 0) return 0;
+  return Math.max(0, Math.min(index, fields.length - 1));
 }
 
 export function UpModal({
@@ -53,123 +33,52 @@ export function UpModal({
   onSubmit,
   onCancel,
 }: UpModalProps) {
-  const [profileQuery, setProfileQuery] = useState("");
-  const [selectedProfileIndex, setSelectedProfileIndex] = useState(0);
   const [focusIndex, setFocusIndex] = useState(0);
-  const [noIde, setNoIde] = useState(false);
-  const [autoSwitch, setAutoSwitch] = useState(true);
+  const {
+    selectedProfileValue,
+    setSelectedProfileValue,
+    noIde,
+    setNoIde,
+    autoSwitch,
+    setAutoSwitch,
+  } = useSessionOptionsState(profileNames, visible);
 
-  const profileItems = useMemo<ListItem[]>(
-    () => [
-      {
-        label: "(default)",
-        value: "",
-      },
-      ...profileNames.map((profileName) => ({
-        label: profileName,
-        value: profileName,
-      })),
-    ],
-    [profileNames],
-  );
-  const filteredProfiles = useMemo(
-    () => filterItems(profileItems, profileQuery),
-    [profileItems, profileQuery],
-  );
   const fields = useMemo<UpModalField[]>(() => {
     const nextFields: UpModalField[] = [];
-    if (profileNames.length > 0) {
-      nextFields.push("profile");
-    }
+    if (profileNames.length > 0) nextFields.push("profile");
     nextFields.push("noIde", "autoSwitch", "submit");
     return nextFields;
   }, [profileNames.length]);
-  const currentField = fields[focusIndex];
+
+  const clampedFocusIndex = clampFocusIndex(focusIndex, fields);
+  const currentField = fields[clampedFocusIndex] ?? null;
   const submission = useMemo(
-    () =>
-      resolveUpModalSubmission(
-        profileNames,
-        filteredProfiles,
-        selectedProfileIndex,
-      ),
-    [profileNames, filteredProfiles, selectedProfileIndex],
+    () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
+    [profileNames, selectedProfileValue],
   );
 
   useEffect(() => {
-    if (!visible) {
-      return;
-    }
-
-    setProfileQuery("");
-    setSelectedProfileIndex(0);
-    setFocusIndex(0);
-    setNoIde(false);
-    setAutoSwitch(true);
-  }, [visible]);
+    setFocusIndex((prev) => clampFocusIndex(prev, fields));
+  }, [fields]);
 
   useEffect(() => {
-    setSelectedProfileIndex((prev) => {
-      if (filteredProfiles.length === 0) {
-        return 0;
-      }
-      return Math.min(prev, filteredProfiles.length - 1);
-    });
-  }, [filteredProfiles.length]);
-
-  const moveFocus = (delta: number) => {
-    setFocusIndex((prev) => (prev + delta + fields.length) % fields.length);
-  };
-
-  const submit = () => {
-    if (!submission.canSubmit) {
-      return;
-    }
-
-    onSubmit({
-      profile: submission.profile,
-      noIde,
-      autoSwitch,
-    });
-  };
+    if (visible) setFocusIndex(0);
+  }, [visible]);
 
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (key.escape) {
         onCancel();
         return;
       }
-
       if (key.tab) {
-        moveFocus(key.shift ? -1 : 1);
-        return;
-      }
-
-      if (currentField !== "profile") {
-        return;
-      }
-
-      if (key.upArrow) {
-        setSelectedProfileIndex((prev) => Math.max(0, prev - 1));
-        return;
-      }
-
-      if (key.downArrow) {
-        if (filteredProfiles.length === 0) {
-          return;
-        }
-        setSelectedProfileIndex((prev) =>
-          Math.min(filteredProfiles.length - 1, prev + 1),
+        setFocusIndex(
+          (prev) =>
+            (clampFocusIndex(prev, fields) +
+              (key.shift ? -1 : 1) +
+              fields.length) %
+            fields.length,
         );
-        return;
-      }
-
-      if (key.backspace || key.delete) {
-        setProfileQuery((prev) => prev.slice(0, -1));
-        return;
-      }
-
-      if (input && !key.ctrl && !key.meta && !key.return) {
-        setProfileQuery((prev) => prev + input);
       }
     },
     { isActive: visible },
@@ -180,40 +89,25 @@ export function UpModal({
       <Box flexDirection="column">
         <Text dimColor>Start worktree session</Text>
         <Box height={1} />
-        {profileNames.length > 0 ? (
-          <TitledBox
-            title={profileQuery ? `Profile filter: ${profileQuery}` : "Profile"}
-            isFocused={currentField === "profile"}
-            width={width ? width - 2 : undefined}
-          >
-            <ScrollableList
-              items={profileItems}
-              selectedIndex={selectedProfileIndex}
-              filterQuery={profileQuery}
-              isFocused={currentField === "profile"}
-              maxVisible={6}
-            />
-          </TitledBox>
-        ) : (
-          <Text dimColor>No profiles configured</Text>
-        )}
-        <Box height={1} />
-        <ToggleRow
-          label="No IDE"
-          checked={noIde}
-          isFocused={currentField === "noIde"}
-          onToggle={() => setNoIde((prev) => !prev)}
-        />
-        <ToggleRow
-          label="Auto-switch"
-          checked={autoSwitch}
-          isFocused={currentField === "autoSwitch"}
-          onToggle={() => setAutoSwitch((prev) => !prev)}
-        />
-        <SubmitButton
-          isFocused={currentField === "submit"}
-          disabled={!submission.canSubmit}
-          onSubmit={submit}
+        <SessionOptionsSection
+          profileNames={profileNames}
+          focusedField={currentField}
+          noIde={noIde}
+          autoSwitch={autoSwitch}
+          canSubmit={submission.canSubmit}
+          onNoIdeToggle={() => setNoIde((prev) => !prev)}
+          onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
+          onSubmit={() => {
+            if (!submission.canSubmit) return;
+            onSubmit({
+              profile: submission.profile,
+              noIde,
+              autoSwitch,
+            });
+          }}
+          onProfileChange={setSelectedProfileValue}
+          resetKey={visible ? "visible" : "hidden"}
+          width={width ? width - 2 : undefined}
         />
         <Box height={1} />
         <Text dimColor>{"tab:next  shift+tab:prev  esc:cancel"}</Text>

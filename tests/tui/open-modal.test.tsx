@@ -85,7 +85,7 @@ describe("OpenModal form variants", () => {
     runPromiseMock.mockReset();
   });
 
-  test("new branch form shows No IDE and No attach toggles", async () => {
+  test("new branch form shows No IDE and Auto-switch toggles", async () => {
     const rendered = await renderNode(
       <NewBranchForm
         defaultBase="main"
@@ -98,13 +98,14 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).toContain("No attach");
+      expect(rendered.output).toContain("Auto-switch");
+      expect(rendered.output).not.toContain("No attach");
     } finally {
       rendered.unmount();
     }
   });
 
-  test("from PR form shows No IDE and No attach toggles", async () => {
+  test("from PR form shows No IDE and Auto-switch toggles", async () => {
     const rendered = await renderNode(
       <FromPRForm
         prList={[
@@ -116,7 +117,7 @@ describe("OpenModal form variants", () => {
             checks: [],
           },
         ]}
-        profileNames={[]}
+        profileNames={["backend"]}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -125,18 +126,22 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).toContain("No attach");
+      expect(rendered.output).toContain("Auto-switch");
+      expect(rendered.output).not.toContain("No attach");
+      expect(rendered.output).toContain("Select PR");
+      expect(rendered.output).toContain("Profile");
     } finally {
       rendered.unmount();
     }
   });
 
-  test("existing branch form shows No IDE and No attach toggles", async () => {
+  test("existing branch form shows profiles when they are configured", async () => {
     runPromiseMock.mockResolvedValueOnce(["feature-a", "feature-b"]);
 
     const rendered = await renderNode(
       <ExistingBranchForm
         repoPath="/repo"
+        profileNames={["backend"]}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -145,7 +150,11 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).toContain("No attach");
+      expect(rendered.output).toContain("Auto-switch");
+      expect(rendered.output).not.toContain("No attach");
+      expect(rendered.output).toContain("Profile");
+      expect(rendered.output).toContain("(default)");
+      expect(rendered.output).toContain("backend");
     } finally {
       rendered.unmount();
     }

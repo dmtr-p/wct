@@ -28,10 +28,7 @@ describe("registry-service", () => {
       Effect.gen(function* () {
         const registry = yield* RegistryService;
 
-        const item = yield* registry.register(
-          "/tmp/fake-repo",
-          "test-project",
-        );
+        const item = yield* registry.register("/tmp/fake-repo", "test-project");
         expect(item.repo_path).toBe("/tmp/fake-repo");
         expect(item.project).toBe("test-project");
 

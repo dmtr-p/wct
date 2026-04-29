@@ -21,6 +21,11 @@ export interface UpModalProps {
 
 type UpModalField = "profile" | "noIde" | "autoSwitch" | "submit";
 
+function clampFocusIndex(index: number, fields: readonly UpModalField[]) {
+  if (fields.length === 0) return 0;
+  return Math.max(0, Math.min(index, fields.length - 1));
+}
+
 export function UpModal({
   visible,
   width,
@@ -45,11 +50,16 @@ export function UpModal({
     return nextFields;
   }, [profileNames.length]);
 
-  const currentField = fields[focusIndex] ?? null;
+  const clampedFocusIndex = clampFocusIndex(focusIndex, fields);
+  const currentField = fields[clampedFocusIndex] ?? null;
   const submission = useMemo(
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
+
+  useEffect(() => {
+    setFocusIndex((prev) => clampFocusIndex(prev, fields));
+  }, [fields]);
 
   useEffect(() => {
     if (visible) setFocusIndex(0);
@@ -64,7 +74,10 @@ export function UpModal({
       if (key.tab) {
         setFocusIndex(
           (prev) =>
-            (prev + (key.shift ? -1 : 1) + fields.length) % fields.length,
+            (clampFocusIndex(prev, fields) +
+              (key.shift ? -1 : 1) +
+              fields.length) %
+            fields.length,
         );
       }
     },

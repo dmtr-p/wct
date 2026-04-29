@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 import type { ListItem } from "../../src/tui/components/ScrollableList";
 import {
   buildProfileItems,
+  clampSelectedProfileIndex,
   getInitialSelectedProfileValue,
+  getNextSelectedProfileIndex,
   isFilterInputCharacter,
   resolveSelectedProfileValue,
   resolveSessionOptionsSubmitState,
@@ -96,5 +98,36 @@ describe("resolveSessionOptionsSubmitState", () => {
       canSubmit: true,
       profile: "backend",
     });
+  });
+});
+
+describe("clampSelectedProfileIndex", () => {
+  test("keeps the selection at zero when the filtered list is empty", () => {
+    expect(clampSelectedProfileIndex(1, 0)).toBe(0);
+    expect(clampSelectedProfileIndex(-1, 0)).toBe(0);
+  });
+
+  test("clamps negative and oversized indices to the available range", () => {
+    expect(clampSelectedProfileIndex(-1, 2)).toBe(0);
+    expect(clampSelectedProfileIndex(5, 2)).toBe(1);
+  });
+});
+
+describe("getNextSelectedProfileIndex", () => {
+  test("does not move below zero when pressing up", () => {
+    expect(getNextSelectedProfileIndex(0, 2, "up")).toBe(0);
+  });
+
+  test("does not move to a negative index when pressing down with no matches", () => {
+    expect(getNextSelectedProfileIndex(0, 0, "down")).toBe(0);
+  });
+
+  test("recovers a valid selection after filtering to zero matches and back", () => {
+    const hiddenSelection = getNextSelectedProfileIndex(0, 0, "down");
+    expect(hiddenSelection).toBe(0);
+    expect(
+      clampSelectedProfileIndex(hiddenSelection, profileItems.length),
+    ).toBe(0);
+    expect(resolveSelectedProfileValue(["backend"], profileItems, 0)).toBe("");
   });
 });

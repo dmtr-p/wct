@@ -47,6 +47,31 @@ export function resolveSelectedProfileValue(
   return filteredProfiles[selectedProfileIndex]?.value;
 }
 
+export function clampSelectedProfileIndex(
+  selectedProfileIndex: number,
+  filteredProfilesLength: number,
+): number {
+  if (filteredProfilesLength === 0) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(selectedProfileIndex, filteredProfilesLength - 1),
+  );
+}
+
+export function getNextSelectedProfileIndex(
+  selectedProfileIndex: number,
+  filteredProfilesLength: number,
+  direction: "up" | "down",
+): number {
+  const nextIndex =
+    direction === "up" ? selectedProfileIndex - 1 : selectedProfileIndex + 1;
+
+  return clampSelectedProfileIndex(nextIndex, filteredProfilesLength);
+}
+
 export function resolveSessionOptionsSubmitState(
   profileNames: string[],
   selectedProfileValue: string | undefined,

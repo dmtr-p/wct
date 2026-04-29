@@ -4,6 +4,8 @@ import { SubmitButton, ToggleRow } from "./form-controls";
 import { filterItems, ScrollableList } from "./ScrollableList";
 import {
   buildProfileItems,
+  clampSelectedProfileIndex,
+  getNextSelectedProfileIndex,
   isFilterInputCharacter,
   resolveSelectedProfileValue,
 } from "./session-options";
@@ -56,9 +58,7 @@ export function SessionOptionsSection({
 
   useEffect(() => {
     setSelectedProfileIndex((prev) =>
-      filteredProfiles.length === 0
-        ? 0
-        : Math.min(prev, filteredProfiles.length - 1),
+      clampSelectedProfileIndex(prev, filteredProfiles.length),
     );
   }, [filteredProfiles.length]);
 
@@ -75,12 +75,14 @@ export function SessionOptionsSection({
   useInput(
     (input, key) => {
       if (key.upArrow) {
-        setSelectedProfileIndex((prev) => Math.max(0, prev - 1));
+        setSelectedProfileIndex((prev) =>
+          getNextSelectedProfileIndex(prev, filteredProfiles.length, "up"),
+        );
         return;
       }
       if (key.downArrow) {
         setSelectedProfileIndex((prev) =>
-          Math.min(filteredProfiles.length - 1, prev + 1),
+          getNextSelectedProfileIndex(prev, filteredProfiles.length, "down"),
         );
         return;
       }

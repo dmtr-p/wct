@@ -62,15 +62,16 @@ export function PathInput({
           Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem;
             const items = yield* fs.readDirectory(parent);
-            const dirs: string[] = [];
-            for (const item of items) {
-              const fullPath = parent + item;
-              const stat = yield* fs.stat(fullPath);
-              if (stat.type === "Directory") {
-                dirs.push(item);
-              }
-            }
-            return dirs.sort();
+            const checked = yield* Effect.all(
+              items.map((item) =>
+                Effect.gen(function* () {
+                  const stat = yield* fs.stat(parent + item);
+                  return stat.type === "Directory" ? item : null;
+                }).pipe(Effect.catchAll(() => Effect.succeed(null))),
+              ),
+              { concurrency: 16 },
+            );
+            return checked.filter((d): d is string => d !== null).sort();
           }),
         );
         if (token.cancelled) return;
@@ -100,6 +101,15 @@ export function PathInput({
         c.label.toLowerCase().startsWith(prefix.toLowerCase()),
       )
     : completions;
+
+  // Clamp selection when filtered list shrinks
+  useEffect(() => {
+    if (selectedCompletionIndex >= filtered.length && filtered.length > 0) {
+      setSelectedCompletionIndex(filtered.length - 1);
+    } else if (filtered.length === 0 && selectedCompletionIndex !== 0) {
+      setSelectedCompletionIndex(0);
+    }
+  }, [filtered.length, selectedCompletionIndex]);
 
   useInput(
     (input, key) => {

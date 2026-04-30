@@ -1,14 +1,14 @@
 // src/tui/hooks/useModalActions.ts
 
+import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
-import { Effect } from "effect";
 import { RegistryService } from "../../services/registry-service";
-import { WorktreeService } from "../../services/worktree-service";
 import type { TmuxClient } from "../../services/tmux";
+import { WorktreeService } from "../../services/worktree-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
@@ -279,7 +279,10 @@ export function createHandleAddProject(deps: ModalActionDeps) {
             const mainDir = yield* WorktreeService.use((s) =>
               s.getMainRepoPath(result.path),
             );
-            return mainDir ?? result.path;
+            if (!mainDir) {
+              throw new Error(`Not a git repository: ${result.path}`);
+            }
+            return mainDir;
           }),
         );
         await runTuiSilentPromise(

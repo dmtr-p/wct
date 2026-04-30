@@ -60,8 +60,8 @@ export function AddProjectModal({
     const timer = setTimeout(async () => {
       try {
         const gitPath = expanded.endsWith("/")
-              ? expanded + ".git"
-              : expanded + "/.git";
+          ? expanded + ".git"
+          : expanded + "/.git";
         const exists = await runTuiSilentPromise(pathExists(gitPath));
         if (!cancelled) setIsGitRepo(exists);
       } catch {
@@ -103,13 +103,18 @@ export function AddProjectModal({
         // When leaving path field, auto-fill name
         if (currentField === "path") autoFillName();
         setFocusIndex(
-          (prev) => (prev + (key.shift ? -1 : 1) + FIELDS.length) % FIELDS.length,
+          (prev) =>
+            (prev + (key.shift ? -1 : 1) + FIELDS.length) % FIELDS.length,
         );
         return;
       }
       if (key.return && currentField === "path") {
         autoFillName();
         setFocusIndex(1); // advance to name
+        return;
+      }
+      if (key.return && currentField === "name") {
+        setFocusIndex(2); // advance to submit
         return;
       }
     },

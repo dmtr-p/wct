@@ -46,47 +46,49 @@ export function PathInput({
   const [completions, setCompletions] = useState<ListItem[]>([]);
   const [selectedCompletionIndex, setSelectedCompletionIndex] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef<{ cancelled: boolean } | null>(null);
 
   // Debounced directory listing
-  const loadCompletions = useCallback(
-    (inputValue: string) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(async () => {
-        const expanded = expandTilde(inputValue);
-        const { parent } = getParentAndPrefix(expanded);
-        try {
-          const entries = await runTuiSilentPromise(
-            Effect.gen(function* () {
-              const fs = yield* FileSystem.FileSystem;
-              const items = yield* fs.readDirectory(parent);
-              const dirs: string[] = [];
-              for (const item of items) {
-                const fullPath = parent + item;
-                const stat = yield* fs.stat(fullPath);
-                if (stat.type === "Directory") {
-                  dirs.push(item);
-                }
+  const loadCompletions = useCallback((inputValue: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (cancelledRef.current) cancelledRef.current.cancelled = true;
+    const token = { cancelled: false };
+    cancelledRef.current = token;
+    debounceRef.current = setTimeout(async () => {
+      const expanded = expandTilde(inputValue);
+      const { parent } = getParentAndPrefix(expanded);
+      try {
+        const entries = await runTuiSilentPromise(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const items = yield* fs.readDirectory(parent);
+            const dirs: string[] = [];
+            for (const item of items) {
+              const fullPath = parent + item;
+              const stat = yield* fs.stat(fullPath);
+              if (stat.type === "Directory") {
+                dirs.push(item);
               }
-              return dirs.sort();
-            }),
-          );
-          setCompletions(
-            entries.map((d) => ({ label: d, value: d })),
-          );
-          setSelectedCompletionIndex(0);
-        } catch {
-          setCompletions([]);
-          setSelectedCompletionIndex(0);
-        }
-      }, 100);
-    },
-    [],
-  );
+            }
+            return dirs.sort();
+          }),
+        );
+        if (token.cancelled) return;
+        setCompletions(entries.map((d) => ({ label: d, value: d })));
+        setSelectedCompletionIndex(0);
+      } catch {
+        if (token.cancelled) return;
+        setCompletions([]);
+        setSelectedCompletionIndex(0);
+      }
+    }, 100);
+  }, []);
 
   useEffect(() => {
     if (isFocused) loadCompletions(value);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (cancelledRef.current) cancelledRef.current.cancelled = true;
     };
   }, [value, isFocused, loadCompletions]);
 

@@ -114,12 +114,14 @@ export function PathInput({
   useInput(
     (input, key) => {
       if (key.downArrow) {
+        if (filtered.length === 0) return;
         setSelectedCompletionIndex((prev) =>
           Math.min(prev + 1, filtered.length - 1),
         );
         return;
       }
       if (key.upArrow) {
+        if (filtered.length === 0) return;
         setSelectedCompletionIndex((prev) => Math.max(prev - 1, 0));
         return;
       }

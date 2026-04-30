@@ -23,6 +23,9 @@ describe("registry-service", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  // This is safe because liveRegistryService reads HOME lazily inside each
+  // registry operation; if it starts opening the DB during layer construction,
+  // this test must build the layer after beforeEach updates process.env.HOME.
   it.layer(WctTestLayer)("operates against $HOME registry", (it) => {
     it.effect("register and list repos", () =>
       Effect.gen(function* () {

@@ -11,6 +11,8 @@ import { WctTestLayer, wctTestLayer } from "./effect-vitest";
 describe("WctTestLayer", () => {
   let nonGitDir: string;
 
+  // Vitest registers this beforeAll before the it.layer block below registers
+  // its own setup, so nonGitDir is initialized before any layered test body runs.
   beforeAll(() => {
     nonGitDir = mkdtempSync(join(tmpdir(), "wct-test-layer-non-git-"));
   });

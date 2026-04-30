@@ -1,10 +1,10 @@
+import { Effect, FileSystem } from "effect";
 import { Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { runTuiSilentPromise } from "../runtime";
 import { useBlink } from "../hooks/useBlink";
-import { type ListItem, getVisibleWindow } from "./ScrollableList";
+import { runTuiSilentPromise } from "../runtime";
+import { getVisibleWindow, type ListItem } from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
-import { Effect, FileSystem } from "effect";
 
 /** Expand leading ~/ or bare ~ to $HOME. Does not expand ~user syntax. */
 export function expandTilde(path: string): string {
@@ -134,9 +134,9 @@ export function PathInput({
         if (selected) {
           const { parent } = getParentAndPrefix(expanded);
           // Reconstruct with tilde if original used it
-          const newExpanded = parent + selected.value + "/";
+          const newExpanded = `${parent + selected.value}/`;
           const newValue = value.startsWith("~")
-            ? "~" + newExpanded.slice((process.env.HOME ?? "/tmp").length)
+            ? `~${newExpanded.slice((process.env.HOME ?? "/tmp").length)}`
             : newExpanded;
           onChange(newValue);
           setSelectedCompletionIndex(0);

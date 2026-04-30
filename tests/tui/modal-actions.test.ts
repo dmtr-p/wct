@@ -9,12 +9,12 @@ import {
 } from "vitest";
 import type { ModalActionDeps } from "../../src/tui/hooks/useModalActions";
 import {
+  createHandleAddProject,
   createHandleOpen,
   createHandleUpSubmit,
+  createPrepareAddProjectModal,
   createPrepareOpenModal,
   createPrepareUpModal,
-  createPrepareAddProjectModal,
-  createHandleAddProject,
 } from "../../src/tui/hooks/useModalActions";
 import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
 import {
@@ -980,7 +980,11 @@ describe("createHandleAddProject", () => {
 
   test("calls register and refreshes on success", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
-    (runTuiSilentPromise as Mock).mockResolvedValueOnce({ id: "1", repoPath: "/repo", project: "myproj" });
+    (runTuiSilentPromise as Mock).mockResolvedValueOnce({
+      id: "1",
+      repoPath: "/repo",
+      project: "myproj",
+    });
 
     const deps = makeDeps({
       refreshAll: vi.fn().mockResolvedValue(undefined),
@@ -999,7 +1003,9 @@ describe("createHandleAddProject", () => {
 
   test("shows error on failure", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
-    (runTuiSilentPromise as Mock).mockRejectedValueOnce(new Error("already registered"));
+    (runTuiSilentPromise as Mock).mockRejectedValueOnce(
+      new Error("already registered"),
+    );
 
     const deps = makeDeps();
     const handle = createHandleAddProject(deps);

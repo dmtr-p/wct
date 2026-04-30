@@ -1,5 +1,8 @@
-import { describe, expect, test, vi } from "vitest";
-import { expandTilde, getParentAndPrefix } from "../../src/tui/components/PathInput";
+import { describe, expect, test } from "vitest";
+import {
+  expandTilde,
+  getParentAndPrefix,
+} from "../../src/tui/components/PathInput";
 
 describe("getParentAndPrefix", () => {
   test("splits /Users/dmtr/co into parent=/Users/dmtr/ prefix=co", () => {

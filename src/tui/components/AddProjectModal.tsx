@@ -1,13 +1,13 @@
+import * as path from "node:path";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
-import { runTuiSilentPromise } from "../runtime";
-import { useBlink } from "../hooks/useBlink";
-import { Modal } from "./Modal";
-import { SubmitButton } from "./form-controls";
-import { PathInput, expandTilde } from "./PathInput";
-import { TitledBox } from "./TitledBox";
 import { pathExists } from "../../services/filesystem";
-import * as path from "node:path";
+import { useBlink } from "../hooks/useBlink";
+import { runTuiSilentPromise } from "../runtime";
+import { SubmitButton } from "./form-controls";
+import { Modal } from "./Modal";
+import { expandTilde, PathInput } from "./PathInput";
+import { TitledBox } from "./TitledBox";
 
 export interface AddProjectModalResult {
   path: string;
@@ -61,8 +61,8 @@ export function AddProjectModal({
     const timer = setTimeout(async () => {
       try {
         const gitPath = expanded.endsWith("/")
-          ? expanded + ".git"
-          : expanded + "/.git";
+          ? `${expanded}.git`
+          : `${expanded}/.git`;
         const exists = await runTuiSilentPromise(pathExists(gitPath));
         if (!cancelled) setIsGitRepo(exists);
       } catch {

@@ -5,11 +5,11 @@ import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
+import { RegistryService } from "../../services/registry-service";
 import type { TmuxClient } from "../../services/tmux";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
-import { RegistryService } from "../../services/registry-service";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import {

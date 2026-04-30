@@ -274,6 +274,7 @@ export function createPrepareAddProjectModal(deps: ModalActionDeps) {
 
 export function createHandleAddProject(deps: ModalActionDeps) {
   return (result: AddProjectModalResult) => {
+    deps.clearActionError();
     deps.setMode(Mode.Navigate);
     (async () => {
       try {

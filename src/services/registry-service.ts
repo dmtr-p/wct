@@ -82,21 +82,22 @@ function getCurrentSchemaVersion(db: Database): number {
 
 function runMigrations(db: Database): void {
   db.run(SCHEMA_VERSION_SQL);
-  const current = getCurrentSchemaVersion(db);
-  if (current >= TARGET_SCHEMA_VERSION) return;
 
   const apply = db.transaction(() => {
+    const current = getCurrentSchemaVersion(db);
+    if (current >= TARGET_SCHEMA_VERSION) return;
+
     for (let v = current; v < TARGET_SCHEMA_VERSION; v++) {
       const sql = MIGRATIONS[v];
       if (!sql) continue;
       db.run(sql);
-      db.run(
-        "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-        [v + 1, Date.now()],
-      );
+      db.run("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)", [
+        v + 1,
+        Date.now(),
+      ]);
     }
   });
-  apply();
+  apply.immediate();
 }
 
 function generateId(): string {
@@ -133,36 +134,17 @@ function withDb<A>(
 export const liveRegistryService: RegistryServiceApi = RegistryService.of({
   register: (repoPath, project) =>
     withDb("register repo", (db) => {
-      const tx = db.transaction(() => {
-        const existing = db
-          .query("SELECT * FROM registry WHERE repo_path = ?")
-          .get(repoPath) as RegistryItem | null;
-
-        if (existing) {
-          if (existing.project !== project) {
-            db.run("UPDATE registry SET project = ? WHERE repo_path = ?", [
-              project,
-              repoPath,
-            ]);
-          }
-          return { ...existing, project };
-        }
-
-        const id = generateId();
-        const created_at = Date.now();
-        const item: RegistryItem = {
-          id,
-          repo_path: repoPath,
-          project,
-          created_at,
-        };
-        db.run(
-          "INSERT INTO registry (id, repo_path, project, created_at) VALUES (?, ?, ?, ?)",
-          [id, repoPath, project, created_at],
-        );
-        return item;
-      });
-      return tx();
+      const id = generateId();
+      const now = Date.now();
+      db.run(
+        `INSERT INTO registry (id, repo_path, project, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(repo_path) DO UPDATE SET project = excluded.project`,
+        [id, repoPath, project, now],
+      );
+      return db
+        .query("SELECT * FROM registry WHERE repo_path = ?")
+        .get(repoPath) as RegistryItem;
     }),
 
   unregister: (repoPath) =>

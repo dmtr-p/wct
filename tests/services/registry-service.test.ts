@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,6 +65,48 @@ describe("registry-service", () => {
 
         const removed = yield* registry.unregister("/tmp/does-not-exist");
         expect(removed).toBe(false);
+      }),
+    );
+
+    it.effect("creates schema_version table with current version on first open", () =>
+      Effect.gen(function* () {
+        const registry = yield* RegistryService;
+        yield* registry.listRepos();
+
+        const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
+          readonly: true,
+        });
+        try {
+          const row = db
+            .query(
+              "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+            )
+            .get() as { version: number } | null;
+          expect(row).not.toBeNull();
+          expect(row?.version).toBe(1);
+        } finally {
+          db.close();
+        }
+      }),
+    );
+
+    it.effect("does not re-apply migrations on subsequent opens", () =>
+      Effect.gen(function* () {
+        const registry = yield* RegistryService;
+        yield* registry.listRepos();
+        yield* registry.listRepos();
+
+        const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
+          readonly: true,
+        });
+        try {
+          const rows = db
+            .query("SELECT version FROM schema_version ORDER BY version ASC")
+            .all() as { version: number }[];
+          expect(rows.map((r) => r.version)).toEqual([1]);
+        } finally {
+          db.close();
+        }
       }),
     );
   });

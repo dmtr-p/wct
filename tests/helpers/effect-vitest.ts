@@ -1,6 +1,7 @@
 import { BunServices } from "@effect/platform-bun";
 import { Layer } from "effect";
 import { JsonFlag } from "../../src/cli/json-flag";
+import { WctServicesLayer } from "../../src/effect/services";
 import {
   GitHubService,
   liveGitHubService,
@@ -36,17 +37,7 @@ export type { ServiceOverrides };
  * Use with `it.layer(WctTestLayer)((it) => { it.effect(...) })` from
  * @effect/vitest.
  */
-export const WctTestLayer = Layer.mergeAll(
-  Layer.succeed(GitHubService, liveGitHubService),
-  Layer.succeed(IdeService, liveIdeService),
-  Layer.succeed(SetupService, liveSetupService),
-  Layer.succeed(TmuxService, liveTmuxService),
-  Layer.succeed(VSCodeWorkspaceService, liveVSCodeWorkspaceService),
-  Layer.succeed(WorktreeService, liveWorktreeService),
-  Layer.succeed(RegistryService, liveRegistryService),
-  Layer.succeed(JsonFlag, false),
-  BunServices.layer,
-);
+export const WctTestLayer = Layer.mergeAll(WctServicesLayer, BunServices.layer);
 
 /**
  * Variant of `WctTestLayer` that swaps in per-test overrides matching

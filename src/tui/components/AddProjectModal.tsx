@@ -158,7 +158,6 @@ export function AddProjectModal({
           value={pathValue}
           onChange={(v) => {
             setPathValue(v);
-            setNameAutoFilled(false);
           }}
           isFocused={currentField === "path"}
           isGitRepo={isGitRepo}

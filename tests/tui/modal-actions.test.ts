@@ -980,9 +980,12 @@ describe("createHandleAddProject", () => {
 
   test("calls register and refreshes on success", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    // First call: getMainRepoPath returns canonical path
+    (runTuiSilentPromise as Mock).mockResolvedValueOnce("/home/user/myproj");
+    // Second call: register
     (runTuiSilentPromise as Mock).mockResolvedValueOnce({
       id: "1",
-      repoPath: "/repo",
+      repoPath: "/home/user/myproj",
       project: "myproj",
     });
 
@@ -991,7 +994,11 @@ describe("createHandleAddProject", () => {
     });
     const handle = createHandleAddProject(deps);
 
-    handle({ path: "/home/user/myproj", name: "myproj" });
+    handle({
+      path: "/home/user/myproj",
+      name: "myproj",
+      nameManuallyEdited: false,
+    });
 
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
 
@@ -1010,7 +1017,7 @@ describe("createHandleAddProject", () => {
     const deps = makeDeps();
     const handle = createHandleAddProject(deps);
 
-    handle({ path: "/repo", name: "proj" });
+    handle({ path: "/repo", name: "proj", nameManuallyEdited: false });
 
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
 

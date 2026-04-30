@@ -12,6 +12,7 @@ import { TitledBox } from "./TitledBox";
 export interface AddProjectModalResult {
   path: string;
   name: string;
+  nameManuallyEdited: boolean;
 }
 
 export interface AddProjectModalProps {
@@ -91,8 +92,8 @@ export function AddProjectModal({
     if (!isGitRepo) return;
     const expanded = expandTilde(pathValue).replace(/\/+$/, "");
     const name = nameValue || path.basename(expanded);
-    onSubmit({ path: expanded, name });
-  }, [isGitRepo, pathValue, nameValue, onSubmit]);
+    onSubmit({ path: expanded, name, nameManuallyEdited: !nameAutoFilled });
+  }, [isGitRepo, pathValue, nameValue, nameAutoFilled, onSubmit]);
 
   useInput(
     (_input, key) => {

@@ -1,5 +1,7 @@
 // src/tui/hooks/useModalActions.ts
 
+import * as path from "node:path";
+
 import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { openWorktree, resolveOpenOptions } from "../../commands/open";
@@ -285,8 +287,11 @@ export function createHandleAddProject(deps: ModalActionDeps) {
             return mainDir;
           }),
         );
+        const projectName = result.nameManuallyEdited
+          ? result.name
+          : path.basename(canonicalPath) || result.name;
         await runTuiSilentPromise(
-          RegistryService.use((s) => s.register(canonicalPath, result.name)),
+          RegistryService.use((s) => s.register(canonicalPath, projectName)),
         );
         await deps.refreshAll();
       } catch (error) {

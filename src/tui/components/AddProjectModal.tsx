@@ -54,7 +54,7 @@ export function AddProjectModal({
   // Check if path is a git repo
   useEffect(() => {
     const expanded = expandTilde(pathValue);
-    if (!expanded || expanded.length < 2) {
+    if (!expanded) {
       setIsGitRepo(false);
       return;
     }

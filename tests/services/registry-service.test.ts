@@ -93,7 +93,7 @@ describe("registry-service", () => {
     );
 
     it.effect(
-      "register transaction wrap preserves idempotent upsert behavior",
+      "register upsert updates project and returns single row",
       () =>
         Effect.gen(function* () {
           const registry = yield* RegistryService;

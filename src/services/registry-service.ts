@@ -83,11 +83,17 @@ function getCurrentSchemaVersion(db: Database): number {
 function runMigrations(db: Database): void {
   db.run(SCHEMA_VERSION_SQL);
 
-  const apply = db.transaction(() => {
-    const current = getCurrentSchemaVersion(db);
-    if (current >= TARGET_SCHEMA_VERSION) return;
+  // Fast path: skip the write lock when already at target version.
+  const current = getCurrentSchemaVersion(db);
+  if (current >= TARGET_SCHEMA_VERSION) return;
 
-    for (let v = current; v < TARGET_SCHEMA_VERSION; v++) {
+  const apply = db.transaction(() => {
+    // Re-check inside the write lock — another process may have migrated
+    // between the fast-path read and acquiring this lock.
+    const version = getCurrentSchemaVersion(db);
+    if (version >= TARGET_SCHEMA_VERSION) return;
+
+    for (let v = version; v < TARGET_SCHEMA_VERSION; v++) {
       const sql = MIGRATIONS[v];
       if (!sql) continue;
       db.run(sql);
@@ -136,15 +142,14 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
     withDb("register repo", (db) => {
       const id = generateId();
       const now = Date.now();
-      db.run(
-        `INSERT INTO registry (id, repo_path, project, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(repo_path) DO UPDATE SET project = excluded.project`,
-        [id, repoPath, project, now],
-      );
       return db
-        .query("SELECT * FROM registry WHERE repo_path = ?")
-        .get(repoPath) as RegistryItem;
+        .query(
+          `INSERT INTO registry (id, repo_path, project, created_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(repo_path) DO UPDATE SET project = excluded.project
+           RETURNING *`,
+        )
+        .get(id, repoPath, project, now) as RegistryItem;
     }),
 
   unregister: (repoPath) =>

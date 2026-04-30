@@ -133,11 +133,14 @@ export function PathInput({
         const selected = filtered[selectedCompletionIndex];
         if (selected) {
           const { parent } = getParentAndPrefix(expanded);
-          // Reconstruct with tilde if original used it
+          // Reconstruct with tilde if original used it and path is under HOME
           const newExpanded = `${parent + selected.value}/`;
-          const newValue = value.startsWith("~")
-            ? `~${newExpanded.slice((process.env.HOME ?? "/tmp").length)}`
-            : newExpanded;
+          const home = process.env.HOME ?? "/tmp";
+          const newValue =
+            value.startsWith("~") &&
+            (newExpanded === home || newExpanded.startsWith(`${home}/`))
+              ? `~${newExpanded.slice(home.length)}`
+              : newExpanded;
           onChange(newValue);
           setSelectedCompletionIndex(0);
         }

@@ -5,9 +5,9 @@ import { useBlink } from "../hooks/useBlink";
 import { type ListItem, getVisibleWindow } from "./ScrollableList";
 import { Effect, FileSystem } from "effect";
 
-/** Expand leading ~ to $HOME */
+/** Expand leading ~/ or bare ~ to $HOME. Does not expand ~user syntax. */
 export function expandTilde(path: string): string {
-  if (path.startsWith("~")) {
+  if (path === "~" || path.startsWith("~/")) {
     const home = process.env.HOME ?? "/tmp";
     return home + path.slice(1);
   }

@@ -41,6 +41,15 @@ describe("expandTilde", () => {
     expect(expandTilde("/foo/~bar")).toBe("/foo/~bar");
   });
 
+  test("does not expand ~user syntax", () => {
+    expect(expandTilde("~otheruser/foo")).toBe("~otheruser/foo");
+  });
+
+  test("expands bare ~", () => {
+    const home = process.env.HOME ?? "/tmp";
+    expect(expandTilde("~")).toBe(home);
+  });
+
   test("returns path unchanged if no tilde", () => {
     expect(expandTilde("/usr/local")).toBe("/usr/local");
   });

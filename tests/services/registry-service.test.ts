@@ -106,6 +106,48 @@ describe("registry-service", () => {
       }),
     );
 
+    it.effect("converges legacy DB that has registry but no schema_version", () =>
+      Effect.gen(function* () {
+        // Simulate a legacy DB: create the registry table directly,
+        // insert a row, but do NOT create schema_version.
+        const dbPath = `${process.env.HOME}/.wct/wct.db`;
+        mkdirSync(`${process.env.HOME}/.wct`, { recursive: true });
+        const legacy = new Database(dbPath, { create: true });
+        legacy.run("PRAGMA journal_mode=WAL");
+        legacy.run(`CREATE TABLE registry (
+          id TEXT PRIMARY KEY,
+          repo_path TEXT NOT NULL UNIQUE,
+          project TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )`);
+        legacy.run(
+          "INSERT INTO registry (id, repo_path, project, created_at) VALUES (?, ?, ?, ?)",
+          ["legacy-1", "/tmp/legacy-repo", "old-project", 1000],
+        );
+        legacy.close();
+
+        // Now open via the service — migrations should converge without
+        // destroying the existing data.
+        const registry = yield* RegistryService;
+        const repos = yield* registry.listRepos();
+        const legacyRow = repos.find((r) => r.repo_path === "/tmp/legacy-repo");
+        expect(legacyRow).toBeDefined();
+        expect(legacyRow?.project).toBe("old-project");
+
+        // schema_version should now exist and record v1.
+        const db = new Database(dbPath, { readonly: true });
+        try {
+          const row = db
+            .query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
+            .get() as { version: number } | null;
+          expect(row).not.toBeNull();
+          expect(row?.version).toBe(1);
+        } finally {
+          db.close();
+        }
+      }),
+    );
+
     it.effect("does not re-apply migrations on subsequent opens", () =>
       Effect.gen(function* () {
         const registry = yield* RegistryService;

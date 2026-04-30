@@ -26,6 +26,7 @@ function getHints(
           "←→:expand/collapse",
           hasClient && "space:switch",
           "o:open",
+          "a:add",
         ),
         join("u:up", hasClient && "d:down", "c:close", "/:search", "q:quit"),
       ];
@@ -52,6 +53,7 @@ function getHints(
           "←:collapse",
           hasClient && "space:action",
           "o:open",
+          "a:add",
         ),
         join("u:up", hasClient && "d:down", "c:close", "/:search", "q:quit"),
       ];
@@ -67,6 +69,7 @@ function getHints(
         "enter:force close  esc:cancel",
       ];
     case "UpModal":
+    case "AddProjectModal":
       return ["", ""];
   }
 }

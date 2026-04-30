@@ -297,6 +297,7 @@ export function App() {
     toggleExpanded,
     prepareOpenModal: modalActions.prepareOpenModal,
     prepareUpModal: modalActions.prepareUpModal,
+    prepareAddProjectModal: () => setMode(Mode.AddProjectModal),
     handleSpaceSwitch: sessionActions.handleSpaceSwitch,
     handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
     handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
@@ -409,6 +410,7 @@ export function App() {
       input === "q" &&
       mode.type !== "OpenModal" &&
       mode.type !== "UpModal" &&
+      mode.type !== "AddProjectModal" &&
       mode.type !== "Search" &&
       mode.type !== "ConfirmKill" &&
       mode.type !== "ConfirmDown" &&
@@ -426,6 +428,7 @@ export function App() {
         return handleSearchInput(input, key);
       case "OpenModal":
       case "UpModal":
+      case "AddProjectModal":
         return;
       case "Expanded":
         return handleExpandedInput(expCtx, input, key);

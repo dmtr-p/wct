@@ -46,6 +46,7 @@ function makeCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleSpaceSwitch: vi.fn(),
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
+    prepareAddProjectModal: vi.fn(),
     ...overrides,
   };
 }
@@ -86,6 +87,12 @@ describe("handleNavigateInput", () => {
     const ctx = makeCtx({ tmuxClient: null });
     handleNavigateInput(ctx, "d", noKey);
     expect(ctx.handleDownSelectedWorktree).not.toHaveBeenCalled();
+  });
+
+  test("a calls prepareAddProjectModal", () => {
+    const ctx = makeCtx();
+    handleNavigateInput(ctx, "a", noKey);
+    expect(ctx.prepareAddProjectModal).toHaveBeenCalled();
   });
 
   test("u calls prepareUpModal", () => {

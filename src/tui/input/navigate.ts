@@ -20,6 +20,7 @@ export interface NavigateContext {
   handleSpaceSwitch: () => void;
   handleDownSelectedWorktree: () => void;
   handleCloseSelectedWorktree: () => void;
+  prepareAddProjectModal: () => void;
 }
 
 export function handleNavigateInput(
@@ -50,6 +51,11 @@ export function handleNavigateInput(
 
   if (input === "u") {
     ctx.prepareUpModal();
+    return;
+  }
+
+  if (input === "a") {
+    ctx.prepareAddProjectModal();
     return;
   }
 

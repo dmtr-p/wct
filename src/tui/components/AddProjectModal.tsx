@@ -1,7 +1,7 @@
 import * as path from "node:path";
+import { Effect, FileSystem } from "effect";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
-import { pathExists } from "../../services/filesystem";
 import { useBlink } from "../hooks/useBlink";
 import { runTuiSilentPromise } from "../runtime";
 import { SubmitButton } from "./form-controls";
@@ -64,7 +64,12 @@ export function AddProjectModal({
         const gitPath = expanded.endsWith("/")
           ? `${expanded}.git`
           : `${expanded}/.git`;
-        const exists = await runTuiSilentPromise(pathExists(gitPath));
+        const exists = await runTuiSilentPromise(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            return yield* fs.exists(gitPath);
+          }),
+        );
         if (!cancelled) setIsGitRepo(exists);
       } catch {
         if (!cancelled) setIsGitRepo(false);

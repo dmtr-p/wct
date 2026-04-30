@@ -1,8 +1,7 @@
 import { dirname, isAbsolute, resolve } from "node:path";
-import { Context, Effect } from "effect";
+import { Context, Effect, FileSystem } from "effect";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { pathExists } from "./filesystem";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
 
 export interface Worktree {
@@ -327,7 +326,8 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
     ),
   createWorktree: (path, branch, useExisting, base, cwd) =>
     Effect.gen(function* () {
-      const exists = yield* pathExists(path);
+      const fs = yield* FileSystem.FileSystem;
+      const exists = yield* fs.exists(path);
 
       if (exists) {
         const worktrees = yield* listWorktreesImpl(cwd);

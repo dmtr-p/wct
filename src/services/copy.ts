@@ -1,13 +1,6 @@
 import { dirname, join } from "node:path";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import * as logger from "../utils/logger";
-import {
-  ensureDirectory,
-  isDirectory,
-  pathExists,
-  readBytes,
-  writeBytes,
-} from "./filesystem";
 
 export interface CopyResult {
   file: string;
@@ -28,7 +21,11 @@ function expandDirectory(dirPath: string, baseDir: string) {
   const fullPath = join(baseDir, normalizedDir);
 
   return Effect.gen(function* () {
-    if (!(yield* isDirectory(fullPath))) {
+    const fs = yield* FileSystem.FileSystem;
+    const info = yield* Effect.catch(fs.stat(fullPath), () =>
+      Effect.succeed(null),
+    );
+    if (!info || info.type !== "Directory") {
       return [];
     }
 
@@ -128,16 +125,17 @@ function copyFiles(
 
       const result = yield* Effect.catch(
         Effect.gen(function* () {
-          if (!(yield* pathExists(sourcePath))) {
+          const fs = yield* FileSystem.FileSystem;
+          if (!(yield* fs.exists(sourcePath))) {
             yield* logger.warn(`File not found: ${file}`);
             return { file, success: false as const, error: "File not found" };
           }
 
           const targetDirPath = dirname(targetPath);
-          yield* ensureDirectory(targetDirPath);
+          yield* fs.makeDirectory(targetDirPath, { recursive: true });
 
-          const content = yield* readBytes(sourcePath);
-          yield* writeBytes(targetPath, content);
+          const content = yield* fs.readFile(sourcePath);
+          yield* fs.writeFile(targetPath, content);
 
           return { file, success: true as const };
         }),

@@ -1,9 +1,8 @@
 import { basename, join } from "node:path";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { CONFIG_FILENAME } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { pathExists, writeText } from "../services/filesystem";
 import { RegistryService } from "../services/registry-service";
 import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
@@ -60,10 +59,11 @@ tmux:
 
 export function initCommand(): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
     const cwd = process.cwd();
     const configPath = join(cwd, CONFIG_FILENAME);
 
-    const exists = yield* Effect.mapError(pathExists(configPath), (error) =>
+    const exists = yield* Effect.mapError(fs.exists(configPath), (error) =>
       commandError(
         "init_error",
         `Failed to check for existing ${CONFIG_FILENAME}`,
@@ -76,7 +76,7 @@ export function initCommand(): Effect.Effect<void, WctError, WctServices> {
       return;
     }
 
-    yield* Effect.mapError(writeText(configPath, TEMPLATE), (error) =>
+    yield* Effect.mapError(fs.writeFileString(configPath, TEMPLATE), (error) =>
       commandError(
         "init_error",
         `Failed to create ${CONFIG_FILENAME}: ${error instanceof Error ? error.message : String(error)}`,

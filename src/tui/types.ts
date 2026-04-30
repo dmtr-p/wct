@@ -7,6 +7,7 @@ export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
   | { type: "OpenModal" }
+  | { type: "AddProjectModal" }
   | {
       type: "UpModal";
       worktreePath: string;
@@ -51,6 +52,7 @@ export const Mode = {
   Navigate: { type: "Navigate" } as Mode,
   Search: { type: "Search" } as Mode,
   OpenModal: { type: "OpenModal" } as Mode,
+  AddProjectModal: { type: "AddProjectModal" } as Mode,
   UpModal: (
     worktreePath: string,
     worktreeKey: string,

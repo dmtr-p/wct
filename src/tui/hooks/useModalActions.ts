@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { openWorktree, resolveOpenOptions } from "../../commands/open";
+import { loadConfig } from "../../config/loader";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
@@ -287,9 +288,19 @@ export function createHandleAddProject(deps: ModalActionDeps) {
             return mainDir;
           }),
         );
-        const projectName = result.nameManuallyEdited
+        let projectName = result.nameManuallyEdited
           ? result.name
           : path.basename(canonicalPath) || result.name;
+        if (!result.nameManuallyEdited) {
+          try {
+            const config = await loadConfig(canonicalPath);
+            if (config?.config?.project_name) {
+              projectName = config.config.project_name;
+            }
+          } catch {
+            // Ignore config load failures, keep basename default
+          }
+        }
         await runTuiSilentPromise(
           RegistryService.use((s) => s.register(canonicalPath, projectName)),
         );

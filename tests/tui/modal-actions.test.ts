@@ -13,6 +13,8 @@ import {
   createHandleUpSubmit,
   createPrepareOpenModal,
   createPrepareUpModal,
+  createPrepareAddProjectModal,
+  createHandleAddProject,
 } from "../../src/tui/hooks/useModalActions";
 import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
 import {
@@ -959,5 +961,55 @@ describe("createHandleUpSubmit", () => {
 
     expect(deps.clearActionError).not.toHaveBeenCalled();
     expect(deps.setMode).not.toHaveBeenCalled();
+  });
+});
+
+describe("createPrepareAddProjectModal", () => {
+  test("sets mode to AddProjectModal", () => {
+    const deps = makeDeps();
+    const prepare = createPrepareAddProjectModal(deps);
+    prepare();
+    expect(deps.setMode).toHaveBeenCalledWith(Mode.AddProjectModal);
+  });
+});
+
+describe("createHandleAddProject", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("calls register and refreshes on success", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    (runTuiSilentPromise as Mock).mockResolvedValueOnce({ id: "1", repoPath: "/repo", project: "myproj" });
+
+    const deps = makeDeps({
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handle = createHandleAddProject(deps);
+
+    handle({ path: "/home/user/myproj", name: "myproj" });
+
+    expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
+
+    await vi.waitFor(() => {
+      expect(runTuiSilentPromise).toHaveBeenCalled();
+      expect(deps.refreshAll).toHaveBeenCalled();
+    });
+  });
+
+  test("shows error on failure", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+    (runTuiSilentPromise as Mock).mockRejectedValueOnce(new Error("already registered"));
+
+    const deps = makeDeps();
+    const handle = createHandleAddProject(deps);
+
+    handle({ path: "/repo", name: "proj" });
+
+    expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith("already registered");
+    });
   });
 });

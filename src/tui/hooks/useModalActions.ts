@@ -6,8 +6,10 @@ import type { StartWorktreeSessionResult } from "../../commands/worktree-session
 import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
+import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
+import { RegistryService } from "../../services/registry-service";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import {
@@ -259,11 +261,35 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
   };
 }
 
+export function createPrepareAddProjectModal(deps: ModalActionDeps) {
+  return () => {
+    deps.setMode(Mode.AddProjectModal);
+  };
+}
+
+export function createHandleAddProject(deps: ModalActionDeps) {
+  return (result: AddProjectModalResult) => {
+    deps.setMode(Mode.Navigate);
+    (async () => {
+      try {
+        await runTuiSilentPromise(
+          RegistryService.use((s) => s.register(result.path, result.name)),
+        );
+        await deps.refreshAll();
+      } catch (error) {
+        deps.showActionError(toWctError(error).message);
+      }
+    })();
+  };
+}
+
 export function useModalActions(deps: ModalActionDeps) {
   return {
     prepareOpenModal: createPrepareOpenModal(deps),
     handleOpen: createHandleOpen(deps),
     prepareUpModal: createPrepareUpModal(deps),
     handleUpSubmit: createHandleUpSubmit(deps),
+    prepareAddProjectModal: createPrepareAddProjectModal(deps),
+    handleAddProject: createHandleAddProject(deps),
   };
 }

@@ -4,6 +4,7 @@ import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { stopWorktreeSession } from "../commands/worktree-session";
 import { toWctError } from "../errors";
+import { AddProjectModal } from "./components/AddProjectModal";
 import { OpenModal } from "./components/OpenModal";
 import { StatusBar } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
@@ -297,7 +298,7 @@ export function App() {
     toggleExpanded,
     prepareOpenModal: modalActions.prepareOpenModal,
     prepareUpModal: modalActions.prepareUpModal,
-    prepareAddProjectModal: () => setMode(Mode.AddProjectModal),
+    prepareAddProjectModal: modalActions.prepareAddProjectModal,
     handleSpaceSwitch: sessionActions.handleSpaceSwitch,
     handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
     handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
@@ -491,6 +492,13 @@ export function App() {
             setSelectedIndex(upModalReturnSelectedIndexRef.current);
             setMode(upModalReturnModeRef.current);
           }}
+        />
+      ) : mode.type === "AddProjectModal" ? (
+        <AddProjectModal
+          visible
+          width={Math.min(termCols, 60)}
+          onSubmit={modalActions.handleAddProject}
+          onCancel={() => setMode(Mode.Navigate)}
         />
       ) : (
         <Box flexDirection="column">

@@ -1,8 +1,9 @@
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { runTuiSilentPromise } from "../runtime";
 import { useBlink } from "../hooks/useBlink";
 import { type ListItem, getVisibleWindow } from "./ScrollableList";
+import { TitledBox } from "./TitledBox";
 import { Effect, FileSystem } from "effect";
 
 /** Expand leading ~/ or bare ~ to $HOME. Does not expand ~user syntax. */
@@ -34,6 +35,7 @@ interface PathInputProps {
   onChange: (value: string) => void;
   isFocused: boolean;
   isGitRepo: boolean;
+  width?: number;
 }
 
 export function PathInput({
@@ -41,6 +43,7 @@ export function PathInput({
   onChange,
   isFocused,
   isGitRepo,
+  width,
 }: PathInputProps) {
   const cursorVisible = useBlink();
   const [completions, setCompletions] = useState<ListItem[]>([]);
@@ -67,7 +70,7 @@ export function PathInput({
                 Effect.gen(function* () {
                   const stat = yield* fs.stat(parent + item);
                   return stat.type === "Directory" ? item : null;
-                }).pipe(Effect.catchAll(() => Effect.succeed(null))),
+                }).pipe(Effect.catch(() => Effect.succeed(null))),
               ),
               { concurrency: 16 },
             );
@@ -159,51 +162,41 @@ export function PathInput({
     { isActive: isFocused },
   );
 
+  const title = isGitRepo ? "Path ✓" : "Path";
+  const displayValue = value || (!isFocused || !cursorVisible ? " " : "");
+  const showCompletions = isFocused && filtered.length > 0;
+  const maxVisible = 8;
+  const window = showCompletions
+    ? getVisibleWindow(filtered.length, selectedCompletionIndex, maxVisible)
+    : null;
+  const visible = window ? filtered.slice(window.start, window.end) : [];
+
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
-          Path:{" "}
-        </Text>
-        <Text>
-          {value}
-          {isFocused && cursorVisible ? "▎" : " "}
-        </Text>
-        {isGitRepo && <Text color="green"> ✓</Text>}
-      </Box>
-      {isFocused && filtered.length > 0 && (
-        <Box flexDirection="column" marginLeft={6}>
-          {(() => {
-            const maxVisible = 8;
-            const { start, end, hasAbove, hasBelow } = getVisibleWindow(
-              filtered.length,
-              selectedCompletionIndex,
-              maxVisible,
-            );
-            const visible = filtered.slice(start, end);
+    <TitledBox title={title} isFocused={isFocused} width={width}>
+      <Text color={isFocused ? undefined : "dim"}>
+        {displayValue}
+        {isFocused ? (cursorVisible ? "▎" : " ") : ""}
+      </Text>
+      {showCompletions && window && (
+        <>
+          {window.hasAbove && <Text dimColor> ▲</Text>}
+          {visible.map((item, i) => {
+            const actualIndex = window.start + i;
+            const isSelected = actualIndex === selectedCompletionIndex;
             return (
-              <>
-                {hasAbove && <Text dimColor> ▲</Text>}
-                {visible.map((item, i) => {
-                  const actualIndex = start + i;
-                  const isSelected = actualIndex === selectedCompletionIndex;
-                  return (
-                    <Text
-                      key={item.value}
-                      color={isSelected ? "cyan" : "dim"}
-                      bold={isSelected}
-                    >
-                      {isSelected ? "▸ " : "  "}
-                      {item.label}/
-                    </Text>
-                  );
-                })}
-                {hasBelow && <Text dimColor> ▼</Text>}
-              </>
+              <Text
+                key={item.value}
+                color={isSelected ? "cyan" : "dim"}
+                bold={isSelected}
+              >
+                {isSelected ? "▸ " : "  "}
+                {item.label}/
+              </Text>
             );
-          })()}
-        </Box>
+          })}
+          {window.hasBelow && <Text dimColor> ▼</Text>}
+        </>
       )}
-    </Box>
+    </TitledBox>
   );
 }

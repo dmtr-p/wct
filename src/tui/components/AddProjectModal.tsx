@@ -5,6 +5,7 @@ import { useBlink } from "../hooks/useBlink";
 import { Modal } from "./Modal";
 import { SubmitButton } from "./form-controls";
 import { PathInput, expandTilde } from "./PathInput";
+import { TitledBox } from "./TitledBox";
 import { pathExists } from "../../services/filesystem";
 import * as path from "node:path";
 
@@ -144,6 +145,10 @@ export function AddProjectModal({
     { isActive: visible && currentField === "name" },
   );
 
+  const innerWidth = width === undefined ? undefined : Math.max(width - 2, 0);
+  const nameFocused = currentField === "name";
+  const nameDisplay = nameValue || (!nameFocused || !cursorVisible ? " " : "");
+
   return (
     <Modal title="Add Project" visible={visible} width={width}>
       <Box flexDirection="column">
@@ -157,29 +162,24 @@ export function AddProjectModal({
           }}
           isFocused={currentField === "path"}
           isGitRepo={isGitRepo}
+          width={innerWidth}
         />
-        <Box height={1} />
-        <Box>
-          <Text
-            color={currentField === "name" ? "cyan" : "dim"}
-            bold={currentField === "name"}
-          >
-            Name:{" "}
+        <TitledBox title="Name" isFocused={nameFocused} width={innerWidth}>
+          <Text color={nameFocused ? undefined : "dim"}>
+            {nameDisplay}
+            {nameFocused ? (cursorVisible ? "▎" : " ") : ""}
           </Text>
-          <Text>
-            {nameValue}
-            {currentField === "name" && cursorVisible ? "▎" : " "}
-          </Text>
-        </Box>
+        </TitledBox>
         <SubmitButton
           isFocused={currentField === "submit"}
           disabled={!isGitRepo}
           onSubmit={handleSubmit}
         />
-        <Box height={1} />
-        <Text dimColor>
-          {"tab:next  shift+tab:prev  →:complete  enter:confirm  esc:cancel"}
-        </Text>
+        <Box marginTop={1}>
+          <Text dimColor>
+            {"tab:next  shift+tab:prev  →:complete  enter:confirm  esc:cancel"}
+          </Text>
+        </Box>
       </Box>
     </Modal>
   );

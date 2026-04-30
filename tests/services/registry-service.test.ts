@@ -68,40 +68,44 @@ describe("registry-service", () => {
       }),
     );
 
-    it.effect("creates schema_version table with current version on first open", () =>
-      Effect.gen(function* () {
-        const registry = yield* RegistryService;
-        yield* registry.listRepos();
+    it.effect(
+      "creates schema_version table with current version on first open",
+      () =>
+        Effect.gen(function* () {
+          const registry = yield* RegistryService;
+          yield* registry.listRepos();
 
-        const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
-          readonly: true,
-        });
-        try {
-          const row = db
-            .query(
-              "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
-            )
-            .get() as { version: number } | null;
-          expect(row).not.toBeNull();
-          expect(row?.version).toBe(1);
-        } finally {
-          db.close();
-        }
-      }),
+          const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
+            readonly: true,
+          });
+          try {
+            const row = db
+              .query(
+                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+              )
+              .get() as { version: number } | null;
+            expect(row).not.toBeNull();
+            expect(row?.version).toBe(1);
+          } finally {
+            db.close();
+          }
+        }),
     );
 
-    it.effect("register transaction wrap preserves idempotent upsert behavior", () =>
-      Effect.gen(function* () {
-        const registry = yield* RegistryService;
+    it.effect(
+      "register transaction wrap preserves idempotent upsert behavior",
+      () =>
+        Effect.gen(function* () {
+          const registry = yield* RegistryService;
 
-        yield* registry.register("/tmp/tx-repo", "alpha");
-        yield* registry.register("/tmp/tx-repo", "beta");
+          yield* registry.register("/tmp/tx-repo", "alpha");
+          yield* registry.register("/tmp/tx-repo", "beta");
 
-        const repos = yield* registry.listRepos();
-        const matches = repos.filter((r) => r.repo_path === "/tmp/tx-repo");
-        expect(matches.length).toBe(1);
-        expect(matches[0]?.project).toBe("beta");
-      }),
+          const repos = yield* registry.listRepos();
+          const matches = repos.filter((r) => r.repo_path === "/tmp/tx-repo");
+          expect(matches.length).toBe(1);
+          expect(matches[0]?.project).toBe("beta");
+        }),
     );
 
     it.effect("does not re-apply migrations on subsequent opens", () =>

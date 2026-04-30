@@ -1,6 +1,7 @@
 import { BunServices } from "@effect/platform-bun";
 import { Layer } from "effect";
 import { JsonFlag } from "../../src/cli/json-flag";
+import { WctServicesLayer } from "../../src/effect/services";
 import {
   GitHubService,
   liveGitHubService,
@@ -23,7 +24,6 @@ import {
   liveWorktreeService,
   WorktreeService,
 } from "../../src/services/worktree-service";
-import { WctServicesLayer } from "../../src/effect/services";
 import type { ServiceOverrides } from "./services";
 
 export type { ServiceOverrides };

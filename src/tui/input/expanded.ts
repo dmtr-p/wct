@@ -80,6 +80,11 @@ export function handleExpandedInput(
     return;
   }
 
+  if (input === "a") {
+    ctx.prepareAddProjectModal();
+    return;
+  }
+
   if (input === "c") {
     ctx.handleCloseSelectedWorktree();
     return;

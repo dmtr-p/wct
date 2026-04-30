@@ -57,6 +57,7 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleSpaceSwitch: vi.fn(),
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
+    prepareAddProjectModal: vi.fn(),
     ...overrides,
   };
 }
@@ -220,6 +221,12 @@ describe("handleExpandedInput", () => {
     expect(ctx.setMode).toHaveBeenCalledWith(
       Mode.ConfirmKill("%5", "vim", "proj/feat"),
     );
+  });
+
+  test("a calls prepareAddProjectModal in expanded mode", () => {
+    const ctx = makeExpCtx();
+    handleExpandedInput(ctx, "a", noKey);
+    expect(ctx.prepareAddProjectModal).toHaveBeenCalled();
   });
 
   test("x with tmuxClient:null is a no-op", () => {

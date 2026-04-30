@@ -90,6 +90,20 @@ describe("registry-service", () => {
       }),
     );
 
+    it.effect("register transaction wrap preserves idempotent upsert behavior", () =>
+      Effect.gen(function* () {
+        const registry = yield* RegistryService;
+
+        yield* registry.register("/tmp/tx-repo", "alpha");
+        yield* registry.register("/tmp/tx-repo", "beta");
+
+        const repos = yield* registry.listRepos();
+        const matches = repos.filter((r) => r.repo_path === "/tmp/tx-repo");
+        expect(matches.length).toBe(1);
+        expect(matches[0]?.project).toBe("beta");
+      }),
+    );
+
     it.effect("does not re-apply migrations on subsequent opens", () =>
       Effect.gen(function* () {
         const registry = yield* RegistryService;

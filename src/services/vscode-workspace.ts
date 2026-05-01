@@ -1,19 +1,11 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+import { stat as nodeStat } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Context, Effect, type FileSystem } from "effect";
+import { Context, Effect, FileSystem } from "effect";
 import * as logger from "../utils/logger";
-import {
-  copyPath,
-  ensureDirectory,
-  isDirectory,
-  pathExists,
-  removePath,
-  statBigint,
-  writeText,
-} from "./filesystem";
 
 export interface SyncResult {
   success: boolean;
@@ -64,7 +56,11 @@ export function getVSCodeStoragePath(): string | null {
 
 export function computeWorkspaceId(folderPath: string) {
   return Effect.gen(function* () {
-    const stats = yield* statBigint(folderPath);
+    const stats = yield* Effect.tryPromise({
+      try: () => nodeStat(folderPath, { bigint: true }),
+      catch: (error) =>
+        error instanceof Error ? error : new Error(String(error)),
+    });
 
     let ctime: string;
     const p = platform();
@@ -93,13 +89,17 @@ export function workspaceExists(workspaceId: string) {
   }
 
   return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
     const workspacePath = join(storagePath, workspaceId);
-    const exists = yield* pathExists(workspacePath);
+    const exists = yield* fs.exists(workspacePath);
     if (!exists) {
       return false;
     }
 
-    return yield* isDirectory(workspacePath);
+    const info = yield* Effect.catch(fs.stat(workspacePath), () =>
+      Effect.succeed(null),
+    );
+    return info?.type === "Directory";
   });
 }
 
@@ -113,9 +113,10 @@ export function copyWorkspaceStorage(sourceId: string, targetId: string) {
   const targetPath = join(storagePath, targetId);
 
   return Effect.gen(function* () {
-    yield* ensureDirectory(targetPath);
-    yield* copyPath(sourcePath, targetPath, { overwrite: true });
-    yield* removePath(join(targetPath, "workspace.json"), { force: true });
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(targetPath, { recursive: true });
+    yield* fs.copy(sourcePath, targetPath, { overwrite: true });
+    yield* fs.remove(join(targetPath, "workspace.json"), { force: true });
   });
 }
 
@@ -126,10 +127,13 @@ export function createWorkspaceJson(workspaceId: string, folderPath: string) {
   }
 
   const workspaceJsonPath = join(storagePath, workspaceId, "workspace.json");
-  return writeText(
-    workspaceJsonPath,
-    JSON.stringify({ folder: pathToFileURL(folderPath).href }),
-  );
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.writeFileString(
+      workspaceJsonPath,
+      JSON.stringify({ folder: pathToFileURL(folderPath).href }),
+    );
+  });
 }
 
 export function rewriteStatePaths(
@@ -241,12 +245,17 @@ function filterEditorsInState(state: Record<string, unknown>) {
           }
 
           if (
-            yield* Effect.catch(pathExists(filePath), (error) =>
-              logger
-                .warn(
-                  `Failed to check VS Code editor path ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-                )
-                .pipe(Effect.as(true)),
+            yield* Effect.catch(
+              Effect.gen(function* () {
+                const fs = yield* FileSystem.FileSystem;
+                return yield* fs.exists(filePath);
+              }),
+              (error) =>
+                logger
+                  .warn(
+                    `Failed to check VS Code editor path ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+                  )
+                  .pipe(Effect.as(true)),
             )
           ) {
             keepIndices.push(i);
@@ -580,9 +589,12 @@ function syncWorkspaceStateImpl(
         (error) =>
           Effect.gen(function* () {
             yield* Effect.catch(
-              removePath(worktreeWorkspacePath, {
-                recursive: true,
-                force: true,
+              Effect.gen(function* () {
+                const fs = yield* FileSystem.FileSystem;
+                yield* fs.remove(worktreeWorkspacePath, {
+                  recursive: true,
+                  force: true,
+                });
               }),
               () => Effect.void,
             );
@@ -590,8 +602,9 @@ function syncWorkspaceStateImpl(
           }),
       );
 
+      const fs = yield* FileSystem.FileSystem;
       const dbFile = join(worktreeWorkspacePath, "state.vscdb");
-      if (yield* pathExists(dbFile)) {
+      if (yield* fs.exists(dbFile)) {
         rewriteStatePaths(dbFile, mainRepoPath, worktreePath);
         yield* filterMissingEditors(dbFile, worktreePath);
         yield* clearTerminalState(dbFile);
@@ -599,7 +612,7 @@ function syncWorkspaceStateImpl(
       }
 
       const backupDbFile = join(worktreeWorkspacePath, "state.vscdb.backup");
-      if (yield* pathExists(backupDbFile)) {
+      if (yield* fs.exists(backupDbFile)) {
         rewriteStatePaths(backupDbFile, mainRepoPath, worktreePath);
         yield* filterMissingEditors(backupDbFile, worktreePath);
         yield* clearTerminalState(backupDbFile);

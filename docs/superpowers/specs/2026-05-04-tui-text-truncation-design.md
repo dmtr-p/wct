@@ -74,7 +74,29 @@ New prop: `maxWidth: number`. `TreeView` passes it down.
 
 **`pane` items — required meta fields**
 
-The `"pane"` detail item meta is updated in `src/tui/types.ts` to make `window`, `paneIndex`, and `command` required (non-optional):
+Two changes to `src/tui/types.ts`:
+
+**1. Fix the `DetailItem` generic** — the non-undefined branch currently has `meta?: TMeta`. Change it to `meta: TMeta`:
+
+```ts
+// Before
+: {
+    type: "detail";
+    ...
+    meta?: TMeta;
+  };
+
+// After
+: {
+    type: "detail";
+    ...
+    meta: TMeta;       // required whenever TMeta is provided
+  };
+```
+
+This makes `meta` required for all detail items that carry metadata (`"check"` and `"pane"`). The `"pr"` and `"pane-header"` kinds use the `TMeta = undefined` branch and are unaffected. `"check"` items always set `meta` in `tree-helpers.ts` today, so this tightening is safe.
+
+**2. Extend the pane TMeta** — add `window`, `paneIndex`, and `command`:
 
 ```ts
 // Before
@@ -91,7 +113,7 @@ The `"pane"` detail item meta is updated in `src/tui/types.ts` to make `window`,
   }>
 ```
 
-`tree-helpers.ts` already has all three values from `TmuxPaneInfo` when building pane detail items — it just needs to pass them into `meta`. Because they are typed as required and set at the single construction site, `DetailRow` can access `item.meta.window` etc. directly with no optional-chaining or unsafe assertions. No fallback to `item.label` is needed.
+With `meta: TMeta` (required) and all three fields non-optional, `DetailRow` can access `item.meta.window`, `item.meta.paneIndex`, and `item.meta.command` directly — no optional-chaining, no unsafe assertions, no fallback to `item.label`. The TypeScript compiler enforces this at the single construction site in `tree-helpers.ts`.
 
 The `label` field continues to be set as `${pane.window}:${pane.paneIndex} ${pane.command}` (unchanged) — it is used as a fallback key in `getDetailRowKey` and for the kill-confirm `mode.label`.
 

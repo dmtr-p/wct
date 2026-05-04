@@ -192,4 +192,26 @@ describe("project registration", () => {
       cwdSpy.mockRestore();
     }
   });
+
+  test("returns worktree_error for relative paths when process.cwd cannot be resolved", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("cwd unavailable");
+    });
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(registerProject({ path: "relative-repo" }), {
+            registry: fakeRegistry([]),
+            worktree: fakeWorktree(null),
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: "worktree_error",
+        details: "Could not determine current directory",
+      });
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
 });

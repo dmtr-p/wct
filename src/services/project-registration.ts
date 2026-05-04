@@ -1,4 +1,4 @@
-import { basename, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 import { Effect, FileSystem } from "effect";
 import { loadConfig } from "../config/loader";
 import type { WctServices } from "../effect/services";
@@ -33,7 +33,9 @@ function currentDirectory(): Effect.Effect<string, WctError> {
 function resolveInputPath(path?: string): Effect.Effect<string, WctError> {
   return Effect.gen(function* () {
     const rawPath = path ?? (yield* currentDirectory());
-    const resolvedPath = resolve(rawPath);
+    const resolvedPath = isAbsolute(rawPath)
+      ? resolve(rawPath)
+      : resolve(yield* currentDirectory(), rawPath);
 
     const fs = yield* FileSystem.FileSystem;
     const exists = yield* Effect.mapError(fs.exists(resolvedPath), (error) =>

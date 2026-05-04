@@ -980,9 +980,6 @@ describe("createHandleAddProject", () => {
 
   test("calls register and refreshes on success", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
-    // First call: getMainRepoPath returns canonical path
-    (runTuiSilentPromise as Mock).mockResolvedValueOnce("/home/user/myproj");
-    // Second call: register
     (runTuiSilentPromise as Mock).mockResolvedValueOnce({
       id: "1",
       repoPath: "/home/user/myproj",

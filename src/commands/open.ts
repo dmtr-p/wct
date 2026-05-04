@@ -9,7 +9,7 @@ import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { copyEntries } from "../services/copy";
 import { GitHubService, parsePrArg } from "../services/github-service";
-import { RegistryService } from "../services/registry-service";
+import { registerProject } from "../services/project-registration";
 import { SetupService } from "../services/setup-service";
 import { formatSessionName } from "../services/tmux";
 import { VSCodeWorkspaceService } from "../services/vscode-workspace";
@@ -272,9 +272,11 @@ export function openWorktree(
 
     // Auto-register repo in TUI registry
     yield* Effect.catch(
-      RegistryService.use((service) =>
-        service.register(mainDir, resolved.project_name ?? basename(mainDir)),
-      ),
+      registerProject({
+        path: mainDir,
+        name: resolved.project_name ?? basename(mainDir),
+        tolerateConfigErrors: true,
+      }),
       () => Effect.void,
     );
 

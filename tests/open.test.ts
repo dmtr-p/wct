@@ -259,6 +259,7 @@ describe("open workflow", () => {
     expect(repoCalls).toEqual([
       { method: "isGitRepo", cwd: fixture.repoDir },
       { method: "getMainRepoPath", cwd: fixture.repoDir },
+      { method: "getMainRepoPath", cwd: fixture.repoDir },
     ]);
     expect(registerCalls).toEqual([
       {

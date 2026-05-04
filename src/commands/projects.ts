@@ -1,9 +1,9 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Console, Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
-import { loadConfig } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
+import { registerProject } from "../services/project-registration";
 import { RegistryService } from "../services/registry-service";
 import { WorktreeService } from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
@@ -71,48 +71,17 @@ export function projectsAddCommand(opts?: {
 > {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;
-    const originalCwd = yield* currentDirectory();
-    const repoPath = resolve(opts?.path ?? originalCwd);
-    if (opts?.path) {
-      yield* changeDirectory(repoPath);
-    }
-
-    const mainDir = yield* Effect.ensuring(
-      WorktreeService.use((service) => service.getMainRepoPath()),
-      opts?.path ? Effect.ignore(changeDirectory(originalCwd)) : Effect.void,
-    );
-
-    if (!mainDir) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", `Not a git repository: ${repoPath}`),
-      );
-    }
-
-    let projectName = opts?.name ?? basename(mainDir) ?? "unknown";
-    if (!opts?.name) {
-      const loadResult = yield* Effect.catch(
-        Effect.tryPromise({
-          try: () => loadConfig(mainDir),
-          catch: (error) =>
-            commandError("config_error", "Failed to load config", error),
-        }),
-        () => Effect.succeed(null),
-      );
-
-      if (loadResult?.config?.project_name) {
-        projectName = loadResult.config.project_name;
-      }
-    }
-
-    const item = yield* RegistryService.use((service) =>
-      service.register(mainDir, projectName),
-    );
+    const { item, repoPath, projectName } = yield* registerProject({
+      path: opts?.path,
+      name: opts?.name,
+      tolerateConfigErrors: true,
+    });
 
     if (json) {
       yield* jsonSuccess(item);
       return;
     }
-    yield* logger.success(`Added ${mainDir} as '${projectName}'`);
+    yield* logger.success(`Added ${repoPath} as '${projectName}'`);
   });
 }
 

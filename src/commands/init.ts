@@ -1,10 +1,9 @@
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { Effect, FileSystem } from "effect";
 import { CONFIG_FILENAME } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { RegistryService } from "../services/registry-service";
-import { WorktreeService } from "../services/worktree-service";
+import { registerProject } from "../services/project-registration";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -87,18 +86,10 @@ export function initCommand(): Effect.Effect<void, WctError, WctServices> {
     yield* logger.success(`Created ${CONFIG_FILENAME}`);
 
     // Auto-register repo in TUI registry
-    const mainDir = yield* Effect.catch(
-      WorktreeService.use((service) => service.getMainRepoPath()),
-      () => Effect.succeed(null),
+    yield* Effect.catch(
+      registerProject({ tolerateConfigErrors: true }),
+      () => Effect.void,
     );
-    if (mainDir) {
-      yield* Effect.catch(
-        RegistryService.use((service) =>
-          service.register(mainDir, basename(mainDir)),
-        ),
-        () => Effect.void,
-      );
-    }
 
     yield* logger.info("Edit the config file to customize your workflow");
   });

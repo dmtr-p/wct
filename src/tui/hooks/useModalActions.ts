@@ -1,17 +1,12 @@
 // src/tui/hooks/useModalActions.ts
 
-import * as path from "node:path";
-
-import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { startWorktreeSession } from "../../commands/worktree-session";
-import { loadConfig } from "../../config/loader";
 import { toWctError } from "../../errors";
-import { RegistryService } from "../../services/registry-service";
+import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
-import { WorktreeService } from "../../services/worktree-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
@@ -278,32 +273,12 @@ export function createHandleAddProject(deps: ModalActionDeps) {
     deps.setMode(Mode.Navigate);
     (async () => {
       try {
-        const canonicalPath = await runTuiSilentPromise(
-          Effect.gen(function* () {
-            const mainDir = yield* WorktreeService.use((s) =>
-              s.getMainRepoPath(result.path),
-            );
-            if (!mainDir) {
-              throw new Error(`Not a git repository: ${result.path}`);
-            }
-            return mainDir;
-          }),
-        );
-        let projectName = result.nameManuallyEdited
-          ? result.name
-          : path.basename(canonicalPath) || result.name;
-        if (!result.nameManuallyEdited) {
-          try {
-            const config = await loadConfig(canonicalPath);
-            if (config?.config?.project_name) {
-              projectName = config.config.project_name;
-            }
-          } catch {
-            // Ignore config load failures, keep basename default
-          }
-        }
         await runTuiSilentPromise(
-          RegistryService.use((s) => s.register(canonicalPath, projectName)),
+          registerProject({
+            path: result.path,
+            name: result.nameManuallyEdited ? result.name : undefined,
+            tolerateConfigErrors: true,
+          }),
         );
         await deps.refreshAll();
       } catch (error) {

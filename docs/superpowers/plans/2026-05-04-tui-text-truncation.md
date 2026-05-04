@@ -270,18 +270,28 @@ meta: {
 
 - [ ] **Step 4: Update `tests/tui/build-tree-items.test.ts`**
 
-**4a.** Extend the first test ("passes zoomed and active pane metadata") to also assert the three new fields. Find the assertion block (after `buildTreeItems(...)`) and add:
+**4a.** In the first test ("passes zoomed and active pane metadata"), the existing assertion at line ~56 uses `toEqual` with only three fields. Once `tree-helpers.ts` sets the new fields, this assertion will fail because `toEqual` requires an exact match. Replace it with the full object:
 
 ```ts
-const paneItem = items.find(
-  (i) => i.type === "detail" && i.detailKind === "pane",
-) as Extract<TreeItem, { type: "detail"; detailKind: "pane" }> | undefined;
+// Before:
+expect(paneItem?.meta).toEqual({
+  paneId: "%1",
+  zoomed: true,
+  active: true,
+});
 
-expect(paneItem).toBeDefined();
-expect(paneItem!.meta.window).toBe("main");
-expect(paneItem!.meta.paneIndex).toBe(0);
-expect(paneItem!.meta.command).toBe("bun run dev");
+// After:
+expect(paneItem?.meta).toEqual({
+  paneId: "%1",
+  zoomed: true,
+  active: true,
+  window: "main",
+  paneIndex: 0,
+  command: "bun run dev",
+});
 ```
+
+(`paneItem` is already declared just above this assertion — do not re-declare it.)
 
 **4b.** In the "resolves the correct pane when multiple pane rows share the same label" test (around line 174–184), the two manually constructed pane items need the new fields. The adjacent `panes` fixture at line 207 has the ground-truth values (`%1 → paneIndex: 0, command: "bash"` and `%2 → paneIndex: 1, command: "top"`):
 

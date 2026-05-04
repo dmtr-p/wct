@@ -16,8 +16,15 @@ Project names in `RepoNode` and pane labels in `DetailRow` are rendered without 
 | `DetailRow` — `pane-header` | `Panes (N)` | Right-truncation |
 | `DetailRow` — `check` | Check name | Right-truncation |
 | `DetailRow` — `pr` | PR title | **No change** |
+| `StatusBar` kill-confirm label | `Kill pane …?` | **Out of scope** — tracked separately |
+
+The kill-confirm status bar (`StatusBar` rendering `Kill pane ${mode.label}?`) can still overflow on very long pane commands. That path uses `mode.label` from `resolveSelectedPane`, which is a separate display surface. It is explicitly out of scope here and should be addressed in a follow-up.
 
 ## Design
+
+### Truncation budget: string character length
+
+All truncation in this spec — and in the existing `truncateBranch` used by `WorktreeItem` — operates on `String.prototype.length` (UTF-16 code units), not terminal display-column width. This is consistent with the existing pattern. Ink's `wrap="truncate"` is not used; manual truncation gives control over the `...` suffix and prefix-preservation logic. Wide unicode characters (emoji wider than 1 column) are not compensated for — same as the existing branch truncation.
 
 ### 1. Shared truncation utility — `src/tui/utils/truncate.ts`
 
@@ -65,25 +72,37 @@ const displayProject = truncateBranch(project, maxWidth - 4);
 
 New prop: `maxWidth: number`. `TreeView` passes it down.
 
-**`pane` items — prefix-preserving truncation**
+**`pane` items — required meta fields**
 
-The label currently pre-joins `window`, `paneIndex`, and `command` in `tree-helpers.ts`. To enable prefix-preserving truncation, the `meta` field on `"pane"` detail items is extended with two new fields:
+The `"pane"` detail item meta is updated in `src/tui/types.ts` to make `window`, `paneIndex`, and `command` required (non-optional):
 
 ```ts
-meta: { paneId: string; zoomed?: boolean; active?: boolean; window: string; paneIndex: number; command: string }
+// Before
+| DetailItem<"pane", { paneId: string; zoomed?: boolean; active?: boolean }>
+
+// After
+| DetailItem<"pane", {
+    paneId: string;
+    zoomed?: boolean;
+    active?: boolean;
+    window: string;
+    paneIndex: number;
+    command: string;
+  }>
 ```
 
-`tree-helpers.ts` sets `meta.window` and `meta.paneIndex` from the raw `TmuxPaneInfo`. The `label` field is no longer needed for display (it's still set for keying); `DetailRow` reconstructs the prefix from `meta`.
+`tree-helpers.ts` already has all three values from `TmuxPaneInfo` when building pane detail items — it just needs to pass them into `meta`. Because they are typed as required and set at the single construction site, `DetailRow` can access `item.meta.window` etc. directly with no optional-chaining or unsafe assertions. No fallback to `item.label` is needed.
 
-Inside `DetailRow` for `pane`:
+The `label` field continues to be set as `${pane.window}:${pane.paneIndex} ${pane.command}` (unchanged) — it is used as a fallback key in `getDetailRowKey` and for the kill-confirm `mode.label`.
+
+**`pane` items — prefix-preserving truncation**
+
 ```
-prefix  = `${meta.window}:${meta.paneIndex} `
-rest    = meta.command  // stored separately on meta
+prefix   = `${meta.window}:${meta.paneIndex} `
+rest     = meta.command
 overhead = indent(8) + selectorPrefix(2) + zoomedEmoji(3 if zoomed&&active else 0)
-display = truncateWithPrefix(prefix, rest, maxWidth - overhead)
+display  = truncateWithPrefix(prefix, rest, maxWidth - overhead)
 ```
-
-`meta` also stores `command: string` (from `TmuxPaneInfo.command`) so `DetailRow` can truncate it separately without parsing the `label` string.
 
 **`pane-header` items**
 
@@ -108,11 +127,20 @@ display  = truncateBranch(label, maxWidth - 12)
 | `src/tui/components/RepoNode.tsx` | Add `maxWidth` prop; truncate project name |
 | `src/tui/components/DetailRow.tsx` | Add `maxWidth` prop; truncate pane/pane-header/check labels |
 | `src/tui/components/TreeView.tsx` | Pass `maxWidth` to `RepoNode` and `DetailRow` |
-| `src/tui/types.ts` | Extend `"pane"` detail item `meta` with `window`, `paneIndex`, `command` |
+| `src/tui/types.ts` | Make `window`, `paneIndex`, `command` required on `"pane"` detail item meta |
 | `src/tui/tree-helpers.ts` | Set new `meta` fields when building pane detail items |
 
 ## Testing
 
-- Unit tests for `truncateBranch` and `truncateWithPrefix` in `src/tui/utils/truncate.test.ts`
-- Cover: fits without truncation, exact fit, needs truncation, extremely narrow (available ≤ 3 / ≤ prefix+3)
-- No component-level tests needed — the utility functions capture all the logic
+**Utility tests** — `src/tui/utils/truncate.test.ts`
+
+- `truncateBranch`: fits without truncation, exact fit, needs truncation, extremely narrow (available ≤ 3)
+- `truncateWithPrefix`: fits, prefix+rest fits exactly, rest needs truncation, extremely narrow (available ≤ prefix+3), empty command
+
+**Component / render tests**
+
+- `RepoNode`: renders truncated project name when `maxWidth` is tight; renders full name when width is sufficient
+- `DetailRow` pane: window:index prefix is preserved when command is long; both prefix and command render when they fit
+- `TreeView`: `maxWidth` prop reaches `RepoNode` and `DetailRow` (smoke test with a narrow width, verify no overflow in rendered output)
+
+The component tests catch the wiring risks (forgetting to pass `maxWidth`, wrong overhead per row) that utility tests alone cannot detect.

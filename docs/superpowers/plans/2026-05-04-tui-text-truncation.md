@@ -4,9 +4,11 @@
 
 **Goal:** Truncate project names in `RepoNode` and pane/check/pane-header labels in `DetailRow` to fit the terminal width, matching the existing branch-name truncation pattern.
 
-**Architecture:** Extract `truncateBranch` from `WorktreeItem.tsx` into a shared `src/tui/utils/truncate.ts` alongside a new `truncateWithPrefix` helper. Tighten the `DetailItem` type so pane meta is always required. Thread `maxWidth` into `RepoNode` and `DetailRow` via `TreeView`.
+**Architecture:** Extract `truncateBranch` from `WorktreeItem.tsx` into a shared `src/tui/utils/truncate.ts` alongside a new `truncateWithPrefix` helper. Tighten the `DetailItem` type so pane and check meta are always required. Thread `maxWidth` into `RepoNode` and `DetailRow` via `TreeView`.
 
 **Tech Stack:** TypeScript, React/Ink (TUI), Vitest
+
+> **Hooks note:** This repo runs `bun run test` and `biome lint/format` automatically via Claude Code Stop/PostToolUse hooks. **Do not run tests or lint manually.** Every commit in this plan is sufficient — the hooks verify correctness on stop.
 
 ---
 
@@ -20,8 +22,11 @@
 | `tests/tui/worktree-item.test.ts` | **Modify** — update import path |
 | `src/tui/types.ts` | **Modify** — `meta: TMeta` (required), extend pane meta shape |
 | `src/tui/tree-helpers.ts` | **Modify** — set `window`, `paneIndex`, `command` on pane meta |
-| `tests/tui/build-tree-items.test.ts` | **Modify** — assert new meta fields; update pane item construction |
+| `tests/tui/build-tree-items.test.ts` | **Modify** — add missing pane meta fields; assert new fields |
 | `tests/tui/detail-row.test.tsx` | **Modify** — add missing required meta fields; add truncation tests |
+| `tests/tui/status-bar-wiring.test.ts` | **Modify** — add missing pane meta fields |
+| `tests/tui/tree-view-keys.test.ts` | **Modify** — add missing pane meta fields |
+| `tests/tui/adjust-index.test.ts` | **Modify** — add missing pane meta fields; add missing check meta |
 | `src/tui/components/RepoNode.tsx` | **Modify** — add `maxWidth` prop; truncate project name |
 | `tests/tui/repo-node.test.tsx` | **Create** — RepoNode truncation render tests |
 | `src/tui/components/DetailRow.tsx` | **Modify** — add `maxWidth` prop; truncate pane/pane-header/check |
@@ -38,9 +43,7 @@
 - Modify: `src/tui/components/WorktreeItem.tsx`
 - Modify: `tests/tui/worktree-item.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
-
-Create `tests/tui/truncate.test.ts`:
+- [ ] **Step 1: Create `tests/tui/truncate.test.ts`**
 
 ```ts
 import { describe, expect, test } from "vitest";
@@ -116,15 +119,7 @@ describe("truncateWithPrefix", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to confirm they fail**
-
-```bash
-bun run test tests/tui/truncate.test.ts
-```
-
-Expected: FAIL — `Cannot find module '../../src/tui/utils/truncate'`
-
-- [ ] **Step 3: Create `src/tui/utils/truncate.ts`**
+- [ ] **Step 2: Create `src/tui/utils/truncate.ts`**
 
 ```ts
 export function truncateBranch(text: string, available: number): string {
@@ -145,23 +140,15 @@ export function truncateWithPrefix(
 }
 ```
 
-- [ ] **Step 4: Run the tests to confirm they pass**
+- [ ] **Step 3: Update `src/tui/components/WorktreeItem.tsx`**
 
-```bash
-bun run test tests/tui/truncate.test.ts
-```
-
-Expected: all 11 tests PASS
-
-- [ ] **Step 5: Update `src/tui/components/WorktreeItem.tsx`**
-
-Add import at the top (after existing imports):
+Add import at the top:
 
 ```ts
 import { truncateBranch } from "../utils/truncate";
 ```
 
-Remove the local `truncateBranch` definition (lines 17–21):
+Remove the local `truncateBranch` definition (lines 17–21 — the exported function currently defined there):
 
 ```ts
 // DELETE these lines:
@@ -174,9 +161,9 @@ export function truncateBranch(branch: string, available: number): string {
 
 `branchBudget` stays — it is only used inside `WorktreeItem.tsx`.
 
-- [ ] **Step 6: Update `tests/tui/worktree-item.test.ts`**
+- [ ] **Step 4: Update `tests/tui/worktree-item.test.ts`**
 
-Change the import from `WorktreeItem` to `truncate`:
+Change the import:
 
 ```ts
 // Before:
@@ -186,15 +173,7 @@ import { truncateBranch } from "../../src/tui/components/WorktreeItem";
 import { truncateBranch } from "../../src/tui/utils/truncate";
 ```
 
-- [ ] **Step 7: Run the full test suite to confirm no regressions**
-
-```bash
-bun run test
-```
-
-Expected: all tests PASS
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/tui/utils/truncate.ts tests/tui/truncate.test.ts \
@@ -204,17 +183,22 @@ git commit -m "refactor(tui): extract truncation helpers to shared utility"
 
 ---
 
-## Task 2: Tighten `DetailItem` type and extend pane meta
+## Task 2: Tighten `DetailItem` type and update all affected fixtures
+
+This task makes `meta` required for metadata-bearing detail items (`"check"` and `"pane"`) and extends the pane meta shape. The type change will not cause TypeScript compile errors in test files that use `as TreeItem` casts, but the fixtures must be updated for correctness and to avoid runtime failures.
 
 **Files:**
 - Modify: `src/tui/types.ts`
 - Modify: `src/tui/tree-helpers.ts`
 - Modify: `tests/tui/build-tree-items.test.ts`
 - Modify: `tests/tui/detail-row.test.tsx`
+- Modify: `tests/tui/status-bar-wiring.test.ts`
+- Modify: `tests/tui/tree-view-keys.test.ts`
+- Modify: `tests/tui/adjust-index.test.ts`
 
-- [ ] **Step 1: Update `src/tui/types.ts`**
+- [ ] **Step 1: Update `src/tui/types.ts` — make meta required**
 
-In the `DetailItem` generic (currently around line 134), change `meta?: TMeta` to `meta: TMeta`:
+In the `DetailItem` generic (around line 134), change `meta?: TMeta` to `meta: TMeta`:
 
 ```ts
 // Before (the non-undefined branch):
@@ -240,7 +224,11 @@ In the `DetailItem` generic (currently around line 134), change `meta?: TMeta` t
     };
 ```
 
-Also update the `"pane"` union member to include the three new required fields:
+This makes `meta` required for both `"check"` and `"pane"` detail items (the two kinds that supply a `TMeta` argument). `"pr"` and `"pane-header"` use the `TMeta = undefined` branch and are unaffected.
+
+- [ ] **Step 2: Update `src/tui/types.ts` — extend pane meta shape**
+
+Update the `"pane"` union member to include the three new required fields:
 
 ```ts
 // Before (line ~130):
@@ -257,59 +245,34 @@ Also update the `"pane"` union member to include the three new required fields:
   }>
 ```
 
-- [ ] **Step 2: Update `src/tui/tree-helpers.ts`**
+- [ ] **Step 3: Update `src/tui/tree-helpers.ts` — set new meta fields**
 
 In the pane-building loop (around line 148–161), add `window`, `paneIndex`, and `command` to `meta`:
 
 ```ts
 // Before:
-items.push({
-  type: "detail",
-  repoIndex: ri,
-  worktreeIndex: wi,
-  detailKind: "pane",
-  label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
-  meta: {
-    paneId: pane.paneId,
-    zoomed: pane.zoomed,
-    active: pane.active,
-  },
-  action: () => jumpToPane(pane.paneId),
-});
+meta: {
+  paneId: pane.paneId,
+  zoomed: pane.zoomed,
+  active: pane.active,
+},
 
 // After:
-items.push({
-  type: "detail",
-  repoIndex: ri,
-  worktreeIndex: wi,
-  detailKind: "pane",
-  label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
-  meta: {
-    paneId: pane.paneId,
-    zoomed: pane.zoomed,
-    active: pane.active,
-    window: pane.window,
-    paneIndex: pane.paneIndex,
-    command: pane.command,
-  },
-  action: () => jumpToPane(pane.paneId),
-});
+meta: {
+  paneId: pane.paneId,
+  zoomed: pane.zoomed,
+  active: pane.active,
+  window: pane.window,
+  paneIndex: pane.paneIndex,
+  command: pane.command,
+},
 ```
-
-- [ ] **Step 3: Run the type checker to confirm it compiles**
-
-```bash
-bunx tsc --noEmit
-```
-
-Expected: no errors
 
 - [ ] **Step 4: Update `tests/tui/build-tree-items.test.ts`**
 
-The existing test at the top of the file verifies that zoomed/active are passed through. Extend it to also assert the three new meta fields. Find the assertion block (after `buildTreeItems(...)` is called) and add:
+**4a.** Extend the first test ("passes zoomed and active pane metadata") to also assert the three new fields. Find the assertion block (after `buildTreeItems(...)`) and add:
 
 ```ts
-// Find the pane detail item from the returned items array:
 const paneItem = items.find(
   (i) => i.type === "detail" && i.detailKind === "pane",
 ) as Extract<TreeItem, { type: "detail"; detailKind: "pane" }> | undefined;
@@ -318,39 +281,111 @@ expect(paneItem).toBeDefined();
 expect(paneItem!.meta.window).toBe("main");
 expect(paneItem!.meta.paneIndex).toBe(0);
 expect(paneItem!.meta.command).toBe("bun run dev");
-expect(paneItem!.meta.zoomed).toBe(true);
-expect(paneItem!.meta.active).toBe(true);
+```
+
+**4b.** In the "resolves the correct pane when multiple pane rows share the same label" test (around line 174–184), the two manually constructed pane items need the new fields. The adjacent `panes` fixture at line 207 has the ground-truth values (`%1 → paneIndex: 0, command: "bash"` and `%2 → paneIndex: 1, command: "top"`):
+
+```ts
+// Line ~174 — pane item for %1:
+meta: { paneId: "%1", zoomed: false, active: false, window: "main", paneIndex: 0, command: "bash" },
+
+// Line ~182 — pane item for %2:
+meta: { paneId: "%2", zoomed: true, active: true, window: "main", paneIndex: 1, command: "top" },
+```
+
+**4c.** In the "finds the owning worktree row for a selected detail row" test (around line 251), derive values from the label `"editor:0 bash"`:
+
+```ts
+meta: { paneId: "%1", zoomed: false, active: true, window: "editor", paneIndex: 0, command: "bash" },
 ```
 
 - [ ] **Step 5: Update `tests/tui/detail-row.test.tsx`**
 
-The three pane item objects in the existing test (lines ~55–82) have `meta` without `paneId`, `window`, `paneIndex`, or `command`. Add all required fields:
+The three pane item objects in the existing zoom indicator test need all required fields. Derive `window`, `paneIndex`, `command` from the labels:
 
 ```ts
-// First pane item (zoomed + active):
+// Pane with label "main:0 bash" (zoomed, active):
 meta: { paneId: "%0", zoomed: true, active: true, window: "main", paneIndex: 0, command: "bash" },
 
-// Second pane item (zoomed, not active):
+// Pane with label "main:1 node" (zoomed, not active):
 meta: { paneId: "%1", zoomed: true, active: false, window: "main", paneIndex: 1, command: "node" },
 
-// Third pane item (not zoomed, active):
+// Pane with label "main:2 zsh" (not zoomed, active):
 meta: { paneId: "%2", zoomed: false, active: true, window: "main", paneIndex: 2, command: "zsh" },
 ```
 
-- [ ] **Step 6: Run tests to confirm everything passes**
+- [ ] **Step 6: Update `tests/tui/status-bar-wiring.test.ts`**
 
-```bash
-bun run test
+There are two pane items (around lines 13 and 61), both with `label: "main:0 bash"`. Add the three new fields to each:
+
+```ts
+meta: { paneId: "%1", zoomed: false, active: true, window: "main", paneIndex: 0, command: "bash" },
 ```
 
-Expected: all tests PASS
+- [ ] **Step 7: Update `tests/tui/tree-view-keys.test.ts`**
 
-- [ ] **Step 7: Commit**
+There are two pane items (around lines 11 and 19), both with `label: "main:0 bash"`. Add the three new fields to each, deriving from the label:
+
+```ts
+// paneA (paneId "%1"):
+meta: { paneId: "%1", zoomed: false, active: false, window: "main", paneIndex: 0, command: "bash" },
+
+// paneB (paneId "%2"):
+meta: { paneId: "%2", zoomed: true, active: true, window: "main", paneIndex: 0, command: "bash" },
+```
+
+- [ ] **Step 8: Update `tests/tui/adjust-index.test.ts` — pane items**
+
+There are four pane item constructions. Add the three new fields to each, derived from their labels:
+
+```ts
+// Line ~154 — label "main:0 bash", paneId "%1":
+meta: { paneId: "%1", zoomed: false, active: false, window: "main", paneIndex: 0, command: "bash" },
+
+// Line ~162 — label "main:1 bash", paneId "%2":
+meta: { paneId: "%2", zoomed: false, active: true, window: "main", paneIndex: 1, command: "bash" },
+
+// Line ~243 — label "main:0 bash", paneId "%1":
+meta: { paneId: "%1", zoomed: false, active: false, window: "main", paneIndex: 0, command: "bash" },
+
+// Line ~251 — label "main:1 vim", paneId "%2":
+meta: { paneId: "%2", zoomed: false, active: true, window: "main", paneIndex: 1, command: "vim" },
+```
+
+- [ ] **Step 9: Update `tests/tui/adjust-index.test.ts` — check items**
+
+There are two check items (around lines 130 and 137) with no `meta` field. After the generic change, `"check"` items require `meta: { state?: string }`. Add `meta: {}` to each (since `state` is optional within the meta object):
+
+```ts
+// checkA (line ~130):
+{
+  type: "detail",
+  repoIndex: 0,
+  worktreeIndex: 0,
+  detailKind: "check",
+  label: "CI / build",
+  meta: {},
+} as TreeItem,
+
+// checkB (line ~137):
+{
+  type: "detail",
+  repoIndex: 0,
+  worktreeIndex: 0,
+  detailKind: "check",
+  label: "CI / lint",
+  meta: {},
+} as TreeItem,
+```
+
+- [ ] **Step 10: Commit**
 
 ```bash
 git add src/tui/types.ts src/tui/tree-helpers.ts \
-        tests/tui/build-tree-items.test.ts tests/tui/detail-row.test.tsx
-git commit -m "feat(tui): tighten DetailItem pane meta — required window/paneIndex/command"
+        tests/tui/build-tree-items.test.ts tests/tui/detail-row.test.tsx \
+        tests/tui/status-bar-wiring.test.ts tests/tui/tree-view-keys.test.ts \
+        tests/tui/adjust-index.test.ts
+git commit -m "feat(tui): tighten DetailItem type — meta required for check/pane, extend pane meta"
 ```
 
 ---
@@ -362,9 +397,7 @@ git commit -m "feat(tui): tighten DetailItem pane meta — required window/paneI
 - Modify: `src/tui/components/RepoNode.tsx`
 - Modify: `src/tui/components/TreeView.tsx`
 
-- [ ] **Step 1: Write the failing tests**
-
-Create `tests/tui/repo-node.test.tsx`:
+- [ ] **Step 1: Create `tests/tui/repo-node.test.tsx`**
 
 ```tsx
 import { PassThrough } from "node:stream";
@@ -441,8 +474,8 @@ describe("RepoNode", () => {
     unmount();
   });
 
-  test("renders truncated name at exact width", async () => {
-    // overhead=4, project="my-project" (10), maxWidth=14 → available=10 → no truncation
+  test("renders full name at exact available width", async () => {
+    // overhead=4, project="my-project" (10), maxWidth=14 → available=10 → fits exactly
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
       expanded: false,
@@ -457,17 +490,7 @@ describe("RepoNode", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to confirm they fail**
-
-```bash
-bun run test tests/tui/repo-node.test.tsx
-```
-
-Expected: FAIL — `maxWidth` is not a valid prop on `RepoNode`
-
-- [ ] **Step 3: Update `src/tui/components/RepoNode.tsx`**
-
-Add `maxWidth` to the `Props` interface and apply truncation:
+- [ ] **Step 2: Update `src/tui/components/RepoNode.tsx`**
 
 ```tsx
 import { Box, Text } from "ink";
@@ -515,17 +538,9 @@ export function RepoNode({
 }
 ```
 
-- [ ] **Step 4: Run the RepoNode tests to confirm they pass**
+- [ ] **Step 3: Update `src/tui/components/TreeView.tsx` — pass `maxWidth` to `RepoNode`**
 
-```bash
-bun run test tests/tui/repo-node.test.tsx
-```
-
-Expected: all 3 tests PASS
-
-- [ ] **Step 5: Update `src/tui/components/TreeView.tsx`**
-
-Pass `maxWidth` to the `RepoNode` call (around line 95–104). Add `maxWidth={maxWidth}` to the `<RepoNode ... />` JSX:
+Add `maxWidth={maxWidth}` to the `<RepoNode ... />` JSX (around line 95–104):
 
 ```tsx
 elements.push(
@@ -541,15 +556,7 @@ elements.push(
 );
 ```
 
-- [ ] **Step 6: Run the full test suite to confirm no regressions**
-
-```bash
-bun run test
-```
-
-Expected: all tests PASS
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add tests/tui/repo-node.test.tsx src/tui/components/RepoNode.tsx \
@@ -567,27 +574,24 @@ git commit -m "feat(tui): truncate project names in RepoNode to fit terminal wid
 - Modify: `tests/tui/detail-row.test.tsx`
 - Create: `tests/tui/tree-view-wiring.test.tsx`
 
-- [ ] **Step 1: Write the failing DetailRow truncation tests**
+- [ ] **Step 1: Update `tests/tui/detail-row.test.tsx` — add `maxWidth` to existing calls and new truncation tests**
 
-Add the following tests to `tests/tui/detail-row.test.tsx` inside the existing `describe("DetailRow", ...)` block. The existing `renderDetailRow` helper already works via `React.ComponentProps<typeof DetailRow>` — once `maxWidth` is added to `DetailRow`'s `Props`, this helper will require it for all calls.
-
-**Also update all existing `renderDetailRow` calls to include `maxWidth: 80`** (wide enough that existing tests are unaffected):
+**1a.** The `renderDetailRow` helper picks up `React.ComponentProps<typeof DetailRow>` — once `maxWidth` is added to `DetailRow`'s `Props` in Step 2 it will be required. Update all three existing `renderDetailRow` calls in the zoom indicator test to pass `maxWidth: 80`:
 
 ```tsx
-// In the existing zoom indicator test, add maxWidth: 80 to each renderDetailRow call:
 const zoomedActive = await renderDetailRow({
   item: { ... }, // unchanged
   isSelected: false,
-  maxWidth: 80,  // ADD THIS
+  maxWidth: 80,
 });
 // same for zoomedInactive and unzoomedActive
 ```
 
-**Add new test cases:**
+**1b.** Add these test cases inside the existing `describe("DetailRow", ...)` block:
 
 ```tsx
 test("renders full pane label when width is sufficient", async () => {
-  // overhead=10 (indent 8 + selectorPrefix 2), available=70, "1:0 vim" easily fits
+  // overhead=10, available=70, "1:0 vim" (7) fits
   const { output, unmount } = await renderDetailRow({
     item: {
       type: "detail",
@@ -612,10 +616,10 @@ test("renders full pane label when width is sufficient", async () => {
 });
 
 test("preserves window:index prefix when command is long", async () => {
-  // overhead=10, maxWidth=20 → available=10
+  // overhead=10 (indent 8 + selectorPrefix 2), maxWidth=20 → available=10
   // prefix "1:0 " (4), rest "bun run dev" (11)
-  // 15 > 10, available(10) > prefix+3(7) → prefix + truncateBranch("bun run dev", 6)
-  // → "1:0 " + "bun..." → "1:0 bun..."
+  // 15 > 10, available(10) > prefix+3(7) → "1:0 " + truncateBranch("bun run dev", 6)
+  // → "1:0 bun..."
   const { output, unmount } = await renderDetailRow({
     item: {
       type: "detail",
@@ -643,7 +647,7 @@ test("preserves window:index prefix when command is long", async () => {
 
 test("truncates pane-header label when width is tight", async () => {
   // overhead=8 (indent 6 + selectorPrefix 2), maxWidth=15 → available=7
-  // "Panes (3)" (9) → truncateBranch("Panes (3)", 7) → "Pane..."
+  // "Panes (3)" (9) → "Pane..."
   const { output, unmount } = await renderDetailRow({
     item: {
       type: "detail",
@@ -662,7 +666,7 @@ test("truncates pane-header label when width is tight", async () => {
 
 test("truncates check label when width is tight", async () => {
   // overhead=12 (indent 8 + selectorPrefix 2 + icon 1 + space 1), maxWidth=20 → available=8
-  // "ci/backend" (10) → truncateBranch("ci/backend", 8) → "ci/ba..."
+  // "ci/backend" (10) → "ci/ba..."
   const { output, unmount } = await renderDetailRow({
     item: {
       type: "detail",
@@ -681,15 +685,7 @@ test("truncates check label when width is tight", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to confirm the new ones fail**
-
-```bash
-bun run test tests/tui/detail-row.test.tsx
-```
-
-Expected: new tests FAIL — `maxWidth` is not a valid prop; existing tests may fail due to missing `maxWidth` in `renderDetailRow` calls
-
-- [ ] **Step 3: Update `src/tui/components/DetailRow.tsx`**
+- [ ] **Step 2: Update `src/tui/components/DetailRow.tsx`**
 
 ```tsx
 import { Box, Text } from "ink";
@@ -764,7 +760,11 @@ export function DetailRow({ item, isSelected, maxWidth }: Props) {
       // overhead: indent(8) + selectorPrefix(2) + zoomedEmoji(3 if shown, else 0)
       const overhead = 8 + 2 + (zoomedEmoji ? 3 : 0);
       const panePrefix = `${window}:${paneIndex} `;
-      const displayLabel = truncateWithPrefix(panePrefix, command, maxWidth - overhead);
+      const displayLabel = truncateWithPrefix(
+        panePrefix,
+        command,
+        maxWidth - overhead,
+      );
       return (
         <Box>
           <Text>{indent}</Text>
@@ -780,17 +780,9 @@ export function DetailRow({ item, isSelected, maxWidth }: Props) {
 }
 ```
 
-- [ ] **Step 4: Run the DetailRow tests to confirm they pass**
+- [ ] **Step 3: Update `src/tui/components/TreeView.tsx` — pass `maxWidth` to `DetailRow`**
 
-```bash
-bun run test tests/tui/detail-row.test.tsx
-```
-
-Expected: all tests PASS
-
-- [ ] **Step 5: Update `src/tui/components/TreeView.tsx`**
-
-Pass `maxWidth` to the `<DetailRow ... />` call (around line 109–115):
+Add `maxWidth={maxWidth}` to the `<DetailRow ... />` JSX (around line 109–115):
 
 ```tsx
 elements.push(
@@ -803,9 +795,7 @@ elements.push(
 );
 ```
 
-- [ ] **Step 6: Write the TreeView wiring smoke test**
-
-Create `tests/tui/tree-view-wiring.test.tsx`:
+- [ ] **Step 4: Create `tests/tui/tree-view-wiring.test.tsx`**
 
 ```tsx
 import { PassThrough } from "node:stream";
@@ -877,7 +867,7 @@ describe("TreeView maxWidth wiring", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const output = chunks.join("");
 
-    // "very-long-project-name" (22 chars) with maxWidth=15, overhead=4 → available=11
+    // "very-long-project-name" (22 chars), maxWidth=15, overhead=4 → available=11
     // truncateBranch("very-long-project-name", 11) → "very-lon..."
     expect(output).toContain("very-lon...");
     expect(output).not.toContain("very-long-project-name");
@@ -887,23 +877,7 @@ describe("TreeView maxWidth wiring", () => {
 });
 ```
 
-- [ ] **Step 7: Run the wiring smoke test to confirm it passes**
-
-```bash
-bun run test tests/tui/tree-view-wiring.test.tsx
-```
-
-Expected: PASS
-
-- [ ] **Step 8: Run the full test suite**
-
-```bash
-bun run test
-```
-
-Expected: all tests PASS
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/tui/components/DetailRow.tsx src/tui/components/TreeView.tsx \

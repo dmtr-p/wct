@@ -10,7 +10,14 @@ describe("getDetailRowKey", () => {
       worktreeIndex: 0,
       detailKind: "pane",
       label: "main:0 bash",
-      meta: { paneId: "%1", zoomed: false, active: false },
+      meta: {
+        paneId: "%1",
+        zoomed: false,
+        active: false,
+        window: "main",
+        paneIndex: 0,
+        command: "bash",
+      },
     } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>;
     const paneB = {
       type: "detail",
@@ -18,7 +25,14 @@ describe("getDetailRowKey", () => {
       worktreeIndex: 0,
       detailKind: "pane",
       label: "main:0 bash",
-      meta: { paneId: "%2", zoomed: true, active: true },
+      meta: {
+        paneId: "%2",
+        zoomed: true,
+        active: true,
+        window: "main",
+        paneIndex: 0,
+        command: "bash",
+      },
     } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>;
 
     expect(getDetailRowKey("repo-1", paneA)).toBe("detail-repo-1-0-pane-%1");

@@ -34,7 +34,7 @@ export function getDetailRowKey(
 ): string {
   const base = `detail-${repoId}-${item.worktreeIndex}-${item.detailKind}`;
   if (item.detailKind === "pane") {
-    return `${base}-${item.meta?.paneId ?? item.label}`;
+    return `${base}-${item.meta.paneId}`;
   }
   return `${base}-${item.label}`;
 }
@@ -99,6 +99,7 @@ export function TreeView({
           isSelected={idx === selectedIndex}
           isChildSelected={childSelected}
           worktreeCount={repo.worktrees.length}
+          maxWidth={maxWidth}
         />,
       );
       continue;
@@ -110,6 +111,7 @@ export function TreeView({
           key={getDetailRowKey(repo.id, item)}
           item={item}
           isSelected={idx === selectedIndex}
+          maxWidth={maxWidth}
         />,
       );
       continue;

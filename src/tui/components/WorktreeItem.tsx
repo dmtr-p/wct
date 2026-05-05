@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { truncateBranch } from "../utils/truncate";
 
 interface Props {
   branch: string;
@@ -12,12 +13,6 @@ interface Props {
   isExpanded?: boolean;
   hasExpandableData?: boolean;
   maxWidth: number;
-}
-
-export function truncateBranch(branch: string, available: number): string {
-  if (branch.length <= available) return branch;
-  if (available <= 3) return ".".repeat(Math.max(0, available));
-  return `${branch.slice(0, available - 3)}...`;
 }
 
 function branchBudget(maxWidth: number, overhead: number): number {

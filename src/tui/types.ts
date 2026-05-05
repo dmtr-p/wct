@@ -127,7 +127,17 @@ export type TreeItem =
   | DetailItem<"pr">
   | DetailItem<"check", { state?: string }>
   | DetailItem<"pane-header">
-  | DetailItem<"pane", { paneId: string; zoomed?: boolean; active?: boolean }>;
+  | DetailItem<
+      "pane",
+      {
+        paneId: string;
+        zoomed?: boolean;
+        active?: boolean;
+        window: string;
+        paneIndex: number;
+        command: string;
+      }
+    >;
 
 export type DetailKind = "pr" | "check" | "pane-header" | "pane";
 
@@ -150,7 +160,7 @@ type DetailItem<
       detailKind: TKind;
       label: string;
       action?: () => void;
-      meta?: TMeta;
+      meta: TMeta;
     };
 
 /** Pending action for optimistic UI */

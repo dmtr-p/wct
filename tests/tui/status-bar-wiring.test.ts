@@ -12,7 +12,14 @@ describe("resolveStatusBarProps", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "main:0 bash",
-        meta: { paneId: "%1", zoomed: false, active: true },
+        meta: {
+          paneId: "%1",
+          zoomed: false,
+          active: true,
+          window: "main",
+          paneIndex: 0,
+          command: "bash",
+        },
       },
     ];
 
@@ -60,7 +67,14 @@ describe("resolveStatusBarProps", () => {
             worktreeIndex: 0,
             detailKind: "pane",
             label: "main:0 bash",
-            meta: { paneId: "%1", zoomed: false, active: true },
+            meta: {
+              paneId: "%1",
+              zoomed: false,
+              active: true,
+              window: "main",
+              paneIndex: 0,
+              command: "bash",
+            },
           },
         ],
         selectedIndex: 1,

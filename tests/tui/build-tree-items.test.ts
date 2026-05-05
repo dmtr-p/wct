@@ -57,6 +57,9 @@ describe("buildTreeItems", () => {
       paneId: "%1",
       zoomed: true,
       active: true,
+      window: "main",
+      paneIndex: 0,
+      command: "bun run dev",
     });
   });
 
@@ -173,7 +176,14 @@ describe("buildTreeItems", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "shared label",
-        meta: { paneId: "%1", zoomed: false, active: false },
+        meta: {
+          paneId: "%1",
+          zoomed: false,
+          active: false,
+          window: "main",
+          paneIndex: 0,
+          command: "bash",
+        },
       },
       {
         type: "detail",
@@ -181,7 +191,14 @@ describe("buildTreeItems", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "shared label",
-        meta: { paneId: "%2", zoomed: true, active: true },
+        meta: {
+          paneId: "%2",
+          zoomed: true,
+          active: true,
+          window: "main",
+          paneIndex: 1,
+          command: "top",
+        },
       },
     ];
 
@@ -250,7 +267,14 @@ describe("buildTreeItems", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "editor:0 bash",
-        meta: { paneId: "%1", zoomed: false, active: true },
+        meta: {
+          paneId: "%1",
+          zoomed: false,
+          active: true,
+          window: "editor",
+          paneIndex: 0,
+          command: "bash",
+        },
       },
     ];
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { truncateBranch } from "../../src/tui/components/WorktreeItem";
+import { truncateBranch } from "../../src/tui/utils/truncate";
 
 describe("truncateBranch", () => {
   test("returns branch unchanged when it fits", () => {

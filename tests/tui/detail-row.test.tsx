@@ -54,9 +54,17 @@ describe("DetailRow", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "main:0 bash",
-        meta: { zoomed: true, active: true },
+        meta: {
+          paneId: "%0",
+          zoomed: true,
+          active: true,
+          window: "main",
+          paneIndex: 0,
+          command: "bash",
+        },
       } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
+      maxWidth: 80,
     });
     const zoomedInactive = await renderDetailRow({
       item: {
@@ -65,9 +73,17 @@ describe("DetailRow", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "main:1 node",
-        meta: { zoomed: true, active: false },
+        meta: {
+          paneId: "%1",
+          zoomed: true,
+          active: false,
+          window: "main",
+          paneIndex: 1,
+          command: "node",
+        },
       } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
+      maxWidth: 80,
     });
     const unzoomedActive = await renderDetailRow({
       item: {
@@ -76,9 +92,17 @@ describe("DetailRow", () => {
         worktreeIndex: 0,
         detailKind: "pane",
         label: "main:2 zsh",
-        meta: { zoomed: false, active: true },
+        meta: {
+          paneId: "%2",
+          zoomed: false,
+          active: true,
+          window: "main",
+          paneIndex: 2,
+          command: "zsh",
+        },
       } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
+      maxWidth: 80,
     });
 
     expect(zoomedActive.output).toContain("🔍");
@@ -88,5 +112,99 @@ describe("DetailRow", () => {
     zoomedActive.unmount();
     zoomedInactive.unmount();
     unzoomedActive.unmount();
+  });
+
+  test("renders full pane label when width is sufficient", async () => {
+    // overhead=10, available=70, "1:0 vim" (7) fits
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "1:0 vim",
+        meta: {
+          paneId: "%0",
+          zoomed: false,
+          active: false,
+          window: "1",
+          paneIndex: 0,
+          command: "vim",
+        },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      isSelected: false,
+      maxWidth: 80,
+    });
+    expect(output).toContain("1:0 vim");
+    unmount();
+  });
+
+  test("preserves window:index prefix when command is long", async () => {
+    // overhead=10 (indent 8 + selectorPrefix 2), maxWidth=20 → available=10
+    // prefix "1:0 " (4), rest "bun run dev" (11)
+    // 15 > 10, available(10) > prefix+3(7) → "1:0 " + truncateBranch("bun run dev", 6)
+    // → "1:0 bun..."
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane",
+        label: "1:0 bun run dev",
+        meta: {
+          paneId: "%0",
+          zoomed: false,
+          active: false,
+          window: "1",
+          paneIndex: 0,
+          command: "bun run dev",
+        },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      isSelected: false,
+      maxWidth: 20,
+    });
+    expect(output).toContain("1:0 ");
+    expect(output).toContain("bun...");
+    expect(output).not.toContain("bun run dev");
+    unmount();
+  });
+
+  test("truncates pane-header label when width is tight", async () => {
+    // overhead=8 (indent 6 + selectorPrefix 2), maxWidth=15 → available=7
+    // "Panes (3)" (9) → "Pane..."
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane-header",
+        label: "Panes (3)",
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pane-header" }>,
+      isSelected: false,
+      maxWidth: 15,
+    });
+    expect(output).toContain("Pane...");
+    expect(output).not.toContain("Panes (3)");
+    unmount();
+  });
+
+  test("truncates check label when width is tight", async () => {
+    // overhead=12 (indent 8 + selectorPrefix 2 + icon 1 + space 1), maxWidth=20 → available=8
+    // "ci/backend" (10) → "ci/ba..."
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "check",
+        label: "ci/backend",
+        meta: { state: "success" },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "check" }>,
+      isSelected: false,
+      maxWidth: 20,
+    });
+    expect(output).toContain("ci/ba...");
+    expect(output).not.toContain("ci/backend");
+    unmount();
   });
 });

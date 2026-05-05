@@ -156,6 +156,9 @@ export function buildTreeItems({
                 paneId: pane.paneId,
                 zoomed: pane.zoomed,
                 active: pane.active,
+                window: pane.window,
+                paneIndex: pane.paneIndex,
+                command: pane.command,
               },
               action: () => jumpToPane(pane.paneId),
             });
@@ -179,7 +182,7 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   if (!wt) return null;
   if (item.type === "worktree") return `wt:${repo.id}/${wt.branch}`;
   const base = `detail:${repo.id}/${wt.branch}/${item.detailKind}`;
-  if (item.detailKind === "pane" && item.meta?.paneId)
+  if (item.detailKind === "pane" && item.meta.paneId)
     return `${base}/${item.meta.paneId}`;
   if (item.detailKind === "check") return `${base}/${item.label}`;
   return base;
@@ -405,7 +408,7 @@ export function resolveSelectedPane({
     return null;
   }
 
-  const paneId = selected.meta?.paneId;
+  const paneId = selected.meta.paneId;
   if (!paneId) {
     return null;
   }

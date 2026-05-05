@@ -129,6 +129,7 @@ describe("treeItemId", () => {
       worktreeIndex: 0,
       detailKind: "check",
       label: "CI / build",
+      meta: {},
     } as TreeItem;
     const checkB = {
       type: "detail",
@@ -136,6 +137,7 @@ describe("treeItemId", () => {
       worktreeIndex: 0,
       detailKind: "check",
       label: "CI / lint",
+      meta: {},
     } as TreeItem;
     expect(treeItemId(checkA, repos)).toBe(
       "detail:repo-a/main/check/CI / build",
@@ -153,7 +155,14 @@ describe("treeItemId", () => {
       worktreeIndex: 0,
       detailKind: "pane",
       label: "main:0 bash",
-      meta: { paneId: "%1", zoomed: false, active: false },
+      meta: {
+        paneId: "%1",
+        zoomed: false,
+        active: false,
+        window: "main",
+        paneIndex: 0,
+        command: "bash",
+      },
     } as TreeItem;
     const paneB = {
       type: "detail",
@@ -161,7 +170,14 @@ describe("treeItemId", () => {
       worktreeIndex: 0,
       detailKind: "pane",
       label: "main:1 bash",
-      meta: { paneId: "%2", zoomed: false, active: true },
+      meta: {
+        paneId: "%2",
+        zoomed: false,
+        active: true,
+        window: "main",
+        paneIndex: 1,
+        command: "bash",
+      },
     } as TreeItem;
     expect(treeItemId(paneA, repos)).toBe("detail:repo-a/main/pane/%1");
     expect(treeItemId(paneB, repos)).toBe("detail:repo-a/main/pane/%2");
@@ -242,7 +258,14 @@ describe("identity-based recovery scenarios", () => {
       worktreeIndex: 0,
       detailKind: "pane",
       label: "main:0 bash",
-      meta: { paneId: "%1", zoomed: false, active: false },
+      meta: {
+        paneId: "%1",
+        zoomed: false,
+        active: false,
+        window: "main",
+        paneIndex: 0,
+        command: "bash",
+      },
     } as TreeItem;
     const pane2 = {
       type: "detail",
@@ -250,7 +273,14 @@ describe("identity-based recovery scenarios", () => {
       worktreeIndex: 0,
       detailKind: "pane",
       label: "main:1 vim",
-      meta: { paneId: "%2", zoomed: false, active: true },
+      meta: {
+        paneId: "%2",
+        zoomed: false,
+        active: true,
+        window: "main",
+        paneIndex: 1,
+        command: "vim",
+      },
     } as TreeItem;
 
     const itemsBefore: TreeItem[] = [

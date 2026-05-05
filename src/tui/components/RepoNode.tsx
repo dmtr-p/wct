@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { truncateBranch } from "../utils/truncate";
 
 interface Props {
   project: string;
@@ -6,6 +7,7 @@ interface Props {
   isSelected: boolean;
   isChildSelected: boolean;
   worktreeCount: number;
+  maxWidth: number;
 }
 
 export function RepoNode({
@@ -14,18 +16,20 @@ export function RepoNode({
   isSelected,
   isChildSelected,
   worktreeCount,
+  maxWidth,
 }: Props) {
-  const arrow = expanded ? "\u25BC" : "\u25B6";
+  const arrow = expanded ? "▼" : "▶";
   const active = isSelected || isChildSelected;
-
   const prefix = isSelected ? "❯ " : "  ";
+  // overhead: prefix (2) + arrow (1) + space (1) = 4
+  const displayProject = truncateBranch(project, maxWidth - 4);
 
   return (
     <Box flexDirection="column">
       <Box>
         <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
         <Text color={isSelected ? "cyan" : "yellow"} bold={active}>
-          {arrow} {project}
+          {arrow} {displayProject}
         </Text>
       </Box>
       {expanded && worktreeCount === 0 ? (

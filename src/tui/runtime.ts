@@ -4,6 +4,10 @@ import type { WctServices } from "../effect/services";
 import { GitHubService, liveGitHubService } from "../services/github-service";
 import { IdeService, liveIdeService } from "../services/ide-service";
 import {
+  livePrCacheService,
+  PrCacheService,
+} from "../services/pr-cache-service";
+import {
   liveRegistryService,
   RegistryService,
 } from "../services/registry-service";
@@ -26,6 +30,7 @@ const tuiLayer = Layer.mergeAll(
   Layer.succeed(RegistryService, liveRegistryService),
   Layer.succeed(SetupService, liveSetupService),
   Layer.succeed(VSCodeWorkspaceService, liveVSCodeWorkspaceService),
+  Layer.succeed(PrCacheService, livePrCacheService),
   BunServices.layer,
 );
 

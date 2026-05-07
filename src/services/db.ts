@@ -46,6 +46,15 @@ export const MIGRATIONS: readonly string[] = [
     project TEXT NOT NULL,
     created_at INTEGER NOT NULL
   )`,
+  // v2 — PR cache for TUI. Stores the last-fetched PR list per project so
+  // the TUI can render PR decorations immediately on launch without waiting
+  // for the first network call to return.
+  `CREATE TABLE IF NOT EXISTS pr_cache (
+    project TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    last_error TEXT
+  )`,
 ];
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;

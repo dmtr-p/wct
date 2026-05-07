@@ -12,6 +12,11 @@ import {
   liveIdeService,
 } from "../services/ide-service";
 import {
+  livePrCacheService,
+  PrCacheService,
+  type PrCacheServiceApi,
+} from "../services/pr-cache-service";
+import {
   liveRegistryService,
   RegistryService,
   type RegistryServiceApi,
@@ -41,6 +46,7 @@ export type WctServices =
   | BunServices.BunServices
   | GitHubServiceApi
   | IdeServiceApi
+  | PrCacheServiceApi
   | RegistryServiceApi
   | SetupServiceApi
   | TmuxServiceApi
@@ -50,6 +56,7 @@ export type WctServices =
 export type WctRuntimeServices =
   | BunServices.BunServices
   | GitHubServiceApi
+  | PrCacheServiceApi
   | RegistryServiceApi
   | TmuxServiceApi
   | WorktreeServiceApi;
@@ -64,6 +71,7 @@ export type WctRuntimeServices =
 export const WctServicesLayer = Layer.mergeAll(
   Layer.succeed(GitHubService, liveGitHubService),
   Layer.succeed(IdeService, liveIdeService),
+  Layer.succeed(PrCacheService, livePrCacheService),
   Layer.succeed(SetupService, liveSetupService),
   Layer.succeed(TmuxService, liveTmuxService),
   Layer.succeed(VSCodeWorkspaceService, liveVSCodeWorkspaceService),

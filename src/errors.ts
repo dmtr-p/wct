@@ -20,7 +20,8 @@ export type ErrorCode =
   | "init_error"
   | "pr_error"
   | "gh_not_installed"
-  | "registry_error";
+  | "registry_error"
+  | "pr_cache_error";
 
 export class WctCommandError extends Data.TaggedError("WctCommandError")<{
   code: ErrorCode | "unexpected_error";

@@ -41,12 +41,14 @@ export function computeRollup(
   for (const entry of checks) {
     if (typeof entry !== "object" || entry === null) continue;
     const e = entry as Record<string, unknown>;
-    // Derive effective state: status-style has `state`, check-run-style has
-    // `status` and `conclusion`. When status is COMPLETED use conclusion.
+    // Derive effective state: status-style entries carry `state` and no
+    // `status`/`conclusion`. Check-run-style entries carry `status` and
+    // `conclusion`; `conclusion` is only meaningful once `status ===
+    // "COMPLETED"` — until then `status` is the live in-flight signal.
     const raw =
       typeof e["state"] === "string"
         ? e["state"]
-        : typeof e["conclusion"] === "string" && e["conclusion"] !== null
+        : e["status"] === "COMPLETED" && typeof e["conclusion"] === "string"
           ? e["conclusion"]
           : typeof e["status"] === "string"
             ? e["status"]
@@ -83,12 +85,8 @@ export function parseGhPrList(stdout: string): PrListItem[] {
         typeof pr.headRefName === "string"
       ) {
         let rollupState: PrListItem["rollupState"] = null;
-        try {
-          if (Array.isArray(pr.statusCheckRollup)) {
-            rollupState = computeRollup(pr.statusCheckRollup);
-          }
-        } catch {
-          // malformed rollup → null
+        if (Array.isArray(pr.statusCheckRollup)) {
+          rollupState = computeRollup(pr.statusCheckRollup);
         }
         results.push({
           number: pr.number,

@@ -305,6 +305,18 @@ describe("computeRollup", () => {
     ).toBe("pending");
   });
 
+  test("in-flight re-run: stale conclusion ignored when status is IN_PROGRESS", () => {
+    expect(
+      computeRollup([{ status: "IN_PROGRESS", conclusion: "SUCCESS" }]),
+    ).toBe("pending");
+  });
+
+  test("completed check-run with FAILURE conclusion returns failure", () => {
+    expect(
+      computeRollup([{ status: "COMPLETED", conclusion: "FAILURE" }]),
+    ).toBe("failure");
+  });
+
   test("handles mix of status-style and check-run-style entries", () => {
     expect(
       computeRollup([

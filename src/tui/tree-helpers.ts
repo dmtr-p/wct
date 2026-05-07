@@ -118,21 +118,12 @@ export function buildTreeItems({
             worktreeIndex: wi,
             detailKind: "pr",
             label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
+            meta: { rollupState: pr.rollupState },
             action: () =>
               Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
                 cwd: repo.repoPath,
               }),
           });
-          for (const check of pr.checks) {
-            items.push({
-              type: "detail",
-              repoIndex: ri,
-              worktreeIndex: wi,
-              detailKind: "check",
-              label: check.name,
-              meta: { state: check.state },
-            });
-          }
         }
 
         // Panes for this worktree
@@ -184,7 +175,6 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   const base = `detail:${repo.id}/${wt.branch}/${item.detailKind}`;
   if (item.detailKind === "pane" && item.meta.paneId)
     return `${base}/${item.meta.paneId}`;
-  if (item.detailKind === "check") return `${base}/${item.label}`;
   return base;
 }
 

@@ -1,12 +1,41 @@
 import { Box, Text } from "ink";
 import type { TreeItem } from "../types";
-import { checkColor, checkIcon } from "../types";
 import { truncateBranch, truncateWithPrefix } from "../utils/truncate";
 
 interface Props {
   item: Extract<TreeItem, { type: "detail" }>;
   isSelected: boolean;
   maxWidth: number;
+}
+
+function rollupIcon(
+  rollupState: "success" | "failure" | "pending" | null,
+): string {
+  switch (rollupState) {
+    case "success":
+      return "✓";
+    case "failure":
+      return "✗";
+    case "pending":
+      return "◌";
+    default:
+      return "";
+  }
+}
+
+function rollupColor(
+  rollupState: "success" | "failure" | "pending" | null,
+): "green" | "red" | "yellow" | undefined {
+  switch (rollupState) {
+    case "success":
+      return "green";
+    case "failure":
+      return "red";
+    case "pending":
+      return "yellow";
+    default:
+      return undefined;
+  }
 }
 
 export function DetailRow({ item, isSelected, maxWidth }: Props) {
@@ -34,31 +63,19 @@ export function DetailRow({ item, isSelected, maxWidth }: Props) {
         </Box>
       );
 
-    case "pr":
+    case "pr": {
+      const { rollupState } = item.meta;
+      const icon = rollupIcon(rollupState);
+      const iconColor = rollupColor(rollupState);
       return (
         <Box>
           <Text>{indent}</Text>
           <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
             {prefix}
+          </Text>
+          {icon ? <Text color={iconColor}>{icon} </Text> : null}
+          <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
             {label}
-          </Text>
-        </Box>
-      );
-
-    case "check": {
-      const icon = checkIcon(item.meta.state ?? "");
-      const color = checkColor(item.meta.state ?? "");
-      // overhead: indent(8) + selectorPrefix(2) + icon(1) + space(1) = 12
-      return (
-        <Box>
-          <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
-            {prefix}
-          </Text>
-          <Text color={color}>{icon}</Text>
-          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
-            {" "}
-            {truncateBranch(label, maxWidth - 12)}
           </Text>
         </Box>
       );

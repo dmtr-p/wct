@@ -19,11 +19,53 @@ export interface PrListItem {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   headRefName: string;
+  rollupState: "success" | "failure" | "pending" | null;
 }
 
-export interface PrCheckInfo {
-  name: string;
-  state: string;
+/**
+ * Aggregates a `statusCheckRollup` array from `gh pr list --json` into a
+ * single rollup state, matching the rules GitHub's web UI uses:
+ *
+ * - Any FAILURE / TIMED_OUT / STARTUP_FAILURE → "failure"
+ * - Else any IN_PROGRESS / QUEUED / PENDING / ACTION_REQUIRED → "pending"
+ * - Else (all SUCCESS / SKIPPED / NEUTRAL / CANCELLED / unknown) → "success"
+ * - Empty array → null
+ */
+export function computeRollup(
+  checks: unknown[],
+): "success" | "failure" | "pending" | null {
+  if (checks.length === 0) return null;
+
+  let hasPending = false;
+
+  for (const entry of checks) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    // Derive effective state: status-style has `state`, check-run-style has
+    // `status` and `conclusion`. When status is COMPLETED use conclusion.
+    const raw =
+      typeof e["state"] === "string"
+        ? e["state"]
+        : typeof e["conclusion"] === "string" && e["conclusion"] !== null
+          ? e["conclusion"]
+          : typeof e["status"] === "string"
+            ? e["status"]
+            : null;
+
+    if (raw === "FAILURE" || raw === "TIMED_OUT" || raw === "STARTUP_FAILURE") {
+      return "failure";
+    }
+    if (
+      raw === "IN_PROGRESS" ||
+      raw === "QUEUED" ||
+      raw === "PENDING" ||
+      raw === "ACTION_REQUIRED"
+    ) {
+      hasPending = true;
+    }
+  }
+
+  return hasPending ? "pending" : "success";
 }
 
 export function parseGhPrList(stdout: string): PrListItem[] {
@@ -40,28 +82,21 @@ export function parseGhPrList(stdout: string): PrListItem[] {
           pr.state === "CLOSED") &&
         typeof pr.headRefName === "string"
       ) {
+        let rollupState: PrListItem["rollupState"] = null;
+        try {
+          if (Array.isArray(pr.statusCheckRollup)) {
+            rollupState = computeRollup(pr.statusCheckRollup);
+          }
+        } catch {
+          // malformed rollup → null
+        }
         results.push({
           number: pr.number,
           title: pr.title,
           state: pr.state as PrListItem["state"],
           headRefName: pr.headRefName,
+          rollupState,
         });
-      }
-    }
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-export function parseGhPrChecks(stdout: string): PrCheckInfo[] {
-  try {
-    const data = JSON.parse(stdout);
-    if (!Array.isArray(data)) return [];
-    const results: PrCheckInfo[] = [];
-    for (const c of data) {
-      if (typeof c.name === "string" && typeof c.state === "string") {
-        results.push({ name: c.name, state: c.state });
       }
     }
     return results;
@@ -90,10 +125,6 @@ export interface GitHubService {
   listPrs: (
     cwd: string,
   ) => Effect.Effect<PrListItem[], WctError, WctRuntimeServices>;
-  listPrChecks: (
-    cwd: string,
-    prNumber: number,
-  ) => Effect.Effect<PrCheckInfo[], WctError, WctRuntimeServices>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
@@ -191,24 +222,13 @@ function listPrsImpl(cwd: string) {
         "pr",
         "list",
         "--json",
-        "number,title,state,headRefName",
+        "number,title,state,headRefName,statusCheckRollup",
         "--limit",
         "20",
       ],
       { cwd },
     ).pipe(Effect.map((result) => parseGhPrList(result.stdout.trim()))),
     () => Effect.succeed([] as PrListItem[]),
-  );
-}
-
-function listPrChecksImpl(cwd: string, prNumber: number) {
-  return Effect.catch(
-    execProcess(
-      "gh",
-      ["pr", "checks", String(prNumber), "--json", "name,state"],
-      { cwd },
-    ).pipe(Effect.map((result) => parseGhPrChecks(result.stdout.trim()))),
-    () => Effect.succeed([] as PrCheckInfo[]),
   );
 }
 
@@ -331,14 +351,6 @@ export const liveGitHubService: GitHubService = GitHubService.of({
   listPrs: (cwd) =>
     Effect.mapError(listPrsImpl(cwd), (error) =>
       commandError("pr_error", "Failed to list PRs", error),
-    ),
-  listPrChecks: (cwd, prNumber) =>
-    Effect.mapError(listPrChecksImpl(cwd, prNumber), (error) =>
-      commandError(
-        "pr_error",
-        `Failed to list checks for PR #${prNumber}`,
-        error,
-      ),
     ),
   findRemoteForRepo: (owner, repo, cwd) =>
     Effect.gen(function* () {

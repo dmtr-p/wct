@@ -1,8 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  parseGhPrChecks,
-  parseGhPrList,
-} from "../../src/services/github-service";
+import { parseGhPrList } from "../../src/services/github-service";
 
 describe("parseGhPrList", () => {
   test("parses JSON output from gh pr list", () => {
@@ -26,10 +23,12 @@ describe("parseGhPrList", () => {
     expect(result[0]?.title).toBe("feat: TUI sidebar");
     expect(result[0]?.state).toBe("OPEN");
     expect(result[0]?.headRefName).toBe("feat/tui");
+    expect(result[0]?.rollupState).toBe(null);
     expect(result[1]?.number).toBe(31);
     expect(result[1]?.title).toBe("fix: migration");
     expect(result[1]?.state).toBe("MERGED");
     expect(result[1]?.headRefName).toBe("fix/migrate");
+    expect(result[1]?.rollupState).toBe(null);
   });
 
   test("returns empty array for empty JSON", () => {
@@ -38,21 +37,5 @@ describe("parseGhPrList", () => {
 
   test("returns empty array for invalid JSON", () => {
     expect(parseGhPrList("not json")).toEqual([]);
-  });
-});
-
-describe("parseGhPrChecks", () => {
-  test("parses JSON output from gh pr checks", () => {
-    const json = JSON.stringify([
-      { name: "build", state: "SUCCESS" },
-      { name: "test", state: "FAILURE" },
-    ]);
-    const result = parseGhPrChecks(json);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({ name: "build", state: "SUCCESS" });
-  });
-
-  test("returns empty array for invalid JSON", () => {
-    expect(parseGhPrChecks("")).toEqual([]);
   });
 });

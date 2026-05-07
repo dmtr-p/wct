@@ -22,7 +22,7 @@ function worktree(repoIndex: number, worktreeIndex: number): TreeItem {
 function detail(
   repoIndex: number,
   worktreeIndex: number,
-  kind: "pr" | "check" | "pane-header" = "pr",
+  kind: "pr" | "pane-header" = "pr",
 ): TreeItem {
   return {
     type: "detail",
@@ -30,6 +30,7 @@ function detail(
     worktreeIndex,
     detailKind: kind,
     label: `detail-${kind}`,
+    ...(kind === "pr" ? { meta: { rollupState: null } } : {}),
   } as TreeItem;
 }
 
@@ -122,30 +123,16 @@ describe("treeItemId", () => {
     expect(treeItemId(detail(0, 0, "pr"), repos)).toBe("detail:repo-a/main/pr");
   });
 
-  test("check details include label for uniqueness", () => {
-    const checkA = {
+  test("pr detail id is stable", () => {
+    const prItem = {
       type: "detail",
       repoIndex: 0,
       worktreeIndex: 0,
-      detailKind: "check",
-      label: "CI / build",
-      meta: {},
+      detailKind: "pr",
+      label: "PR #42",
+      meta: { rollupState: null },
     } as TreeItem;
-    const checkB = {
-      type: "detail",
-      repoIndex: 0,
-      worktreeIndex: 0,
-      detailKind: "check",
-      label: "CI / lint",
-      meta: {},
-    } as TreeItem;
-    expect(treeItemId(checkA, repos)).toBe(
-      "detail:repo-a/main/check/CI / build",
-    );
-    expect(treeItemId(checkB, repos)).toBe(
-      "detail:repo-a/main/check/CI / lint",
-    );
-    expect(treeItemId(checkA, repos)).not.toBe(treeItemId(checkB, repos));
+    expect(treeItemId(prItem, repos)).toBe("detail:repo-a/main/pr");
   });
 
   test("pane details include paneId for uniqueness", () => {
@@ -347,7 +334,7 @@ describe("resolveSelectedWorktreeIndex", () => {
   });
 
   test("returns the parent worktree index for a selected detail row", () => {
-    const items: TreeItem[] = [repo(0), worktree(0, 0), detail(0, 0, "check")];
+    const items: TreeItem[] = [repo(0), worktree(0, 0), detail(0, 0, "pr")];
     expect(resolveSelectedWorktreeIndex(items, 2)).toBe(1);
   });
 

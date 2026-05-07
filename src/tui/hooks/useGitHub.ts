@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GitHubService, type PrCheckInfo } from "../../services/github-service";
+import { GitHubService } from "../../services/github-service";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
@@ -18,21 +18,10 @@ async function fetchRepoData(
       opts,
     );
 
-    await Promise.all(
-      prs.map(async (pr) => {
-        let checks: PrCheckInfo[] = [];
-        try {
-          checks = await tuiRuntime.runPromise(
-            GitHubService.use((s) => s.listPrChecks(repo.repoPath, pr.number)),
-            opts,
-          );
-        } catch {
-          // Checks may not be available
-        }
-        const key = `${repo.project}/${pr.headRefName}`;
-        entries.push([key, { ...pr, checks }]);
-      }),
-    );
+    for (const pr of prs) {
+      const key = `${repo.project}/${pr.headRefName}`;
+      entries.push([key, { ...pr }]);
+    }
   } catch {
     // gh not installed or not authenticated — silently skip
   }

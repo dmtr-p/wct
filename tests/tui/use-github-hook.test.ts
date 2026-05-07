@@ -26,6 +26,7 @@ type PrListResult = Array<{
   title: string;
   state: "OPEN";
   headRefName: string;
+  rollupState: "success" | "failure" | "pending" | null;
 }>;
 
 function makeRepo(overrides: Partial<RepoInfo> = {}): RepoInfo {
@@ -109,7 +110,7 @@ describe("useGitHub hook", () => {
     harness.unmount();
   });
 
-  test("keeps PR entries when check fetch fails for one PR", async () => {
+  test("maps PR list to prData keyed by project/branch", async () => {
     const repo = makeRepo();
     const prList = [
       {
@@ -117,29 +118,18 @@ describe("useGitHub hook", () => {
         title: "feat: something",
         state: "OPEN" as const,
         headRefName: "feat/something",
+        rollupState: "success" as const,
       },
       {
         number: 11,
         title: "fix: other",
         state: "OPEN" as const,
         headRefName: "fix/other",
+        rollupState: null,
       },
     ];
 
-    let callCount = 0;
-    mockRunPromise.mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) {
-        // First call: listPrs
-        return Promise.resolve(prList);
-      }
-      if (callCount === 2) {
-        // Second call: listPrChecks — succeeds
-        return Promise.resolve([{ name: "build", state: "SUCCESS" }]);
-      }
-      // Third call: listPrChecks — fails
-      return Promise.reject(new Error("checks unavailable"));
-    });
+    mockRunPromise.mockResolvedValueOnce(prList);
 
     const harness = await renderUseGitHub([repo]);
     await flush(10);
@@ -152,14 +142,14 @@ describe("useGitHub hook", () => {
       "Expected feat/something PR data",
     );
     expect(pr10.number).toBe(10);
-    expect(pr10.checks).toEqual([{ name: "build", state: "SUCCESS" }]);
+    expect(pr10.rollupState).toBe("success");
 
     const pr11 = expectDefined(
       data.get("myproject/fix/other"),
       "Expected fix/other PR data",
     );
     expect(pr11.number).toBe(11);
-    expect(pr11.checks).toEqual([]);
+    expect(pr11.rollupState).toBeNull();
 
     harness.unmount();
   });

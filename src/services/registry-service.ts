@@ -1,4 +1,5 @@
 import { Context, Effect } from "effect";
+import type { Database } from "bun:sqlite";
 import type { WctError } from "../errors";
 import { withDb } from "./db";
 
@@ -33,7 +34,7 @@ function generateId(): string {
 
 function registryDb<A>(
   operation: string,
-  f: (db: import("bun:sqlite").Database) => A,
+  f: (db: Database) => A,
 ): Effect.Effect<A, WctError> {
   return withDb("registry_error", operation, f);
 }

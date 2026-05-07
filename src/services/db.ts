@@ -11,7 +11,7 @@ export function getDbPath(): string {
   return `${getWctDir()}/wct.db`;
 }
 
-export const SCHEMA_VERSION_SQL = `CREATE TABLE IF NOT EXISTS schema_version (
+const SCHEMA_VERSION_SQL = `CREATE TABLE IF NOT EXISTS schema_version (
   version INTEGER PRIMARY KEY,
   applied_at INTEGER NOT NULL
 )`;
@@ -50,6 +50,7 @@ export const MIGRATIONS: readonly string[] = [
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;
 
+/** Exported for test access; use `runMigrations` in production code. */
 export function getCurrentSchemaVersion(db: Database): number {
   const row = db
     .query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")

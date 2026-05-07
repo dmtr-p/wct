@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect";
+import { Context, type Effect } from "effect";
 import type { Database } from "bun:sqlite";
 import type { WctError } from "../errors";
 import { withDb } from "./db";

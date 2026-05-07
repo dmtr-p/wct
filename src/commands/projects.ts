@@ -123,18 +123,7 @@ export function projectsRemoveCommand(
 
     const projectName = registryItem.project;
 
-    const removed = yield* RegistryService.use((service) =>
-      service.unregister(targetPath),
-    );
-
-    if (!removed) {
-      return yield* Effect.fail(
-        commandError(
-          "registry_error",
-          `Project not found in registry: ${targetPath}`,
-        ),
-      );
-    }
+    yield* RegistryService.use((service) => service.unregister(targetPath));
 
     yield* PrCacheService.use((service) => service.invalidate(projectName));
 

@@ -9,17 +9,12 @@ import {
   projectsRemoveCommand,
 } from "../src/commands/projects";
 import { runBunPromise } from "../src/effect/runtime";
-import { runMigrations } from "../src/services/db";
 import {
   livePrCacheService,
   PrCacheService,
   sqlGetCached,
   sqlSetCached,
 } from "../src/services/pr-cache-service";
-import {
-  liveRegistryService,
-  RegistryService,
-} from "../src/services/registry-service";
 import type { PRInfo } from "../src/tui/types";
 import { withTestServices } from "./helpers/services";
 

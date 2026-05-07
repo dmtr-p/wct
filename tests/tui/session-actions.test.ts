@@ -226,6 +226,7 @@ describe("createHandleSpaceSwitch", () => {
         worktreeIndex: 0,
         detailKind: "pr",
         label: "PR #42",
+        meta: { rollupState: null },
         action,
       },
     ];

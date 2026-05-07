@@ -135,14 +135,14 @@ describe("createPrepareOpenModal", () => {
       title: "Fix bug",
       state: "OPEN",
       headRefName: "fix-bug",
-      checks: [],
+      rollupState: null,
     };
     const otherPR: PRInfo = {
       number: 99,
       title: "Other",
       state: "OPEN",
       headRefName: "other",
-      checks: [],
+      rollupState: null,
     };
     const prData = new Map<string, PRInfo>([
       ["myproj/fix-bug", matchingPR],

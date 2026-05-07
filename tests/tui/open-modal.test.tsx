@@ -114,7 +114,7 @@ describe("OpenModal form variants", () => {
             title: "Feature from PR",
             state: "OPEN",
             headRefName: "feature-from-pr",
-            checks: [],
+            rollupState: null,
           },
         ]}
         profileNames={["backend"]}

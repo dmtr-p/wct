@@ -57,13 +57,14 @@ export function useGitHub(repos: RepoInfo[]) {
   const isFirstRefreshRef = useRef(true);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    if (reposRef.current.length === 0) return;
+    const repos = reposRef.current;
+    if (repos.length === 0) return;
     setLoading(true);
     const isFirst = isFirstRefreshRef.current;
     isFirstRefreshRef.current = false;
     try {
       const results = await Promise.allSettled(
-        reposRef.current.map(async (repo) => {
+        repos.map(async (repo) => {
           // On the first call only: skip fetch if the cache is fresh enough
           // (debounce against rapid TUI relaunches within 30s).
           if (isFirst) {
@@ -121,12 +122,8 @@ export function useGitHub(repos: RepoInfo[]) {
       // Handle errors: write last_error for repos that failed (but not aborts)
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
-        const repo = reposRef.current[i];
-        if (
-          result.status === "rejected" &&
-          !signal?.aborted &&
-          repo !== undefined
-        ) {
+        const repo = repos[i];
+        if (result.status === "rejected" && !signal?.aborted) {
           const errMsg =
             result.reason instanceof Error
               ? result.reason.message

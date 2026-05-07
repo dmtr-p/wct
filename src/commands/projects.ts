@@ -4,6 +4,7 @@ import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { registerProject } from "../services/project-registration";
+import { PrCacheService } from "../services/pr-cache-service";
 import { RegistryService } from "../services/registry-service";
 import { WorktreeService } from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
@@ -107,6 +108,21 @@ export function projectsRemoveCommand(
 
     const targetPath = mainDir ?? repoPath;
 
+    const registryItem = yield* RegistryService.use((service) =>
+      service.findByPath(targetPath),
+    );
+
+    if (!registryItem) {
+      return yield* Effect.fail(
+        commandError(
+          "registry_error",
+          `Project not found in registry: ${targetPath}`,
+        ),
+      );
+    }
+
+    const projectName = registryItem.project;
+
     const removed = yield* RegistryService.use((service) =>
       service.unregister(targetPath),
     );
@@ -119,6 +135,8 @@ export function projectsRemoveCommand(
         ),
       );
     }
+
+    yield* PrCacheService.use((service) => service.invalidate(projectName));
 
     if (json) {
       yield* jsonSuccess({ repo_path: targetPath, removed: true });

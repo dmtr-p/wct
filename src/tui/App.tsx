@@ -213,6 +213,13 @@ export function App() {
     return prs;
   }, [prData, openModalRepoProject]);
 
+  const openModalOnRefresh = useCallback(
+    (signal?: AbortSignal) => {
+      void refreshGitHub(openModalRepoProject, signal);
+    },
+    [refreshGitHub, openModalRepoProject],
+  );
+
   const sessionActions = useSessionActions({
     treeItems,
     filteredRepos,
@@ -495,7 +502,7 @@ export function App() {
           repoPath={openModalRepoPath}
           prList={openModalPRList}
           isRefreshing={refreshingProjects.has(openModalRepoProject)}
-          onRefresh={(signal) => refreshGitHub(openModalRepoProject, signal)}
+          onRefresh={openModalOnRefresh}
           onSubmit={modalActions.handleOpen}
           onCancel={() => setMode(Mode.Navigate)}
         />

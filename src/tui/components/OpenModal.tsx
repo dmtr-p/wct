@@ -703,7 +703,7 @@ export function OpenModal({
   onCancel,
   defaultBase,
   profileNames,
-  repoProject,
+  repoProject: _repoProject,
   repoPath,
   prList,
   isRefreshing,
@@ -726,8 +726,7 @@ export function OpenModal({
       controller.abort();
       abortControllerRef.current = null;
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount; onRefresh identity is stable per App render
-  }, [repoProject]);
+  }, [onRefresh]);
 
   const handleCancel = () => {
     abortControllerRef.current?.abort();

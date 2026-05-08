@@ -5,7 +5,7 @@ import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
-const GITHUB_POLL_INTERVAL = 30_000; // 30 seconds
+const GITHUB_POLL_INTERVAL = 120_000; // 120 seconds
 const CACHE_FRESH_WINDOW = 30_000; // skip initial fetch if cache is < 30s old
 
 function readCacheSync(repos: RepoInfo[]): Map<string, PRInfo> {
@@ -50,28 +50,43 @@ export function useGitHub(repos: RepoInfo[]) {
     readCacheSync(repos),
   );
   const [loading, setLoading] = useState(false);
+  // Set of project names currently being fetched — drives ↻ indicator re-renders
+  const [refreshingProjects, setRefreshingProjects] = useState<Set<string>>(
+    new Set(),
+  );
   const reposRef = useRef(repos);
   reposRef.current = repos;
   // Tracks whether the very first refresh call has completed; only the first
   // call applies the 30s "fresh cache" debounce (rapid-relaunch guard).
   const isFirstRefreshRef = useRef(true);
+  // Per-project in-flight promises — concurrent callers share the same fetch.
+  const inFlightRef = useRef<Map<string, Promise<void>>>(new Map());
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    const repos = reposRef.current;
-    if (repos.length === 0) return;
-    setLoading(true);
-    const isFirst = isFirstRefreshRef.current;
-    isFirstRefreshRef.current = false;
-    try {
-      const results = await Promise.allSettled(
-        repos.map(async (repo) => {
-          // On the first call only: skip fetch if the cache is fresh enough
+  const refreshOne = useCallback(
+    async (repo: RepoInfo, isFirst: boolean, signal?: AbortSignal) => {
+      const project = repo.project;
+
+      // Coalesce: return existing in-flight promise if one exists for this project
+      const existing = inFlightRef.current.get(project);
+      if (existing !== undefined) {
+        return existing;
+      }
+
+      const promise = (async () => {
+        setRefreshingProjects((prev) => {
+          const next = new Set(prev);
+          next.add(project);
+          return next;
+        });
+
+        try {
+          // On the first overall call only: skip fetch if the cache is fresh enough
           // (debounce against rapid TUI relaunches within 30s).
           if (isFirst) {
             let skipFetch = false;
             try {
               const cached = tuiRuntime.runSync(
-                PrCacheService.use((s) => s.getCached(repo.project)),
+                PrCacheService.use((s) => s.getCached(project)),
               );
               if (
                 cached !== null &&
@@ -82,71 +97,97 @@ export function useGitHub(repos: RepoInfo[]) {
             } catch {
               // If cache read fails, proceed with fetch
             }
-            if (skipFetch) {
-              return null; // signal: use whatever is already in prData
-            }
+            if (skipFetch) return;
           }
 
           // Fetch — may throw on error or abort
           const { entries, prs } = await fetchRepoData(repo, signal);
 
-          // Write to cache (only on success and only if not aborted)
+          // Write to cache only on success and only if not aborted
           if (!signal?.aborted) {
             tuiRuntime
-              .runPromise(
-                PrCacheService.use((s) => s.setCached(repo.project, prs)),
-              )
+              .runPromise(PrCacheService.use((s) => s.setCached(project, prs)))
               .catch(() => {
                 // Cache write failure is non-fatal
               });
-          }
 
-          return entries;
-        }),
-      );
-
-      // Build new map: start from current prData to preserve skipped repos,
-      // then overlay successful fetch results.
-      setPrData((prev) => {
-        const next = new Map(prev);
-        for (const result of results) {
-          if (result.status === "fulfilled" && result.value !== null) {
-            for (const [key, pr] of result.value) {
-              next.set(key, pr);
-            }
-          }
-        }
-        return next;
-      });
-
-      // Handle errors: write last_error for repos that failed (but not aborts)
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i];
-        const repo = repos[i];
-        if (result.status === "rejected" && !signal?.aborted) {
-          const errMsg =
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason ?? "unknown error");
-          tuiRuntime
-            .runPromise(
-              PrCacheService.use((s) => s.setError(repo.project, errMsg)),
-            )
-            .catch(() => {
-              // Cache error write failure is non-fatal
+            setPrData((prev) => {
+              const next = new Map(prev);
+              for (const [key, pr] of entries) {
+                next.set(key, pr);
+              }
+              return next;
             });
+          }
+        } catch (err) {
+          // Don't write error if aborted
+          if (!signal?.aborted) {
+            const errMsg =
+              err instanceof Error
+                ? err.message
+                : String(err ?? "unknown error");
+            tuiRuntime
+              .runPromise(
+                PrCacheService.use((s) => s.setError(project, errMsg)),
+              )
+              .catch(() => {
+                // Cache error write failure is non-fatal
+              });
+          }
+        } finally {
+          inFlightRef.current.delete(project);
+          setRefreshingProjects((prev) => {
+            const next = new Set(prev);
+            next.delete(project);
+            return next;
+          });
         }
+      })();
+
+      inFlightRef.current.set(project, promise);
+      return promise;
+    },
+    [],
+  );
+
+  // refresh(project?) — when called with a project, refreshes only that one;
+  // when called without args, refreshes all repos.
+  const refresh = useCallback(
+    async (project?: string, signal?: AbortSignal) => {
+      const repos = reposRef.current;
+      if (repos.length === 0) return;
+
+      const isFirst = isFirstRefreshRef.current;
+      isFirstRefreshRef.current = false;
+
+      const targets = project
+        ? repos.filter((r) => r.project === project)
+        : repos;
+
+      if (targets.length === 0) return;
+
+      setLoading(true);
+      try {
+        await Promise.allSettled(
+          targets.map((repo) => refreshOne(repo, isFirst, signal)),
+        );
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [refreshOne],
+  );
+
+  const isRefreshing = useCallback(
+    (project: string): boolean => refreshingProjects.has(project),
+    [refreshingProjects],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    refresh(controller.signal);
+    refresh(undefined, controller.signal);
     const id = setInterval(
-      () => refresh(controller.signal),
+      () => refresh(undefined, controller.signal),
       GITHUB_POLL_INTERVAL,
     );
     return () => {
@@ -155,5 +196,5 @@ export function useGitHub(repos: RepoInfo[]) {
     };
   }, [refresh]);
 
-  return { prData, loading, refresh };
+  return { prData, loading, refresh, isRefreshing, refreshingProjects };
 }

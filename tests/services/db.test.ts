@@ -1,10 +1,10 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "vitest";
 import {
-  MIGRATIONS,
-  TARGET_SCHEMA_VERSION,
   getCurrentSchemaVersion,
+  MIGRATIONS,
   runMigrations,
+  TARGET_SCHEMA_VERSION,
 } from "../../src/services/db";
 
 describe("wct-db migration runner", () => {

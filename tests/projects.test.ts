@@ -1,20 +1,15 @@
+import { Database } from "bun:sqlite";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   projectsAddCommand,
   projectsRemoveCommand,
 } from "../src/commands/projects";
 import { runBunPromise } from "../src/effect/runtime";
-import {
-  livePrCacheService,
-  PrCacheService,
-  sqlGetCached,
-  sqlSetCached,
-} from "../src/services/pr-cache-service";
+import { sqlGetCached, sqlSetCached } from "../src/services/pr-cache-service";
 import type { PRInfo } from "../src/tui/types";
 import { withTestServices } from "./helpers/services";
 
@@ -451,7 +446,7 @@ describe("projects command", () => {
     // Verify the cache row exists before removal
     const beforeRemove = sqlGetCached(db, "cache-test-project");
     expect(beforeRemove).not.toBeNull();
-    expect(beforeRemove!.payload).toEqual([prA]);
+    expect(beforeRemove?.payload).toEqual([prA]);
     db.close();
 
     // Run projectsRemoveCommand via the live CLI process

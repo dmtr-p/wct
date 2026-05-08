@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { runMigrations } from "../../src/services/db";
 import {
@@ -47,9 +47,9 @@ describe("PrCacheService SQL helpers", () => {
     sqlSetCached(db, "my-project", [PR_A, PR_B]);
     const entry = sqlGetCached(db, "my-project");
     expect(entry).not.toBeNull();
-    expect(entry!.payload).toEqual([PR_A, PR_B]);
-    expect(entry!.lastError).toBeNull();
-    expect(entry!.fetchedAt).toBeGreaterThan(0);
+    expect(entry?.payload).toEqual([PR_A, PR_B]);
+    expect(entry?.lastError).toBeNull();
+    expect(entry?.fetchedAt).toBeGreaterThan(0);
     db.close();
   });
 
@@ -58,7 +58,7 @@ describe("PrCacheService SQL helpers", () => {
     sqlSetCached(db, "empty-project", []);
     const entry = sqlGetCached(db, "empty-project");
     expect(entry).not.toBeNull();
-    expect(entry!.payload).toEqual([]);
+    expect(entry?.payload).toEqual([]);
     db.close();
   });
 
@@ -75,9 +75,9 @@ describe("PrCacheService SQL helpers", () => {
     sqlSetError(db, "err-project", "network timeout");
     const entry = sqlGetCached(db, "err-project");
     expect(entry).not.toBeNull();
-    expect(entry!.lastError).toBe("network timeout");
+    expect(entry?.lastError).toBe("network timeout");
     // sentinel row has empty payload
-    expect(entry!.payload).toEqual([]);
+    expect(entry?.payload).toEqual([]);
     db.close();
   });
 
@@ -87,8 +87,8 @@ describe("PrCacheService SQL helpers", () => {
     sqlSetError(db, "has-data", "transient error");
     const entry = sqlGetCached(db, "has-data");
     expect(entry).not.toBeNull();
-    expect(entry!.payload).toEqual([PR_A]);
-    expect(entry!.lastError).toBe("transient error");
+    expect(entry?.payload).toEqual([PR_A]);
+    expect(entry?.lastError).toBe("transient error");
     db.close();
   });
 
@@ -98,8 +98,8 @@ describe("PrCacheService SQL helpers", () => {
     sqlSetCached(db, "recover-project", [PR_B]);
     const entry = sqlGetCached(db, "recover-project");
     expect(entry).not.toBeNull();
-    expect(entry!.payload).toEqual([PR_B]);
-    expect(entry!.lastError).toBeNull();
+    expect(entry?.payload).toEqual([PR_B]);
+    expect(entry?.lastError).toBeNull();
     db.close();
   });
 
@@ -114,7 +114,7 @@ describe("PrCacheService SQL helpers", () => {
       db1.run("PRAGMA journal_mode=WAL");
       runMigrations(db1);
 
-      db2 = new Database(dbPath, { create: false });
+      db2 = new Database(dbPath, { readwrite: true, create: false });
       db2.run("PRAGMA journal_mode=WAL");
       runMigrations(db2);
 
@@ -127,12 +127,12 @@ describe("PrCacheService SQL helpers", () => {
       // Read back from the other connection to verify WAL visibility
       const alpha = sqlGetCached(db2, "proj-alpha");
       expect(alpha).not.toBeNull();
-      expect(alpha!.payload).toEqual([PR_A, PR_B]);
+      expect(alpha?.payload).toEqual([PR_A, PR_B]);
 
       const beta = sqlGetCached(db1, "proj-beta");
       expect(beta).not.toBeNull();
-      expect(beta!.payload).toEqual([PR_B]);
-      expect(beta!.lastError).toBe("some error");
+      expect(beta?.payload).toEqual([PR_B]);
+      expect(beta?.lastError).toBe("some error");
     } finally {
       try {
         db1?.close();

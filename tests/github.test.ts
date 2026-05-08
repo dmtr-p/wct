@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   computeRollup,
   findMatchingRemote,
-  parsePrArg,
   parseGhPrList,
+  parsePrArg,
   parseRemoteOwnerRepo,
 } from "../src/services/github-service";
 

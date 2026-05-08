@@ -46,12 +46,12 @@ export function computeRollup(
     // `conclusion`; `conclusion` is only meaningful once `status ===
     // "COMPLETED"` — until then `status` is the live in-flight signal.
     const raw =
-      typeof e["state"] === "string"
-        ? e["state"]
-        : e["status"] === "COMPLETED" && typeof e["conclusion"] === "string"
-          ? e["conclusion"]
-          : typeof e["status"] === "string"
-            ? e["status"]
+      typeof e.state === "string"
+        ? e.state
+        : e.status === "COMPLETED" && typeof e.conclusion === "string"
+          ? e.conclusion
+          : typeof e.status === "string"
+            ? e.status
             : null;
 
     if (raw === "FAILURE" || raw === "TIMED_OUT" || raw === "STARTUP_FAILURE") {

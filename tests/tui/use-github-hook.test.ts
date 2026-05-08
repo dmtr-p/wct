@@ -6,7 +6,8 @@ import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 // Mock tuiRuntime before importing the hook
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
-    runPromise: vi.fn(),
+    runPromise: vi.fn(() => Promise.resolve(undefined)),
+    runSync: vi.fn(() => null),
   },
 }));
 
@@ -97,6 +98,7 @@ async function renderUseGitHub(repos: RepoInfo[]) {
 describe("useGitHub hook", () => {
   beforeEach(() => {
     mockRunPromise.mockReset();
+    mockRunPromise.mockResolvedValue(undefined);
   });
 
   test("does not fetch when repo list is empty", async () => {

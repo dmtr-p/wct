@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { afterEach, beforeEach, expect } from "vitest";
+import { TARGET_SCHEMA_VERSION } from "../../src/services/db";
 import { RegistryService } from "../../src/services/registry-service";
 import { WctTestLayer } from "../helpers/effect-vitest";
 
@@ -85,7 +86,7 @@ describe("registry-service", () => {
               )
               .get() as { version: number } | null;
             expect(row).not.toBeNull();
-            expect(row?.version).toBe(1);
+            expect(row?.version).toBe(TARGET_SCHEMA_VERSION);
           } finally {
             db.close();
           }
@@ -147,7 +148,7 @@ describe("registry-service", () => {
               )
               .get() as { version: number } | null;
             expect(row).not.toBeNull();
-            expect(row?.version).toBe(1);
+            expect(row?.version).toBe(TARGET_SCHEMA_VERSION);
           } finally {
             db.close();
           }
@@ -167,7 +168,9 @@ describe("registry-service", () => {
           const rows = db
             .query("SELECT version FROM schema_version ORDER BY version ASC")
             .all() as { version: number }[];
-          expect(rows.map((r) => r.version)).toEqual([1]);
+          expect(rows.map((r) => r.version)).toEqual(
+            Array.from({ length: TARGET_SCHEMA_VERSION }, (_, i) => i + 1),
+          );
         } finally {
           db.close();
         }

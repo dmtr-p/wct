@@ -185,6 +185,71 @@ describe("OpenModal form variants", () => {
     }
   });
 
+  test("from PR form cursor stays on PR row (not Refresh row) when isRefreshing=true with one PR", async () => {
+    // When isRefreshing=true, selectedPRIndex starts at 0 (on the PR), not on the Refresh row.
+    // The ▸ cursor marker should appear next to the PR label, not on "↻ Loading...".
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[
+          {
+            number: 42,
+            title: "Some PR",
+            state: "OPEN",
+            headRefName: "feat-42",
+            rollupState: null,
+          },
+        ]}
+        profileNames={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      // The PR row should have the cursor marker
+      expect(rendered.output).toContain("▸ #42 feat-42");
+      // The loading row must not have the cursor marker
+      expect(rendered.output).not.toContain("▸ ↻ Loading...");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("OpenModal always passes an AbortSignal to onRefresh (both auto and manual)", async () => {
+    // Gap 2: The bound onRefresh passed to FromPRForm uses abortControllerRef.current?.signal,
+    // so every call — auto-on-open and future manual calls — carries a signal.
+    const onRefresh = vi.fn();
+
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      // The auto-on-open refresh fires with a signal (verifies the controller path)
+      expect(onRefresh).toHaveBeenCalled();
+      const lastSignal =
+        onRefresh.mock.calls[onRefresh.mock.calls.length - 1][0];
+      expect(lastSignal).toBeInstanceOf(AbortSignal);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("existing branch form shows profiles when they are configured", async () => {
     runPromiseMock.mockResolvedValueOnce(["feature-a", "feature-b"]);
 

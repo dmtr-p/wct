@@ -312,7 +312,7 @@ export function FromPRForm({
   prList: PRInfo[];
   profileNames: string[];
   isRefreshing: boolean;
-  onRefresh: (signal?: AbortSignal) => void;
+  onRefresh: () => void;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -363,7 +363,15 @@ export function FromPRForm({
   // Total navigable items: filtered PRs + refresh row (always at bottom)
   const navigableCount = filteredPRItems.length + 1;
   const refreshRowIndex = filteredPRItems.length;
+  const isRefreshRowSelectable = !isRefreshing;
   const isRefreshRowSelected = selectedPRIndex === refreshRowIndex;
+
+  // When isRefreshing flips to true, move cursor off the Refresh row
+  useEffect(() => {
+    if (isRefreshing && selectedPRIndex === refreshRowIndex) {
+      setSelectedPRIndex(Math.max(0, refreshRowIndex - 1));
+    }
+  }, [isRefreshing, selectedPRIndex, refreshRowIndex]);
 
   const submission = useMemo(
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
@@ -397,11 +405,16 @@ export function FromPRForm({
           return;
         }
         if (key.downArrow) {
-          setSelectedPRIndex((s) => Math.min(navigableCount - 1, s + 1));
+          setSelectedPRIndex((s) => {
+            const max = isRefreshRowSelectable
+              ? navigableCount - 1
+              : refreshRowIndex - 1;
+            return Math.min(max, s + 1);
+          });
           return;
         }
         if (key.return) {
-          if (isRefreshRowSelected && !isRefreshing) {
+          if (isRefreshRowSelected && isRefreshRowSelectable) {
             onRefresh();
           }
           return;
@@ -755,7 +768,7 @@ export function OpenModal({
           prList={prList}
           profileNames={profileNames}
           isRefreshing={isRefreshing}
-          onRefresh={(signal) => onRefresh(signal)}
+          onRefresh={() => onRefresh(abortControllerRef.current?.signal)}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}

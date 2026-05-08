@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,6 +9,8 @@ import {
   projectsRemoveCommand,
 } from "../src/commands/projects";
 import { runBunPromise } from "../src/effect/runtime";
+import { sqlGetCached, sqlSetCached } from "../src/services/pr-cache-service";
+import type { PRInfo } from "../src/tui/types";
 import { withTestServices } from "./helpers/services";
 
 const CLI_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
@@ -412,6 +415,59 @@ describe("projects command", () => {
     } finally {
       cwdSpy.mockRestore();
     }
+  });
+
+  test("projectsRemoveCommand clears pr_cache row for the removed project", async () => {
+    // Seed registry and pr_cache using live services pointing at the temp HOME
+    // (process.env.HOME = tempDir is set by beforeEach above)
+    const addResult = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "cache-test-project",
+      "--json",
+    ]);
+    expect(addResult.exitCode).toBe(0);
+
+    // Manually seed a pr_cache row for the project using the same on-disk DB
+    const dbPath = `${tempDir}/.wct/wct.db`;
+    const db = new Database(dbPath);
+    db.run("PRAGMA journal_mode=WAL");
+    const prA: PRInfo = {
+      number: 42,
+      title: "feat: cached pr",
+      state: "OPEN",
+      headRefName: "feat/cached",
+      rollupState: "success",
+    };
+    sqlSetCached(db, "cache-test-project", [prA]);
+
+    // Verify the cache row exists before removal
+    const beforeRemove = sqlGetCached(db, "cache-test-project");
+    expect(beforeRemove).not.toBeNull();
+    expect(beforeRemove?.payload).toEqual([prA]);
+    db.close();
+
+    // Run projectsRemoveCommand via the live CLI process
+    const removeResult = runCliProcess([
+      "projects",
+      "remove",
+      repoDir,
+      "--json",
+    ]);
+    expect(removeResult.exitCode).toBe(0);
+    expect(JSON.parse(removeResult.stdout.toString())).toEqual({
+      ok: true,
+      data: { repo_path: resolvedRepoDir, removed: true },
+    });
+
+    // Assert the pr_cache row is gone
+    const db2 = new Database(dbPath);
+    db2.run("PRAGMA journal_mode=WAL");
+    const afterRemove = sqlGetCached(db2, "cache-test-project");
+    expect(afterRemove).toBeNull();
+    db2.close();
   });
 
   test("projects --help shows add, remove, and list subcommands", () => {

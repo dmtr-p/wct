@@ -1,7 +1,5 @@
 // src/tui/types.ts
 
-import type { PrCheckInfo } from "../services/github-service";
-
 /** TUI interaction modes */
 export type Mode =
   | { type: "Navigate" }
@@ -124,8 +122,7 @@ export const Mode = {
 export type TreeItem =
   | { type: "repo"; repoIndex: number }
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
-  | DetailItem<"pr">
-  | DetailItem<"check", { state?: string }>
+  | DetailItem<"pr", { rollupState: "success" | "failure" | "pending" | null }>
   | DetailItem<"pane-header">
   | DetailItem<
       "pane",
@@ -139,7 +136,7 @@ export type TreeItem =
       }
     >;
 
-export type DetailKind = "pr" | "check" | "pane-header" | "pane";
+export type DetailKind = "pr" | "pane-header" | "pane";
 
 type DetailItem<
   TKind extends DetailKind,
@@ -176,7 +173,7 @@ export interface PRInfo {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   headRefName: string;
-  checks: PrCheckInfo[];
+  rollupState: "success" | "failure" | "pending" | null;
 }
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
@@ -184,42 +181,4 @@ export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
 /** Format a pending action key */
 export function pendingKey(project: string, branch: string): string {
   return `${project}/${branch}`;
-}
-
-/** Map check state to display icon */
-export function checkIcon(state: string): string {
-  switch (state) {
-    case "SUCCESS":
-      return "✓";
-    case "FAILURE":
-      return "✗";
-    case "PENDING":
-    case "QUEUED":
-    case "IN_PROGRESS":
-      return "◌";
-    case "SKIPPED":
-      return "⊘";
-    case "CANCELLED":
-      return "⊘";
-    default:
-      return "?";
-  }
-}
-
-/** Map check state to Ink color name */
-export function checkColor(
-  state: string,
-): "green" | "red" | "yellow" | "dim" | undefined {
-  switch (state) {
-    case "SUCCESS":
-      return "green";
-    case "FAILURE":
-      return "red";
-    case "PENDING":
-    case "QUEUED":
-    case "IN_PROGRESS":
-      return "yellow";
-    default:
-      return "dim";
-  }
 }

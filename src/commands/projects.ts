@@ -3,6 +3,7 @@ import { Console, Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
+import { PrCacheService } from "../services/pr-cache-service";
 import { registerProject } from "../services/project-registration";
 import { RegistryService } from "../services/registry-service";
 import { WorktreeService } from "../services/worktree-service";
@@ -107,11 +108,11 @@ export function projectsRemoveCommand(
 
     const targetPath = mainDir ?? repoPath;
 
-    const removed = yield* RegistryService.use((service) =>
-      service.unregister(targetPath),
+    const registryItem = yield* RegistryService.use((service) =>
+      service.findByPath(targetPath),
     );
 
-    if (!removed) {
+    if (!registryItem) {
       return yield* Effect.fail(
         commandError(
           "registry_error",
@@ -119,6 +120,14 @@ export function projectsRemoveCommand(
         ),
       );
     }
+
+    const projectName = registryItem.project;
+
+    yield* RegistryService.use((service) => service.unregister(targetPath));
+
+    yield* Effect.ignore(
+      PrCacheService.use((service) => service.invalidate(projectName)),
+    );
 
     if (json) {
       yield* jsonSuccess({ repo_path: targetPath, removed: true });

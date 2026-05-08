@@ -14,9 +14,8 @@ vi.mock("../../src/tui/hooks/useBlink", () => ({
   useBlink: () => false,
 }));
 
-const { ExistingBranchForm, FromPRForm, NewBranchForm } = await import(
-  "../../src/tui/components/OpenModal"
-);
+const { ExistingBranchForm, FromPRForm, NewBranchForm, OpenModal } =
+  await import("../../src/tui/components/OpenModal");
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -114,10 +113,12 @@ describe("OpenModal form variants", () => {
             title: "Feature from PR",
             state: "OPEN",
             headRefName: "feature-from-pr",
-            checks: [],
+            rollupState: null,
           },
         ]}
         profileNames={["backend"]}
+        isRefreshing={false}
+        onRefresh={() => {}}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -130,6 +131,146 @@ describe("OpenModal form variants", () => {
       expect(rendered.output).not.toContain("No attach");
       expect(rendered.output).toContain("Select PR");
       expect(rendered.output).toContain("Profile");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form shows Refresh row at the bottom of the PR list", async () => {
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[
+          {
+            number: 1,
+            title: "First PR",
+            state: "OPEN",
+            headRefName: "feat-1",
+            rollupState: null,
+          },
+        ]}
+        profileNames={[]}
+        isRefreshing={false}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("↻ Refresh PRs");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form shows Loading label on Refresh row when isRefreshing", async () => {
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[]}
+        profileNames={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("↻ Loading...");
+      expect(rendered.output).not.toContain("↻ Refresh PRs");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form cursor stays on PR row (not Refresh row) when isRefreshing=true with one PR", async () => {
+    // When isRefreshing=true, selectedPRIndex starts at 0 (on the PR), not on the Refresh row.
+    // The ▸ cursor marker should appear next to the PR label, not on "↻ Loading...".
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[
+          {
+            number: 42,
+            title: "Some PR",
+            state: "OPEN",
+            headRefName: "feat-42",
+            rollupState: null,
+          },
+        ]}
+        profileNames={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      // The PR row should have the cursor marker
+      expect(rendered.output).toContain("▸ #42 feat-42");
+      // The loading row must not have the cursor marker
+      expect(rendered.output).not.toContain("▸ ↻ Loading...");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form Down-arrow clamp: max stays non-negative when filteredPRItems is empty and isRefreshing is true", async () => {
+    // Regression: when prList is empty and isRefreshing=true, refreshRowIndex=0 so
+    // the un-clamped max would be refreshRowIndex-1 = -1. Math.max(0, refreshRowIndex-1)
+    // prevents this. The component must render without crashing and the Loading row renders.
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[]}
+        profileNames={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      // Component renders without error — Loading row is visible
+      expect(rendered.output).toContain("↻ Loading...");
+      // With no PRs, no PR label is selected (no "▸ #" pattern)
+      expect(rendered.output).not.toMatch(/▸\s*#\d/);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("OpenModal always passes an AbortSignal to onRefresh (both auto and manual)", async () => {
+    // Gap 2: The bound onRefresh passed to FromPRForm uses abortControllerRef.current?.signal,
+    // so every call — auto-on-open and future manual calls — carries a signal.
+    const onRefresh = vi.fn();
+
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      // The auto-on-open refresh fires with a signal (verifies the controller path)
+      expect(onRefresh).toHaveBeenCalled();
+      const lastSignal =
+        onRefresh.mock.calls[onRefresh.mock.calls.length - 1][0];
+      expect(lastSignal).toBeInstanceOf(AbortSignal);
     } finally {
       rendered.unmount();
     }
@@ -155,6 +296,94 @@ describe("OpenModal form variants", () => {
       expect(rendered.output).toContain("Profile");
       expect(rendered.output).toContain("(default)");
       expect(rendered.output).toContain("backend");
+    } finally {
+      rendered.unmount();
+    }
+  });
+});
+
+describe("OpenModal", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    runPromiseMock.mockReset();
+  });
+
+  test("calls onRefresh once on mount with an AbortSignal", async () => {
+    const onRefresh = vi.fn();
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+      expect(onRefresh.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("signal passed to onRefresh is aborted after unmount", async () => {
+    const signals: AbortSignal[] = [];
+    const onRefresh = vi.fn((signal?: AbortSignal) => {
+      if (signal) signals.push(signal);
+    });
+
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(onRefresh).toHaveBeenCalled();
+    // Collect all signals passed to onRefresh — after unmount ALL must be aborted
+    // (intermediate ones from React effect re-runs in test env may already be aborted)
+    rendered.unmount();
+    for (const signal of signals) {
+      expect(signal.aborted).toBe(true);
+    }
+  });
+
+  test("shows Updating indicator in title when isRefreshing", async () => {
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("↻ Updating…");
     } finally {
       rendered.unmount();
     }

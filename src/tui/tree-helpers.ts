@@ -37,6 +37,7 @@ interface ResolveStatusBarPropsOptions {
   mode: Mode;
   items: TreeItem[];
   selectedIndex: number;
+  repos?: RepoInfo[];
 }
 
 interface ResolveExpandedRightArrowActionOptions {
@@ -80,6 +81,8 @@ type CloseSelectedWorktreeAction =
 export interface ResolvedStatusBarProps {
   mode: Mode;
   selectedPaneRow?: boolean;
+  /** The project identifier of the repo that the cursor is on or under. */
+  selectedProject?: string;
 }
 
 export function buildTreeItems({
@@ -118,21 +121,12 @@ export function buildTreeItems({
             worktreeIndex: wi,
             detailKind: "pr",
             label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
+            meta: { rollupState: pr.rollupState },
             action: () =>
               Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
                 cwd: repo.repoPath,
               }),
           });
-          for (const check of pr.checks) {
-            items.push({
-              type: "detail",
-              repoIndex: ri,
-              worktreeIndex: wi,
-              detailKind: "check",
-              label: check.name,
-              meta: { state: check.state },
-            });
-          }
         }
 
         // Panes for this worktree
@@ -184,7 +178,6 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   const base = `detail:${repo.id}/${wt.branch}/${item.detailKind}`;
   if (item.detailKind === "pane" && item.meta.paneId)
     return `${base}/${item.meta.paneId}`;
-  if (item.detailKind === "check") return `${base}/${item.label}`;
   return base;
 }
 
@@ -430,11 +423,16 @@ export function resolveStatusBarProps({
   mode,
   items,
   selectedIndex,
+  repos,
 }: ResolveStatusBarPropsOptions): ResolvedStatusBarProps {
+  const selectedItem = items[selectedIndex];
+  const selectedProject =
+    selectedItem && repos ? repos[selectedItem.repoIndex]?.project : undefined;
+
   return {
     mode,
     selectedPaneRow:
-      items[selectedIndex]?.type === "detail" &&
-      items[selectedIndex]?.detailKind === "pane",
+      selectedItem?.type === "detail" && selectedItem.detailKind === "pane",
+    selectedProject,
   };
 }

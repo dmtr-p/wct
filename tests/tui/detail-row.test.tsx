@@ -188,23 +188,75 @@ describe("DetailRow", () => {
     unmount();
   });
 
-  test("truncates check label when width is tight", async () => {
-    // overhead=12 (indent 8 + selectorPrefix 2 + icon 1 + space 1), maxWidth=20 → available=8
-    // "ci/backend" (10) → "ci/ba..."
+  test("renders rollup success icon for pr row", async () => {
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
         repoIndex: 0,
         worktreeIndex: 0,
-        detailKind: "check",
-        label: "ci/backend",
-        meta: { state: "success" },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "check" }>,
+        detailKind: "pr",
+        label: "PR #42: fix login (OPEN)",
+        meta: { rollupState: "success" as const },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
       isSelected: false,
-      maxWidth: 20,
+      maxWidth: 80,
     });
-    expect(output).toContain("ci/ba...");
-    expect(output).not.toContain("ci/backend");
+    expect(output).toContain("✓");
+    expect(output).toContain("PR #42: fix login (OPEN)");
+    unmount();
+  });
+
+  test("renders rollup failure icon for pr row", async () => {
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pr",
+        label: "PR #43: broken build (OPEN)",
+        meta: { rollupState: "failure" as const },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
+      isSelected: false,
+      maxWidth: 80,
+    });
+    expect(output).toContain("✗");
+    unmount();
+  });
+
+  test("renders rollup pending icon for pr row", async () => {
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pr",
+        label: "PR #44: in progress (OPEN)",
+        meta: { rollupState: "pending" as const },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
+      isSelected: false,
+      maxWidth: 80,
+    });
+    expect(output).toContain("◌");
+    unmount();
+  });
+
+  test("renders no rollup icon for pr row when rollupState is null", async () => {
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pr",
+        label: "PR #45: no checks (OPEN)",
+        meta: { rollupState: null },
+      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
+      isSelected: false,
+      maxWidth: 80,
+    });
+    expect(output).not.toContain("✓");
+    expect(output).not.toContain("✗");
+    expect(output).not.toContain("◌");
+    expect(output).toContain("PR #45: no checks (OPEN)");
     unmount();
   });
 });

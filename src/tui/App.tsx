@@ -36,7 +36,12 @@ export function App() {
   const termCols = stdout?.columns ?? 80;
   const termRows = stdout?.rows ?? 24;
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
-  const { prData } = useGitHub(repos);
+  const {
+    prData,
+    errors: githubErrors,
+    refresh: refreshGitHub,
+    refreshingProjects,
+  } = useGitHub(repos);
   const {
     client: tmuxClient,
     sessions,
@@ -177,6 +182,7 @@ export function App() {
     mode,
     items: treeItems,
     selectedIndex,
+    repos: filteredRepos,
   });
 
   const refreshAll = useCallback(async () => {
@@ -197,7 +203,22 @@ export function App() {
     });
   }, []);
 
-  const [openModalPRList, setOpenModalPRList] = useState<PRInfo[]>([]);
+  const openModalPRList = useMemo(() => {
+    const prs: PRInfo[] = [];
+    for (const [key, pr] of prData) {
+      if (key.startsWith(`${openModalRepoProject}/`)) {
+        prs.push(pr);
+      }
+    }
+    return prs;
+  }, [prData, openModalRepoProject]);
+
+  const openModalOnRefresh = useCallback(
+    (signal?: AbortSignal) => {
+      void refreshGitHub(openModalRepoProject, signal);
+    },
+    [refreshGitHub, openModalRepoProject],
+  );
 
   const sessionActions = useSessionActions({
     treeItems,
@@ -226,7 +247,6 @@ export function App() {
     filteredRepos,
     selectedIndex,
     mode,
-    prData,
     openModalRepoProject,
     openModalRepoPath,
     setMode,
@@ -236,7 +256,6 @@ export function App() {
     setOpenModalProfiles,
     setOpenModalRepoProject,
     setOpenModalRepoPath,
-    setOpenModalPRList,
     showActionError,
     clearActionError,
     switchSession,
@@ -302,6 +321,7 @@ export function App() {
     handleSpaceSwitch: sessionActions.handleSpaceSwitch,
     handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
     handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
+    refreshRepo: (project: string) => void refreshGitHub(project),
   };
 
   const expCtx: ExpandedContext = {
@@ -468,6 +488,8 @@ export function App() {
           panes={panes}
           expandedWorktreeKey={expandedWorktreeKey}
           maxWidth={termCols}
+          refreshingProjects={refreshingProjects}
+          errors={githubErrors}
         />
       </Box>
       {mode.type === "OpenModal" ? (
@@ -479,6 +501,8 @@ export function App() {
           repoProject={openModalRepoProject}
           repoPath={openModalRepoPath}
           prList={openModalPRList}
+          isRefreshing={refreshingProjects.has(openModalRepoProject)}
+          onRefresh={openModalOnRefresh}
           onSubmit={modalActions.handleOpen}
           onCancel={() => setMode(Mode.Navigate)}
         />
@@ -510,6 +534,11 @@ export function App() {
             {...statusBarProps}
             searchQuery={searchQuery}
             hasClient={tmuxClient !== null}
+            repoError={
+              statusBarProps.selectedProject
+                ? githubErrors.get(statusBarProps.selectedProject)
+                : undefined
+            }
           />
         </Box>
       )}

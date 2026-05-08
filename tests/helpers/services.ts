@@ -12,6 +12,11 @@ import {
   liveIdeService,
 } from "../../src/services/ide-service";
 import {
+  livePrCacheService,
+  PrCacheService,
+  type PrCacheServiceApi,
+} from "../../src/services/pr-cache-service";
+import {
   liveRegistryService,
   RegistryService,
   type RegistryServiceApi,
@@ -43,6 +48,7 @@ export interface ServiceOverrides {
   github?: GitHubServiceApi;
   ide?: IdeServiceApi;
   json?: boolean;
+  prCache?: PrCacheServiceApi;
   registry?: RegistryServiceApi;
   setup?: SetupServiceApi;
   tmux?: TmuxServiceApi;
@@ -85,6 +91,11 @@ export function withTestServices<A, E, R>(
     provided,
     WorktreeService,
     overrides.worktree ?? liveWorktreeService,
+  );
+  provided = Effect.provideService(
+    provided,
+    PrCacheService,
+    overrides.prCache ?? livePrCacheService,
   );
   provided = Effect.provideService(
     provided,

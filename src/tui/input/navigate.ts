@@ -21,6 +21,7 @@ export interface NavigateContext {
   handleDownSelectedWorktree: () => void;
   handleCloseSelectedWorktree: () => void;
   prepareAddProjectModal: () => void;
+  refreshRepo: (project: string) => void;
 }
 
 export function handleNavigateInput(
@@ -74,6 +75,11 @@ export function handleNavigateInput(
 
   const currentRepo = ctx.filteredRepos[currentItem.repoIndex];
   if (!currentRepo) return;
+
+  if (input === "r") {
+    ctx.refreshRepo(currentRepo.project);
+    return;
+  }
 
   const currentWorktree =
     currentItem.type === "worktree" && currentItem.worktreeIndex !== undefined

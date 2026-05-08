@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
 import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
@@ -34,6 +34,8 @@ export interface OpenModalProps {
   repoProject: string;
   repoPath: string;
   prList: PRInfo[];
+  isRefreshing: boolean;
+  onRefresh: (signal?: AbortSignal) => void;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────
@@ -301,12 +303,16 @@ type FromPRField =
 export function FromPRForm({
   prList,
   profileNames,
+  isRefreshing,
+  onRefresh,
   onSubmit,
   onBack,
   width,
 }: {
   prList: PRInfo[];
   profileNames: string[];
+  isRefreshing: boolean;
+  onRefresh: () => void;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -343,10 +349,29 @@ export function FromPRForm({
     [prList],
   );
 
+  // Refresh row pinned at the bottom — non-selectable while refreshing
+  const refreshItem: ListItem = {
+    label: isRefreshing ? "↻ Loading..." : "↻ Refresh PRs",
+    value: "__refresh__",
+  };
+
   const filteredPRItems = useMemo(
     () => filterItems(prItems, filterQuery),
     [prItems, filterQuery],
   );
+
+  // Total navigable items: filtered PRs + refresh row (always at bottom)
+  const navigableCount = filteredPRItems.length + 1;
+  const refreshRowIndex = filteredPRItems.length;
+  const isRefreshRowSelectable = !isRefreshing;
+  const isRefreshRowSelected = selectedPRIndex === refreshRowIndex;
+
+  // When isRefreshing flips to true, move cursor off the Refresh row
+  useEffect(() => {
+    if (isRefreshing && selectedPRIndex === refreshRowIndex) {
+      setSelectedPRIndex(Math.max(0, refreshRowIndex - 1));
+    }
+  }, [isRefreshing, selectedPRIndex, refreshRowIndex]);
 
   const submission = useMemo(
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
@@ -373,13 +398,25 @@ export function FromPRForm({
       // PR list navigation
       if (currentField === "prList") {
         if (key.upArrow) {
-          setSelectedPRIndex((s) => Math.max(0, s - 1));
+          setSelectedPRIndex((s) => {
+            if (s === refreshRowIndex) return Math.max(0, refreshRowIndex - 1);
+            return Math.max(0, s - 1);
+          });
           return;
         }
         if (key.downArrow) {
-          setSelectedPRIndex((s) =>
-            Math.min(filteredPRItems.length - 1, s + 1),
-          );
+          setSelectedPRIndex((s) => {
+            const max = isRefreshRowSelectable
+              ? navigableCount - 1
+              : Math.max(0, refreshRowIndex - 1);
+            return Math.min(max, s + 1);
+          });
+          return;
+        }
+        if (key.return) {
+          if (isRefreshRowSelected && isRefreshRowSelectable) {
+            onRefresh();
+          }
           return;
         }
         if (key.backspace || key.delete) {
@@ -387,7 +424,7 @@ export function FromPRForm({
           setSelectedPRIndex(0);
           return;
         }
-        if (input && !key.ctrl && !key.meta && !key.return) {
+        if (input && !key.ctrl && !key.meta) {
           setFilterQuery((q) => q + input);
           setSelectedPRIndex(0);
           return;
@@ -395,6 +432,14 @@ export function FromPRForm({
       }
     },
     { isActive: true },
+  );
+
+  // The display list shown in ScrollableList includes filtered PRs + refresh row.
+  // isRefreshing is the real dep for refreshItem label — biome-ignore needed below.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshItem depends on isRefreshing, listed explicitly
+  const displayItems: ListItem[] = useMemo(
+    () => [...filteredPRItems, refreshItem],
+    [filteredPRItems, isRefreshing],
   );
 
   return (
@@ -407,7 +452,7 @@ export function FromPRForm({
         width={width}
       >
         <ScrollableList
-          items={prItems}
+          items={displayItems}
           selectedIndex={selectedPRIndex}
           filterQuery={filterQuery}
           maxVisible={8}
@@ -433,11 +478,14 @@ export function FromPRForm({
         noIde={noIde}
         autoSwitch={autoSwitch}
         canSubmit={
-          submission.canSubmit && Boolean(filteredPRItems[selectedPRIndex])
+          submission.canSubmit &&
+          !isRefreshRowSelected &&
+          Boolean(filteredPRItems[selectedPRIndex])
         }
         onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={() => {
+          if (isRefreshRowSelected) return;
           const selectedPR = filteredPRItems[selectedPRIndex];
           if (!selectedPR || !submission.canSubmit) return;
           const pr = prList.find((p) => String(p.number) === selectedPR.value);
@@ -658,6 +706,8 @@ export function OpenModal({
   repoProject: _repoProject,
   repoPath,
   prList,
+  isRefreshing,
+  onRefresh,
 }: OpenModalProps) {
   const [step, setStep] = useState<ModalStep>("selector");
 
@@ -665,13 +715,32 @@ export function OpenModal({
     if (visible) setStep("selector");
   }, [visible]);
 
+  // One AbortController per modal mount — aborted on unmount or explicit cancel.
+  const abortControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    // Auto-refresh on open so the PR list is fresh
+    onRefresh(controller.signal);
+    return () => {
+      controller.abort();
+      abortControllerRef.current = null;
+    };
+  }, [onRefresh]);
+
+  const handleCancel = () => {
+    abortControllerRef.current?.abort();
+    onCancel();
+  };
+
   if (!visible) return null;
 
+  const updatingIndicator = isRefreshing ? " ↻ Updating…" : "";
   const titleMap: Record<ModalStep, string> = {
-    selector: "Open Worktree",
-    newBranch: "Open Worktree — New Branch",
-    fromPR: "Open Worktree — From PR",
-    existingBranch: "Open Worktree — Existing Branch",
+    selector: `Open Worktree${updatingIndicator}`,
+    newBranch: `Open Worktree — New Branch${updatingIndicator}`,
+    fromPR: `Open Worktree — From PR${updatingIndicator}`,
+    existingBranch: `Open Worktree — Existing Branch${updatingIndicator}`,
   };
   const innerWidth = width === undefined ? undefined : Math.max(width - 2, 0);
 
@@ -680,7 +749,7 @@ export function OpenModal({
       {step === "selector" && (
         <ModeSelector
           onSelect={setStep}
-          onCancel={onCancel}
+          onCancel={handleCancel}
           width={innerWidth}
         />
       )}
@@ -697,6 +766,8 @@ export function OpenModal({
         <FromPRForm
           prList={prList}
           profileNames={profileNames}
+          isRefreshing={isRefreshing}
+          onRefresh={() => onRefresh(abortControllerRef.current?.signal)}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}

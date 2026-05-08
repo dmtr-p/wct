@@ -17,12 +17,7 @@ import {
   createPrepareUpModal,
 } from "../../src/tui/hooks/useModalActions";
 import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
-import {
-  Mode,
-  type PRInfo,
-  pendingKey,
-  type TreeItem,
-} from "../../src/tui/types";
+import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
@@ -46,7 +41,6 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     filteredRepos: [],
     selectedIndex: 0,
     mode: Mode.Navigate,
-    prData: new Map(),
     openModalRepoProject: "",
     openModalRepoPath: "",
     setMode: vi.fn(),
@@ -58,7 +52,6 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setOpenModalProfiles: vi.fn(),
     setOpenModalRepoProject: vi.fn(),
     setOpenModalRepoPath: vi.fn(),
-    setOpenModalPRList: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
@@ -107,58 +100,6 @@ describe("createPrepareOpenModal", () => {
     expect(deps.setOpenModalRepoProject).toHaveBeenCalledWith("myproj");
     expect(deps.setOpenModalRepoPath).toHaveBeenCalledWith("/home/user/myproj");
     expect(deps.setMode).toHaveBeenCalledWith(Mode.OpenModal);
-  });
-
-  test("filters PRs by project prefix", () => {
-    const items: TreeItem[] = [
-      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
-    ];
-    const repos = [
-      {
-        id: "r1",
-        project: "myproj",
-        repoPath: "/repo",
-        profileNames: [],
-        worktrees: [
-          {
-            branch: "main",
-            path: "/repo/main",
-            isMainWorktree: true,
-            changedFiles: 0,
-            sync: null,
-          },
-        ],
-      },
-    ];
-    const matchingPR: PRInfo = {
-      number: 42,
-      title: "Fix bug",
-      state: "OPEN",
-      headRefName: "fix-bug",
-      checks: [],
-    };
-    const otherPR: PRInfo = {
-      number: 99,
-      title: "Other",
-      state: "OPEN",
-      headRefName: "other",
-      checks: [],
-    };
-    const prData = new Map<string, PRInfo>([
-      ["myproj/fix-bug", matchingPR],
-      ["otherproj/other", otherPR],
-    ]);
-    const deps = makeDeps({
-      treeItems: items,
-      filteredRepos: repos,
-      selectedIndex: 0,
-      prData,
-    });
-    const prepare = createPrepareOpenModal(deps);
-
-    prepare();
-
-    expect(deps.setOpenModalPRList).toHaveBeenCalledWith([matchingPR]);
   });
 
   test("sets undefined base when selected item is a repo header", () => {

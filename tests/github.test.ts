@@ -1,9 +1,17 @@
+import { BunServices } from "@effect/platform-bun";
+import { Effect, Exit } from "effect";
 import { describe, expect, test } from "vitest";
+import { WctCommandError } from "../src/errors";
 import {
+  computeRollup,
   findMatchingRemote,
+  isGhNotInstalledError,
+  liveGitHubService,
+  parseGhPrList,
   parsePrArg,
   parseRemoteOwnerRepo,
 } from "../src/services/github-service";
+import { ProcessExitError } from "../src/services/process";
 
 describe("GitHub PR resolution", () => {
   describe("parsePrArg", () => {
@@ -222,5 +230,282 @@ describe("GitHub PR resolution", () => {
       ].join("\n");
       expect(findMatchingRemote(output, "org", "repo")).toBe("backup");
     });
+  });
+});
+
+describe("computeRollup", () => {
+  test("returns null for empty array", () => {
+    expect(computeRollup([])).toBeNull();
+  });
+
+  test("returns success for all SUCCESS entries", () => {
+    expect(computeRollup([{ state: "SUCCESS" }, { state: "SUCCESS" }])).toBe(
+      "success",
+    );
+  });
+
+  test("returns success when mix includes SKIPPED, NEUTRAL, CANCELLED", () => {
+    expect(
+      computeRollup([
+        { state: "SUCCESS" },
+        { state: "SKIPPED" },
+        { state: "NEUTRAL" },
+        { state: "CANCELLED" },
+      ]),
+    ).toBe("success");
+  });
+
+  test("returns failure for any FAILURE entry", () => {
+    expect(computeRollup([{ state: "SUCCESS" }, { state: "FAILURE" }])).toBe(
+      "failure",
+    );
+  });
+
+  test("returns failure for TIMED_OUT", () => {
+    expect(computeRollup([{ state: "TIMED_OUT" }])).toBe("failure");
+  });
+
+  test("returns failure for STARTUP_FAILURE", () => {
+    expect(computeRollup([{ state: "STARTUP_FAILURE" }])).toBe("failure");
+  });
+
+  test("returns pending for any IN_PROGRESS entry (no failures)", () => {
+    expect(
+      computeRollup([{ state: "SUCCESS" }, { state: "IN_PROGRESS" }]),
+    ).toBe("pending");
+  });
+
+  test("returns pending for QUEUED", () => {
+    expect(computeRollup([{ state: "QUEUED" }])).toBe("pending");
+  });
+
+  test("returns pending for PENDING", () => {
+    expect(computeRollup([{ state: "PENDING" }])).toBe("pending");
+  });
+
+  test("returns pending for ACTION_REQUIRED", () => {
+    expect(computeRollup([{ state: "ACTION_REQUIRED" }])).toBe("pending");
+  });
+
+  test("failure dominates pending", () => {
+    expect(
+      computeRollup([{ state: "IN_PROGRESS" }, { state: "FAILURE" }]),
+    ).toBe("failure");
+  });
+
+  test("handles check-run-style entries with conclusion", () => {
+    expect(
+      computeRollup([
+        { status: "COMPLETED", conclusion: "SUCCESS" },
+        { status: "COMPLETED", conclusion: "FAILURE" },
+      ]),
+    ).toBe("failure");
+  });
+
+  test("handles check-run-style IN_PROGRESS (conclusion null)", () => {
+    expect(
+      computeRollup([
+        { status: "IN_PROGRESS", conclusion: null },
+        { status: "COMPLETED", conclusion: "SUCCESS" },
+      ]),
+    ).toBe("pending");
+  });
+
+  test("in-flight re-run: stale conclusion ignored when status is IN_PROGRESS", () => {
+    expect(
+      computeRollup([{ status: "IN_PROGRESS", conclusion: "SUCCESS" }]),
+    ).toBe("pending");
+  });
+
+  test("completed check-run with FAILURE conclusion returns failure", () => {
+    expect(
+      computeRollup([{ status: "COMPLETED", conclusion: "FAILURE" }]),
+    ).toBe("failure");
+  });
+
+  test("handles mix of status-style and check-run-style entries", () => {
+    expect(
+      computeRollup([
+        { state: "SUCCESS" },
+        { status: "COMPLETED", conclusion: "SKIPPED" },
+        { status: "IN_PROGRESS", conclusion: null },
+      ]),
+    ).toBe("pending");
+  });
+
+  test("unknown state strings do not throw and produce success when alone", () => {
+    expect(() => computeRollup([{ state: "FUTURE_STATE_42" }])).not.toThrow();
+    expect(computeRollup([{ state: "FUTURE_STATE_42" }])).toBe("success");
+  });
+
+  test("unknown state does not override a known failure", () => {
+    expect(
+      computeRollup([{ state: "FUTURE_STATE" }, { state: "FAILURE" }]),
+    ).toBe("failure");
+  });
+
+  test("non-object entries are safely ignored", () => {
+    expect(computeRollup([null, undefined, "string", 42])).toBe("success");
+  });
+});
+
+describe("parseGhPrList with statusCheckRollup", () => {
+  test("parses statusCheckRollup and sets rollupState correctly", () => {
+    const json = JSON.stringify([
+      {
+        number: 1,
+        title: "all success",
+        state: "OPEN",
+        headRefName: "feat/a",
+        statusCheckRollup: [{ state: "SUCCESS" }, { state: "SUCCESS" }],
+      },
+      {
+        number: 2,
+        title: "has failure",
+        state: "OPEN",
+        headRefName: "feat/b",
+        statusCheckRollup: [{ state: "SUCCESS" }, { state: "FAILURE" }],
+      },
+      {
+        number: 3,
+        title: "in progress",
+        state: "OPEN",
+        headRefName: "feat/c",
+        statusCheckRollup: [{ status: "IN_PROGRESS", conclusion: null }],
+      },
+      {
+        number: 4,
+        title: "no checks",
+        state: "OPEN",
+        headRefName: "feat/d",
+        statusCheckRollup: [],
+      },
+    ]);
+    const result = parseGhPrList(json);
+    expect(result).toHaveLength(4);
+    expect(result[0]?.rollupState).toBe("success");
+    expect(result[1]?.rollupState).toBe("failure");
+    expect(result[2]?.rollupState).toBe("pending");
+    expect(result[3]?.rollupState).toBeNull();
+  });
+
+  test("malformed rollup (non-array) produces rollupState null without throwing", () => {
+    const json = JSON.stringify([
+      {
+        number: 5,
+        title: "bad rollup",
+        state: "OPEN",
+        headRefName: "feat/e",
+        statusCheckRollup: "not-an-array",
+      },
+    ]);
+    expect(() => parseGhPrList(json)).not.toThrow();
+    const result = parseGhPrList(json);
+    expect(result[0]?.rollupState).toBeNull();
+  });
+
+  test("missing statusCheckRollup field produces rollupState null", () => {
+    const json = JSON.stringify([
+      {
+        number: 6,
+        title: "no rollup field",
+        state: "OPEN",
+        headRefName: "feat/f",
+      },
+    ]);
+    const result = parseGhPrList(json);
+    expect(result[0]?.rollupState).toBeNull();
+  });
+
+  test("existing fixtures without statusCheckRollup still parse and produce rollupState null", () => {
+    const json = JSON.stringify([
+      {
+        number: 34,
+        title: "feat: TUI sidebar",
+        state: "OPEN",
+        headRefName: "feat/tui",
+      },
+      {
+        number: 31,
+        title: "fix: migration",
+        state: "MERGED",
+        headRefName: "fix/migrate",
+      },
+    ]);
+    const result = parseGhPrList(json);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.rollupState).toBeNull();
+    expect(result[1]?.rollupState).toBeNull();
+  });
+});
+
+describe("isGhNotInstalledError", () => {
+  function makeExitError(
+    exitCode: number | null,
+    cause?: unknown,
+  ): ProcessExitError {
+    return new ProcessExitError({
+      command: "gh",
+      args: ["pr", "list"],
+      stdout: "",
+      stderr: "",
+      exitCode,
+      cause,
+    });
+  }
+
+  test("returns true for ProcessExitError with exitCode null and ENOENT cause", () => {
+    const enoent = Object.assign(new Error("spawn gh ENOENT"), {
+      code: "ENOENT",
+      syscall: "spawn gh",
+    });
+    expect(isGhNotInstalledError(makeExitError(null, enoent))).toBe(true);
+  });
+
+  test("returns false when exitCode is non-null (gh ran but failed)", () => {
+    expect(isGhNotInstalledError(makeExitError(1))).toBe(false);
+  });
+
+  test("returns false when exitCode is null but cause has no ENOENT code", () => {
+    const otherErr = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    expect(isGhNotInstalledError(makeExitError(null, otherErr))).toBe(false);
+  });
+
+  test("returns false for null cause with null exitCode", () => {
+    expect(isGhNotInstalledError(makeExitError(null, undefined))).toBe(false);
+  });
+
+  test("returns false for non-ProcessExitError values", () => {
+    expect(isGhNotInstalledError(new Error("random error"))).toBe(false);
+    expect(isGhNotInstalledError(null)).toBe(false);
+    expect(isGhNotInstalledError("ENOENT")).toBe(false);
+  });
+});
+
+describe("liveGitHubService.listPrs error message threading", () => {
+  test("non-ENOENT gh failure produces WctCommandError whose message is the underlying gh error, not 'Failed to list PRs'", async () => {
+    // Run listPrs against /tmp — gh is installed but /tmp is not a git repo,
+    // so gh will exit non-zero with a meaningful stderr message.
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(liveGitHubService.listPrs("/tmp"), BunServices.layer),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (!Exit.isFailure(exit)) return;
+
+    // In Effect v4, Cause has a flat `reasons` array of Fail/Die/Interrupt.
+    const reason = exit.cause.reasons[0];
+    expect(reason).toBeDefined();
+    expect(reason?._tag).toBe("Fail");
+    if (reason?._tag !== "Fail") return;
+
+    const wctErr = reason.error;
+    expect(wctErr).toBeInstanceOf(WctCommandError);
+    const msg = (wctErr as WctCommandError).message;
+    expect(msg).not.toBe("Failed to list PRs");
+    // The message should contain something from gh's actual output
+    expect(msg.length).toBeGreaterThan(0);
   });
 });

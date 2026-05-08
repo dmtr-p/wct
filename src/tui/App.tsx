@@ -240,7 +240,6 @@ export function App() {
     filteredRepos,
     selectedIndex,
     mode,
-    prData,
     openModalRepoProject,
     openModalRepoPath,
     setMode,

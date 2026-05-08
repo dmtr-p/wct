@@ -408,7 +408,7 @@ export function FromPRForm({
           setSelectedPRIndex((s) => {
             const max = isRefreshRowSelectable
               ? navigableCount - 1
-              : refreshRowIndex - 1;
+              : Math.max(0, refreshRowIndex - 1);
             return Math.min(max, s + 1);
           });
           return;

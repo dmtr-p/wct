@@ -41,7 +41,6 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     filteredRepos: [],
     selectedIndex: 0,
     mode: Mode.Navigate,
-    prData: new Map(),
     openModalRepoProject: "",
     openModalRepoPath: "",
     setMode: vi.fn(),

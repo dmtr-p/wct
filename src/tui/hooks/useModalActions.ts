@@ -12,13 +12,7 @@ import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
-import {
-  Mode,
-  type PendingAction,
-  pendingKey,
-  type PRInfo,
-  type TreeItem,
-} from "../types";
+import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery } from "./useTmux";
 
@@ -27,8 +21,6 @@ export interface ModalActionDeps {
   filteredRepos: RepoInfo[];
   selectedIndex: number;
   mode: Mode;
-  prData: Map<string, PRInfo>;
-
   openModalRepoProject: string;
   openModalRepoPath: string;
 

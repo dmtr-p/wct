@@ -218,6 +218,32 @@ describe("OpenModal form variants", () => {
     }
   });
 
+  test("from PR form Down-arrow clamp: max stays non-negative when filteredPRItems is empty and isRefreshing is true", async () => {
+    // Regression: when prList is empty and isRefreshing=true, refreshRowIndex=0 so
+    // the un-clamped max would be refreshRowIndex-1 = -1. Math.max(0, refreshRowIndex-1)
+    // prevents this. The component must render without crashing and the Loading row renders.
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[]}
+        profileNames={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      // Component renders without error — Loading row is visible
+      expect(rendered.output).toContain("↻ Loading...");
+      // With no PRs, no PR label is selected (no "▸ #" pattern)
+      expect(rendered.output).not.toMatch(/▸\s*#\d/);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("OpenModal always passes an AbortSignal to onRefresh (both auto and manual)", async () => {
     // Gap 2: The bound onRefresh passed to FromPRForm uses abortControllerRef.current?.signal,
     // so every call — auto-on-open and future manual calls — carries a signal.

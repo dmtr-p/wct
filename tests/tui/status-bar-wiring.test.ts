@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
 import { Mode, type TreeItem } from "../../src/tui/types";
 
 function makeRepo(project: string): RepoInfo {

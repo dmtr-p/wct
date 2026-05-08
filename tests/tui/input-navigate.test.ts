@@ -47,6 +47,7 @@ function makeCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
     prepareAddProjectModal: vi.fn(),
+    refreshRepo: vi.fn(),
     ...overrides,
   };
 }
@@ -210,5 +211,39 @@ describe("handleNavigateInput", () => {
     });
     handleNavigateInput(ctx, "c", noKey);
     expect(ctx.handleCloseSelectedWorktree).not.toHaveBeenCalled();
+  });
+
+  test("r calls refreshRepo with the focused repo's project", () => {
+    const repos = [
+      { id: "repo1", project: "myproj", worktrees: [] },
+    ] as unknown as RepoInfo[];
+    const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
+    const ctx = makeCtx({
+      treeItems: items,
+      filteredRepos: repos,
+      selectedIndex: 0,
+    });
+    handleNavigateInput(ctx, "r", noKey);
+    expect(ctx.refreshRepo).toHaveBeenCalledWith("myproj");
+  });
+
+  test("r calls refreshRepo with the project of the worktree's parent repo", () => {
+    const repos = [
+      {
+        id: "repo1",
+        project: "myproj",
+        worktrees: [{ branch: "feat", path: "/tmp/feat" }],
+      },
+    ] as unknown as RepoInfo[];
+    const items: TreeItem[] = [
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+    const ctx = makeCtx({
+      treeItems: items,
+      filteredRepos: repos,
+      selectedIndex: 0,
+    });
+    handleNavigateInput(ctx, "r", noKey);
+    expect(ctx.refreshRepo).toHaveBeenCalledWith("myproj");
   });
 });

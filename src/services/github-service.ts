@@ -374,7 +374,7 @@ export const liveGitHubService: GitHubService = GitHubService.of({
     ),
   listPrs: (cwd) =>
     Effect.mapError(listPrsImpl(cwd), (error) =>
-      commandError("pr_error", "Failed to list PRs", error),
+      commandError("pr_error", extractShellError(error), error),
     ),
   findRemoteForRepo: (owner, repo, cwd) =>
     Effect.gen(function* () {

@@ -1,8 +1,12 @@
+import { BunServices } from "@effect/platform-bun";
+import { Effect, Exit } from "effect";
 import { describe, expect, test } from "vitest";
+import { WctCommandError } from "../src/errors";
 import {
   computeRollup,
   findMatchingRemote,
   isGhNotInstalledError,
+  liveGitHubService,
   parseGhPrList,
   parsePrArg,
   parseRemoteOwnerRepo,
@@ -477,5 +481,31 @@ describe("isGhNotInstalledError", () => {
     expect(isGhNotInstalledError(new Error("random error"))).toBe(false);
     expect(isGhNotInstalledError(null)).toBe(false);
     expect(isGhNotInstalledError("ENOENT")).toBe(false);
+  });
+});
+
+describe("liveGitHubService.listPrs error message threading", () => {
+  test("non-ENOENT gh failure produces WctCommandError whose message is the underlying gh error, not 'Failed to list PRs'", async () => {
+    // Run listPrs against /tmp — gh is installed but /tmp is not a git repo,
+    // so gh will exit non-zero with a meaningful stderr message.
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(liveGitHubService.listPrs("/tmp"), BunServices.layer),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (!Exit.isFailure(exit)) return;
+
+    // In Effect v4, Cause has a flat `reasons` array of Fail/Die/Interrupt.
+    const reason = exit.cause.reasons[0];
+    expect(reason).toBeDefined();
+    expect(reason?._tag).toBe("Fail");
+    if (reason?._tag !== "Fail") return;
+
+    const wctErr = reason.error;
+    expect(wctErr).toBeInstanceOf(WctCommandError);
+    const msg = (wctErr as WctCommandError).message;
+    expect(msg).not.toBe("Failed to list PRs");
+    // The message should contain something from gh's actual output
+    expect(msg.length).toBeGreaterThan(0);
   });
 });

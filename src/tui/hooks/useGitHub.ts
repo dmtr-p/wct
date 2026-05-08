@@ -84,6 +84,26 @@ export function useGitHub(repos: RepoInfo[]) {
         return existing;
       }
 
+      // On the first overall call only: skip fetch if the cache is fresh enough
+      // (debounce against rapid TUI relaunches within 30s). Done synchronously
+      // before creating the in-flight promise so a skipped fetch doesn't store
+      // a permanently-resolved promise in inFlightRef and block future fetches.
+      if (isFirst) {
+        try {
+          const cached = tuiRuntime.runSync(
+            PrCacheService.use((s) => s.getCached(project)),
+          );
+          if (
+            cached !== null &&
+            Date.now() - cached.fetchedAt < CACHE_FRESH_WINDOW
+          ) {
+            return;
+          }
+        } catch {
+          // If cache read fails, proceed with fetch
+        }
+      }
+
       const promise = (async () => {
         setRefreshingProjects((prev) => {
           const next = new Set(prev);
@@ -92,26 +112,6 @@ export function useGitHub(repos: RepoInfo[]) {
         });
 
         try {
-          // On the first overall call only: skip fetch if the cache is fresh enough
-          // (debounce against rapid TUI relaunches within 30s).
-          if (isFirst) {
-            let skipFetch = false;
-            try {
-              const cached = tuiRuntime.runSync(
-                PrCacheService.use((s) => s.getCached(project)),
-              );
-              if (
-                cached !== null &&
-                Date.now() - cached.fetchedAt < CACHE_FRESH_WINDOW
-              ) {
-                skipFetch = true;
-              }
-            } catch {
-              // If cache read fails, proceed with fetch
-            }
-            if (skipFetch) return;
-          }
-
           // Fetch — may throw on error or abort
           const { entries, prs } = await fetchRepoData(repo, signal);
 

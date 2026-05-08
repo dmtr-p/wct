@@ -107,9 +107,9 @@ export function withDb<A>(
     try: () => {
       mkdirSync(getWctDir(), { recursive: true });
       const db = new Database(getDbPath(), { create: true });
-      db.run("PRAGMA journal_mode=WAL");
-      runMigrations(db);
       try {
+        db.run("PRAGMA journal_mode=WAL");
+        runMigrations(db);
         return f(db);
       } finally {
         db.close();

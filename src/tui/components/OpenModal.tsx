@@ -399,7 +399,7 @@ export function FromPRForm({
       if (currentField === "prList") {
         if (key.upArrow) {
           setSelectedPRIndex((s) => {
-            if (s === refreshRowIndex) return refreshRowIndex - 1;
+            if (s === refreshRowIndex) return Math.max(0, refreshRowIndex - 1);
             return Math.max(0, s - 1);
           });
           return;

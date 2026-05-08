@@ -125,7 +125,9 @@ export function projectsRemoveCommand(
 
     yield* RegistryService.use((service) => service.unregister(targetPath));
 
-    yield* PrCacheService.use((service) => service.invalidate(projectName));
+    yield* Effect.ignore(
+      PrCacheService.use((service) => service.invalidate(projectName)),
+    );
 
     if (json) {
       yield* jsonSuccess({ repo_path: targetPath, removed: true });

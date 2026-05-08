@@ -1,7 +1,12 @@
 import { Context, Effect } from "effect";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
-import { execProcess, getProcessErrorMessage, runProcess } from "./process";
+import {
+  execProcess,
+  getProcessErrorMessage,
+  ProcessExitError,
+  runProcess,
+} from "./process";
 
 const GITHUB_PR_URL_PATTERN =
   /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)\/?$/;
@@ -212,6 +217,24 @@ function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
   });
 }
 
+/**
+ * Returns true when the error represents "gh is not installed" — i.e. the
+ * executable was not found on PATH.  We detect this via the ENOENT code that
+ * Bun/Node sets on the underlying spawn error, surfaced through
+ * `ProcessExitError.cause`.
+ */
+export function isGhNotInstalledError(error: unknown): boolean {
+  if (!(error instanceof ProcessExitError)) return false;
+  if (error.exitCode !== null) return false; // Non-zero exit — gh ran but failed
+  const cause = error.cause;
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    (cause as { code: unknown }).code === "ENOENT"
+  );
+}
+
 function listPrsImpl(cwd: string) {
   return Effect.catch(
     execProcess(
@@ -226,7 +249,10 @@ function listPrsImpl(cwd: string) {
       ],
       { cwd },
     ).pipe(Effect.map((result) => parseGhPrList(result.stdout.trim()))),
-    () => Effect.succeed([] as PrListItem[]),
+    (error) =>
+      isGhNotInstalledError(error)
+        ? Effect.succeed([] as PrListItem[])
+        : Effect.fail(error),
   );
 }
 

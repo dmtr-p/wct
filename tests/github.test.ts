@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import {
   computeRollup,
   findMatchingRemote,
+  isGhNotInstalledError,
   parseGhPrList,
   parsePrArg,
   parseRemoteOwnerRepo,
 } from "../src/services/github-service";
+import { ProcessExitError } from "../src/services/process";
 
 describe("GitHub PR resolution", () => {
   describe("parsePrArg", () => {
@@ -430,5 +432,50 @@ describe("parseGhPrList with statusCheckRollup", () => {
     expect(result).toHaveLength(2);
     expect(result[0]?.rollupState).toBeNull();
     expect(result[1]?.rollupState).toBeNull();
+  });
+});
+
+describe("isGhNotInstalledError", () => {
+  function makeExitError(
+    exitCode: number | null,
+    cause?: unknown,
+  ): ProcessExitError {
+    return new ProcessExitError({
+      command: "gh",
+      args: ["pr", "list"],
+      stdout: "",
+      stderr: "",
+      exitCode,
+      cause,
+    });
+  }
+
+  test("returns true for ProcessExitError with exitCode null and ENOENT cause", () => {
+    const enoent = Object.assign(new Error("spawn gh ENOENT"), {
+      code: "ENOENT",
+      syscall: "spawn gh",
+    });
+    expect(isGhNotInstalledError(makeExitError(null, enoent))).toBe(true);
+  });
+
+  test("returns false when exitCode is non-null (gh ran but failed)", () => {
+    expect(isGhNotInstalledError(makeExitError(1))).toBe(false);
+  });
+
+  test("returns false when exitCode is null but cause has no ENOENT code", () => {
+    const otherErr = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    expect(isGhNotInstalledError(makeExitError(null, otherErr))).toBe(false);
+  });
+
+  test("returns false for null cause with null exitCode", () => {
+    expect(isGhNotInstalledError(makeExitError(null, undefined))).toBe(false);
+  });
+
+  test("returns false for non-ProcessExitError values", () => {
+    expect(isGhNotInstalledError(new Error("random error"))).toBe(false);
+    expect(isGhNotInstalledError(null)).toBe(false);
+    expect(isGhNotInstalledError("ENOENT")).toBe(false);
   });
 });

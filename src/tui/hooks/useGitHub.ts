@@ -178,11 +178,6 @@ export function useGitHub(repos: RepoInfo[]) {
     [refreshOne],
   );
 
-  const isRefreshing = useCallback(
-    (project: string): boolean => refreshingProjects.has(project),
-    [refreshingProjects],
-  );
-
   useEffect(() => {
     const controller = new AbortController();
     refresh(undefined, controller.signal);
@@ -196,5 +191,5 @@ export function useGitHub(repos: RepoInfo[]) {
     };
   }, [refresh]);
 
-  return { prData, loading, refresh, isRefreshing, refreshingProjects };
+  return { prData, loading, refresh, refreshingProjects };
 }

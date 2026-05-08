@@ -26,6 +26,7 @@ interface Props {
   panes: Map<string, PaneInfo[]>;
   expandedWorktreeKey: string | null;
   maxWidth: number;
+  refreshingProjects?: Set<string>;
 }
 
 export function getDetailRowKey(
@@ -50,6 +51,7 @@ export function TreeView({
   panes,
   expandedWorktreeKey,
   maxWidth,
+  refreshingProjects,
 }: Props) {
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.name, s])),
@@ -100,6 +102,7 @@ export function TreeView({
           isChildSelected={childSelected}
           worktreeCount={repo.worktrees.length}
           maxWidth={maxWidth}
+          isRefreshing={refreshingProjects?.has(repo.project)}
         />,
       );
       continue;

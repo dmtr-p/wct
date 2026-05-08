@@ -8,6 +8,7 @@ interface Props {
   isChildSelected: boolean;
   worktreeCount: number;
   maxWidth: number;
+  isRefreshing?: boolean;
 }
 
 export function RepoNode({
@@ -17,12 +18,17 @@ export function RepoNode({
   isChildSelected,
   worktreeCount,
   maxWidth,
+  isRefreshing,
 }: Props) {
   const arrow = expanded ? "▼" : "▶";
   const active = isSelected || isChildSelected;
   const prefix = isSelected ? "❯ " : "  ";
-  // overhead: prefix (2) + arrow (1) + space (1) = 4
-  const displayProject = truncateBranch(project, maxWidth - 4);
+  // overhead: prefix (2) + arrow (1) + space (1) = 4, plus " ↻" (2) when refreshing
+  const refreshSuffix = isRefreshing ? " ↻" : "";
+  const displayProject = truncateBranch(
+    project,
+    maxWidth - 4 - refreshSuffix.length,
+  );
 
   return (
     <Box flexDirection="column">
@@ -31,6 +37,7 @@ export function RepoNode({
         <Text color={isSelected ? "cyan" : "yellow"} bold={active}>
           {arrow} {displayProject}
         </Text>
+        {isRefreshing ? <Text dimColor> ↻</Text> : null}
       </Box>
       {expanded && worktreeCount === 0 ? (
         <Box>

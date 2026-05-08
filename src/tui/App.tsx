@@ -36,7 +36,11 @@ export function App() {
   const termCols = stdout?.columns ?? 80;
   const termRows = stdout?.rows ?? 24;
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
-  const { prData } = useGitHub(repos);
+  const {
+    prData,
+    refresh: refreshGitHub,
+    refreshingProjects,
+  } = useGitHub(repos);
   const {
     client: tmuxClient,
     sessions,
@@ -302,6 +306,7 @@ export function App() {
     handleSpaceSwitch: sessionActions.handleSpaceSwitch,
     handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
     handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
+    refreshRepo: (project: string) => void refreshGitHub(project),
   };
 
   const expCtx: ExpandedContext = {
@@ -468,6 +473,7 @@ export function App() {
           panes={panes}
           expandedWorktreeKey={expandedWorktreeKey}
           maxWidth={termCols}
+          refreshingProjects={refreshingProjects}
         />
       </Box>
       {mode.type === "OpenModal" ? (

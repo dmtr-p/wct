@@ -7,6 +7,7 @@ interface Props {
   searchQuery?: string;
   selectedPaneRow?: boolean;
   hasClient?: boolean;
+  repoError?: string;
 }
 
 function join(...parts: (string | false)[]): string {
@@ -79,6 +80,7 @@ export function StatusBar({
   searchQuery,
   selectedPaneRow,
   hasClient,
+  repoError,
 }: Props) {
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 50;
@@ -116,6 +118,7 @@ export function StatusBar({
   return (
     <Box flexDirection="column">
       <Text dimColor>{divider}</Text>
+      {repoError ? <Text color="yellow">⚠ {repoError}</Text> : null}
       <Text dimColor>{line1}</Text>
       <Text dimColor>{line2}</Text>
     </Box>

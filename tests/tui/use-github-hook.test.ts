@@ -380,4 +380,77 @@ describe("useGitHub hook", () => {
 
     harness.unmount();
   });
+
+  test("errors map is populated from cache lastError on initial render", async () => {
+    const repo = makeRepo({ project: "myproject" });
+
+    // runSync returns a cache entry with a stored last_error
+    mockRunSync.mockReturnValue({
+      payload: [],
+      fetchedAt: Date.now(), // fresh — skips fetch
+      lastError: "token expired",
+    });
+
+    const harness = await renderUseGitHub([repo]);
+    await flush(4);
+
+    // The error should be visible from the initial cache read before any fetch
+    expect(harness.value.errors.get("myproject")).toBe("token expired");
+
+    harness.unmount();
+  });
+
+  test("errors map is populated after a failed fetch", async () => {
+    const repo = makeRepo({ project: "myproject" });
+
+    // No cached error initially
+    mockRunSync.mockReturnValue(null);
+
+    let callIndex = 0;
+    mockRunPromise.mockImplementation((_effect: unknown) => {
+      const idx = callIndex++;
+      if (idx === 0) {
+        return Promise.reject(new Error("auth expired"));
+      }
+      // setError call — return success
+      return Promise.resolve(undefined);
+    });
+
+    const harness = await renderUseGitHub([repo]);
+    await flush(10);
+
+    expect(harness.value.errors.get("myproject")).toBe("auth expired");
+
+    harness.unmount();
+  });
+
+  test("errors map is cleared on the next successful fetch", async () => {
+    const repo = makeRepo({ project: "myproject" });
+
+    // Initial cache has a stored error but stale data (will trigger fetch)
+    mockRunSync.mockReturnValue({
+      payload: [],
+      fetchedAt: Date.now() - 60_000, // 60s old → will fetch
+      lastError: "previous error",
+    });
+
+    let callIndex = 0;
+    mockRunPromise.mockImplementation((_effect: unknown) => {
+      const idx = callIndex++;
+      if (idx === 0) {
+        // listPrs — succeed
+        return Promise.resolve([]);
+      }
+      // setCached call
+      return Promise.resolve(undefined);
+    });
+
+    const harness = await renderUseGitHub([repo]);
+
+    // After the successful fetch completes, the error should be cleared
+    await flush(10);
+    expect(harness.value.errors.has("myproject")).toBe(false);
+
+    harness.unmount();
+  });
 });

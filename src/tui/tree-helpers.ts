@@ -37,6 +37,7 @@ interface ResolveStatusBarPropsOptions {
   mode: Mode;
   items: TreeItem[];
   selectedIndex: number;
+  repos?: RepoInfo[];
 }
 
 interface ResolveExpandedRightArrowActionOptions {
@@ -80,6 +81,8 @@ type CloseSelectedWorktreeAction =
 export interface ResolvedStatusBarProps {
   mode: Mode;
   selectedPaneRow?: boolean;
+  /** The project identifier of the repo that the cursor is on or under. */
+  selectedProject?: string;
 }
 
 export function buildTreeItems({
@@ -420,11 +423,16 @@ export function resolveStatusBarProps({
   mode,
   items,
   selectedIndex,
+  repos,
 }: ResolveStatusBarPropsOptions): ResolvedStatusBarProps {
+  const selectedItem = items[selectedIndex];
+  const selectedProject =
+    selectedItem && repos ? repos[selectedItem.repoIndex]?.project : undefined;
+
   return {
     mode,
     selectedPaneRow:
-      items[selectedIndex]?.type === "detail" &&
-      items[selectedIndex]?.detailKind === "pane",
+      selectedItem?.type === "detail" && selectedItem.detailKind === "pane",
+    selectedProject,
   };
 }

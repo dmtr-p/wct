@@ -38,6 +38,7 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
+    errors: githubErrors,
     refresh: refreshGitHub,
     refreshingProjects,
   } = useGitHub(repos);
@@ -181,6 +182,7 @@ export function App() {
     mode,
     items: treeItems,
     selectedIndex,
+    repos: filteredRepos,
   });
 
   const refreshAll = useCallback(async () => {
@@ -474,6 +476,7 @@ export function App() {
           expandedWorktreeKey={expandedWorktreeKey}
           maxWidth={termCols}
           refreshingProjects={refreshingProjects}
+          errors={githubErrors}
         />
       </Box>
       {mode.type === "OpenModal" ? (
@@ -516,6 +519,11 @@ export function App() {
             {...statusBarProps}
             searchQuery={searchQuery}
             hasClient={tmuxClient !== null}
+            repoError={
+              statusBarProps.selectedProject
+                ? githubErrors.get(statusBarProps.selectedProject)
+                : undefined
+            }
           />
         </Box>
       )}

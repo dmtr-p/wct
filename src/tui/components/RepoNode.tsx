@@ -9,6 +9,7 @@ interface Props {
   worktreeCount: number;
   maxWidth: number;
   isRefreshing?: boolean;
+  hasError?: boolean;
 }
 
 export function RepoNode({
@@ -19,15 +20,18 @@ export function RepoNode({
   worktreeCount,
   maxWidth,
   isRefreshing,
+  hasError,
 }: Props) {
   const arrow = expanded ? "▼" : "▶";
   const active = isSelected || isChildSelected;
   const prefix = isSelected ? "❯ " : "  ";
-  // overhead: prefix (2) + arrow (1) + space (1) = 4, plus " ↻" (2) when refreshing
+  // overhead: prefix (2) + arrow (1) + space (1) = 4
+  // plus " ↻" (2) when refreshing, plus " ⚠" (2) when errored
   const refreshSuffix = isRefreshing ? " ↻" : "";
+  const errorSuffix = hasError ? " ⚠" : "";
   const displayProject = truncateBranch(
     project,
-    maxWidth - 4 - refreshSuffix.length,
+    maxWidth - 4 - refreshSuffix.length - errorSuffix.length,
   );
 
   return (
@@ -38,6 +42,7 @@ export function RepoNode({
           {arrow} {displayProject}
         </Text>
         {isRefreshing ? <Text dimColor> ↻</Text> : null}
+        {hasError ? <Text color="yellow"> ⚠</Text> : null}
       </Box>
       {expanded && worktreeCount === 0 ? (
         <Box>

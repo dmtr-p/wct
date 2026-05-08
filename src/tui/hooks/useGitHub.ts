@@ -8,8 +8,14 @@ import type { RepoInfo } from "./useRegistry";
 const GITHUB_POLL_INTERVAL = 120_000; // 120 seconds
 const CACHE_FRESH_WINDOW = 30_000; // skip initial fetch if cache is < 30s old
 
-function readCacheSync(repos: RepoInfo[]): Map<string, PRInfo> {
-  const map = new Map<string, PRInfo>();
+interface InitialCacheState {
+  prData: Map<string, PRInfo>;
+  errors: Map<string, string>;
+}
+
+function readCacheSync(repos: RepoInfo[]): InitialCacheState {
+  const prData = new Map<string, PRInfo>();
+  const errors = new Map<string, string>();
   for (const repo of repos) {
     try {
       const entry = tuiRuntime.runSync(
@@ -17,14 +23,17 @@ function readCacheSync(repos: RepoInfo[]): Map<string, PRInfo> {
       );
       if (entry !== null) {
         for (const pr of entry.payload) {
-          map.set(`${repo.project}/${pr.headRefName}`, pr);
+          prData.set(`${repo.project}/${pr.headRefName}`, pr);
+        }
+        if (entry.lastError !== null) {
+          errors.set(repo.project, entry.lastError);
         }
       }
     } catch {
       // Cache read failed — start with empty state for this repo
     }
   }
-  return map;
+  return { prData, errors };
 }
 
 async function fetchRepoData(
@@ -46,9 +55,12 @@ async function fetchRepoData(
 }
 
 export function useGitHub(repos: RepoInfo[]) {
-  const [prData, setPrData] = useState<Map<string, PRInfo>>(() =>
-    readCacheSync(repos),
-  );
+  // Both state slices are initialised from a single synchronous DB scan.
+  // We use a lazily-evaluated tuple state so the scan runs at most once.
+  const [{ prData: _initPrData, errors: _initErrors }] =
+    useState<InitialCacheState>(() => readCacheSync(repos));
+  const [prData, setPrData] = useState<Map<string, PRInfo>>(_initPrData);
+  const [errors, setErrors] = useState<Map<string, string>>(_initErrors);
   const [loading, setLoading] = useState(false);
   // Set of project names currently being fetched — drives ↻ indicator re-renders
   const [refreshingProjects, setRefreshingProjects] = useState<Set<string>>(
@@ -111,6 +123,14 @@ export function useGitHub(repos: RepoInfo[]) {
                 // Cache write failure is non-fatal
               });
 
+            // Clear any previous error for this project
+            setErrors((prev) => {
+              if (!prev.has(project)) return prev;
+              const next = new Map(prev);
+              next.delete(project);
+              return next;
+            });
+
             setPrData((prev) => {
               const next = new Map(prev);
               for (const [key, pr] of entries) {
@@ -133,6 +153,13 @@ export function useGitHub(repos: RepoInfo[]) {
               .catch(() => {
                 // Cache error write failure is non-fatal
               });
+
+            // Surface the error in the errors map
+            setErrors((prev) => {
+              const next = new Map(prev);
+              next.set(project, errMsg);
+              return next;
+            });
           }
         } finally {
           inFlightRef.current.delete(project);
@@ -191,5 +218,5 @@ export function useGitHub(repos: RepoInfo[]) {
     };
   }, [refresh]);
 
-  return { prData, loading, refresh, refreshingProjects };
+  return { prData, errors, loading, refresh, refreshingProjects };
 }

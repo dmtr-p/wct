@@ -1,6 +1,17 @@
 import { describe, expect, test } from "vitest";
 import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
+import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { Mode, type TreeItem } from "../../src/tui/types";
+
+function makeRepo(project: string): RepoInfo {
+  return {
+    id: project,
+    repoPath: `/tmp/${project}`,
+    project,
+    worktrees: [],
+    profileNames: [],
+  };
+}
 
 describe("resolveStatusBarProps", () => {
   test("marks a selected pane detail row", () => {
@@ -32,6 +43,7 @@ describe("resolveStatusBarProps", () => {
     ).toEqual({
       mode: Mode.Expanded("proj/branch"),
       selectedPaneRow: true,
+      selectedProject: undefined,
     });
   });
 
@@ -50,6 +62,7 @@ describe("resolveStatusBarProps", () => {
     ).toEqual({
       mode: Mode.Expanded("proj/branch"),
       selectedPaneRow: false,
+      selectedProject: undefined,
     });
   });
 
@@ -82,6 +95,7 @@ describe("resolveStatusBarProps", () => {
     ).toEqual({
       mode: confirmKill,
       selectedPaneRow: true,
+      selectedProject: undefined,
     });
   });
 
@@ -105,6 +119,49 @@ describe("resolveStatusBarProps", () => {
     ).toEqual({
       mode: confirmDown,
       selectedPaneRow: false,
+      selectedProject: undefined,
+    });
+  });
+
+  test("resolves selectedProject from repos when cursor is on a repo row", () => {
+    const repos = [makeRepo("alpha"), makeRepo("beta")];
+    const items: TreeItem[] = [
+      { type: "repo", repoIndex: 0 },
+      { type: "repo", repoIndex: 1 },
+    ];
+
+    expect(
+      resolveStatusBarProps({
+        mode: Mode.Navigate,
+        items,
+        selectedIndex: 1,
+        repos,
+      }),
+    ).toEqual({
+      mode: Mode.Navigate,
+      selectedPaneRow: false,
+      selectedProject: "beta",
+    });
+  });
+
+  test("resolves selectedProject from repos when cursor is on a worktree row", () => {
+    const repos = [makeRepo("myrepo")];
+    const items: TreeItem[] = [
+      { type: "repo", repoIndex: 0 },
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+
+    expect(
+      resolveStatusBarProps({
+        mode: Mode.Navigate,
+        items,
+        selectedIndex: 1,
+        repos,
+      }),
+    ).toEqual({
+      mode: Mode.Navigate,
+      selectedPaneRow: false,
+      selectedProject: "myrepo",
     });
   });
 });

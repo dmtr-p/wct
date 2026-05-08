@@ -27,6 +27,7 @@ interface Props {
   expandedWorktreeKey: string | null;
   maxWidth: number;
   refreshingProjects?: Set<string>;
+  errors?: Map<string, string>;
 }
 
 export function getDetailRowKey(
@@ -52,6 +53,7 @@ export function TreeView({
   expandedWorktreeKey,
   maxWidth,
   refreshingProjects,
+  errors,
 }: Props) {
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.name, s])),
@@ -103,6 +105,7 @@ export function TreeView({
           worktreeCount={repo.worktrees.length}
           maxWidth={maxWidth}
           isRefreshing={refreshingProjects?.has(repo.project)}
+          hasError={errors?.has(repo.project)}
         />,
       );
       continue;

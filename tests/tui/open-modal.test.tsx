@@ -14,9 +14,8 @@ vi.mock("../../src/tui/hooks/useBlink", () => ({
   useBlink: () => false,
 }));
 
-const { ExistingBranchForm, FromPRForm, NewBranchForm } = await import(
-  "../../src/tui/components/OpenModal"
-);
+const { ExistingBranchForm, FromPRForm, NewBranchForm, OpenModal } =
+  await import("../../src/tui/components/OpenModal");
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -118,6 +117,8 @@ describe("OpenModal form variants", () => {
           },
         ]}
         profileNames={["backend"]}
+        isRefreshing={false}
+        onRefresh={() => {}}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -130,6 +131,55 @@ describe("OpenModal form variants", () => {
       expect(rendered.output).not.toContain("No attach");
       expect(rendered.output).toContain("Select PR");
       expect(rendered.output).toContain("Profile");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form shows Refresh row at the bottom of the PR list", async () => {
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[
+          {
+            number: 1,
+            title: "First PR",
+            state: "OPEN",
+            headRefName: "feat-1",
+            rollupState: null,
+          },
+        ]}
+        profileNames={[]}
+        isRefreshing={false}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("↻ Refresh PRs");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form shows Loading label on Refresh row when isRefreshing", async () => {
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[]}
+        profileNames={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("↻ Loading...");
+      expect(rendered.output).not.toContain("↻ Refresh PRs");
     } finally {
       rendered.unmount();
     }
@@ -155,6 +205,94 @@ describe("OpenModal form variants", () => {
       expect(rendered.output).toContain("Profile");
       expect(rendered.output).toContain("(default)");
       expect(rendered.output).toContain("backend");
+    } finally {
+      rendered.unmount();
+    }
+  });
+});
+
+describe("OpenModal", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    runPromiseMock.mockReset();
+  });
+
+  test("calls onRefresh once on mount with an AbortSignal", async () => {
+    const onRefresh = vi.fn();
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+      expect(onRefresh.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("signal passed to onRefresh is aborted after unmount", async () => {
+    const signals: AbortSignal[] = [];
+    const onRefresh = vi.fn((signal?: AbortSignal) => {
+      if (signal) signals.push(signal);
+    });
+
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(onRefresh).toHaveBeenCalled();
+    // Collect all signals passed to onRefresh — after unmount ALL must be aborted
+    // (intermediate ones from React effect re-runs in test env may already be aborted)
+    rendered.unmount();
+    for (const signal of signals) {
+      expect(signal.aborted).toBe(true);
+    }
+  });
+
+  test("shows Updating indicator in title when isRefreshing", async () => {
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={true}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("↻ Updating…");
     } finally {
       rendered.unmount();
     }

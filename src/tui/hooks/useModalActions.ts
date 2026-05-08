@@ -15,8 +15,8 @@ import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import {
   Mode,
   type PendingAction,
-  type PRInfo,
   pendingKey,
+  type PRInfo,
   type TreeItem,
 } from "../types";
 import type { RepoInfo } from "./useRegistry";
@@ -39,7 +39,6 @@ export interface ModalActionDeps {
   setOpenModalProfiles: (v: string[]) => void;
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
-  setOpenModalPRList: (v: PRInfo[]) => void;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -83,13 +82,6 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
     deps.setOpenModalProfiles(profiles);
     deps.setOpenModalRepoProject(project);
     deps.setOpenModalRepoPath(repoPath);
-    const prs: PRInfo[] = [];
-    for (const [key, pr] of deps.prData) {
-      if (key.startsWith(`${project}/`)) {
-        prs.push(pr);
-      }
-    }
-    deps.setOpenModalPRList(prs);
     deps.setMode(Mode.OpenModal);
   };
 }

@@ -203,7 +203,15 @@ export function App() {
     });
   }, []);
 
-  const [openModalPRList, setOpenModalPRList] = useState<PRInfo[]>([]);
+  const openModalPRList = useMemo(() => {
+    const prs: PRInfo[] = [];
+    for (const [key, pr] of prData) {
+      if (key.startsWith(`${openModalRepoProject}/`)) {
+        prs.push(pr);
+      }
+    }
+    return prs;
+  }, [prData, openModalRepoProject]);
 
   const sessionActions = useSessionActions({
     treeItems,
@@ -242,7 +250,6 @@ export function App() {
     setOpenModalProfiles,
     setOpenModalRepoProject,
     setOpenModalRepoPath,
-    setOpenModalPRList,
     showActionError,
     clearActionError,
     switchSession,
@@ -488,6 +495,8 @@ export function App() {
           repoProject={openModalRepoProject}
           repoPath={openModalRepoPath}
           prList={openModalPRList}
+          isRefreshing={refreshingProjects.has(openModalRepoProject)}
+          onRefresh={(signal) => refreshGitHub(openModalRepoProject, signal)}
           onSubmit={modalActions.handleOpen}
           onCancel={() => setMode(Mode.Navigate)}
         />

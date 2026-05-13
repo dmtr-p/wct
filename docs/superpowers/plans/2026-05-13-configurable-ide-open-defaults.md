@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Change IDE launching so no config means no IDE by default, `ide.open` controls default IDE launch behavior, CLI/TUI choices override config, and the fallback IDE command is used only when forcing IDE open without a configured command.
+**Goal:** Change IDE launching so no config means no IDE by default, `ide.open` controls default IDE launch behavior, CLI/TUI choices override config, and the fallback IDE command is used whenever the final decision is to open an IDE but no command is configured.
 
 **Architecture:** Represent IDE config as an optional object with `open?: boolean`, `command?: string`, and existing metadata fields. Merge global, project, and profile IDE objects field-by-field so `open` can be overridden independently from `command` and `fork_workspace`. Route all launch decisions through one small helper that turns resolved config plus CLI/TUI overrides into a final IDE command and workspace-sync decision.
 
@@ -91,7 +91,7 @@ describe("DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG.ide).toBeUndefined();
   });
 
-  test("exports a fallback IDE command for explicit force-open behavior", () => {
+  test("exports a fallback IDE command for open-without-command behavior", () => {
     expect(DEFAULT_IDE_CONFIG.command).toBe("code $WCT_WORKTREE_DIR");
   });
 
@@ -360,6 +360,24 @@ describe("resolveIdeLaunch", () => {
       open: true,
       command: "cursor $WCT_WORKTREE_DIR",
       config,
+    });
+  });
+
+  test("opens fallback IDE by default when ide object has no command", () => {
+    const config = {};
+    expect(resolveIdeLaunch(config, {})).toEqual({
+      open: true,
+      command: DEFAULT_IDE_CONFIG.command,
+      config: DEFAULT_IDE_CONFIG,
+    });
+  });
+
+  test("opens fallback IDE when ide.open is true and no command is configured", () => {
+    const config = { open: true };
+    expect(resolveIdeLaunch(config, {})).toEqual({
+      open: true,
+      command: DEFAULT_IDE_CONFIG.command,
+      config: { ...DEFAULT_IDE_CONFIG, open: true },
     });
   });
 
@@ -647,8 +665,8 @@ export interface OpenOptions {
   existing: boolean;
   base?: string;
   cwd?: string;
-  ide: boolean;
-  noIde: boolean;
+  ide?: boolean;
+  noIde?: boolean;
   pr?: string;
   prompt?: string;
   profile?: string;
@@ -666,6 +684,8 @@ export interface OpenRequest {
   profile?: string;
 }
 ```
+
+Keep `ide` and `noIde` optional on `OpenOptions` because many tests and internal call sites construct `OpenOptions` directly. Normalize them only in `resolveOpenOptions` return values.
 
 At the start of `resolveOpenOptions`, default both booleans during destructuring:
 
@@ -696,7 +716,7 @@ if (ide && noIde) {
 }
 ```
 
-Return both flags in both PR and non-PR return objects:
+Return both normalized flags in both PR and non-PR return objects:
 
 ```ts
 ide,
@@ -831,69 +851,95 @@ test("rejects ide and noIde together", async () => {
 
 test("skips IDE by default when config omits ide", async () => {
   process.chdir(fixture.repoDir);
-  await Bun.write(
-    join(fixture.repoDir, ".wct.yaml"),
-    `version: 1
+  const configPath = join(fixture.repoDir, ".wct.yaml");
+  const originalConfig = await Bun.file(configPath).text();
+  try {
+    await Bun.write(
+      configPath,
+      `version: 1
 worktree_dir: "worktrees"
 project_name: "myapp"
 tmux:
   windows:
     - name: "main"
 `,
-  );
+    );
 
-  const result = await runBunPromise(
-    withTestServices(startWorktreeSession({ path: wtPath }), {
-      worktree: {
-        ...liveWorktreeService,
-        isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
-        getMainRepoPath: (cwd?: string) =>
-          Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
-        getCurrentBranch: (cwd?: string) =>
-          Effect.succeed(cwd === wtPath ? "feature-branch" : null),
-      },
-    }),
-  );
+    const result = await runBunPromise(
+      withTestServices(startWorktreeSession({ path: wtPath }), {
+        worktree: {
+          ...liveWorktreeService,
+          isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
+          getMainRepoPath: (cwd?: string) =>
+            Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
+          getCurrentBranch: (cwd?: string) =>
+            Effect.succeed(cwd === wtPath ? "feature-branch" : null),
+        },
+      }),
+    );
 
-  expect(result.ide).toEqual({ attempted: false });
+    expect(result.ide).toEqual({ attempted: false });
+  } finally {
+    await Bun.write(configPath, originalConfig);
+  }
 });
 
 test("opens fallback IDE when ide flag is passed and config omits ide", async () => {
   process.chdir(fixture.repoDir);
-  await Bun.write(
-    join(fixture.repoDir, ".wct.yaml"),
-    `version: 1
+  const configPath = join(fixture.repoDir, ".wct.yaml");
+  const originalConfig = await Bun.file(configPath).text();
+  try {
+    await Bun.write(
+      configPath,
+      `version: 1
 worktree_dir: "worktrees"
 project_name: "myapp"
 tmux:
   windows:
     - name: "main"
 `,
-  );
-  const ideCalls: string[] = [];
+    );
+    const ideCalls: string[] = [];
 
-  const result = await runBunPromise(
-    withTestServices(startWorktreeSession({ path: wtPath, ide: true }), {
-      worktree: {
-        ...liveWorktreeService,
-        isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
-        getMainRepoPath: (cwd?: string) =>
-          Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
-        getCurrentBranch: (cwd?: string) =>
-          Effect.succeed(cwd === wtPath ? "feature-branch" : null),
-      },
-      ide: {
-        openIDE: (command) =>
-          Effect.sync(() => {
-            ideCalls.push(command);
-          }),
-      },
-    }),
-  );
+    const result = await runBunPromise(
+      withTestServices(startWorktreeSession({ path: wtPath, ide: true }), {
+        worktree: {
+          ...liveWorktreeService,
+          isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
+          getMainRepoPath: (cwd?: string) =>
+            Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
+          getCurrentBranch: (cwd?: string) =>
+            Effect.succeed(cwd === wtPath ? "feature-branch" : null),
+        },
+        ide: {
+          openIDE: (command) =>
+            Effect.sync(() => {
+              ideCalls.push(command);
+            }),
+        },
+      }),
+    );
 
-  expect(result.ide.attempted).toBe(true);
-  expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
+    expect(result.ide.attempted).toBe(true);
+    expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
+  } finally {
+    await Bun.write(configPath, originalConfig);
+  }
 });
+```
+
+The config restore in `finally` is required because `tests/worktree-session.test.ts` uses a shared fixture across tests and other tests expect the original `ide.command` config.
+
+```ts
+// Keep this pattern around any test that overwrites fixture.repoDir/.wct.yaml:
+const configPath = join(fixture.repoDir, ".wct.yaml");
+const originalConfig = await Bun.file(configPath).text();
+try {
+  await Bun.write(configPath, nextConfig);
+  // assertions
+} finally {
+  await Bun.write(configPath, originalConfig);
+}
 ```
 
 Add this import at the top of `tests/worktree-session.test.ts`:
@@ -1102,6 +1148,48 @@ Add imports:
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+```
+
+Update the existing `loadRepoInfo` tests in `tests/tui/use-registry.test.ts` because `LoadRepoInfoDeps` and `RepoInfo` now include IDE defaults. Add a local constant near the tests:
+
+```ts
+const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
+```
+
+In each existing `loadRepoInfo(..., deps)` call, add this dependency:
+
+```ts
+getIdeDefaults: () => Promise.resolve(defaultIdeDefaults),
+```
+
+In each existing exact `RepoInfo` expectation, add:
+
+```ts
+ideDefaults: defaultIdeDefaults,
+```
+
+For example, the inspection-failure expected object becomes:
+
+```ts
+await expect(
+  loadRepoInfo(repo, {
+    pathExists: () => true,
+    getProfileNames: () => ["default"],
+    getIdeDefaults: () => Promise.resolve(defaultIdeDefaults),
+    listWorktrees: () => Promise.reject(new Error("bad repo")),
+    getDefaultBranch: () => Promise.resolve("origin/main"),
+    getChangedFileCount: vi.fn(),
+    getAheadBehind: vi.fn(),
+  }),
+).resolves.toEqual({
+  id: "1",
+  repoPath: "/repo",
+  project: "demo",
+  worktrees: [],
+  profileNames: ["default"],
+  ideDefaults: defaultIdeDefaults,
+  error: "Failed to inspect repository",
+});
 ```
 
 - [ ] **Step 2: Let hooks verify the tests fail**
@@ -1421,6 +1509,20 @@ In `src/tui/hooks/useModalActions.ts`, add state setter:
 setOpenModalIdeDefaults: (v: SessionIdeDefaults) => void;
 ```
 
+Update `tests/tui/modal-actions.test.ts` fixtures at the same time:
+
+```ts
+const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
+```
+
+Add `ideDefaults: defaultIdeDefaults` to every hand-built `RepoInfo` object. Add `setOpenModalIdeDefaults: vi.fn()` to the shared `makeDeps` / dependency factory object that satisfies `ModalActionDeps`.
+
+If a test specifically needs the modal to default to opening an IDE, override the repo fixture with:
+
+```ts
+ideDefaults: { baseNoIde: false, profileNoIde: {} },
+```
+
 In `createPrepareOpenModal`, set:
 
 ```ts
@@ -1617,7 +1719,7 @@ git commit -m "chore: format ide defaults changes"
 - No config means no IDE by default: Task 1 removes IDE from `DEFAULT_CONFIG`; Task 3 launch helper skips missing config.
 - Global config counts: Task 2 preserves global/project merge behavior and makes IDE object merge field-wise.
 - CLI options override files: Tasks 4 and 5 add `--ide`, preserve `--no-ide`, and fail on both flags.
-- Fallback command: Task 3 uses `DEFAULT_IDE_CONFIG` only when force-opening without a command.
+- Fallback command: Task 3 uses `DEFAULT_IDE_CONFIG` when the final decision opens an IDE but the resolved config has no command.
 - `ide.open` shape: Tasks 1 and 2 add `open?: boolean` and merge it consistently across global, project, and profile.
 - TUI “No IDE” checkbox reflects config and profiles: Tasks 6 and 7 derive and apply base/profile defaults.
 - Workspace sync only when final decision opens IDE: Task 4 gates sync behind `ideLaunch.open`.

@@ -7,6 +7,7 @@ import {
   DEFAULT_IDE_CONFIG,
   expandTilde,
   loadConfig,
+  resolveIdeLaunch,
   resolveWorktreePath,
   slugifyBranch,
 } from "../src/config/loader";
@@ -555,6 +556,87 @@ describe("DEFAULT_CONFIG", () => {
         process.env.HOME = originalHome;
       }
     }
+  });
+});
+
+describe("resolveIdeLaunch", () => {
+  test("skips IDE when no config and no force flag are present", () => {
+    expect(resolveIdeLaunch(undefined, {})).toEqual({
+      open: false,
+      command: undefined,
+      config: undefined,
+    });
+  });
+
+  test("opens fallback IDE when force flag is true and no config exists", () => {
+    expect(resolveIdeLaunch(undefined, { ide: true })).toEqual({
+      open: true,
+      command: DEFAULT_IDE_CONFIG.command,
+      config: DEFAULT_IDE_CONFIG,
+    });
+  });
+
+  test("opens configured IDE by default when ide object exists", () => {
+    const config = { command: "cursor $WCT_WORKTREE_DIR" };
+    expect(resolveIdeLaunch(config, {})).toEqual({
+      open: true,
+      command: "cursor $WCT_WORKTREE_DIR",
+      config,
+    });
+  });
+
+  test("opens fallback IDE by default when ide object has no command", () => {
+    const config = {};
+    expect(resolveIdeLaunch(config, {})).toEqual({
+      open: true,
+      command: DEFAULT_IDE_CONFIG.command,
+      config: DEFAULT_IDE_CONFIG,
+    });
+  });
+
+  test("opens fallback IDE when ide.open is true and no command is configured", () => {
+    const config = { open: true };
+    expect(resolveIdeLaunch(config, {})).toEqual({
+      open: true,
+      command: DEFAULT_IDE_CONFIG.command,
+      config: { ...DEFAULT_IDE_CONFIG, open: true },
+    });
+  });
+
+  test("skips configured IDE when open is false", () => {
+    const config = { open: false, command: "cursor $WCT_WORKTREE_DIR" };
+    expect(resolveIdeLaunch(config, {})).toEqual({
+      open: false,
+      command: "cursor $WCT_WORKTREE_DIR",
+      config,
+    });
+  });
+
+  test("force flag opens configured command even when open is false", () => {
+    const config = { open: false, command: "cursor $WCT_WORKTREE_DIR" };
+    expect(resolveIdeLaunch(config, { ide: true })).toEqual({
+      open: true,
+      command: "cursor $WCT_WORKTREE_DIR",
+      config,
+    });
+  });
+
+  test("force flag uses fallback command when config has open false but no command", () => {
+    const config = { open: false };
+    expect(resolveIdeLaunch(config, { ide: true })).toEqual({
+      open: true,
+      command: DEFAULT_IDE_CONFIG.command,
+      config: { ...DEFAULT_IDE_CONFIG, open: false },
+    });
+  });
+
+  test("noIde flag skips even configured IDE", () => {
+    const config = { command: "cursor $WCT_WORKTREE_DIR" };
+    expect(resolveIdeLaunch(config, { noIde: true })).toEqual({
+      open: false,
+      command: "cursor $WCT_WORKTREE_DIR",
+      config,
+    });
   });
 });
 

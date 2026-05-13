@@ -17,6 +17,60 @@ const DEFAULT_CONFIG: WctConfig = {
   tmux: { windows: [{ name: "main" }] },
 };
 
+export interface IdeLaunchOptions {
+  ide?: boolean;
+  noIde?: boolean;
+}
+
+export interface ResolvedIdeLaunch {
+  open: boolean;
+  command: string | undefined;
+  config: WctConfig["ide"] | undefined;
+}
+
+export function resolveIdeLaunch(
+  ideConfig: WctConfig["ide"] | undefined,
+  options: IdeLaunchOptions,
+): ResolvedIdeLaunch {
+  const mergedConfig = ideConfig?.command
+    ? ideConfig
+    : ideConfig
+      ? { ...DEFAULT_IDE_CONFIG, ...ideConfig }
+      : undefined;
+
+  if (options.noIde) {
+    return {
+      open: false,
+      command: mergedConfig?.command,
+      config: mergedConfig,
+    };
+  }
+
+  if (options.ide) {
+    const config = mergedConfig ?? DEFAULT_IDE_CONFIG;
+    return {
+      open: true,
+      command: config.command,
+      config,
+    };
+  }
+
+  if (!mergedConfig) {
+    return {
+      open: false,
+      command: undefined,
+      config: undefined,
+    };
+  }
+
+  const open = mergedConfig.open ?? true;
+  return {
+    open,
+    command: mergedConfig.command,
+    config: mergedConfig,
+  };
+}
+
 export function expandTilde(path: string): string {
   if (path.startsWith("~/")) {
     return join(homedir(), path.slice(2));

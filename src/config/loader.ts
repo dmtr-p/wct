@@ -47,7 +47,7 @@ function mergeConfigs(
     ...project,
     copy: project.copy ?? global.copy,
     setup: project.setup ?? global.setup,
-    ide: project.ide ?? global.ide,
+    ide: mergeIdeConfig(global.ide, project.ide),
     tmux: project.tmux
       ? {
           ...global.tmux,
@@ -56,6 +56,18 @@ function mergeConfigs(
         }
       : global.tmux,
     profiles: project.profiles ?? global.profiles,
+  };
+}
+
+function mergeIdeConfig(
+  base: WctConfig["ide"] | undefined,
+  override: WctConfig["ide"] | undefined,
+): WctConfig["ide"] | undefined {
+  if (!base) return override;
+  if (!override) return base;
+  return {
+    ...base,
+    ...override,
   };
 }
 
@@ -240,7 +252,7 @@ function applyProfile(
   return {
     ...base,
     setup: profile.setup ?? base.setup,
-    ide: profile.ide ?? base.ide,
+    ide: mergeIdeConfig(base.ide, profile.ide),
     tmux: profile.tmux ?? base.tmux,
     copy: profile.copy ?? base.copy,
   };

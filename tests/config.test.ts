@@ -520,6 +520,42 @@ describe("DEFAULT_CONFIG", () => {
     );
     expect(result.config?.tmux?.windows?.[0]?.command).toBeUndefined();
   });
+
+  test("project ide.open overrides global ide command without discarding command", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "wct-config-project-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "wct-config-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeDir;
+    try {
+      await Bun.write(
+        join(homeDir, ".wct.yaml"),
+        `ide:
+  command: "cursor $WCT_WORKTREE_DIR"
+  fork_workspace: true
+`,
+      );
+      await Bun.write(
+        join(projectDir, ".wct.yaml"),
+        `ide:
+  open: false
+`,
+      );
+
+      const result = await loadConfig(projectDir);
+
+      expect(result.config?.ide).toEqual({
+        command: "cursor $WCT_WORKTREE_DIR",
+        fork_workspace: true,
+        open: false,
+      });
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
+  });
 });
 
 describe("resolveWorktreePath", () => {

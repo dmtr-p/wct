@@ -177,6 +177,7 @@ const openCliCommand = Command.make(
       "BRANCH",
     ),
     existing: booleanFlag("existing", "Use existing branch", "e"),
+    ide: booleanFlag("ide", "Force opening IDE"),
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     pr: optionalStringFlag(
@@ -198,12 +199,13 @@ const openCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ branch, base, existing, noIde, noAttach, pr, prompt, profile }) =>
+  ({ branch, base, existing, ide, noIde, noAttach, pr, prompt, profile }) =>
     Effect.gen(function* () {
       const options = yield* resolveOpenOptions({
         branch: optionToUndefined(branch),
         base: optionToUndefined(base),
         existing,
+        ide,
         noIde,
         pr: optionToUndefined(pr),
         prompt: optionToUndefined(prompt),

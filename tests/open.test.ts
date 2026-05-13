@@ -9,11 +9,16 @@ import {
   openWorktree,
   resolveOpenOptions,
 } from "../src/commands/open";
+import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import {
   type GitHubService,
   liveGitHubService,
 } from "../src/services/github-service";
+import {
+  type IdeService,
+  liveIdeService,
+} from "../src/services/ide-service";
 import {
   liveRegistryService,
   type RegistryServiceApi,
@@ -73,6 +78,28 @@ async function cleanupOpenWorkflowFixture(
 }
 
 describe("resolveOpenOptions", () => {
+  test("rejects --ide together with --no-ide", async () => {
+    await expect(
+      runResolveOpenOptions({
+        branch: "feature-branch",
+        ide: true,
+        noIde: true,
+      }),
+    ).rejects.toThrow("Options --ide and --no-ide cannot be used together");
+  });
+
+  test("passes through positive ide flag", async () => {
+    await expect(
+      runResolveOpenOptions({
+        branch: "feature-branch",
+        ide: true,
+      }),
+    ).resolves.toMatchObject({
+      ide: true,
+      noIde: false,
+    });
+  });
+
   test("rejects branch argument together with --pr", async () => {
     await expect(
       runResolveOpenOptions({
@@ -141,6 +168,7 @@ describe("resolveOpenOptions", () => {
       existing: false,
       base: "origin/feature-from-pr",
       cwd: "/repo",
+      ide: false,
       noIde: true,
       prompt: "focus",
       profile: "default",
@@ -301,6 +329,93 @@ describe("open workflow", () => {
     );
 
     expect(result.tmuxSessionStarted).toBe(false);
+  });
+
+  test("does not open IDE by default when config omits ide", async () => {
+    const ideCalls: string[] = [];
+    const result = await runBunPromise(
+      withTestServices(
+        openWorktree({
+          branch: "no-default-ide-branch",
+          cwd: fixture.repoDir,
+          existing: false,
+        }),
+        {
+          ide: {
+            ...liveIdeService,
+            openIDE: (command) =>
+              Effect.sync(() => {
+                ideCalls.push(command);
+              }),
+          } satisfies IdeService,
+          registry: {
+            ...liveRegistryService,
+            register: (path: string, name: string) =>
+              Effect.succeed({
+                id: "registry-item",
+                repo_path: path,
+                project: name,
+                created_at: 1,
+              }),
+          } satisfies RegistryServiceApi,
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+            branchExists: () => Effect.succeed(false),
+            createWorktree: (path) =>
+              Effect.succeed({ _tag: "Created" as const, path }),
+          },
+        },
+      ),
+    );
+
+    expect(result.tmuxSessionStarted).toBe(false);
+    expect(ideCalls).toEqual([]);
+  });
+
+  test("opens fallback IDE when --ide is passed and config omits ide", async () => {
+    const ideCalls: string[] = [];
+    const result = await runBunPromise(
+      withTestServices(
+        openWorktree({
+          branch: "forced-default-ide-branch",
+          cwd: fixture.repoDir,
+          existing: false,
+          ide: true,
+        }),
+        {
+          ide: {
+            ...liveIdeService,
+            openIDE: (command) =>
+              Effect.sync(() => {
+                ideCalls.push(command);
+              }),
+          } satisfies IdeService,
+          registry: {
+            ...liveRegistryService,
+            register: (path: string, name: string) =>
+              Effect.succeed({
+                id: "registry-item",
+                repo_path: path,
+                project: name,
+                created_at: 1,
+              }),
+          } satisfies RegistryServiceApi,
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+            branchExists: () => Effect.succeed(false),
+            createWorktree: (path) =>
+              Effect.succeed({ _tag: "Created" as const, path }),
+          },
+        },
+      ),
+    );
+
+    expect(result.tmuxSessionStarted).toBe(false);
+    expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
   });
 
   test("openCommand prints attach guidance when --no-attach is set and tmux started", async () => {

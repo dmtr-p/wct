@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { Effect } from "effect";
 import {
   loadConfig,
+  resolveIdeLaunch,
   resolveProfile,
   resolveWorktreePath,
 } from "../config/loader";
@@ -36,6 +37,11 @@ export const commandDef: CommandDef = {
       short: "e",
       type: "boolean",
       description: "Use existing branch",
+    },
+    {
+      name: "ide",
+      type: "boolean",
+      description: "Force opening IDE",
     },
     {
       name: "no-ide",
@@ -76,6 +82,7 @@ export interface OpenOptions {
   existing: boolean;
   base?: string;
   cwd?: string;
+  ide?: boolean;
   noIde?: boolean;
   prompt?: string;
   profile?: string;
@@ -86,6 +93,7 @@ export interface OpenRequest {
   existing?: boolean;
   base?: string;
   cwd?: string;
+  ide?: boolean;
   noIde?: boolean;
   pr?: string;
   prompt?: string;
@@ -111,11 +119,21 @@ export function resolveOpenOptions(
       existing = false,
       base,
       cwd,
-      noIde,
+      ide = false,
+      noIde = false,
       pr,
       prompt,
       profile,
     } = input;
+
+    if (ide && noIde) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Options --ide and --no-ide cannot be used together",
+        ),
+      );
+    }
 
     if (pr && branch) {
       return yield* Effect.fail(
@@ -199,6 +217,7 @@ export function resolveOpenOptions(
         existing: localExists,
         base: localExists ? undefined : `${remote}/${resolvedBranch}`,
         cwd,
+        ide,
         noIde,
         prompt,
         profile,
@@ -216,6 +235,7 @@ export function resolveOpenOptions(
       existing,
       base,
       cwd,
+      ide,
       noIde,
       prompt,
       profile,
@@ -227,7 +247,8 @@ export function openWorktree(
   options: OpenOptions,
 ): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { branch, existing, base, cwd, noIde, prompt, profile } = options;
+    const { branch, existing, base, cwd, ide, noIde, prompt, profile } =
+      options;
 
     const repo = yield* WorktreeService.use((service) =>
       service.isGitRepo(cwd),
@@ -269,6 +290,7 @@ export function openWorktree(
     if (profileName) {
       yield* logger.info(`Using profile '${profileName}'`);
     }
+    const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
 
     // Auto-register repo in TUI registry
     yield* Effect.catch(
@@ -345,8 +367,9 @@ export function openWorktree(
     }
 
     if (
-      (resolved.ide?.name ?? "vscode") === "vscode" &&
-      resolved.ide?.fork_workspace
+      ideLaunch.open &&
+      (ideLaunch.config?.name ?? "vscode") === "vscode" &&
+      ideLaunch.config?.fork_workspace
     ) {
       yield* logger.info("Syncing VS Code workspace state...");
       const syncResult = yield* VSCodeWorkspaceService.use((service) =>
@@ -415,8 +438,8 @@ export function openWorktree(
       workingDir: worktreePath,
       tmuxConfig: resolved.tmux,
       env,
-      ideCommand: resolved.ide?.command,
-      noIde,
+      ideCommand: ideLaunch.open ? ideLaunch.command : undefined,
+      noIde: false,
     });
 
     yield* logger.success(`Worktree '${branch}' is ready`);

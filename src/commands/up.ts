@@ -11,6 +11,11 @@ export const commandDef: CommandDef = {
   description: "Start tmux session and open IDE for a worktree",
   options: [
     {
+      name: "ide",
+      type: "boolean",
+      description: "Force opening IDE",
+    },
+    {
       name: "no-ide",
       type: "boolean",
       description: "Skip opening IDE",
@@ -46,6 +51,7 @@ export const commandDef: CommandDef = {
 };
 
 export interface UpOptions {
+  ide?: boolean;
   noIde?: boolean;
   noAttach?: boolean;
   profile?: string;
@@ -57,8 +63,9 @@ export function upCommand(
   options?: UpOptions,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { noIde, noAttach, profile, path, branch } = options ?? {};
+    const { ide, noIde, noAttach, profile, path, branch } = options ?? {};
     const result = yield* startWorktreeSession({
+      ide,
       noIde,
       profile,
       path,

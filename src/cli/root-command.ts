@@ -133,6 +133,7 @@ const switchCliCommand = Command.make(
 const upCliCommand = Command.make(
   "up",
   {
+    ide: booleanFlag("ide", "Force opening IDE"),
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     path: optionalStringFlag(
@@ -154,8 +155,9 @@ const upCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ noIde, noAttach, path, branch, profile }) =>
+  ({ ide, noIde, noAttach, path, branch, profile }) =>
     upCommand({
+      ide,
       noIde,
       noAttach,
       path: optionToUndefined(path),

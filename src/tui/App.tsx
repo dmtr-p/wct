@@ -15,6 +15,7 @@ import { useModalActions } from "./hooks/useModalActions";
 import { useRefresh } from "./hooks/useRefresh";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
+import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
 import { useTmux } from "./hooks/useTmux";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
@@ -63,6 +64,8 @@ export function App() {
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
+  const [openModalIdeDefaults, setOpenModalIdeDefaults] =
+    useState<SessionIdeDefaults>({ baseNoIde: true, profileNoIde: {} });
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   const [searchQuery, setSearchQuery] = useState("");
   const { actionError, showActionError, clearActionError } = useActionError();
@@ -256,6 +259,7 @@ export function App() {
     setOpenModalProfiles,
     setOpenModalRepoProject,
     setOpenModalRepoPath,
+    setOpenModalIdeDefaults,
     showActionError,
     clearActionError,
     switchSession,
@@ -500,6 +504,7 @@ export function App() {
           profileNames={openModalProfiles}
           repoProject={openModalRepoProject}
           repoPath={openModalRepoPath}
+          ideDefaults={openModalIdeDefaults}
           prList={openModalPRList}
           isRefreshing={refreshingProjects.has(openModalRepoProject)}
           onRefresh={openModalOnRefresh}
@@ -511,6 +516,7 @@ export function App() {
           visible
           width={Math.min(termCols, 60)}
           profileNames={mode.profileNames}
+          ideDefaults={mode.ideDefaults}
           onSubmit={modalActions.handleUpSubmit}
           onCancel={() => {
             setSelectedIndex(upModalReturnSelectedIndexRef.current);

@@ -1,6 +1,9 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
+import {
+  type SessionIdeDefaults,
+  useSessionOptionsState,
+} from "../hooks/useSessionOptionsState";
 import { Modal } from "./Modal";
 import { SessionOptionsSection } from "./SessionOptionsSection";
 import { resolveSessionOptionsSubmitState } from "./session-options";
@@ -15,6 +18,7 @@ export interface UpModalProps {
   visible: boolean;
   width?: number;
   profileNames: string[];
+  ideDefaults?: SessionIdeDefaults;
   onSubmit: (result: UpModalResult) => void;
   onCancel: () => void;
 }
@@ -30,6 +34,7 @@ export function UpModal({
   visible,
   width,
   profileNames,
+  ideDefaults,
   onSubmit,
   onCancel,
 }: UpModalProps) {
@@ -41,7 +46,7 @@ export function UpModal({
     setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames, visible);
+  } = useSessionOptionsState(profileNames, visible, ideDefaults);
 
   const fields = useMemo<UpModalField[]>(() => {
     const nextFields: UpModalField[] = [];

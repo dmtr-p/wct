@@ -35,6 +35,8 @@ vi.mock("../../src/commands/open", () => ({
   openWorktree: vi.fn(() => "open-worktree-effect"),
 }));
 
+const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
+
 function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
   return {
     treeItems: [],
@@ -52,6 +54,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setOpenModalProfiles: vi.fn(),
     setOpenModalRepoProject: vi.fn(),
     setOpenModalRepoPath: vi.fn(),
+    setOpenModalIdeDefaults: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
@@ -75,7 +78,7 @@ describe("createPrepareOpenModal", () => {
         project: "myproj",
         repoPath: "/home/user/myproj",
         profileNames: ["dev", "ci"],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        ideDefaults: defaultIdeDefaults,
         worktrees: [
           {
             branch: "feat-a",
@@ -100,6 +103,9 @@ describe("createPrepareOpenModal", () => {
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev", "ci"]);
     expect(deps.setOpenModalRepoProject).toHaveBeenCalledWith("myproj");
     expect(deps.setOpenModalRepoPath).toHaveBeenCalledWith("/home/user/myproj");
+    expect(deps.setOpenModalIdeDefaults).toHaveBeenCalledWith(
+      defaultIdeDefaults,
+    );
     expect(deps.setMode).toHaveBeenCalledWith(Mode.OpenModal);
   });
 
@@ -111,7 +117,7 @@ describe("createPrepareOpenModal", () => {
         project: "myproj",
         repoPath: "/repo",
         profileNames: ["dev"],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        ideDefaults: defaultIdeDefaults,
         worktrees: [],
       },
     ];
@@ -126,6 +132,20 @@ describe("createPrepareOpenModal", () => {
 
     expect(deps.setOpenModalBase).toHaveBeenCalledWith(undefined);
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev"]);
+    expect(deps.setOpenModalIdeDefaults).toHaveBeenCalledWith(
+      defaultIdeDefaults,
+    );
+  });
+
+  test("uses No IDE defaults when no repo is selected", () => {
+    const deps = makeDeps();
+    const prepare = createPrepareOpenModal(deps);
+
+    prepare();
+
+    expect(deps.setOpenModalIdeDefaults).toHaveBeenCalledWith(
+      defaultIdeDefaults,
+    );
   });
 });
 
@@ -200,6 +220,7 @@ describe("createHandleOpen", () => {
       profile: "dev",
       prompt: "ship it",
       existing: false,
+      ide: false,
       noIde: true,
     });
     expect(runTuiSilentPromise).toHaveBeenNthCalledWith(
@@ -269,6 +290,7 @@ describe("createHandleOpen", () => {
         profile: "",
         prompt: "",
         existing: false,
+        ide: true,
         noIde: false,
       });
       expect(openWorktree).toHaveBeenCalledWith(resolvedOptions);
@@ -332,6 +354,7 @@ describe("createHandleOpen", () => {
       profile: undefined,
       prompt: undefined,
       existing: false,
+      ide: true,
       noIde: false,
     });
 
@@ -487,6 +510,7 @@ describe("createHandleOpen", () => {
       profile: undefined,
       prompt: undefined,
       existing: false,
+      ide: true,
       noIde: false,
     });
     await vi.waitFor(() => {
@@ -750,7 +774,7 @@ describe("createPrepareUpModal", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: ["dev"],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        ideDefaults: defaultIdeDefaults,
         worktrees: [
           {
             branch: "feat",
@@ -778,7 +802,12 @@ describe("createPrepareUpModal", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.UpModal("/repo/feat", pendingKey("proj", "feat"), ["dev"]),
+      Mode.UpModal(
+        "/repo/feat",
+        pendingKey("proj", "feat"),
+        ["dev"],
+        defaultIdeDefaults,
+      ),
     );
   });
 
@@ -805,7 +834,7 @@ describe("createPrepareUpModal", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        ideDefaults: defaultIdeDefaults,
         worktrees: [
           {
             branch: "feat",
@@ -839,6 +868,9 @@ describe("createHandleUpSubmit", () => {
 
   test("restores return mode and index, then delegates to handleStartResult", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
+    const { startWorktreeSession } = await import(
+      "../../src/commands/worktree-session"
+    );
     const startResult = {
       worktreePath: "/repo/feat",
       mainRepoPath: "/repo",
@@ -855,7 +887,12 @@ describe("createHandleUpSubmit", () => {
     const returnIndexRef = { current: 3 };
     const handleStartResult = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", ["dev"]),
+      mode: Mode.UpModal(
+        "/repo/feat",
+        "proj/feat",
+        ["dev"],
+        defaultIdeDefaults,
+      ),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
       handleStartResult,
@@ -871,6 +908,12 @@ describe("createHandleUpSubmit", () => {
 
     // Wait for the async operation
     await vi.waitFor(() => {
+      expect(startWorktreeSession).toHaveBeenCalledWith({
+        path: "/repo/feat",
+        profile: "dev",
+        ide: true,
+        noIde: false,
+      });
       expect(handleStartResult).toHaveBeenCalledWith(startResult, true);
     });
   });
@@ -882,7 +925,7 @@ describe("createHandleUpSubmit", () => {
     );
 
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", []),
+      mode: Mode.UpModal("/repo/feat", "proj/feat", [], defaultIdeDefaults),
       upModalReturnModeRef: { current: Mode.Navigate },
       upModalReturnSelectedIndexRef: { current: 0 },
     });

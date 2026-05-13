@@ -14,6 +14,7 @@ import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
+import type { SessionIdeDefaults } from "./useSessionOptionsState";
 import type { TmuxClientDiscovery } from "./useTmux";
 
 export interface ModalActionDeps {
@@ -31,6 +32,7 @@ export interface ModalActionDeps {
   setOpenModalProfiles: (v: string[]) => void;
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
+  setOpenModalIdeDefaults: (v: SessionIdeDefaults) => void;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -53,12 +55,14 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
     let profiles: string[] = [];
     let project = "";
     let repoPath = "";
+    let ideDefaults: SessionIdeDefaults = { baseNoIde: true, profileNoIde: {} };
     if (selected) {
       const repo = deps.filteredRepos[selected.repoIndex];
       if (repo) {
         profiles = repo.profileNames;
         project = repo.project;
         repoPath = repo.repoPath;
+        ideDefaults = repo.ideDefaults;
       }
       if (
         repo &&
@@ -74,6 +78,7 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
     deps.setOpenModalProfiles(profiles);
     deps.setOpenModalRepoProject(project);
     deps.setOpenModalRepoPath(repoPath);
+    deps.setOpenModalIdeDefaults(ideDefaults);
     deps.setMode(Mode.OpenModal);
   };
 }
@@ -120,6 +125,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
               profile: opts.profile,
               prompt: opts.prompt,
               existing: opts.existing,
+              ide: !opts.noIde,
               noIde: opts.noIde,
             }),
           );
@@ -198,7 +204,9 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
-    deps.setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
+    deps.setMode(
+      Mode.UpModal(wt.path, worktreeKey, repo.profileNames, repo.ideDefaults),
+    );
   };
 }
 
@@ -227,6 +235,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
           startWorktreeSession({
             path: worktreePath,
             profile: result.profile,
+            ide: !result.noIde,
             noIde: result.noIde,
           }),
         );

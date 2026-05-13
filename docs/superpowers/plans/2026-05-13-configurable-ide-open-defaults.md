@@ -1015,9 +1015,11 @@ Add tests:
 ```ts
 describe("getIdeDefaults", () => {
   test("defaults to no IDE when config cannot be loaded", async () => {
-    await expect(getIdeDefaults("/missing")).resolves.toEqual({
-      baseNoIde: true,
-      profileNoIde: {},
+    await withIsolatedHome(async () => {
+      await expect(getIdeDefaults("/missing")).resolves.toEqual({
+        baseNoIde: true,
+        profileNoIde: {},
+      });
     });
   });
 
@@ -1069,17 +1071,12 @@ profiles:
 Add this test helper in the same file:
 
 ```ts
-async function withConfigFixture(
-  content: string,
-  run: (repoPath: string) => Promise<void>,
-): Promise<void> {
-  const repoPath = mkdtempSync(join(tmpdir(), "wct-tui-registry-"));
+async function withIsolatedHome(run: () => Promise<void>): Promise<void> {
   const homeDir = mkdtempSync(join(tmpdir(), "wct-tui-home-"));
   const originalHome = process.env.HOME;
-  writeFileSync(join(repoPath, ".wct.yaml"), content);
   process.env.HOME = homeDir;
   try {
-    await run(repoPath);
+    await run();
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -1087,6 +1084,15 @@ async function withConfigFixture(
       process.env.HOME = originalHome;
     }
   }
+}
+
+async function withConfigFixture(
+  content: string,
+  run: (repoPath: string) => Promise<void>,
+): Promise<void> {
+  const repoPath = mkdtempSync(join(tmpdir(), "wct-tui-registry-"));
+  writeFileSync(join(repoPath, ".wct.yaml"), content);
+  await withIsolatedHome(() => run(repoPath));
 }
 ```
 

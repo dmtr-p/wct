@@ -15,10 +15,7 @@ import {
   type GitHubService,
   liveGitHubService,
 } from "../src/services/github-service";
-import {
-  type IdeService,
-  liveIdeService,
-} from "../src/services/ide-service";
+import { type IdeService, liveIdeService } from "../src/services/ide-service";
 import {
   liveRegistryService,
   type RegistryServiceApi,

@@ -17,6 +17,10 @@ const DEFAULT_CONFIG: WctConfig = {
   tmux: { windows: [{ name: "main" }] },
 };
 
+function homeDir(): string {
+  return process.env.HOME ?? homedir();
+}
+
 export interface IdeLaunchOptions {
   ide?: boolean;
   noIde?: boolean;
@@ -73,7 +77,7 @@ export function resolveIdeLaunch(
 
 export function expandTilde(path: string): string {
   if (path.startsWith("~/")) {
-    return join(homedir(), path.slice(2));
+    return join(homeDir(), path.slice(2));
   }
   return path;
 }
@@ -210,7 +214,7 @@ export function loadConfigEffect(
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const projectConfigPath = path.join(projectDir, CONFIG_FILENAME);
-    const globalConfigPath = path.join(homedir(), CONFIG_FILENAME);
+    const globalConfigPath = path.join(homeDir(), CONFIG_FILENAME);
 
     const [projectConfig, globalConfig] = yield* Effect.all([
       loadConfigFileEffect(projectConfigPath),

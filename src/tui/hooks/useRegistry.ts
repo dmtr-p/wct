@@ -37,7 +37,8 @@ export interface RepoInfo {
 
 function getProfileNames(repoPath: string): string[] {
   try {
-    const paths = [join(repoPath, ".wct.yaml"), join(homedir(), ".wct.yaml")];
+    const home = process.env.HOME ?? homedir();
+    const paths = [join(repoPath, ".wct.yaml"), join(home, ".wct.yaml")];
     for (const p of paths) {
       if (!existsSync(p)) continue;
       const content = readFileSync(p, "utf-8");

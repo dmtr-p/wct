@@ -22,7 +22,7 @@ import { launchSessionAndIde, maybeAttachSession } from "./session";
 
 export const commandDef: CommandDef = {
   name: "open",
-  description: "Create worktree, run setup, start tmux session, open IDE",
+  description: "Create worktree, run setup, and start configured environment",
   args: "<branch>",
   options: [
     {

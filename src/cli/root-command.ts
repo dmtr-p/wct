@@ -164,9 +164,7 @@ const upCliCommand = Command.make(
       branch: optionToUndefined(branch),
       profile: optionToUndefined(profile),
     }),
-).pipe(
-  Command.withDescription("Start tmux session and open IDE for a worktree"),
-);
+).pipe(Command.withDescription("Start configured environment for a worktree"));
 
 const openCliCommand = Command.make(
   "open",
@@ -174,7 +172,7 @@ const openCliCommand = Command.make(
     branch: optionalBranchArgument,
     base: optionalStringFlag(
       "base",
-      "Base branch for new worktree",
+      "Base branch for new worktree (default: HEAD)",
       "b",
       "BRANCH",
     ),
@@ -218,7 +216,7 @@ const openCliCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Create worktree, run setup, start tmux session, open IDE",
+    "Create worktree, run setup, and start configured environment",
   ),
 );
 

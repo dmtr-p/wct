@@ -8,7 +8,7 @@ import { startWorktreeSession } from "./worktree-session";
 
 export const commandDef: CommandDef = {
   name: "up",
-  description: "Start tmux session and open IDE for a worktree",
+  description: "Start configured environment for a worktree",
   options: [
     {
       name: "ide",

@@ -527,6 +527,35 @@ test("passes through positive ide flag", async () => {
 });
 ```
 
+Update the existing exact PR normalization expectation in `tests/open.test.ts` to include the new normalized `ide` boolean:
+
+```ts
+await expect(
+  runResolveOpenOptions(
+    {
+      cwd: "/repo",
+      pr: "123",
+      noIde: true,
+      prompt: "focus",
+      profile: "default",
+    },
+    {
+      github: githubOverrides,
+      worktree: worktreeOverrides,
+    },
+  ),
+).resolves.toEqual({
+  branch: "feature-from-pr",
+  existing: false,
+  base: "origin/feature-from-pr",
+  cwd: "/repo",
+  ide: false,
+  noIde: true,
+  prompt: "focus",
+  profile: "default",
+});
+```
+
 - [ ] **Step 2: Write failing open launch behavior tests**
 
 In `tests/open.test.ts`, add a workflow test using the existing fixture style:
@@ -618,14 +647,14 @@ export interface OpenOptions {
   existing: boolean;
   base?: string;
   cwd?: string;
-  ide?: boolean;
-  noIde?: boolean;
+  ide: boolean;
+  noIde: boolean;
   pr?: string;
   prompt?: string;
   profile?: string;
 }
 
-export interface ResolveOpenOptionsInput {
+export interface OpenRequest {
   branch?: string;
   existing?: boolean;
   base?: string;
@@ -638,7 +667,23 @@ export interface ResolveOpenOptionsInput {
 }
 ```
 
-At the start of `resolveOpenOptions`, after destructuring:
+At the start of `resolveOpenOptions`, default both booleans during destructuring:
+
+```ts
+const {
+  branch,
+  existing = false,
+  base,
+  cwd,
+  ide = false,
+  noIde = false,
+  pr,
+  prompt,
+  profile,
+} = input;
+```
+
+Then validate the conflict:
 
 ```ts
 if (ide && noIde) {
@@ -651,7 +696,7 @@ if (ide && noIde) {
 }
 ```
 
-Return both flags:
+Return both flags in both PR and non-PR return objects:
 
 ```ts
 ide,
@@ -692,7 +737,13 @@ import {
 } from "../config/loader";
 ```
 
-Inside `openWorktree`, compute after profile resolution:
+At the top of `openWorktree`, include `ide` in the options destructure:
+
+```ts
+const { branch, existing, base, cwd, ide, noIde, prompt, profile } = options;
+```
+
+Then compute after profile resolution:
 
 ```ts
 const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
@@ -971,45 +1022,45 @@ describe("getIdeDefaults", () => {
   });
 
   test("base config with ide object defaults No IDE unchecked", async () => {
-    const repoPath = makeConfigFixture(`ide:
+    await withConfigFixture(`ide:
   command: "cursor $WCT_WORKTREE_DIR"
-`);
-
-    await expect(getIdeDefaults(repoPath)).resolves.toEqual({
-      baseNoIde: false,
-      profileNoIde: {},
+`, async (repoPath) => {
+      await expect(getIdeDefaults(repoPath)).resolves.toEqual({
+        baseNoIde: false,
+        profileNoIde: {},
+      });
     });
   });
 
   test("profile ide.open false defaults No IDE checked for that profile", async () => {
-    const repoPath = makeConfigFixture(`ide:
+    await withConfigFixture(`ide:
   command: "cursor $WCT_WORKTREE_DIR"
 profiles:
   quiet:
     ide:
       open: false
-`);
-
-    await expect(getIdeDefaults(repoPath)).resolves.toEqual({
-      baseNoIde: false,
-      profileNoIde: {
-        quiet: true,
-      },
+`, async (repoPath) => {
+      await expect(getIdeDefaults(repoPath)).resolves.toEqual({
+        baseNoIde: false,
+        profileNoIde: {
+          quiet: true,
+        },
+      });
     });
   });
 
   test("profile ide object defaults No IDE unchecked when base has no ide", async () => {
-    const repoPath = makeConfigFixture(`profiles:
+    await withConfigFixture(`profiles:
   cursor:
     ide:
       command: "cursor $WCT_WORKTREE_DIR"
-`);
-
-    await expect(getIdeDefaults(repoPath)).resolves.toEqual({
-      baseNoIde: true,
-      profileNoIde: {
-        cursor: false,
-      },
+`, async (repoPath) => {
+      await expect(getIdeDefaults(repoPath)).resolves.toEqual({
+        baseNoIde: true,
+        profileNoIde: {
+          cursor: false,
+        },
+      });
     });
   });
 });
@@ -1018,10 +1069,24 @@ profiles:
 Add this test helper in the same file:
 
 ```ts
-function makeConfigFixture(content: string): string {
+async function withConfigFixture(
+  content: string,
+  run: (repoPath: string) => Promise<void>,
+): Promise<void> {
   const repoPath = mkdtempSync(join(tmpdir(), "wct-tui-registry-"));
+  const homeDir = mkdtempSync(join(tmpdir(), "wct-tui-home-"));
+  const originalHome = process.env.HOME;
   writeFileSync(join(repoPath, ".wct.yaml"), content);
-  return repoPath;
+  process.env.HOME = homeDir;
+  try {
+    await run(repoPath);
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+  }
 }
 ```
 
@@ -1207,6 +1272,11 @@ export interface SessionIdeDefaults {
   profileNoIde: Record<string, boolean>;
 }
 
+const DEFAULT_SESSION_IDE_DEFAULTS: SessionIdeDefaults = {
+  baseNoIde: false,
+  profileNoIde: {},
+};
+
 export function resolveNoIdeDefault(opts: {
   selectedProfileValue: string | undefined;
   baseNoIde: boolean;
@@ -1225,7 +1295,7 @@ Update `useSessionOptionsState` signature:
 export function useSessionOptionsState(
   profileNames: string[],
   enabled = true,
-  ideDefaults: SessionIdeDefaults = { baseNoIde: false, profileNoIde: {} },
+  ideDefaults: SessionIdeDefaults = DEFAULT_SESSION_IDE_DEFAULTS,
 ): SessionOptionsState {
 ```
 
@@ -1249,6 +1319,7 @@ On reset, apply defaults:
 
 ```ts
 const ideDefaultsKey = JSON.stringify(ideDefaults);
+// biome-ignore lint/correctness/useExhaustiveDependencies: ideDefaultsKey is a content-derived stable identity for ideDefaults
 useEffect(() => {
   if (!enabled) return;
   const nextProfile = getInitialSelectedProfileValue(profileNames);
@@ -1264,9 +1335,10 @@ useEffect(() => {
 }, [profileKey, enabled, ideDefaultsKey]);
 ```
 
-Add an effect to update `noIde` when the selected profile changes:
+Add an effect to update `noIde` when the selected profile or the content of the defaults changes. Do not depend on the `profileNoIde` object identity; that can reset a user's manual toggle when a parent passes an equivalent fresh object.
 
 ```ts
+// biome-ignore lint/correctness/useExhaustiveDependencies: ideDefaultsKey is a content-derived stable identity for ideDefaults
 useEffect(() => {
   if (!enabled) return;
   setNoIde(
@@ -1276,7 +1348,7 @@ useEffect(() => {
       profileNoIde: ideDefaults.profileNoIde,
     }),
   );
-}, [selectedProfileValue, enabled, ideDefaultsKey, ideDefaults.baseNoIde, ideDefaults.profileNoIde]);
+}, [selectedProfileValue, enabled, ideDefaultsKey]);
 ```
 
 - [ ] **Step 3: Pass defaults into UpModal and OpenModal**

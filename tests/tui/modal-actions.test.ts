@@ -75,6 +75,7 @@ describe("createPrepareOpenModal", () => {
         project: "myproj",
         repoPath: "/home/user/myproj",
         profileNames: ["dev", "ci"],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat-a",
@@ -110,6 +111,7 @@ describe("createPrepareOpenModal", () => {
         project: "myproj",
         repoPath: "/repo",
         profileNames: ["dev"],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [],
       },
     ];
@@ -748,6 +750,7 @@ describe("createPrepareUpModal", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: ["dev"],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -802,6 +805,7 @@ describe("createPrepareUpModal", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",

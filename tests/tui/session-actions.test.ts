@@ -250,6 +250,7 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "main",
@@ -290,6 +291,7 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -332,6 +334,7 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -469,6 +472,7 @@ describe("createHandleDownSelectedWorktree", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -502,6 +506,7 @@ describe("createHandleDownSelectedWorktree", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -544,6 +549,7 @@ describe("createHandleDownSelectedWorktree", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",

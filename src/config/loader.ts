@@ -8,9 +8,12 @@ import { resolveConfig, validateConfig } from "./validator";
 
 const CONFIG_FILENAME = ".wct.yaml";
 
+const DEFAULT_IDE_CONFIG = {
+  command: "code $WCT_WORKTREE_DIR",
+} satisfies NonNullable<WctConfig["ide"]>;
+
 const DEFAULT_CONFIG: WctConfig = {
   worktree_dir: "..",
-  ide: { command: "code $WCT_WORKTREE_DIR" },
   tmux: { windows: [{ name: "main" }] },
 };
 
@@ -283,4 +286,4 @@ export function resolveProfile(
   return { config: stripProfiles(config) };
 }
 
-export { CONFIG_FILENAME, DEFAULT_CONFIG };
+export { CONFIG_FILENAME, DEFAULT_CONFIG, DEFAULT_IDE_CONFIG };

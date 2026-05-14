@@ -161,6 +161,51 @@ describe("resolveProfile", () => {
     expect(result.copy).toEqual([".gitignore"]);
   });
 
+  test("profile ide.open overrides base ide without discarding command", () => {
+    const config = baseConfig({
+      ide: {
+        name: "vscode",
+        command: "code $WCT_WORKTREE_DIR",
+        fork_workspace: true,
+      },
+      profiles: {
+        quiet: {
+          ide: { open: false },
+        },
+      },
+    });
+
+    const { config: result } = resolveProfile(config, "any-branch", "quiet");
+
+    expect(result.ide).toEqual({
+      name: "vscode",
+      command: "code $WCT_WORKTREE_DIR",
+      fork_workspace: true,
+      open: false,
+    });
+  });
+
+  test("profile ide command overrides base command and inherits open flag", () => {
+    const config = baseConfig({
+      ide: {
+        open: false,
+        command: "code $WCT_WORKTREE_DIR",
+      },
+      profiles: {
+        cursor: {
+          ide: { command: "cursor $WCT_WORKTREE_DIR" },
+        },
+      },
+    });
+
+    const { config: result } = resolveProfile(config, "any-branch", "cursor");
+
+    expect(result.ide).toEqual({
+      open: false,
+      command: "cursor $WCT_WORKTREE_DIR",
+    });
+  });
+
   test("empty string profile treated as no profile", () => {
     const config = baseConfig({
       profiles: {

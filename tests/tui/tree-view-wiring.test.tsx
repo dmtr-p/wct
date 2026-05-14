@@ -29,6 +29,7 @@ describe("TreeView maxWidth wiring", () => {
         project: "very-long-project-name",
         worktrees: [],
         profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
       },
     ];
     const expandedRepos = new Set(["repo-1"]);

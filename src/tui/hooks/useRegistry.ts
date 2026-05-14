@@ -3,6 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { useCallback, useEffect, useState } from "react";
+import {
+  loadConfig,
+  resolveIdeLaunch,
+  resolveProfile,
+} from "../../config/loader";
 import { RegistryService } from "../../services/registry-service";
 import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
@@ -15,18 +20,25 @@ export interface WorktreeInfo {
   sync: { ahead: number; behind: number } | null;
 }
 
+export interface IdeDefaults {
+  baseNoIde: boolean;
+  profileNoIde: Record<string, boolean>;
+}
+
 export interface RepoInfo {
   id: string;
   repoPath: string;
   project: string;
   worktrees: WorktreeInfo[];
   profileNames: string[];
+  ideDefaults: IdeDefaults;
   error?: string;
 }
 
 function getProfileNames(repoPath: string): string[] {
   try {
-    const paths = [join(repoPath, ".wct.yaml"), join(homedir(), ".wct.yaml")];
+    const home = process.env.HOME ?? homedir();
+    const paths = [join(repoPath, ".wct.yaml"), join(home, ".wct.yaml")];
     for (const p of paths) {
       if (!existsSync(p)) continue;
       const content = readFileSync(p, "utf-8");
@@ -50,6 +62,7 @@ interface RegistryRepoItem {
 interface LoadRepoInfoDeps {
   pathExists: (path: string) => boolean;
   getProfileNames: (repoPath: string) => string[];
+  getIdeDefaults: (repoPath: string) => Promise<IdeDefaults>;
   listWorktrees: (
     repoPath: string,
   ) => Promise<import("../../services/worktree-service").Worktree[]>;
@@ -59,6 +72,24 @@ interface LoadRepoInfoDeps {
     worktreePath: string,
     ref: string,
   ) => Promise<{ ahead: number; behind: number } | null>;
+}
+
+export async function getIdeDefaults(repoPath: string): Promise<IdeDefaults> {
+  try {
+    const { config } = await loadConfig(repoPath);
+    if (!config) {
+      return { baseNoIde: true, profileNoIde: {} };
+    }
+    const baseNoIde = !resolveIdeLaunch(config.ide, {}).open;
+    const profileNoIde: Record<string, boolean> = {};
+    for (const name of Object.keys(config.profiles ?? {})) {
+      const { config: profiled } = resolveProfile(config, "main", name);
+      profileNoIde[name] = !resolveIdeLaunch(profiled.ide, {}).open;
+    }
+    return { baseNoIde, profileNoIde };
+  } catch {
+    return { baseNoIde: true, profileNoIde: {} };
+  }
 }
 
 export async function loadRepoInfo(
@@ -72,27 +103,44 @@ export async function loadRepoInfo(
       project: item.project,
       worktrees: [],
       profileNames: [],
+      ideDefaults: { baseNoIde: true, profileNoIde: {} },
       error: "Directory not found",
     };
   }
 
-  const profileNames = deps.getProfileNames(item.repo_path);
+  const profileNamesPromise = Promise.resolve(
+    deps.getProfileNames(item.repo_path),
+  );
+  const ideDefaultsPromise = deps.getIdeDefaults(item.repo_path);
 
   let worktreeList: import("../../services/worktree-service").Worktree[];
   let defaultBranch: string | null;
+  let profileNames: string[];
+  let ideDefaults: IdeDefaults;
 
   try {
-    [worktreeList, defaultBranch] = await Promise.all([
-      deps.listWorktrees(item.repo_path),
-      deps.getDefaultBranch(item.repo_path),
-    ]);
+    [profileNames, ideDefaults, worktreeList, defaultBranch] =
+      await Promise.all([
+        profileNamesPromise,
+        ideDefaultsPromise,
+        deps.listWorktrees(item.repo_path),
+        deps.getDefaultBranch(item.repo_path),
+      ]);
   } catch {
+    const [fallbackProfileNames, fallbackIdeDefaults] = await Promise.all([
+      profileNamesPromise.catch(() => []),
+      ideDefaultsPromise.catch(() => ({
+        baseNoIde: true,
+        profileNoIde: {},
+      })),
+    ]);
     return {
       id: item.id,
       repoPath: item.repo_path,
       project: item.project,
       worktrees: [],
-      profileNames,
+      profileNames: fallbackProfileNames,
+      ideDefaults: fallbackIdeDefaults,
       error: "Failed to inspect repository",
     };
   }
@@ -123,6 +171,7 @@ export async function loadRepoInfo(
     project: item.project,
     worktrees,
     profileNames,
+    ideDefaults,
   };
 }
 
@@ -142,6 +191,7 @@ export function useRegistry() {
           loadRepoInfo(item, {
             pathExists: existsSync,
             getProfileNames,
+            getIdeDefaults,
             listWorktrees: (repoPath) =>
               tuiRuntime.runPromise(
                 WorktreeService.use((s) => s.listWorktrees(repoPath)),

@@ -8,6 +8,7 @@ import {
   startWorktreeSession,
   stopWorktreeSession,
 } from "../src/commands/worktree-session";
+import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import { liveTmuxService } from "../src/services/tmux";
@@ -81,6 +82,20 @@ ide:
 
   afterAll(async () => {
     await cleanupLinkedWorktreeFixture(fixture, originalDir);
+  });
+
+  test("rejects ide and noIde together", async () => {
+    await expect(
+      runBunPromise(
+        withTestServices(
+          startWorktreeSession({
+            path: wtPath,
+            ide: true,
+            noIde: true,
+          }),
+        ),
+      ),
+    ).rejects.toThrow("Options --ide and --no-ide cannot be used together");
   });
 
   test("returns structured session start data for a worktree path", async () => {
@@ -182,6 +197,135 @@ ide:
       },
     });
     expect(result.ide).toEqual({ attempted: false });
+  });
+
+  test("skips IDE by default when config omits ide", async () => {
+    const wctYamlPath = join(fixture.repoDir, ".wct.yaml");
+    const originalYaml = await Bun.file(wctYamlPath).text();
+    const originalHome = process.env.HOME;
+    const homeDir = await mkdtemp(join(tmpdir(), "wct-session-home-"));
+
+    try {
+      process.env.HOME = homeDir;
+      await Bun.write(
+        wctYamlPath,
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(fixture.repoDir);
+
+      const ideCalls: string[] = [];
+      const result = await runBunPromise(
+        withTestServices(startWorktreeSession({ path: wtPath }), {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
+            getMainRepoPath: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
+            getCurrentBranch: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? "feature-branch" : null),
+          },
+          tmux: {
+            ...liveTmuxService,
+            createSession: (name) =>
+              Effect.succeed({
+                _tag: "Created" as const,
+                sessionName: name,
+              }),
+          },
+          ide: {
+            openIDE: (command) =>
+              Effect.sync(() => {
+                ideCalls.push(command);
+              }),
+          },
+        }),
+      );
+
+      expect(result.ide).toEqual({ attempted: false });
+      expect(ideCalls).toEqual([]);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      process.chdir(originalDir);
+      await Bun.write(wctYamlPath, originalYaml);
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  test("opens fallback IDE when ide flag is passed and config omits ide", async () => {
+    const wctYamlPath = join(fixture.repoDir, ".wct.yaml");
+    const originalYaml = await Bun.file(wctYamlPath).text();
+    const originalHome = process.env.HOME;
+    const homeDir = await mkdtemp(join(tmpdir(), "wct-session-home-"));
+
+    try {
+      process.env.HOME = homeDir;
+      await Bun.write(
+        wctYamlPath,
+        `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+tmux:
+  windows:
+    - name: "main"
+`,
+      );
+
+      process.chdir(fixture.repoDir);
+
+      const ideCalls: string[] = [];
+      const result = await runBunPromise(
+        withTestServices(startWorktreeSession({ path: wtPath, ide: true }), {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
+            getMainRepoPath: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
+            getCurrentBranch: (cwd?: string) =>
+              Effect.succeed(cwd === wtPath ? "feature-branch" : null),
+          },
+          tmux: {
+            ...liveTmuxService,
+            createSession: (name) =>
+              Effect.succeed({
+                _tag: "Created" as const,
+                sessionName: name,
+              }),
+          },
+          ide: {
+            openIDE: (command) =>
+              Effect.sync(() => {
+                ideCalls.push(command);
+              }),
+          },
+        }),
+      );
+
+      expect(result.ide).toMatchObject({
+        attempted: true,
+        ok: true,
+      });
+      expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      process.chdir(originalDir);
+      await Bun.write(wctYamlPath, originalYaml);
+      await rm(homeDir, { recursive: true, force: true });
+    }
   });
 });
 

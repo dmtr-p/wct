@@ -164,7 +164,7 @@ describe("Effect CLI root", () => {
     expect(output).toContain("local subcmd_index=$((cmd_index + 1))");
     expect(output).toContain("while [[ $subcmd_index -lt $cword ]]");
     expect(output).toContain(
-      "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-ide --no-attach --pr --prompt -p --profile -P' -- \"$cur\"))",
+      "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --ide --no-ide --no-attach --pr --prompt -p --profile -P' -- \"$cur\"))",
     );
   });
 

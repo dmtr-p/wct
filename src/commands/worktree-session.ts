@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import { loadConfig, resolveProfile } from "../config/loader";
+import { loadConfig, resolveIdeLaunch, resolveProfile } from "../config/loader";
 import type { WctRuntimeServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
 import {
@@ -26,6 +26,7 @@ export type OperationAttempt<T> =
 
 export interface StartWorktreeSessionOptions
   extends ResolveWorktreePathOptions {
+  ide?: boolean;
   noIde?: boolean;
   profile?: string;
 }
@@ -80,7 +81,17 @@ export function startWorktreeSession(
   WctRuntimeServices | IdeServiceApi
 > {
   return Effect.gen(function* () {
-    const { noIde, profile, path, branch: branchOption } = options;
+    const { ide, noIde, profile, path, branch: branchOption } = options;
+
+    if (ide && noIde) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Options --ide and --no-ide cannot be used together",
+        ),
+      );
+    }
+
     const worktreePath = yield* resolveWorktreePath({
       path,
       branch: branchOption,
@@ -133,6 +144,7 @@ export function startWorktreeSession(
           error instanceof Error ? error.message : String(error),
         ),
     });
+    const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
 
     const sessionName = formatSessionName(basename(worktreePath));
     const env: WctEnv = {
@@ -142,7 +154,7 @@ export function startWorktreeSession(
       WCT_PROJECT: config.project_name,
     };
 
-    const [tmux, ide] = yield* Effect.all(
+    const [tmux, ideResult] = yield* Effect.all(
       [
         resolved.tmux
           ? captureAttempt(
@@ -156,10 +168,10 @@ export function startWorktreeSession(
               ),
             )
           : Effect.succeed(skippedAttempt<CreateSessionResult>()),
-        resolved.ide?.command && !noIde
+        ideLaunch.open && ideLaunch.command
           ? captureAttempt(
               IdeService.use((service) =>
-                service.openIDE(resolved.ide?.command ?? "", env),
+                service.openIDE(ideLaunch.command ?? "", env),
               ),
             )
           : Effect.succeed(skippedAttempt<void>()),
@@ -176,7 +188,7 @@ export function startWorktreeSession(
       profileName,
       env,
       tmux,
-      ide,
+      ide: ideResult,
     };
   });
 }

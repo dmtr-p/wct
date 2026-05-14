@@ -39,6 +39,7 @@ setup:
 
 # IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
 ide:
+  open: true
   name: vscode
   command: "code $WCT_WORKTREE_DIR"
   # command: "cursor $WCT_WORKTREE_DIR"

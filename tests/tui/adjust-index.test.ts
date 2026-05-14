@@ -47,6 +47,7 @@ function fakeRepo(id: string, branches: string[]): RepoInfo {
       sync: null,
     })),
     profileNames: [],
+    ideDefaults: { baseNoIde: true, profileNoIde: {} },
   };
 }
 

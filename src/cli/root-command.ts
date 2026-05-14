@@ -133,6 +133,7 @@ const switchCliCommand = Command.make(
 const upCliCommand = Command.make(
   "up",
   {
+    ide: booleanFlag("ide", "Force opening IDE"),
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     path: optionalStringFlag(
@@ -154,17 +155,16 @@ const upCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ noIde, noAttach, path, branch, profile }) =>
+  ({ ide, noIde, noAttach, path, branch, profile }) =>
     upCommand({
+      ide,
       noIde,
       noAttach,
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
       profile: optionToUndefined(profile),
     }),
-).pipe(
-  Command.withDescription("Start tmux session and open IDE for a worktree"),
-);
+).pipe(Command.withDescription("Start configured environment for a worktree"));
 
 const openCliCommand = Command.make(
   "open",
@@ -172,11 +172,12 @@ const openCliCommand = Command.make(
     branch: optionalBranchArgument,
     base: optionalStringFlag(
       "base",
-      "Base branch for new worktree",
+      "Base branch for new worktree (default: HEAD)",
       "b",
       "BRANCH",
     ),
     existing: booleanFlag("existing", "Use existing branch", "e"),
+    ide: booleanFlag("ide", "Force opening IDE"),
     noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     pr: optionalStringFlag(
@@ -198,12 +199,13 @@ const openCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ branch, base, existing, noIde, noAttach, pr, prompt, profile }) =>
+  ({ branch, base, existing, ide, noIde, noAttach, pr, prompt, profile }) =>
     Effect.gen(function* () {
       const options = yield* resolveOpenOptions({
         branch: optionToUndefined(branch),
         base: optionToUndefined(base),
         existing,
+        ide,
         noIde,
         pr: optionToUndefined(pr),
         prompt: optionToUndefined(prompt),
@@ -214,7 +216,7 @@ const openCliCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Create worktree, run setup, start tmux session, open IDE",
+    "Create worktree, run setup, and start configured environment",
   ),
 );
 

@@ -34,8 +34,9 @@ export const TmuxConfigSchema = Schema.Struct({
 });
 
 export const IdeConfigSchema = Schema.Struct({
+  open: Schema.optional(Schema.Boolean),
   name: Schema.optional(Schema.String),
-  command: Schema.String,
+  command: Schema.optional(Schema.String),
   fork_workspace: Schema.optional(Schema.Boolean),
 });
 

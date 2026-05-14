@@ -2,7 +2,10 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
-import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
+import {
+  type SessionIdeDefaults,
+  useSessionOptionsState,
+} from "../hooks/useSessionOptionsState";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { Modal } from "./Modal";
@@ -33,6 +36,7 @@ export interface OpenModalProps {
   profileNames: string[];
   repoProject: string;
   repoPath: string;
+  ideDefaults: SessionIdeDefaults;
   prList: PRInfo[];
   isRefreshing: boolean;
   onRefresh: (signal?: AbortSignal) => void;
@@ -172,12 +176,14 @@ type NewBranchField =
 export function NewBranchForm({
   defaultBase,
   profileNames,
+  ideDefaults,
   onSubmit,
   onBack,
   width,
 }: {
   defaultBase: string;
   profileNames: string[];
+  ideDefaults: SessionIdeDefaults;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -191,7 +197,7 @@ export function NewBranchForm({
     setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames);
+  } = useSessionOptionsState(profileNames, true, ideDefaults);
   const [prompt, setPrompt] = useState("");
 
   const fields = useMemo(() => {
@@ -303,6 +309,7 @@ type FromPRField =
 export function FromPRForm({
   prList,
   profileNames,
+  ideDefaults,
   isRefreshing,
   onRefresh,
   onSubmit,
@@ -311,6 +318,7 @@ export function FromPRForm({
 }: {
   prList: PRInfo[];
   profileNames: string[];
+  ideDefaults: SessionIdeDefaults;
   isRefreshing: boolean;
   onRefresh: () => void;
   onSubmit: (result: OpenModalResult) => void;
@@ -326,7 +334,7 @@ export function FromPRForm({
     setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames);
+  } = useSessionOptionsState(profileNames, true, ideDefaults);
   const [prompt, setPrompt] = useState("");
 
   const fields = useMemo(() => {
@@ -522,12 +530,14 @@ type ExistingBranchField =
 export function ExistingBranchForm({
   repoPath,
   profileNames,
+  ideDefaults,
   onSubmit,
   onBack,
   width,
 }: {
   repoPath: string;
   profileNames: string[];
+  ideDefaults: SessionIdeDefaults;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -542,7 +552,7 @@ export function ExistingBranchForm({
     setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames);
+  } = useSessionOptionsState(profileNames, true, ideDefaults);
   const [prompt, setPrompt] = useState("");
 
   const fields = useMemo(() => {
@@ -705,6 +715,7 @@ export function OpenModal({
   profileNames,
   repoProject: _repoProject,
   repoPath,
+  ideDefaults,
   prList,
   isRefreshing,
   onRefresh,
@@ -757,6 +768,7 @@ export function OpenModal({
         <NewBranchForm
           defaultBase={defaultBase}
           profileNames={profileNames}
+          ideDefaults={ideDefaults}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}
@@ -766,6 +778,7 @@ export function OpenModal({
         <FromPRForm
           prList={prList}
           profileNames={profileNames}
+          ideDefaults={ideDefaults}
           isRefreshing={isRefreshing}
           onRefresh={() => onRefresh(abortControllerRef.current?.signal)}
           onSubmit={onSubmit}
@@ -777,6 +790,7 @@ export function OpenModal({
         <ExistingBranchForm
           repoPath={repoPath}
           profileNames={profileNames}
+          ideDefaults={ideDefaults}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}

@@ -83,7 +83,10 @@ describe("wct-db migration runner", () => {
     // Apply the v1 SQL directly (simulating partial state)
     const v1Sql = MIGRATIONS[0];
     expect(v1Sql).toBeDefined();
-    db.run(v1Sql!);
+    if (v1Sql === undefined) {
+      throw new Error("Missing v1 migration");
+    }
+    db.run(v1Sql);
 
     // runMigrations should handle this cleanly because v1 uses CREATE TABLE IF NOT EXISTS
     expect(() => runMigrations(db)).not.toThrow();

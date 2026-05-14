@@ -8,15 +8,76 @@ import { resolveConfig, validateConfig } from "./validator";
 
 const CONFIG_FILENAME = ".wct.yaml";
 
+const DEFAULT_IDE_CONFIG = {
+  command: "code $WCT_WORKTREE_DIR",
+} satisfies NonNullable<WctConfig["ide"]>;
+
 const DEFAULT_CONFIG: WctConfig = {
   worktree_dir: "..",
-  ide: { command: "code $WCT_WORKTREE_DIR" },
   tmux: { windows: [{ name: "main" }] },
 };
 
+function homeDir(): string {
+  return process.env.HOME ?? homedir();
+}
+
+export interface IdeLaunchOptions {
+  ide?: boolean;
+  noIde?: boolean;
+}
+
+export interface ResolvedIdeLaunch {
+  open: boolean;
+  command: string | undefined;
+  config: WctConfig["ide"] | undefined;
+}
+
+export function resolveIdeLaunch(
+  ideConfig: WctConfig["ide"] | undefined,
+  options: IdeLaunchOptions,
+): ResolvedIdeLaunch {
+  const mergedConfig = ideConfig?.command
+    ? ideConfig
+    : ideConfig
+      ? { ...DEFAULT_IDE_CONFIG, ...ideConfig }
+      : undefined;
+
+  if (options.noIde) {
+    return {
+      open: false,
+      command: mergedConfig?.command,
+      config: mergedConfig,
+    };
+  }
+
+  if (options.ide) {
+    const config = mergedConfig ?? DEFAULT_IDE_CONFIG;
+    return {
+      open: true,
+      command: config.command,
+      config,
+    };
+  }
+
+  if (!mergedConfig) {
+    return {
+      open: false,
+      command: undefined,
+      config: undefined,
+    };
+  }
+
+  const open = mergedConfig.open ?? true;
+  return {
+    open,
+    command: mergedConfig.command,
+    config: mergedConfig,
+  };
+}
+
 export function expandTilde(path: string): string {
   if (path.startsWith("~/")) {
-    return join(homedir(), path.slice(2));
+    return join(homeDir(), path.slice(2));
   }
   return path;
 }
@@ -44,7 +105,7 @@ function mergeConfigs(
     ...project,
     copy: project.copy ?? global.copy,
     setup: project.setup ?? global.setup,
-    ide: project.ide ?? global.ide,
+    ide: mergeIdeConfig(global.ide, project.ide),
     tmux: project.tmux
       ? {
           ...global.tmux,
@@ -53,6 +114,18 @@ function mergeConfigs(
         }
       : global.tmux,
     profiles: project.profiles ?? global.profiles,
+  };
+}
+
+function mergeIdeConfig(
+  base: WctConfig["ide"] | undefined,
+  override: WctConfig["ide"] | undefined,
+): WctConfig["ide"] | undefined {
+  if (!base) return override;
+  if (!override) return base;
+  return {
+    ...base,
+    ...override,
   };
 }
 
@@ -141,7 +214,7 @@ export function loadConfigEffect(
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const projectConfigPath = path.join(projectDir, CONFIG_FILENAME);
-    const globalConfigPath = path.join(homedir(), CONFIG_FILENAME);
+    const globalConfigPath = path.join(homeDir(), CONFIG_FILENAME);
 
     const [projectConfig, globalConfig] = yield* Effect.all([
       loadConfigFileEffect(projectConfigPath),
@@ -237,7 +310,7 @@ function applyProfile(
   return {
     ...base,
     setup: profile.setup ?? base.setup,
-    ide: profile.ide ?? base.ide,
+    ide: mergeIdeConfig(base.ide, profile.ide),
     tmux: profile.tmux ?? base.tmux,
     copy: profile.copy ?? base.copy,
   };
@@ -283,4 +356,4 @@ export function resolveProfile(
   return { config: stripProfiles(config) };
 }
 
-export { CONFIG_FILENAME, DEFAULT_CONFIG };
+export { CONFIG_FILENAME, DEFAULT_CONFIG, DEFAULT_IDE_CONFIG };

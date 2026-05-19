@@ -1,7 +1,7 @@
 import { basename } from "node:path";
+import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 import { loadConfig, resolveIdeLaunch, resolveProfile } from "../config/loader";
-import type { WctRuntimeServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
 import {
   IdeService,
@@ -11,8 +11,12 @@ import {
   type CreateSessionResult,
   formatSessionName,
   TmuxService,
+  type TmuxService as TmuxServiceApi,
 } from "../services/tmux";
-import { WorktreeService } from "../services/worktree-service";
+import {
+  WorktreeService,
+  type WorktreeService as WorktreeServiceApi,
+} from "../services/worktree-service";
 import type { WctEnv } from "../types/env";
 import {
   type ResolveWorktreePathOptions,
@@ -78,7 +82,7 @@ export function startWorktreeSession(
 ): Effect.Effect<
   StartWorktreeSessionResult,
   WctError,
-  WctRuntimeServices | IdeServiceApi
+  WorktreeServiceApi | TmuxServiceApi | IdeServiceApi | BunServices.BunServices
 > {
   return Effect.gen(function* () {
     const { ide, noIde, profile, path, branch: branchOption } = options;
@@ -195,7 +199,11 @@ export function startWorktreeSession(
 
 export function stopWorktreeSession(
   options: StopWorktreeSessionOptions = {},
-): Effect.Effect<StopWorktreeSessionResult, WctError, WctRuntimeServices> {
+): Effect.Effect<
+  StopWorktreeSessionResult,
+  WctError,
+  WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
+> {
   return Effect.gen(function* () {
     const worktreePath = yield* resolveWorktreePath(options);
 

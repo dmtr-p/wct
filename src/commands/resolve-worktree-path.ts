@@ -1,8 +1,11 @@
 import { resolve } from "node:path";
+import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
-import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { WorktreeService } from "../services/worktree-service";
+import {
+  WorktreeService,
+  type WorktreeService as WorktreeServiceApi,
+} from "../services/worktree-service";
 
 export interface ResolveWorktreePathOptions {
   path?: string;
@@ -11,7 +14,11 @@ export interface ResolveWorktreePathOptions {
 
 export function resolveWorktreePath(
   options: ResolveWorktreePathOptions,
-): Effect.Effect<string, WctError, WctRuntimeServices> {
+): Effect.Effect<
+  string,
+  WctError,
+  WorktreeServiceApi | BunServices.BunServices
+> {
   return Effect.gen(function* () {
     const { path, branch } = options;
 

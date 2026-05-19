@@ -1,6 +1,6 @@
+import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
 import type { SetupCommand } from "../config/schema";
-import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
@@ -17,7 +17,7 @@ export interface SetupService {
     commands: ReadonlyArray<SetupCommand>,
     workingDir: string,
     env: WctEnv,
-  ) => Effect.Effect<SetupResult[], WctError, WctServices>;
+  ) => Effect.Effect<SetupResult[], WctError, BunServices.BunServices>;
 }
 
 export const SetupService = Context.Service<SetupService>("wct/SetupService");

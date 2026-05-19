@@ -1,10 +1,17 @@
 import { basename, isAbsolute, resolve } from "node:path";
+import type { BunServices } from "@effect/platform-bun";
 import { Effect, FileSystem } from "effect";
 import { loadConfig } from "../config/loader";
-import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { type RegistryItem, RegistryService } from "./registry-service";
-import { WorktreeService } from "./worktree-service";
+import {
+  type RegistryItem,
+  RegistryService,
+  type RegistryServiceApi,
+} from "./registry-service";
+import {
+  WorktreeService,
+  type WorktreeService as WorktreeServiceApi,
+} from "./worktree-service";
 
 export interface RegisterProjectOptions {
   path?: string;
@@ -30,7 +37,9 @@ function currentDirectory(): Effect.Effect<string, WctError> {
   });
 }
 
-function resolveInputPath(path?: string): Effect.Effect<string, WctError> {
+function resolveInputPath(
+  path?: string,
+): Effect.Effect<string, WctError, BunServices.BunServices> {
   return Effect.gen(function* () {
     const rawPath = path ?? (yield* currentDirectory());
     const resolvedPath = isAbsolute(rawPath)
@@ -84,7 +93,11 @@ function deriveProjectName(
 
 export function registerProject(
   options: RegisterProjectOptions = {},
-): Effect.Effect<RegisterProjectResult, WctError, WctServices> {
+): Effect.Effect<
+  RegisterProjectResult,
+  WctError,
+  WorktreeServiceApi | RegistryServiceApi | BunServices.BunServices
+> {
   return Effect.gen(function* () {
     const inputPath = yield* resolveInputPath(options.path);
     const repoPath = yield* WorktreeService.use((service) =>

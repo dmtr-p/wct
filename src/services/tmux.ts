@@ -1,6 +1,6 @@
+import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
-import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import {
@@ -39,62 +39,66 @@ export interface TmuxService {
   listSessions: () => Effect.Effect<
     TmuxSession[] | null,
     WctError,
-    WctRuntimeServices
+    BunServices.BunServices
   >;
   isPaneAlive: (
     pane: string,
-  ) => Effect.Effect<boolean | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<boolean | null, WctError, BunServices.BunServices>;
   sessionExists: (
     name: string,
-  ) => Effect.Effect<boolean, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
   getSessionStatus: (
     name: string,
   ) => Effect.Effect<
     "attached" | "detached" | null,
     WctError,
-    WctRuntimeServices
+    BunServices.BunServices
   >;
   createSession: (
     name: string,
     workingDir: string,
     config?: TmuxConfig,
     env?: WctEnv,
-  ) => Effect.Effect<CreateSessionResult, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<CreateSessionResult, WctError, BunServices.BunServices>;
   killSession: (
     name: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   getCurrentSession: () => Effect.Effect<
     string | null,
     WctError,
-    WctRuntimeServices
+    BunServices.BunServices
   >;
   switchSession: (
     name: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   attachSession: (
     name: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   listPanes: (
     sessionName: string,
-  ) => Effect.Effect<TmuxPaneInfo[], WctError, WctRuntimeServices>;
-  listClients: () => Effect.Effect<TmuxClient[], WctError, WctRuntimeServices>;
+  ) => Effect.Effect<TmuxPaneInfo[], WctError, BunServices.BunServices>;
+  listClients: () => Effect.Effect<
+    TmuxClient[],
+    WctError,
+    BunServices.BunServices
+  >;
   detachClient: (
     clientTty: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   switchClientToPane: (
     clientTty: string,
     target: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   selectPane: (
     pane: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   togglePaneZoom: (
     paneId: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   killPane: (
     paneId: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
-  refreshClient: () => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
+  refreshClient: () => Effect.Effect<void, WctError, BunServices.BunServices>;
 }
 
 export const TmuxService = Context.Service<TmuxService>("wct/TmuxService");

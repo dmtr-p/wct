@@ -65,29 +65,21 @@ function deriveProjectName(
   repoPath: string,
   explicitName: string | undefined,
   tolerateConfigErrors: boolean,
-): Effect.Effect<string, WctError> {
+): Effect.Effect<string, WctError, BunServices.BunServices> {
   return Effect.gen(function* () {
     if (explicitName !== undefined) {
       return explicitName;
     }
 
     const loadResult = yield* Effect.catch(
-      Effect.tryPromise({
-        try: () => loadConfig(repoPath),
-        catch: (error) =>
-          commandError("config_error", "Failed to load config", error),
-      }),
+      Effect.mapError(loadConfig(repoPath), (error) =>
+        commandError("config_error", error.message, error),
+      ),
       (error) =>
         tolerateConfigErrors ? Effect.succeed(null) : Effect.fail(error),
     );
 
-    if (loadResult && !loadResult.config && !tolerateConfigErrors) {
-      return yield* Effect.fail(
-        commandError("config_error", loadResult.errors.join("\n")),
-      );
-    }
-
-    return loadResult?.config?.project_name ?? basename(repoPath) ?? "unknown";
+    return loadResult?.project_name ?? basename(repoPath) ?? "unknown";
   });
 }
 

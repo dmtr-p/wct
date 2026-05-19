@@ -76,10 +76,7 @@ interface LoadRepoInfoDeps {
 
 export async function getIdeDefaults(repoPath: string): Promise<IdeDefaults> {
   try {
-    const { config } = await loadConfig(repoPath);
-    if (!config) {
-      return { baseNoIde: true, profileNoIde: {} };
-    }
+    const config = await tuiRuntime.runPromise(loadConfig(repoPath));
     const baseNoIde = !resolveIdeLaunch(config.ide, {}).open;
     const profileNoIde: Record<string, boolean> = {};
     for (const name of Object.keys(config.profiles ?? {})) {

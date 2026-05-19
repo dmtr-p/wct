@@ -1,8 +1,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { Effect, FileSystem, Path } from "effect";
+import { Data, Effect, FileSystem } from "effect";
 import { identity } from "effect/Function";
-import { runBunPromise } from "../effect/runtime";
 import type { Profile, ResolvedConfig, WctConfig } from "./schema";
 import { resolveConfig, validateConfig } from "./validator";
 
@@ -86,6 +85,19 @@ export function slugifyBranch(branch: string): string {
   return branch.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
+export class ConfigError extends Data.TaggedError("ConfigError")<{
+  details: string;
+  cause?: unknown;
+}> {
+  override get message(): string {
+    return this.details;
+  }
+}
+
+function configError(details: string, cause?: unknown): ConfigError {
+  return new ConfigError({ details, cause });
+}
+
 function mergeConfigs(
   global: WctConfig | null,
   project: WctConfig | null,
@@ -129,22 +141,18 @@ function mergeIdeConfig(
   };
 }
 
-export interface LoadConfigResult {
-  config: ResolvedConfig | null;
-  errors: string[];
-  hasProjectConfig: boolean;
-  hasGlobalConfig: boolean;
-}
-
 interface LoadedConfigFile {
   exists: boolean;
   config: WctConfig | null;
-  error?: string;
 }
+
+type LoadConfigFileResult =
+  | { ok: true; file: LoadedConfigFile }
+  | { ok: false; error: ConfigError };
 
 function loadConfigFileEffect(
   filePath: string,
-): Effect.Effect<LoadedConfigFile, never, FileSystem.FileSystem> {
+): Effect.Effect<LoadedConfigFile, ConfigError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const exists = yield* Effect.match(fs.exists(filePath), {
@@ -156,86 +164,66 @@ function loadConfigFileEffect(
       return { exists: false, config: null };
     }
 
-    const contentResult = yield* Effect.match(fs.readFileString(filePath), {
-      onFailure: (error) => ({
-        ok: false as const,
-        message: `Failed to read ${filePath}: ${error.message}`,
-      }),
-      onSuccess: (content) => ({
-        ok: true as const,
-        content,
-      }),
-    });
-
-    if (!contentResult.ok) {
-      return {
-        exists: true,
-        config: null,
-        error: contentResult.message,
-      };
-    }
-
-    const parsedResult = yield* Effect.match(
-      Effect.try({
-        try: () => Bun.YAML.parse(contentResult.content),
-        catch: (error) =>
-          `Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-      }),
-      {
-        onFailure: (error) => ({
-          ok: false as const,
-          message: error,
-        }),
-        onSuccess: (config) => ({
-          ok: true as const,
-          config,
-        }),
-      },
+    const content = yield* Effect.mapError(
+      fs.readFileString(filePath),
+      (error) =>
+        configError(`Failed to read ${filePath}: ${error.message}`, error),
     );
 
-    if (!parsedResult.ok) {
-      return {
-        exists: true,
-        config: null,
-        error: parsedResult.message,
-      };
-    }
+    const parsed = yield* Effect.mapError(
+      Effect.try({
+        try: () => Bun.YAML.parse(content),
+        catch: (error) => error,
+      }),
+      (error) =>
+        configError(
+          `Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        ),
+    );
 
     return {
       exists: true,
-      config: parsedResult.config as WctConfig,
+      config: parsed as WctConfig,
     };
   });
 }
 
-export function loadConfigEffect(
-  projectDir: string,
-): Effect.Effect<LoadConfigResult, never, FileSystem.FileSystem | Path.Path> {
-  return Effect.gen(function* () {
-    const path = yield* Path.Path;
-    const projectConfigPath = path.join(projectDir, CONFIG_FILENAME);
-    const globalConfigPath = path.join(homeDir(), CONFIG_FILENAME);
+function captureConfigFile(
+  filePath: string,
+): Effect.Effect<LoadConfigFileResult, never, FileSystem.FileSystem> {
+  return Effect.match(loadConfigFileEffect(filePath), {
+    onFailure: (error) => ({ ok: false, error }),
+    onSuccess: (file) => ({ ok: true, file }),
+  });
+}
 
-    const [projectConfig, globalConfig] = yield* Effect.all([
-      loadConfigFileEffect(projectConfigPath),
-      loadConfigFileEffect(globalConfigPath),
+export function loadConfig(
+  projectDir: string,
+): Effect.Effect<ResolvedConfig, ConfigError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const projectConfigPath = join(projectDir, CONFIG_FILENAME);
+    const globalConfigPath = join(homeDir(), CONFIG_FILENAME);
+
+    const [projectResult, globalResult] = yield* Effect.all([
+      captureConfigFile(projectConfigPath),
+      captureConfigFile(globalConfigPath),
     ]);
+
+    if (!projectResult.ok || !globalResult.ok) {
+      const loadErrors = [projectResult, globalResult]
+        .filter(
+          (result): result is { ok: false; error: ConfigError } => !result.ok,
+        )
+        .map((result) => result.error.message);
+      return yield* Effect.fail(configError(loadErrors.join("\n")));
+    }
+
+    const projectConfig = projectResult.file;
+    const globalConfig = globalResult.file;
 
     const hasProjectConfig = projectConfig.exists;
     const hasGlobalConfig = globalConfig.exists;
-    const loadErrors = [projectConfig.error, globalConfig.error].filter(
-      (error): error is string => typeof error === "string",
-    );
-
-    if (loadErrors.length > 0) {
-      return {
-        config: null,
-        errors: loadErrors,
-        hasProjectConfig,
-        hasGlobalConfig,
-      };
-    }
-
     const merged =
       hasProjectConfig || hasGlobalConfig
         ? mergeConfigs(globalConfig.config, projectConfig.config)
@@ -243,29 +231,11 @@ export function loadConfigEffect(
     const validation = validateConfig(merged);
 
     if (!validation.valid) {
-      return {
-        config: null,
-        errors: validation.errors,
-        hasProjectConfig,
-        hasGlobalConfig,
-      };
+      return yield* Effect.fail(configError(validation.errors.join("\n")));
     }
 
-    const resolved = resolveConfig(merged, projectDir);
-
-    return {
-      config: resolved,
-      errors: [],
-      hasProjectConfig,
-      hasGlobalConfig,
-    };
+    return resolveConfig(merged, projectDir);
   });
-}
-
-export async function loadConfig(
-  projectDir: string,
-): Promise<LoadConfigResult> {
-  return await runBunPromise(loadConfigEffect(projectDir));
 }
 
 export function resolveWorktreePath(

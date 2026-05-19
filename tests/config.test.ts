@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  ConfigError,
   DEFAULT_CONFIG,
   DEFAULT_IDE_CONFIG,
   expandTilde,
@@ -12,6 +13,7 @@ import {
   slugifyBranch,
 } from "../src/config/loader";
 import { resolveConfig, validateConfig } from "../src/config/validator";
+import { runBunPromise } from "../src/effect/runtime";
 
 function expectValidationError(errors: string[], expected: string): void {
   expect(errors.some((error) => error.includes(expected))).toBe(true);
@@ -510,16 +512,15 @@ describe("DEFAULT_CONFIG", () => {
 
   test("loadConfig returns default config without IDE when no config files are present", async () => {
     const projectDir = mkdtempSync(join(tmpdir(), "wct-config-test-"));
-    const result = await loadConfig(projectDir);
+    const result = await runBunPromise(loadConfig(projectDir));
 
-    expect(result.config).not.toBeNull();
-    expect(result.config?.worktree_dir).toBe(DEFAULT_CONFIG.worktree_dir);
-    expect(result.config?.ide).toBeUndefined();
-    expect(result.config?.tmux?.windows).toHaveLength(1);
-    expect(result.config?.tmux?.windows?.[0]?.name).toBe(
+    expect(result.worktree_dir).toBe(DEFAULT_CONFIG.worktree_dir);
+    expect(result.ide).toBeUndefined();
+    expect(result.tmux?.windows).toHaveLength(1);
+    expect(result.tmux?.windows?.[0]?.name).toBe(
       DEFAULT_CONFIG.tmux?.windows?.[0]?.name,
     );
-    expect(result.config?.tmux?.windows?.[0]?.command).toBeUndefined();
+    expect(result.tmux?.windows?.[0]?.command).toBeUndefined();
   });
 
   test("project ide.open overrides global ide command without discarding command", async () => {
@@ -542,9 +543,9 @@ describe("DEFAULT_CONFIG", () => {
 `,
       );
 
-      const result = await loadConfig(projectDir);
+      const result = await runBunPromise(loadConfig(projectDir));
 
-      expect(result.config?.ide).toEqual({
+      expect(result.ide).toEqual({
         command: "cursor $WCT_WORKTREE_DIR",
         fork_workspace: true,
         open: false,
@@ -556,6 +557,15 @@ describe("DEFAULT_CONFIG", () => {
         process.env.HOME = originalHome;
       }
     }
+  });
+
+  test("loadConfig fails with ConfigError when YAML cannot be parsed", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "wct-config-invalid-"));
+    await Bun.write(join(projectDir, ".wct.yaml"), "project_name: [\n");
+
+    await expect(runBunPromise(loadConfig(projectDir))).rejects.toBeInstanceOf(
+      ConfigError,
+    );
   });
 });
 

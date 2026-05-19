@@ -9,19 +9,42 @@ import { listCommand } from "../src/commands/list";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import {
+  formatSync,
   liveWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
-import * as worktreeStatus from "../src/services/worktree-status";
-import {
-  formatSync,
-  getAheadBehind,
-  getChangedFilesCount,
-  getDefaultBranch,
-} from "../src/services/worktree-status";
 
 async function runCommand(options?: { short?: boolean }) {
   await runBunPromise(provideWctServices(listCommand(options)));
+}
+
+function getChangedFilesCount(
+  worktreePath: string,
+  options?: { logWarnings?: boolean },
+) {
+  return provideWctServices(
+    WorktreeService.use((service) =>
+      service.getChangedFileCount(worktreePath, options),
+    ),
+  );
+}
+
+function getAheadBehind(
+  worktreePath: string,
+  defaultBranch: string,
+  options?: { logWarnings?: boolean },
+) {
+  return provideWctServices(
+    WorktreeService.use((service) =>
+      service.getAheadBehind(worktreePath, defaultBranch, options),
+    ),
+  );
+}
+
+function getDefaultBranch(repoPath: string) {
+  return provideWctServices(
+    WorktreeService.use((service) => service.getDefaultBranch(repoPath)),
+  );
 }
 
 describe("getChangedFilesCount", () => {
@@ -450,28 +473,40 @@ describe("listCommand integration", () => {
   test("--json suppresses recoverable worktree status warnings", async () => {
     process.chdir(repoDir);
     const lines: string[] = [];
-    const originalGetChangedFilesCount = worktreeStatus.getChangedFilesCount;
     const consoleSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...args: unknown[]) => {
         lines.push(String(args[0]));
       });
-    const changesSpy = vi
-      .spyOn(worktreeStatus, "getChangedFilesCount")
-      .mockImplementation((worktreePath, options) => {
-        if (worktreePath.includes("feature-test")) {
-          if (options?.logWarnings === false) {
-            return Effect.succeed(0);
-          }
-          throw new Error("expected logWarnings to be false in json mode");
-        }
-        return originalGetChangedFilesCount(worktreePath, options);
-      });
 
     try {
       await runBunPromise(
         provideWctServices(
-          Effect.provideService(listCommand({ short: false }), JsonFlag, true),
+          Effect.provideService(
+            Effect.provideService(
+              listCommand({ short: false }),
+              JsonFlag,
+              true,
+            ),
+            WorktreeService,
+            WorktreeService.of({
+              ...liveWorktreeService,
+              getChangedFileCount: (worktreePath, options) => {
+                if (worktreePath.includes("feature-test")) {
+                  if (options?.logWarnings === false) {
+                    return Effect.succeed(0);
+                  }
+                  throw new Error(
+                    "expected logWarnings to be false in json mode",
+                  );
+                }
+                return liveWorktreeService.getChangedFileCount(
+                  worktreePath,
+                  options,
+                );
+              },
+            }),
+          ),
         ),
       );
       expect(lines).toHaveLength(1);
@@ -480,7 +515,6 @@ describe("listCommand integration", () => {
       expect(() => JSON.parse(jsonLine ?? "")).not.toThrow();
       expect(stripAnsi(jsonLine ?? "")).not.toContain("warn ");
     } finally {
-      changesSpy.mockRestore();
       consoleSpy.mockRestore();
       process.chdir(originalDir);
     }

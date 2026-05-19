@@ -4,14 +4,11 @@ import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
-import { WorktreeService } from "../services/worktree-service";
 import {
   formatChanges,
   formatSync,
-  getAheadBehind,
-  getChangedFilesCount,
-  getDefaultBranch,
-} from "../services/worktree-status";
+  WorktreeService,
+} from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
@@ -65,12 +62,8 @@ export function listCommand(opts?: {
     ]);
     const sessions = sessionsList ?? [];
     const defaultBranch = mainRepoPath
-      ? yield* Effect.mapError(getDefaultBranch(mainRepoPath), (error) =>
-          commandError(
-            "worktree_error",
-            "Failed to determine the default branch",
-            error,
-          ),
+      ? yield* WorktreeService.use((service) =>
+          service.getDefaultBranch(mainRepoPath),
         )
       : null;
 
@@ -83,8 +76,14 @@ export function listCommand(opts?: {
           const session = sessions.find((s) => s.name === sessionName);
           const statusOptions = json ? { logWarnings: false } : undefined;
           const [changesCount, syncStatus] = yield* Effect.all([
-            getChangedFilesCount(wt.path, statusOptions),
-            getAheadBehind(wt.path, defaultBranch, statusOptions),
+            WorktreeService.use((service) =>
+              service.getChangedFileCount(wt.path, statusOptions),
+            ),
+            defaultBranch
+              ? WorktreeService.use((service) =>
+                  service.getAheadBehind(wt.path, defaultBranch, statusOptions),
+                )
+              : Effect.succeed(null),
           ]);
 
           return {

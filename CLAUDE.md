@@ -40,7 +40,7 @@ src/
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
 │   └── services.ts       # Live service bundle provided to the app
 ├── services/
-│   ├── worktree-service.ts # Effect service for git worktree operations
+│   ├── worktree-service.ts # Effect service for git worktree operations and status helpers
 │   ├── copy.ts           # File copying utilities
 │   ├── filesystem.ts     # Effect-based filesystem helpers (pathExists, ensureDirectory, stat)
 │   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
@@ -49,8 +49,7 @@ src/
 │   ├── ide-service.ts    # Effect service for IDE launching
 │   ├── github-service.ts # Effect service for GitHub PR integration
 │   ├── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
-│   ├── registry-service.ts # Effect service for multi-repo registry
-│   └── worktree-status.ts  # Helpers for computing worktree status
+│   └── registry-service.ts # Effect service for multi-repo registry
 ├── tui/
 │   ├── App.tsx            # Root Ink component, data fetching, keyboard routing
 │   ├── runtime.ts         # ManagedRuntime for TUI-specific Effect services

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatChanges, formatSync } from "../../src/services/worktree-status";
+import { formatChanges, formatSync } from "../../src/services/worktree-service";
 
 describe("formatSync", () => {
   test("returns checkmark when in sync", () => {

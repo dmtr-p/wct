@@ -8,6 +8,10 @@ import {
 } from "../../src/services/github-service";
 import { IdeService, liveIdeService } from "../../src/services/ide-service";
 import {
+  livePrCacheService,
+  PrCacheService,
+} from "../../src/services/pr-cache-service";
+import {
   liveRegistryService,
   RegistryService,
 } from "../../src/services/registry-service";
@@ -56,6 +60,7 @@ export function wctTestLayer(overrides: ServiceOverrides = {}) {
       overrides.vscodeWorkspace ?? liveVSCodeWorkspaceService,
     ),
     Layer.succeed(WorktreeService, overrides.worktree ?? liveWorktreeService),
+    Layer.succeed(PrCacheService, overrides.prCache ?? livePrCacheService),
     Layer.succeed(RegistryService, overrides.registry ?? liveRegistryService),
     Layer.succeed(JsonFlag, overrides.json ?? false),
     BunServices.layer,
@@ -72,6 +77,7 @@ type _HandledOverrideKeys =
   | "github"
   | "ide"
   | "json"
+  | "prCache"
   | "registry"
   | "setup"
   | "tmux"

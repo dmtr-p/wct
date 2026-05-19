@@ -58,6 +58,7 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
     prepareAddProjectModal: vi.fn(),
+    refreshRepo: vi.fn(),
     ...overrides,
   };
 }

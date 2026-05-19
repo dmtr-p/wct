@@ -278,8 +278,9 @@ describe("OpenModal form variants", () => {
     try {
       // The auto-on-open refresh fires with a signal (verifies the controller path)
       expect(onRefresh).toHaveBeenCalled();
-      const lastSignal =
-        onRefresh.mock.calls[onRefresh.mock.calls.length - 1][0];
+      const lastCall = onRefresh.mock.calls.at(-1);
+      expect(lastCall).toBeDefined();
+      const lastSignal = lastCall?.[0];
       expect(lastSignal).toBeInstanceOf(AbortSignal);
     } finally {
       rendered.unmount();
@@ -340,7 +341,9 @@ describe("OpenModal", () => {
 
     try {
       expect(onRefresh).toHaveBeenCalledTimes(1);
-      expect(onRefresh.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+      const firstCall = onRefresh.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      expect(firstCall?.[0]).toBeInstanceOf(AbortSignal);
     } finally {
       rendered.unmount();
     }

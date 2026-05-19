@@ -2,6 +2,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect, FileSystem } from "effect";
 import { commandError, type WctError } from "../errors";
+import * as logger from "../utils/logger";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
 
 export interface Worktree {
@@ -19,6 +20,10 @@ export type CreateWorktreeResult =
 export type RemoveWorktreeResult =
   | { _tag: "Removed"; path: string }
   | { _tag: "BlockedByChanges"; path: string };
+
+export interface WorktreeStatusOptions {
+  logWarnings?: boolean;
+}
 
 export interface WorktreeService {
   getMainRepoPath: (
@@ -62,10 +67,12 @@ export interface WorktreeService {
   ) => Effect.Effect<Worktree | null, WctError, BunServices.BunServices>;
   getChangedFileCount: (
     cwd: string,
+    options?: WorktreeStatusOptions,
   ) => Effect.Effect<number, WctError, BunServices.BunServices>;
   getAheadBehind: (
     cwd: string,
     ref: string,
+    options?: WorktreeStatusOptions,
   ) => Effect.Effect<
     { ahead: number; behind: number } | null,
     WctError,
@@ -177,23 +184,68 @@ export function normalizeDefaultBranchRef(ref: string): string {
   return ref.replace(/^origin\//, "");
 }
 
-function getChangedFileCountImpl(cwd: string) {
+export function formatChanges(count: number): string {
+  return `${count} ${count === 1 ? "file" : "files"}`;
+}
+
+export function formatSync(
+  sync: { ahead: number; behind: number } | null,
+): string {
+  if (!sync) return "?";
+  const { ahead, behind } = sync;
+  if (ahead === 0 && behind === 0) return "\u2713";
+  const parts: string[] = [];
+  if (ahead > 0) parts.push(`\u2191${ahead}`);
+  if (behind > 0) parts.push(`\u2193${behind}`);
+  return parts.join(" ");
+}
+
+function getChangedFileCountImpl(
+  cwd: string,
+  options: WorktreeStatusOptions = {},
+) {
+  const logWarnings = options.logWarnings ?? true;
   return Effect.catch(
     execProcess("git", ["status", "--porcelain"], { cwd }).pipe(
       Effect.map((result) => parseGitStatusCount(result.stdout)),
     ),
-    () => Effect.succeed(0),
+    (error) => {
+      if (!logWarnings) {
+        return Effect.succeed(0);
+      }
+
+      return logger
+        .warn(
+          `Failed to get changes for ${cwd}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        .pipe(Effect.as(0));
+    },
   );
 }
 
-function getAheadBehindImpl(cwd: string, ref: string) {
+function getAheadBehindImpl(
+  cwd: string,
+  ref: string,
+  options: WorktreeStatusOptions = {},
+) {
+  const logWarnings = options.logWarnings ?? true;
   return Effect.catch(
     execProcess(
       "git",
       ["rev-list", "--left-right", "--count", `HEAD...${ref}`],
       { cwd },
     ).pipe(Effect.map((result) => parseAheadBehind(result.stdout))),
-    () => Effect.succeed(null),
+    (error) => {
+      if (!logWarnings) {
+        return Effect.succeed(null);
+      }
+
+      return logger
+        .warn(
+          `Failed to get sync status for ${cwd}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        .pipe(Effect.as(null));
+    },
   );
 }
 
@@ -456,12 +508,12 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
         ),
       ),
     ),
-  getChangedFileCount: (cwd) =>
-    Effect.mapError(getChangedFileCountImpl(cwd), (error) =>
+  getChangedFileCount: (cwd, options) =>
+    Effect.mapError(getChangedFileCountImpl(cwd, options), (error) =>
       commandError("worktree_error", "Failed to get changed file count", error),
     ),
-  getAheadBehind: (cwd, ref) =>
-    Effect.mapError(getAheadBehindImpl(cwd, ref), (error) =>
+  getAheadBehind: (cwd, ref, options) =>
+    Effect.mapError(getAheadBehindImpl(cwd, ref, options), (error) =>
       commandError(
         "worktree_error",
         "Failed to get ahead/behind counts",

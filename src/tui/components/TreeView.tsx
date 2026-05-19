@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
 import { formatSessionName } from "../../services/tmux";
-import { formatSync } from "../../services/worktree-status";
+import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
 import {
   type PaneInfo,

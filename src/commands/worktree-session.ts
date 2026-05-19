@@ -129,16 +129,9 @@ export function startWorktreeSession(
       );
     }
 
-    const { config, errors } = yield* Effect.tryPromise({
-      try: () => loadConfig(mainRepoPath),
-      catch: (error) =>
-        commandError("config_error", "Failed to load configuration", error),
-    });
-    if (!config) {
-      return yield* Effect.fail(
-        commandError("config_error", errors.join("\n")),
-      );
-    }
+    const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
+      commandError("config_error", error.message, error),
+    );
 
     const { config: resolved, profileName } = yield* Effect.try({
       try: () => resolveProfile(config, branch, profile),

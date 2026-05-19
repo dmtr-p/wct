@@ -1,5 +1,5 @@
+import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
-import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { execShell, getProcessErrorMessage } from "./process";
@@ -20,7 +20,7 @@ export interface IdeService {
   openIDE: (
     command: string,
     env: WctEnv,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
 }
 
 export const IdeService = Context.Service<IdeService>("wct/IdeService");

@@ -1,5 +1,5 @@
+import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
-import type { WctRuntimeServices } from "../effect/services";
 import { commandError, toWctError, type WctError } from "../errors";
 import {
   execProcess,
@@ -109,30 +109,34 @@ export function parseGhPrList(stdout: string): PrListItem[] {
 }
 
 export interface GitHubService {
-  isGhInstalled: () => Effect.Effect<boolean, WctError, WctRuntimeServices>;
+  isGhInstalled: () => Effect.Effect<
+    boolean,
+    WctError,
+    BunServices.BunServices
+  >;
   resolvePr: (
     prNumber: number,
     cwd?: string,
-  ) => Effect.Effect<PrInfo, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<PrInfo, WctError, BunServices.BunServices>;
   addForkRemote: (
     remoteName: string,
     owner: string,
     repo: string,
     cwd?: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   fetchBranch: (
     branch: string,
     remote?: string,
     cwd?: string,
-  ) => Effect.Effect<void, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
   listPrs: (
     cwd: string,
-  ) => Effect.Effect<PrListItem[], WctError, WctRuntimeServices>;
+  ) => Effect.Effect<PrListItem[], WctError, BunServices.BunServices>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
     cwd?: string,
-  ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
 }
 
 export const GitHubService =

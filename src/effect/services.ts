@@ -53,14 +53,6 @@ export type WctServices =
   | VSCodeWorkspaceServiceApi
   | WorktreeServiceApi;
 
-export type WctRuntimeServices =
-  | BunServices.BunServices
-  | GitHubServiceApi
-  | PrCacheServiceApi
-  | RegistryServiceApi
-  | TmuxServiceApi
-  | WorktreeServiceApi;
-
 /**
  * Layer providing every live wct service plus the default `JsonFlag` value.
  * Does NOT include `BunServices.layer`; that is provided separately by

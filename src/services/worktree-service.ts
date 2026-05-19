@@ -1,6 +1,6 @@
 import { dirname, isAbsolute, resolve } from "node:path";
+import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect, FileSystem } from "effect";
-import type { WctRuntimeServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
 
@@ -23,60 +23,60 @@ export type RemoveWorktreeResult =
 export interface WorktreeService {
   getMainRepoPath: (
     cwd?: string,
-  ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
   getCurrentBranch: (
     cwd?: string,
-  ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
   getMainWorktreePath: (
     cwd?: string,
-  ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
   isGitRepo: (
     cwd?: string,
-  ) => Effect.Effect<boolean, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
   listWorktrees: (
     cwd?: string,
-  ) => Effect.Effect<Worktree[], WctError, WctRuntimeServices>;
+  ) => Effect.Effect<Worktree[], WctError, BunServices.BunServices>;
   createWorktree: (
     path: string,
     branch: string,
     useExisting: boolean,
     base?: string,
     cwd?: string,
-  ) => Effect.Effect<CreateWorktreeResult, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<CreateWorktreeResult, WctError, BunServices.BunServices>;
   branchExists: (
     branch: string,
     cwd?: string,
-  ) => Effect.Effect<boolean, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
   remoteBranchExists: (
     branch: string,
     cwd?: string,
-  ) => Effect.Effect<boolean, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
   removeWorktree: (
     path: string,
     force?: boolean,
     cwd?: string,
-  ) => Effect.Effect<RemoveWorktreeResult, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<RemoveWorktreeResult, WctError, BunServices.BunServices>;
   findWorktreeByBranch: (
     branch: string,
     cwd?: string,
-  ) => Effect.Effect<Worktree | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<Worktree | null, WctError, BunServices.BunServices>;
   getChangedFileCount: (
     cwd: string,
-  ) => Effect.Effect<number, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<number, WctError, BunServices.BunServices>;
   getAheadBehind: (
     cwd: string,
     ref: string,
   ) => Effect.Effect<
     { ahead: number; behind: number } | null,
     WctError,
-    WctRuntimeServices
+    BunServices.BunServices
   >;
   getDefaultBranch: (
     cwd: string,
-  ) => Effect.Effect<string | null, WctError, WctRuntimeServices>;
+  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
   listBranches: (
     cwd: string,
-  ) => Effect.Effect<string[], WctError, WctRuntimeServices>;
+  ) => Effect.Effect<string[], WctError, BunServices.BunServices>;
 }
 
 export const WorktreeService = Context.Service<WorktreeService>(

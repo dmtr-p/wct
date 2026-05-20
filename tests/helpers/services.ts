@@ -37,6 +37,11 @@ import {
   type VSCodeWorkspaceService as VSCodeWorkspaceServiceApi,
 } from "../../src/services/vscode-workspace";
 import {
+  liveWorkspaceService,
+  WorkspaceService,
+  type WorkspaceService as WorkspaceServiceApi,
+} from "../../src/services/workspace-service";
+import {
   liveWorktreeService,
   WorktreeService,
   type WorktreeService as WorktreeServiceApi,
@@ -54,6 +59,7 @@ export interface ServiceOverrides {
   tmux?: TmuxServiceApi;
   vscodeWorkspace?: VSCodeWorkspaceServiceApi;
   worktree?: WorktreeServiceApi;
+  workspace?: WorkspaceServiceApi;
 }
 
 export function withTestServices<A, E, R>(
@@ -91,6 +97,11 @@ export function withTestServices<A, E, R>(
     provided,
     WorktreeService,
     overrides.worktree ?? liveWorktreeService,
+  );
+  provided = Effect.provideService(
+    provided,
+    WorkspaceService,
+    overrides.workspace ?? liveWorkspaceService,
   );
   provided = Effect.provideService(
     provided,

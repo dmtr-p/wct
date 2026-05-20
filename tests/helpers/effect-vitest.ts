@@ -25,6 +25,10 @@ import {
   VSCodeWorkspaceService,
 } from "../../src/services/vscode-workspace";
 import {
+  liveWorkspaceService,
+  WorkspaceService,
+} from "../../src/services/workspace-service";
+import {
   liveWorktreeService,
   WorktreeService,
 } from "../../src/services/worktree-service";
@@ -60,6 +64,10 @@ export function wctTestLayer(overrides: ServiceOverrides = {}) {
       overrides.vscodeWorkspace ?? liveVSCodeWorkspaceService,
     ),
     Layer.succeed(WorktreeService, overrides.worktree ?? liveWorktreeService),
+    Layer.succeed(
+      WorkspaceService,
+      overrides.workspace ?? liveWorkspaceService,
+    ),
     Layer.succeed(PrCacheService, overrides.prCache ?? livePrCacheService),
     Layer.succeed(RegistryService, overrides.registry ?? liveRegistryService),
     Layer.succeed(JsonFlag, overrides.json ?? false),
@@ -82,7 +90,8 @@ type _HandledOverrideKeys =
   | "setup"
   | "tmux"
   | "vscodeWorkspace"
-  | "worktree";
+  | "worktree"
+  | "workspace";
 type _AssertOverridesExhaustive =
   keyof ServiceOverrides extends _HandledOverrideKeys
     ? _HandledOverrideKeys extends keyof ServiceOverrides

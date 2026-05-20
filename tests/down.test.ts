@@ -18,6 +18,7 @@ import {
   liveTmuxService,
   type TmuxService,
 } from "../src/services/tmux";
+import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
   type WorktreeService,
@@ -26,7 +27,12 @@ import { withTestServices } from "./helpers/services";
 
 async function runCommand(
   options?: DownOptions,
-  overrides: { tmux?: TmuxService; worktree?: WorktreeService } = {},
+  overrides: {
+    json?: boolean;
+    tmux?: TmuxService;
+    worktree?: WorktreeService;
+    workspace?: WorkspaceService;
+  } = {},
 ) {
   await runBunPromise(withTestServices(downCommand(options), overrides));
 }
@@ -227,5 +233,83 @@ describe("downCommand behavior", () => {
         worktree: worktreeOverrides,
       }),
     ).rejects.toThrow("tmux failed");
+  });
+
+  test("prints absent tmux sessions as informational output", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    tmuxOverrides = {
+      ...tmuxOverrides,
+      sessionExists: () => Effect.succeed(false),
+    };
+    cwdSpy.mockReturnValue("/tmp/myapp-feature-auth");
+
+    try {
+      await runCommand(undefined, {
+        tmux: tmuxOverrides,
+        worktree: worktreeOverrides,
+      });
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) =>
+          line.includes("No tmux session 'myapp-feature-auth' found"),
+        ),
+      ).toBe(true);
+      expect(loggedLines.some((line) => line.includes("warn"))).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("json output emits the final result only", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await runCommand(
+        { path: "/tmp/myapp-feature-auth" },
+        {
+          json: true,
+          workspace: {
+            up: () => Effect.die("unused"),
+            down: () =>
+              Effect.succeed({
+                operation: "down",
+                worktreePath: "/tmp/myapp-feature-auth",
+                sessionName: "myapp-feature-auth",
+                existed: false,
+                status: "absent",
+                attempts: {
+                  kill: {
+                    attempted: false,
+                    reason: "session_absent",
+                  },
+                },
+                warnings: [] as [],
+              }),
+          },
+        },
+      );
+
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toEqual({
+        ok: true,
+        data: {
+          operation: "down",
+          worktreePath: "/tmp/myapp-feature-auth",
+          sessionName: "myapp-feature-auth",
+          existed: false,
+          status: "absent",
+          attempts: {
+            kill: {
+              attempted: false,
+              reason: "session_absent",
+            },
+          },
+          warnings: [],
+        },
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

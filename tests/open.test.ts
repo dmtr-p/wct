@@ -18,6 +18,8 @@ import {
 import { type IdeService, liveIdeService } from "../src/services/ide-service";
 import {
   liveRegistryService,
+  type RegistryItem,
+  type RegistryRegistrationResult,
   type RegistryServiceApi,
 } from "../src/services/registry-service";
 import { liveTmuxService } from "../src/services/tmux";
@@ -32,6 +34,21 @@ async function runResolveOpenOptions(
   overrides: { github?: GitHubService; worktree?: WorktreeService } = {},
 ) {
   return runBunPromise(withTestServices(resolveOpenOptions(input), overrides));
+}
+
+function registeredResult(
+  path: string,
+  project: string,
+): RegistryRegistrationResult {
+  return {
+    status: "registered",
+    item: {
+      id: "registry-item",
+      repo_path: path,
+      project,
+      created_at: 1,
+    } satisfies RegistryItem,
+  };
 }
 
 interface OpenWorkflowFixture {
@@ -225,12 +242,7 @@ describe("open workflow", () => {
             register: (path: string, name: string) =>
               Effect.sync(() => {
                 registerCalls.push({ path, name });
-                return {
-                  id: "registry-item",
-                  repo_path: path,
-                  project: name,
-                  created_at: 1,
-                };
+                return registeredResult(path, name);
               }),
           } satisfies RegistryServiceApi,
           worktree: {
@@ -306,12 +318,7 @@ describe("open workflow", () => {
           registry: {
             ...liveRegistryService,
             register: (path: string, name: string) =>
-              Effect.succeed({
-                id: "registry-item",
-                repo_path: path,
-                project: name,
-                created_at: 1,
-              }),
+              Effect.succeed(registeredResult(path, name)),
           } satisfies RegistryServiceApi,
           worktree: {
             ...liveWorktreeService,
@@ -348,12 +355,7 @@ describe("open workflow", () => {
           registry: {
             ...liveRegistryService,
             register: (path: string, name: string) =>
-              Effect.succeed({
-                id: "registry-item",
-                repo_path: path,
-                project: name,
-                created_at: 1,
-              }),
+              Effect.succeed(registeredResult(path, name)),
           } satisfies RegistryServiceApi,
           worktree: {
             ...liveWorktreeService,
@@ -392,12 +394,7 @@ describe("open workflow", () => {
           registry: {
             ...liveRegistryService,
             register: (path: string, name: string) =>
-              Effect.succeed({
-                id: "registry-item",
-                repo_path: path,
-                project: name,
-                created_at: 1,
-              }),
+              Effect.succeed(registeredResult(path, name)),
           } satisfies RegistryServiceApi,
           worktree: {
             ...liveWorktreeService,
@@ -442,12 +439,7 @@ describe("open workflow", () => {
               registry: {
                 ...liveRegistryService,
                 register: (path: string, name: string) =>
-                  Effect.succeed({
-                    id: "registry-item",
-                    repo_path: path,
-                    project: name,
-                    created_at: 1,
-                  }),
+                  Effect.succeed(registeredResult(path, name)),
               } satisfies RegistryServiceApi,
               worktree: {
                 ...liveWorktreeService,
@@ -504,12 +496,7 @@ describe("open workflow", () => {
               registry: {
                 ...liveRegistryService,
                 register: (path: string, name: string) =>
-                  Effect.succeed({
-                    id: "registry-item",
-                    repo_path: path,
-                    project: name,
-                    created_at: 1,
-                  }),
+                  Effect.succeed(registeredResult(path, name)),
               } satisfies RegistryServiceApi,
               worktree: {
                 ...liveWorktreeService,
@@ -556,12 +543,7 @@ describe("open workflow", () => {
           registry: {
             ...liveRegistryService,
             register: (path: string, name: string) =>
-              Effect.succeed({
-                id: "registry-item",
-                repo_path: path,
-                project: name,
-                created_at: 1,
-              }),
+              Effect.succeed(registeredResult(path, name)),
           } satisfies RegistryServiceApi,
           worktree: {
             ...liveWorktreeService,

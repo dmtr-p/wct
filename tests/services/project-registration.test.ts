@@ -7,6 +7,7 @@ import { runBunPromise } from "../../src/effect/runtime";
 import { registerProject } from "../../src/services/project-registration";
 import type {
   RegistryItem,
+  RegistryRegistrationResult,
   RegistryServiceApi,
 } from "../../src/services/registry-service";
 import type { WorktreeService } from "../../src/services/worktree-service";
@@ -17,12 +18,16 @@ function fakeRegistry(calls: Array<{ path: string; project: string }>) {
     register: (repoPath: string, project: string) =>
       Effect.sync(() => {
         calls.push({ path: repoPath, project });
-        return {
+        const item = {
           id: "registry-item",
           repo_path: repoPath,
           project,
           created_at: 1,
         } satisfies RegistryItem;
+        return {
+          status: "registered",
+          item,
+        } satisfies RegistryRegistrationResult;
       }),
     unregister: () => Effect.succeed(false),
     listRepos: () => Effect.succeed([]),
@@ -61,6 +66,7 @@ describe("project registration", () => {
       );
 
       expect(result.projectName).toBe("explicit-name");
+      expect(result.registration.status).toBe("registered");
       expect(result.repoPath).toBe(tempDir);
       expect(calls).toEqual([{ path: tempDir, project: "explicit-name" }]);
     } finally {
@@ -83,6 +89,7 @@ describe("project registration", () => {
       );
 
       expect(result.projectName).toBe("from-config");
+      expect(result.registration.status).toBe("registered");
       expect(calls).toEqual([{ path: tempDir, project: "from-config" }]);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
@@ -107,6 +114,7 @@ describe("project registration", () => {
       );
 
       expect(result.projectName).toBe(basename(tempDir));
+      expect(result.registration.status).toBe("registered");
       expect(calls).toEqual([{ path: tempDir, project: basename(tempDir) }]);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });

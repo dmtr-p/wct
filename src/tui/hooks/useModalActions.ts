@@ -270,6 +270,7 @@ export function createHandleAddProject(deps: ModalActionDeps) {
           registerProject({
             path: result.path,
             name: result.nameManuallyEdited ? result.name : undefined,
+            forceRename: result.nameManuallyEdited,
             tolerateConfigErrors: true,
           }),
         );

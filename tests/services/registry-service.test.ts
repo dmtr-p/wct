@@ -29,13 +29,17 @@ describe("registry-service", () => {
   // registry operation; if it starts opening the DB during layer construction,
   // this test must build the layer after beforeEach updates process.env.HOME.
   it.layer(WctTestLayer)("operates against $HOME registry", (it) => {
-    it.effect("register and list repos", () =>
+    it.effect("register returns a registered outcome for a new repo", () =>
       Effect.gen(function* () {
         const registry = yield* RegistryService;
 
-        const item = yield* registry.register("/tmp/fake-repo", "test-project");
-        expect(item.repo_path).toBe("/tmp/fake-repo");
-        expect(item.project).toBe("test-project");
+        const result = yield* registry.register(
+          "/tmp/fake-repo",
+          "test-project",
+        );
+        expect(result.status).toBe("registered");
+        expect(result.item.repo_path).toBe("/tmp/fake-repo");
+        expect(result.item.project).toBe("test-project");
 
         const repos = yield* registry.listRepos();
         expect(repos.length).toBeGreaterThanOrEqual(1);
@@ -48,16 +52,19 @@ describe("registry-service", () => {
       }),
     );
 
-    it.effect("register is idempotent and updates project name", () =>
-      Effect.gen(function* () {
-        const registry = yield* RegistryService;
+    it.effect(
+      "register returns already-registered and preserves the existing project name by default",
+      () =>
+        Effect.gen(function* () {
+          const registry = yield* RegistryService;
 
-        yield* registry.register("/tmp/idem-repo", "old-name");
-        const updated = yield* registry.register("/tmp/idem-repo", "new-name");
-        expect(updated.project).toBe("new-name");
+          yield* registry.register("/tmp/idem-repo", "old-name");
+          const result = yield* registry.register("/tmp/idem-repo", "new-name");
+          expect(result.status).toBe("already-registered");
+          expect(result.item.project).toBe("old-name");
 
-        yield* registry.unregister("/tmp/idem-repo");
-      }),
+          yield* registry.unregister("/tmp/idem-repo");
+        }),
     );
 
     it.effect("unregister returns false for unknown path", () =>
@@ -93,17 +100,69 @@ describe("registry-service", () => {
         }),
     );
 
-    it.effect("register upsert updates project and returns single row", () =>
+    it.effect(
+      "register with forceRename updates a different project name and returns single row",
+      () =>
+        Effect.gen(function* () {
+          const registry = yield* RegistryService;
+
+          yield* registry.register("/tmp/tx-repo", "alpha");
+          const updated = yield* registry.register("/tmp/tx-repo", "beta", {
+            forceRename: true,
+          });
+          expect(updated.status).toBe("updated");
+          expect(updated.item.project).toBe("beta");
+
+          const repos = yield* registry.listRepos();
+          const matches = repos.filter((r) => r.repo_path === "/tmp/tx-repo");
+          expect(matches.length).toBe(1);
+          expect(matches[0]?.project).toBe("beta");
+        }),
+    );
+
+    it.effect(
+      "register with forceRename returns already-registered for the same project name",
+      () =>
+        Effect.gen(function* () {
+          const registry = yield* RegistryService;
+
+          yield* registry.register("/tmp/same-name-repo", "alpha");
+          const result = yield* registry.register(
+            "/tmp/same-name-repo",
+            "alpha",
+            {
+              forceRename: true,
+            },
+          );
+
+          expect(result.status).toBe("already-registered");
+          expect(result.item.project).toBe("alpha");
+        }),
+    );
+
+    it.effect("concurrent first registrations return structured outcomes", () =>
       Effect.gen(function* () {
         const registry = yield* RegistryService;
 
-        yield* registry.register("/tmp/tx-repo", "alpha");
-        yield* registry.register("/tmp/tx-repo", "beta");
+        const results = yield* Effect.all(
+          [
+            registry.register("/tmp/concurrent-repo", "alpha"),
+            registry.register("/tmp/concurrent-repo", "alpha"),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        expect(results.map((result) => result.status).sort()).toEqual([
+          "already-registered",
+          "registered",
+        ]);
 
         const repos = yield* registry.listRepos();
-        const matches = repos.filter((r) => r.repo_path === "/tmp/tx-repo");
+        const matches = repos.filter(
+          (repo) => repo.repo_path === "/tmp/concurrent-repo",
+        );
         expect(matches.length).toBe(1);
-        expect(matches[0]?.project).toBe("beta");
+        expect(matches[0]?.project).toBe("alpha");
       }),
     );
 

@@ -495,4 +495,22 @@ describe("resolveSessionHandoff", () => {
       }),
     ).toEqual({ type: "blocked" });
   });
+
+  test("returns a no-op plan when target session is absent even if client discovery is ambiguous", () => {
+    expect(
+      resolveSessionHandoff({
+        client: { type: "multiple" },
+        targetSession: "feature-a",
+        sessions: [{ name: "main" }],
+      }),
+    ).toEqual({ type: "not-needed" });
+
+    expect(
+      resolveSessionHandoff({
+        client: { type: "error" },
+        targetSession: "feature-a",
+        sessions: [{ name: "main" }],
+      }),
+    ).toEqual({ type: "not-needed" });
+  });
 });

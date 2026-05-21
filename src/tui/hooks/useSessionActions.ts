@@ -4,15 +4,16 @@ import { basename } from "node:path";
 import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
-import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName, TmuxService } from "../../services/tmux";
+import { WorkspaceService } from "../../services/workspace-service";
 import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
 import {
   resolveSessionHandoff,
   resolveStartActionMessage,
+  workspaceUpToStartResult,
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
@@ -186,9 +187,10 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
       );
       void (async () => {
         try {
-          const startResult = await tuiRuntime.runPromise(
-            startWorktreeSession({ path: wt.path }),
+          const upResult = await tuiRuntime.runPromise(
+            WorkspaceService.use((service) => service.up({ path: wt.path })),
           );
+          const startResult = workspaceUpToStartResult(upResult);
           await handleStartResult(startResult, true);
         } catch (error) {
           deps.showActionError(toWctError(error).message);
@@ -201,6 +203,55 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
           });
         }
       })();
+    }
+  };
+}
+
+export function createExecuteDown(deps: SessionActionDeps) {
+  const switchClientAway = createSwitchClientAway(deps);
+
+  return async (
+    sessionName: string,
+    branch: string,
+    worktreePath: string,
+    worktreeKey: string,
+  ) => {
+    deps.clearActionError();
+
+    const canProceed = await switchClientAway(sessionName);
+    if (!canProceed) {
+      deps.showActionError(
+        "Cannot safely stop the tmux session because the active client could not be moved away",
+      );
+      return;
+    }
+
+    deps.setSelectedIndex(deps.confirmDownReturnSelectedIndexRef.current);
+    deps.setMode(deps.confirmDownReturnModeRef.current);
+
+    const project = worktreeKey.split("/")[0] ?? "unknown";
+    deps.setPendingActions((prev) =>
+      new Map(prev).set(worktreeKey, {
+        type: "stopping",
+        branch,
+        project,
+      }),
+    );
+
+    try {
+      await tuiRuntime.runPromise(
+        WorkspaceService.use((service) => service.down({ path: worktreePath })),
+      );
+      await deps.refreshAll();
+    } catch (error) {
+      deps.showActionError(toWctError(error).message);
+      await deps.refreshAll();
+    } finally {
+      deps.setPendingActions((prev) => {
+        const next = new Map(prev);
+        next.delete(worktreeKey);
+        return next;
+      });
     }
   };
 }
@@ -368,5 +419,6 @@ export function useSessionActions(deps: SessionActionDeps) {
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),
     executeClose: createExecuteClose(deps),
     handleDownSelectedWorktree: createHandleDownSelectedWorktree(deps),
+    executeDown: createExecuteDown(deps),
   };
 }

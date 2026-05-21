@@ -3,14 +3,15 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
-import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
+import { WorkspaceService } from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
+import { workspaceUpToStartResult } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
@@ -231,14 +232,17 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
 
     void (async () => {
       try {
-        const startResult = await tuiRuntime.runPromise(
-          startWorktreeSession({
-            path: worktreePath,
-            profile: result.profile,
-            ide: !result.noIde,
-            noIde: result.noIde,
-          }),
+        const upResult = await tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.up({
+              path: worktreePath,
+              profile: result.profile,
+              ide: !result.noIde,
+              noIde: result.noIde,
+            }),
+          ),
         );
+        const startResult = workspaceUpToStartResult(upResult);
         await deps.handleStartResult(startResult, result.autoSwitch);
       } catch (error) {
         deps.showActionError(toWctError(error).message);

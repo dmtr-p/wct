@@ -9,13 +9,12 @@ import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
-import { noopTmuxService } from "./helpers/services";
 import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return provideWctServices(

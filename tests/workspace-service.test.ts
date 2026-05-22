@@ -15,7 +15,7 @@ import {
   type SetupResult,
   type SetupService,
 } from "../src/services/setup-service";
-import { type TmuxService } from "../src/services/tmux";
+import type { TmuxService } from "../src/services/tmux";
 import {
   liveVSCodeWorkspaceService,
   type VSCodeWorkspaceService,

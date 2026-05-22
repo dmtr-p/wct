@@ -89,7 +89,8 @@ describe("OpenModal form variants", () => {
 
   beforeEach(() => {
     console.error = (...args: unknown[]) => {
-      if (typeof args[0] === "string" && suppressedPattern.test(args[0])) return;
+      if (typeof args[0] === "string" && suppressedPattern.test(args[0]))
+        return;
       originalConsoleError(...args);
     };
   });

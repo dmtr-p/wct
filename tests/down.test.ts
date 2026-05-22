@@ -13,10 +13,7 @@ import { type DownOptions, downCommand } from "../src/commands/down";
 import { Command } from "../src/effect/cli";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
-import {
-  formatSessionName,
-  type TmuxService,
-} from "../src/services/tmux";
+import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,

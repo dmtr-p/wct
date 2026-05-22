@@ -3,10 +3,7 @@ import { describe, expect, test } from "vitest";
 import { commandDef, switchCommand } from "../src/commands/switch";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
-import {
-  formatSessionName,
-  type TmuxService,
-} from "../src/services/tmux";
+import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import {
   liveWorktreeService,
   type WorktreeService,

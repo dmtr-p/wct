@@ -15,14 +15,13 @@ import {
   type RegistryRegistrationResult,
   type RegistryServiceApi,
 } from "../src/services/registry-service";
-import { noopTmuxService } from "./helpers/services";
 import {
   type WorkspaceOpenOptions,
   type WorkspaceOpenResult,
   WorkspaceService,
 } from "../src/services/workspace-service";
 import { liveWorktreeService } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function registeredResult(
   path: string,

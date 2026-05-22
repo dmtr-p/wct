@@ -10,10 +10,7 @@ import {
 } from "vitest";
 import { closeCommand, commandDef } from "../src/commands/close";
 import { runBunPromise } from "../src/effect/runtime";
-import {
-  formatSessionName,
-  type TmuxService,
-} from "../src/services/tmux";
+import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import type {
   WorkspaceCloseResult,
   WorkspaceService,

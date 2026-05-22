@@ -1,12 +1,12 @@
 // src/tui/hooks/useModalActions.ts
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { openWorktree, resolveOpenOptions } from "../../commands/open";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
 import {
+  type WorkspaceOpenResult,
   WorkspaceService,
   type WorkspaceWarning,
 } from "../../services/workspace-service";
@@ -20,6 +20,10 @@ import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { SessionIdeDefaults } from "./useSessionOptionsState";
 import type { TmuxClientDiscovery } from "./useTmux";
+
+function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
+  return result.attempts.tmux.attempted && result.attempts.tmux.ok;
+}
 
 function formatWorkspaceWarning(warning: string | WorkspaceWarning): string {
   if (typeof warning === "string") return warning;
@@ -135,27 +139,42 @@ export function createHandleOpen(deps: ModalActionDeps) {
 
       try {
         try {
-          const resolved = await runTuiSilentPromise(
-            resolveOpenOptions({
-              branch: requestedBranch,
-              base: opts.base,
-              cwd: deps.openModalRepoPath || undefined,
-              pr: opts.pr,
-              profile: opts.profile,
-              prompt: opts.prompt,
-              existing: opts.existing,
-              ide: !opts.noIde,
-              noIde: opts.noIde,
-            }),
+          const result = await tuiRuntime.runPromise(
+            WorkspaceService.use((service) =>
+              service.open({
+                branch: requestedBranch,
+                base: opts.base,
+                cwd: deps.openModalRepoPath || undefined,
+                pr: opts.pr,
+                profile: opts.profile,
+                prompt: opts.prompt,
+                existing: opts.existing,
+                ide: !opts.noIde,
+                noIde: opts.noIde,
+              }),
+            ),
           );
-          const result = await runTuiSilentPromise(openWorktree(resolved));
           if (result.warnings.length > 0) {
             appendWarning(
               result.warnings.map(formatWorkspaceWarning).join("\n"),
             );
           }
 
-          if (!opts.noAttach && result.tmuxSessionStarted) {
+          try {
+            await runTuiSilentPromise(
+              registerProject({
+                path: result.mainRepoPath,
+                name: result.projectName,
+                tolerateConfigErrors: true,
+              }),
+            );
+          } catch (error) {
+            appendWarning(
+              `Project registration failed after open: ${toWctError(error).message}`,
+            );
+          }
+
+          if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
             const liveClient = await deps.discoverClient();
             if (liveClient.type === "single") {
               const switched = await deps.switchSession(

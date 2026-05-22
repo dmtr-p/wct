@@ -273,6 +273,7 @@ describe("upCommand", () => {
   test("passes CLI options through to WorkspaceService.up", async () => {
     const receivedOptions: unknown[] = [];
     const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
       up: (options) =>
         Effect.sync(() => {
           receivedOptions.push(options);
@@ -732,6 +733,7 @@ tmux:
   test("json output emits the final workspace result only", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
       up: () =>
         Effect.succeed({
           operation: "up",

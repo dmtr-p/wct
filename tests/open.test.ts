@@ -4,17 +4,10 @@ import { join, resolve } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import {
-  openCommand,
-  openWorktree,
-  resolveOpenOptions,
-} from "../src/commands/open";
+import { openCommand, openWorktree } from "../src/commands/open";
 import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
-import {
-  type GitHubService,
-  liveGitHubService,
-} from "../src/services/github-service";
+import { commandError, WctCommandError } from "../src/errors";
 import { type IdeService, liveIdeService } from "../src/services/ide-service";
 import {
   liveRegistryService,
@@ -23,18 +16,9 @@ import {
   type RegistryServiceApi,
 } from "../src/services/registry-service";
 import { liveTmuxService } from "../src/services/tmux";
-import {
-  liveWorktreeService,
-  type WorktreeService,
-} from "../src/services/worktree-service";
+import type { WorkspaceOpenResult } from "../src/services/workspace-service";
+import { liveWorktreeService } from "../src/services/worktree-service";
 import { withTestServices } from "./helpers/services";
-
-async function runResolveOpenOptions(
-  input: Parameters<typeof resolveOpenOptions>[0],
-  overrides: { github?: GitHubService; worktree?: WorktreeService } = {},
-) {
-  return runBunPromise(withTestServices(resolveOpenOptions(input), overrides));
-}
 
 function registeredResult(
   path: string,
@@ -49,6 +33,36 @@ function registeredResult(
       created_at: 1,
     } satisfies RegistryItem,
   };
+}
+
+function alreadyRegisteredResult(
+  path: string,
+  project: string,
+): RegistryRegistrationResult {
+  return {
+    status: "already-registered",
+    item: {
+      id: "registry-item",
+      repo_path: path,
+      project,
+      created_at: 1,
+    } satisfies RegistryItem,
+  };
+}
+
+async function expectWctFailure(
+  effect: Effect.Effect<unknown, unknown, never>,
+  code: string,
+  message: string,
+) {
+  try {
+    await runBunPromise(effect);
+    throw new Error("Expected command to fail");
+  } catch (error) {
+    expect(error).toBeInstanceOf(WctCommandError);
+    expect((error as WctCommandError).code).toBe(code);
+    expect((error as WctCommandError).message).toContain(message);
+  }
 }
 
 interface OpenWorkflowFixture {
@@ -91,116 +105,111 @@ async function cleanupOpenWorkflowFixture(
   await rm(fixture.worktreeDir, { recursive: true, force: true });
 }
 
-describe("resolveOpenOptions", () => {
+describe("WorkspaceService open validation through openWorktree", () => {
   test("rejects --ide together with --no-ide", async () => {
-    await expect(
-      runResolveOpenOptions({
-        branch: "feature-branch",
-        ide: true,
-        noIde: true,
-      }),
-    ).rejects.toThrow("Options --ide and --no-ide cannot be used together");
-  });
-
-  test("passes through positive ide flag", async () => {
-    await expect(
-      runResolveOpenOptions({
-        branch: "feature-branch",
-        ide: true,
-      }),
-    ).resolves.toMatchObject({
-      ide: true,
-      noIde: false,
-    });
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          branch: "feature-branch",
+          ide: true,
+          noIde: true,
+        }),
+      ),
+      "invalid_options",
+      "Options --ide and --no-ide cannot be used together",
+    );
   });
 
   test("rejects branch argument together with --pr", async () => {
-    await expect(
-      runResolveOpenOptions({
-        branch: "feature-branch",
-        pr: "123",
-      }),
-    ).rejects.toThrow("Cannot use --pr together with a branch argument");
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          branch: "feature-branch",
+          pr: "123",
+        }),
+      ),
+      "invalid_options",
+      "Cannot use --pr together with a branch argument",
+    );
   });
 
   test("rejects --existing together with --pr", async () => {
-    await expect(
-      runResolveOpenOptions({
-        pr: "123",
-        existing: true,
-      }),
-    ).rejects.toThrow("Cannot use --pr together with --existing");
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          pr: "123",
+          existing: true,
+        }),
+      ),
+      "invalid_options",
+      "Cannot use --pr together with --existing",
+    );
   });
 
-  test("normalizes PR options into branch and base after fetching", async () => {
-    const calls: Array<{ branch: string; cwd?: string; remote?: string }> = [];
-    const branchExistsCalls: Array<{ branch: string; cwd?: string }> = [];
-    const githubOverrides: GitHubService = {
-      ...liveGitHubService,
-      isGhInstalled: () => Effect.succeed(true),
-      resolvePr: (prNumber: number, cwd?: string) =>
-        Effect.succeed({
-          branch: "feature-from-pr",
-          prNumber,
-          cwd,
-          isCrossRepository: false,
-          headOwner: "acme",
-          headRepo: "wct",
-        }),
-      findRemoteForRepo: (_owner: string, _repo: string, cwd?: string) =>
-        Effect.succeed(cwd ? "origin" : "missing-cwd"),
-      fetchBranch: (branch: string, remote?: string, cwd?: string) =>
-        Effect.sync(() => {
-          calls.push({ branch, remote, cwd });
-        }),
-    };
-    const worktreeOverrides: WorktreeService = {
-      ...liveWorktreeService,
-      branchExists: (branch: string, cwd?: string) =>
-        Effect.sync(() => {
-          branchExistsCalls.push({ branch, cwd });
-          return false;
-        }),
-    };
-
-    await expect(
-      runResolveOpenOptions(
-        {
-          cwd: "/repo",
+  test("rejects --base together with --pr", async () => {
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
           pr: "123",
-          noIde: true,
-          prompt: "focus",
-          profile: "default",
-        },
-        {
-          github: githubOverrides,
-          worktree: worktreeOverrides,
-        },
+          base: "main",
+        }),
       ),
-    ).resolves.toEqual({
-      branch: "feature-from-pr",
-      existing: false,
-      base: "origin/feature-from-pr",
-      cwd: "/repo",
-      ide: false,
-      noIde: true,
-      prompt: "focus",
-      profile: "default",
-    });
+      "invalid_options",
+      "Cannot use --pr together with --base",
+    );
+  });
 
-    expect(calls).toEqual([
-      {
-        branch: "feature-from-pr",
-        cwd: "/repo",
-        remote: "origin",
-      },
-    ]);
-    expect(branchExistsCalls).toEqual([
-      {
-        branch: "feature-from-pr",
-        cwd: "/repo",
-      },
-    ]);
+  test("rejects missing branch before repository validation", async () => {
+    await expectWctFailure(
+      withTestServices(openWorktree({}), {
+        worktree: {
+          ...liveWorktreeService,
+          isGitRepo: () => Effect.die("repository should not be checked"),
+        },
+      }),
+      "missing_branch_arg",
+      "Missing branch name",
+    );
+  });
+
+  test("rejects invalid PR values before checking gh", async () => {
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          pr: "not-a-pr",
+        }),
+      ),
+      "pr_error",
+      "Invalid --pr value: 'not-a-pr'",
+    );
+  });
+
+  test("validation ordering keeps --ide/--no-ide first for combined invalid inputs", async () => {
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          pr: "not-a-pr",
+          ide: true,
+          noIde: true,
+        }),
+      ),
+      "invalid_options",
+      "Options --ide and --no-ide cannot be used together",
+    );
+  });
+
+  test("validation ordering keeps branch plus --pr before --pr plus --base", async () => {
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          branch: "feature",
+          pr: "123",
+          base: "main",
+        }),
+      ),
+      "invalid_options",
+      "Cannot use --pr together with a branch argument",
+    );
   });
 });
 
@@ -227,7 +236,6 @@ describe("open workflow", () => {
       base?: string;
     }> = [];
     const repoCalls: Array<{ cwd?: string; method: string }> = [];
-    const registerCalls: Array<{ path: string; name: string }> = [];
 
     const result = await runBunPromise(
       withTestServices(
@@ -237,14 +245,6 @@ describe("open workflow", () => {
           existing: false,
         }),
         {
-          registry: {
-            ...liveRegistryService,
-            register: (path: string, name: string) =>
-              Effect.sync(() => {
-                registerCalls.push({ path, name });
-                return registeredResult(path, name);
-              }),
-          } satisfies RegistryServiceApi,
           worktree: {
             ...liveWorktreeService,
             isGitRepo: (cwd?: string) =>
@@ -275,8 +275,9 @@ describe("open workflow", () => {
       ),
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       worktreePath: join(fixture.worktreeDir, "myapp-feature-branch"),
+      mainRepoPath: fixture.repoDir,
       branch: "feature-branch",
       sessionName: "myapp-feature-branch",
       projectName: "myapp",
@@ -296,13 +297,6 @@ describe("open workflow", () => {
     expect(repoCalls).toEqual([
       { method: "isGitRepo", cwd: fixture.repoDir },
       { method: "getMainRepoPath", cwd: fixture.repoDir },
-      { method: "getMainRepoPath", cwd: fixture.repoDir },
-    ]);
-    expect(registerCalls).toEqual([
-      {
-        path: fixture.repoDir,
-        name: "myapp",
-      },
     ]);
   });
 
@@ -333,6 +327,48 @@ describe("open workflow", () => {
     );
 
     expect(result.tmuxSessionStarted).toBe(false);
+  });
+
+  test("validates --existing plus --base and missing base after config resolution", async () => {
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          branch: "feature",
+          cwd: fixture.repoDir,
+          existing: true,
+          base: "main",
+        }),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+          },
+        },
+      ),
+      "invalid_options",
+      "Options --existing and --base cannot be used together",
+    );
+
+    await expectWctFailure(
+      withTestServices(
+        openWorktree({
+          branch: "feature",
+          cwd: fixture.repoDir,
+          base: "missing-base",
+        }),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+            branchExists: (branch) => Effect.succeed(branch !== "missing-base"),
+          },
+        },
+      ),
+      "base_branch_not_found",
+      "Base branch 'missing-base' does not exist",
+    );
   });
 
   test("does not open IDE by default when config omits ide", async () => {
@@ -525,7 +561,7 @@ describe("open workflow", () => {
     }
   });
 
-  test("openCommand delegates to openWorktree and resolves void", async () => {
+  test("openCommand uses WorkspaceService.open and resolves void", async () => {
     const createCalls: Array<{
       branch: string;
       existing: boolean;
@@ -572,5 +608,385 @@ describe("open workflow", () => {
         base: undefined,
       },
     ]);
+  });
+
+  test("openCommand registers only after Workspace open succeeds", async () => {
+    const registerCalls: string[] = [];
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "fatal",
+            existing: false,
+          }),
+          {
+            workspace: {
+              open: () =>
+                Effect.fail(commandError("worktree_error", "fatal open")),
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: (path: string) =>
+                Effect.sync(() => {
+                  registerCalls.push(path);
+                  return registeredResult(path, "myapp");
+                }),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      ),
+    ).rejects.toThrow("fatal open");
+
+    expect(registerCalls).toEqual([]);
+  });
+
+  test("openCommand auto-registration omits forceRename for existing registry rows", async () => {
+    const registerCalls: Array<{
+      path: string;
+      name: string;
+      forceRename?: boolean;
+    }> = [];
+    const workspaceResult: WorkspaceOpenResult = {
+      operation: "open",
+      worktreePath: "/tmp/myapp-existing-registration",
+      mainRepoPath: fixture.repoDir,
+      branch: "existing-registration",
+      sessionName: "myapp-existing-registration",
+      projectName: "new-config-name",
+      created: true,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-existing-registration",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "existing-registration",
+        WCT_PROJECT: "new-config-name",
+      },
+      warnings: [],
+      attempts: {
+        worktree: {
+          attempted: true,
+          ok: true,
+          value: {
+            _tag: "Created",
+            path: "/tmp/myapp-existing-registration",
+          },
+        },
+        vscode: {
+          attempted: false,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false, reason: "copy_not_configured" },
+        setup: { attempted: false, reason: "setup_not_configured" },
+        tmux: { attempted: false, reason: "tmux_not_configured" },
+        ide: { attempted: false, reason: "ide_not_configured" },
+      },
+    };
+
+    await runBunPromise(
+      withTestServices(
+        openCommand({
+          branch: "existing-registration",
+          existing: false,
+        }),
+        {
+          workspace: {
+            open: () => Effect.succeed(workspaceResult),
+            up: () => Effect.die("unused"),
+            down: () => Effect.die("unused"),
+          },
+          registry: {
+            ...liveRegistryService,
+            register: (path, name, options) =>
+              Effect.sync(() => {
+                registerCalls.push({
+                  path,
+                  name,
+                  forceRename: options?.forceRename,
+                });
+                return alreadyRegisteredResult(path, "original-name");
+              }),
+          } satisfies RegistryServiceApi,
+        },
+      ),
+    );
+
+    expect(registerCalls).toEqual([
+      {
+        path: fixture.repoDir,
+        name: "new-config-name",
+        forceRename: undefined,
+      },
+    ]);
+  });
+
+  test("openCommand JSON emits final workspace result and registration status", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspaceResult: WorkspaceOpenResult = {
+      operation: "open" as const,
+      worktreePath: "/tmp/myapp-json",
+      mainRepoPath: fixture.repoDir,
+      branch: "json",
+      sessionName: "myapp-json",
+      projectName: "myapp",
+      created: true,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-json",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "json",
+        WCT_PROJECT: "myapp",
+      },
+      warnings: [
+        {
+          _tag: "TmuxStartFailed",
+          operation: "open",
+          error: {
+            code: "tmux_error",
+            message: "tmux unavailable",
+          },
+        },
+      ],
+      attempts: {
+        worktree: {
+          attempted: true as const,
+          ok: true as const,
+          value: { _tag: "Created" as const, path: "/tmp/myapp-json" },
+        },
+        vscode: {
+          attempted: false as const,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false as const, reason: "copy_not_configured" },
+        setup: { attempted: false as const, reason: "setup_not_configured" },
+        tmux: {
+          attempted: true as const,
+          ok: false as const,
+          error: {
+            code: "tmux_error",
+            message: "tmux unavailable",
+          },
+        },
+        ide: { attempted: false as const, reason: "ide_not_configured" },
+      },
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "json",
+            existing: false,
+          }),
+          {
+            json: true,
+            workspace: {
+              open: (options) => {
+                expect(options.reporter).toBeUndefined();
+                return Effect.succeed(workspaceResult);
+              },
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: (path: string, name: string) =>
+                Effect.succeed(registeredResult(path, name)),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      );
+
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toMatchObject({
+        ok: true,
+        data: {
+          workspace: workspaceResult,
+          registrationStatus: "registered",
+        },
+      });
+      expect(output.data.workspace.warnings).toEqual(workspaceResult.warnings);
+      expect(output.data.workspace.attempts.tmux).toEqual(
+        workspaceResult.attempts.tmux,
+      );
+      expect(output.data.registration).toBeUndefined();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("openCommand passes a human reporter and keeps already-registered auto-registration silent", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspaceResult = {
+      operation: "open" as const,
+      worktreePath: "/tmp/myapp-human",
+      mainRepoPath: fixture.repoDir,
+      branch: "human",
+      sessionName: "myapp-human",
+      projectName: "myapp",
+      created: true,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-human",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "human",
+        WCT_PROJECT: "myapp",
+      },
+      warnings: [],
+      attempts: {
+        worktree: {
+          attempted: true as const,
+          ok: true as const,
+          value: { _tag: "Created" as const, path: "/tmp/myapp-human" },
+        },
+        vscode: {
+          attempted: false as const,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false as const, reason: "copy_not_configured" },
+        setup: { attempted: false as const, reason: "setup_not_configured" },
+        tmux: { attempted: false as const, reason: "tmux_not_configured" },
+        ide: { attempted: false as const, reason: "ide_not_configured" },
+      },
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "human",
+            existing: false,
+          }),
+          {
+            workspace: {
+              open: (options) =>
+                Effect.gen(function* () {
+                  const reporter = options.reporter;
+                  expect(reporter).toBeDefined();
+                  if (reporter) {
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "AttemptStarted",
+                        attempt: "copy",
+                      }),
+                      () => Effect.void,
+                    );
+                  }
+                  return workspaceResult;
+                }),
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: (path: string, name: string) =>
+                Effect.succeed(alreadyRegisteredResult(path, name)),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      );
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(loggedLines.some((line) => line.includes("Copying files"))).toBe(
+        true,
+      );
+      expect(
+        loggedLines.some((line) => line.includes("Registered project")),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("openCommand human reporter logs resolved PR branch and base", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspaceResult: WorkspaceOpenResult = {
+      operation: "open",
+      worktreePath: "/tmp/myapp-pr-branch",
+      mainRepoPath: fixture.repoDir,
+      branch: "pr-branch",
+      sessionName: "myapp-pr-branch",
+      projectName: "myapp",
+      created: true,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-pr-branch",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "pr-branch",
+        WCT_PROJECT: "myapp",
+      },
+      warnings: [],
+      attempts: {
+        worktree: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", path: "/tmp/myapp-pr-branch" },
+        },
+        vscode: {
+          attempted: false,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false, reason: "copy_not_configured" },
+        setup: { attempted: false, reason: "setup_not_configured" },
+        tmux: { attempted: false, reason: "tmux_not_configured" },
+        ide: { attempted: false, reason: "ide_not_configured" },
+      },
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            pr: "42",
+            existing: false,
+          }),
+          {
+            workspace: {
+              open: (options) =>
+                Effect.gen(function* () {
+                  if (options.reporter) {
+                    yield* Effect.catch(
+                      options.reporter.event({
+                        operation: "open",
+                        _tag: "TargetResolved",
+                        worktreePath: workspaceResult.worktreePath,
+                        branch: "pr-branch",
+                        base: "alice/pr-branch",
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      options.reporter.event({
+                        operation: "open",
+                        _tag: "AttemptStarted",
+                        attempt: "worktree",
+                      }),
+                      () => Effect.void,
+                    );
+                  }
+                  return workspaceResult;
+                }),
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: (path: string, name: string) =>
+                Effect.succeed(alreadyRegisteredResult(path, name)),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      );
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) =>
+          line.includes(
+            "Creating worktree for 'pr-branch' based on 'alice/pr-branch'",
+          ),
+        ),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

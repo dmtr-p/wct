@@ -63,7 +63,11 @@ export interface UpOptions {
 
 export function upCommand(
   options?: UpOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
     const { ide, noIde, noAttach, profile, path, branch } = options ?? {};
     const result = yield* WorkspaceService.use((service) =>

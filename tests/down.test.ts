@@ -270,6 +270,7 @@ describe("downCommand behavior", () => {
         {
           json: true,
           workspace: {
+            open: () => Effect.die("unused"),
             up: () => Effect.die("unused"),
             down: () =>
               Effect.succeed({

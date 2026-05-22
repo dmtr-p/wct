@@ -1,10 +1,26 @@
 import { basename, resolve } from "node:path";
 import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
-import { loadConfig, resolveIdeLaunch, resolveProfile } from "../config/loader";
+import {
+  loadConfig,
+  resolveIdeLaunch,
+  resolveProfile,
+  resolveWorktreePath,
+} from "../config/loader";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
+import { type CopyResult, copyEntries } from "./copy";
+import {
+  GitHubService,
+  type GitHubService as GitHubServiceApi,
+  parsePrArg,
+} from "./github-service";
 import { IdeService, type IdeService as IdeServiceApi } from "./ide-service";
+import {
+  type SetupResult,
+  SetupService,
+  type SetupService as SetupServiceApi,
+} from "./setup-service";
 import {
   type CreateSessionResult,
   formatSessionName,
@@ -12,6 +28,12 @@ import {
   type TmuxService as TmuxServiceApi,
 } from "./tmux";
 import {
+  type SyncResult,
+  VSCodeWorkspaceService,
+  type VSCodeWorkspaceService as VSCodeWorkspaceServiceApi,
+} from "./vscode-workspace";
+import {
+  type CreateWorktreeResult,
   WorktreeService,
   type WorktreeService as WorktreeServiceApi,
 } from "./worktree-service";
@@ -31,12 +53,24 @@ export type WorkspaceAttempt<T> =
 export type WorkspaceWarning =
   | {
       _tag: "TmuxStartFailed";
-      operation: "up";
+      operation: "open" | "up";
       error: WorkspaceError;
     }
   | {
       _tag: "IdeOpenFailed";
-      operation: "up";
+      operation: "open" | "up";
+      error: WorkspaceError;
+    }
+  | {
+      _tag: "VSCodeSyncFailed";
+      operation: "open";
+      error: WorkspaceError;
+    }
+  | {
+      _tag: "SetupFailed";
+      operation: "open";
+      name: string;
+      optional: boolean;
       error: WorkspaceError;
     };
 
@@ -45,6 +79,8 @@ export type WorkspaceReporterEvent =
       operation: WorkspaceOperation;
       _tag: "TargetResolved";
       worktreePath: string;
+      branch?: string;
+      base?: string;
     }
   | {
       operation: WorkspaceOperation;
@@ -54,12 +90,12 @@ export type WorkspaceReporterEvent =
   | {
       operation: WorkspaceOperation;
       _tag: "AttemptStarted";
-      attempt: "tmux" | "ide";
+      attempt: "worktree" | "vscode" | "copy" | "setup" | "tmux" | "ide";
     }
   | {
       operation: WorkspaceOperation;
       _tag: "AttemptCompleted";
-      attempt: "tmux" | "ide";
+      attempt: "worktree" | "vscode" | "copy" | "setup" | "tmux" | "ide";
       ok: boolean;
     }
   | {
@@ -93,6 +129,40 @@ export interface WorkspaceDownOptions extends ResolveWorkspaceTargetOptions {
   reporter?: WorkspaceReporter;
 }
 
+export interface WorkspaceOpenOptions {
+  branch?: string;
+  existing?: boolean;
+  base?: string;
+  cwd?: string;
+  ide?: boolean;
+  noIde?: boolean;
+  pr?: string;
+  prompt?: string;
+  profile?: string;
+  reporter?: WorkspaceReporter;
+}
+
+export interface WorkspaceOpenResult {
+  operation: "open";
+  worktreePath: string;
+  mainRepoPath: string;
+  branch: string;
+  sessionName: string;
+  projectName: string;
+  profileName?: string;
+  created: boolean;
+  env: WctEnv;
+  warnings: WorkspaceWarning[];
+  attempts: {
+    worktree: WorkspaceAttempt<CreateWorktreeResult>;
+    vscode: WorkspaceAttempt<SyncResult>;
+    copy: WorkspaceAttempt<CopyResult[]>;
+    setup: WorkspaceAttempt<SetupResult[]>;
+    tmux: WorkspaceAttempt<CreateSessionResult>;
+    ide: WorkspaceAttempt<null>;
+  };
+}
+
 export interface WorkspaceUpResult {
   operation: "up";
   worktreePath: string;
@@ -122,6 +192,19 @@ export interface WorkspaceDownResult {
 }
 
 export interface WorkspaceService {
+  open: (
+    options: WorkspaceOpenOptions,
+  ) => Effect.Effect<
+    WorkspaceOpenResult,
+    WctError,
+    | WorktreeServiceApi
+    | TmuxServiceApi
+    | IdeServiceApi
+    | SetupServiceApi
+    | VSCodeWorkspaceServiceApi
+    | GitHubServiceApi
+    | BunServices.BunServices
+  >;
   up: (
     options?: WorkspaceUpOptions,
   ) => Effect.Effect<
@@ -166,7 +249,7 @@ function emitReporter(
     try: () => reporter.event(event),
     catch: (error) => error,
   }).pipe(
-    Effect.flatMap((reporterEffect) => reporterEffect),
+    Effect.flatten,
     Effect.catchCause(() => Effect.void),
   );
 }
@@ -185,6 +268,507 @@ function captureAttempt<A, E, R>(
       ok: true as const,
       value,
     }),
+  });
+}
+
+function setupWarning(result: SetupResult): WorkspaceWarning | undefined {
+  if (result._tag === "Succeeded") return undefined;
+  return {
+    _tag: "SetupFailed",
+    operation: "open",
+    name: result.name,
+    optional: result._tag === "OptionalFailed",
+    error: {
+      code:
+        result._tag === "OptionalFailed"
+          ? "optional_setup_failed"
+          : "setup_failed",
+      message: result.error ?? "Unknown error",
+    },
+  };
+}
+
+function resolveOpenIntent(
+  options: WorkspaceOpenOptions,
+): Effect.Effect<
+  Required<Pick<WorkspaceOpenOptions, "branch" | "existing">> &
+    Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter">,
+  WctError,
+  GitHubServiceApi | WorktreeServiceApi | BunServices.BunServices
+> {
+  return Effect.gen(function* () {
+    const {
+      branch,
+      existing = false,
+      base,
+      cwd,
+      ide = false,
+      noIde = false,
+      pr,
+      prompt,
+      profile,
+    } = options;
+
+    if (ide && noIde) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Options --ide and --no-ide cannot be used together",
+        ),
+      );
+    }
+
+    if (pr && branch) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Cannot use --pr together with a branch argument",
+        ),
+      );
+    }
+
+    if (pr && base) {
+      return yield* Effect.fail(
+        commandError("invalid_options", "Cannot use --pr together with --base"),
+      );
+    }
+
+    if (pr && existing) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Cannot use --pr together with --existing",
+        ),
+      );
+    }
+
+    if (pr) {
+      const prNumber = parsePrArg(pr);
+      if (prNumber === null) {
+        return yield* Effect.fail(
+          commandError(
+            "pr_error",
+            `Invalid --pr value: '${pr}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
+          ),
+        );
+      }
+
+      const ghInstalled = yield* GitHubService.use((service) =>
+        service.isGhInstalled(),
+      );
+      if (!ghInstalled) {
+        return yield* Effect.fail(
+          commandError(
+            "gh_not_installed",
+            "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
+          ),
+        );
+      }
+
+      const resolvedPr = yield* GitHubService.use((service) =>
+        service.resolvePr(prNumber, cwd),
+      );
+      const resolvedBranch = resolvedPr.branch;
+      let remote = "origin";
+
+      if (resolvedPr.headOwner && resolvedPr.headRepo) {
+        const { headOwner, headRepo } = resolvedPr;
+        const existingRemote = yield* GitHubService.use((service) =>
+          service.findRemoteForRepo(headOwner, headRepo, cwd),
+        );
+
+        if (existingRemote) {
+          remote = existingRemote;
+        } else if (resolvedPr.isCrossRepository) {
+          remote = headOwner;
+          yield* GitHubService.use((service) =>
+            service.addForkRemote(remote, headOwner, headRepo, cwd),
+          );
+        }
+      }
+
+      yield* GitHubService.use((service) =>
+        service.fetchBranch(resolvedBranch, remote, cwd),
+      );
+
+      const localExists = yield* WorktreeService.use((service) =>
+        service.branchExists(resolvedBranch, cwd),
+      );
+
+      return {
+        branch: resolvedBranch,
+        existing: localExists,
+        base: localExists ? undefined : `${remote}/${resolvedBranch}`,
+        cwd,
+        ide,
+        noIde,
+        prompt,
+        profile,
+      };
+    }
+
+    if (!branch) {
+      return yield* Effect.fail(
+        commandError("missing_branch_arg", "Missing branch name"),
+      );
+    }
+
+    return { branch, existing, base, cwd, ide, noIde, prompt, profile };
+  });
+}
+
+function openImpl(
+  options: WorkspaceOpenOptions,
+): Effect.Effect<
+  WorkspaceOpenResult,
+  WctError,
+  | WorktreeServiceApi
+  | TmuxServiceApi
+  | IdeServiceApi
+  | SetupServiceApi
+  | VSCodeWorkspaceServiceApi
+  | GitHubServiceApi
+  | BunServices.BunServices
+> {
+  return Effect.gen(function* () {
+    const reporter = options.reporter;
+    const resolvedOptions = yield* resolveOpenIntent(options);
+    const { branch, existing, base, cwd, ide, noIde, prompt, profile } =
+      resolvedOptions;
+
+    const repo = yield* WorktreeService.use((service) =>
+      service.isGitRepo(cwd),
+    );
+    if (!repo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
+      );
+    }
+
+    const mainRepoPath = yield* WorktreeService.use((service) =>
+      service.getMainRepoPath(cwd),
+    );
+    if (!mainRepoPath) {
+      return yield* Effect.fail(
+        commandError("worktree_error", "Could not determine repository root"),
+      );
+    }
+
+    const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
+      commandError("config_error", error.message, error),
+    );
+    const { config: resolved, profileName } = yield* Effect.try({
+      try: () => resolveProfile(config, branch, profile),
+      catch: (error) =>
+        commandError(
+          "config_error",
+          error instanceof Error ? error.message : String(error),
+        ),
+    });
+    yield* emitReporter(reporter, {
+      operation: "open",
+      _tag: "ProfileResolved",
+      ...(profileName ? { profileName } : {}),
+    });
+    const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
+
+    if (existing && base) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Options --existing and --base cannot be used together",
+        ),
+      );
+    }
+
+    if (base) {
+      const baseExists = yield* WorktreeService.use((service) =>
+        service.branchExists(base, cwd),
+      );
+      if (!baseExists) {
+        return yield* Effect.fail(
+          commandError(
+            "base_branch_not_found",
+            `Base branch '${base}' does not exist`,
+          ),
+        );
+      }
+    }
+
+    const worktreePath = resolveWorktreePath(
+      config.worktree_dir,
+      branch,
+      mainRepoPath,
+      config.project_name,
+    );
+    yield* emitReporter(reporter, {
+      operation: "open",
+      _tag: "TargetResolved",
+      worktreePath,
+      branch,
+      ...(base ? { base } : {}),
+    });
+    const sessionName = formatSessionName(basename(worktreePath));
+    const env: WctEnv = {
+      WCT_WORKTREE_DIR: worktreePath,
+      WCT_MAIN_DIR: mainRepoPath,
+      WCT_BRANCH: branch,
+      WCT_PROJECT: config.project_name,
+      WCT_PROMPT: prompt,
+    };
+
+    yield* emitReporter(reporter, {
+      operation: "open",
+      _tag: "AttemptStarted",
+      attempt: "worktree",
+    });
+    const worktreeResult = yield* WorktreeService.use((service) =>
+      service.createWorktree(worktreePath, branch, existing, base, cwd),
+    );
+    if (worktreeResult._tag === "PathConflict") {
+      return yield* Effect.fail(
+        commandError(
+          "worktree_error",
+          worktreeResult.existingBranch
+            ? `Path already exists for branch '${worktreeResult.existingBranch}', not '${branch}'`
+            : `Path '${worktreePath}' already exists and is not a registered worktree for '${branch}'`,
+        ),
+      );
+    }
+    yield* emitReporter(reporter, {
+      operation: "open",
+      _tag: "AttemptCompleted",
+      attempt: "worktree",
+      ok: true,
+    });
+
+    const shouldSyncVSCode =
+      ideLaunch.open &&
+      (ideLaunch.config?.name ?? "vscode") === "vscode" &&
+      ideLaunch.config?.fork_workspace;
+    if (shouldSyncVSCode) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptStarted",
+        attempt: "vscode",
+      });
+    }
+    const vscode = shouldSyncVSCode
+      ? yield* captureAttempt(
+          VSCodeWorkspaceService.use((service) =>
+            service.syncWorkspaceState(mainRepoPath, worktreePath),
+          ).pipe(
+            Effect.flatMap((result) =>
+              result.success
+                ? Effect.succeed(result)
+                : Effect.fail(
+                    commandError(
+                      "worktree_error",
+                      result.error ?? "VS Code workspace sync failed",
+                    ),
+                  ),
+            ),
+          ),
+        )
+      : skippedAttempt<SyncResult>("vscode_sync_not_configured");
+    if (vscode.attempted) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptCompleted",
+        attempt: "vscode",
+        ok: vscode.ok,
+      });
+    }
+
+    if (resolved.copy && resolved.copy.length > 0) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptStarted",
+        attempt: "copy",
+      });
+    }
+    const copy =
+      resolved.copy && resolved.copy.length > 0
+        ? yield* Effect.mapError(
+            copyEntries(resolved.copy, mainRepoPath, worktreePath),
+            (error) =>
+              commandError("worktree_error", "Failed to copy files", error),
+          ).pipe(
+            Effect.flatMap((results) => {
+              const failed = results.find((result) => !result.success);
+              return failed
+                ? Effect.fail(
+                    commandError(
+                      "worktree_error",
+                      `Failed to copy files: ${failed.file}: ${failed.error ?? "Unknown error"}`,
+                    ),
+                  )
+                : Effect.succeed(results);
+            }),
+            Effect.map((value) => ({
+              attempted: true as const,
+              ok: true as const,
+              value,
+            })),
+          )
+        : skippedAttempt<CopyResult[]>("copy_not_configured");
+    if (copy.attempted) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptCompleted",
+        attempt: "copy",
+        ok: copy.ok,
+      });
+    }
+
+    if (resolved.setup && resolved.setup.length > 0) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptStarted",
+        attempt: "setup",
+      });
+    }
+    const setup =
+      resolved.setup && resolved.setup.length > 0
+        ? yield* captureAttempt(
+            SetupService.use((service) =>
+              service.runSetupCommands(resolved.setup ?? [], worktreePath, env),
+            ),
+          )
+        : skippedAttempt<SetupResult[]>("setup_not_configured");
+    if (setup.attempted) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptCompleted",
+        attempt: "setup",
+        ok: setup.ok,
+      });
+    }
+
+    if (resolved.tmux) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptStarted",
+        attempt: "tmux",
+      });
+    }
+    if (ideLaunch.open && ideLaunch.command) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptStarted",
+        attempt: "ide",
+      });
+    }
+
+    const startTmux = resolved.tmux
+      ? captureAttempt(
+          TmuxService.use((service) =>
+            service.createSession(
+              sessionName,
+              worktreePath,
+              resolved.tmux,
+              env,
+            ),
+          ),
+        )
+      : Effect.succeed(
+          skippedAttempt<CreateSessionResult>("tmux_not_configured"),
+        );
+    const startIde =
+      ideLaunch.open && ideLaunch.command
+        ? captureAttempt(
+            IdeService.use((service) =>
+              service
+                .openIDE(ideLaunch.command ?? "", env)
+                .pipe(Effect.as(null)),
+            ),
+          )
+        : Effect.succeed(skippedAttempt<null>("ide_not_configured"));
+
+    const [tmux, ideResult] = yield* Effect.all([startTmux, startIde], {
+      concurrency: "unbounded",
+    });
+
+    if (tmux.attempted) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptCompleted",
+        attempt: "tmux",
+        ok: tmux.ok,
+      });
+    }
+    if (ideResult.attempted) {
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptCompleted",
+        attempt: "ide",
+        ok: ideResult.ok,
+      });
+    }
+
+    const warnings: WorkspaceWarning[] = [];
+    if (vscode.attempted && !vscode.ok) {
+      warnings.push({
+        _tag: "VSCodeSyncFailed",
+        operation: "open",
+        error: vscode.error,
+      });
+    }
+    if (setup.attempted && setup.ok) {
+      warnings.push(
+        ...setup.value.flatMap((result) => {
+          const warning = setupWarning(result);
+          return warning ? [warning] : [];
+        }),
+      );
+    } else if (setup.attempted && !setup.ok) {
+      warnings.push({
+        _tag: "SetupFailed",
+        operation: "open",
+        name: "setup",
+        optional: false,
+        error: setup.error,
+      });
+    }
+    if (tmux.attempted && !tmux.ok) {
+      warnings.push({
+        _tag: "TmuxStartFailed",
+        operation: "open",
+        error: tmux.error,
+      });
+    }
+    if (ideResult.attempted && !ideResult.ok) {
+      warnings.push({
+        _tag: "IdeOpenFailed",
+        operation: "open",
+        error: ideResult.error,
+      });
+    }
+
+    return {
+      operation: "open",
+      worktreePath,
+      mainRepoPath,
+      branch,
+      sessionName,
+      projectName: config.project_name,
+      ...(profileName ? { profileName } : {}),
+      created: worktreeResult._tag !== "AlreadyExists",
+      env,
+      warnings,
+      attempts: {
+        worktree: {
+          attempted: true,
+          ok: true,
+          value: worktreeResult,
+        },
+        vscode,
+        copy,
+        setup,
+        tmux,
+        ide: ideResult,
+      },
+    };
   });
 }
 
@@ -491,6 +1075,7 @@ function downImpl(
 }
 
 export const liveWorkspaceService: WorkspaceService = WorkspaceService.of({
+  open: openImpl,
   up: upImpl,
   down: downImpl,
 });

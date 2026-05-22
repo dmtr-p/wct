@@ -414,6 +414,58 @@ describe("createHandleOpen", () => {
     });
   });
 
+  test("formats typed Workspace warnings returned by openWorktree", async () => {
+    const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+
+    (runTuiSilentPromise as Mock)
+      .mockResolvedValueOnce({
+        branch: "feat",
+        existing: false,
+        cwd: "/repo",
+      })
+      .mockResolvedValueOnce({
+        worktreePath: "/repo/feat",
+        branch: "feat",
+        sessionName: "feat",
+        projectName: "proj",
+        created: true,
+        tmuxSessionStarted: false,
+        warnings: [
+          {
+            _tag: "SetupFailed",
+            operation: "open",
+            name: "bootstrap",
+            optional: true,
+            error: { code: "optional_setup_failed", message: "missing tool" },
+          },
+        ],
+      });
+
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(undefined),
+    });
+    const handleOpen = createHandleOpen(deps);
+
+    handleOpen({
+      branch: "feat",
+      base: undefined,
+      pr: undefined,
+      profile: undefined,
+      prompt: undefined,
+      existing: false,
+      noIde: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith(
+        "Optional setup failed: bootstrap: missing tool",
+      );
+    });
+  });
+
   test("handles refresh failures separately from open failures", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
 

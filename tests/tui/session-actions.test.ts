@@ -89,8 +89,8 @@ function makeWorkspaceUpResult(
     env: {} as StartWorktreeSessionResult["env"],
     warnings: [],
     attempts: {
-      tmux: { attempted: false },
-      ide: { attempted: false },
+      tmux: { attempted: false, reason: "tmux_not_configured" },
+      ide: { attempted: false, reason: "ide_not_configured" },
     },
     ...overrides,
   };
@@ -376,7 +376,7 @@ describe("createHandleSpaceSwitch", () => {
           ok: true,
           value: { _tag: "Created", sessionName: "wt-feat" },
         },
-        ide: { attempted: false },
+        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
     (tuiRuntime.runPromise as Mock).mockResolvedValue(upResult);

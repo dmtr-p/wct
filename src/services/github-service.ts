@@ -366,7 +366,7 @@ export const liveGitHubService: GitHubService = GitHubService.of({
     Effect.mapError(
       execProcess(
         "git",
-        ["fetch", remote, branch],
+        ["fetch", remote, `${branch}:refs/remotes/${remote}/${branch}`],
         cwd ? { cwd } : undefined,
       ).pipe(Effect.asVoid),
       (error) =>

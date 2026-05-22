@@ -1,4 +1,8 @@
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BunServices } from "@effect/platform-bun";
+import { $ } from "bun";
 import { Effect, Exit } from "effect";
 import { describe, expect, test } from "vitest";
 import { WctCommandError } from "../src/errors";
@@ -507,5 +511,57 @@ describe("liveGitHubService.listPrs error message threading", () => {
     expect(msg).not.toBe("Failed to list PRs");
     // The message should contain something from gh's actual output
     expect(msg.length).toBeGreaterThan(0);
+  });
+});
+
+describe("liveGitHubService.fetchBranch", () => {
+  test("materializes fetched PR branches as remote-tracking refs", async () => {
+    const baseDir = await realpath(await mkdtemp(join(tmpdir(), "wct-gh-")));
+    const remoteDir = join(baseDir, "remote.git");
+    const sourceDir = join(baseDir, "source");
+    const cloneDir = join(baseDir, "clone");
+
+    try {
+      await $`git init --bare ${remoteDir}`.quiet();
+      await $`git init -b main ${sourceDir}`.quiet();
+      await $`git config user.email "test@test.com"`.quiet().cwd(sourceDir);
+      await $`git config user.name "Test"`.quiet().cwd(sourceDir);
+      await $`git config commit.gpgSign false`.quiet().cwd(sourceDir);
+      await Bun.write(join(sourceDir, "README.md"), "initial\n");
+      await $`git add README.md`.quiet().cwd(sourceDir);
+      await $`git commit -m initial`.quiet().cwd(sourceDir);
+      await $`git remote add origin ${remoteDir}`.quiet().cwd(sourceDir);
+      await $`git push origin main`.quiet().cwd(sourceDir);
+      await $`git switch -c contributor/pr-branch`.quiet().cwd(sourceDir);
+      await Bun.write(join(sourceDir, "feature.txt"), "feature\n");
+      await $`git add feature.txt`.quiet().cwd(sourceDir);
+      await $`git commit -m feature`.quiet().cwd(sourceDir);
+      await $`git push origin contributor/pr-branch`.quiet().cwd(sourceDir);
+
+      await $`git clone ${remoteDir} ${cloneDir}`.quiet();
+      await $`git update-ref -d refs/remotes/origin/contributor/pr-branch`
+        .quiet()
+        .cwd(cloneDir);
+
+      await Effect.runPromise(
+        Effect.provide(
+          liveGitHubService.fetchBranch(
+            "contributor/pr-branch",
+            "origin",
+            cloneDir,
+          ),
+          BunServices.layer,
+        ),
+      );
+
+      const ref =
+        await $`git rev-parse --verify refs/remotes/origin/contributor/pr-branch`
+          .quiet()
+          .cwd(cloneDir)
+          .text();
+      expect(ref.trim()).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      await rm(baseDir, { recursive: true, force: true });
+    }
   });
 });

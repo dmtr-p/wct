@@ -35,7 +35,11 @@ export interface DownOptions {
 
 export function downCommand(
   options?: DownOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
     const result = yield* WorkspaceService.use((service) =>
       service.down({

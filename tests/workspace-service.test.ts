@@ -4,8 +4,22 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
-import { commandError } from "../src/errors";
+import { commandError, WctCommandError } from "../src/errors";
+import {
+  type GitHubService,
+  liveGitHubService,
+} from "../src/services/github-service";
+import { type IdeService, liveIdeService } from "../src/services/ide-service";
+import {
+  liveSetupService,
+  type SetupResult,
+  type SetupService,
+} from "../src/services/setup-service";
 import { liveTmuxService, type TmuxService } from "../src/services/tmux";
+import {
+  liveVSCodeWorkspaceService,
+  type VSCodeWorkspaceService,
+} from "../src/services/vscode-workspace";
 import {
   liveWorkspaceService,
   type WorkspaceReporterEvent,
@@ -161,6 +175,691 @@ describe("WorkspaceService target resolution", () => {
     } finally {
       await rm(mainRepoPath, { recursive: true, force: true });
     }
+  });
+});
+
+describe("WorkspaceService open", () => {
+  let repoDir: string;
+  let worktreeRoot: string;
+
+  beforeEach(async () => {
+    repoDir = await mkdtemp(join(tmpdir(), "wct-workspace-open-repo-"));
+    worktreeRoot = join(repoDir, "..", "worktrees");
+    await mkdir(worktreeRoot, { recursive: true });
+    await writeConfig(repoDir);
+  });
+
+  afterEach(async () => {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(worktreeRoot, { recursive: true, force: true });
+  });
+
+  function openWorktreeService(
+    overrides: Partial<WorktreeService> = {},
+  ): WorktreeService {
+    return {
+      ...liveWorktreeService,
+      isGitRepo: () => Effect.succeed(true),
+      getMainRepoPath: () => Effect.succeed(repoDir),
+      branchExists: () => Effect.succeed(true),
+      createWorktree: (path, branch, existing, base) =>
+        Effect.succeed({
+          _tag: "Created" as const,
+          path,
+          branch,
+          existing,
+          base,
+        }),
+      ...overrides,
+    };
+  }
+
+  test("opens a branch workspace with base-config path and WCT_PROMPT", async () => {
+    await writeConfig(
+      repoDir,
+      `profiles:
+  prof:
+    match: "*"
+    copy: []
+`,
+    );
+    const createCalls: unknown[] = [];
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({
+            branch: "feature",
+            base: "main",
+            cwd: repoDir,
+            prompt: "ship it",
+            profile: "prof",
+          }),
+        ),
+        {
+          worktree: openWorktreeService({
+            createWorktree: (path, branch, existing, base, cwd) =>
+              Effect.sync(() => {
+                createCalls.push({ path, branch, existing, base, cwd });
+                return { _tag: "Created" as const, path };
+              }),
+          }),
+          tmux: {
+            ...liveTmuxService,
+            createSession: () =>
+              Effect.succeed({ _tag: "Created", sessionName: "myapp-feature" }),
+          },
+          ide: {
+            ...liveIdeService,
+            openIDE: () => Effect.void,
+          },
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      operation: "open",
+      branch: "feature",
+      projectName: "myapp",
+      sessionName: "myapp-feature",
+      created: true,
+      profileName: "prof",
+    });
+    expect(result.env.WCT_PROJECT).toBe("myapp");
+    expect(result.env.WCT_PROMPT).toBe("ship it");
+    expect(createCalls).toEqual([
+      {
+        path: join(worktreeRoot, "myapp-feature"),
+        branch: "feature",
+        existing: false,
+        base: "main",
+        cwd: repoDir,
+      },
+    ]);
+  });
+
+  test("keeps WCT_PROMPT open-only and profile lifecycle overrides out of path naming", async () => {
+    await writeConfig(
+      repoDir,
+      `profiles:
+  prof:
+    match: "*"
+    copy:
+      - profile.env
+`,
+    );
+    await Bun.write(join(repoDir, "profile.env"), "PROFILE=1\n");
+
+    const openResult = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({
+            branch: "profiled",
+            cwd: repoDir,
+            prompt: "open prompt",
+            profile: "prof",
+          }),
+        ),
+        {
+          worktree: openWorktreeService(),
+        },
+      ),
+    );
+    const upResult = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.up({ path: openResult.worktreePath, profile: "prof" }),
+        ),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            getMainRepoPath: () => Effect.succeed(repoDir),
+            getCurrentBranch: () => Effect.succeed("profiled"),
+          },
+        },
+      ),
+    );
+
+    expect(openResult.worktreePath).toBe(join(worktreeRoot, "myapp-profiled"));
+    expect(openResult.env.WCT_PROJECT).toBe("myapp");
+    expect(openResult.env.WCT_PROMPT).toBe("open prompt");
+    expect(openResult.attempts.copy).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(upResult.env).not.toHaveProperty("WCT_PROMPT");
+    expect(upResult.env.WCT_PROJECT).toBe("myapp");
+  });
+
+  test("resolves PR branches and adds fork remotes before creating the worktree", async () => {
+    const calls: string[] = [];
+    const github: GitHubService = {
+      ...liveGitHubService,
+      isGhInstalled: () => Effect.succeed(true),
+      resolvePr: () =>
+        Effect.succeed({
+          branch: "contrib-feature",
+          prNumber: 42,
+          isCrossRepository: true,
+          headOwner: "alice",
+          headRepo: "wct",
+        }),
+      findRemoteForRepo: () => Effect.succeed(null),
+      addForkRemote: (remote) =>
+        Effect.sync(() => {
+          calls.push(`add:${remote}`);
+        }),
+      fetchBranch: (branch, remote) =>
+        Effect.sync(() => {
+          calls.push(`fetch:${remote}/${branch}`);
+        }),
+    };
+    const worktree = openWorktreeService({
+      branchExists: (branch) =>
+        Effect.sync(() => {
+          calls.push(`exists:${branch}`);
+          return branch === "alice/contrib-feature";
+        }),
+      createWorktree: (_path, branch, existing, base) =>
+        Effect.sync(() => {
+          calls.push(`create:${branch}:${existing}:${base}`);
+          return { _tag: "Created" as const, path: "created" };
+        }),
+    });
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({ pr: "42", cwd: repoDir, noIde: true }),
+        ),
+        { github, worktree },
+      ),
+    );
+
+    expect(result.branch).toBe("contrib-feature");
+    expect(calls).toEqual([
+      "add:alice",
+      "fetch:alice/contrib-feature",
+      "exists:contrib-feature",
+      "exists:alice/contrib-feature",
+      "create:contrib-feature:false:alice/contrib-feature",
+    ]);
+  });
+
+  test("resolves PR URLs, reuses existing remotes, and opens existing local branches", async () => {
+    const calls: string[] = [];
+    const github: GitHubService = {
+      ...liveGitHubService,
+      isGhInstalled: () => Effect.succeed(true),
+      resolvePr: (prNumber) =>
+        Effect.sync(() => {
+          calls.push(`resolve:${prNumber}`);
+          return {
+            branch: "existing-local",
+            prNumber,
+            isCrossRepository: true,
+            headOwner: "alice",
+            headRepo: "wct",
+          };
+        }),
+      findRemoteForRepo: () => Effect.succeed("alice-fork"),
+      addForkRemote: () => Effect.die("existing remote should be reused"),
+      fetchBranch: (branch, remote) =>
+        Effect.sync(() => {
+          calls.push(`fetch:${remote}/${branch}`);
+        }),
+    };
+    const worktree = openWorktreeService({
+      branchExists: (branch) =>
+        Effect.sync(() => {
+          calls.push(`exists:${branch}`);
+          return branch === "existing-local";
+        }),
+      createWorktree: (_path, branch, existing, base) =>
+        Effect.sync(() => {
+          calls.push(`create:${branch}:${existing}:${base ?? "none"}`);
+          return { _tag: "Created" as const, path: "created" };
+        }),
+    });
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({
+            pr: "https://github.com/acme/wct/pull/42",
+            cwd: repoDir,
+            noIde: true,
+          }),
+        ),
+        { github, worktree },
+      ),
+    );
+
+    expect(result.branch).toBe("existing-local");
+    expect(calls).toEqual([
+      "resolve:42",
+      "fetch:alice-fork/existing-local",
+      "exists:existing-local",
+      "create:existing-local:true:none",
+    ]);
+  });
+
+  test("handles same-repo PRs without adding fork remotes", async () => {
+    const calls: string[] = [];
+    const github: GitHubService = {
+      ...liveGitHubService,
+      isGhInstalled: () => Effect.succeed(true),
+      resolvePr: () =>
+        Effect.succeed({
+          branch: "same-repo",
+          prNumber: 7,
+          isCrossRepository: false,
+        }),
+      addForkRemote: () => Effect.die("same-repo PR should not add a remote"),
+      fetchBranch: (branch, remote) =>
+        Effect.sync(() => {
+          calls.push(`fetch:${remote}/${branch}`);
+        }),
+    };
+    const worktree = openWorktreeService({
+      branchExists: (branch) => Effect.succeed(branch === "origin/same-repo"),
+      createWorktree: (_path, branch, existing, base) =>
+        Effect.sync(() => {
+          calls.push(`create:${branch}:${existing}:${base}`);
+          return { _tag: "Created" as const, path: "created" };
+        }),
+    });
+
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({ pr: "7", cwd: repoDir, noIde: true }),
+        ),
+        { github, worktree },
+      ),
+    );
+
+    expect(calls).toEqual([
+      "fetch:origin/same-repo",
+      "create:same-repo:false:origin/same-repo",
+    ]);
+  });
+
+  test("surfaces PR setup failures from gh, remote add, and fetch", async () => {
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ pr: "1", cwd: repoDir }),
+          ),
+          {
+            github: {
+              ...liveGitHubService,
+              isGhInstalled: () => Effect.succeed(false),
+            },
+          },
+        ),
+      ),
+    ).rejects.toThrow("GitHub CLI (gh) is not installed");
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ pr: "1", cwd: repoDir }),
+          ),
+          {
+            github: {
+              ...liveGitHubService,
+              isGhInstalled: () => Effect.succeed(true),
+              resolvePr: () =>
+                Effect.succeed({
+                  branch: "fork-fails",
+                  prNumber: 1,
+                  isCrossRepository: true,
+                  headOwner: "alice",
+                  headRepo: "wct",
+                }),
+              findRemoteForRepo: () => Effect.succeed(null),
+              addForkRemote: () =>
+                Effect.fail(commandError("pr_error", "remote add failed")),
+            },
+          },
+        ),
+      ),
+    ).rejects.toThrow("remote add failed");
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ pr: "1", cwd: repoDir }),
+          ),
+          {
+            github: {
+              ...liveGitHubService,
+              isGhInstalled: () => Effect.succeed(true),
+              resolvePr: () =>
+                Effect.succeed({
+                  branch: "fetch-fails",
+                  prNumber: 1,
+                  isCrossRepository: false,
+                }),
+              fetchBranch: () =>
+                Effect.fail(commandError("pr_error", "fetch failed")),
+            },
+          },
+        ),
+      ),
+    ).rejects.toThrow("fetch failed");
+  });
+
+  test("preserves resolvePr failure code and message", async () => {
+    try {
+      await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ pr: "123", cwd: repoDir }),
+          ),
+          {
+            github: {
+              ...liveGitHubService,
+              isGhInstalled: () => Effect.succeed(true),
+              resolvePr: () =>
+                Effect.fail(
+                  commandError("pr_error", "could not resolve PR 123"),
+                ),
+            },
+          },
+        ),
+      );
+      throw new Error("Expected PR resolution to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(WctCommandError);
+      expect((error as WctCommandError).code).toBe("pr_error");
+      expect((error as WctCommandError).message).toBe(
+        "could not resolve PR 123",
+      );
+    }
+  });
+
+  test("treats path conflicts and copy failures as fatal", async () => {
+    await writeConfig(repoDir, `copy:\n  - missing.env\n`);
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "conflict", cwd: repoDir }),
+          ),
+          {
+            worktree: openWorktreeService({
+              createWorktree: (path) =>
+                Effect.succeed({
+                  _tag: "PathConflict" as const,
+                  path,
+                  existingBranch: "other",
+                }),
+            }),
+          },
+        ),
+      ),
+    ).rejects.toThrow("Path already exists for branch 'other', not 'conflict'");
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "copy-fails", cwd: repoDir }),
+          ),
+          { worktree: openWorktreeService() },
+        ),
+      ),
+    ).rejects.toThrow("Failed to copy files");
+  });
+
+  test("runs copy, setup, and VS Code sync when the worktree already exists", async () => {
+    await writeConfig(
+      repoDir,
+      `copy:
+  - existing.env
+setup:
+  - name: bootstrap
+    command: "echo setup"
+ide:
+  name: vscode
+  command: "code"
+  fork_workspace: true
+`,
+    );
+    await Bun.write(join(repoDir, "existing.env"), "EXISTING=1\n");
+    const calls: string[] = [];
+    const setup: SetupService = {
+      ...liveSetupService,
+      runSetupCommands: () =>
+        Effect.sync(() => {
+          calls.push("setup");
+          return [{ _tag: "Succeeded", name: "bootstrap" }];
+        }),
+    };
+    const vscodeWorkspace: VSCodeWorkspaceService = {
+      ...liveVSCodeWorkspaceService,
+      syncWorkspaceState: () =>
+        Effect.sync(() => {
+          calls.push("vscode");
+          return { success: true, skipped: true };
+        }),
+    };
+    const worktree = openWorktreeService({
+      createWorktree: (path) =>
+        Effect.sync(() => {
+          calls.push("worktree");
+          return { _tag: "AlreadyExists" as const, path };
+        }),
+    });
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({ branch: "already", cwd: repoDir, ide: true }),
+        ),
+        {
+          ide: {
+            ...liveIdeService,
+            openIDE: () => Effect.void,
+          },
+          setup,
+          vscodeWorkspace,
+          worktree,
+        },
+      ),
+    );
+
+    expect(result.created).toBe(false);
+    expect(result.attempts.copy).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(result.attempts.setup).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(result.attempts.vscode).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(calls).toEqual(["worktree", "vscode", "setup"]);
+  });
+
+  test("returns typed warnings for setup, VS Code, tmux, and IDE failures", async () => {
+    await writeConfig(
+      repoDir,
+      `setup:
+  - name: required
+    command: "false"
+ide:
+  name: vscode
+  command: "code"
+  fork_workspace: true
+tmux: {}
+`,
+    );
+    const setup: SetupService = {
+      ...liveSetupService,
+      runSetupCommands: () =>
+        Effect.succeed([
+          { _tag: "Failed", name: "required", error: "boom" },
+        ] satisfies SetupResult[]),
+    };
+    const vscodeWorkspace: VSCodeWorkspaceService = {
+      ...liveVSCodeWorkspaceService,
+      syncWorkspaceState: () =>
+        Effect.succeed({ success: false, error: "state unavailable" }),
+    };
+    const tmux: TmuxService = {
+      ...liveTmuxService,
+      createSession: () => Effect.fail(commandError("tmux_error", "no tmux")),
+    };
+    const ide: IdeService = {
+      ...liveIdeService,
+      openIDE: () => Effect.fail(commandError("unexpected_error", "no ide")),
+    };
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({ branch: "warnings", cwd: repoDir }),
+        ),
+        {
+          ide,
+          setup,
+          tmux,
+          vscodeWorkspace,
+          worktree: openWorktreeService(),
+        },
+      ),
+    );
+
+    expect(result.warnings.map((warning) => warning._tag)).toEqual([
+      "VSCodeSyncFailed",
+      "SetupFailed",
+      "TmuxStartFailed",
+      "IdeOpenFailed",
+    ]);
+    expect(result.attempts.tmux).toMatchObject({
+      attempted: true,
+      ok: false,
+    });
+    expect(result.attempts.ide).toMatchObject({ attempted: true, ok: false });
+  });
+
+  test("types optional setup failures as optional warnings", async () => {
+    await writeConfig(
+      repoDir,
+      `setup:
+  - name: optional-step
+    command: "false"
+    optional: true
+`,
+    );
+    const setup: SetupService = {
+      ...liveSetupService,
+      runSetupCommands: () =>
+        Effect.succeed([
+          { _tag: "OptionalFailed", name: "optional-step", error: "skipped" },
+        ] satisfies SetupResult[]),
+    };
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({ branch: "optional-warning", cwd: repoDir }),
+        ),
+        {
+          setup,
+          worktree: openWorktreeService(),
+        },
+      ),
+    );
+
+    expect(result.warnings).toContainEqual({
+      _tag: "SetupFailed",
+      operation: "open",
+      name: "optional-step",
+      optional: true,
+      error: {
+        code: "optional_setup_failed",
+        message: "skipped",
+      },
+    });
+  });
+
+  test("starts open tmux and IDE in parallel after prerequisite work", async () => {
+    await writeConfig(repoDir, `tmux: {}\nide:\n  command: "code"\n`);
+    const calls: string[] = [];
+    let ideStarted = false;
+
+    const result = await Promise.race([
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "parallel", cwd: repoDir }),
+          ),
+          {
+            worktree: openWorktreeService({
+              createWorktree: (path) =>
+                Effect.sync(() => {
+                  calls.push("worktree");
+                  return { _tag: "Created" as const, path };
+                }),
+            }),
+            tmux: {
+              ...liveTmuxService,
+              createSession: (name) =>
+                Effect.promise(async () => {
+                  calls.push("tmux-started");
+                  while (!ideStarted) {
+                    await Bun.sleep(1);
+                  }
+                  calls.push("tmux-completed");
+                  return { _tag: "Created" as const, sessionName: name };
+                }),
+            },
+            ide: {
+              ...liveIdeService,
+              openIDE: () =>
+                Effect.promise(async () => {
+                  calls.push("ide-started");
+                  ideStarted = true;
+                  await Bun.sleep(1);
+                  calls.push("ide-completed");
+                }),
+            },
+          },
+        ),
+      ),
+      Bun.sleep(100).then(() => {
+        throw new Error(
+          "workspace open did not start tmux and IDE in parallel",
+        );
+      }),
+    ]);
+
+    expect(result.attempts.tmux).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(result.attempts.ide).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(calls).toEqual([
+      "worktree",
+      "tmux-started",
+      "ide-started",
+      "tmux-completed",
+      "ide-completed",
+    ]);
   });
 });
 
@@ -666,9 +1365,9 @@ describe("WorkspaceService reporter", () => {
   });
 });
 
-test("liveWorkspaceService exposes public up and down operations only for this slice", () => {
+test("liveWorkspaceService exposes public open, up, and down operations for this slice", () => {
+  expect(typeof liveWorkspaceService.open).toBe("function");
   expect(typeof liveWorkspaceService.up).toBe("function");
   expect(typeof liveWorkspaceService.down).toBe("function");
-  expect("open" in liveWorkspaceService).toBe(false);
   expect("close" in liveWorkspaceService).toBe(false);
 });

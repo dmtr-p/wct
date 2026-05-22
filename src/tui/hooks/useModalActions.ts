@@ -6,7 +6,10 @@ import type { StartWorktreeSessionResult } from "../../commands/worktree-session
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
-import { WorkspaceService } from "../../services/workspace-service";
+import {
+  WorkspaceService,
+  type WorkspaceWarning,
+} from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
@@ -17,6 +20,21 @@ import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { SessionIdeDefaults } from "./useSessionOptionsState";
 import type { TmuxClientDiscovery } from "./useTmux";
+
+function formatWorkspaceWarning(warning: string | WorkspaceWarning): string {
+  if (typeof warning === "string") return warning;
+
+  switch (warning._tag) {
+    case "SetupFailed":
+      return `${warning.optional ? "Optional setup failed" : "Setup failed"}: ${warning.name}: ${warning.error.message}`;
+    case "VSCodeSyncFailed":
+      return `VS Code workspace sync failed: ${warning.error.message}`;
+    case "TmuxStartFailed":
+      return `Failed to create tmux session: ${warning.error.message}`;
+    case "IdeOpenFailed":
+      return `Failed to open IDE: ${warning.error.message}`;
+  }
+}
 
 export interface ModalActionDeps {
   treeItems: TreeItem[];
@@ -132,7 +150,9 @@ export function createHandleOpen(deps: ModalActionDeps) {
           );
           const result = await runTuiSilentPromise(openWorktree(resolved));
           if (result.warnings.length > 0) {
-            appendWarning(result.warnings.join("\n"));
+            appendWarning(
+              result.warnings.map(formatWorkspaceWarning).join("\n"),
+            );
           }
 
           if (!opts.noAttach && result.tmuxSessionStarted) {

@@ -1,10 +1,10 @@
-import { Effect, Option } from "effect";
+import { Option } from "effect";
 import { cdCommand } from "../commands/cd";
 import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
 import { initCommand } from "../commands/init";
 import { listCommand } from "../commands/list";
-import { openCommand, resolveOpenOptions } from "../commands/open";
+import { openCommand } from "../commands/open";
 import {
   projectsAddCommand,
   projectsListCommand,
@@ -200,19 +200,16 @@ const openCliCommand = Command.make(
     ),
   },
   ({ branch, base, existing, ide, noIde, noAttach, pr, prompt, profile }) =>
-    Effect.gen(function* () {
-      const options = yield* resolveOpenOptions({
-        branch: optionToUndefined(branch),
-        base: optionToUndefined(base),
-        existing,
-        ide,
-        noIde,
-        pr: optionToUndefined(pr),
-        prompt: optionToUndefined(prompt),
-        profile: optionToUndefined(profile),
-      });
-
-      return yield* openCommand({ ...options, noAttach });
+    openCommand({
+      branch: optionToUndefined(branch),
+      base: optionToUndefined(base),
+      existing,
+      ide,
+      noIde,
+      noAttach,
+      pr: optionToUndefined(pr),
+      prompt: optionToUndefined(prompt),
+      profile: optionToUndefined(profile),
     }),
 ).pipe(
   Command.withDescription(

@@ -143,7 +143,7 @@ export function closeCommand(
       }
 
       let result = yield* WorkspaceService.use((service) =>
-        service.close({ branch, force }),
+        service.close({ path: worktreePath, force }),
       );
       const killedSession = result.existed;
 
@@ -163,8 +163,22 @@ export function closeCommand(
             }
           }
           result = yield* WorkspaceService.use((service) =>
-            service.close({ branch, force: true }),
+            service.close({ path: worktreePath, force: true }),
           );
+          if (killedSession && !result.existed) {
+            result = {
+              ...result,
+              existed: true,
+              attempts: {
+                ...result.attempts,
+                kill: {
+                  attempted: true,
+                  ok: true,
+                  value: null,
+                },
+              },
+            };
+          }
         }
 
         if (result.status === "blocked_by_changes") {

@@ -12,7 +12,6 @@ import { closeCommand, commandDef } from "../src/commands/close";
 import { runBunPromise } from "../src/effect/runtime";
 import {
   formatSessionName,
-  liveTmuxService,
   type TmuxService,
 } from "../src/services/tmux";
 import type {
@@ -24,7 +23,7 @@ import {
   type WorktreeService,
 } from "../src/services/worktree-service";
 import * as prompt from "../src/utils/prompt";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 async function runCommand(
   options: {
@@ -87,7 +86,7 @@ function setupMocks(): CloseCommandSpies {
   const tmuxCalls: string[] = [];
   const worktreeCalls: string[] = [];
   const tmux = {
-    ...liveTmuxService,
+    ...noopTmuxService,
     getCurrentSession: () => Effect.succeed(null),
     sessionExists: () => Effect.succeed(true),
     killSession: (name: string) =>
@@ -166,7 +165,7 @@ describe("closeCommand", () => {
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
-          return removedCloseResult(options?.branch ?? "unknown");
+          return removedCloseResult("feature-a");
         }),
     };
 
@@ -183,8 +182,8 @@ describe("closeCommand", () => {
     );
 
     expect(closeCalls).toEqual([
-      { branch: "feature-a", force: false },
-      { branch: "feature-b", force: false },
+      { path: "/tmp/myapp-feature-a", force: false },
+      { path: "/tmp/myapp-feature-b", force: false },
     ]);
   });
 
@@ -257,9 +256,12 @@ describe("closeCommand", () => {
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
+          const branch = options?.path?.endsWith("feature-a")
+            ? "feature-a"
+            : "unknown";
           if (!options?.force) {
             return {
-              ...removedCloseResult(options?.branch ?? "feature-a"),
+              ...removedCloseResult(branch),
               status: "blocked_by_changes" as const,
               attempts: {
                 kill: {
@@ -278,7 +280,7 @@ describe("closeCommand", () => {
               },
             };
           }
-          return removedCloseResult(options.branch ?? "feature-a");
+          return removedCloseResult(branch);
         }),
     };
 
@@ -297,9 +299,100 @@ describe("closeCommand", () => {
       "Worktree has uncommitted changes. Force remove anyway?",
     );
     expect(closeCalls).toEqual([
-      { branch: "feature-a", force: false },
-      { branch: "feature-a", force: true },
+      { path: "/tmp/myapp-feature-a", force: false },
+      { path: "/tmp/myapp-feature-a", force: true },
     ]);
+  });
+
+  test("JSON preserves first-call kill result when force retry removes dirty worktree", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const closeCalls: unknown[] = [];
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.sync(() => {
+          closeCalls.push(options);
+          const branch = options?.path?.endsWith("feature-a")
+            ? "feature-a"
+            : "unknown";
+          const worktreePath = `/tmp/myapp-${branch}`;
+          if (!options?.force) {
+            return {
+              ...removedCloseResult(branch),
+              status: "blocked_by_changes" as const,
+              attempts: {
+                kill: {
+                  attempted: true as const,
+                  ok: true as const,
+                  value: null,
+                },
+                remove: {
+                  attempted: true as const,
+                  ok: true as const,
+                  value: {
+                    _tag: "BlockedByChanges" as const,
+                    path: worktreePath,
+                  },
+                },
+              },
+            };
+          }
+
+          return {
+            ...removedCloseResult(branch),
+            existed: false,
+            attempts: {
+              kill: {
+                attempted: false as const,
+                reason: "session_absent",
+              },
+              remove: {
+                attempted: true as const,
+                ok: true as const,
+                value: { _tag: "Removed" as const, path: worktreePath },
+              },
+            },
+          };
+        }),
+    };
+
+    try {
+      await runCommand(
+        {
+          branches: ["feature-a"],
+          yes: true,
+        },
+        {
+          json: true,
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          workspace,
+        },
+      );
+
+      expect(closeCalls).toEqual([
+        { path: "/tmp/myapp-feature-a", force: false },
+        { path: "/tmp/myapp-feature-a", force: true },
+      ]);
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output.data[0]).toMatchObject({
+        operation: "close",
+        status: "removed",
+        existed: true,
+        attempts: {
+          kill: { attempted: true, ok: true, value: null },
+          remove: {
+            attempted: true,
+            ok: true,
+            value: { _tag: "Removed", path: "/tmp/myapp-feature-a" },
+          },
+        },
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   test("aborts when user declines force remove", async () => {
@@ -429,7 +522,11 @@ describe("closeCommand", () => {
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
       close: (options) =>
-        Effect.succeed(removedCloseResult(options?.branch ?? "unknown")),
+        Effect.succeed(
+          removedCloseResult(
+            options?.path?.endsWith("feature-a") ? "feature-a" : "feature-b",
+          ),
+        ),
     };
 
     try {
@@ -468,15 +565,17 @@ describe("closeCommand", () => {
       down: () => Effect.die("unused"),
       close: (options) =>
         Effect.succeed({
-          ...removedCloseResult(options?.branch ?? "unknown"),
-          existed: options?.branch !== "feature-b",
+          ...removedCloseResult(
+            options?.path?.endsWith("feature-a") ? "feature-a" : "feature-b",
+          ),
+          existed: !options?.path?.endsWith("feature-b"),
           attempts: {
-            kill:
-              options?.branch === "feature-b"
-                ? { attempted: false as const, reason: "session_absent" }
-                : { attempted: true as const, ok: true as const, value: null },
-            remove: removedCloseResult(options?.branch ?? "unknown").attempts
-              .remove,
+            kill: options?.path?.endsWith("feature-b")
+              ? { attempted: false as const, reason: "session_absent" }
+              : { attempted: true as const, ok: true as const, value: null },
+            remove: removedCloseResult(
+              options?.path?.endsWith("feature-a") ? "feature-a" : "feature-b",
+            ).attempts.remove,
           },
         }),
     };
@@ -530,10 +629,10 @@ describe("closeCommand", () => {
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
-          if (options?.branch === "feature-a") {
+          if (options?.path === "/tmp/myapp-feature-a") {
             throw new Error("kill boom");
           }
-          return removedCloseResult(options?.branch ?? "unknown");
+          return removedCloseResult("unknown");
         }),
     };
 
@@ -552,7 +651,9 @@ describe("closeCommand", () => {
         ),
       ).rejects.toThrow("kill boom");
 
-      expect(closeCalls).toEqual([{ branch: "feature-a", force: false }]);
+      expect(closeCalls).toEqual([
+        { path: "/tmp/myapp-feature-a", force: false },
+      ]);
       const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
       expect(
         loggedLines.some((line) => line.includes("Killed tmux session")),
@@ -575,10 +676,10 @@ describe("closeCommand", () => {
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
-          if (options?.branch === "feature-a") {
+          if (options?.path === "/tmp/myapp-feature-a") {
             throw new Error("kill boom");
           }
-          return removedCloseResult(options?.branch ?? "unknown");
+          return removedCloseResult("unknown");
         }),
     };
 
@@ -598,7 +699,9 @@ describe("closeCommand", () => {
         ),
       ).rejects.toThrow("kill boom");
 
-      expect(closeCalls).toEqual([{ branch: "feature-a", force: false }]);
+      expect(closeCalls).toEqual([
+        { path: "/tmp/myapp-feature-a", force: false },
+      ]);
       expect(logSpy).not.toHaveBeenCalled();
     } finally {
       logSpy.mockRestore();

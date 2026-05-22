@@ -1,20 +1,19 @@
 // src/tui/hooks/useModalActions.ts
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
 import {
   type WorkspaceOpenResult,
   WorkspaceService,
+  type WorkspaceUpResult,
   type WorkspaceWarning,
 } from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
-import { workspaceUpToStartResult } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
@@ -25,9 +24,7 @@ function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
   return result.attempts.tmux.attempted && result.attempts.tmux.ok;
 }
 
-function formatWorkspaceWarning(warning: string | WorkspaceWarning): string {
-  if (typeof warning === "string") return warning;
-
+function formatWorkspaceWarning(warning: WorkspaceWarning): string {
   switch (warning._tag) {
     case "SetupFailed":
       return `${warning.optional ? "Optional setup failed" : "Setup failed"}: ${warning.name}: ${warning.error.message}`;
@@ -62,7 +59,7 @@ export interface ModalActionDeps {
   switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   handleStartResult: (
-    result: StartWorktreeSessionResult,
+    result: WorkspaceUpResult,
     autoSwitch: boolean,
   ) => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -281,8 +278,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
             }),
           ),
         );
-        const startResult = workspaceUpToStartResult(upResult);
-        await deps.handleStartResult(startResult, result.autoSwitch);
+        await deps.handleStartResult(upResult, result.autoSwitch);
       } catch (error) {
         deps.showActionError(toWctError(error).message);
         await deps.refreshAll();

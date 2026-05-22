@@ -541,7 +541,7 @@ function openImpl(
       WCT_MAIN_DIR: mainRepoPath,
       WCT_BRANCH: branch,
       WCT_PROJECT: config.project_name,
-      WCT_PROMPT: prompt,
+      ...(prompt !== undefined ? { WCT_PROMPT: prompt } : {}),
     };
 
     yield* emitReporter(reporter, {

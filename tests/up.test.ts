@@ -9,7 +9,7 @@ import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
-import { liveTmuxService } from "../src/services/tmux";
+import { noopTmuxService } from "./helpers/services";
 import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
@@ -364,7 +364,7 @@ tmux:
               Effect.succeed(cwd === wtPath ? "feature-branch" : null),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: (_name, workingDir) =>
               Effect.sync(() => {
                 createCalls.push(workingDir);
@@ -418,7 +418,7 @@ tmux:
               Effect.succeed(cwd === wtPath ? "feature-branch" : "main"),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: (_name, workingDir) =>
               Effect.sync(() => {
                 createCalls.push(workingDir);
@@ -477,7 +477,7 @@ tmux:
                 Effect.succeed(cwd === wtPath ? "feature-branch" : null),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: (_name, _workingDir) =>
                 Effect.succeed({
                   _tag: "Created" as const,
@@ -544,7 +544,7 @@ tmux:
               getCurrentBranch: () => Effect.succeed("main"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: () =>
                 Effect.fail(commandError("tmux_error", "tmux boom")),
             },
@@ -606,7 +606,7 @@ tmux:
               getCurrentBranch: () => Effect.succeed("main"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: () =>
                 Effect.succeed({
                   _tag: "Created" as const,
@@ -693,7 +693,7 @@ tmux:
               getCurrentBranch: () => Effect.succeed("main"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: () =>
                 Effect.succeed({
                   _tag: "Created" as const,

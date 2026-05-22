@@ -342,41 +342,7 @@ describe("createHandleOpen", () => {
     expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 
-  test("surfaces string Workspace warnings after a successful open", async () => {
-    const { tuiRuntime } = await import("../../src/tui/runtime");
-    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
-      makeOpenResult({
-        warnings: ["Optional setup failed: bootstrap: missing tool"],
-      }),
-    );
-
-    const deps = makeDeps({
-      openModalRepoProject: "proj",
-      openModalRepoPath: "/repo",
-      refreshAll: vi.fn().mockResolvedValue(undefined),
-    });
-    const handleOpen = createHandleOpen(deps);
-
-    handleOpen({
-      branch: "feat",
-      base: undefined,
-      pr: undefined,
-      profile: undefined,
-      prompt: undefined,
-      existing: false,
-      noIde: false,
-      noAttach: true,
-    });
-
-    await vi.waitFor(() => {
-      expect(deps.refreshAll).toHaveBeenCalled();
-      expect(deps.showActionError).toHaveBeenCalledWith(
-        "Optional setup failed: bootstrap: missing tool",
-      );
-    });
-  });
-
-  test("formats typed Workspace warnings", async () => {
+  test("surfaces typed Workspace warnings after a successful open", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
       makeOpenResult({
@@ -411,6 +377,7 @@ describe("createHandleOpen", () => {
     });
 
     await vi.waitFor(() => {
+      expect(deps.refreshAll).toHaveBeenCalled();
       expect(deps.showActionError).toHaveBeenCalledWith(
         "Optional setup failed: bootstrap: missing tool",
       );
@@ -783,19 +750,9 @@ describe("createHandleUpSubmit", () => {
       env: {},
       warnings: [],
       attempts: {
-        tmux: { attempted: false },
-        ide: { attempted: false },
+        tmux: { attempted: false, reason: "tmux_not_configured" },
+        ide: { attempted: false, reason: "ide_not_configured" },
       },
-    };
-    const expectedStartResult = {
-      worktreePath: "/repo/feat",
-      mainRepoPath: "/repo",
-      branch: "feat",
-      sessionName: "feat",
-      projectName: "proj",
-      env: {},
-      tmux: { attempted: false },
-      ide: { attempted: false },
     };
     (tuiRuntime.runPromise as Mock).mockResolvedValue(upResult);
 
@@ -841,7 +798,7 @@ describe("createHandleUpSubmit", () => {
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith(
         "mock-workspace-effect",
       );
-      expect(handleStartResult).toHaveBeenCalledWith(expectedStartResult, true);
+      expect(handleStartResult).toHaveBeenCalledWith(upResult, true);
     });
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);

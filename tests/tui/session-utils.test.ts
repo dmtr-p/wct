@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { WorkspaceUpResult } from "../../src/services/workspace-service";
-import {
-  resolveStartActionMessage,
-  workspaceUpToStartResult,
-} from "../../src/tui/session-utils";
+import { resolveStartActionMessage } from "../../src/tui/session-utils";
 
 function workspaceUpResult(
   overrides: Partial<WorkspaceUpResult> = {},
@@ -30,62 +27,40 @@ function workspaceUpResult(
   };
 }
 
-describe("workspaceUpToStartResult", () => {
-  test("converts tmux failure into the existing start-action message path", () => {
-    const result = workspaceUpToStartResult(
-      workspaceUpResult({
-        attempts: {
-          tmux: {
-            attempted: true,
-            ok: false,
-            error: {
-              code: "tmux_error",
-              message: "tmux failed",
-            },
+describe("resolveStartActionMessage", () => {
+  test("returns a tmux failure from WorkspaceService up results", () => {
+    const result = workspaceUpResult({
+      attempts: {
+        tmux: {
+          attempted: true,
+          ok: false,
+          error: {
+            code: "tmux_error",
+            message: "tmux failed",
           },
-          ide: { attempted: false, reason: "ide_not_configured" },
         },
-      }),
-    );
+        ide: { attempted: false, reason: "ide_not_configured" },
+      },
+    });
 
     expect(resolveStartActionMessage(result)).toBe("tmux failed");
-    expect(result.tmux).toMatchObject({
-      attempted: true,
-      ok: false,
-      error: {
-        code: "unexpected_error",
-        message: "tmux failed",
-        cause: "tmux_error",
-      },
-    });
   });
 
-  test("converts IDE failure into the existing start-action message path", () => {
-    const result = workspaceUpToStartResult(
-      workspaceUpResult({
-        attempts: {
-          tmux: { attempted: false, reason: "tmux_not_configured" },
-          ide: {
-            attempted: true,
-            ok: false,
-            error: {
-              code: "ide_error",
-              message: "IDE failed",
-            },
+  test("returns an IDE failure from WorkspaceService up results", () => {
+    const result = workspaceUpResult({
+      attempts: {
+        tmux: { attempted: false, reason: "tmux_not_configured" },
+        ide: {
+          attempted: true,
+          ok: false,
+          error: {
+            code: "ide_error",
+            message: "IDE failed",
           },
         },
-      }),
-    );
-
-    expect(resolveStartActionMessage(result)).toBe("IDE failed");
-    expect(result.ide).toMatchObject({
-      attempted: true,
-      ok: false,
-      error: {
-        code: "unexpected_error",
-        message: "IDE failed",
-        cause: "ide_error",
       },
     });
+
+    expect(resolveStartActionMessage(result)).toBe("IDE failed");
   });
 });

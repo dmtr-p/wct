@@ -78,13 +78,21 @@ describe("handleConfirmCloseInput", () => {
     expect(ctx.executeClose).not.toHaveBeenCalled();
   });
 
-  test("return from dirty ConfirmClose enters force confirmation", () => {
+  test("return from dirty ConfirmClose executes non-force close first", () => {
     const ctx = makeCtx({ mode: confirmCloseMode(2) });
 
     handleConfirmCloseInput(ctx, "", { ...noKey, return: true });
 
-    expect(ctx.setMode).toHaveBeenCalledWith(confirmCloseForceMode());
-    expect(ctx.executeClose).not.toHaveBeenCalled();
+    expect(ctx.setMode).not.toHaveBeenCalledWith(confirmCloseForceMode());
+    expect(ctx.executeClose).toHaveBeenCalledWith(
+      "session",
+      "feature",
+      "/worktrees/feature",
+      "project/feature",
+      "/repos/project",
+      "project",
+      false,
+    );
   });
 
   test("return from clean ConfirmClose executes non-force close", () => {

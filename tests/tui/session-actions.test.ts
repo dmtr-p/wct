@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import type { StartWorktreeSessionResult } from "../../src/commands/worktree-session";
 import { commandError } from "../../src/errors";
 import {
   type WorkspaceCloseResult,
@@ -65,17 +64,21 @@ function makeDeps(
 }
 
 function makeStartResult(
-  overrides: Partial<StartWorktreeSessionResult> = {},
-): StartWorktreeSessionResult {
+  overrides: Partial<WorkspaceUpResult> = {},
+): WorkspaceUpResult {
   return {
+    operation: "up",
     worktreePath: "/tmp/wt",
     mainRepoPath: "/tmp/repo",
     branch: "feat",
     sessionName: "wt-feat",
     projectName: "proj",
-    env: {} as StartWorktreeSessionResult["env"],
-    tmux: { attempted: false },
-    ide: { attempted: false },
+    env: {} as WorkspaceUpResult["env"],
+    warnings: [],
+    attempts: {
+      tmux: { attempted: false, reason: "tmux_not_configured" },
+      ide: { attempted: false, reason: "ide_not_configured" },
+    },
     ...overrides,
   };
 }
@@ -90,7 +93,7 @@ function makeWorkspaceUpResult(
     branch: "feat",
     sessionName: "wt-feat",
     projectName: "proj",
-    env: {} as StartWorktreeSessionResult["env"],
+    env: {} as WorkspaceUpResult["env"],
     warnings: [],
     attempts: {
       tmux: { attempted: false, reason: "tmux_not_configured" },
@@ -198,10 +201,13 @@ describe("createHandleStartResult", () => {
     const handleStart = createHandleStartResult(deps);
 
     const result = makeStartResult({
-      tmux: {
-        attempted: true,
-        ok: true,
-        value: { _tag: "Created", sessionName: "wt-feat" },
+      attempts: {
+        tmux: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", sessionName: "wt-feat" },
+        },
+        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -224,10 +230,13 @@ describe("createHandleStartResult", () => {
     const handleStart = createHandleStartResult(deps);
 
     const result = makeStartResult({
-      tmux: {
-        attempted: true,
-        ok: true,
-        value: { _tag: "Created", sessionName: "wt-feat" },
+      attempts: {
+        tmux: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", sessionName: "wt-feat" },
+        },
+        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -242,10 +251,13 @@ describe("createHandleStartResult", () => {
     const handleStart = createHandleStartResult(deps);
 
     const result = makeStartResult({
-      tmux: {
-        attempted: true,
-        ok: true,
-        value: { _tag: "Created", sessionName: "wt-feat" },
+      attempts: {
+        tmux: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", sessionName: "wt-feat" },
+        },
+        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -259,10 +271,13 @@ describe("createHandleStartResult", () => {
     const handleStart = createHandleStartResult(deps);
 
     const result = makeStartResult({
-      tmux: {
-        attempted: true,
-        ok: false,
-        error: commandError("unexpected_error", "tmux failed"),
+      attempts: {
+        tmux: {
+          attempted: true,
+          ok: false,
+          error: commandError("unexpected_error", "tmux failed"),
+        },
+        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 

@@ -2,16 +2,17 @@
 
 import { basename } from "node:path";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName } from "../../services/tmux";
-import { WorkspaceService } from "../../services/workspace-service";
+import {
+  WorkspaceService,
+  type WorkspaceUpResult,
+} from "../../services/workspace-service";
 import { tuiRuntime } from "../runtime";
 import {
   resolveSessionHandoff,
   resolveStartActionMessage,
-  workspaceUpToStartResult,
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
@@ -99,10 +100,14 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
 }
 
 export function createHandleStartResult(deps: SessionActionDeps) {
-  return async (result: StartWorktreeSessionResult, autoSwitch: boolean) => {
+  return async (result: WorkspaceUpResult, autoSwitch: boolean) => {
     const actionMessage = resolveStartActionMessage(result);
 
-    if (result.tmux.attempted && result.tmux.ok && autoSwitch) {
+    if (
+      result.attempts.tmux.attempted &&
+      result.attempts.tmux.ok &&
+      autoSwitch
+    ) {
       const liveClient = await deps.discoverClient();
       if (liveClient.type === "single") {
         const switched = await deps.switchSession(
@@ -188,8 +193,7 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
           const upResult = await tuiRuntime.runPromise(
             WorkspaceService.use((service) => service.up({ path: wt.path })),
           );
-          const startResult = workspaceUpToStartResult(upResult);
-          await handleStartResult(startResult, true);
+          await handleStartResult(upResult, true);
         } catch (error) {
           deps.showActionError(toWctError(error).message);
           await deps.refreshAll();

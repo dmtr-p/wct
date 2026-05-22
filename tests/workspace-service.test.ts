@@ -15,7 +15,7 @@ import {
   type SetupResult,
   type SetupService,
 } from "../src/services/setup-service";
-import { liveTmuxService, type TmuxService } from "../src/services/tmux";
+import { type TmuxService } from "../src/services/tmux";
 import {
   liveVSCodeWorkspaceService,
   type VSCodeWorkspaceService,
@@ -29,7 +29,7 @@ import {
   liveWorktreeService,
   type WorktreeService,
 } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 async function writeConfig(repoDir: string, body = "") {
   await Bun.write(
@@ -80,7 +80,7 @@ describe("WorkspaceService target resolution", () => {
     };
 
     const tmux: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(false),
     };
 
@@ -156,7 +156,7 @@ describe("WorkspaceService target resolution", () => {
           {
             worktree,
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: (name) =>
                 Effect.succeed({
                   _tag: "Created" as const,
@@ -194,7 +194,7 @@ describe("WorkspaceService open", () => {
     await rm(worktreeRoot, { recursive: true, force: true });
   });
 
-  function openWorktreeService(
+  function makeWorktreeService(
     overrides: Partial<WorktreeService> = {},
   ): WorktreeService {
     return {
@@ -236,7 +236,7 @@ describe("WorkspaceService open", () => {
           }),
         ),
         {
-          worktree: openWorktreeService({
+          worktree: makeWorktreeService({
             createWorktree: (path, branch, existing, base, cwd) =>
               Effect.sync(() => {
                 createCalls.push({ path, branch, existing, base, cwd });
@@ -244,7 +244,7 @@ describe("WorkspaceService open", () => {
               }),
           }),
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: () =>
               Effect.succeed({ _tag: "Created", sessionName: "myapp-feature" }),
           },
@@ -277,6 +277,27 @@ describe("WorkspaceService open", () => {
     ]);
   });
 
+  test("omits WCT_PROMPT from open env when prompt is absent", async () => {
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({
+            branch: "without-prompt",
+            cwd: repoDir,
+          }),
+        ),
+        {
+          worktree: makeWorktreeService(),
+        },
+      ),
+    );
+
+    expect(result.env).not.toHaveProperty("WCT_PROMPT");
+    expect(JSON.parse(JSON.stringify(result)).env).not.toHaveProperty(
+      "WCT_PROMPT",
+    );
+  });
+
   test("keeps WCT_PROMPT open-only and profile lifecycle overrides out of path naming", async () => {
     await writeConfig(
       repoDir,
@@ -300,7 +321,7 @@ describe("WorkspaceService open", () => {
           }),
         ),
         {
-          worktree: openWorktreeService(),
+          worktree: makeWorktreeService(),
         },
       ),
     );
@@ -354,7 +375,7 @@ describe("WorkspaceService open", () => {
           calls.push(`fetch:${remote}/${branch}`);
         }),
     };
-    const worktree = openWorktreeService({
+    const worktree = makeWorktreeService({
       branchExists: (branch) =>
         Effect.sync(() => {
           calls.push(`exists:${branch}`);
@@ -409,7 +430,7 @@ describe("WorkspaceService open", () => {
           calls.push(`fetch:${remote}/${branch}`);
         }),
     };
-    const worktree = openWorktreeService({
+    const worktree = makeWorktreeService({
       branchExists: (branch) =>
         Effect.sync(() => {
           calls.push(`exists:${branch}`);
@@ -461,7 +482,7 @@ describe("WorkspaceService open", () => {
           calls.push(`fetch:${remote}/${branch}`);
         }),
     };
-    const worktree = openWorktreeService({
+    const worktree = makeWorktreeService({
       branchExists: (branch) => Effect.succeed(branch === "origin/same-repo"),
       createWorktree: (_path, branch, existing, base) =>
         Effect.sync(() => {
@@ -593,7 +614,7 @@ describe("WorkspaceService open", () => {
             service.open({ branch: "conflict", cwd: repoDir }),
           ),
           {
-            worktree: openWorktreeService({
+            worktree: makeWorktreeService({
               createWorktree: (path) =>
                 Effect.succeed({
                   _tag: "PathConflict" as const,
@@ -612,7 +633,7 @@ describe("WorkspaceService open", () => {
           WorkspaceService.use((service) =>
             service.open({ branch: "copy-fails", cwd: repoDir }),
           ),
-          { worktree: openWorktreeService() },
+          { worktree: makeWorktreeService() },
         ),
       ),
     ).rejects.toThrow("Failed to copy files");
@@ -650,7 +671,7 @@ ide:
           return { success: true, skipped: true };
         }),
     };
-    const worktree = openWorktreeService({
+    const worktree = makeWorktreeService({
       createWorktree: (path) =>
         Effect.sync(() => {
           calls.push("worktree");
@@ -717,7 +738,7 @@ tmux: {}
         Effect.succeed({ success: false, error: "state unavailable" }),
     };
     const tmux: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       createSession: () => Effect.fail(commandError("tmux_error", "no tmux")),
     };
     const ide: IdeService = {
@@ -735,7 +756,7 @@ tmux: {}
           setup,
           tmux,
           vscodeWorkspace,
-          worktree: openWorktreeService(),
+          worktree: makeWorktreeService(),
         },
       ),
     );
@@ -777,7 +798,7 @@ tmux: {}
         ),
         {
           setup,
-          worktree: openWorktreeService(),
+          worktree: makeWorktreeService(),
         },
       ),
     );
@@ -806,7 +827,7 @@ tmux: {}
             service.open({ branch: "parallel", cwd: repoDir }),
           ),
           {
-            worktree: openWorktreeService({
+            worktree: makeWorktreeService({
               createWorktree: (path) =>
                 Effect.sync(() => {
                   calls.push("worktree");
@@ -814,7 +835,7 @@ tmux: {}
                 }),
             }),
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: (name) =>
                 Effect.promise(async () => {
                   calls.push("tmux-started");
@@ -904,7 +925,7 @@ describe("WorkspaceService up", () => {
             getCurrentBranch: () => Effect.succeed("feature"),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: (name, workingDir) =>
               Effect.sync(() => {
                 calls.push(`tmux:${name}:${workingDir}`);
@@ -973,7 +994,7 @@ describe("WorkspaceService up", () => {
             getCurrentBranch: () => Effect.succeed("feature"),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: (name, _workingDir, config) =>
               Effect.sync(() => {
                 tmuxWindowNames.push(config?.windows?.[0]?.name);
@@ -1007,7 +1028,7 @@ describe("WorkspaceService up", () => {
             getCurrentBranch: () => Effect.succeed("feature"),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: () =>
               Effect.fail(commandError("tmux_error", "tmux boom")),
           },
@@ -1068,7 +1089,7 @@ describe("WorkspaceService down", () => {
             isGitRepo: () => Effect.succeed(true),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(true),
             killSession: (name) =>
               Effect.sync(() => {
@@ -1109,7 +1130,7 @@ describe("WorkspaceService down", () => {
             isGitRepo: () => Effect.succeed(true),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(false),
             killSession: (name) =>
               Effect.sync(() => {
@@ -1150,7 +1171,7 @@ describe("WorkspaceService down", () => {
 
   test("treats tmux kill failure as fatal", async () => {
     const tmux: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: () => Effect.fail(commandError("tmux_error", "kill boom")),
     };
@@ -1200,7 +1221,7 @@ describe("WorkspaceService close", () => {
               }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(false),
             killSession: () => Effect.die("kill should not be called"),
           },
@@ -1255,7 +1276,7 @@ describe("WorkspaceService close", () => {
               }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(true),
             killSession: (name) =>
               Effect.sync(() => {
@@ -1291,7 +1312,7 @@ describe("WorkspaceService close", () => {
               Effect.succeed({ _tag: "Removed" as const, path }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(false),
           },
         },
@@ -1326,7 +1347,7 @@ describe("WorkspaceService close", () => {
                 }),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               sessionExists: () => Effect.succeed(true),
               killSession: () =>
                 Effect.fail(commandError("tmux_error", "kill boom")),
@@ -1350,7 +1371,7 @@ describe("WorkspaceService close", () => {
               Effect.succeed({ _tag: "BlockedByChanges" as const, path }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(false),
           },
         },
@@ -1383,7 +1404,7 @@ describe("WorkspaceService close", () => {
               }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(false),
           },
         },
@@ -1420,7 +1441,7 @@ describe("WorkspaceService close", () => {
               }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(false),
           },
         },
@@ -1472,7 +1493,7 @@ describe("WorkspaceService reporter", () => {
               getCurrentBranch: () => Effect.succeed("feature"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: (name) =>
                 Effect.promise(async () => {
                   calls.push("tmux-started");
@@ -1575,7 +1596,7 @@ describe("WorkspaceService reporter", () => {
               isGitRepo: () => Effect.succeed(true),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               sessionExists: () => Effect.succeed(false),
             },
           },
@@ -1617,7 +1638,7 @@ describe("WorkspaceService reporter", () => {
               isGitRepo: () => Effect.succeed(true),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               sessionExists: () => Effect.succeed(false),
             },
           },

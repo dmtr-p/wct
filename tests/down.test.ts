@@ -15,7 +15,6 @@ import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import {
   formatSessionName,
-  liveTmuxService,
   type TmuxService,
 } from "../src/services/tmux";
 import type { WorkspaceService } from "../src/services/workspace-service";
@@ -23,7 +22,7 @@ import {
   liveWorktreeService,
   type WorktreeService,
 } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 async function runCommand(
   options?: DownOptions,
@@ -80,7 +79,7 @@ describe("downCommand behavior", () => {
       findWorktreeByBranch: () => Effect.succeed(null),
     };
     tmuxOverrides = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: () => Effect.succeed(undefined),
     };
@@ -125,7 +124,7 @@ describe("downCommand behavior", () => {
     let isGitRepoArg: string | undefined;
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const pathOverrides: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: (name: string) =>
         Effect.sync(() => {
@@ -155,7 +154,7 @@ describe("downCommand behavior", () => {
     let isGitRepoArg: string | undefined;
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const tmuxOverridesViaRoot: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: (name: string) =>
         Effect.sync(() => {
@@ -185,7 +184,7 @@ describe("downCommand behavior", () => {
     let isGitRepoArg: string | undefined;
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const tmuxOverridesByBranch: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: (name: string) =>
         Effect.sync(() => {

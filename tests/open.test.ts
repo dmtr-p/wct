@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { openCommand, openWorktree } from "../src/commands/open";
+import { openCommand } from "../src/commands/open";
 import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError, WctCommandError } from "../src/errors";
@@ -15,8 +15,12 @@ import {
   type RegistryRegistrationResult,
   type RegistryServiceApi,
 } from "../src/services/registry-service";
-import { liveTmuxService } from "../src/services/tmux";
-import type { WorkspaceOpenResult } from "../src/services/workspace-service";
+import { noopTmuxService } from "./helpers/services";
+import {
+  type WorkspaceOpenOptions,
+  type WorkspaceOpenResult,
+  WorkspaceService,
+} from "../src/services/workspace-service";
 import { liveWorktreeService } from "../src/services/worktree-service";
 import { withTestServices } from "./helpers/services";
 
@@ -65,6 +69,10 @@ async function expectWctFailure(
   }
 }
 
+function workspaceOpen(options: WorkspaceOpenOptions) {
+  return WorkspaceService.use((service) => service.open(options));
+}
+
 interface OpenWorkflowFixture {
   homeDir: string;
   repoDir: string;
@@ -105,11 +113,11 @@ async function cleanupOpenWorkflowFixture(
   await rm(fixture.worktreeDir, { recursive: true, force: true });
 }
 
-describe("WorkspaceService open validation through openWorktree", () => {
+describe("WorkspaceService open validation", () => {
   test("rejects --ide together with --no-ide", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature-branch",
           ide: true,
           noIde: true,
@@ -123,7 +131,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
   test("rejects branch argument together with --pr", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature-branch",
           pr: "123",
         }),
@@ -136,7 +144,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
   test("rejects --existing together with --pr", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           pr: "123",
           existing: true,
         }),
@@ -149,7 +157,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
   test("rejects --base together with --pr", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           pr: "123",
           base: "main",
         }),
@@ -161,7 +169,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
 
   test("rejects missing branch before repository validation", async () => {
     await expectWctFailure(
-      withTestServices(openWorktree({}), {
+      withTestServices(workspaceOpen({}), {
         worktree: {
           ...liveWorktreeService,
           isGitRepo: () => Effect.die("repository should not be checked"),
@@ -175,7 +183,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
   test("rejects invalid PR values before checking gh", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           pr: "not-a-pr",
         }),
       ),
@@ -187,7 +195,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
   test("validation ordering keeps --ide/--no-ide first for combined invalid inputs", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           pr: "not-a-pr",
           ide: true,
           noIde: true,
@@ -201,7 +209,7 @@ describe("WorkspaceService open validation through openWorktree", () => {
   test("validation ordering keeps branch plus --pr before --pr plus --base", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature",
           pr: "123",
           base: "main",
@@ -227,7 +235,7 @@ describe("open workflow", () => {
     await cleanupOpenWorkflowFixture(fixture);
   });
 
-  test("openWorktree returns created false when the worktree already exists", async () => {
+  test("WorkspaceService.open returns created false when the worktree already exists", async () => {
     const createCalls: Array<{
       branch: string;
       cwd?: string;
@@ -239,7 +247,7 @@ describe("open workflow", () => {
 
     const result = await runBunPromise(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature-branch",
           cwd: fixture.repoDir,
           existing: false,
@@ -283,8 +291,8 @@ describe("open workflow", () => {
       projectName: "myapp",
       created: false,
       warnings: [],
-      tmuxSessionStarted: false,
     });
+    expect(result.attempts.tmux).toMatchObject({ attempted: false });
     expect(createCalls).toEqual([
       {
         path: join(fixture.worktreeDir, "myapp-feature-branch"),
@@ -300,10 +308,10 @@ describe("open workflow", () => {
     ]);
   });
 
-  test("openWorktree reports tmuxSessionStarted false when no tmux config exists", async () => {
+  test("WorkspaceService.open skips tmux when no tmux config exists", async () => {
     const result = await runBunPromise(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature-branch",
           cwd: fixture.repoDir,
           existing: false,
@@ -326,13 +334,13 @@ describe("open workflow", () => {
       ),
     );
 
-    expect(result.tmuxSessionStarted).toBe(false);
+    expect(result.attempts.tmux).toMatchObject({ attempted: false });
   });
 
   test("validates --existing plus --base and missing base after config resolution", async () => {
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature",
           cwd: fixture.repoDir,
           existing: true,
@@ -352,7 +360,7 @@ describe("open workflow", () => {
 
     await expectWctFailure(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "feature",
           cwd: fixture.repoDir,
           base: "missing-base",
@@ -375,7 +383,7 @@ describe("open workflow", () => {
     const ideCalls: string[] = [];
     const result = await runBunPromise(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "no-default-ide-branch",
           cwd: fixture.repoDir,
           existing: false,
@@ -405,7 +413,7 @@ describe("open workflow", () => {
       ),
     );
 
-    expect(result.tmuxSessionStarted).toBe(false);
+    expect(result.attempts.tmux).toMatchObject({ attempted: false });
     expect(ideCalls).toEqual([]);
   });
 
@@ -413,7 +421,7 @@ describe("open workflow", () => {
     const ideCalls: string[] = [];
     const result = await runBunPromise(
       withTestServices(
-        openWorktree({
+        workspaceOpen({
           branch: "forced-default-ide-branch",
           cwd: fixture.repoDir,
           existing: false,
@@ -444,7 +452,7 @@ describe("open workflow", () => {
       ),
     );
 
-    expect(result.tmuxSessionStarted).toBe(false);
+    expect(result.attempts.tmux).toMatchObject({ attempted: false });
     expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
   });
 
@@ -486,7 +494,7 @@ describe("open workflow", () => {
                   Effect.succeed({ _tag: "Created" as const, path }),
               },
               tmux: {
-                ...liveTmuxService,
+                ...noopTmuxService,
                 createSession: () =>
                   Effect.succeed({
                     _tag: "Created" as const,
@@ -513,7 +521,7 @@ describe("open workflow", () => {
     }
   });
 
-  test("openCommand skips maybeAttachSession when tmuxSessionStarted is false", async () => {
+  test("openCommand skips maybeAttachSession when WorkspaceService does not start tmux", async () => {
     const originalTmux = process.env.TMUX;
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -723,8 +731,9 @@ describe("open workflow", () => {
     ]);
   });
 
-  test("openCommand JSON emits final workspace result and registration status", async () => {
+  test("openCommand JSON emits final workspace result and registration outcome", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const registrationResult = registeredResult(fixture.repoDir, "myapp");
     const workspaceResult: WorkspaceOpenResult = {
       operation: "open" as const,
       worktreePath: "/tmp/myapp-json",
@@ -794,7 +803,11 @@ describe("open workflow", () => {
             registry: {
               ...liveRegistryService,
               register: (path: string, name: string) =>
-                Effect.succeed(registeredResult(path, name)),
+                Effect.sync(() => {
+                  expect(path).toBe(fixture.repoDir);
+                  expect(name).toBe("myapp");
+                  return registrationResult;
+                }),
             } satisfies RegistryServiceApi,
           },
         ),
@@ -805,14 +818,242 @@ describe("open workflow", () => {
         ok: true,
         data: {
           workspace: workspaceResult,
-          registrationStatus: "registered",
+          registration: registrationResult,
         },
       });
       expect(output.data.workspace.warnings).toEqual(workspaceResult.warnings);
       expect(output.data.workspace.attempts.tmux).toEqual(
         workspaceResult.attempts.tmux,
       );
-      expect(output.data.registration).toBeUndefined();
+      expect(output.data.registrationStatus).toBeUndefined();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("openCommand JSON preserves already-registered registration outcome", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const registrationResult = alreadyRegisteredResult(
+      fixture.repoDir,
+      "original-name",
+    );
+    const workspaceResult: WorkspaceOpenResult = {
+      operation: "open" as const,
+      worktreePath: "/tmp/myapp-json-existing",
+      mainRepoPath: fixture.repoDir,
+      branch: "json-existing",
+      sessionName: "myapp-json-existing",
+      projectName: "myapp",
+      created: false,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-json-existing",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "json-existing",
+        WCT_PROJECT: "myapp",
+      },
+      warnings: [],
+      attempts: {
+        worktree: {
+          attempted: true as const,
+          ok: true as const,
+          value: {
+            _tag: "AlreadyExists" as const,
+            path: "/tmp/myapp-json-existing",
+          },
+        },
+        vscode: {
+          attempted: false as const,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false as const, reason: "copy_not_configured" },
+        setup: { attempted: false as const, reason: "setup_not_configured" },
+        tmux: { attempted: false as const, reason: "tmux_not_configured" },
+        ide: { attempted: false as const, reason: "ide_not_configured" },
+      },
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "json-existing",
+            existing: false,
+          }),
+          {
+            json: true,
+            workspace: {
+              open: () => Effect.succeed(workspaceResult),
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: () => Effect.succeed(registrationResult),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      );
+
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toMatchObject({
+        ok: true,
+        data: {
+          workspace: workspaceResult,
+          registration: registrationResult,
+        },
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("openCommand JSON reports registration failures distinctly", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspaceResult: WorkspaceOpenResult = {
+      operation: "open" as const,
+      worktreePath: "/tmp/myapp-json-registration-failure",
+      mainRepoPath: fixture.repoDir,
+      branch: "json-registration-failure",
+      sessionName: "myapp-json-registration-failure",
+      projectName: "myapp",
+      created: true,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-json-registration-failure",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "json-registration-failure",
+        WCT_PROJECT: "myapp",
+      },
+      warnings: [],
+      attempts: {
+        worktree: {
+          attempted: true as const,
+          ok: true as const,
+          value: {
+            _tag: "Created" as const,
+            path: "/tmp/myapp-json-registration-failure",
+          },
+        },
+        vscode: {
+          attempted: false as const,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false as const, reason: "copy_not_configured" },
+        setup: { attempted: false as const, reason: "setup_not_configured" },
+        tmux: { attempted: false as const, reason: "tmux_not_configured" },
+        ide: { attempted: false as const, reason: "ide_not_configured" },
+      },
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "json-registration-failure",
+            existing: false,
+          }),
+          {
+            json: true,
+            workspace: {
+              open: () => Effect.succeed(workspaceResult),
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: () =>
+                Effect.fail(commandError("registry_error", "db locked")),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      );
+
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toMatchObject({
+        ok: true,
+        data: {
+          workspace: workspaceResult,
+          registration: {
+            status: "failed",
+            error: {
+              code: "registry_error",
+              message: "db locked",
+            },
+          },
+        },
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("openCommand warns when human auto-registration fails", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspaceResult: WorkspaceOpenResult = {
+      operation: "open" as const,
+      worktreePath: "/tmp/myapp-registration-warning",
+      mainRepoPath: fixture.repoDir,
+      branch: "registration-warning",
+      sessionName: "myapp-registration-warning",
+      projectName: "myapp",
+      created: true,
+      env: {
+        WCT_WORKTREE_DIR: "/tmp/myapp-registration-warning",
+        WCT_MAIN_DIR: fixture.repoDir,
+        WCT_BRANCH: "registration-warning",
+        WCT_PROJECT: "myapp",
+      },
+      warnings: [],
+      attempts: {
+        worktree: {
+          attempted: true as const,
+          ok: true as const,
+          value: {
+            _tag: "Created" as const,
+            path: "/tmp/myapp-registration-warning",
+          },
+        },
+        vscode: {
+          attempted: false as const,
+          reason: "vscode_sync_not_configured",
+        },
+        copy: { attempted: false as const, reason: "copy_not_configured" },
+        setup: { attempted: false as const, reason: "setup_not_configured" },
+        tmux: { attempted: false as const, reason: "tmux_not_configured" },
+        ide: { attempted: false as const, reason: "ide_not_configured" },
+      },
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "registration-warning",
+            existing: false,
+          }),
+          {
+            workspace: {
+              open: () => Effect.succeed(workspaceResult),
+              up: () => Effect.die("unused"),
+              down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
+            },
+            registry: {
+              ...liveRegistryService,
+              register: () =>
+                Effect.fail(commandError("registry_error", "db locked")),
+            } satisfies RegistryServiceApi,
+          },
+        ),
+      );
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) =>
+          line.includes("Project registration failed after open: db locked"),
+        ),
+      ).toBe(true);
     } finally {
       logSpy.mockRestore();
     }

@@ -1,5 +1,5 @@
 import type { Key } from "ink";
-import { Mode, type Mode as TuiMode } from "../types";
+import type { Mode as TuiMode } from "../types";
 
 export interface ConfirmCloseContext {
   mode: TuiMode;
@@ -35,20 +35,6 @@ export function handleConfirmCloseInput(
   }
 
   if (key.return) {
-    if (mode.type === "ConfirmClose" && mode.changedFiles > 0) {
-      ctx.setMode(
-        Mode.ConfirmCloseForce(
-          mode.sessionName,
-          mode.branch,
-          mode.worktreePath,
-          mode.worktreeKey,
-          mode.repoPath,
-          mode.project,
-        ),
-      );
-      return;
-    }
-
     ctx.executeClose(
       mode.sessionName,
       mode.branch,

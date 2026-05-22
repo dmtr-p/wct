@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
-import type { WctError } from "../errors";
+import { toWctError } from "../errors";
 import { registerProject } from "../services/project-registration";
 import {
   type WorkspaceOpenOptions,
@@ -83,47 +83,19 @@ export interface OpenOptions {
   profile?: string;
 }
 
-export interface OpenRequest extends WorkspaceOpenOptions {}
-
-export interface OpenWorktreeResult
-  extends Omit<WorkspaceOpenResult, "operation"> {
-  warnings: WorkspaceOpenResult["warnings"];
-  tmuxSessionStarted: boolean;
-}
-
-export function resolveOpenOptions(
-  input: OpenRequest,
-): Effect.Effect<OpenRequest, WctError, WctServices> {
-  return Effect.succeed(input);
-}
-
-function toOpenWorktreeResult(result: WorkspaceOpenResult): OpenWorktreeResult {
-  return {
-    worktreePath: result.worktreePath,
-    mainRepoPath: result.mainRepoPath,
-    branch: result.branch,
-    sessionName: result.sessionName,
-    projectName: result.projectName,
-    ...(result.profileName ? { profileName: result.profileName } : {}),
-    created: result.created,
-    env: result.env,
-    warnings: result.warnings,
-    attempts: result.attempts,
-    tmuxSessionStarted:
-      result.attempts.tmux.attempted && result.attempts.tmux.ok,
-  };
-}
-
-export function openWorktree(
-  options: WorkspaceOpenOptions,
-): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
-  return WorkspaceService.use((service) => service.open(options)).pipe(
-    Effect.map(toOpenWorktreeResult),
-  );
-}
-
 export interface OpenCommandOptions extends WorkspaceOpenOptions {
   noAttach?: boolean;
+}
+
+function registrationFailure(error: unknown) {
+  const wctError = toWctError(error);
+  return {
+    status: "failed" as const,
+    error: {
+      code: wctError.code,
+      message: wctError.message,
+    },
+  };
 }
 
 function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
@@ -263,27 +235,34 @@ export function openCommand(
           : { reporter: createOpenHumanReporter(workspaceOptions) }),
       }),
     );
-    const registration = yield* Effect.catch(
+    const registration = yield* Effect.match(
       registerProject({
         path: result.mainRepoPath,
         name: result.projectName ?? basename(result.mainRepoPath),
         tolerateConfigErrors: true,
       }),
-      () => Effect.succeed(null),
+      {
+        onFailure: (error) => registrationFailure(error),
+        onSuccess: (success) => success.registration,
+      },
     );
 
     if (json) {
       yield* jsonSuccess({
         workspace: result,
-        registrationStatus: registration?.registration.status ?? null,
+        registration,
       });
       return;
     }
 
     yield* logWorkspaceOpenResult(result);
-    if (registration?.registration.status === "registered") {
+    if (registration.status === "registered") {
       yield* logger.success(
-        `Registered project '${registration.registration.item.project}'`,
+        `Registered project '${registration.item.project}'`,
+      );
+    } else if (registration.status === "failed") {
+      yield* logger.warn(
+        `Project registration failed after open: ${registration.error.message}`,
       );
     }
 

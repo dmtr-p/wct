@@ -15,6 +15,7 @@ import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
 import { useTmux } from "./hooks/useTmux";
+import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import type { NavigateContext } from "./input/navigate";
@@ -267,45 +268,6 @@ export function App() {
     upModalReturnSelectedIndexRef,
   });
 
-  function handleConfirmCloseInput(_input: string, key: Key) {
-    if (mode.type !== "ConfirmClose" && mode.type !== "ConfirmCloseForce") {
-      return;
-    }
-
-    if (key.escape) {
-      setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
-      setMode(confirmCloseReturnModeRef.current);
-      return;
-    }
-
-    if (key.return) {
-      if (mode.type === "ConfirmClose" && mode.changedFiles > 0) {
-        setMode(
-          Mode.ConfirmCloseForce(
-            mode.sessionName,
-            mode.branch,
-            mode.worktreePath,
-            mode.worktreeKey,
-            mode.repoPath,
-            mode.project,
-          ),
-        );
-        return;
-      }
-
-      const force = mode.type === "ConfirmCloseForce";
-      void sessionActions.executeClose(
-        mode.sessionName,
-        mode.branch,
-        mode.worktreePath,
-        mode.worktreeKey,
-        mode.repoPath,
-        mode.project,
-        force,
-      );
-    }
-  }
-
   const navCtx: NavigateContext = {
     treeItems,
     filteredRepos,
@@ -423,7 +385,19 @@ export function App() {
         return handleConfirmDownInput(input, key);
       case "ConfirmClose":
       case "ConfirmCloseForce":
-        return handleConfirmCloseInput(input, key);
+        return handleConfirmCloseInput(
+          {
+            mode,
+            returnMode: confirmCloseReturnModeRef.current,
+            returnSelectedIndex: confirmCloseReturnSelectedIndexRef.current,
+            setMode,
+            setSelectedIndex,
+            executeClose: (...args) =>
+              void sessionActions.executeClose(...args),
+          },
+          input,
+          key,
+        );
     }
   });
 

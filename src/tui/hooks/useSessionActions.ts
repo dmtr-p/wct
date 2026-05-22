@@ -1,14 +1,12 @@
 // src/tui/hooks/useSessionActions.ts
 
 import { basename } from "node:path";
-import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
-import { formatSessionName, TmuxService } from "../../services/tmux";
+import { formatSessionName } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
-import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
 import {
   resolveSessionHandoff,
@@ -326,31 +324,17 @@ export function createExecuteClose(deps: SessionActionDeps) {
     );
 
     try {
-      await tuiRuntime.runPromise(
-        Effect.gen(function* () {
-          const exists = yield* TmuxService.use((service) =>
-            service.sessionExists(sessionName),
-          );
-          if (exists) {
-            yield* TmuxService.use((service) =>
-              service.killSession(sessionName),
-            );
-          }
-        }),
-      );
-
-      const removeResult = await tuiRuntime.runPromise(
-        WorktreeService.use((service) =>
-          service.removeWorktree(worktreePath, force, repoPath),
+      const closeResult = await tuiRuntime.runPromise(
+        WorkspaceService.use((service) =>
+          service.close(
+            force
+              ? { path: worktreePath, cwd: repoPath, force }
+              : { path: worktreePath, cwd: repoPath },
+          ),
         ),
       );
 
-      if (removeResult._tag === "BlockedByChanges") {
-        deps.setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(worktreeKey);
-          return next;
-        });
+      if (closeResult.status === "blocked_by_changes") {
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,

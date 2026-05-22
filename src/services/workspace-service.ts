@@ -131,6 +131,7 @@ export interface WorkspaceDownOptions extends ResolveWorkspaceTargetOptions {
 }
 
 export interface WorkspaceCloseOptions extends ResolveWorkspaceTargetOptions {
+  cwd?: string;
   force?: boolean;
   reporter?: WorkspaceReporter;
 }
@@ -1108,7 +1109,7 @@ function closeImpl(
   WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
 > {
   return Effect.gen(function* () {
-    const { force = false, reporter } = options;
+    const { cwd, force = false, reporter } = options;
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "close",
@@ -1162,7 +1163,7 @@ function closeImpl(
       attempt: "worktree",
     });
     const removeResult = yield* WorktreeService.use((service) =>
-      service.removeWorktree(worktreePath, force),
+      service.removeWorktree(worktreePath, force, cwd),
     );
     yield* emitReporter(reporter, {
       operation: "close",

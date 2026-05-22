@@ -1393,6 +1393,45 @@ describe("WorkspaceService close", () => {
     expect(result.status).toBe("removed");
     expect(forceArgs).toEqual([true]);
   });
+
+  test("passes explicit cwd to worktree removal", async () => {
+    const removeCalls: Array<{
+      path: string;
+      force?: boolean;
+      cwd?: string;
+    }> = [];
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.close({
+            path: "/tmp/myapp-feature",
+            cwd: "/repos/myapp",
+          }),
+        ),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            removeWorktree: (path, force, cwd) =>
+              Effect.sync(() => {
+                removeCalls.push({ path, force, cwd });
+                return { _tag: "Removed" as const, path };
+              }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(false),
+          },
+        },
+      ),
+    );
+
+    expect(result.status).toBe("removed");
+    expect(removeCalls).toEqual([
+      { path: "/tmp/myapp-feature", force: false, cwd: "/repos/myapp" },
+    ]);
+  });
 });
 
 describe("WorkspaceService reporter", () => {

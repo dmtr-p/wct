@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import type { StartWorktreeSessionResult } from "../../src/commands/worktree-session";
 import { commandError } from "../../src/errors";
 import {
+  type WorkspaceCloseResult,
   WorkspaceService,
   type WorkspaceUpResult,
 } from "../../src/services/workspace-service";
@@ -18,6 +19,7 @@ import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
+const workspaceClose = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
@@ -27,7 +29,9 @@ vi.mock("../../src/tui/runtime", () => ({
 
 vi.mock("../../src/services/workspace-service", () => ({
   WorkspaceService: {
-    use: vi.fn((f) => f({ up: workspaceUp, down: workspaceDown })),
+    use: vi.fn((f) =>
+      f({ up: workspaceUp, down: workspaceDown, close: workspaceClose }),
+    ),
   },
 }));
 
@@ -92,6 +96,28 @@ function makeWorkspaceUpResult(
       tmux: { attempted: false, reason: "tmux_not_configured" },
       ide: { attempted: false, reason: "ide_not_configured" },
     },
+    ...overrides,
+  };
+}
+
+function makeWorkspaceCloseResult(
+  overrides: Partial<WorkspaceCloseResult> = {},
+): WorkspaceCloseResult {
+  return {
+    operation: "close",
+    worktreePath: "/tmp/wt",
+    sessionName: "wt",
+    existed: true,
+    status: "removed",
+    attempts: {
+      kill: { attempted: true, ok: true, value: null },
+      remove: {
+        attempted: true,
+        ok: true,
+        value: { _tag: "Removed", path: "/tmp/wt" },
+      },
+    },
+    warnings: [],
     ...overrides,
   };
 }
@@ -483,7 +509,7 @@ describe("createExecuteClose", () => {
     vi.clearAllMocks();
   });
 
-  test("calls switchClientAway first and aborts on failure", async () => {
+  test("active-client safety failure prevents WorkspaceService.close", async () => {
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "multiple" }),
       refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
@@ -502,17 +528,26 @@ describe("createExecuteClose", () => {
     expect(deps.showActionError).toHaveBeenCalledWith(
       expect.stringContaining("could not be moved away"),
     );
+    expect(workspaceClose).not.toHaveBeenCalled();
+    expect(deps.setPendingActions).not.toHaveBeenCalled();
   });
 
-  test("sets pending action and removes on completion", async () => {
+  test("uses WorkspaceService.close, refreshes, and clears pending after success", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
-    (tuiRuntime.runPromise as Mock)
-      .mockResolvedValueOnce(undefined) // kill session
-      .mockResolvedValueOnce({ _tag: "Removed" }); // remove worktree
+    (tuiRuntime.runPromise as Mock).mockResolvedValue(
+      makeWorkspaceCloseResult(),
+    );
 
+    let pendingActions = new Map<string, unknown>();
+    const setPendingActions = vi.fn((update) => {
+      pendingActions =
+        typeof update === "function" ? update(pendingActions) : update;
+      return pendingActions;
+    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
+      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -525,15 +560,24 @@ describe("createExecuteClose", () => {
       "proj",
       false,
     );
+    expect(WorkspaceService.use).toHaveBeenCalled();
+    expect(workspaceClose).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      cwd: "/repo",
+    });
+    expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
     expect(deps.setPendingActions).toHaveBeenCalled();
     expect(deps.refreshAll).toHaveBeenCalled();
+    expect(deps.showActionError).not.toHaveBeenCalled();
+    expect(pendingActions.size).toBe(0);
+    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
-  test("transitions to ConfirmCloseForce on BlockedByChanges", async () => {
+  test("passes selected repoPath as WorkspaceService.close cwd for multi-repo TUI close", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
-    (tuiRuntime.runPromise as Mock)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce({ _tag: "BlockedByChanges" });
+    (tuiRuntime.runPromise as Mock).mockResolvedValue(
+      makeWorkspaceCloseResult(),
+    );
 
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
@@ -546,10 +590,106 @@ describe("createExecuteClose", () => {
       "feat",
       "/tmp/wt",
       "proj/feat",
+      "/registered/repo",
+      "proj",
+      false,
+    );
+
+    expect(workspaceClose).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      cwd: "/registered/repo",
+    });
+  });
+
+  test("moves active client before WorkspaceService.close", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValue(
+      makeWorkspaceCloseResult(),
+    );
+
+    const calls: string[] = [];
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({
+        type: "single",
+        client: { tty: "/dev/pts/0", session: "my-session" },
+      }),
+      refreshSessions: vi
+        .fn()
+        .mockResolvedValue([{ name: "my-session" }, { name: "fallback" }]),
+      switchSession: vi.fn().mockImplementation(async () => {
+        calls.push("switch");
+        return true;
+      }),
+    });
+    workspaceClose.mockImplementationOnce(() => {
+      calls.push("close");
+      return "mock-workspace-effect";
+    });
+    const executeClose = createExecuteClose(deps);
+
+    await executeClose(
+      "my-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
       "/repo",
       "proj",
       false,
     );
+
+    expect(calls).toEqual(["switch", "close"]);
+    expect(deps.switchSession).toHaveBeenCalledWith("fallback", {
+      tty: "/dev/pts/0",
+      session: "my-session",
+    });
+    expect(workspaceClose).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      cwd: "/repo",
+    });
+  });
+
+  test("blocked close enters force-confirm mode, refreshes, and clears pending", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValue(
+      makeWorkspaceCloseResult({
+        status: "blocked_by_changes",
+        attempts: {
+          kill: { attempted: true, ok: true, value: null },
+          remove: {
+            attempted: true,
+            ok: true,
+            value: { _tag: "BlockedByChanges", path: "/tmp/wt" },
+          },
+        },
+      }),
+    );
+
+    let pendingActions = new Map<string, unknown>();
+    const setPendingActions = vi.fn((update) => {
+      pendingActions =
+        typeof update === "function" ? update(pendingActions) : update;
+      return pendingActions;
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
+      refreshSessions: vi.fn().mockResolvedValue([]),
+      setPendingActions,
+    });
+    const executeClose = createExecuteClose(deps);
+
+    await executeClose(
+      "my-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+    expect(workspaceClose).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      cwd: "/repo",
+    });
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.ConfirmCloseForce(
         "my-session",
@@ -561,6 +701,76 @@ describe("createExecuteClose", () => {
       ),
     );
     expect(deps.refreshAll).toHaveBeenCalled();
+    expect(pendingActions.size).toBe(0);
+    expect(setPendingActions).toHaveBeenCalledTimes(2);
+  });
+
+  test("force close calls WorkspaceService.close with force", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValue(
+      makeWorkspaceCloseResult(),
+    );
+
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
+      refreshSessions: vi.fn().mockResolvedValue([]),
+    });
+    const executeClose = createExecuteClose(deps);
+
+    await executeClose(
+      "my-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      true,
+    );
+
+    expect(workspaceClose).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      cwd: "/repo",
+      force: true,
+    });
+    expect(deps.refreshAll).toHaveBeenCalled();
+  });
+
+  test("surfaces WorkspaceService.close tmux kill failure and clears pending", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockRejectedValue(
+      commandError("tmux_error", "kill failed"),
+    );
+
+    let pendingActions = new Map<string, unknown>();
+    const setPendingActions = vi.fn((update) => {
+      pendingActions =
+        typeof update === "function" ? update(pendingActions) : update;
+      return pendingActions;
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
+      refreshSessions: vi.fn().mockResolvedValue([]),
+      setPendingActions,
+    });
+    const executeClose = createExecuteClose(deps);
+
+    await executeClose(
+      "my-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+
+    expect(workspaceClose).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      cwd: "/repo",
+    });
+    expect(deps.showActionError).toHaveBeenCalledWith("kill failed");
+    expect(deps.refreshAll).toHaveBeenCalled();
+    expect(pendingActions.size).toBe(0);
   });
 });
 

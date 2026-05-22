@@ -15,6 +15,10 @@ import {
   liveTmuxService,
   type TmuxService,
 } from "../src/services/tmux";
+import type {
+  WorkspaceCloseResult,
+  WorkspaceService,
+} from "../src/services/workspace-service";
 import {
   liveWorktreeService,
   type WorktreeService,
@@ -29,8 +33,10 @@ async function runCommand(
     force?: boolean;
   },
   overrides: {
+    json?: boolean;
     tmux?: TmuxService;
     worktree?: WorktreeService;
+    workspace?: WorkspaceService;
   } = {},
 ) {
   await runBunPromise(withTestServices(closeCommand(options), overrides));
@@ -51,6 +57,26 @@ function makeWorktree(branch: string) {
     branch,
     commit: "abc123",
     isBare: false,
+  };
+}
+
+function removedCloseResult(branch: string): WorkspaceCloseResult {
+  const worktreePath = `/tmp/myapp-${branch}`;
+  return {
+    operation: "close",
+    worktreePath,
+    sessionName: formatSessionName(`myapp-${branch}`),
+    existed: true,
+    status: "removed",
+    attempts: {
+      kill: { attempted: true, ok: true, value: null },
+      remove: {
+        attempted: true,
+        ok: true,
+        value: { _tag: "Removed", path: worktreePath },
+      },
+    },
+    warnings: [],
   };
 }
 
@@ -131,6 +157,37 @@ describe("closeCommand", () => {
     ]);
   });
 
+  test("calls WorkspaceService.close once per branch in loop order", async () => {
+    const closeCalls: unknown[] = [];
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.sync(() => {
+          closeCalls.push(options);
+          return removedCloseResult(options?.branch ?? "unknown");
+        }),
+    };
+
+    await runCommand(
+      {
+        branches: ["feature-a", "feature-b"],
+        yes: true,
+      },
+      {
+        tmux: mocks.tmux,
+        worktree: mocks.worktree,
+        workspace,
+      },
+    );
+
+    expect(closeCalls).toEqual([
+      { branch: "feature-a", force: false },
+      { branch: "feature-b", force: false },
+    ]);
+  });
+
   test("stops on first missing branch in multi-close", async () => {
     mocks.worktree = {
       ...mocks.worktree,
@@ -186,9 +243,63 @@ describe("closeCommand", () => {
       "Worktree has uncommitted changes. Force remove anyway?",
     );
     expect(forceRemoveCalled).toBe(true);
-    expect(mocks.tmuxCalls).toHaveLength(3);
+    expect(mocks.tmuxCalls).toHaveLength(4);
     // feature-a, feature-b (blocked), feature-b (force), feature-c
     expect(mocks.worktreeCalls).toHaveLength(4);
+  });
+
+  test("keeps force prompt policy outside WorkspaceService", async () => {
+    const closeCalls: unknown[] = [];
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.sync(() => {
+          closeCalls.push(options);
+          if (!options?.force) {
+            return {
+              ...removedCloseResult(options?.branch ?? "feature-a"),
+              status: "blocked_by_changes" as const,
+              attempts: {
+                kill: {
+                  attempted: true as const,
+                  ok: true as const,
+                  value: null,
+                },
+                remove: {
+                  attempted: true as const,
+                  ok: true as const,
+                  value: {
+                    _tag: "BlockedByChanges" as const,
+                    path: "/tmp/myapp-feature-a",
+                  },
+                },
+              },
+            };
+          }
+          return removedCloseResult(options.branch ?? "feature-a");
+        }),
+    };
+
+    await runCommand(
+      {
+        branches: ["feature-a"],
+      },
+      {
+        tmux: mocks.tmux,
+        worktree: mocks.worktree,
+        workspace,
+      },
+    );
+
+    expect(mocks.confirmSpy).toHaveBeenCalledWith(
+      "Worktree has uncommitted changes. Force remove anyway?",
+    );
+    expect(closeCalls).toEqual([
+      { branch: "feature-a", force: false },
+      { branch: "feature-a", force: true },
+    ]);
   });
 
   test("aborts when user declines force remove", async () => {
@@ -309,6 +420,189 @@ describe("closeCommand", () => {
     expect(mocks.confirmSpy).not.toHaveBeenCalled();
     expect(mocks.tmuxCalls).toHaveLength(2);
     expect(mocks.worktreeCalls).toHaveLength(2);
+  });
+
+  test("json output emits final close results only", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.succeed(removedCloseResult(options?.branch ?? "unknown")),
+    };
+
+    try {
+      await runCommand(
+        {
+          branches: ["feature-a", "feature-b"],
+          yes: true,
+        },
+        {
+          json: true,
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          workspace,
+        },
+      );
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toEqual({
+        ok: true,
+        data: [
+          removedCloseResult("feature-a"),
+          removedCloseResult("feature-b"),
+        ],
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("human output keeps final session and removal messages", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.succeed({
+          ...removedCloseResult(options?.branch ?? "unknown"),
+          existed: options?.branch !== "feature-b",
+          attempts: {
+            kill:
+              options?.branch === "feature-b"
+                ? { attempted: false as const, reason: "session_absent" }
+                : { attempted: true as const, ok: true as const, value: null },
+            remove: removedCloseResult(options?.branch ?? "unknown").attempts
+              .remove,
+          },
+        }),
+    };
+
+    try {
+      await runCommand(
+        {
+          branches: ["feature-a", "feature-b"],
+          yes: true,
+        },
+        {
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          workspace,
+        },
+      );
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) =>
+          line.includes("Killed tmux session 'myapp-feature-a'"),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) =>
+          line.includes("No tmux session 'myapp-feature-b' found"),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) =>
+          line.includes("Removed worktree 'feature-a'"),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) =>
+          line.includes("Removed worktree 'feature-b'"),
+        ),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("WorkspaceService.close failure aborts branch loop without human success output", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const closeCalls: unknown[] = [];
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.sync(() => {
+          closeCalls.push(options);
+          if (options?.branch === "feature-a") {
+            throw new Error("kill boom");
+          }
+          return removedCloseResult(options?.branch ?? "unknown");
+        }),
+    };
+
+    try {
+      await expect(
+        runCommand(
+          {
+            branches: ["feature-a", "feature-b"],
+            yes: true,
+          },
+          {
+            tmux: mocks.tmux,
+            worktree: mocks.worktree,
+            workspace,
+          },
+        ),
+      ).rejects.toThrow("kill boom");
+
+      expect(closeCalls).toEqual([{ branch: "feature-a", force: false }]);
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) => line.includes("Killed tmux session")),
+      ).toBe(false);
+      expect(
+        loggedLines.some((line) => line.includes("Removed worktree")),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("WorkspaceService.close failure emits no JSON success result", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const closeCalls: unknown[] = [];
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.sync(() => {
+          closeCalls.push(options);
+          if (options?.branch === "feature-a") {
+            throw new Error("kill boom");
+          }
+          return removedCloseResult(options?.branch ?? "unknown");
+        }),
+    };
+
+    try {
+      await expect(
+        runCommand(
+          {
+            branches: ["feature-a", "feature-b"],
+            yes: true,
+          },
+          {
+            json: true,
+            tmux: mocks.tmux,
+            worktree: mocks.worktree,
+            workspace,
+          },
+        ),
+      ).rejects.toThrow("kill boom");
+
+      expect(closeCalls).toEqual([{ branch: "feature-a", force: false }]);
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   test("defers current tmux session branch until last in multi-close", async () => {

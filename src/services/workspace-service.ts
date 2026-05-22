@@ -34,6 +34,7 @@ import {
 } from "./vscode-workspace";
 import {
   type CreateWorktreeResult,
+  type RemoveWorktreeResult,
   WorktreeService,
   type WorktreeService as WorktreeServiceApi,
 } from "./worktree-service";
@@ -129,6 +130,11 @@ export interface WorkspaceDownOptions extends ResolveWorkspaceTargetOptions {
   reporter?: WorkspaceReporter;
 }
 
+export interface WorkspaceCloseOptions extends ResolveWorkspaceTargetOptions {
+  force?: boolean;
+  reporter?: WorkspaceReporter;
+}
+
 export interface WorkspaceOpenOptions {
   branch?: string;
   existing?: boolean;
@@ -191,6 +197,19 @@ export interface WorkspaceDownResult {
   warnings: [];
 }
 
+export interface WorkspaceCloseResult {
+  operation: "close";
+  worktreePath: string;
+  sessionName: string;
+  existed: boolean;
+  status: "removed" | "blocked_by_changes";
+  attempts: {
+    kill: WorkspaceAttempt<null>;
+    remove: WorkspaceAttempt<RemoveWorktreeResult>;
+  };
+  warnings: [];
+}
+
 export interface WorkspaceService {
   open: (
     options: WorkspaceOpenOptions,
@@ -219,6 +238,13 @@ export interface WorkspaceService {
     options?: WorkspaceDownOptions,
   ) => Effect.Effect<
     WorkspaceDownResult,
+    WctError,
+    WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
+  >;
+  close: (
+    options?: WorkspaceCloseOptions,
+  ) => Effect.Effect<
+    WorkspaceCloseResult,
     WctError,
     WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
   >;
@@ -1074,8 +1100,100 @@ function downImpl(
   });
 }
 
+function closeImpl(
+  options: WorkspaceCloseOptions = {},
+): Effect.Effect<
+  WorkspaceCloseResult,
+  WctError,
+  WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
+> {
+  return Effect.gen(function* () {
+    const { force = false, reporter } = options;
+    const worktreePath = yield* resolveTargetImpl(options);
+    yield* emitReporter(reporter, {
+      operation: "close",
+      _tag: "TargetResolved",
+      worktreePath,
+    });
+
+    const isRepo = yield* WorktreeService.use((service) =>
+      service.isGitRepo(worktreePath),
+    );
+    if (!isRepo) {
+      return yield* Effect.fail(
+        commandError("not_git_repo", "Not a git repository"),
+      );
+    }
+
+    const sessionName = formatSessionName(basename(worktreePath));
+    const existed = yield* TmuxService.use((service) =>
+      service.sessionExists(sessionName),
+    );
+
+    const kill: WorkspaceAttempt<null> = existed
+      ? yield* TmuxService.use((service) =>
+          service.killSession(sessionName),
+        ).pipe(
+          Effect.as({
+            attempted: true as const,
+            ok: true as const,
+            value: null,
+          }),
+        )
+      : skippedAttempt("session_absent");
+
+    if (existed) {
+      yield* emitReporter(reporter, {
+        operation: "close",
+        _tag: "SessionKilled",
+        sessionName,
+      });
+    } else {
+      yield* emitReporter(reporter, {
+        operation: "close",
+        _tag: "SessionAbsent",
+        sessionName,
+      });
+    }
+
+    yield* emitReporter(reporter, {
+      operation: "close",
+      _tag: "AttemptStarted",
+      attempt: "worktree",
+    });
+    const removeResult = yield* WorktreeService.use((service) =>
+      service.removeWorktree(worktreePath, force),
+    );
+    yield* emitReporter(reporter, {
+      operation: "close",
+      _tag: "AttemptCompleted",
+      attempt: "worktree",
+      ok: removeResult._tag === "Removed",
+    });
+
+    return {
+      operation: "close",
+      worktreePath,
+      sessionName,
+      existed,
+      status:
+        removeResult._tag === "Removed" ? "removed" : "blocked_by_changes",
+      attempts: {
+        kill,
+        remove: {
+          attempted: true,
+          ok: true,
+          value: removeResult,
+        },
+      },
+      warnings: [],
+    };
+  });
+}
+
 export const liveWorkspaceService: WorkspaceService = WorkspaceService.of({
   open: openImpl,
   up: upImpl,
   down: downImpl,
+  close: closeImpl,
 });

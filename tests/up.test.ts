@@ -301,6 +301,7 @@ describe("upCommand", () => {
           };
         }),
       down: () => Effect.die("unused"),
+      close: () => Effect.die("unused"),
     };
 
     await runBunPromise(
@@ -765,6 +766,7 @@ tmux:
           },
         }),
       down: () => Effect.die("unused"),
+      close: () => Effect.die("unused"),
     };
 
     try {

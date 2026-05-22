@@ -287,6 +287,7 @@ describe("downCommand behavior", () => {
                 },
                 warnings: [] as [],
               }),
+            close: () => Effect.die("unused"),
           },
         },
       );

@@ -626,6 +626,7 @@ describe("open workflow", () => {
                 Effect.fail(commandError("worktree_error", "fatal open")),
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
             },
             registry: {
               ...liveRegistryService,
@@ -695,6 +696,7 @@ describe("open workflow", () => {
             open: () => Effect.succeed(workspaceResult),
             up: () => Effect.die("unused"),
             down: () => Effect.die("unused"),
+            close: () => Effect.die("unused"),
           },
           registry: {
             ...liveRegistryService,
@@ -787,6 +789,7 @@ describe("open workflow", () => {
               },
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
             },
             registry: {
               ...liveRegistryService,
@@ -876,6 +879,7 @@ describe("open workflow", () => {
                 }),
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
             },
             registry: {
               ...liveRegistryService,
@@ -967,6 +971,7 @@ describe("open workflow", () => {
                 }),
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              close: () => Effect.die("unused"),
             },
             registry: {
               ...liveRegistryService,

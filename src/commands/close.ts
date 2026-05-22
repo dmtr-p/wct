@@ -1,9 +1,15 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
-import { commandError, toWctError, type WctError } from "../errors";
+import { commandError, type WctError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
+import {
+  type WorkspaceCloseResult,
+  WorkspaceService,
+} from "../services/workspace-service";
 import { WorktreeService } from "../services/worktree-service";
+import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
 import type { CommandDef } from "./command-def";
@@ -37,11 +43,17 @@ export interface CloseOptions {
 
 export function closeCommand(
   options: CloseOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
     const { branches, yes = false, force = false } = options;
     const branchQueue = [...branches];
     let deferredCurrentSessionBranch = false;
+    const results: WorkspaceCloseResult[] = [];
+    const json = yield* JsonFlag;
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
@@ -82,15 +94,17 @@ export function closeCommand(
         branchQueue.length > 0 &&
         !deferredCurrentSessionBranch
       ) {
-        yield* logger.warn(
-          `Deferring branch '${branch}' because it is the current tmux session`,
-        );
+        if (!json) {
+          yield* logger.warn(
+            `Deferring branch '${branch}' because it is the current tmux session`,
+          );
+        }
         branchQueue.push(branch);
         deferredCurrentSessionBranch = true;
         continue;
       }
 
-      if (branches.length > 1) {
+      if (!json && branches.length > 1) {
         yield* logger.info(
           `Closing branch '${branch}' (${processedCount + 1}/${branches.length})`,
         );
@@ -105,7 +119,9 @@ export function closeCommand(
             commandError("tmux_error", "Confirmation prompt failed", error),
         );
         if (!confirmed) {
-          yield* logger.info("Aborted");
+          if (!json) {
+            yield* logger.info("Aborted");
+          }
           return;
         }
       }
@@ -119,59 +135,39 @@ export function closeCommand(
             commandError("tmux_error", "Confirmation prompt failed", error),
         );
         if (!confirmed) {
-          yield* logger.info("Aborted");
+          if (!json) {
+            yield* logger.info("Aborted");
+          }
           return;
         }
       }
 
-      const exists = yield* TmuxService.use((service) =>
-        service.sessionExists(sessionName),
+      let result = yield* WorkspaceService.use((service) =>
+        service.close({ branch, force }),
       );
-      if (exists) {
-        yield* logger.info(`Killing tmux session '${sessionName}'...`);
-        const killed = yield* Effect.catch(
-          TmuxService.use((service) => service.killSession(sessionName)).pipe(
-            Effect.as(true),
-          ),
-          (error) =>
-            logger
-              .warn(`Failed to kill tmux session: ${toWctError(error).message}`)
-              .pipe(Effect.as(false)),
-        );
-        if (killed) {
-          yield* logger.success(`Killed tmux session '${sessionName}'`);
-        }
-      } else {
-        yield* logger.warn(`Tmux session '${sessionName}' does not exist`);
-      }
+      const killedSession = result.existed;
 
-      yield* logger.info(`Removing worktree at ${worktreePath}...`);
-      const removeResult = yield* WorktreeService.use((service) =>
-        service.removeWorktree(worktreePath, force),
-      );
-
-      if (removeResult._tag === "Removed") {
-        yield* logger.success(`Removed worktree '${branch}'`);
-        processedCount += 1;
-      } else if (removeResult._tag === "BlockedByChanges") {
-        if (!yes) {
-          const forceConfirmed = yield* Effect.mapError(
-            confirm("Worktree has uncommitted changes. Force remove anyway?"),
-            (error) =>
-              commandError("tmux_error", "Confirmation prompt failed", error),
-          );
-          if (!forceConfirmed) {
-            yield* logger.info("Aborted");
-            return;
+      if (result.status === "blocked_by_changes") {
+        if (!force) {
+          if (!yes) {
+            const forceConfirmed = yield* Effect.mapError(
+              confirm("Worktree has uncommitted changes. Force remove anyway?"),
+              (error) =>
+                commandError("tmux_error", "Confirmation prompt failed", error),
+            );
+            if (!forceConfirmed) {
+              if (!json) {
+                yield* logger.info("Aborted");
+              }
+              return;
+            }
           }
+          result = yield* WorkspaceService.use((service) =>
+            service.close({ branch, force: true }),
+          );
         }
-        const retryResult = yield* WorktreeService.use((service) =>
-          service.removeWorktree(worktreePath, true),
-        );
-        if (retryResult._tag === "Removed") {
-          yield* logger.success(`Removed worktree '${branch}'`);
-          processedCount += 1;
-        } else {
+
+        if (result.status === "blocked_by_changes") {
           return yield* Effect.fail(
             commandError(
               "worktree_remove_failed",
@@ -180,6 +176,23 @@ export function closeCommand(
           );
         }
       }
+
+      if (!json) {
+        if (killedSession) {
+          yield* logger.success(`Killed tmux session '${result.sessionName}'`);
+        } else {
+          yield* logger.info(`No tmux session '${result.sessionName}' found`);
+        }
+      }
+      if (!json) {
+        yield* logger.success(`Removed worktree '${branch}'`);
+      }
+      results.push(result);
+      processedCount += 1;
+    }
+
+    if (json) {
+      yield* jsonSuccess(results);
     }
   });
 }

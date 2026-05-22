@@ -1172,6 +1172,229 @@ describe("WorkspaceService down", () => {
   });
 });
 
+describe("WorkspaceService close", () => {
+  let cwdSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/myapp-feature");
+  });
+
+  afterEach(() => {
+    cwdSpy.mockRestore();
+  });
+
+  test("continues to removal when tmux session is absent", async () => {
+    const removeCalls: Array<{ path: string; force?: boolean }> = [];
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) => service.close()),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            removeWorktree: (path, force) =>
+              Effect.sync(() => {
+                removeCalls.push({ path, force });
+                return { _tag: "Removed" as const, path };
+              }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(false),
+            killSession: () => Effect.die("kill should not be called"),
+          },
+        },
+      ),
+    );
+
+    expect(result).toEqual({
+      operation: "close",
+      worktreePath: "/tmp/myapp-feature",
+      sessionName: "myapp-feature",
+      existed: false,
+      status: "removed",
+      attempts: {
+        kill: {
+          attempted: false,
+          reason: "session_absent",
+        },
+        remove: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Removed", path: "/tmp/myapp-feature" },
+        },
+      },
+      warnings: [],
+    });
+    expect(removeCalls).toEqual([{ path: "/tmp/myapp-feature", force: false }]);
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
+  test("kills tmux before attempting worktree removal", async () => {
+    const calls: string[] = [];
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) => service.close({ branch: "feature" })),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            findWorktreeByBranch: (branch) =>
+              Effect.succeed({
+                path: `/tmp/myapp-${branch}`,
+                branch,
+                commit: "abc123",
+                isBare: false,
+              }),
+            isGitRepo: () => Effect.succeed(true),
+            removeWorktree: (path) =>
+              Effect.sync(() => {
+                calls.push(`remove:${path}`);
+                return { _tag: "Removed" as const, path };
+              }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(true),
+            killSession: (name) =>
+              Effect.sync(() => {
+                calls.push(`kill:${name}`);
+              }),
+          },
+        },
+      ),
+    );
+
+    expect(result.status).toBe("removed");
+    expect(result.sessionName).toBe("myapp-feature");
+    expect(calls).toEqual(["kill:myapp-feature", "remove:/tmp/myapp-feature"]);
+  });
+
+  test("resolves explicit path targets", async () => {
+    const seenPaths: string[] = [];
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.close({ path: "/tmp/myapp-explicit" }),
+        ),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: (cwd) =>
+              Effect.sync(() => {
+                if (cwd) seenPaths.push(cwd);
+                return true;
+              }),
+            removeWorktree: (path) =>
+              Effect.succeed({ _tag: "Removed" as const, path }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(false),
+          },
+        },
+      ),
+    );
+
+    expect(result.worktreePath).toBe("/tmp/myapp-explicit");
+    expect(result.sessionName).toBe("myapp-explicit");
+    expect(result.attempts.remove).toEqual({
+      attempted: true,
+      ok: true,
+      value: { _tag: "Removed", path: "/tmp/myapp-explicit" },
+    });
+    expect(seenPaths).toEqual(["/tmp/myapp-explicit"]);
+  });
+
+  test("kill failure is fatal and prevents removal", async () => {
+    const removeCalls: string[] = [];
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) => service.close()),
+          {
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              removeWorktree: (path) =>
+                Effect.sync(() => {
+                  removeCalls.push(path);
+                  return { _tag: "Removed" as const, path };
+                }),
+            },
+            tmux: {
+              ...liveTmuxService,
+              sessionExists: () => Effect.succeed(true),
+              killSession: () =>
+                Effect.fail(commandError("tmux_error", "kill boom")),
+            },
+          },
+        ),
+      ),
+    ).rejects.toThrow("kill boom");
+    expect(removeCalls).toEqual([]);
+  });
+
+  test("returns a structured blocked-by-changes result", async () => {
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) => service.close()),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            removeWorktree: (path) =>
+              Effect.succeed({ _tag: "BlockedByChanges" as const, path }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(false),
+          },
+        },
+      ),
+    );
+
+    expect(result.status).toBe("blocked_by_changes");
+    expect(result.attempts.remove).toEqual({
+      attempted: true,
+      ok: true,
+      value: { _tag: "BlockedByChanges", path: "/tmp/myapp-feature" },
+    });
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
+  test("passes force to worktree removal", async () => {
+    const forceArgs: Array<boolean | undefined> = [];
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) => service.close({ force: true })),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            removeWorktree: (path, force) =>
+              Effect.sync(() => {
+                forceArgs.push(force);
+                return { _tag: "Removed" as const, path };
+              }),
+          },
+          tmux: {
+            ...liveTmuxService,
+            sessionExists: () => Effect.succeed(false),
+          },
+        },
+      ),
+    );
+
+    expect(result.status).toBe("removed");
+    expect(forceArgs).toEqual([true]);
+  });
+});
+
 describe("WorkspaceService reporter", () => {
   let repoDir: string;
 
@@ -1365,9 +1588,9 @@ describe("WorkspaceService reporter", () => {
   });
 });
 
-test("liveWorkspaceService exposes public open, up, and down operations for this slice", () => {
+test("liveWorkspaceService exposes public lifecycle operations for this slice", () => {
   expect(typeof liveWorkspaceService.open).toBe("function");
   expect(typeof liveWorkspaceService.up).toBe("function");
   expect(typeof liveWorkspaceService.down).toBe("function");
-  expect("close" in liveWorkspaceService).toBe(false);
+  expect(typeof liveWorkspaceService.close).toBe("function");
 });

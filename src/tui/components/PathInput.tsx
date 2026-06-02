@@ -176,7 +176,7 @@ export function PathInput({
 
   return (
     <TitledBox title={title} isFocused={isFocused} width={width}>
-      <Text color={isFocused ? undefined : "dim"}>
+      <Text dimColor={!isFocused}>
         {displayValue}
         {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>
@@ -189,7 +189,8 @@ export function PathInput({
             return (
               <Text
                 key={item.value}
-                color={isSelected ? "cyan" : "dim"}
+                color={isSelected ? "cyan" : undefined}
+                dimColor={!isSelected}
                 bold={isSelected}
               >
                 {isSelected ? "▸ " : "  "}

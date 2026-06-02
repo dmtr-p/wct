@@ -19,7 +19,11 @@ export function ToggleRow({
   );
 
   return (
-    <Text color={isFocused ? "cyan" : "dim"} bold={isFocused}>
+    <Text
+      color={isFocused ? "cyan" : undefined}
+      dimColor={!isFocused}
+      bold={isFocused}
+    >
       {checked ? "[x]" : "[ ]"} {label}
     </Text>
   );
@@ -43,7 +47,11 @@ export function SubmitButton({
 
   return (
     <Box marginTop={1}>
-      <Text color={!disabled && isFocused ? "cyan" : "dim"} bold={isFocused}>
+      <Text
+        color={!disabled && isFocused ? "cyan" : undefined}
+        dimColor={disabled || !isFocused}
+        bold={isFocused}
+      >
         {isFocused ? "▸ " : "  "}Submit
       </Text>
     </Box>

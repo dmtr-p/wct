@@ -76,7 +76,12 @@ function ModeSelector({
       {options.map((opt, i) => {
         const isSel = i === selected;
         return (
-          <Text key={opt.step} color={isSel ? "cyan" : "dim"} bold={isSel}>
+          <Text
+            key={opt.step}
+            color={isSel ? "cyan" : undefined}
+            dimColor={!isSel}
+            bold={isSel}
+          >
             {isSel ? "▸ " : "  "}
             {opt.label}
           </Text>
@@ -116,7 +121,7 @@ function BracketInput({
 
   return (
     <TitledBox title={label} isFocused={isFocused} width={width}>
-      <Text color={isFocused ? undefined : "dim"}>
+      <Text dimColor={!isFocused}>
         {displayValue}
         {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>
@@ -153,7 +158,7 @@ function PromptArea({
 
   return (
     <TitledBox title="Prompt" isFocused={isFocused} width={width}>
-      <Text color={isFocused ? undefined : "dim"}>
+      <Text dimColor={!isFocused}>
         {value || (isFocused ? "" : "optional")}
         {isFocused ? (cursorVisible ? "▎" : " ") : ""}
       </Text>

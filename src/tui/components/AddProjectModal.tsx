@@ -170,7 +170,7 @@ export function AddProjectModal({
           width={innerWidth}
         />
         <TitledBox title="Name" isFocused={nameFocused} width={innerWidth}>
-          <Text color={nameFocused ? undefined : "dim"}>
+          <Text dimColor={!nameFocused}>
             {nameDisplay}
             {nameFocused ? (cursorVisible ? "▎" : " ") : ""}
           </Text>

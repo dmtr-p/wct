@@ -95,7 +95,11 @@ export function DetailRow({ item, isSelected, maxWidth }: Props) {
       return (
         <Box>
           <Text>{indent}</Text>
-          <Text color={isSelected ? "cyan" : "dim"} bold={isSelected}>
+          <Text
+            color={isSelected ? "cyan" : undefined}
+            dimColor={!isSelected}
+            bold={isSelected}
+          >
             {prefix}
             {zoomedEmoji}
             {displayLabel}

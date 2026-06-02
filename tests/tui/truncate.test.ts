@@ -15,17 +15,17 @@ describe("truncateBranch", () => {
 
   test("truncates with ellipsis when too long", () => {
     expect(truncateBranch("feature/very-long-branch-name", 15)).toBe(
-      "feature/very...",
+      "feature/very-l…",
     );
   });
 
-  test("handles available === 3", () => {
-    expect(truncateBranch("feature/branch", 3)).toBe("...");
+  test("uses one ellipsis glyph in the available budget", () => {
+    expect(truncateBranch("feature/branch", 3)).toBe("fe…");
   });
 
-  test("handles available less than 3", () => {
-    expect(truncateBranch("feature/branch", 2)).toBe("..");
-    expect(truncateBranch("feature/branch", 1)).toBe(".");
+  test("handles available less than the text length", () => {
+    expect(truncateBranch("feature/branch", 2)).toBe("f…");
+    expect(truncateBranch("feature/branch", 1)).toBe("…");
   });
 
   test("returns empty string when available is 0", () => {
@@ -46,22 +46,22 @@ describe("truncateWithPrefix", () => {
   test("preserves prefix and truncates rest when too long", () => {
     // prefix "1:0 " (4), rest "bun run dev --watch" (19), available 15
     // → "1:0 " + truncateBranch("bun run dev --watch", 11)
-    // → "1:0 " + "bun run ..."
+    // → "1:0 " + "bun run de…"
     expect(truncateWithPrefix("1:0 ", "bun run dev --watch", 15)).toBe(
-      "1:0 bun run ...",
+      "1:0 bun run de…",
     );
   });
 
-  test("falls back to truncateBranch when available === prefix.length + 3", () => {
-    // prefix "1:0 " (4), available 7 (= 4+3) — fallback threshold
-    // truncateBranch("1:0 vim this is long", 7) → "1:0 ..."
-    expect(truncateWithPrefix("1:0 ", "vim this is long", 7)).toBe("1:0 ...");
+  test("preserves prefix when available is wider than prefix plus ellipsis", () => {
+    // prefix "1:0 " (4), available 7 (> 4+1)
+    // "1:0 " + truncateBranch("vim this is long", 3) → "1:0 vi…"
+    expect(truncateWithPrefix("1:0 ", "vim this is long", 7)).toBe("1:0 vi…");
   });
 
-  test("falls back to truncateBranch when available < prefix.length + 3", () => {
-    // prefix "1:0 " (4), available 5 (< 7) — fallback
-    // truncateBranch("1:0 vim this is long", 5) → "1:..."
-    expect(truncateWithPrefix("1:0 ", "vim this is long", 5)).toBe("1:...");
+  test("falls back to truncateBranch when available <= prefix.length + ellipsis", () => {
+    // prefix "1:0 " (4), available 5 (= 4+1) — fallback
+    // truncateBranch("1:0 vim this is long", 5) → "1:0 …"
+    expect(truncateWithPrefix("1:0 ", "vim this is long", 5)).toBe("1:0 …");
   });
 
   test("handles empty rest", () => {

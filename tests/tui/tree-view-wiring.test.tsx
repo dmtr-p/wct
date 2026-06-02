@@ -69,8 +69,8 @@ describe("TreeView maxWidth wiring", () => {
     const output = chunks.join("");
 
     // "very-long-project-name" (22 chars), maxWidth=15, overhead=4 → available=11
-    // truncateBranch("very-long-project-name", 11) → "very-lon..."
-    expect(output).toContain("very-lon...");
+    // truncateBranch("very-long-project-name", 11) → "very-long-…"
+    expect(output).toContain("very-long-…");
     expect(output).not.toContain("very-long-project-name");
 
     instance.unmount();

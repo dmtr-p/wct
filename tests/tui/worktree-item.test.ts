@@ -12,17 +12,17 @@ describe("truncateBranch", () => {
 
   test("truncates with ellipsis when too long", () => {
     expect(truncateBranch("feature/very-long-branch-name", 15)).toBe(
-      "feature/very...",
+      "feature/very-l…",
     );
   });
 
   test("handles very small available space", () => {
-    expect(truncateBranch("feature/branch", 3)).toBe("...");
+    expect(truncateBranch("feature/branch", 3)).toBe("fe…");
   });
 
-  test("handles available less than 3", () => {
-    expect(truncateBranch("feature/branch", 2)).toBe("..");
-    expect(truncateBranch("feature/branch", 1)).toBe(".");
+  test("handles available less than the text length", () => {
+    expect(truncateBranch("feature/branch", 2)).toBe("f…");
+    expect(truncateBranch("feature/branch", 1)).toBe("…");
   });
 
   test("returns empty string when no space is available", () => {

@@ -142,8 +142,8 @@ describe("DetailRow", () => {
   test("preserves window:index prefix when command is long", async () => {
     // overhead=10 (indent 8 + selectorPrefix 2), maxWidth=20 → available=10
     // prefix "1:0 " (4), rest "bun run dev" (11)
-    // 15 > 10, available(10) > prefix+3(7) → "1:0 " + truncateBranch("bun run dev", 6)
-    // → "1:0 bun..."
+    // 15 > 10, available(10) > prefix+1(5) → "1:0 " + truncateBranch("bun run dev", 6)
+    // → "1:0 bun r…"
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
@@ -164,14 +164,14 @@ describe("DetailRow", () => {
       maxWidth: 20,
     });
     expect(output).toContain("1:0 ");
-    expect(output).toContain("bun...");
+    expect(output).toContain("bun r…");
     expect(output).not.toContain("bun run dev");
     unmount();
   });
 
   test("truncates pane-header label when width is tight", async () => {
     // overhead=8 (indent 6 + selectorPrefix 2), maxWidth=15 → available=7
-    // "Panes (3)" (9) → "Pane..."
+    // "Panes (3)" (9) → "Panes …"
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
@@ -183,7 +183,7 @@ describe("DetailRow", () => {
       isSelected: false,
       maxWidth: 15,
     });
-    expect(output).toContain("Pane...");
+    expect(output).toContain("Panes …");
     expect(output).not.toContain("Panes (3)");
     unmount();
   });

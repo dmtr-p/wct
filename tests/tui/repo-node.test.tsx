@@ -58,7 +58,7 @@ describe("RepoNode", () => {
   });
 
   test("truncates project name when maxWidth is tight", async () => {
-    // overhead=4, project="my-project" (10), maxWidth=10 → available=6 → "my-..."
+    // overhead=4, project="my-project" (10), maxWidth=10 → available=6 → "my-pr…"
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
       expanded: false,
@@ -67,7 +67,7 @@ describe("RepoNode", () => {
       worktreeCount: 1,
       maxWidth: 10,
     });
-    expect(output).toContain("my-...");
+    expect(output).toContain("my-pr…");
     expect(output).not.toContain("my-project");
     unmount();
   });

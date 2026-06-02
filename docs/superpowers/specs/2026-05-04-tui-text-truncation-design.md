@@ -11,7 +11,7 @@ Project names in `RepoNode` and pane labels in `DetailRow` are rendered without 
 
 | Location | Element | Change |
 |---|---|---|
-| `RepoNode` | Project name | Add right-truncation with `...` |
+| `RepoNode` | Project name | Add right-truncation with `…` |
 | `DetailRow` — `pane` | `window:index command` | Prefix-preserving truncation on command |
 | `DetailRow` — `pane-header` | `Panes (N)` | Right-truncation |
 | `DetailRow` — `check` | Check name | Right-truncation |
@@ -24,14 +24,14 @@ The kill-confirm status bar (`StatusBar` rendering `Kill pane ${mode.label}?`) c
 
 ### Truncation budget: string character length
 
-All truncation in this spec — and in the existing `truncateBranch` used by `WorktreeItem` — operates on `String.prototype.length` (UTF-16 code units), not terminal display-column width. This is consistent with the existing pattern. Ink's `wrap="truncate"` is not used; manual truncation gives control over the `...` suffix and prefix-preservation logic. Wide unicode characters (emoji wider than 1 column) are not compensated for — same as the existing branch truncation.
+All truncation in this spec — and in the existing `truncateBranch` used by `WorktreeItem` — operates on `String.prototype.length` (UTF-16 code units), not terminal display-column width. This is consistent with the existing pattern. Ink's `wrap="truncate"` is not used; manual truncation gives control over the `…` suffix and prefix-preservation logic. Wide unicode characters (emoji wider than 1 column) are not compensated for — same as the existing branch truncation.
 
 ### 1. Shared truncation utility — `src/tui/utils/truncate.ts`
 
 Two exported functions:
 
 ```ts
-// Right-truncates text to `available` chars, appending '...' if cut.
+// Right-truncates text to `available` chars, appending '…' if cut.
 // Currently lives in WorktreeItem.tsx — moved here, import updated there.
 export function truncateBranch(text: string, available: number): string
 
@@ -47,7 +47,7 @@ export function truncateWithPrefix(
 
 `truncateWithPrefix` logic:
 - If `prefix.length + rest.length <= available` → return `prefix + rest`
-- If `available <= prefix.length + 3` → `truncateBranch(prefix + rest, available)`
+- If `available <= prefix.length + 1` → `truncateBranch(prefix + rest, available)`
 - Otherwise → `prefix + truncateBranch(rest, available - prefix.length)`
 
 `WorktreeItem.tsx` updates its import; no behavior change.

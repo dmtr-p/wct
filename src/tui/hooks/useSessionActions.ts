@@ -155,7 +155,7 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     if (worktreeIndex === null) return;
 
     const resolvedItem = deps.treeItems[worktreeIndex];
-    if (!resolvedItem || resolvedItem.type !== "worktree") return;
+    if (resolvedItem?.type !== "worktree") return;
     const repo = deps.filteredRepos[resolvedItem.repoIndex];
     if (!repo) return;
     const wt = repo.worktrees[resolvedItem.worktreeIndex];
@@ -267,7 +267,7 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
     if (worktreeIndex === null) return;
 
     const item = deps.treeItems[worktreeIndex];
-    if (!item || item.type !== "worktree") return;
+    if (item?.type !== "worktree") return;
 
     const repo = deps.filteredRepos[item.repoIndex];
     const wt = repo?.worktrees[item.worktreeIndex];
@@ -376,7 +376,7 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     if (worktreeIndex === null) return;
 
     const item = deps.treeItems[worktreeIndex];
-    if (!item || item.type !== "worktree") return;
+    if (item?.type !== "worktree") return;
 
     const repo = deps.filteredRepos[item.repoIndex];
     const wt = repo?.worktrees[item.worktreeIndex];

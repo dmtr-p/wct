@@ -272,7 +272,7 @@ export function resolveCloseSelectedWorktreeAction({
   }
 
   const selectedWorktree = items[worktreeIndex];
-  if (!selectedWorktree || selectedWorktree.type !== "worktree") {
+  if (selectedWorktree?.type !== "worktree") {
     return { type: "noop" };
   }
 
@@ -381,11 +381,7 @@ export function resolveSelectedPane({
   selectedIndex,
 }: ResolveSelectedPaneOptions): SelectedPaneResolution | null {
   const selected = items[selectedIndex];
-  if (
-    !selected ||
-    selected.type !== "detail" ||
-    selected.detailKind !== "pane"
-  ) {
+  if (selected?.type !== "detail" || selected.detailKind !== "pane") {
     return null;
   }
 

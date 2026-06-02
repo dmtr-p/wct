@@ -229,7 +229,7 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
     if (worktreeIndex === null) return;
 
     const item = deps.treeItems[worktreeIndex];
-    if (!item || item.type !== "worktree") return;
+    if (item?.type !== "worktree") return;
 
     const repo = deps.filteredRepos[item.repoIndex];
     const wt = repo?.worktrees[item.worktreeIndex];

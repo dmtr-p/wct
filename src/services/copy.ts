@@ -25,7 +25,7 @@ function expandDirectory(dirPath: string, baseDir: string) {
     const info = yield* Effect.catch(fs.stat(fullPath), () =>
       Effect.succeed(null),
     );
-    if (!info || info.type !== "Directory") {
+    if (info?.type !== "Directory") {
       return [];
     }
 

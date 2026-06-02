@@ -10,11 +10,32 @@ export interface RegistryItem {
   created_at: number;
 }
 
+export type RegistryRegistrationStatus =
+  | "registered"
+  | "already-registered"
+  | "updated";
+
+export interface RegistryRegisterOptions {
+  forceRename?: boolean;
+}
+
+export type RegistryRegistrationResult =
+  | {
+      status: "registered" | "already-registered";
+      item: RegistryItem;
+    }
+  | {
+      status: "updated";
+      item: RegistryItem;
+      previousItem: RegistryItem;
+    };
+
 export interface RegistryServiceApi {
   register: (
     repoPath: string,
     project: string,
-  ) => Effect.Effect<RegistryItem, WctError>;
+    options?: RegistryRegisterOptions,
+  ) => Effect.Effect<RegistryRegistrationResult, WctError>;
   unregister: (repoPath: string) => Effect.Effect<boolean, WctError>;
   listRepos: () => Effect.Effect<RegistryItem[], WctError>;
   findByPath: (
@@ -40,18 +61,53 @@ function registryDb<A>(
 }
 
 export const liveRegistryService: RegistryServiceApi = RegistryService.of({
-  register: (repoPath, project) =>
+  register: (repoPath, project, options) =>
     registryDb("register repo", (db) => {
-      const id = generateId();
-      const now = Date.now();
-      return db
-        .query(
-          `INSERT INTO registry (id, repo_path, project, created_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(repo_path) DO UPDATE SET project = excluded.project
-           RETURNING *`,
-        )
-        .get(id, repoPath, project, now) as RegistryItem;
+      return db.transaction(() => {
+        const id = generateId();
+        const now = Date.now();
+        const inserted =
+          (db
+            .query(
+              `INSERT INTO registry (id, repo_path, project, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(repo_path) DO NOTHING
+               RETURNING *`,
+            )
+            .get(id, repoPath, project, now) as RegistryItem | null) ?? null;
+
+        if (inserted) {
+          return {
+            status: "registered",
+            item: inserted,
+          } satisfies RegistryRegistrationResult;
+        }
+
+        const existing = db
+          .query("SELECT * FROM registry WHERE repo_path = ?")
+          .get(repoPath) as RegistryItem;
+
+        if (options?.forceRename === true && existing.project !== project) {
+          const item = db
+            .query(
+              `UPDATE registry
+               SET project = ?
+               WHERE repo_path = ?
+               RETURNING *`,
+            )
+            .get(project, repoPath) as RegistryItem;
+          return {
+            status: "updated",
+            item,
+            previousItem: existing,
+          } satisfies RegistryRegistrationResult;
+        }
+
+        return {
+          status: "already-registered",
+          item: existing,
+        } satisfies RegistryRegistrationResult;
+      })();
     }),
 
   unregister: (repoPath) =>

@@ -1,12 +1,15 @@
 // src/tui/hooks/useModalActions.ts
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { openWorktree, resolveOpenOptions } from "../../commands/open";
-import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
-import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
+import {
+  type WorkspaceOpenResult,
+  WorkspaceService,
+  type WorkspaceUpResult,
+  type WorkspaceWarning,
+} from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
@@ -16,6 +19,23 @@ import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { SessionIdeDefaults } from "./useSessionOptionsState";
 import type { TmuxClientDiscovery } from "./useTmux";
+
+function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
+  return result.attempts.tmux.attempted && result.attempts.tmux.ok;
+}
+
+function formatWorkspaceWarning(warning: WorkspaceWarning): string {
+  switch (warning._tag) {
+    case "SetupFailed":
+      return `${warning.optional ? "Optional setup failed" : "Setup failed"}: ${warning.name}: ${warning.error.message}`;
+    case "VSCodeSyncFailed":
+      return `VS Code workspace sync failed: ${warning.error.message}`;
+    case "TmuxStartFailed":
+      return `Failed to create tmux session: ${warning.error.message}`;
+    case "IdeOpenFailed":
+      return `Failed to open IDE: ${warning.error.message}`;
+  }
+}
 
 export interface ModalActionDeps {
   treeItems: TreeItem[];
@@ -39,7 +59,7 @@ export interface ModalActionDeps {
   switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   handleStartResult: (
-    result: StartWorktreeSessionResult,
+    result: WorkspaceUpResult,
     autoSwitch: boolean,
   ) => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -116,25 +136,42 @@ export function createHandleOpen(deps: ModalActionDeps) {
 
       try {
         try {
-          const resolved = await runTuiSilentPromise(
-            resolveOpenOptions({
-              branch: requestedBranch,
-              base: opts.base,
-              cwd: deps.openModalRepoPath || undefined,
-              pr: opts.pr,
-              profile: opts.profile,
-              prompt: opts.prompt,
-              existing: opts.existing,
-              ide: !opts.noIde,
-              noIde: opts.noIde,
-            }),
+          const result = await tuiRuntime.runPromise(
+            WorkspaceService.use((service) =>
+              service.open({
+                branch: requestedBranch,
+                base: opts.base,
+                cwd: deps.openModalRepoPath || undefined,
+                pr: opts.pr,
+                profile: opts.profile,
+                prompt: opts.prompt,
+                existing: opts.existing,
+                ide: !opts.noIde,
+                noIde: opts.noIde,
+              }),
+            ),
           );
-          const result = await runTuiSilentPromise(openWorktree(resolved));
           if (result.warnings.length > 0) {
-            appendWarning(result.warnings.join("\n"));
+            appendWarning(
+              result.warnings.map(formatWorkspaceWarning).join("\n"),
+            );
           }
 
-          if (!opts.noAttach && result.tmuxSessionStarted) {
+          try {
+            await runTuiSilentPromise(
+              registerProject({
+                path: result.mainRepoPath,
+                name: result.projectName,
+                tolerateConfigErrors: true,
+              }),
+            );
+          } catch (error) {
+            appendWarning(
+              `Project registration failed after open: ${toWctError(error).message}`,
+            );
+          }
+
+          if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
             const liveClient = await deps.discoverClient();
             if (liveClient.type === "single") {
               const switched = await deps.switchSession(
@@ -231,15 +268,17 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
 
     void (async () => {
       try {
-        const startResult = await tuiRuntime.runPromise(
-          startWorktreeSession({
-            path: worktreePath,
-            profile: result.profile,
-            ide: !result.noIde,
-            noIde: result.noIde,
-          }),
+        const upResult = await tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.up({
+              path: worktreePath,
+              profile: result.profile,
+              ide: !result.noIde,
+              noIde: result.noIde,
+            }),
+          ),
         );
-        await deps.handleStartResult(startResult, result.autoSwitch);
+        await deps.handleStartResult(upResult, result.autoSwitch);
       } catch (error) {
         deps.showActionError(toWctError(error).message);
         await deps.refreshAll();
@@ -270,6 +309,7 @@ export function createHandleAddProject(deps: ModalActionDeps) {
           registerProject({
             path: result.path,
             name: result.nameManuallyEdited ? result.name : undefined,
+            forceRename: result.nameManuallyEdited,
             tolerateConfigErrors: true,
           }),
         );

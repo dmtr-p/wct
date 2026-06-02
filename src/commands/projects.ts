@@ -72,17 +72,30 @@ export function projectsAddCommand(opts?: {
 > {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;
-    const { item, repoPath, projectName } = yield* registerProject({
+    const { registration, repoPath, projectName } = yield* registerProject({
       path: opts?.path,
       name: opts?.name,
+      forceRename: opts?.name !== undefined,
       tolerateConfigErrors: true,
     });
 
     if (json) {
-      yield* jsonSuccess(item);
+      yield* jsonSuccess(registration);
       return;
     }
-    yield* logger.success(`Added ${repoPath} as '${projectName}'`);
+    if (registration.status === "registered") {
+      yield* logger.success(`Added ${repoPath} as '${projectName}'`);
+      return;
+    }
+
+    if (registration.status === "updated") {
+      yield* logger.success(
+        `Updated ${repoPath} from '${registration.previousItem.project}' to '${projectName}'`,
+      );
+      return;
+    }
+
+    yield* logger.info(`Already registered ${repoPath} as '${projectName}'`);
   });
 }
 

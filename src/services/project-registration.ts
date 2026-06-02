@@ -5,6 +5,7 @@ import { loadConfig } from "../config/loader";
 import { commandError, type WctError } from "../errors";
 import {
   type RegistryItem,
+  type RegistryRegistrationResult,
   RegistryService,
   type RegistryServiceApi,
 } from "./registry-service";
@@ -16,11 +17,13 @@ import {
 export interface RegisterProjectOptions {
   path?: string;
   name?: string;
+  forceRename?: boolean;
   tolerateConfigErrors?: boolean;
 }
 
 export interface RegisterProjectResult {
   item: RegistryItem;
+  registration: RegistryRegistrationResult;
   repoPath: string;
   projectName: string;
 }
@@ -108,14 +111,17 @@ export function registerProject(
       options.tolerateConfigErrors ?? false,
     );
 
-    const item = yield* RegistryService.use((service) =>
-      service.register(repoPath, projectName),
+    const registration = yield* RegistryService.use((service) =>
+      service.register(repoPath, projectName, {
+        forceRename: options.forceRename,
+      }),
     );
 
     return {
-      item,
+      item: registration.item,
+      registration,
       repoPath,
-      projectName,
+      projectName: registration.item.project,
     };
   });
 }

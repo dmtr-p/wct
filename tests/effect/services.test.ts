@@ -10,6 +10,7 @@ import { RegistryService } from "../../src/services/registry-service";
 import { SetupService } from "../../src/services/setup-service";
 import { TmuxService } from "../../src/services/tmux";
 import { VSCodeWorkspaceService } from "../../src/services/vscode-workspace";
+import { WorkspaceService } from "../../src/services/workspace-service";
 import { WorktreeService } from "../../src/services/worktree-service";
 
 describe("WctServicesLayer", () => {
@@ -27,6 +28,7 @@ describe("WctServicesLayer", () => {
             const tmux = yield* TmuxService;
             const vscode = yield* VSCodeWorkspaceService;
             const worktree = yield* WorktreeService;
+            const workspace = yield* WorkspaceService;
             const json = yield* JsonFlag;
 
             expect(typeof github.isGhInstalled).toBe("function");
@@ -36,6 +38,8 @@ describe("WctServicesLayer", () => {
             expect(typeof tmux.sessionExists).toBe("function");
             expect(typeof vscode.syncWorkspaceState).toBe("function");
             expect(typeof worktree.isGitRepo).toBe("function");
+            expect(typeof workspace.up).toBe("function");
+            expect(typeof workspace.down).toBe("function");
             expect(json).toBe(false);
           }),
       );

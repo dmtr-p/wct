@@ -9,12 +9,12 @@ import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
-import { liveTmuxService } from "../src/services/tmux";
+import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return provideWctServices(
@@ -269,6 +269,65 @@ describe("upCommand", () => {
     });
   });
 
+  test("passes CLI options through to WorkspaceService.up", async () => {
+    const receivedOptions: unknown[] = [];
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: (options) =>
+        Effect.sync(() => {
+          receivedOptions.push(options);
+          return {
+            operation: "up" as const,
+            worktreePath: "/tmp/myapp-feature",
+            mainRepoPath: "/tmp/myapp",
+            branch: "feature",
+            sessionName: "myapp-feature",
+            projectName: "myapp",
+            env: {
+              WCT_WORKTREE_DIR: "/tmp/myapp-feature",
+              WCT_MAIN_DIR: "/tmp/myapp",
+              WCT_BRANCH: "feature",
+              WCT_PROJECT: "myapp",
+            },
+            warnings: [],
+            attempts: {
+              tmux: {
+                attempted: false as const,
+                reason: "tmux_not_configured",
+              },
+              ide: { attempted: false as const, reason: "ide_not_configured" },
+            },
+          };
+        }),
+      down: () => Effect.die("unused"),
+      close: () => Effect.die("unused"),
+    };
+
+    await runBunPromise(
+      withTestServices(
+        upCommand({
+          ide: true,
+          noIde: true,
+          noAttach: true,
+          profile: "focused",
+          path: "/tmp/myapp-feature",
+          branch: "feature",
+        }),
+        { workspace },
+      ),
+    );
+
+    expect(receivedOptions).toEqual([
+      {
+        ide: true,
+        noIde: true,
+        profile: "focused",
+        path: "/tmp/myapp-feature",
+        branch: "feature",
+      },
+    ]);
+  });
+
   test("resolves worktree path via --path flag outside a git repo", async () => {
     const fixture = await createLinkedWorktreeFixture(
       "wct-up-path-flag-",
@@ -304,7 +363,7 @@ tmux:
               Effect.succeed(cwd === wtPath ? "feature-branch" : null),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: (_name, workingDir) =>
               Effect.sync(() => {
                 createCalls.push(workingDir);
@@ -358,7 +417,7 @@ tmux:
               Effect.succeed(cwd === wtPath ? "feature-branch" : "main"),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             createSession: (_name, workingDir) =>
               Effect.sync(() => {
                 createCalls.push(workingDir);
@@ -417,7 +476,7 @@ tmux:
                 Effect.succeed(cwd === wtPath ? "feature-branch" : null),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: (_name, _workingDir) =>
                 Effect.succeed({
                   _tag: "Created" as const,
@@ -484,7 +543,7 @@ tmux:
               getCurrentBranch: () => Effect.succeed("main"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: () =>
                 Effect.fail(commandError("tmux_error", "tmux boom")),
             },
@@ -546,7 +605,7 @@ tmux:
               getCurrentBranch: () => Effect.succeed("main"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: () =>
                 Effect.succeed({
                   _tag: "Created" as const,
@@ -633,7 +692,7 @@ tmux:
               getCurrentBranch: () => Effect.succeed("main"),
             },
             tmux: {
-              ...liveTmuxService,
+              ...noopTmuxService,
               createSession: () =>
                 Effect.succeed({
                   _tag: "Created" as const,
@@ -668,6 +727,68 @@ tmux:
       }
       process.chdir(originalDir);
       await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  test("json output emits the final workspace result only", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () =>
+        Effect.succeed({
+          operation: "up",
+          worktreePath: "/tmp/myapp-feature",
+          mainRepoPath: "/tmp/myapp",
+          branch: "feature",
+          sessionName: "myapp-feature",
+          projectName: "myapp",
+          env: {
+            WCT_WORKTREE_DIR: "/tmp/myapp-feature",
+            WCT_MAIN_DIR: "/tmp/myapp",
+            WCT_BRANCH: "feature",
+            WCT_PROJECT: "myapp",
+          },
+          warnings: [
+            {
+              _tag: "TmuxStartFailed",
+              operation: "up",
+              error: { code: "tmux_error", message: "tmux boom" },
+            },
+          ],
+          attempts: {
+            tmux: {
+              attempted: true,
+              ok: false,
+              error: { code: "tmux_error", message: "tmux boom" },
+            },
+            ide: { attempted: false, reason: "ide_not_configured" },
+          },
+        }),
+      down: () => Effect.die("unused"),
+      close: () => Effect.die("unused"),
+    };
+
+    try {
+      await runBunPromise(
+        withTestServices(upCommand({ noAttach: true }), {
+          json: true,
+          workspace,
+        }),
+      );
+
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output.ok).toBe(true);
+      expect(output.data.operation).toBe("up");
+      expect(output.data.warnings).toEqual([
+        {
+          _tag: "TmuxStartFailed",
+          operation: "up",
+          error: { code: "tmux_error", message: "tmux boom" },
+        },
+      ]);
+      expect(output.data).not.toHaveProperty("events");
+    } finally {
+      logSpy.mockRestore();
     }
   });
 });

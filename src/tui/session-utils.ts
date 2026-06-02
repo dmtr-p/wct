@@ -1,6 +1,4 @@
-// src/tui/session-utils.ts
-
-import type { StartWorktreeSessionResult } from "../commands/worktree-session";
+import type { WorkspaceUpResult } from "../services/workspace-service";
 import type { TmuxClientDiscovery } from "./hooks/useTmux";
 
 interface ResolveSessionSwitchTargetOptions {
@@ -20,6 +18,13 @@ export function resolveSessionHandoff({
   targetSession,
   sessions,
 }: ResolveSessionSwitchTargetOptions): SessionHandoff {
+  const targetExists = sessions.some(
+    (session) => session.name === targetSession,
+  );
+  if (!targetExists) {
+    return { type: "not-needed" };
+  }
+
   if (client.type === "multiple" || client.type === "error") {
     return { type: "blocked" };
   }
@@ -43,12 +48,16 @@ export function resolveSessionHandoff({
 }
 
 export function resolveStartActionMessage(
-  result: StartWorktreeSessionResult,
+  result: WorkspaceUpResult,
 ): string | null {
   const tmuxError =
-    result.tmux.attempted && !result.tmux.ok ? result.tmux.error.message : null;
+    result.attempts.tmux.attempted && !result.attempts.tmux.ok
+      ? result.attempts.tmux.error.message
+      : null;
   const ideError =
-    result.ide.attempted && !result.ide.ok ? result.ide.error.message : null;
+    result.attempts.ide.attempted && !result.attempts.ide.ok
+      ? result.attempts.ide.error.message
+      : null;
 
   if (tmuxError && ideError) {
     return `${tmuxError} (IDE also failed: ${ideError})`;

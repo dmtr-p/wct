@@ -96,7 +96,7 @@ describe("projects command", () => {
     });
   });
 
-  test("projects add --json returns the registered registry item envelope", () => {
+  test("projects add --json returns the registered registration outcome", () => {
     const result = runCliProcess([
       "projects",
       "add",
@@ -111,12 +111,15 @@ describe("projects command", () => {
     expect(result.stderr.toString()).toBe("");
     expect(JSON.parse(stdout)).toEqual({
       ok: true,
-      data: expect.objectContaining({
-        repo_path: resolvedRepoDir,
-        project: "example-project",
-        id: expect.any(String),
-        created_at: expect.any(Number),
-      }),
+      data: {
+        status: "registered",
+        item: expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "example-project",
+          id: expect.any(String),
+          created_at: expect.any(Number),
+        }),
+      },
     });
 
     const listResult = runCliProcess(["projects", "list", "--json"]);
@@ -147,6 +150,126 @@ describe("projects command", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr.toString()).toBe("");
     expect(stdout).toContain(`Added ${resolvedRepoDir} as 'example-project'`);
+  });
+
+  test("projects add without --name preserves an existing registration", () => {
+    const first = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "original-project",
+      "--json",
+    ]);
+    expect(first.exitCode).toBe(0);
+
+    writeFileSync(
+      join(repoDir, ".wct.yaml"),
+      'project_name: "config-project"\n',
+    );
+    const result = runCliProcess(["projects", "add", repoDir]);
+    const stdout = stripAnsi(result.stdout.toString());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(stdout).toContain(
+      `Already registered ${resolvedRepoDir} as 'original-project'`,
+    );
+
+    const listResult = runCliProcess(["projects", "list", "--json"]);
+    expect(JSON.parse(listResult.stdout.toString())).toEqual({
+      ok: true,
+      data: [
+        expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "original-project",
+        }),
+      ],
+    });
+  });
+
+  test("projects add --name can update an existing registration name", () => {
+    const first = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "original-project",
+      "--json",
+    ]);
+    expect(first.exitCode).toBe(0);
+
+    const result = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "renamed-project",
+    ]);
+    const stdout = stripAnsi(result.stdout.toString());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(stdout).toContain(
+      `Updated ${resolvedRepoDir} from 'original-project' to 'renamed-project'`,
+    );
+
+    const jsonResult = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "renamed-project",
+      "--json",
+    ]);
+    expect(JSON.parse(jsonResult.stdout.toString())).toEqual({
+      ok: true,
+      data: {
+        status: "already-registered",
+        item: expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "renamed-project",
+        }),
+      },
+    });
+  });
+
+  test("projects add --name --json returns updated when renaming an existing registration", () => {
+    const first = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "original-project",
+      "--json",
+    ]);
+    expect(first.exitCode).toBe(0);
+
+    const result = runCliProcess([
+      "projects",
+      "add",
+      repoDir,
+      "--name",
+      "renamed-project",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(JSON.parse(result.stdout.toString())).toEqual({
+      ok: true,
+      data: {
+        status: "updated",
+        item: expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "renamed-project",
+        }),
+        previousItem: expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "original-project",
+        }),
+      },
+    });
   });
 
   test("projects remove --json returns removed metadata for the repo path", () => {
@@ -231,10 +354,13 @@ describe("projects command", () => {
     expect(addResult.stderr.toString()).toBe("");
     expect(JSON.parse(addResult.stdout.toString())).toEqual({
       ok: true,
-      data: expect.objectContaining({
-        repo_path: resolvedRepoDir,
-        project: "cwd-project",
-      }),
+      data: {
+        status: "registered",
+        item: expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "cwd-project",
+        }),
+      },
     });
 
     const listAfterAdd = runCliProcess(["--json", "projects", "list"]);
@@ -376,10 +502,13 @@ describe("projects command", () => {
     expect(result.stderr.toString()).toBe("");
     expect(JSON.parse(stdout)).toEqual({
       ok: true,
-      data: expect.objectContaining({
-        repo_path: resolvedRepoDir,
-        project: "repo",
-      }),
+      data: {
+        status: "registered",
+        item: expect.objectContaining({
+          repo_path: resolvedRepoDir,
+          project: "repo",
+        }),
+      },
     });
   });
 

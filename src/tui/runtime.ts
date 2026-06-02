@@ -18,6 +18,10 @@ import {
   VSCodeWorkspaceService,
 } from "../services/vscode-workspace";
 import {
+  liveWorkspaceService,
+  WorkspaceService,
+} from "../services/workspace-service";
+import {
   liveWorktreeService,
   WorktreeService,
 } from "../services/worktree-service";
@@ -30,6 +34,7 @@ const tuiLayer = Layer.mergeAll(
   Layer.succeed(RegistryService, liveRegistryService),
   Layer.succeed(SetupService, liveSetupService),
   Layer.succeed(VSCodeWorkspaceService, liveVSCodeWorkspaceService),
+  Layer.succeed(WorkspaceService, liveWorkspaceService),
   Layer.succeed(PrCacheService, livePrCacheService),
   BunServices.layer,
 );

@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import type React from "react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const runPromiseMock = vi.hoisted(() => vi.fn());
 
@@ -81,7 +81,22 @@ async function renderNode(node: React.ReactElement) {
 }
 
 describe("OpenModal form variants", () => {
+  // Suppress spurious React reconciler "duplicate key" warnings triggered by
+  // ink's internal rendering – the "key" value is a stack trace string, not
+  // user-defined keys.
+  const originalConsoleError = console.error;
+  const suppressedPattern = /Encountered two children with the same key/;
+
+  beforeEach(() => {
+    console.error = (...args: unknown[]) => {
+      if (typeof args[0] === "string" && suppressedPattern.test(args[0]))
+        return;
+      originalConsoleError(...args);
+    };
+  });
+
   afterEach(() => {
+    console.error = originalConsoleError;
     vi.clearAllMocks();
     runPromiseMock.mockReset();
   });

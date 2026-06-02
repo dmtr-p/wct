@@ -37,6 +37,11 @@ import {
   type VSCodeWorkspaceService as VSCodeWorkspaceServiceApi,
 } from "../services/vscode-workspace";
 import {
+  liveWorkspaceService,
+  WorkspaceService,
+  type WorkspaceService as WorkspaceServiceApi,
+} from "../services/workspace-service";
+import {
   liveWorktreeService,
   WorktreeService,
   type WorktreeService as WorktreeServiceApi,
@@ -51,7 +56,8 @@ export type WctServices =
   | SetupServiceApi
   | TmuxServiceApi
   | VSCodeWorkspaceServiceApi
-  | WorktreeServiceApi;
+  | WorktreeServiceApi
+  | WorkspaceServiceApi;
 
 /**
  * Layer providing every live wct service plus the default `JsonFlag` value.
@@ -68,6 +74,7 @@ export const WctServicesLayer = Layer.mergeAll(
   Layer.succeed(TmuxService, liveTmuxService),
   Layer.succeed(VSCodeWorkspaceService, liveVSCodeWorkspaceService),
   Layer.succeed(WorktreeService, liveWorktreeService),
+  Layer.succeed(WorkspaceService, liveWorkspaceService),
   Layer.succeed(RegistryService, liveRegistryService),
   Layer.succeed(JsonFlag, false),
 );

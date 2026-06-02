@@ -1,24 +1,20 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import {
-  loadConfig,
-  resolveIdeLaunch,
-  resolveProfile,
-  resolveWorktreePath,
-} from "../config/loader";
+import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
-import { commandError, type WctError } from "../errors";
-import { copyEntries } from "../services/copy";
-import { GitHubService, parsePrArg } from "../services/github-service";
+import type { WctError } from "../errors";
+import { toWctError } from "../errors";
 import { registerProject } from "../services/project-registration";
-import { SetupService } from "../services/setup-service";
-import { formatSessionName } from "../services/tmux";
-import { VSCodeWorkspaceService } from "../services/vscode-workspace";
-import { WorktreeService } from "../services/worktree-service";
-import type { WctEnv } from "../types/env";
+import {
+  type WorkspaceOpenOptions,
+  type WorkspaceOpenResult,
+  type WorkspaceReporter,
+  WorkspaceService,
+} from "../services/workspace-service";
+import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
-import { launchSessionAndIde, maybeAttachSession } from "./session";
+import { maybeAttachSession } from "./session";
 
 export const commandDef: CommandDef = {
   name: "open",
@@ -88,320 +84,59 @@ export interface OpenOptions {
   profile?: string;
 }
 
-export interface OpenRequest {
-  branch?: string;
-  existing?: boolean;
-  base?: string;
-  cwd?: string;
-  ide?: boolean;
-  noIde?: boolean;
-  pr?: string;
-  prompt?: string;
-  profile?: string;
+export interface OpenCommandOptions extends WorkspaceOpenOptions {
+  noAttach?: boolean;
 }
 
-export interface OpenWorktreeResult {
-  worktreePath: string;
-  branch: string;
-  sessionName: string;
-  projectName: string;
-  created: boolean;
-  warnings: string[];
-  tmuxSessionStarted: boolean;
+function registrationFailure(error: unknown) {
+  const wctError = toWctError(error);
+  return {
+    status: "failed" as const,
+    error: {
+      code: wctError.code,
+      message: wctError.message,
+    },
+  };
 }
 
-export function resolveOpenOptions(
-  input: OpenRequest,
-): Effect.Effect<OpenOptions, WctError, WctServices> {
+function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
   return Effect.gen(function* () {
-    const {
-      branch,
-      existing = false,
-      base,
-      cwd,
-      ide = false,
-      noIde = false,
-      pr,
-      prompt,
-      profile,
-    } = input;
-
-    if (ide && noIde) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Options --ide and --no-ide cannot be used together",
-        ),
-      );
+    if (result.profileName) {
+      yield* logger.info(`Using profile '${result.profileName}'`);
     }
 
-    if (pr && branch) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Cannot use --pr together with a branch argument",
-        ),
-      );
-    }
-
-    if (pr && base) {
-      return yield* Effect.fail(
-        commandError("invalid_options", "Cannot use --pr together with --base"),
-      );
-    }
-
-    if (pr && existing) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Cannot use --pr together with --existing",
-        ),
-      );
-    }
-
-    if (pr) {
-      const prNumber = parsePrArg(pr);
-      if (prNumber === null) {
-        return yield* Effect.fail(
-          commandError(
-            "pr_error",
-            `Invalid --pr value: '${pr}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
-          ),
-        );
-      }
-
-      const ghInstalled = yield* GitHubService.use((service) =>
-        service.isGhInstalled(),
-      );
-      if (!ghInstalled) {
-        return yield* Effect.fail(
-          commandError(
-            "gh_not_installed",
-            "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
-          ),
-        );
-      }
-
-      const resolvedPr = yield* GitHubService.use((service) =>
-        service.resolvePr(prNumber, cwd),
-      );
-      const resolvedBranch = resolvedPr.branch;
-      let remote = "origin";
-
-      if (resolvedPr.headOwner && resolvedPr.headRepo) {
-        const { headOwner, headRepo } = resolvedPr;
-        const existingRemote = yield* GitHubService.use((service) =>
-          service.findRemoteForRepo(headOwner, headRepo, cwd),
-        );
-
-        if (existingRemote) {
-          remote = existingRemote;
-        } else if (resolvedPr.isCrossRepository) {
-          remote = headOwner;
-          yield* GitHubService.use((service) =>
-            service.addForkRemote(remote, headOwner, headRepo, cwd),
-          );
-        }
-      }
-
-      yield* GitHubService.use((service) =>
-        service.fetchBranch(resolvedBranch, remote, cwd),
-      );
-
-      const localExists = yield* WorktreeService.use((service) =>
-        service.branchExists(resolvedBranch, cwd),
-      );
-
-      return {
-        branch: resolvedBranch,
-        existing: localExists,
-        base: localExists ? undefined : `${remote}/${resolvedBranch}`,
-        cwd,
-        ide,
-        noIde,
-        prompt,
-        profile,
-      };
-    }
-
-    if (!branch) {
-      return yield* Effect.fail(
-        commandError("missing_branch_arg", "Missing branch name"),
-      );
-    }
-
-    return {
-      branch,
-      existing,
-      base,
-      cwd,
-      ide,
-      noIde,
-      prompt,
-      profile,
-    };
-  });
-}
-
-export function openWorktree(
-  options: OpenOptions,
-): Effect.Effect<OpenWorktreeResult, WctError, WctServices> {
-  return Effect.gen(function* () {
-    const { branch, existing, base, cwd, ide, noIde, prompt, profile } =
-      options;
-
-    const repo = yield* WorktreeService.use((service) =>
-      service.isGitRepo(cwd),
-    );
-    if (!repo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
-    }
-
-    const mainDir = yield* WorktreeService.use((service) =>
-      service.getMainRepoPath(cwd),
-    );
-    if (!mainDir) {
-      return yield* Effect.fail(
-        commandError("worktree_error", "Could not determine repository root"),
-      );
-    }
-
-    const config = yield* Effect.mapError(loadConfig(mainDir), (error) =>
-      commandError("config_error", error.message, error),
-    );
-
-    const { config: resolved, profileName } = yield* Effect.try({
-      try: () => resolveProfile(config, branch, profile),
-      catch: (error) =>
-        commandError(
-          "config_error",
-          error instanceof Error ? error.message : String(error),
-        ),
-    });
-    if (profileName) {
-      yield* logger.info(`Using profile '${profileName}'`);
-    }
-    const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
-
-    // Auto-register repo in TUI registry
-    yield* Effect.catch(
-      registerProject({
-        path: mainDir,
-        name: resolved.project_name ?? basename(mainDir),
-        tolerateConfigErrors: true,
-      }),
-      () => Effect.void,
-    );
-
-    if (existing && base) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Options --existing and --base cannot be used together",
-        ),
-      );
-    }
-
-    if (base) {
-      const baseExists = yield* WorktreeService.use((service) =>
-        service.branchExists(base, cwd),
-      );
-      if (!baseExists) {
-        return yield* Effect.fail(
-          commandError(
-            "base_branch_not_found",
-            `Base branch '${base}' does not exist`,
-          ),
-        );
-      }
-    }
-
-    const worktreePath = resolveWorktreePath(
-      config.worktree_dir,
-      branch,
-      mainDir,
-      config.project_name,
-    );
-    const sessionName = formatSessionName(basename(worktreePath));
-    const warnings: string[] = [];
-
-    const env: WctEnv = {
-      WCT_WORKTREE_DIR: worktreePath,
-      WCT_MAIN_DIR: mainDir,
-      WCT_BRANCH: branch,
-      WCT_PROJECT: config.project_name,
-      WCT_PROMPT: prompt,
-    };
-
-    yield* logger.info(
-      `Creating worktree for '${branch}'${base ? ` based on '${base}'` : ""}`,
-    );
-    const worktreeResult = yield* WorktreeService.use((service) =>
-      service.createWorktree(worktreePath, branch, existing, base, cwd),
-    );
-
-    if (worktreeResult._tag === "PathConflict") {
-      return yield* Effect.fail(
-        commandError(
-          "worktree_error",
-          worktreeResult.existingBranch
-            ? `Path already exists for branch '${worktreeResult.existingBranch}', not '${branch}'`
-            : `Path '${worktreePath}' already exists and is not a registered worktree for '${branch}'`,
-        ),
-      );
-    }
-
-    if (worktreeResult._tag === "AlreadyExists") {
-      yield* logger.info("Worktree already exists");
+    if (result.created) {
+      yield* logger.success(`Created worktree at ${result.worktreePath}`);
     } else {
-      yield* logger.success(`Created worktree at ${worktreePath}`);
+      yield* logger.info("Worktree already exists");
     }
 
-    if (
-      ideLaunch.open &&
-      (ideLaunch.config?.name ?? "vscode") === "vscode" &&
-      ideLaunch.config?.fork_workspace
-    ) {
-      yield* logger.info("Syncing VS Code workspace state...");
-      const syncResult = yield* VSCodeWorkspaceService.use((service) =>
-        service.syncWorkspaceState(mainDir, worktreePath),
-      );
-      if (syncResult.success && !syncResult.skipped) {
-        yield* logger.success("VS Code workspace state synced");
-      } else if (syncResult.skipped) {
-        yield* logger.info("VS Code workspace already exists, skipping sync");
+    if (result.attempts.vscode.attempted) {
+      if (result.attempts.vscode.ok) {
+        yield* result.attempts.vscode.value.skipped
+          ? logger.info("VS Code workspace already exists, skipping sync")
+          : logger.success("VS Code workspace state synced");
       } else {
-        const warning = `VS Code workspace sync failed: ${syncResult.error}`;
-        warnings.push(warning);
-        yield* logger.warn(warning);
+        yield* logger.warn(
+          `VS Code workspace sync failed: ${result.attempts.vscode.error.message}`,
+        );
       }
     }
 
-    const copyConfig = resolved.copy;
-    if (copyConfig && copyConfig.length > 0) {
-      yield* logger.info("Copying files...");
-      const copyResults = yield* Effect.mapError(
-        copyEntries(copyConfig, mainDir, worktreePath),
-        (error) =>
-          commandError("worktree_error", "Failed to copy files", error),
+    if (result.attempts.copy.attempted && result.attempts.copy.ok) {
+      const copied = result.attempts.copy.value.filter((r) => r.success).length;
+      yield* logger.success(
+        `Copied ${copied}/${result.attempts.copy.value.length} files`,
       );
-      const copied = copyResults.filter((r) => r.success).length;
-      yield* logger.success(`Copied ${copied}/${copyResults.length} files`);
     }
 
-    const setupConfig = resolved.setup;
-    if (setupConfig && setupConfig.length > 0) {
-      yield* logger.info("Running setup commands...");
-      const setupResults = yield* SetupService.use((service) =>
-        service.runSetupCommands(setupConfig, worktreePath, env),
+    if (result.attempts.setup.attempted && result.attempts.setup.ok) {
+      const failedRequired = result.attempts.setup.value.filter(
+        (r) => r._tag === "Failed",
       );
-      const failedRequired = setupResults.filter((r) => r._tag === "Failed");
-      const failedOptional = setupResults.filter(
+      const failedOptional = result.attempts.setup.value.filter(
         (r) => r._tag === "OptionalFailed",
       );
-
       if (failedRequired.length === 0 && failedOptional.length === 0) {
         yield* logger.success("Setup complete");
       } else if (failedRequired.length === 0) {
@@ -413,53 +148,127 @@ export function openWorktree(
           `Setup completed with ${failedRequired.length} failure${failedRequired.length === 1 ? "" : "s"} and ${failedOptional.length} optional failure${failedOptional.length === 1 ? "" : "s"}`,
         );
       }
+    } else if (result.attempts.setup.attempted && !result.attempts.setup.ok) {
+      yield* logger.warn(
+        `Setup failed: ${result.attempts.setup.error.message}`,
+      );
+    }
 
-      for (const failure of failedRequired) {
-        warnings.push(
-          `Setup failed: ${failure.name}: ${failure.error ?? "Unknown error"}`,
-        );
-      }
-      for (const failure of failedOptional) {
-        warnings.push(
-          `Optional setup failed: ${failure.name}: ${failure.error ?? "Unknown error"}`,
+    if (result.attempts.tmux.attempted) {
+      if (result.attempts.tmux.ok) {
+        yield* result.attempts.tmux.value._tag === "AlreadyExists"
+          ? logger.info(`Tmux session '${result.sessionName}' already exists`)
+          : logger.success(`Created tmux session '${result.sessionName}'`);
+      } else {
+        yield* logger.warn(
+          `Failed to create tmux session: ${result.attempts.tmux.error.message}`,
         );
       }
     }
 
-    const launchResult = yield* launchSessionAndIde({
-      sessionName,
-      workingDir: worktreePath,
-      tmuxConfig: resolved.tmux,
-      env,
-      ideCommand: ideLaunch.open ? ideLaunch.command : undefined,
-      noIde: false,
-    });
+    if (result.attempts.ide.attempted) {
+      if (result.attempts.ide.ok) {
+        yield* logger.success("IDE opened");
+      } else {
+        yield* logger.warn(
+          `Failed to open IDE: ${result.attempts.ide.error.message}`,
+        );
+      }
+    }
 
-    yield* logger.success(`Worktree '${branch}' is ready`);
-
-    return {
-      worktreePath,
-      branch,
-      sessionName,
-      projectName: config.project_name,
-      created: worktreeResult._tag !== "AlreadyExists",
-      warnings,
-      tmuxSessionStarted: launchResult.tmuxSessionStarted,
-    };
+    yield* logger.success(`Worktree '${result.branch}' is ready`);
   });
 }
 
-export interface OpenCommandOptions extends OpenOptions {
-  noAttach?: boolean;
+function createOpenHumanReporter(
+  options: WorkspaceOpenOptions,
+): WorkspaceReporter {
+  let resolvedBranch = options.branch;
+  let resolvedBase = options.base;
+
+  return {
+    event: (event) => {
+      if (event._tag === "TargetResolved") {
+        resolvedBranch = event.branch ?? resolvedBranch;
+        resolvedBase = event.base ?? resolvedBase;
+        return Effect.void;
+      }
+
+      if (event._tag !== "AttemptStarted") return Effect.void;
+
+      switch (event.attempt) {
+        case "worktree":
+          return logger.info(
+            `Creating worktree${resolvedBranch ? ` for '${resolvedBranch}'` : ""}${
+              resolvedBase ? ` based on '${resolvedBase}'` : ""
+            }`,
+          );
+        case "vscode":
+          return logger.info("Syncing VS Code workspace state...");
+        case "copy":
+          return logger.info("Copying files...");
+        case "setup":
+          return logger.info("Running setup commands...");
+        case "tmux":
+          return logger.info("Creating tmux session...");
+        case "ide":
+          return logger.info("Opening IDE...");
+      }
+    },
+  };
 }
 
 export function openCommand(
   options: OpenCommandOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
-    const result = yield* openWorktree(options);
-    if (result.tmuxSessionStarted) {
-      yield* maybeAttachSession(result.sessionName, options.noAttach);
+    const { noAttach, ...workspaceOptions } = options;
+    const json = yield* JsonFlag;
+    const result = yield* WorkspaceService.use((service) =>
+      service.open({
+        ...workspaceOptions,
+        ...(json
+          ? {}
+          : { reporter: createOpenHumanReporter(workspaceOptions) }),
+      }),
+    );
+    const registration = yield* Effect.match(
+      registerProject({
+        path: result.mainRepoPath,
+        name: result.projectName ?? basename(result.mainRepoPath),
+        tolerateConfigErrors: true,
+      }),
+      {
+        onFailure: (error) => registrationFailure(error),
+        onSuccess: (success) => success.registration,
+      },
+    );
+
+    if (json) {
+      yield* jsonSuccess({
+        workspace: result,
+        registration,
+      });
+      return;
+    }
+
+    yield* logWorkspaceOpenResult(result);
+    if (registration.status === "registered") {
+      yield* logger.success(
+        `Registered project '${registration.item.project}'`,
+      );
+    } else if (registration.status === "failed") {
+      yield* logger.warn(
+        `Project registration failed after open: ${registration.error.message}`,
+      );
+    }
+
+    if (result.attempts.tmux.attempted && result.attempts.tmux.ok) {
+      yield* maybeAttachSession(result.sessionName, noAttach);
     }
   });
 }

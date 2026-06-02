@@ -1,10 +1,12 @@
 import { Effect } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import type { WctError } from "../errors";
+import { WorkspaceService } from "../services/workspace-service";
+import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 import { maybeAttachSession } from "./session";
-import { startWorktreeSession } from "./worktree-session";
 
 export const commandDef: CommandDef = {
   name: "up",
@@ -61,42 +63,50 @@ export interface UpOptions {
 
 export function upCommand(
   options?: UpOptions,
-): Effect.Effect<void, WctError, WctServices> {
+): Effect.Effect<
+  void,
+  WctError,
+  WctServices | "effect/unstable/cli/GlobalFlag/json"
+> {
   return Effect.gen(function* () {
     const { ide, noIde, noAttach, profile, path, branch } = options ?? {};
-    const result = yield* startWorktreeSession({
-      ide,
-      noIde,
-      profile,
-      path,
-      branch,
-    });
+    const result = yield* WorkspaceService.use((service) =>
+      service.up({ ide, noIde, profile, path, branch }),
+    );
+    const json = yield* JsonFlag;
+
+    if (json) {
+      yield* jsonSuccess(result);
+      return;
+    }
 
     if (result.profileName) {
       yield* logger.info(`Using profile '${result.profileName}'`);
     }
 
-    if (result.tmux.attempted) {
-      if (result.tmux.ok) {
-        yield* result.tmux.value._tag === "AlreadyExists"
+    if (result.attempts.tmux.attempted) {
+      if (result.attempts.tmux.ok) {
+        yield* result.attempts.tmux.value._tag === "AlreadyExists"
           ? logger.info(`Tmux session '${result.sessionName}' already exists`)
           : logger.success(`Created tmux session '${result.sessionName}'`);
       } else {
         yield* logger.warn(
-          `Failed to create tmux session: ${result.tmux.error.message}`,
+          `Failed to create tmux session: ${result.attempts.tmux.error.message}`,
         );
       }
     }
 
-    if (result.ide.attempted) {
-      if (result.ide.ok) {
+    if (result.attempts.ide.attempted) {
+      if (result.attempts.ide.ok) {
         yield* logger.success("IDE opened");
       } else {
-        yield* logger.warn(`Failed to open IDE: ${result.ide.error.message}`);
+        yield* logger.warn(
+          `Failed to open IDE: ${result.attempts.ide.error.message}`,
+        );
       }
     }
 
-    if (result.tmux.attempted && result.tmux.ok) {
+    if (result.attempts.tmux.attempted && result.attempts.tmux.ok) {
       yield* maybeAttachSession(result.sessionName, noAttach);
     }
 

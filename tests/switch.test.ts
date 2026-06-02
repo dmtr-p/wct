@@ -3,16 +3,12 @@ import { describe, expect, test } from "vitest";
 import { commandDef, switchCommand } from "../src/commands/switch";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
-import {
-  formatSessionName,
-  liveTmuxService,
-  type TmuxService,
-} from "../src/services/tmux";
+import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import {
   liveWorktreeService,
   type WorktreeService,
 } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 async function runCommand(
   branch: string,
@@ -50,7 +46,7 @@ describe("switchCommand", () => {
               }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(true),
             switchSession: (name) =>
               Effect.sync(() => {
@@ -88,7 +84,7 @@ describe("switchCommand", () => {
               }),
           },
           tmux: {
-            ...liveTmuxService,
+            ...noopTmuxService,
             sessionExists: () => Effect.succeed(true),
             attachSession: () =>
               Effect.fail(commandError("tmux_error", "attach failed")),

@@ -13,20 +13,22 @@ import { type DownOptions, downCommand } from "../src/commands/down";
 import { Command } from "../src/effect/cli";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
-import {
-  formatSessionName,
-  liveTmuxService,
-  type TmuxService,
-} from "../src/services/tmux";
+import { formatSessionName, type TmuxService } from "../src/services/tmux";
+import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
   type WorktreeService,
 } from "../src/services/worktree-service";
-import { withTestServices } from "./helpers/services";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 async function runCommand(
   options?: DownOptions,
-  overrides: { tmux?: TmuxService; worktree?: WorktreeService } = {},
+  overrides: {
+    json?: boolean;
+    tmux?: TmuxService;
+    worktree?: WorktreeService;
+    workspace?: WorkspaceService;
+  } = {},
 ) {
   await runBunPromise(withTestServices(downCommand(options), overrides));
 }
@@ -74,7 +76,7 @@ describe("downCommand behavior", () => {
       findWorktreeByBranch: () => Effect.succeed(null),
     };
     tmuxOverrides = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: () => Effect.succeed(undefined),
     };
@@ -119,7 +121,7 @@ describe("downCommand behavior", () => {
     let isGitRepoArg: string | undefined;
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const pathOverrides: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: (name: string) =>
         Effect.sync(() => {
@@ -149,7 +151,7 @@ describe("downCommand behavior", () => {
     let isGitRepoArg: string | undefined;
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const tmuxOverridesViaRoot: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: (name: string) =>
         Effect.sync(() => {
@@ -179,7 +181,7 @@ describe("downCommand behavior", () => {
     let isGitRepoArg: string | undefined;
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const tmuxOverridesByBranch: TmuxService = {
-      ...liveTmuxService,
+      ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
       killSession: (name: string) =>
         Effect.sync(() => {
@@ -227,5 +229,86 @@ describe("downCommand behavior", () => {
         worktree: worktreeOverrides,
       }),
     ).rejects.toThrow("tmux failed");
+  });
+
+  test("prints absent tmux sessions as informational output", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    tmuxOverrides = {
+      ...tmuxOverrides,
+      sessionExists: () => Effect.succeed(false),
+    };
+    cwdSpy.mockReturnValue("/tmp/myapp-feature-auth");
+
+    try {
+      await runCommand(undefined, {
+        tmux: tmuxOverrides,
+        worktree: worktreeOverrides,
+      });
+
+      const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
+      expect(
+        loggedLines.some((line) =>
+          line.includes("No tmux session 'myapp-feature-auth' found"),
+        ),
+      ).toBe(true);
+      expect(loggedLines.some((line) => line.includes("warn"))).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("json output emits the final result only", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await runCommand(
+        { path: "/tmp/myapp-feature-auth" },
+        {
+          json: true,
+          workspace: {
+            open: () => Effect.die("unused"),
+            up: () => Effect.die("unused"),
+            down: () =>
+              Effect.succeed({
+                operation: "down",
+                worktreePath: "/tmp/myapp-feature-auth",
+                sessionName: "myapp-feature-auth",
+                existed: false,
+                status: "absent",
+                attempts: {
+                  kill: {
+                    attempted: false,
+                    reason: "session_absent",
+                  },
+                },
+                warnings: [] as [],
+              }),
+            close: () => Effect.die("unused"),
+          },
+        },
+      );
+
+      expect(logSpy.mock.calls.length).toBe(1);
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toEqual({
+        ok: true,
+        data: {
+          operation: "down",
+          worktreePath: "/tmp/myapp-feature-auth",
+          sessionName: "myapp-feature-auth",
+          existed: false,
+          status: "absent",
+          attempts: {
+            kill: {
+              attempted: false,
+              reason: "session_absent",
+            },
+          },
+          warnings: [],
+        },
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

@@ -27,7 +27,6 @@ import {
   type SetupService as SetupServiceApi,
 } from "../../src/services/setup-service";
 import {
-  liveTmuxService,
   TmuxService,
   type TmuxService as TmuxServiceApi,
 } from "../../src/services/tmux";
@@ -36,6 +35,11 @@ import {
   VSCodeWorkspaceService,
   type VSCodeWorkspaceService as VSCodeWorkspaceServiceApi,
 } from "../../src/services/vscode-workspace";
+import {
+  liveWorkspaceService,
+  WorkspaceService,
+  type WorkspaceService as WorkspaceServiceApi,
+} from "../../src/services/workspace-service";
 import {
   liveWorktreeService,
   WorktreeService,
@@ -54,7 +58,33 @@ export interface ServiceOverrides {
   tmux?: TmuxServiceApi;
   vscodeWorkspace?: VSCodeWorkspaceServiceApi;
   worktree?: WorktreeServiceApi;
+  workspace?: WorkspaceServiceApi;
 }
+
+/**
+ * No-op TmuxService that never calls real tmux.
+ * Used as the default in tests to prevent side-effects on the host machine.
+ */
+export const noopTmuxService: TmuxServiceApi = {
+  listSessions: () => Effect.succeed(null),
+  isPaneAlive: () => Effect.succeed(null),
+  sessionExists: () => Effect.succeed(false),
+  getSessionStatus: () => Effect.succeed(null),
+  createSession: (_name, _workingDir) =>
+    Effect.succeed({ _tag: "Created", sessionName: _name }),
+  killSession: () => Effect.void,
+  getCurrentSession: () => Effect.succeed(null),
+  switchSession: () => Effect.void,
+  attachSession: () => Effect.void,
+  listPanes: () => Effect.succeed([]),
+  listClients: () => Effect.succeed([]),
+  detachClient: () => Effect.void,
+  switchClientToPane: () => Effect.void,
+  selectPane: () => Effect.void,
+  togglePaneZoom: () => Effect.void,
+  killPane: () => Effect.void,
+  refreshClient: () => Effect.void,
+};
 
 export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -80,7 +110,7 @@ export function withTestServices<A, E, R>(
   provided = Effect.provideService(
     provided,
     TmuxService,
-    overrides.tmux ?? liveTmuxService,
+    overrides.tmux ?? noopTmuxService,
   );
   provided = Effect.provideService(
     provided,
@@ -91,6 +121,11 @@ export function withTestServices<A, E, R>(
     provided,
     WorktreeService,
     overrides.worktree ?? liveWorktreeService,
+  );
+  provided = Effect.provideService(
+    provided,
+    WorkspaceService,
+    overrides.workspace ?? liveWorkspaceService,
   );
   provided = Effect.provideService(
     provided,

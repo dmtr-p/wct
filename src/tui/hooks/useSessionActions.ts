@@ -1,14 +1,14 @@
 // src/tui/hooks/useSessionActions.ts
 
 import { basename } from "node:path";
-import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { StartWorktreeSessionResult } from "../../commands/worktree-session";
-import { startWorktreeSession } from "../../commands/worktree-session";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
-import { formatSessionName, TmuxService } from "../../services/tmux";
-import { WorktreeService } from "../../services/worktree-service";
+import { formatSessionName } from "../../services/tmux";
+import {
+  WorkspaceService,
+  type WorkspaceUpResult,
+} from "../../services/workspace-service";
 import { tuiRuntime } from "../runtime";
 import {
   resolveSessionHandoff,
@@ -100,10 +100,14 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
 }
 
 export function createHandleStartResult(deps: SessionActionDeps) {
-  return async (result: StartWorktreeSessionResult, autoSwitch: boolean) => {
+  return async (result: WorkspaceUpResult, autoSwitch: boolean) => {
     const actionMessage = resolveStartActionMessage(result);
 
-    if (result.tmux.attempted && result.tmux.ok && autoSwitch) {
+    if (
+      result.attempts.tmux.attempted &&
+      result.attempts.tmux.ok &&
+      autoSwitch
+    ) {
       const liveClient = await deps.discoverClient();
       if (liveClient.type === "single") {
         const switched = await deps.switchSession(
@@ -186,10 +190,10 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
       );
       void (async () => {
         try {
-          const startResult = await tuiRuntime.runPromise(
-            startWorktreeSession({ path: wt.path }),
+          const upResult = await tuiRuntime.runPromise(
+            WorkspaceService.use((service) => service.up({ path: wt.path })),
           );
-          await handleStartResult(startResult, true);
+          await handleStartResult(upResult, true);
         } catch (error) {
           deps.showActionError(toWctError(error).message);
           await deps.refreshAll();
@@ -201,6 +205,55 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
           });
         }
       })();
+    }
+  };
+}
+
+export function createExecuteDown(deps: SessionActionDeps) {
+  const switchClientAway = createSwitchClientAway(deps);
+
+  return async (
+    sessionName: string,
+    branch: string,
+    worktreePath: string,
+    worktreeKey: string,
+  ) => {
+    deps.clearActionError();
+
+    const canProceed = await switchClientAway(sessionName);
+    if (!canProceed) {
+      deps.showActionError(
+        "Cannot safely stop the tmux session because the active client could not be moved away",
+      );
+      return;
+    }
+
+    deps.setSelectedIndex(deps.confirmDownReturnSelectedIndexRef.current);
+    deps.setMode(deps.confirmDownReturnModeRef.current);
+
+    const project = worktreeKey.split("/")[0] ?? "unknown";
+    deps.setPendingActions((prev) =>
+      new Map(prev).set(worktreeKey, {
+        type: "stopping",
+        branch,
+        project,
+      }),
+    );
+
+    try {
+      await tuiRuntime.runPromise(
+        WorkspaceService.use((service) => service.down({ path: worktreePath })),
+      );
+      await deps.refreshAll();
+    } catch (error) {
+      deps.showActionError(toWctError(error).message);
+      await deps.refreshAll();
+    } finally {
+      deps.setPendingActions((prev) => {
+        const next = new Map(prev);
+        next.delete(worktreeKey);
+        return next;
+      });
     }
   };
 }
@@ -275,31 +328,17 @@ export function createExecuteClose(deps: SessionActionDeps) {
     );
 
     try {
-      await tuiRuntime.runPromise(
-        Effect.gen(function* () {
-          const exists = yield* TmuxService.use((service) =>
-            service.sessionExists(sessionName),
-          );
-          if (exists) {
-            yield* TmuxService.use((service) =>
-              service.killSession(sessionName),
-            );
-          }
-        }),
-      );
-
-      const removeResult = await tuiRuntime.runPromise(
-        WorktreeService.use((service) =>
-          service.removeWorktree(worktreePath, force, repoPath),
+      const closeResult = await tuiRuntime.runPromise(
+        WorkspaceService.use((service) =>
+          service.close(
+            force
+              ? { path: worktreePath, cwd: repoPath, force }
+              : { path: worktreePath, cwd: repoPath },
+          ),
         ),
       );
 
-      if (removeResult._tag === "BlockedByChanges") {
-        deps.setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(worktreeKey);
-          return next;
-        });
+      if (closeResult.status === "blocked_by_changes") {
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,
@@ -368,5 +407,6 @@ export function useSessionActions(deps: SessionActionDeps) {
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),
     executeClose: createExecuteClose(deps),
     handleDownSelectedWorktree: createHandleDownSelectedWorktree(deps),
+    executeDown: createExecuteDown(deps),
   };
 }

@@ -1,16 +1,10 @@
-import { useEffect, useState } from "react";
+import { useAnimation } from "ink";
 
 /**
  * Returns a boolean that toggles every `intervalMs` milliseconds.
  * Use to show/hide a cursor character.
  */
 export function useBlink(intervalMs = 500): boolean {
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const id = setInterval(() => setVisible((v) => !v), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-
-  return visible;
+  const { frame } = useAnimation({ interval: intervalMs });
+  return frame % 2 === 0;
 }

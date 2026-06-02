@@ -47,14 +47,14 @@ function jsonAborted(
   sessionName: string,
   reason: string,
 ) {
-  return jsonSuccess({
+  return {
     operation: "close",
     status: "aborted",
     branch,
     worktreePath,
     sessionName,
     reason,
-  });
+  } as const;
 }
 
 export function closeCommand(
@@ -68,7 +68,9 @@ export function closeCommand(
     const { branches, yes = false, force = false } = options;
     const branchQueue = [...branches];
     let deferredCurrentSessionBranch = false;
-    const results: WorkspaceCloseResult[] = [];
+    const results: Array<
+      WorkspaceCloseResult | ReturnType<typeof jsonAborted>
+    > = [];
     const json = yield* JsonFlag;
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
@@ -138,12 +140,15 @@ export function closeCommand(
           if (!json) {
             yield* logger.info("Aborted");
           } else {
-            yield* jsonAborted(
-              branch,
-              worktreePath,
-              sessionName,
-              "confirmation_declined",
+            results.push(
+              jsonAborted(
+                branch,
+                worktreePath,
+                sessionName,
+                "confirmation_declined",
+              ),
             );
+            yield* jsonSuccess(results);
           }
           return;
         }
@@ -161,12 +166,15 @@ export function closeCommand(
           if (!json) {
             yield* logger.info("Aborted");
           } else {
-            yield* jsonAborted(
-              branch,
-              worktreePath,
-              sessionName,
-              "current_session_confirmation_declined",
+            results.push(
+              jsonAborted(
+                branch,
+                worktreePath,
+                sessionName,
+                "current_session_confirmation_declined",
+              ),
             );
+            yield* jsonSuccess(results);
           }
           return;
         }
@@ -189,12 +197,15 @@ export function closeCommand(
               if (!json) {
                 yield* logger.info("Aborted");
               } else {
-                yield* jsonAborted(
-                  branch,
-                  worktreePath,
-                  sessionName,
-                  "force_confirmation_declined",
+                results.push(
+                  jsonAborted(
+                    branch,
+                    worktreePath,
+                    sessionName,
+                    "force_confirmation_declined",
+                  ),
                 );
+                yield* jsonSuccess(results);
               }
               return;
             }

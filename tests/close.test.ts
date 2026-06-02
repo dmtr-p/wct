@@ -581,14 +581,70 @@ describe("closeCommand", () => {
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
       expect(output).toEqual({
         ok: true,
-        data: {
-          operation: "close",
-          status: "aborted",
-          branch: "feature-a",
-          worktreePath: "/tmp/myapp-feature-a",
-          sessionName: "myapp-feature-a",
-          reason: "confirmation_declined",
+        data: [
+          {
+            operation: "close",
+            status: "aborted",
+            branch: "feature-a",
+            worktreePath: "/tmp/myapp-feature-a",
+            sessionName: "myapp-feature-a",
+            reason: "confirmation_declined",
+          },
+        ],
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("json output preserves closed results when a later confirmation is declined", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const closeCalls: unknown[] = [];
+    mocks.confirmSpy
+      .mockImplementationOnce(() => Effect.succeed(true))
+      .mockImplementationOnce(() => Effect.succeed(false));
+    const workspace: WorkspaceService = {
+      open: () => Effect.die("unused"),
+      up: () => Effect.die("unused"),
+      down: () => Effect.die("unused"),
+      close: (options) =>
+        Effect.sync(() => {
+          closeCalls.push(options);
+          return removedCloseResult("feature-a");
+        }),
+    };
+
+    try {
+      await runCommand(
+        {
+          branches: ["feature-a", "feature-b"],
         },
+        {
+          json: true,
+          tmux: mocks.tmux,
+          worktree: mocks.worktree,
+          workspace,
+        },
+      );
+
+      expect(closeCalls).toEqual([
+        { path: "/tmp/myapp-feature-a", force: false },
+      ]);
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toEqual({
+        ok: true,
+        data: [
+          removedCloseResult("feature-a"),
+          {
+            operation: "close",
+            status: "aborted",
+            branch: "feature-b",
+            worktreePath: "/tmp/myapp-feature-b",
+            sessionName: "myapp-feature-b",
+            reason: "confirmation_declined",
+          },
+        ],
       });
     } finally {
       logSpy.mockRestore();

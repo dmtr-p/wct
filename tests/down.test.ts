@@ -288,6 +288,7 @@ describe("downCommand behavior", () => {
         },
       );
 
+      expect(logSpy.mock.calls.length).toBe(1);
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
       expect(output).toEqual({
         ok: true,

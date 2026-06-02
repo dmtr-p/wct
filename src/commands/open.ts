@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
+import type { WctError } from "../errors";
 import { toWctError } from "../errors";
 import { registerProject } from "../services/project-registration";
 import {

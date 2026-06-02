@@ -41,6 +41,22 @@ export interface CloseOptions {
   force?: boolean;
 }
 
+function jsonAborted(
+  branch: string,
+  worktreePath: string,
+  sessionName: string,
+  reason: string,
+) {
+  return jsonSuccess({
+    operation: "close",
+    status: "aborted",
+    branch,
+    worktreePath,
+    sessionName,
+    reason,
+  });
+}
+
 export function closeCommand(
   options: CloseOptions,
 ): Effect.Effect<
@@ -121,6 +137,13 @@ export function closeCommand(
         if (!confirmed) {
           if (!json) {
             yield* logger.info("Aborted");
+          } else {
+            yield* jsonAborted(
+              branch,
+              worktreePath,
+              sessionName,
+              "confirmation_declined",
+            );
           }
           return;
         }
@@ -137,6 +160,13 @@ export function closeCommand(
         if (!confirmed) {
           if (!json) {
             yield* logger.info("Aborted");
+          } else {
+            yield* jsonAborted(
+              branch,
+              worktreePath,
+              sessionName,
+              "current_session_confirmation_declined",
+            );
           }
           return;
         }
@@ -158,6 +188,13 @@ export function closeCommand(
             if (!forceConfirmed) {
               if (!json) {
                 yield* logger.info("Aborted");
+              } else {
+                yield* jsonAborted(
+                  branch,
+                  worktreePath,
+                  sessionName,
+                  "force_confirmation_declined",
+                );
               }
               return;
             }

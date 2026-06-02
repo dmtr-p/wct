@@ -1,6 +1,14 @@
 // src/tui/App.tsx
 
-import { Box, type Key, render, Text, useApp, useInput, useStdout } from "ink";
+import {
+  Box,
+  type Key,
+  render,
+  Text,
+  useApp,
+  useInput,
+  useWindowSize,
+} from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { OpenModal } from "./components/OpenModal";
@@ -31,9 +39,7 @@ import { Mode, type PendingAction, type PRInfo } from "./types";
 
 export function App() {
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  const termCols = stdout?.columns ?? 80;
-  const termRows = stdout?.rows ?? 24;
+  const { columns: termCols, rows: termRows } = useWindowSize();
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
@@ -300,7 +306,7 @@ export function App() {
     if (key.escape) {
       setMode(Mode.Navigate);
       setSearchQuery("");
-    } else if (key.backspace || key.delete) {
+    } else if (key.backspace) {
       setSearchQuery((q) => q.slice(0, -1));
     } else if (key.return) {
       setMode(Mode.Navigate);
@@ -487,9 +493,6 @@ export function App() {
 }
 
 export function startTui(): Promise<void> {
-  process.stdout.write("\x1b[?1049h\x1b[H");
-  const instance = render(<App />);
-  return instance.waitUntilExit().then(() => {
-    process.stdout.write("\x1b[?1049l");
-  });
+  const instance = render(<App />, { alternateScreen: true });
+  return instance.waitUntilExit();
 }

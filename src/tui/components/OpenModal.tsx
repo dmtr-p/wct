@@ -105,7 +105,7 @@ function BracketInput({
   useInput(
     (input, key) => {
       if (!isFocused) return;
-      if (key.backspace || key.delete) {
+      if (key.backspace) {
         onChange(value.slice(0, -1));
       } else if (input && !key.ctrl && !key.meta && !key.return) {
         onChange(value + input);
@@ -140,7 +140,7 @@ function PromptArea({
   useInput(
     (input, key) => {
       if (!isFocused) return;
-      if (key.backspace || key.delete) {
+      if (key.backspace) {
         onChange(value.slice(0, -1));
       } else if (key.return) {
         onChange(`${value}\n`);
@@ -427,7 +427,7 @@ export function FromPRForm({
           }
           return;
         }
-        if (key.backspace || key.delete) {
+        if (key.backspace) {
           setFilterQuery((q) => q.slice(0, -1));
           setSelectedPRIndex(0);
           return;
@@ -628,7 +628,7 @@ export function ExistingBranchForm({
           );
           return;
         }
-        if (key.backspace || key.delete) {
+        if (key.backspace) {
           setFilterQuery((q) => q.slice(0, -1));
           setSelectedBranchIndex(0);
           return;

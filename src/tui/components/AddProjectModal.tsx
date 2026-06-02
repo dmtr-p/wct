@@ -131,7 +131,7 @@ export function AddProjectModal({
   // Name field input handling
   useInput(
     (input, key) => {
-      if (key.backspace || key.delete) {
+      if (key.backspace) {
         setNameValue((prev) => prev.slice(0, -1));
         setNameAutoFilled(false);
         return;

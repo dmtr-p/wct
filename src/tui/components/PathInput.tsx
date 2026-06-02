@@ -146,7 +146,7 @@ export function PathInput({
         }
         return;
       }
-      if (key.backspace || key.delete) {
+      if (key.backspace) {
         onChange(value.slice(0, -1));
         return;
       }

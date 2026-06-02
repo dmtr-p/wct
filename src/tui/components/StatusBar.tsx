@@ -1,5 +1,5 @@
 // src/tui/components/StatusBar.tsx
-import { Box, Text, useStdout } from "ink";
+import { Box, Text, useWindowSize } from "ink";
 import type { Mode } from "../types";
 
 interface Props {
@@ -82,8 +82,7 @@ export function StatusBar({
   hasClient,
   repoError,
 }: Props) {
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 50;
+  const { columns: cols } = useWindowSize();
   const divider = "─".repeat(Math.max(1, cols));
 
   if (

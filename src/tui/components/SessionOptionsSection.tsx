@@ -86,7 +86,7 @@ export function SessionOptionsSection({
         );
         return;
       }
-      if (key.backspace || key.delete) {
+      if (key.backspace) {
         setProfileQuery((prev) => prev.slice(0, -1));
         return;
       }

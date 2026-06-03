@@ -9,6 +9,10 @@ import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
+import {
+  liveRegistryService,
+  type RegistryServiceApi,
+} from "../src/services/registry-service";
 import type { WorkspaceService } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
@@ -271,6 +275,7 @@ describe("upCommand", () => {
 
   test("passes CLI options through to WorkspaceService.up", async () => {
     const receivedOptions: unknown[] = [];
+    const registerCalls: string[] = [];
     const workspace: WorkspaceService = {
       open: () => Effect.die("unused"),
       up: (options) =>
@@ -313,7 +318,25 @@ describe("upCommand", () => {
           path: "/tmp/myapp-feature",
           branch: "feature",
         }),
-        { workspace },
+        {
+          workspace,
+          registry: {
+            ...liveRegistryService,
+            register: (path: string) =>
+              Effect.sync(() => {
+                registerCalls.push(path);
+                return {
+                  status: "registered" as const,
+                  item: {
+                    id: "registry-item",
+                    repo_path: path,
+                    project: "myapp",
+                    created_at: 1,
+                  },
+                };
+              }),
+          } satisfies RegistryServiceApi,
+        },
       ),
     );
 
@@ -326,6 +349,7 @@ describe("upCommand", () => {
         branch: "feature",
       },
     ]);
+    expect(registerCalls).toEqual([]);
   });
 
   test("resolves worktree path via --path flag outside a git repo", async () => {

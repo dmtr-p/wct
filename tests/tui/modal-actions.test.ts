@@ -189,7 +189,7 @@ describe("createHandleOpen", () => {
     vi.restoreAllMocks();
   });
 
-  test("opens a branch through WorkspaceService, registers, refreshes, and clears pending", async () => {
+  test("opens a branch through WorkspaceService, refreshes, and clears pending without registering", async () => {
     const { tuiRuntime, runTuiSilentPromise } = await import(
       "../../src/tui/runtime"
     );
@@ -202,9 +202,6 @@ describe("createHandleOpen", () => {
     });
     const openResult = makeOpenResult();
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(openResult);
-    (runTuiSilentPromise as Mock).mockResolvedValueOnce({
-      registration: { status: "registered" },
-    });
     const refreshAll = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
       openModalRepoProject: "proj",
@@ -240,14 +237,10 @@ describe("createHandleOpen", () => {
         noIde: true,
       });
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-open-effect");
-      expect(registerProjectMock).toHaveBeenCalledWith({
-        path: "/repo",
-        name: "proj",
-        tolerateConfigErrors: true,
-      });
       expect(refreshAll).toHaveBeenCalled();
     });
-    expect(runTuiSilentPromise).toHaveBeenCalledWith("register-project-effect");
+    expect(registerProjectMock).not.toHaveBeenCalled();
+    expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);
@@ -800,6 +793,7 @@ describe("createHandleUpSubmit", () => {
       );
       expect(handleStartResult).toHaveBeenCalledWith(upResult, true);
     });
+    expect(registerProjectMock).not.toHaveBeenCalled();
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);
   });

@@ -157,20 +157,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
             );
           }
 
-          try {
-            await runTuiSilentPromise(
-              registerProject({
-                path: result.mainRepoPath,
-                name: result.projectName,
-                tolerateConfigErrors: true,
-              }),
-            );
-          } catch (error) {
-            appendWarning(
-              `Project registration failed after open: ${toWctError(error).message}`,
-            );
-          }
-
           if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
             const liveClient = await deps.discoverClient();
             if (liveClient.type === "single") {

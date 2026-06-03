@@ -77,7 +77,7 @@ export function WorktreeItem({
         mainSuffix.length,
     ),
   );
-  const showStats = isSelected || isExpanded;
+  const showStats = isExpanded;
   const hasStats = (sync && sync !== "\u2713") || changedFiles > 0;
 
   if (pendingStatus === "opening") {

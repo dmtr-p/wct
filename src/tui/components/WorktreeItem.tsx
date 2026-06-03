@@ -77,7 +77,6 @@ export function WorktreeItem({
         mainSuffix.length,
     ),
   );
-  const showStats = isExpanded;
   const hasStats = (sync && sync !== "\u2713") || changedFiles > 0;
 
   if (pendingStatus === "opening") {
@@ -132,7 +131,7 @@ export function WorktreeItem({
         </Text>
         <Text dimColor>{attached}</Text>
       </Box>
-      {showStats && hasStats ? (
+      {isExpanded && hasStats ? (
         <Box>
           <Text>{"        "}</Text>
           {sync && sync !== "\u2713" ? <Text dimColor>{sync}</Text> : null}

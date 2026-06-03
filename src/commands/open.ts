@@ -1,10 +1,7 @@
-import { basename } from "node:path";
 import { Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import type { WctError } from "../errors";
-import { toWctError } from "../errors";
-import { registerProject } from "../services/project-registration";
 import {
   type WorkspaceOpenOptions,
   type WorkspaceOpenResult,
@@ -86,17 +83,6 @@ export interface OpenOptions {
 
 export interface OpenCommandOptions extends WorkspaceOpenOptions {
   noAttach?: boolean;
-}
-
-function registrationFailure(error: unknown) {
-  const wctError = toWctError(error);
-  return {
-    status: "failed" as const,
-    error: {
-      code: wctError.code,
-      message: wctError.message,
-    },
-  };
 }
 
 function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
@@ -236,36 +222,13 @@ export function openCommand(
           : { reporter: createOpenHumanReporter(workspaceOptions) }),
       }),
     );
-    const registration = yield* Effect.match(
-      registerProject({
-        path: result.mainRepoPath,
-        name: result.projectName ?? basename(result.mainRepoPath),
-        tolerateConfigErrors: true,
-      }),
-      {
-        onFailure: (error) => registrationFailure(error),
-        onSuccess: (success) => success.registration,
-      },
-    );
 
     if (json) {
-      yield* jsonSuccess({
-        workspace: result,
-        registration,
-      });
+      yield* jsonSuccess({ workspace: result });
       return;
     }
 
     yield* logWorkspaceOpenResult(result);
-    if (registration.status === "registered") {
-      yield* logger.success(
-        `Registered project '${registration.item.project}'`,
-      );
-    } else if (registration.status === "failed") {
-      yield* logger.warn(
-        `Project registration failed after open: ${registration.error.message}`,
-      );
-    }
 
     if (result.attempts.tmux.attempted && result.attempts.tmux.ok) {
       yield* maybeAttachSession(result.sessionName, noAttach);

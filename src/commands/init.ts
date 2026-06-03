@@ -3,7 +3,6 @@ import { Effect, FileSystem } from "effect";
 import { CONFIG_FILENAME } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { registerProject } from "../services/project-registration";
 import * as logger from "../utils/logger";
 import type { CommandDef } from "./command-def";
 
@@ -85,13 +84,7 @@ export function initCommand(): Effect.Effect<void, WctError, WctServices> {
     );
 
     yield* logger.success(`Created ${CONFIG_FILENAME}`);
-
-    // Auto-register repo in TUI registry
-    yield* Effect.catch(
-      registerProject({ tolerateConfigErrors: true }),
-      () => Effect.void,
-    );
-
+    yield* logger.info("Run 'wct projects add' to show this repo in the TUI");
     yield* logger.info("Edit the config file to customize your workflow");
   });
 }

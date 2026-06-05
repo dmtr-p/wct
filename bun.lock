@@ -5,7 +5,7 @@
     "": {
       "name": "tab-cli",
       "dependencies": {
-        "@effect/platform-bun": "4.0.0-beta.75",
+        "@effect/platform-bun": "4.0.0-beta.78",
         "effect": "4.0.0-beta.75",
         "ink": "7.0.5",
         "react": "^19.2.7",
@@ -45,9 +45,9 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.16", "", { "os": "win32", "cpu": "x64" }, "sha512-Kp85jgoBHa05gix6UIRjfCDiUV3w/8VIdZ247VyyO2gEjaw12WEVhdIjlxp/AMzXxqxQwbxNTDVZ3Mwd2RG5rw=="],
 
-    "@effect/platform-bun": ["@effect/platform-bun@4.0.0-beta.75", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-beta.75" }, "peerDependencies": { "effect": "^4.0.0-beta.75" } }, "sha512-OIIi1kI/DFkzgIHPzy7kqLI1VVbRVpq3HkgH72LHPjVt9mIO3+YXvt8rnjSmTGpSpjEzzBsas8rZ4cnFbYKESA=="],
+    "@effect/platform-bun": ["@effect/platform-bun@4.0.0-beta.78", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-beta.78" }, "peerDependencies": { "effect": "^4.0.0-beta.78" } }, "sha512-lmPCL1G7SlkCWCguX3rDPS7kKuvJ/AN4pjS7IXb/5SoauHPd67iUdc1ZbB7o6lwTChJaIfWNNPkUWygiaUeJiA=="],
 
-    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.0-beta.75", "", { "dependencies": { "@types/ws": "^8.18.1", "ws": "^8.20.0" }, "peerDependencies": { "effect": "^4.0.0-beta.75" } }, "sha512-ERxuFDuCuMAiSHLrNVTvSXPnUajcZV4PUVibXbk1lwiymhbkxRRBs1Zeuicwho8jZdpn7niXCDI24CiB9PIozA=="],
+    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.0-beta.78", "", { "dependencies": { "@types/ws": "^8.18.1", "ws": "^8.20.0" }, "peerDependencies": { "effect": "^4.0.0-beta.78" } }, "sha512-mo0ddTPATyCMyqzQasYDL7+NI29vozoMplom+qu9f/onDTd4xG5hvEEfGxfL0Ljygui6keG/YE/E9OZVf2z5WA=="],
 
     "@effect/vitest": ["@effect/vitest@4.0.0-beta.75", "", { "peerDependencies": { "effect": "^4.0.0-beta.75", "vitest": "^3.0.0 || ^4.0.0" } }, "sha512-9R6s/9j/tZUc8lMmkOKXfgwnSRhk5EvKS89Rwwj8TaSYh+n9ZCDvvepxGcE9DpNghqDd7fC3Gcbgk0c56hSs3Q=="],
 

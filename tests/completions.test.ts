@@ -58,7 +58,7 @@ describe("Effect CLI root", () => {
 
     expect(result.exitCode).toBe(0);
     expect(output).toContain("GLOBAL FLAGS");
-    expect(output).toContain("--completions choice");
+    expect(output).toContain("--completions <bash|zsh|fish|sh>");
     expect(output).toContain("projects");
     expect(output).toContain("switch, sw");
     expect(output).not.toContain("\n  register");

@@ -12,7 +12,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.4.16",
-        "@effect/vitest": "4.0.0-beta.78",
+        "@effect/vitest": "4.0.0-beta.80",
         "@types/bun": "1.3.14",
         "@types/react": "^19.2.17",
         "bun-types": "1.3.14",
@@ -49,7 +49,7 @@
 
     "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.0-beta.80", "", { "dependencies": { "@types/ws": "^8.18.1", "ws": "^8.20.0" }, "peerDependencies": { "effect": "^4.0.0-beta.80" } }, "sha512-VY+p9cgD20T/Qot/390wbaBYx1ngE5bC8PbyIsHmjKRcnOVO/774wxn528GEfRMOQtLc5zh1stcQOp/GlXNF6Q=="],
 
-    "@effect/vitest": ["@effect/vitest@4.0.0-beta.78", "", { "peerDependencies": { "effect": "^4.0.0-beta.78", "vitest": "^3.0.0 || ^4.0.0" } }, "sha512-5KQsQYrQ/o7mfOVAxRtNnfD9M0W4OI6yQd0n/m2N7OOLxTdX4FwN4s/X4obykBC7ZEwH+bzMrFJiB4pq9lrQKQ=="],
+    "@effect/vitest": ["@effect/vitest@4.0.0-beta.80", "", { "peerDependencies": { "effect": "^4.0.0-beta.80", "vitest": "^3.0.0 || ^4.0.0" } }, "sha512-z5oKKRO8iLprjFwQpEMbiak0c7SPGyeli4EQLVtXrcZzir6FybiC812Rw3iZJTQhTRQOlLcxgkq89UO2j7Vamw=="],
 
     "@emnapi/core": ["@emnapi/core@1.9.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.0", "tslib": "^2.4.0" } }, "sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA=="],
 

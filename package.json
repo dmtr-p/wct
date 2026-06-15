@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
-    "@effect/vitest": "4.0.0-beta.80",
+    "@effect/vitest": "4.0.0-beta.83",
     "@types/bun": "1.3.14",
     "@types/react": "^19.2.17",
     "bun-types": "1.3.14",
@@ -29,7 +29,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-beta.80",
+    "@effect/platform-bun": "4.0.0-beta.83",
     "effect": "4.0.0-beta.83",
     "ink": "7.0.5",
     "react": "^19.2.7"

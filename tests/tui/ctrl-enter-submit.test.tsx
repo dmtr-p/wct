@@ -410,7 +410,10 @@ describe("Ctrl+Enter submit", () => {
         await new Promise((r) => setTimeout(r, 150));
         await sendKeys(rendered.stdin, ENTER);
         await new Promise((r) => setTimeout(r, 0));
-        await sendKeys(rendered.stdin, "\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f");
+        await sendKeys(
+          rendered.stdin,
+          "\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f",
+        );
         await sendKeys(rendered.stdin, "my-proj");
         await new Promise((r) => setTimeout(r, 0));
         await sendKeys(rendered.stdin, CTRL_ENTER);

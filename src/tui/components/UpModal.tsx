@@ -4,6 +4,7 @@ import {
   type SessionIdeDefaults,
   useSessionOptionsState,
 } from "../hooks/useSessionOptionsState";
+import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
 import { SessionOptionsSection } from "./SessionOptionsSection";
 import { resolveSessionOptionsSubmitState } from "./session-options";
@@ -62,6 +63,15 @@ export function UpModal({
     [profileNames, selectedProfileValue],
   );
 
+  const doSubmit = () => {
+    if (!submission.canSubmit) return;
+    onSubmit({
+      profile: submission.profile,
+      noIde,
+      autoSwitch,
+    });
+  };
+
   useEffect(() => {
     setFocusIndex((prev) => clampFocusIndex(prev, fields));
   }, [fields]);
@@ -74,6 +84,10 @@ export function UpModal({
     (_input, key) => {
       if (key.escape) {
         onCancel();
+        return;
+      }
+      if (isSubmitShortcut(key)) {
+        doSubmit();
         return;
       }
       if (key.tab) {
@@ -102,14 +116,7 @@ export function UpModal({
           canSubmit={submission.canSubmit}
           onNoIdeToggle={() => setNoIde((prev) => !prev)}
           onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
-          onSubmit={() => {
-            if (!submission.canSubmit) return;
-            onSubmit({
-              profile: submission.profile,
-              noIde,
-              autoSwitch,
-            });
-          }}
+          onSubmit={doSubmit}
           onProfileChange={setSelectedProfileValue}
           resetKey={visible ? "visible" : "hidden"}
           width={width ? width - 2 : undefined}

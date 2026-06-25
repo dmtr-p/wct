@@ -4,7 +4,7 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import { useBlink } from "../hooks/useBlink";
 import { runTuiSilentPromise } from "../runtime";
-import { SubmitButton } from "./form-controls";
+import { isSubmitShortcut, SubmitButton } from "./form-controls";
 import { Modal } from "./Modal";
 import { expandTilde, PathInput } from "./PathInput";
 import { TitledBox } from "./TitledBox";
@@ -97,13 +97,18 @@ export function AddProjectModal({
     if (!isGitRepo) return;
     const expanded = expandTilde(pathValue).replace(/\/+$/, "");
     const name = nameValue || path.basename(expanded);
-    onSubmit({ path: expanded, name, nameManuallyEdited: !nameAutoFilled });
+    const manuallyEdited = nameValue !== "" && !nameAutoFilled;
+    onSubmit({ path: expanded, name, nameManuallyEdited: manuallyEdited });
   }, [isGitRepo, pathValue, nameValue, nameAutoFilled, onSubmit]);
 
   useInput(
     (_input, key) => {
       if (key.escape) {
         onCancel();
+        return;
+      }
+      if (isSubmitShortcut(key)) {
+        handleSubmit();
         return;
       }
       if (key.tab) {
@@ -115,12 +120,12 @@ export function AddProjectModal({
         );
         return;
       }
-      if (key.return && currentField === "path") {
+      if (key.return && !key.ctrl && currentField === "path") {
         autoFillName();
         setFocusIndex(1); // advance to name
         return;
       }
-      if (key.return && currentField === "name") {
+      if (key.return && !key.ctrl && currentField === "name") {
         setFocusIndex(2); // advance to submit
         return;
       }

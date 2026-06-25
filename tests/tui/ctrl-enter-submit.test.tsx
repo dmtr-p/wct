@@ -379,7 +379,7 @@ describe("Ctrl+Enter submit", () => {
   });
 
   describe("AddProjectModal", () => {
-    test("Ctrl+Enter with a valid git-repo path fires onSubmit with the expected payload", async () => {
+    test("Ctrl+Enter from path field fires onSubmit with nameManuallyEdited=false (name never touched)", async () => {
       runPromiseMock.mockResolvedValue(true);
       const onSubmitMock = vi.fn();
       const rendered = await renderAddProjectModal(onSubmitMock);
@@ -393,7 +393,33 @@ describe("Ctrl+Enter submit", () => {
           expect.objectContaining({
             path: expect.any(String),
             name: expect.any(String),
-            nameManuallyEdited: expect.any(Boolean),
+            nameManuallyEdited: false,
+          }),
+        );
+      } finally {
+        rendered.unmount();
+      }
+    });
+
+    test("Ctrl+Enter after typing a custom name fires onSubmit with nameManuallyEdited=true", async () => {
+      runPromiseMock.mockResolvedValue(true);
+      const onSubmitMock = vi.fn();
+      const rendered = await renderAddProjectModal(onSubmitMock);
+
+      try {
+        await new Promise((r) => setTimeout(r, 150));
+        await sendKeys(rendered.stdin, ENTER);
+        await new Promise((r) => setTimeout(r, 0));
+        await sendKeys(rendered.stdin, "\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f");
+        await sendKeys(rendered.stdin, "my-proj");
+        await new Promise((r) => setTimeout(r, 0));
+        await sendKeys(rendered.stdin, CTRL_ENTER);
+
+        expect(onSubmitMock).toHaveBeenCalledTimes(1);
+        expect(onSubmitMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "my-proj",
+            nameManuallyEdited: true,
           }),
         );
       } finally {

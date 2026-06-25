@@ -97,7 +97,8 @@ export function AddProjectModal({
     if (!isGitRepo) return;
     const expanded = expandTilde(pathValue).replace(/\/+$/, "");
     const name = nameValue || path.basename(expanded);
-    onSubmit({ path: expanded, name, nameManuallyEdited: !nameAutoFilled });
+    const manuallyEdited = nameValue !== "" && !nameAutoFilled;
+    onSubmit({ path: expanded, name, nameManuallyEdited: manuallyEdited });
   }, [isGitRepo, pathValue, nameValue, nameAutoFilled, onSubmit]);
 
   useInput(

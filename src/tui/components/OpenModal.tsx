@@ -8,6 +8,7 @@ import {
 } from "../hooks/useSessionOptionsState";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
+import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { SessionOptionsSection } from "./SessionOptionsSection";
@@ -65,7 +66,8 @@ function ModeSelector({
       if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
       if (key.downArrow)
         setSelected((s) => Math.min(options.length - 1, s + 1));
-      if (key.return) onSelect(options[selected]?.step ?? "newBranch");
+      if (key.return && !key.ctrl)
+        onSelect(options[selected]?.step ?? "newBranch");
       if (key.escape) onCancel();
     },
     { isActive: true },
@@ -147,7 +149,7 @@ function PromptArea({
       if (!isFocused) return;
       if (key.backspace) {
         onChange(value.slice(0, -1));
-      } else if (key.return) {
+      } else if (key.return && !key.ctrl) {
         onChange(`${value}\n`);
       } else if (input && !key.ctrl && !key.meta) {
         onChange(value + input);
@@ -227,10 +229,27 @@ export function NewBranchForm({
     });
   };
 
+  const doSubmit = () => {
+    if (!branch.trim() || !submission.canSubmit) return;
+    onSubmit({
+      branch: branch.trim(),
+      base: base.trim() || undefined,
+      profile: submission.profile,
+      prompt: prompt.trim() || undefined,
+      existing: false,
+      noIde,
+      noAttach: !autoSwitch,
+    });
+  };
+
   useInput(
     (_input, key) => {
       if (key.escape) {
         onBack();
+        return;
+      }
+      if (isSubmitShortcut(key)) {
+        doSubmit();
         return;
       }
       if (key.tab) {
@@ -280,18 +299,7 @@ export function NewBranchForm({
         canSubmit={submission.canSubmit && branch.trim().length > 0}
         onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
-        onSubmit={() => {
-          if (!branch.trim() || !submission.canSubmit) return;
-          onSubmit({
-            branch: branch.trim(),
-            base: base.trim() || undefined,
-            profile: submission.profile,
-            prompt: prompt.trim() || undefined,
-            existing: false,
-            noIde,
-            noAttach: !autoSwitch,
-          });
-        }}
+        onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
         resetKey="new-branch"
         width={width}
@@ -398,10 +406,31 @@ export function FromPRForm({
     });
   };
 
+  const doSubmit = () => {
+    if (isRefreshRowSelected) return;
+    const selectedPR = filteredPRItems[selectedPRIndex];
+    if (!selectedPR || !submission.canSubmit) return;
+    const pr = prList.find((p) => String(p.number) === selectedPR.value);
+    if (!pr) return;
+    onSubmit({
+      branch: pr.headRefName,
+      pr: String(pr.number),
+      profile: submission.profile,
+      prompt: prompt.trim() || undefined,
+      existing: false,
+      noIde,
+      noAttach: !autoSwitch,
+    });
+  };
+
   useInput(
     (input, key) => {
       if (key.escape) {
         onBack();
+        return;
+      }
+      if (isSubmitShortcut(key)) {
+        doSubmit();
         return;
       }
       if (key.tab) {
@@ -426,7 +455,7 @@ export function FromPRForm({
           });
           return;
         }
-        if (key.return) {
+        if (key.return && !key.ctrl) {
           if (isRefreshRowSelected && isRefreshRowSelectable) {
             onRefresh();
           }
@@ -497,22 +526,7 @@ export function FromPRForm({
         }
         onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
-        onSubmit={() => {
-          if (isRefreshRowSelected) return;
-          const selectedPR = filteredPRItems[selectedPRIndex];
-          if (!selectedPR || !submission.canSubmit) return;
-          const pr = prList.find((p) => String(p.number) === selectedPR.value);
-          if (!pr) return;
-          onSubmit({
-            branch: pr.headRefName,
-            pr: String(pr.number),
-            profile: submission.profile,
-            prompt: prompt.trim() || undefined,
-            existing: false,
-            noIde,
-            noAttach: !autoSwitch,
-          });
-        }}
+        onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
         resetKey="from-pr"
         width={width}
@@ -611,10 +625,27 @@ export function ExistingBranchForm({
     });
   };
 
+  const doSubmit = () => {
+    const selectedBranch = filteredBranchItems[selectedBranchIndex];
+    if (!selectedBranch || !submission.canSubmit) return;
+    onSubmit({
+      branch: selectedBranch.value,
+      profile: submission.profile,
+      prompt: prompt.trim() || undefined,
+      existing: true,
+      noIde,
+      noAttach: !autoSwitch,
+    });
+  };
+
   useInput(
     (input, key) => {
       if (key.escape) {
         onBack();
+        return;
+      }
+      if (isSubmitShortcut(key)) {
+        doSubmit();
         return;
       }
       if (key.tab) {
@@ -689,18 +720,7 @@ export function ExistingBranchForm({
         }
         onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
-        onSubmit={() => {
-          const selectedBranch = filteredBranchItems[selectedBranchIndex];
-          if (!selectedBranch || !submission.canSubmit) return;
-          onSubmit({
-            branch: selectedBranch.value,
-            profile: submission.profile,
-            prompt: prompt.trim() || undefined,
-            existing: true,
-            noIde,
-            noAttach: !autoSwitch,
-          });
-        }}
+        onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
         resetKey="existing-branch"
         width={width}

@@ -1,5 +1,12 @@
 import { Box, Text, useInput } from "ink";
 
+export function isSubmitShortcut(key: {
+  ctrl?: boolean;
+  return?: boolean;
+}): boolean {
+  return Boolean(key.ctrl && key.return);
+}
+
 export function ToggleRow({
   label,
   checked,
@@ -40,7 +47,7 @@ export function SubmitButton({
 }) {
   useInput(
     (input, key) => {
-      if (key.return || input === " ") onSubmit();
+      if ((key.return && !key.ctrl) || input === " ") onSubmit();
     },
     { isActive: isFocused && !disabled },
   );

@@ -18,6 +18,7 @@ import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
 import { useModalActions } from "./hooks/useModalActions";
+import { useMouse } from "./hooks/useMouse";
 import { useRefresh } from "./hooks/useRefresh";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
@@ -26,6 +27,11 @@ import { useTmux } from "./hooks/useTmux";
 import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
+import {
+  HEADER_OFFSET,
+  parseSgrMouse,
+  resolveMouseAction,
+} from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import {
@@ -41,12 +47,15 @@ import {
 } from "./tree-helpers";
 import { Mode, type PendingAction, type PRInfo } from "./types";
 
-/** Top chrome above the tree: the `wct` header line + a blank spacer line. */
-const TOP_CHROME_ROWS = 2;
+// Top chrome above the tree: the `wct` header line + a blank spacer line. Same
+// 2 rows the mouse hit-test skips, so it is sourced from a single constant to
+// keep windowing and hit-testing aligned.
+const TOP_CHROME_ROWS = HEADER_OFFSET;
 
 export function App() {
   const { exit } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
+  const { disableMouse } = useMouse();
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
@@ -448,7 +457,46 @@ export function App() {
     }
   }
 
+  function handleMouse(event: ReturnType<typeof parseSgrMouse>) {
+    if (!event) return;
+    const action = resolveMouseAction(event, {
+      mode,
+      rows,
+      effectiveScrollOffset,
+      viewportRows,
+      treeItems,
+      repos: filteredRepos,
+      expandedWorktreeKey,
+    });
+    switch (action.kind) {
+      case "none":
+        return;
+      case "scroll":
+        // Wheel scrolls the viewport only; the selection is untouched.
+        setScrollOffset((prev) =>
+          clampScrollOffset(prev + action.delta, rows.length, viewportRows),
+        );
+        return;
+      case "select":
+        setSelectedIndex(action.itemIndex);
+        return;
+      case "selectAndExitExpanded":
+        setMode(Mode.Navigate);
+        setSelectedIndex(action.itemIndex);
+        return;
+    }
+  }
+
   useInput((input, key) => {
+    // Parse mouse events out of the string Ink already forwards (no second
+    // stdin listener). Swallow ANY recognised mouse sequence in EVERY mode so
+    // no escape garble reaches the screen, even in modal/Search modes.
+    const mouse = parseSgrMouse(input);
+    if (mouse) {
+      handleMouse(mouse);
+      return;
+    }
+
     if (
       input === "q" &&
       mode.type !== "OpenModal" &&
@@ -460,6 +508,9 @@ export function App() {
       mode.type !== "ConfirmClose" &&
       mode.type !== "ConfirmCloseForce"
     ) {
+      // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
+      // mode before React unmount, so the unmount-cleanup disable is too late.
+      disableMouse();
       exit();
       return;
     }

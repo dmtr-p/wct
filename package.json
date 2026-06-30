@@ -12,6 +12,7 @@
     "start": "bun run src/index.ts",
     "test": "bun --bun node_modules/.bin/vitest run",
     "lint": "bunx biome check",
+    "typecheck": "tsc --noEmit",
     "format": "bunx biome check --write",
     "build": "bun build src/index.ts --compile --outfile dist/wct",
     "build:all": "bun run scripts/build-all.ts"

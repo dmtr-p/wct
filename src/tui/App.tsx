@@ -492,7 +492,7 @@ export function App() {
   );
 }
 
-export function startTui(): Promise<void> {
+export async function startTui(): Promise<void> {
   const instance = render(<App />, { alternateScreen: true });
-  return instance.waitUntilExit();
+  await instance.waitUntilExit();
 }

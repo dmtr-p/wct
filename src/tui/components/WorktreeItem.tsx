@@ -5,8 +5,6 @@ interface Props {
   branch: string;
   hasSession: boolean;
   isAttached: boolean;
-  sync: string;
-  changedFiles: number;
   isSelected: boolean;
   isChildSelected?: boolean;
   pendingStatus?: "opening" | "closing" | "starting" | "stopping";
@@ -23,8 +21,6 @@ export function WorktreeItem({
   branch,
   hasSession,
   isAttached,
-  sync,
-  changedFiles,
   isSelected,
   isChildSelected,
   pendingStatus,
@@ -77,7 +73,6 @@ export function WorktreeItem({
         mainSuffix.length,
     ),
   );
-  const hasStats = (sync && sync !== "\u2713") || changedFiles > 0;
 
   if (pendingStatus === "opening") {
     return (
@@ -115,33 +110,20 @@ export function WorktreeItem({
   }
 
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
-        {expandIcon ? <Text dimColor>{expandIcon}</Text> : null}
-        <Text color={indicatorColor}>
-          {indicator}
-          {pendingStatus === "starting" ? (
-            <Text dimColor> starting...</Text>
-          ) : null}
-        </Text>
-        <Text color={isSelected ? "cyan" : undefined} bold={active}>
-          {" "}
-          {mainDisplayBranch}
-        </Text>
-        <Text dimColor>{attached}</Text>
-      </Box>
-      {isExpanded && hasStats ? (
-        <Box>
-          <Text>{"        "}</Text>
-          {sync && sync !== "\u2713" ? <Text dimColor>{sync}</Text> : null}
-          {changedFiles > 0 ? (
-            <Text color="yellow">
-              {sync && sync !== "\u2713" ? " " : ""}~{changedFiles}
-            </Text>
-          ) : null}
-        </Box>
-      ) : null}
+    <Box>
+      <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
+      {expandIcon ? <Text dimColor>{expandIcon}</Text> : null}
+      <Text color={indicatorColor}>
+        {indicator}
+        {pendingStatus === "starting" ? (
+          <Text dimColor> starting...</Text>
+        ) : null}
+      </Text>
+      <Text color={isSelected ? "cyan" : undefined} bold={active}>
+        {" "}
+        {mainDisplayBranch}
+      </Text>
+      <Text dimColor>{attached}</Text>
     </Box>
   );
 }

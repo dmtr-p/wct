@@ -30,12 +30,19 @@ import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import {
   buildTreeItems,
+  buildTreeRows,
+  clampScrollOffset,
   findOwningWorktreeIndex,
+  firstRowForItem,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
+  scrollToKeepVisible,
   treeItemId,
 } from "./tree-helpers";
 import { Mode, type PendingAction, type PRInfo } from "./types";
+
+/** Top chrome above the tree: the `wct` header line + a blank spacer line. */
+const TOP_CHROME_ROWS = 2;
 
 export function App() {
   const { exit } = useApp();
@@ -64,6 +71,7 @@ export function App() {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [didInitialExpand, setDidInitialExpand] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
@@ -147,6 +155,70 @@ export function App() {
     ],
   );
 
+  const statusBarProps = resolveStatusBarProps({
+    mode,
+    items: treeItems,
+    selectedIndex,
+    repos: filteredRepos,
+  });
+
+  const repoError = statusBarProps.selectedProject
+    ? githubErrors.get(statusBarProps.selectedProject)
+    : undefined;
+
+  // The shared visual-row model drives both windowing here and the row-by-row
+  // render in TreeView. Logical items are not 1:1 with terminal rows.
+  const rows = useMemo(
+    () =>
+      buildTreeRows({
+        items: treeItems,
+        repos: filteredRepos,
+        expandedRepos,
+        expandedWorktreeKey,
+        pendingActions,
+      }),
+    [
+      treeItems,
+      filteredRepos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions,
+    ],
+  );
+
+  // The 3 true modals do not scroll the tree — rendering it in full keeps the
+  // modal on-screen. The interactive layout (Navigate/Expanded/Search) windows
+  // the tree under the StatusBar + optional error lines.
+  const isTrueModal =
+    mode.type === "OpenModal" ||
+    mode.type === "UpModal" ||
+    mode.type === "AddProjectModal";
+
+  // Bottom chrome in the interactive layout: optional tmux/action error line
+  // (mutually exclusive) + StatusBar (1 divider + optional repoError line + 2
+  // hint lines). Search renders an extra query line in place of one hint, but
+  // the line count stays at 3 either way. StatusBar only renders the repoError
+  // line in its default Navigate/Expanded branch (Confirm/Search return early),
+  // so only budget for it there.
+  const bottomChromeRows = isTrueModal
+    ? 0
+    : 1 + // divider
+      2 + // two hint lines (or query + hint in Search)
+      (repoError && (mode.type === "Navigate" || mode.type === "Expanded")
+        ? 1
+        : 0) +
+      ((tmuxError && !actionError) || actionError ? 1 : 0);
+
+  const viewportRows = isTrueModal
+    ? Math.max(1, rows.length)
+    : Math.max(1, termRows - TOP_CHROME_ROWS - bottomChromeRows);
+
+  const effectiveScrollOffset = clampScrollOffset(
+    scrollOffset,
+    rows.length,
+    viewportRows,
+  );
+
   // Identity-based selection recovery: when the tree structure changes
   // (background refresh, async worktree add/remove), find the previously-
   // selected item by stable identity instead of blindly clamping by length.
@@ -183,14 +255,32 @@ export function App() {
     if (recoveredIndex !== null && recoveredIndex !== selectedIndex) {
       setSelectedIndex(recoveredIndex);
     }
-  }, [treeItems, selectedIndex, filteredRepos, searchQuery]);
 
-  const statusBarProps = resolveStatusBarProps({
-    mode,
-    items: treeItems,
+    // Keep the scroll offset valid after a background refresh so it can't
+    // desync from the selection (e.g. rows removed below the window).
+    setScrollOffset((prev) =>
+      clampScrollOffset(prev, rows.length, viewportRows),
+    );
+  }, [
+    treeItems,
     selectedIndex,
-    repos: filteredRepos,
-  });
+    filteredRepos,
+    searchQuery,
+    rows,
+    viewportRows,
+  ]);
+
+  // Keyboard ↑/↓ are viewport-aware: after a navigation moves selectedIndex,
+  // nudge the scroll offset minimally to keep the selection on screen. Keyed on
+  // [selectedIndex, rows, viewportRows] but NOT scrollOffset, and uses a
+  // functional update so it never fights a future wheel scroll (slice 02).
+  useEffect(() => {
+    const rowIndex = firstRowForItem(rows, selectedIndex);
+    if (rowIndex === null) return;
+    setScrollOffset((prev) =>
+      scrollToKeepVisible(rowIndex, prev, viewportRows),
+    );
+  }, [selectedIndex, rows, viewportRows]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -434,6 +524,8 @@ export function App() {
           maxWidth={termCols}
           refreshingProjects={refreshingProjects}
           errors={githubErrors}
+          scrollOffset={effectiveScrollOffset}
+          viewportRows={viewportRows}
         />
       </Box>
       {mode.type === "OpenModal" ? (
@@ -480,11 +572,7 @@ export function App() {
             {...statusBarProps}
             searchQuery={searchQuery}
             hasClient={tmuxClient !== null}
-            repoError={
-              statusBarProps.selectedProject
-                ? githubErrors.get(statusBarProps.selectedProject)
-                : undefined
-            }
+            repoError={repoError}
           />
         </Box>
       )}

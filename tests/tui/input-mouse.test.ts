@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   HEADER_OFFSET,
+  isMouseSequence,
   type MouseActionContext,
   parseSgrMouse,
   resolveMouseAction,
@@ -91,6 +92,105 @@ describe("parseSgrMouse", () => {
       col: 5,
       row: 6,
     });
+  });
+});
+
+describe("isMouseSequence", () => {
+  // Bug 3 regression: a single click emits BOTH a press (`M`) and a release
+  // (`m`) SGR sequence. `parseSgrMouse` intentionally returns `null` for the
+  // release half (and for motion/extra-button events) because they aren't
+  // actionable — but the dispatcher guard must still swallow them by SHAPE,
+  // not by whether they parsed to an action, or the raw escape bytes fall
+  // through to mode-specific handlers (e.g. corrupting the Search query).
+  test("matches a release sequence (trailing m)", () => {
+    expect(isMouseSequence("\x1b[<0;45;12m")).toBe(true);
+    expect(isMouseSequence("[<0;45;12m")).toBe(true);
+  });
+
+  test("matches a motion sequence (cb & 32)", () => {
+    expect(isMouseSequence("\x1b[<35;10;5M")).toBe(true);
+  });
+
+  test("matches an extra-button sequence (cb & 0x80)", () => {
+    expect(isMouseSequence("\x1b[<128;10;5M")).toBe(true);
+  });
+
+  test("matches an ordinary actionable press too", () => {
+    expect(isMouseSequence("\x1b[<0;45;12M")).toBe(true);
+  });
+
+  test("does not match a normal keypress", () => {
+    expect(isMouseSequence("\x1b[A")).toBe(false);
+  });
+
+  test("does not match plain text or empty input", () => {
+    expect(isMouseSequence("q")).toBe(false);
+    expect(isMouseSequence("")).toBe(false);
+  });
+
+  test("agrees with parseSgrMouse on every case where parseSgrMouse is non-null", () => {
+    // Whenever parseSgrMouse resolves an actionable event, isMouseSequence
+    // must also be true — parseSgrMouse being non-null is a strict subset of
+    // "is a mouse sequence."
+    const actionable = ["[<64;10;5M", "[<0;45;12M", "[<1;3;4M", "[<2;3;4M"];
+    for (const seq of actionable) {
+      expect(parseSgrMouse(seq)).not.toBeNull();
+      expect(isMouseSequence(seq)).toBe(true);
+    }
+  });
+});
+
+describe("dispatcher guard: release/motion events never reach Search text input", () => {
+  // Mirrors the exact guard shape in App.tsx's useInput dispatcher:
+  //   if (isMouseSequence(input)) {
+  //     const mouse = parseSgrMouse(input);
+  //     if (mouse) handleMouse(mouse);
+  //     return;
+  //   }
+  //   ... falls through to handleSearchInput(input, key) in Search mode ...
+  // Bug 3 was that the OLD guard checked `parseSgrMouse(input)` truthiness
+  // instead of sequence shape, so release/motion/extra-button sequences (which
+  // parseSgrMouse deliberately resolves to null) fell through and got appended
+  // to the search query as raw escape bytes.
+  function dispatch(input: string, appendToQuery: (text: string) => void) {
+    if (isMouseSequence(input)) {
+      const mouse = parseSgrMouse(input);
+      if (mouse) {
+        // handleMouse(mouse) — not relevant to this test, Search ignores mouse
+      }
+      return;
+    }
+    // handleSearchInput's catch-all text-input branch (App.tsx ~line 445):
+    // `else if (input && !key.ctrl && !key.meta) setSearchQuery((q) => q + input)`
+    appendToQuery(input);
+  }
+
+  test("a click's release half does not get appended to the search query", () => {
+    let query = "";
+    const append = (text: string) => {
+      query += text;
+    };
+
+    dispatch("a", append); // normal typed character
+    dispatch("\x1b[<0;45;12M", append); // press half of a click (actionable, swallowed)
+    dispatch("\x1b[<0;45;12m", append); // release half (non-actionable, must still be swallowed)
+    dispatch("b", append);
+
+    expect(query).toBe("ab");
+  });
+
+  test("motion and extra-button sequences also do not get appended", () => {
+    let query = "";
+    const append = (text: string) => {
+      query += text;
+    };
+
+    dispatch("x", append);
+    dispatch("\x1b[<35;10;5M", append); // motion
+    dispatch("\x1b[<128;10;5M", append); // extra button
+    dispatch("y", append);
+
+    expect(query).toBe("xy");
   });
 });
 

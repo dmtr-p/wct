@@ -29,12 +29,14 @@ import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
   HEADER_OFFSET,
+  isMouseSequence,
   parseSgrMouse,
   resolveMouseAction,
 } from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import {
+  adjustIndexForDetailCollapse,
   buildTreeItems,
   buildTreeRows,
   clampScrollOffset,
@@ -235,6 +237,15 @@ export function App() {
   const prevSelectionIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
 
+  // selectionChanged distinguishes a deliberate selection change (e.g. a
+  // mouse click) from a background refresh that only produced new object
+  // references with the same selectedIndex. It's a const computed once
+  // during render, from the ref's value as of the last commit — so every
+  // effect below that closes over it this render sees the same, consistent
+  // answer. The ref itself is written exactly once, in the trailing effect.
+  const prevSelectedIndexRef = useRef(selectedIndex);
+  const selectionChanged = selectedIndex !== prevSelectedIndexRef.current;
+
   useEffect(() => {
     const prevTree = prevTreeRef.current;
     const prevId = prevSelectionIdRef.current;
@@ -254,12 +265,16 @@ export function App() {
     const item = treeItems[selectedIndex];
     prevSelectionIdRef.current = item ? treeItemId(item, filteredRepos) : null;
 
+    // Skip identity recovery for a deliberate selection change (e.g. a mouse
+    // click that also collapsed Expanded) — otherwise it sees the new
+    // selection's identity mismatch the old one and "recovers" back to it.
     const recoveredIndex = resolveRecoveredSelectionIndex({
       prevTree,
       treeItems,
       prevSelectionId: prevId,
       selectedIndex,
       repos: filteredRepos,
+      skipIdentityRecovery: selectionChanged,
     });
     if (recoveredIndex !== null && recoveredIndex !== selectedIndex) {
       setSelectedIndex(recoveredIndex);
@@ -277,19 +292,31 @@ export function App() {
     searchQuery,
     rows,
     viewportRows,
+    selectionChanged,
   ]);
 
-  // Keyboard ↑/↓ are viewport-aware: after a navigation moves selectedIndex,
-  // nudge the scroll offset minimally to keep the selection on screen. Keyed on
-  // [selectedIndex, rows, viewportRows] but NOT scrollOffset, and uses a
-  // functional update so it never fights a future wheel scroll (slice 02).
+  // Keyboard ↑/↓ (and mouse clicks) are viewport-aware: after a DELIBERATE
+  // selection change, nudge the scroll offset minimally to keep the selection
+  // on screen. Gated on `selectionChanged` so a background refresh that gives
+  // `rows` a new reference (useRegistry always calls setRepos, even when
+  // content is unchanged) does not re-fire this and snap a wheel-scrolled
+  // viewport back to the selection. Keyed on [selectedIndex, rows,
+  // viewportRows] but NOT scrollOffset, and uses a functional update so it
+  // never fights a future wheel scroll (slice 02).
   useEffect(() => {
+    if (!selectionChanged) return;
     const rowIndex = firstRowForItem(rows, selectedIndex);
     if (rowIndex === null) return;
     setScrollOffset((prev) =>
       scrollToKeepVisible(rowIndex, prev, viewportRows),
     );
-  }, [selectedIndex, rows, viewportRows]);
+  }, [selectedIndex, rows, viewportRows, selectionChanged]);
+
+  // The only place that writes prevSelectedIndexRef, keeping it in sync with
+  // selectedIndex for the next render's selectionChanged computation.
+  useEffect(() => {
+    prevSelectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -480,20 +507,36 @@ export function App() {
       case "select":
         setSelectedIndex(action.itemIndex);
         return;
-      case "selectAndExitExpanded":
+      case "selectAndExitExpanded": {
+        // Collapsing Expanded can remove the clicked item's detail rows (if
+        // the previously-expanded worktree had a PR/tmux detail row), which
+        // shifts every later item's index. Adjust the clicked itemIndex for
+        // that collapse the same way the keyboard left-arrow/escape path does
+        // (src/tui/input/expanded.ts) so the cursor lands on the row the user
+        // actually clicked, not a stale post-collapse index.
         setMode(Mode.Navigate);
-        setSelectedIndex(action.itemIndex);
+        setSelectedIndex(
+          adjustIndexForDetailCollapse(treeItems, action.itemIndex),
+        );
         return;
+      }
     }
   }
 
   useInput((input, key) => {
     // Parse mouse events out of the string Ink already forwards (no second
-    // stdin listener). Swallow ANY recognised mouse sequence in EVERY mode so
-    // no escape garble reaches the screen, even in modal/Search modes.
-    const mouse = parseSgrMouse(input);
-    if (mouse) {
-      handleMouse(mouse);
+    // stdin listener). Swallow ANY SGR mouse sequence in EVERY mode so no
+    // escape garble reaches the screen, even in modal/Search modes — this
+    // includes release/motion/extra-button sequences that `parseSgrMouse`
+    // resolves to `null` because they aren't actionable. A single click emits
+    // both a press AND a release sequence; without this shape-based guard the
+    // release half falls through to mode-specific handlers (e.g. corrupting
+    // the Search query with raw escape bytes).
+    if (isMouseSequence(input)) {
+      const mouse = parseSgrMouse(input);
+      if (mouse) {
+        handleMouse(mouse);
+      }
       return;
     }
 

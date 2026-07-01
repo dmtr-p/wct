@@ -23,6 +23,24 @@ export type MouseEvent =
     };
 
 /**
+ * True for ANY SGR mouse escape sequence — press, release, motion/drag, and
+ * extra-button events alike — regardless of whether `parseSgrMouse` resolves
+ * it to an actionable `MouseEvent`. Used by the `useInput` dispatcher guard to
+ * swallow every mouse sequence (ADR 0002 / PRD §6.6): a click emits BOTH a
+ * press and a release sequence, and `parseSgrMouse` intentionally returns
+ * `null` for the release half (and for motion/extra-button events) because
+ * those are not actionable — but non-actionable is not the same as "not a
+ * mouse sequence." Falling through the dispatcher guard would let those bytes
+ * reach mode-specific handlers (e.g. Search's text input), corrupting state.
+ *
+ * Matches the same anchored SGR shape as `parseSgrMouse`'s regex; kept as a
+ * separate, pure predicate so `parseSgrMouse` itself stays unchanged.
+ */
+export function isMouseSequence(input: string): boolean {
+  return SGR.test(input);
+}
+
+/**
  * Parse a single SGR mouse sequence out of the string Ink forwards to
  * `useInput`. Returns `null` for anything that is not a recognised mouse event
  * we act on (release, motion/drag, malformed input).

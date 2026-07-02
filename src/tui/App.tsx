@@ -259,6 +259,11 @@ export function App() {
     if (searchQueryChanged) {
       // Search transitions intentionally reset the cursor to the first match.
       prevSelectionIdRef.current = null;
+      // Reset the scroll explicitly: when the cursor was already at index 0
+      // (e.g. after a wheel scroll), setSelectedIndex(0) is a no-op, so
+      // `selectionChanged` stays false and the keep-visible effect below never
+      // fires — leaving the first match scrolled off-screen without this.
+      setScrollOffset(0);
       return;
     }
 

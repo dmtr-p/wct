@@ -94,8 +94,8 @@ export type MouseAction =
  * - Wheel → scroll only; the selection is untouched and may scroll out of view.
  * - Left-click → hit-test the row under the cursor and select it. In Expanded
  *   mode, a click within the expanded worktree's subtree stays; a click outside
- *   exits to Navigate. Non-left buttons and clicks on chrome/phantom rows are
- *   `none`.
+ *   exits to Navigate. Non-left buttons and clicks on chrome/phantom rows or
+ *   inert pane-header rows (which keyboard navigation also skips) are `none`.
  */
 export function resolveMouseAction(
   event: MouseEvent,
@@ -122,6 +122,14 @@ export function resolveMouseAction(
   const itemIndex = row?.itemIndex;
   if (itemIndex == null) {
     return { kind: "none" }; // phantom row / padding
+  }
+
+  // Pane headers are inert separators the keyboard can never land on
+  // (createNavigateTree skips them with this exact predicate); mirror that so
+  // a click cannot select a row that follow-up keys treat inconsistently.
+  const item = ctx.treeItems[itemIndex];
+  if (item?.type === "detail" && item.detailKind === "pane-header") {
+    return { kind: "none" };
   }
 
   if (ctx.mode.type === "Navigate") {

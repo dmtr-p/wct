@@ -457,6 +457,43 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
       }
     });
 
+    test("entering Search after a wheel scroll (selection already at index 0) resets the viewport to the first match", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      setTallWorktrees(40);
+
+      const rendered = await renderApp(<App />, 14);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        // Selection stays on the repo row (index 0, never moved). Wheel-scroll
+        // the viewport away so the selected row is off-screen.
+        for (let i = 0; i < 15; i++) {
+          await sendKeys(rendered.stdin, sgrWheel(1), 1);
+        }
+        await tick(5);
+        expect(selectedLine(rendered.lines())).toBeUndefined();
+
+        // Enter Search and type a query that still matches many rows. The
+        // cursor reset (setSelectedIndex(0)) is a no-op — selectedIndex is
+        // already 0 — so `selectionChanged` stays false and the keep-visible
+        // effect never fires; without the explicit scroll reset in the
+        // searchQueryChanged branch, Search would open with the selected
+        // first match scrolled off-screen and no visible cursor.
+        await sendKeys(rendered.stdin, "/");
+        await sendKeys(rendered.stdin, "f");
+        await tick(5);
+
+        const line = selectedLine(rendered.lines());
+        expect(line).toBeDefined();
+        expect(line).toContain("alpha");
+      } finally {
+        rendered.unmount();
+      }
+    });
+
     test("a genuine selectedIndex change still nudges the viewport", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },

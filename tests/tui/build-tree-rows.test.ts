@@ -233,6 +233,154 @@ describe("buildTreeRows", () => {
     );
   });
 
+  test("phantom rows still follow the last worktree when it is expanded with trailing detail rows", () => {
+    const branch = "feature/pr";
+    const repos = [
+      repo({
+        id: "repo-1",
+        project: "alpha",
+        worktrees: [
+          {
+            branch: "main",
+            path: "/tmp/alpha-main",
+            isMainWorktree: true,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+          {
+            branch,
+            path: "/tmp/alpha-pr",
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+        ],
+      }),
+    ];
+    const expandedRepos = new Set(["repo-1"]);
+    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const prData = new Map([
+      [
+        expandedWorktreeKey,
+        {
+          number: 1,
+          title: "Add thing",
+          state: "OPEN" as const,
+          headRefName: branch,
+          rollupState: "success" as const,
+        },
+      ],
+    ]);
+    const pendingActions = new Map<string, PendingAction>([
+      [
+        pendingKey("alpha", "feature/new"),
+        { type: "opening", branch: "feature/new", project: "alpha" },
+      ],
+    ]);
+    const items = buildTreeItems({
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions,
+    });
+
+    // items: [repo(0), wt main(1), wt feature/pr(2), pr-detail(3)]. The
+    // phantom must come AFTER the expanded last worktree's detail rows — a
+    // next-item-only "last worktree" check would drop it entirely.
+    expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
+      [
+        { itemIndex: 0, kind: "repo" },
+        { itemIndex: 1, kind: "worktree" },
+        { itemIndex: 2, kind: "worktree" },
+        { itemIndex: 3, kind: "detail" },
+        { itemIndex: null, kind: "phantom" },
+      ],
+    );
+  });
+
+  test("phantom rows follow the LAST worktree when an earlier worktree is expanded with detail rows", () => {
+    const branch = "feature/pr";
+    const repos = [
+      repo({
+        id: "repo-1",
+        project: "alpha",
+        worktrees: [
+          {
+            branch,
+            path: "/tmp/alpha-pr",
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+          {
+            branch: "main",
+            path: "/tmp/alpha-main",
+            isMainWorktree: true,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+        ],
+      }),
+    ];
+    const expandedRepos = new Set(["repo-1"]);
+    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const prData = new Map([
+      [
+        expandedWorktreeKey,
+        {
+          number: 1,
+          title: "Add thing",
+          state: "OPEN" as const,
+          headRefName: branch,
+          rollupState: "success" as const,
+        },
+      ],
+    ]);
+    const pendingActions = new Map<string, PendingAction>([
+      [
+        pendingKey("alpha", "feature/new"),
+        { type: "opening", branch: "feature/new", project: "alpha" },
+      ],
+    ]);
+    const items = buildTreeItems({
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions,
+    });
+
+    // items: [repo(0), wt feature/pr(1), pr-detail(2), wt main(3)]. Detail
+    // rows in the MIDDLE of the repo block must not trigger phantom emission;
+    // the phantom still trails the final worktree.
+    expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
+      [
+        { itemIndex: 0, kind: "repo" },
+        { itemIndex: 1, kind: "worktree" },
+        { itemIndex: 2, kind: "detail" },
+        { itemIndex: 3, kind: "worktree" },
+        { itemIndex: null, kind: "phantom" },
+      ],
+    );
+  });
+
   test("phantom rows for an empty expanded repo are appended at the bottom of the whole tree", () => {
     const repos = [
       repo({

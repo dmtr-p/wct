@@ -37,7 +37,10 @@ export type MouseController = ReturnType<typeof createMouseController>;
 /**
  * Enable mouse reporting for the lifetime of the TUI and guarantee the terminal
  * is restored on every exit path. Mirrors `useRefresh`: a plain React hook over
- * Node/Ink primitives, no Effect service.
+ * Node/Ink primitives, no Effect service. This is a DELIBERATE, lifecycle-only
+ * exception to the repo's effect-first guideline — enabling/disabling mouse
+ * reporting is pure terminal-lifecycle plumbing tied to React mount/unmount
+ * and Ink's exit sequencing, with no business logic to lift into Effect.
  *
  * Returns `disableMouse()` — call it on the `q` quit path *before* `exit()`,
  * because Ink's `handleExit` turns off raw mode before React unmount runs, so

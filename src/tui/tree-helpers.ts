@@ -251,6 +251,30 @@ export function buildTreeRows({
   const rows: TreeRow[] = [];
   const phantoms = phantomsByProject(repos, pendingActions);
 
+  // Phantom "opening…" rows for a populated repo follow the repo's LAST
+  // row-emitting item — the final worktree row block including any trailing
+  // detail rows — so an expanded last worktree cannot swallow them.
+  const emitPhantomsIfRepoBlockEnds = (
+    idx: number,
+    repoIndex: number,
+    project: string,
+  ) => {
+    const nextItem = items[idx + 1];
+    const isLastItemForRepo =
+      !nextItem || nextItem.type === "repo" || nextItem.repoIndex !== repoIndex;
+    if (!isLastItemForRepo) return;
+    const projectPhantoms = phantoms.get(project);
+    if (!projectPhantoms) return;
+    for (const phantom of projectPhantoms) {
+      rows.push({
+        itemIndex: null,
+        kind: "phantom",
+        repoIndex,
+        branch: phantom.branch,
+      });
+    }
+  };
+
   for (let idx = 0; idx < items.length; idx++) {
     const item = items[idx];
     if (!item) continue;
@@ -272,6 +296,7 @@ export function buildTreeRows({
 
     if (item.type === "detail") {
       rows.push({ itemIndex: idx, kind: "detail" });
+      emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
       continue;
     }
 
@@ -302,26 +327,10 @@ export function buildTreeRows({
       });
     }
 
-    // Phantom "opening…" rows for a populated repo follow the repo's last
-    // worktree-row block (and any detail rows belonging to it).
-    const nextItem = items[idx + 1];
-    const isLastWorktreeForRepo =
-      !nextItem ||
-      nextItem.type === "repo" ||
-      nextItem.repoIndex !== item.repoIndex;
-    if (isLastWorktreeForRepo) {
-      const projectPhantoms = phantoms.get(repo.project);
-      if (projectPhantoms) {
-        for (const phantom of projectPhantoms) {
-          rows.push({
-            itemIndex: null,
-            kind: "phantom",
-            repoIndex: item.repoIndex,
-            branch: phantom.branch,
-          });
-        }
-      }
-    }
+    // Phantom "opening…" rows follow the repo's last worktree-row block. When
+    // detail rows trail this worktree, the detail branch above emits them
+    // after the last detail row instead.
+    emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
   }
 
   // Phantom rows for expanded repos with no worktrees are appended at the very

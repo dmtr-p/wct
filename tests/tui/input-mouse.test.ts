@@ -12,7 +12,7 @@ import {
   buildTreeRows,
   type TreeRow,
 } from "../../src/tui/tree-helpers";
-import { Mode, pendingKey } from "../../src/tui/types";
+import { Mode, type PaneInfo, pendingKey } from "../../src/tui/types";
 
 describe("parseSgrMouse", () => {
   test("decodes wheel up (cb=64) as wheel, NOT a click (the %4 bug is absent)", () => {
@@ -245,6 +245,7 @@ function buildCtx(
   mode: Mode,
   expandedWorktreeKey: string | null,
   overrides?: Partial<MouseActionContext>,
+  panes: Map<string, PaneInfo[]> = new Map(),
 ): MouseActionContext {
   const expandedRepos = new Set(["repo-1", "repo-2"]);
   const treeItems = buildTreeItems({
@@ -252,7 +253,7 @@ function buildCtx(
     expandedRepos,
     expandedWorktreeKey,
     prData: new Map(),
-    panes: new Map(),
+    panes,
     jumpToPane: () => undefined,
   });
   const rows = buildTreeRows({
@@ -377,6 +378,70 @@ describe("resolveMouseAction", () => {
         ctx,
       ),
     ).toEqual({ kind: "selectAndExitExpanded", itemIndex });
+  });
+
+  test("a click on an inert pane-header row resolves to none, but a pane row selects (keyboard parity)", () => {
+    const key = pendingKey("alpha", "feature/a");
+    // feature/a's session name is formatSessionName(basename("/tmp/a")) = "a".
+    const panes = new Map<string, PaneInfo[]>([
+      [
+        "a",
+        [
+          {
+            paneId: "%1",
+            paneIndex: 0,
+            command: "vim",
+            window: "0",
+            zoomed: false,
+            active: true,
+          },
+        ],
+      ],
+    ]);
+    const ctx = buildCtx(Mode.Expanded(key), key, undefined, panes);
+
+    const headerItemIndex = ctx.treeItems.findIndex(
+      (item) => item.type === "detail" && item.detailKind === "pane-header",
+    );
+    expect(headerItemIndex).toBeGreaterThan(-1);
+    const headerRowIndex = ctx.rows.findIndex(
+      (r: TreeRow) => r.itemIndex === headerItemIndex,
+    );
+    expect(headerRowIndex).toBeGreaterThan(-1);
+
+    // createNavigateTree skips pane-header rows for the keyboard, so a mouse
+    // click on one must be a no-op — not a selection the keyboard could
+    // never reach.
+    expect(
+      resolveMouseAction(
+        {
+          kind: "press",
+          button: "left",
+          col: 3,
+          row: headerRowIndex + 1 + HEADER_OFFSET,
+        },
+        ctx,
+      ),
+    ).toEqual({ kind: "none" });
+
+    // A pane row directly below the header IS selectable by mouse.
+    const paneItemIndex = ctx.treeItems.findIndex(
+      (item) => item.type === "detail" && item.detailKind === "pane",
+    );
+    const paneRowIndex = ctx.rows.findIndex(
+      (r: TreeRow) => r.itemIndex === paneItemIndex,
+    );
+    expect(
+      resolveMouseAction(
+        {
+          kind: "press",
+          button: "left",
+          col: 3,
+          row: paneRowIndex + 1 + HEADER_OFFSET,
+        },
+        ctx,
+      ),
+    ).toEqual({ kind: "select", itemIndex: paneItemIndex });
   });
 
   test("non-interactive modes (Search/modals/confirm) resolve to none", () => {

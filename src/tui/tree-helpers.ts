@@ -2,10 +2,12 @@
 
 import { basename } from "node:path";
 import { formatSessionName } from "../services/tmux";
+import { formatSync } from "../services/worktree-service";
 import type { RepoInfo } from "./hooks/useRegistry";
 import {
   Mode,
   type PaneInfo,
+  type PendingAction,
   type PRInfo,
   pendingKey,
   type TreeItem,
@@ -19,6 +21,39 @@ interface BuildTreeOptions {
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
 }
+
+interface BuildTreeRowsOptions {
+  items: TreeItem[];
+  repos: RepoInfo[];
+  expandedRepos: Set<string>;
+  expandedWorktreeKey: string | null;
+  pendingActions: Map<string, PendingAction>;
+}
+
+/**
+ * A single *visual terminal row*. Logical tree items are not 1:1 with terminal
+ * rows: an expanded worktree with stats emits a second row, an expanded repo
+ * with zero worktrees emits a `(no worktrees)` row, and phantom "opening…" rows
+ * are not present in `items` at all.
+ *
+ * `itemIndex` maps each visual row back to its logical item index in `items`
+ * (or `null` for secondary/phantom rows that are not independently selectable).
+ * `kind` carries enough information for `TreeView` to render the row directly,
+ * so the row model is the single source of truth for both windowing and the
+ * render itself.
+ */
+export type TreeRow =
+  | { itemIndex: number; kind: "repo" }
+  | { itemIndex: null; kind: "repo-empty"; repoIndex: number }
+  | { itemIndex: number; kind: "worktree" }
+  | {
+      itemIndex: null;
+      kind: "worktree-stats";
+      repoIndex: number;
+      worktreeIndex: number;
+    }
+  | { itemIndex: number; kind: "detail" }
+  | { itemIndex: null; kind: "phantom"; repoIndex: number; branch: string };
 
 interface ResolveSelectedPaneOptions {
   repos: RepoInfo[];
@@ -162,6 +197,239 @@ export function buildTreeItems({
     }
   }
   return items;
+}
+
+/**
+ * Phantom "opening…" rows, grouped by project. These are pending `open` actions
+ * for branches that do not yet exist as worktrees in `repos`. Mirrors the
+ * computation `TreeView` performs so the row model matches the render exactly.
+ */
+function phantomsByProject(
+  repos: RepoInfo[],
+  pendingActions: Map<string, PendingAction>,
+): Map<string, PendingAction[]> {
+  const keys = new Set<string>();
+  for (const repo of repos) {
+    for (const wt of repo.worktrees) {
+      keys.add(pendingKey(repo.project, wt.branch));
+    }
+  }
+  const phantoms = new Map<string, PendingAction[]>();
+  for (const [key, action] of pendingActions) {
+    if (action.type === "opening" && !keys.has(key)) {
+      const existing = phantoms.get(action.project) ?? [];
+      existing.push(action);
+      phantoms.set(action.project, existing);
+    }
+  }
+  return phantoms;
+}
+
+/**
+ * Build the visual-row model — one entry per *terminal row* — from the logical
+ * `items` list. This is the shared primitive that drives both windowing (slice
+ * by scroll offset) and, in a later slice, hit-testing (click row → item).
+ *
+ * The row order replicates `TreeView`'s render exactly:
+ * - a repo row, optionally followed by a `(no worktrees)` row when expanded
+ *   with zero worktrees;
+ * - a worktree row, optionally followed by a stats row when expanded with
+ *   sync/changed-file stats;
+ * - detail rows;
+ * - phantom "opening…" rows for a *populated* repo are emitted after that
+ *   repo's last worktree row block;
+ * - phantom rows for *empty* expanded repos are appended at the very bottom of
+ *   the whole tree (matching the rendering quirk in `TreeView`).
+ */
+export function buildTreeRows({
+  items,
+  repos,
+  expandedRepos,
+  expandedWorktreeKey,
+  pendingActions,
+}: BuildTreeRowsOptions): TreeRow[] {
+  const rows: TreeRow[] = [];
+  const phantoms = phantomsByProject(repos, pendingActions);
+
+  // Phantom "opening…" rows for a populated repo follow the repo's LAST
+  // row-emitting item — the final worktree row block including any trailing
+  // detail rows — so an expanded last worktree cannot swallow them.
+  const emitPhantomsIfRepoBlockEnds = (
+    idx: number,
+    repoIndex: number,
+    project: string,
+  ) => {
+    const nextItem = items[idx + 1];
+    const isLastItemForRepo =
+      !nextItem || nextItem.type === "repo" || nextItem.repoIndex !== repoIndex;
+    if (!isLastItemForRepo) return;
+    const projectPhantoms = phantoms.get(project);
+    if (!projectPhantoms) return;
+    for (const phantom of projectPhantoms) {
+      rows.push({
+        itemIndex: null,
+        kind: "phantom",
+        repoIndex,
+        branch: phantom.branch,
+      });
+    }
+  };
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+    if (!item) continue;
+
+    const repo = repos[item.repoIndex];
+    if (!repo) continue;
+
+    if (item.type === "repo") {
+      rows.push({ itemIndex: idx, kind: "repo" });
+      if (expandedRepos.has(repo.id) && repo.worktrees.length === 0) {
+        rows.push({
+          itemIndex: null,
+          kind: "repo-empty",
+          repoIndex: item.repoIndex,
+        });
+      }
+      continue;
+    }
+
+    if (item.type === "detail") {
+      rows.push({ itemIndex: idx, kind: "detail" });
+      emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
+      continue;
+    }
+
+    // worktree
+    const worktreeIndex = item.worktreeIndex;
+    const wt = repo.worktrees[worktreeIndex];
+    if (!wt) continue;
+
+    rows.push({ itemIndex: idx, kind: "worktree" });
+
+    const wtKey = pendingKey(repo.project, wt.branch);
+    const isExpanded = expandedWorktreeKey === wtKey;
+    const pending = pendingActions.get(wtKey);
+    // opening/closing/stopping worktrees render as a single line (no stats
+    // row); `starting` falls through to the normal render and can show stats.
+    const isPending =
+      pending?.type === "opening" ||
+      pending?.type === "closing" ||
+      pending?.type === "stopping";
+    const sync = formatSync(wt.sync);
+    const hasStats = (sync !== "" && sync !== "✓") || wt.changedFiles > 0;
+    if (isExpanded && hasStats && !isPending) {
+      rows.push({
+        itemIndex: null,
+        kind: "worktree-stats",
+        repoIndex: item.repoIndex,
+        worktreeIndex,
+      });
+    }
+
+    // Phantom "opening…" rows follow the repo's last worktree-row block. When
+    // detail rows trail this worktree, the detail branch above emits them
+    // after the last detail row instead.
+    emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
+  }
+
+  // Phantom rows for expanded repos with no worktrees are appended at the very
+  // bottom of the whole tree (a rendering quirk in `TreeView`).
+  for (let ri = 0; ri < repos.length; ri++) {
+    const repo = repos[ri];
+    if (!repo) continue;
+    if (!expandedRepos.has(repo.id)) continue;
+    if (repo.worktrees.length > 0) continue;
+    const projectPhantoms = phantoms.get(repo.project);
+    if (!projectPhantoms) continue;
+    for (const phantom of projectPhantoms) {
+      rows.push({
+        itemIndex: null,
+        kind: "phantom",
+        repoIndex: ri,
+        branch: phantom.branch,
+      });
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * Find the index of the first visual row that maps to the given logical
+ * `itemIndex`, or `null` if no row maps to it.
+ */
+export function firstRowForItem(
+  rows: TreeRow[],
+  itemIndex: number,
+): number | null {
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i]?.itemIndex === itemIndex) {
+      return i;
+    }
+  }
+  return null;
+}
+
+/**
+ * Clamp a scroll offset to the valid range `[0, max(0, rowsLength -
+ * viewportRows)]`. When the tree fits the viewport the offset is forced to 0.
+ */
+export function clampScrollOffset(
+  offset: number,
+  rowsLength: number,
+  viewportRows: number,
+): number {
+  const max = Math.max(0, rowsLength - viewportRows);
+  if (offset < 0) return 0;
+  if (offset > max) return max;
+  return offset;
+}
+
+/**
+ * Minimally nudge the scroll offset so the visual row at `rowIndex` stays
+ * within the window `[offset, offset + viewportRows - 1]`:
+ * - if it is above the window, set the offset to that row;
+ * - if it is below the window, set `offset = rowIndex - viewportRows + 1`;
+ * - otherwise leave the offset unchanged.
+ *
+ * Nudge only — never re-center.
+ */
+export function scrollToKeepVisible(
+  rowIndex: number,
+  offset: number,
+  viewportRows: number,
+): number {
+  if (viewportRows <= 0) return offset;
+  if (rowIndex < offset) {
+    return rowIndex;
+  }
+  if (rowIndex > offset + viewportRows - 1) {
+    return rowIndex - viewportRows + 1;
+  }
+  return offset;
+}
+
+/**
+ * Resolve the owning worktree key for an item (a worktree row's own key, or a
+ * detail row's owning-worktree key) and compare it to `expandedWorktreeKey`.
+ * Used by the click handler to decide whether a click stays in Expanded mode.
+ */
+export function isWithinExpandedSubtree(
+  items: TreeItem[],
+  itemIndex: number,
+  expandedWorktreeKey: string | null,
+  repos: RepoInfo[],
+): boolean {
+  if (!expandedWorktreeKey) return false;
+  const worktreeIndex = findOwningWorktreeIndex(items, itemIndex);
+  if (worktreeIndex === null) return false;
+  const worktree = items[worktreeIndex];
+  if (worktree?.type !== "worktree") return false;
+  const repo = repos[worktree.repoIndex];
+  const wt = repo?.worktrees[worktree.worktreeIndex];
+  if (!repo || !wt) return false;
+  return pendingKey(repo.project, wt.branch) === expandedWorktreeKey;
 }
 
 /**

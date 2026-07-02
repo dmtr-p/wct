@@ -1,4 +1,5 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
+import { useGuardedInput } from "../hooks/useGuardedInput";
 
 export function isSubmitShortcut(key: {
   ctrl?: boolean;
@@ -18,7 +19,7 @@ export function ToggleRow({
   isFocused: boolean;
   onToggle: () => void;
 }) {
-  useInput(
+  useGuardedInput(
     (input) => {
       if (input === " ") onToggle();
     },
@@ -45,7 +46,7 @@ export function SubmitButton({
   disabled?: boolean;
   onSubmit: () => void;
 }) {
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if ((key.return && !key.ctrl) || input === " ") onSubmit();
     },

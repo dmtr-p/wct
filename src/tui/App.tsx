@@ -1,14 +1,6 @@
 // src/tui/App.tsx
 
-import {
-  Box,
-  type Key,
-  render,
-  Text,
-  useApp,
-  useInput,
-  useWindowSize,
-} from "ink";
+import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { OpenModal } from "./components/OpenModal";
@@ -17,7 +9,9 @@ import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
+import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
+import { useMouse } from "./hooks/useMouse";
 import { useRefresh } from "./hooks/useRefresh";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
@@ -26,20 +20,36 @@ import { useTmux } from "./hooks/useTmux";
 import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
+import {
+  HEADER_OFFSET,
+  type MouseEvent,
+  resolveMouseAction,
+} from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import {
+  adjustIndexForDetailCollapse,
   buildTreeItems,
+  buildTreeRows,
+  clampScrollOffset,
   findOwningWorktreeIndex,
+  firstRowForItem,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
+  scrollToKeepVisible,
   treeItemId,
 } from "./tree-helpers";
 import { Mode, type PendingAction, type PRInfo } from "./types";
 
+// Top chrome above the tree: the `wct` header line + a blank spacer line. Same
+// 2 rows the mouse hit-test skips, so it is sourced from a single constant to
+// keep windowing and hit-testing aligned.
+const TOP_CHROME_ROWS = HEADER_OFFSET;
+
 export function App() {
   const { exit } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
+  const { disableMouse } = useMouse();
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
@@ -64,6 +74,7 @@ export function App() {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [didInitialExpand, setDidInitialExpand] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
@@ -147,12 +158,85 @@ export function App() {
     ],
   );
 
+  const statusBarProps = resolveStatusBarProps({
+    mode,
+    items: treeItems,
+    selectedIndex,
+    repos: filteredRepos,
+  });
+
+  const repoError = statusBarProps.selectedProject
+    ? githubErrors.get(statusBarProps.selectedProject)
+    : undefined;
+
+  // The shared visual-row model drives both windowing here and the row-by-row
+  // render in TreeView. Logical items are not 1:1 with terminal rows.
+  const rows = useMemo(
+    () =>
+      buildTreeRows({
+        items: treeItems,
+        repos: filteredRepos,
+        expandedRepos,
+        expandedWorktreeKey,
+        pendingActions,
+      }),
+    [
+      treeItems,
+      filteredRepos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions,
+    ],
+  );
+
+  // The 3 true modals do not scroll the tree — rendering it in full keeps the
+  // modal on-screen. The interactive layout (Navigate/Expanded/Search) windows
+  // the tree under the StatusBar + optional error lines.
+  const isTrueModal =
+    mode.type === "OpenModal" ||
+    mode.type === "UpModal" ||
+    mode.type === "AddProjectModal";
+
+  // Bottom chrome in the interactive layout: optional tmux/action error line
+  // (mutually exclusive) + StatusBar (1 divider + optional repoError line + 2
+  // hint lines). Search renders an extra query line in place of one hint, but
+  // the line count stays at 3 either way. StatusBar only renders the repoError
+  // line in its default Navigate/Expanded branch (Confirm/Search return early),
+  // so only budget for it there.
+  const bottomChromeRows = isTrueModal
+    ? 0
+    : 1 + // divider
+      2 + // two hint lines (or query + hint in Search)
+      (repoError && (mode.type === "Navigate" || mode.type === "Expanded")
+        ? 1
+        : 0) +
+      ((tmuxError && !actionError) || actionError ? 1 : 0);
+
+  const viewportRows = isTrueModal
+    ? Math.max(1, rows.length)
+    : Math.max(1, termRows - TOP_CHROME_ROWS - bottomChromeRows);
+
+  const effectiveScrollOffset = clampScrollOffset(
+    scrollOffset,
+    rows.length,
+    viewportRows,
+  );
+
   // Identity-based selection recovery: when the tree structure changes
   // (background refresh, async worktree add/remove), find the previously-
   // selected item by stable identity instead of blindly clamping by length.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
+
+  // selectionChanged distinguishes a deliberate selection change (e.g. a
+  // mouse click) from a background refresh that only produced new object
+  // references with the same selectedIndex. It's a const computed once
+  // during render, from the ref's value as of the last commit — so every
+  // effect below that closes over it this render sees the same, consistent
+  // answer. The ref itself is written exactly once, in the trailing effect.
+  const prevSelectedIndexRef = useRef(selectedIndex);
+  const selectionChanged = selectedIndex !== prevSelectedIndexRef.current;
 
   useEffect(() => {
     const prevTree = prevTreeRef.current;
@@ -167,30 +251,69 @@ export function App() {
     if (searchQueryChanged) {
       // Search transitions intentionally reset the cursor to the first match.
       prevSelectionIdRef.current = null;
+      // Reset the scroll explicitly: when the cursor was already at index 0
+      // (e.g. after a wheel scroll), setSelectedIndex(0) is a no-op, so
+      // `selectionChanged` stays false and the keep-visible effect below never
+      // fires — leaving the first match scrolled off-screen without this.
+      setScrollOffset(0);
       return;
     }
 
     const item = treeItems[selectedIndex];
     prevSelectionIdRef.current = item ? treeItemId(item, filteredRepos) : null;
 
+    // Skip identity recovery for a deliberate selection change (e.g. a mouse
+    // click that also collapsed Expanded) — otherwise it sees the new
+    // selection's identity mismatch the old one and "recovers" back to it.
     const recoveredIndex = resolveRecoveredSelectionIndex({
       prevTree,
       treeItems,
       prevSelectionId: prevId,
       selectedIndex,
       repos: filteredRepos,
+      skipIdentityRecovery: selectionChanged,
     });
     if (recoveredIndex !== null && recoveredIndex !== selectedIndex) {
       setSelectedIndex(recoveredIndex);
     }
-  }, [treeItems, selectedIndex, filteredRepos, searchQuery]);
 
-  const statusBarProps = resolveStatusBarProps({
-    mode,
-    items: treeItems,
+    // Keep the scroll offset valid after a background refresh so it can't
+    // desync from the selection (e.g. rows removed below the window).
+    setScrollOffset((prev) =>
+      clampScrollOffset(prev, rows.length, viewportRows),
+    );
+  }, [
+    treeItems,
     selectedIndex,
-    repos: filteredRepos,
-  });
+    filteredRepos,
+    searchQuery,
+    rows,
+    viewportRows,
+    selectionChanged,
+  ]);
+
+  // Keyboard ↑/↓ (and mouse clicks) are viewport-aware: after a DELIBERATE
+  // selection change, nudge the scroll offset minimally to keep the selection
+  // on screen. Gated on `selectionChanged` so a background refresh that gives
+  // `rows` a new reference (useRegistry always calls setRepos, even when
+  // content is unchanged) does not re-fire this and snap a wheel-scrolled
+  // viewport back to the selection. Keyed on [selectedIndex, rows,
+  // viewportRows] but NOT scrollOffset, and uses a functional update so it
+  // never fights a future wheel scroll (slice 02).
+  useEffect(() => {
+    if (!selectionChanged) return;
+    const rowIndex = firstRowForItem(rows, selectedIndex);
+    if (rowIndex === null) return;
+    setScrollOffset((prev) =>
+      scrollToKeepVisible(rowIndex, prev, viewportRows),
+    );
+  }, [selectedIndex, rows, viewportRows, selectionChanged]);
+
+  // The only place that writes prevSelectedIndexRef, keeping it in sync with
+  // selectedIndex for the next render's selectionChanged computation.
+  useEffect(() => {
+    prevSelectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -358,54 +481,105 @@ export function App() {
     }
   }
 
-  useInput((input, key) => {
-    if (
-      input === "q" &&
-      mode.type !== "OpenModal" &&
-      mode.type !== "UpModal" &&
-      mode.type !== "AddProjectModal" &&
-      mode.type !== "Search" &&
-      mode.type !== "ConfirmKill" &&
-      mode.type !== "ConfirmDown" &&
-      mode.type !== "ConfirmClose" &&
-      mode.type !== "ConfirmCloseForce"
-    ) {
-      exit();
-      return;
-    }
-
-    switch (mode.type) {
-      case "Navigate":
-        return handleNavigateInput(navCtx, input, key);
-      case "Search":
-        return handleSearchInput(input, key);
-      case "OpenModal":
-      case "UpModal":
-      case "AddProjectModal":
+  function handleMouse(event: MouseEvent) {
+    const action = resolveMouseAction(event, {
+      mode,
+      rows,
+      effectiveScrollOffset,
+      viewportRows,
+      treeItems,
+      repos: filteredRepos,
+      expandedWorktreeKey,
+    });
+    switch (action.kind) {
+      case "none":
         return;
-      case "Expanded":
-        return handleExpandedInput(expCtx, input, key);
-      case "ConfirmKill":
-        return handleConfirmKillInput(input, key);
-      case "ConfirmDown":
-        return handleConfirmDownInput(input, key);
-      case "ConfirmClose":
-      case "ConfirmCloseForce":
-        return handleConfirmCloseInput(
-          {
-            mode,
-            returnMode: confirmCloseReturnModeRef.current,
-            returnSelectedIndex: confirmCloseReturnSelectedIndexRef.current,
-            setMode,
-            setSelectedIndex,
-            executeClose: (...args) =>
-              void sessionActions.executeClose(...args),
-          },
-          input,
-          key,
+      case "scroll":
+        // Wheel scrolls the viewport only; the selection is untouched.
+        setScrollOffset((prev) =>
+          clampScrollOffset(prev + action.delta, rows.length, viewportRows),
         );
+        return;
+      case "select":
+        setSelectedIndex(action.itemIndex);
+        return;
+      case "selectAndExitExpanded": {
+        // Collapsing Expanded can remove the clicked item's detail rows (if
+        // the previously-expanded worktree had a PR/tmux detail row), which
+        // shifts every later item's index. Adjust the clicked itemIndex for
+        // that collapse the same way the keyboard left-arrow/escape path does
+        // (src/tui/input/expanded.ts) so the cursor lands on the row the user
+        // actually clicked, not a stale post-collapse index.
+        setMode(Mode.Navigate);
+        setSelectedIndex(
+          adjustIndexForDetailCollapse(treeItems, action.itemIndex),
+        );
+        return;
+      }
     }
-  });
+  }
+
+  // useGuardedInput parses mouse events out of the string Ink already forwards
+  // (no second stdin listener, ADR 0002) and swallows ANY SGR mouse sequence
+  // in EVERY mode — including release/motion/extra-button sequences, and
+  // multi-sequence strings from Ink's paste-fallback path (normal stdin
+  // delivery is one sequence per event) — so no escape garble ever reaches
+  // the handler below (or any other useGuardedInput handler, e.g. the modals'
+  // text inputs). Actionable events arrive via onMouseEvent, in order.
+  useGuardedInput(
+    (input, key) => {
+      if (
+        input === "q" &&
+        mode.type !== "OpenModal" &&
+        mode.type !== "UpModal" &&
+        mode.type !== "AddProjectModal" &&
+        mode.type !== "Search" &&
+        mode.type !== "ConfirmKill" &&
+        mode.type !== "ConfirmDown" &&
+        mode.type !== "ConfirmClose" &&
+        mode.type !== "ConfirmCloseForce"
+      ) {
+        // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
+        // mode before React unmount, so the unmount-cleanup disable is too late.
+        disableMouse();
+        exit();
+        return;
+      }
+
+      switch (mode.type) {
+        case "Navigate":
+          return handleNavigateInput(navCtx, input, key);
+        case "Search":
+          return handleSearchInput(input, key);
+        case "OpenModal":
+        case "UpModal":
+        case "AddProjectModal":
+          return;
+        case "Expanded":
+          return handleExpandedInput(expCtx, input, key);
+        case "ConfirmKill":
+          return handleConfirmKillInput(input, key);
+        case "ConfirmDown":
+          return handleConfirmDownInput(input, key);
+        case "ConfirmClose":
+        case "ConfirmCloseForce":
+          return handleConfirmCloseInput(
+            {
+              mode,
+              returnMode: confirmCloseReturnModeRef.current,
+              returnSelectedIndex: confirmCloseReturnSelectedIndexRef.current,
+              setMode,
+              setSelectedIndex,
+              executeClose: (...args) =>
+                void sessionActions.executeClose(...args),
+            },
+            input,
+            key,
+          );
+      }
+    },
+    { onMouseEvent: handleMouse },
+  );
 
   if (loading) {
     return (
@@ -434,6 +608,8 @@ export function App() {
           maxWidth={termCols}
           refreshingProjects={refreshingProjects}
           errors={githubErrors}
+          scrollOffset={effectiveScrollOffset}
+          viewportRows={viewportRows}
         />
       </Box>
       {mode.type === "OpenModal" ? (
@@ -480,11 +656,7 @@ export function App() {
             {...statusBarProps}
             searchQuery={searchQuery}
             hasClient={tmuxClient !== null}
-            repoError={
-              statusBarProps.selectedProject
-                ? githubErrors.get(statusBarProps.selectedProject)
-                : undefined
-            }
+            repoError={repoError}
           />
         </Box>
       )}

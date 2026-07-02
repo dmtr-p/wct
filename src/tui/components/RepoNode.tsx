@@ -6,7 +6,6 @@ interface Props {
   expanded: boolean;
   isSelected: boolean;
   isChildSelected: boolean;
-  worktreeCount: number;
   maxWidth: number;
   isRefreshing?: boolean;
   hasError?: boolean;
@@ -17,7 +16,6 @@ export function RepoNode({
   expanded,
   isSelected,
   isChildSelected,
-  worktreeCount,
   maxWidth,
   isRefreshing,
   hasError,
@@ -35,21 +33,13 @@ export function RepoNode({
   );
 
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
-        <Text color={isSelected ? "cyan" : "yellow"} bold={active}>
-          {arrow} {displayProject}
-        </Text>
-        {isRefreshing ? <Text dimColor> ↻</Text> : null}
-        {hasError ? <Text color="yellow"> ⚠</Text> : null}
-      </Box>
-      {expanded && worktreeCount === 0 ? (
-        <Box>
-          <Text>{"    "}</Text>
-          <Text dimColor>(no worktrees)</Text>
-        </Box>
-      ) : null}
+    <Box>
+      <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
+      <Text color={isSelected ? "cyan" : "yellow"} bold={active}>
+        {arrow} {displayProject}
+      </Text>
+      {isRefreshing ? <Text dimColor> ↻</Text> : null}
+      {hasError ? <Text color="yellow"> ⚠</Text> : null}
     </Box>
   );
 }

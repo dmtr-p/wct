@@ -13,6 +13,26 @@ export const HEADER_OFFSET = 2;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the ESC (\x1b) byte is the literal start of an SGR mouse sequence and must be matched
 const SGR = /^\x1b?\[<(\d+);(\d+);(\d+)([Mm])$/;
 
+/**
+ * One or more concatenated SGR sequences. On the normal stdin path Ink 7.1
+ * delivers exactly ONE sequence per `useInput` call: its input parser
+ * (ink/build/input-parser.js) splits each complete CSI sequence in a chunk
+ * into its own event ('<', digits, ';' are parameter bytes, 'M'/'m' finals;
+ * truncated tails are held pending and reassembled), and use-input.js strips
+ * the leading ESC of EACH event. The only path that can hand `useInput` a
+ * multi-sequence (or inner-ESC) string is Ink's bracketed-paste fallback
+ * (`emitInput(event.paste)` when no paste listener is registered) carrying
+ * mouse-shaped pasted text. Accepting one-or-more sequences here is
+ * defense-in-depth for that path — and for any future change in Ink's
+ * delivery model — NOT a description of normal stdin behaviour.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
+const SGR_CHUNK = /^(?:\x1b?\[<\d+;\d+;\d+[Mm])+$/;
+
+/** Global matcher used to split a mouse-only chunk into single sequences. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
+const SGR_SPLIT = /\x1b?\[<\d+;\d+;\d+[Mm]/g;
+
 export type MouseEvent =
   | { kind: "wheel"; dir: 1 | -1 }
   | {
@@ -33,11 +53,35 @@ export type MouseEvent =
  * mouse sequence." Falling through the dispatcher guard would let those bytes
  * reach mode-specific handlers (e.g. Search's text input), corrupting state.
  *
- * Matches the same anchored SGR shape as `parseSgrMouse`'s regex; kept as a
- * separate, pure predicate so `parseSgrMouse` itself stays unchanged.
+ * Also true for a string of several concatenated sequences (see `SGR_CHUNK` —
+ * normal stdin delivery is one sequence per event; the multi-sequence form
+ * only occurs via Ink's paste fallback and is handled as defense-in-depth).
+ * Semantics: input is swallowed as mouse only when it is ENTIRELY mouse
+ * sequences. A mixed string like `a[<0;5;5M` is NOT swallowed — swallowing
+ * it would drop the user's keystroke. Accepted trade-off: a bracketed paste
+ * whose text is exactly one-or-more mouse-shaped tokens (someone literally
+ * pasting `[<0;12;38M` into a text field) is swallowed as mouse input; that
+ * case is vanishingly rare and inherent to shape-based guarding.
+ *
+ * Kept as a separate, pure predicate so `parseSgrMouse` stays single-sequence.
  */
 export function isMouseSequence(input: string): boolean {
-  return SGR.test(input);
+  return SGR_CHUNK.test(input);
+}
+
+/**
+ * Split a mouse-only string into its individual SGR sequences, in order,
+ * each consumable by `parseSgrMouse`. On the normal stdin path Ink already
+ * delivers one sequence per event, so this usually yields a single element;
+ * if a multi-sequence string ever arrives (paste fallback, or a future Ink
+ * delivery change) dispatch iterates ALL of them — e.g. two wheel ticks must
+ * scroll twice, never just the first. Returns `[]` for anything
+ * `isMouseSequence` rejects (mixed or non-mouse input is a keyboard concern,
+ * not ours).
+ */
+export function splitMouseSequences(input: string): string[] {
+  if (!isMouseSequence(input)) return [];
+  return input.match(SGR_SPLIT) ?? [];
 }
 
 /**

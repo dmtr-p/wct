@@ -1,7 +1,8 @@
 import { Effect, FileSystem } from "effect";
-import { Text, useInput } from "ink";
+import { Text } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlink } from "../hooks/useBlink";
+import { useGuardedInput } from "../hooks/useGuardedInput";
 import { runTuiSilentPromise } from "../runtime";
 import { getVisibleWindow, type ListItem } from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
@@ -114,7 +115,7 @@ export function PathInput({
     }
   }, [filtered.length, selectedCompletionIndex]);
 
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (key.downArrow) {
         if (filtered.length === 0) return;

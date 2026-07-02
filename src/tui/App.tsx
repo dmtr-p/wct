@@ -1,14 +1,6 @@
 // src/tui/App.tsx
 
-import {
-  Box,
-  type Key,
-  render,
-  Text,
-  useApp,
-  useInput,
-  useWindowSize,
-} from "ink";
+import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { OpenModal } from "./components/OpenModal";
@@ -17,6 +9,7 @@ import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
+import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
 import { useRefresh } from "./hooks/useRefresh";
@@ -29,8 +22,7 @@ import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
   HEADER_OFFSET,
-  isMouseSequence,
-  parseSgrMouse,
+  type MouseEvent,
   resolveMouseAction,
 } from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
@@ -489,8 +481,7 @@ export function App() {
     }
   }
 
-  function handleMouse(event: ReturnType<typeof parseSgrMouse>) {
-    if (!event) return;
+  function handleMouse(event: MouseEvent) {
     const action = resolveMouseAction(event, {
       mode,
       rows,
@@ -528,73 +519,67 @@ export function App() {
     }
   }
 
-  useInput((input, key) => {
-    // Parse mouse events out of the string Ink already forwards (no second
-    // stdin listener). Swallow ANY SGR mouse sequence in EVERY mode so no
-    // escape garble reaches the screen, even in modal/Search modes — this
-    // includes release/motion/extra-button sequences that `parseSgrMouse`
-    // resolves to `null` because they aren't actionable. A single click emits
-    // both a press AND a release sequence; without this shape-based guard the
-    // release half falls through to mode-specific handlers (e.g. corrupting
-    // the Search query with raw escape bytes).
-    if (isMouseSequence(input)) {
-      const mouse = parseSgrMouse(input);
-      if (mouse) {
-        handleMouse(mouse);
-      }
-      return;
-    }
-
-    if (
-      input === "q" &&
-      mode.type !== "OpenModal" &&
-      mode.type !== "UpModal" &&
-      mode.type !== "AddProjectModal" &&
-      mode.type !== "Search" &&
-      mode.type !== "ConfirmKill" &&
-      mode.type !== "ConfirmDown" &&
-      mode.type !== "ConfirmClose" &&
-      mode.type !== "ConfirmCloseForce"
-    ) {
-      // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
-      // mode before React unmount, so the unmount-cleanup disable is too late.
-      disableMouse();
-      exit();
-      return;
-    }
-
-    switch (mode.type) {
-      case "Navigate":
-        return handleNavigateInput(navCtx, input, key);
-      case "Search":
-        return handleSearchInput(input, key);
-      case "OpenModal":
-      case "UpModal":
-      case "AddProjectModal":
+  // useGuardedInput parses mouse events out of the string Ink already forwards
+  // (no second stdin listener, ADR 0002) and swallows ANY SGR mouse sequence
+  // in EVERY mode — including release/motion/extra-button sequences, and
+  // multi-sequence strings from Ink's paste-fallback path (normal stdin
+  // delivery is one sequence per event) — so no escape garble ever reaches
+  // the handler below (or any other useGuardedInput handler, e.g. the modals'
+  // text inputs). Actionable events arrive via onMouseEvent, in order.
+  useGuardedInput(
+    (input, key) => {
+      if (
+        input === "q" &&
+        mode.type !== "OpenModal" &&
+        mode.type !== "UpModal" &&
+        mode.type !== "AddProjectModal" &&
+        mode.type !== "Search" &&
+        mode.type !== "ConfirmKill" &&
+        mode.type !== "ConfirmDown" &&
+        mode.type !== "ConfirmClose" &&
+        mode.type !== "ConfirmCloseForce"
+      ) {
+        // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
+        // mode before React unmount, so the unmount-cleanup disable is too late.
+        disableMouse();
+        exit();
         return;
-      case "Expanded":
-        return handleExpandedInput(expCtx, input, key);
-      case "ConfirmKill":
-        return handleConfirmKillInput(input, key);
-      case "ConfirmDown":
-        return handleConfirmDownInput(input, key);
-      case "ConfirmClose":
-      case "ConfirmCloseForce":
-        return handleConfirmCloseInput(
-          {
-            mode,
-            returnMode: confirmCloseReturnModeRef.current,
-            returnSelectedIndex: confirmCloseReturnSelectedIndexRef.current,
-            setMode,
-            setSelectedIndex,
-            executeClose: (...args) =>
-              void sessionActions.executeClose(...args),
-          },
-          input,
-          key,
-        );
-    }
-  });
+      }
+
+      switch (mode.type) {
+        case "Navigate":
+          return handleNavigateInput(navCtx, input, key);
+        case "Search":
+          return handleSearchInput(input, key);
+        case "OpenModal":
+        case "UpModal":
+        case "AddProjectModal":
+          return;
+        case "Expanded":
+          return handleExpandedInput(expCtx, input, key);
+        case "ConfirmKill":
+          return handleConfirmKillInput(input, key);
+        case "ConfirmDown":
+          return handleConfirmDownInput(input, key);
+        case "ConfirmClose":
+        case "ConfirmCloseForce":
+          return handleConfirmCloseInput(
+            {
+              mode,
+              returnMode: confirmCloseReturnModeRef.current,
+              returnSelectedIndex: confirmCloseReturnSelectedIndexRef.current,
+              setMode,
+              setSelectedIndex,
+              executeClose: (...args) =>
+                void sessionActions.executeClose(...args),
+            },
+            input,
+            key,
+          );
+      }
+    },
+    { onMouseEvent: handleMouse },
+  );
 
   if (loading) {
     return (

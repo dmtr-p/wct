@@ -494,6 +494,70 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
       }
     });
 
+    test("two wheel-downs written as one stdin chunk scroll twice end-to-end (guard integration)", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      setTallWorktrees(40);
+
+      const rendered = await renderApp(<App />, 14);
+      try {
+        await tick(20);
+        // Rows: repo-1(0), main(1), feature/0(2), feature/1(3), …
+        expect(rendered.output()).toContain("main");
+
+        // Write BOTH wheel-down sequences in ONE stdin chunk. Ink 7.1's input
+        // parser splits the chunk into TWO per-sequence useInput events before
+        // dispatch, so this verifies the guarded dispatcher handles every
+        // event of a coalesced write end-to-end — NOT splitMouseSequences
+        // (that multi-sequence splitter only runs on Ink's paste-fallback
+        // path and is pinned by the pure tests in input-mouse.test.ts). Each
+        // event must scroll one row: offset 0 → 2, so the first visible row
+        // becomes feature/0 and main scrolls off; if only one event were
+        // acted on, offset would be 1 and main would still be visible.
+        await sendKeys(rendered.stdin, sgrWheel(1) + sgrWheel(1));
+        await tick(5);
+
+        const lines = rendered.lines();
+        expect(lines.some((l) => l.includes("feature/0"))).toBe(true);
+        expect(lines.some((l) => l.includes("main"))).toBe(false);
+      } finally {
+        rendered.unmount();
+      }
+    });
+
+    test("a click's press+release written as one chunk leaves the Search query clean (guard integration)", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      setTallWorktrees(5);
+
+      const rendered = await renderApp(<App />, 20);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        await sendKeys(rendered.stdin, "/"); // enter Search
+        // A real click always emits press + release; write both in one stdin
+        // chunk. Ink splits them into two per-sequence useInput events, so
+        // this verifies the shape-based guard swallows BOTH halves in Search
+        // mode end-to-end — in particular the release, which parseSgrMouse
+        // resolves to null but must never fall through to the query handler.
+        await sendKeys(rendered.stdin, sgrPress(3, 3) + sgrRelease(3, 3));
+        await sendKeys(rendered.stdin, "f");
+        await tick(5);
+
+        // Query must be exactly "f" — still matching the feature/* rows. Had
+        // either half leaked into the query, nothing would match and no
+        // selection cursor would render.
+        const line = selectedLine(rendered.lines());
+        expect(line).toBeDefined();
+        expect(line).toContain("alpha");
+      } finally {
+        rendered.unmount();
+      }
+    });
+
     test("a genuine selectedIndex change still nudges the viewport", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },

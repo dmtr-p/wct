@@ -6,6 +6,7 @@ import {
   type MouseActionContext,
   parseSgrMouse,
   resolveMouseAction,
+  splitMouseSequences,
 } from "../../src/tui/input/mouse";
 import {
   buildTreeItems,
@@ -128,6 +129,34 @@ describe("isMouseSequence", () => {
     expect(isMouseSequence("")).toBe(false);
   });
 
+  // Multi-sequence strings — defense-in-depth, NOT the normal stdin path.
+  // Ink 7.1's input parser (ink/build/input-parser.js) splits every complete
+  // CSI sequence in a stdin chunk into its OWN useInput event and strips the
+  // leading ESC per event, so a concatenated string can only reach useInput
+  // via Ink's bracketed-paste fallback (emitInput(event.paste) when no paste
+  // listener is registered) carrying mouse-shaped pasted text — or a future
+  // change in Ink's delivery model. The guard accepts one-or-more sequences
+  // so that path can never leak escape bytes into text inputs either.
+  test("matches a concatenated press+release+release string (paste-fallback shape)", () => {
+    expect(isMouseSequence("[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m")).toBe(true);
+  });
+
+  test("matches a concatenated string whether or not each sequence keeps its ESC", () => {
+    expect(isMouseSequence("\x1b[<65;1;1M\x1b[<65;1;1M")).toBe(true);
+    expect(isMouseSequence("[<65;1;1M[<65;1;1M")).toBe(true);
+  });
+
+  test("does NOT match a mixed string — a keystroke merged with a sequence is keyboard input", () => {
+    // Semantics (documented on isMouseSequence): input is swallowed as mouse
+    // only when it is ENTIRELY mouse sequences. Swallowing a mixed string
+    // would eat the 'a' keystroke. (Accepted trade-off, also documented
+    // there: a paste that is EXACTLY mouse-shaped tokens IS swallowed.)
+    expect(isMouseSequence("a\x1b[<0;5;5M")).toBe(false);
+    expect(isMouseSequence("a[<0;5;5M")).toBe(false);
+    expect(isMouseSequence("\x1b[<0;5;5Mx")).toBe(false);
+    expect(isMouseSequence("[<0;5;5M[<0;5;5")).toBe(false); // truncated tail
+  });
+
   test("agrees with parseSgrMouse on every case where parseSgrMouse is non-null", () => {
     // Whenever parseSgrMouse resolves an actionable event, isMouseSequence
     // must also be true — parseSgrMouse being non-null is a strict subset of
@@ -137,6 +166,49 @@ describe("isMouseSequence", () => {
       expect(parseSgrMouse(seq)).not.toBeNull();
       expect(isMouseSequence(seq)).toBe(true);
     }
+  });
+});
+
+describe("splitMouseSequences", () => {
+  // Pins the ordering/multi-event contract for multi-sequence strings (the
+  // paste-fallback shape — see the delivery-model note above). This pure
+  // suite is the real coverage for the splitter; the app-mouse-wiring tests
+  // exercise guard integration end-to-end but Ink splits their stdin writes
+  // into per-sequence events before the splitter is ever needed.
+  test("splits a concatenated string into single sequences, in order", () => {
+    expect(splitMouseSequences("[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m")).toEqual(
+      ["[<0;12;38M", "\x1b[<0;12;38m", "\x1b[<0;1;1m"],
+    );
+  });
+
+  test("a single sequence yields itself", () => {
+    expect(splitMouseSequences("\x1b[<65;1;1M")).toEqual(["\x1b[<65;1;1M"]);
+  });
+
+  test("each split sequence is consumable by parseSgrMouse — two wheel-downs yield two scroll events in order", () => {
+    const events = splitMouseSequences("\x1b[<65;1;1M\x1b[<65;1;1M").map(
+      parseSgrMouse,
+    );
+    expect(events).toEqual([
+      { kind: "wheel", dir: 1 },
+      { kind: "wheel", dir: 1 },
+    ]);
+  });
+
+  test("press+release split: press parses, release parses to null (non-actionable but swallowed)", () => {
+    const events = splitMouseSequences("\x1b[<0;12;38M\x1b[<0;12;38m").map(
+      parseSgrMouse,
+    );
+    expect(events).toEqual([
+      { kind: "press", button: "left", col: 12, row: 38 },
+      null,
+    ]);
+  });
+
+  test("returns [] for mixed or non-mouse input (never swallows keystrokes)", () => {
+    expect(splitMouseSequences("a\x1b[<0;5;5M")).toEqual([]);
+    expect(splitMouseSequences("q")).toEqual([]);
+    expect(splitMouseSequences("")).toEqual([]);
   });
 });
 

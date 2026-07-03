@@ -3,8 +3,8 @@
 import { basename } from "node:path";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
-import { wrapPrLabel } from "./pr-layout";
 import type { RepoInfo } from "./hooks/useRegistry";
+import { wrapPrLabel } from "./pr-layout";
 import {
   Mode,
   type PaneInfo,
@@ -319,7 +319,11 @@ export function buildTreeRows({
           item.meta.rollupState !== null,
         ).length;
         for (let piece = 1; piece < lineCount; piece++) {
-          rows.push({ itemIndex: idx, kind: "detail-pr-cont", pieceIndex: piece });
+          rows.push({
+            itemIndex: idx,
+            kind: "detail-pr-cont",
+            pieceIndex: piece,
+          });
         }
       }
       emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);

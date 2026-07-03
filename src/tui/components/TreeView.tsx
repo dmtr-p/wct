@@ -79,7 +79,14 @@ export function TreeView({
         pendingActions,
         maxWidth,
       }),
-    [items, repos, expandedRepos, expandedWorktreeKey, pendingActions, maxWidth],
+    [
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions,
+      maxWidth,
+    ],
   );
 
   const selectedItem = items[selectedIndex];

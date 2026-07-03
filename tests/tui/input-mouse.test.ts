@@ -516,6 +516,74 @@ describe("resolveMouseAction", () => {
     ).toEqual({ kind: "select", itemIndex: paneItemIndex });
   });
 
+  test("Expanded: a click on a wrapped PR's continuation row selects the PR", () => {
+    const branch = "feature/a";
+    const key = pendingKey("alpha", branch);
+    const prData = new Map([
+      [
+        key,
+        {
+          number: 1,
+          title: "a very long pull request title that certainly wraps",
+          state: "OPEN" as const,
+          headRefName: branch,
+          rollupState: "success" as const,
+        },
+      ],
+    ]);
+    const expandedRepos = new Set(["repo-1", "repo-2"]);
+    const treeItems = buildTreeItems({
+      repos,
+      expandedRepos,
+      expandedWorktreeKey: key,
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items: treeItems,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey: key,
+      pendingActions: new Map(),
+      maxWidth: 40, // forces the PR title to wrap
+    });
+    const ctx: MouseActionContext = {
+      mode: Mode.Expanded(key),
+      rows,
+      effectiveScrollOffset: 0,
+      viewportRows: rows.length,
+      treeItems,
+      repos,
+      expandedWorktreeKey: key,
+    };
+
+    // The continuation row carries the PR's own itemIndex, so clicking the
+    // wrapped line resolves to selecting the PR (within the expanded subtree).
+    const contRowIndex = rows.findIndex(
+      (r: TreeRow) => r.kind === "detail-pr-cont",
+    );
+    expect(contRowIndex).toBeGreaterThan(-1);
+    const prItemIndex = rows[contRowIndex]?.itemIndex as number;
+    // The primary PR row precedes it and maps to the same item.
+    expect(rows[contRowIndex - 1]).toMatchObject({
+      kind: "detail",
+      itemIndex: prItemIndex,
+    });
+
+    expect(
+      resolveMouseAction(
+        {
+          kind: "press",
+          button: "left",
+          col: 12,
+          row: contRowIndex + 1 + HEADER_OFFSET,
+        },
+        ctx,
+      ),
+    ).toEqual({ kind: "select", itemIndex: prItemIndex });
+  });
+
   test("non-interactive modes (Search/modals/confirm) resolve to none", () => {
     for (const mode of [
       Mode.Search,

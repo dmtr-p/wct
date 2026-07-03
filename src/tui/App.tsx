@@ -179,6 +179,7 @@ export function App() {
         expandedRepos,
         expandedWorktreeKey,
         pendingActions,
+        maxWidth: termCols,
       }),
     [
       treeItems,
@@ -186,6 +187,7 @@ export function App() {
       expandedRepos,
       expandedWorktreeKey,
       pendingActions,
+      termCols,
     ],
   );
 

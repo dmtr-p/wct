@@ -77,8 +77,9 @@ export function TreeView({
         expandedRepos,
         expandedWorktreeKey,
         pendingActions,
+        maxWidth,
       }),
-    [items, repos, expandedRepos, expandedWorktreeKey, pendingActions],
+    [items, repos, expandedRepos, expandedWorktreeKey, pendingActions, maxWidth],
   );
 
   const selectedItem = items[selectedIndex];
@@ -166,7 +167,9 @@ function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
     case "worktree":
       return renderWorktreeRow(row.itemIndex, ctx);
     case "detail":
-      return renderDetailRow(row.itemIndex, ctx);
+      return renderDetailRow(row.itemIndex, ctx, 0);
+    case "detail-pr-cont":
+      return renderDetailRow(row.itemIndex, ctx, row.pieceIndex);
   }
 }
 
@@ -240,7 +243,11 @@ function renderWorktreeRow(
   );
 }
 
-function renderDetailRow(idx: number, ctx: RenderRowContext): React.ReactNode {
+function renderDetailRow(
+  idx: number,
+  ctx: RenderRowContext,
+  pieceIndex: number,
+): React.ReactNode {
   const item = ctx.items[idx];
   if (item?.type !== "detail") return null;
   const repo = ctx.repos[item.repoIndex];
@@ -248,10 +255,15 @@ function renderDetailRow(idx: number, ctx: RenderRowContext): React.ReactNode {
 
   return (
     <DetailRow
-      key={getDetailRowKey(repo.id, item)}
+      key={
+        pieceIndex > 0
+          ? `${getDetailRowKey(repo.id, item)}-cont-${pieceIndex}`
+          : getDetailRowKey(repo.id, item)
+      }
       item={item}
       isSelected={idx === ctx.selectedIndex}
       maxWidth={ctx.maxWidth}
+      pieceIndex={pieceIndex}
     />
   );
 }

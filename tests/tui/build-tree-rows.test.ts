@@ -488,6 +488,187 @@ describe("buildTreeRows", () => {
       ],
     );
   });
+
+  test("a PR label that wraps emits continuation rows so rows below stay aligned", () => {
+    const branch = "feature/pr";
+    const repos = [
+      repo({
+        id: "repo-1",
+        project: "alpha",
+        worktrees: [
+          {
+            branch,
+            path: "/tmp/alpha-pr",
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+          {
+            branch: "main",
+            path: "/tmp/alpha-main",
+            isMainWorktree: true,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+        ],
+      }),
+    ];
+    const expandedRepos = new Set(["repo-1"]);
+    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const prData = new Map([
+      [
+        expandedWorktreeKey,
+        {
+          number: 1,
+          title: "a very long pull request title that certainly wraps",
+          state: "OPEN" as const,
+          headRefName: branch,
+          rollupState: "success" as const,
+        },
+      ],
+    ]);
+    const items = buildTreeItems({
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions: new Map(),
+      maxWidth: 40,
+    });
+
+    // items: [repo(0), wt feature/pr(1), pr-detail(2), wt main(3)].
+    // The PR line wraps at width 40, so the row model inserts continuation
+    // row(s) — all carrying the PR's own itemIndex (2) — before the next
+    // worktree row (item 3), which must remain a distinct terminal row.
+    const shape = rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }));
+    expect(shape[0]).toEqual({ itemIndex: 0, kind: "repo" });
+    expect(shape[1]).toEqual({ itemIndex: 1, kind: "worktree" });
+    expect(shape[2]).toEqual({ itemIndex: 2, kind: "detail" });
+
+    const contRows = shape.filter((r) => r.kind === "detail-pr-cont");
+    expect(contRows.length).toBeGreaterThan(0);
+    expect(contRows.every((r) => r.itemIndex === 2)).toBe(true);
+
+    // The following worktree is still its own row, right after the PR block.
+    expect(shape[3 + contRows.length]).toEqual({
+      itemIndex: 3,
+      kind: "worktree",
+    });
+  });
+
+  test("a PR label that fits on one line emits no continuation rows", () => {
+    const branch = "feature/pr";
+    const repos = [
+      repo({
+        id: "repo-1",
+        project: "alpha",
+        worktrees: [
+          {
+            branch,
+            path: "/tmp/alpha-pr",
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+        ],
+      }),
+    ];
+    const expandedRepos = new Set(["repo-1"]);
+    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const prData = new Map([
+      [
+        expandedWorktreeKey,
+        {
+          number: 1,
+          title: "short",
+          state: "OPEN" as const,
+          headRefName: branch,
+          rollupState: "success" as const,
+        },
+      ],
+    ]);
+    const items = buildTreeItems({
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions: new Map(),
+      maxWidth: 80,
+    });
+
+    expect(rows.map((r) => r.kind)).toEqual(["repo", "worktree", "detail"]);
+  });
+
+  test("a PR with no rollup icon still emits continuation rows when it wraps", () => {
+    const branch = "feature/pr";
+    const repos = [
+      repo({
+        id: "repo-1",
+        project: "alpha",
+        worktrees: [
+          {
+            branch,
+            path: "/tmp/alpha-pr",
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: { ahead: 0, behind: 0 },
+          },
+        ],
+      }),
+    ];
+    const expandedRepos = new Set(["repo-1"]);
+    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const prData = new Map([
+      [
+        expandedWorktreeKey,
+        {
+          number: 1,
+          title: "a very long pull request title that certainly wraps",
+          state: "OPEN" as const,
+          headRefName: branch,
+          // No rollup icon → wrap budget uses prLabelStart(false), a different
+          // code path than the icon case.
+          rollupState: null,
+        },
+      ],
+    ]);
+    const items = buildTreeItems({
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey,
+      pendingActions: new Map(),
+      maxWidth: 40,
+    });
+
+    const contRows = rows.filter((r) => r.kind === "detail-pr-cont");
+    expect(contRows.length).toBeGreaterThan(0);
+    expect(contRows.every((r) => r.itemIndex === 2)).toBe(true);
+  });
 });
 
 describe("clampScrollOffset", () => {

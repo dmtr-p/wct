@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { PR_INDENT, prLabelStart, wrapPrLabel } from "../pr-layout";
 import type { TreeItem } from "../types";
 import { truncateBranch, truncateWithPrefix } from "../utils/truncate";
 
@@ -6,6 +7,12 @@ interface Props {
   item: Extract<TreeItem, { type: "detail" }>;
   isSelected: boolean;
   maxWidth: number;
+  /**
+   * Which wrapped terminal line of the label to render. 0 is the primary line
+   * (indent + selector + icon + first label piece); values > 0 render a PR
+   * continuation line — the label piece indented to align under the first.
+   */
+  pieceIndex?: number;
 }
 
 function rollupIcon(
@@ -38,7 +45,12 @@ function rollupColor(
   }
 }
 
-export function DetailRow({ item, isSelected, maxWidth }: Props) {
+export function DetailRow({
+  item,
+  isSelected,
+  maxWidth,
+  pieceIndex = 0,
+}: Props) {
   const { detailKind, label } = item;
   const prefix = isSelected ? "▸ " : "  ";
   const indent =
@@ -67,15 +79,38 @@ export function DetailRow({ item, isSelected, maxWidth }: Props) {
       const { rollupState } = item.meta;
       const icon = rollupIcon(rollupState);
       const iconColor = rollupColor(rollupState);
+      const hasIcon = rollupState !== null;
+      // The full title is shown, wrapping onto extra lines rather than being
+      // truncated. `buildTreeRows` emits one continuation row per wrapped line
+      // via this same helper, so counted rows == rendered lines and mouse
+      // hit-testing stays aligned.
+      const lines = wrapPrLabel(label, maxWidth, hasIcon);
+
+      if (pieceIndex > 0) {
+        return (
+          <Box>
+            <Text>{" ".repeat(prLabelStart(hasIcon))}</Text>
+            <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
+              {lines[pieceIndex] ?? ""}
+            </Text>
+          </Box>
+        );
+      }
+
+      // The rendered leading chrome MUST equal prLabelStart(hasIcon): the
+      // indent is PR_INDENT columns, `prefix` is PR_SELECTOR (2) wide, and the
+      // icon element `{icon} ` is PR_ICON (2) wide when shown. If these drift,
+      // the label budget stops matching the render and the terminal soft-wraps,
+      // desyncing the row count — hence the indent derives from the constant.
       return (
         <Box>
-          <Text>{indent}</Text>
+          <Text>{" ".repeat(PR_INDENT)}</Text>
           <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
             {prefix}
           </Text>
           {icon ? <Text color={iconColor}>{icon} </Text> : null}
           <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
-            {label}
+            {lines[0] ?? ""}
           </Text>
         </Box>
       );

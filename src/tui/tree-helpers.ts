@@ -3,6 +3,7 @@
 import { basename } from "node:path";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
+import { wrapPrLabel } from "./pr-layout";
 import type { RepoInfo } from "./hooks/useRegistry";
 import {
   Mode,
@@ -28,6 +29,12 @@ interface BuildTreeRowsOptions {
   expandedRepos: Set<string>;
   expandedWorktreeKey: string | null;
   pendingActions: Map<string, PendingAction>;
+  /**
+   * Terminal width in columns, used to count how many terminal lines a PR
+   * detail label wraps onto. Defaults to `Infinity` (no wrapping) so callers
+   * and tests that don't model wrapping keep a 1:1 row-per-detail mapping.
+   */
+  maxWidth?: number;
 }
 
 /**
@@ -38,6 +45,8 @@ interface BuildTreeRowsOptions {
  *
  * `itemIndex` maps each visual row back to its logical item index in `items`
  * (or `null` for secondary/phantom rows that are not independently selectable).
+ * A wrapped PR's continuation rows carry the PR's own `itemIndex` so a click on
+ * any wrapped line still selects the PR.
  * `kind` carries enough information for `TreeView` to render the row directly,
  * so the row model is the single source of truth for both windowing and the
  * render itself.
@@ -53,6 +62,7 @@ export type TreeRow =
       worktreeIndex: number;
     }
   | { itemIndex: number; kind: "detail" }
+  | { itemIndex: number; kind: "detail-pr-cont"; pieceIndex: number }
   | { itemIndex: null; kind: "phantom"; repoIndex: number; branch: string };
 
 interface ResolveSelectedPaneOptions {
@@ -247,6 +257,7 @@ export function buildTreeRows({
   expandedRepos,
   expandedWorktreeKey,
   pendingActions,
+  maxWidth = Number.POSITIVE_INFINITY,
 }: BuildTreeRowsOptions): TreeRow[] {
   const rows: TreeRow[] = [];
   const phantoms = phantomsByProject(repos, pendingActions);
@@ -296,6 +307,21 @@ export function buildTreeRows({
 
     if (item.type === "detail") {
       rows.push({ itemIndex: idx, kind: "detail" });
+      // A PR label is shown in full and may wrap onto extra terminal lines.
+      // Emit one continuation row per wrapped line (all carrying the PR's own
+      // itemIndex) so the row model stays 1:1 with terminal rows and clicks on
+      // wrapped text still hit the PR. pane/pane-header labels are truncated to
+      // a single line, so only PR rows can wrap.
+      if (item.detailKind === "pr") {
+        const lineCount = wrapPrLabel(
+          item.label,
+          maxWidth,
+          item.meta.rollupState !== null,
+        ).length;
+        for (let piece = 1; piece < lineCount; piece++) {
+          rows.push({ itemIndex: idx, kind: "detail-pr-cont", pieceIndex: piece });
+        }
+      }
       emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
       continue;
     }

@@ -1,11 +1,14 @@
 // This hook is the single allowed `useInput` call site — the biome.json
 // override for this file switches off the repo-wide noRestrictedImports rule.
 import { type Key, useInput } from "ink";
+import { useRef } from "react";
 import {
   isMouseSequence,
+  isX10MousePrefix,
   type MouseEvent,
   parseSgrMouse,
   splitMouseSequences,
+  X10_PAYLOAD_BYTES,
 } from "../input/mouse";
 
 export interface GuardedInputOptions {
@@ -45,6 +48,13 @@ export function useGuardedInput(
   options: GuardedInputOptions = {},
 ): void {
   const { isActive = true, onMouseEvent } = options;
+  // Legacy X10 reports (terminal honors ?1000 but not ?1006) split into an
+  // `ESC [ M` event plus a separate 3-raw-byte payload event that has no
+  // recognisable mouse shape — so seeing the prefix arms a byte-counted
+  // swallow of the payload that follows. Per-hook state: Ink dispatches every
+  // event to every active hook, so each instance sees the same stream and
+  // arms/drains its own counter identically.
+  const x10PayloadRemaining = useRef(0);
   useInput(
     (input, key) => {
       if (isMouseSequence(input)) {
@@ -55,6 +65,21 @@ export function useGuardedInput(
           }
         }
         return;
+      }
+      if (isX10MousePrefix(input)) {
+        x10PayloadRemaining.current = X10_PAYLOAD_BYTES;
+        return;
+      }
+      if (x10PayloadRemaining.current > 0) {
+        // Payload bytes may arrive in one event or split across several;
+        // anything longer than the remaining payload is not X10 payload
+        // (drop the counter rather than eat a real keystroke's tail), and an
+        // empty `input` is a special key (arrow/escape), never payload bytes.
+        if (input.length > 0 && input.length <= x10PayloadRemaining.current) {
+          x10PayloadRemaining.current -= input.length;
+          return;
+        }
+        x10PayloadRemaining.current = 0;
       }
       handler(input, key);
     },

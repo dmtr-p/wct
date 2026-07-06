@@ -61,8 +61,13 @@ export type TreeRow =
       repoIndex: number;
       worktreeIndex: number;
     }
-  | { itemIndex: number; kind: "detail" }
-  | { itemIndex: number; kind: "detail-pr-cont"; pieceIndex: number }
+  | { itemIndex: number; kind: "detail"; prLine?: string }
+  | {
+      itemIndex: number;
+      kind: "detail-pr-cont";
+      pieceIndex: number;
+      prLine: string;
+    }
   | { itemIndex: null; kind: "phantom"; repoIndex: number; branch: string };
 
 interface ResolveSelectedPaneOptions {
@@ -306,25 +311,31 @@ export function buildTreeRows({
     }
 
     if (item.type === "detail") {
-      rows.push({ itemIndex: idx, kind: "detail" });
       // A PR label is shown in full and may wrap onto extra terminal lines.
       // Emit one continuation row per wrapped line (all carrying the PR's own
       // itemIndex) so the row model stays 1:1 with terminal rows and clicks on
-      // wrapped text still hit the PR. pane/pane-header labels are truncated to
-      // a single line, so only PR rows can wrap.
+      // wrapped text still hit the PR. Each row carries its own wrapped line
+      // text (`prLine`), so the render consumes exactly the lines this model
+      // counted — the count and the rendered text cannot diverge, and
+      // DetailRow never re-wraps. pane/pane-header labels are truncated to a
+      // single line, so only PR rows can wrap.
       if (item.detailKind === "pr") {
-        const lineCount = wrapPrLabel(
+        const lines = wrapPrLabel(
           item.label,
           maxWidth,
           item.meta.rollupState !== null,
-        ).length;
-        for (let piece = 1; piece < lineCount; piece++) {
+        );
+        rows.push({ itemIndex: idx, kind: "detail", prLine: lines[0] ?? "" });
+        for (let piece = 1; piece < lines.length; piece++) {
           rows.push({
             itemIndex: idx,
             kind: "detail-pr-cont",
             pieceIndex: piece,
+            prLine: lines[piece] ?? "",
           });
         }
+      } else {
+        rows.push({ itemIndex: idx, kind: "detail" });
       }
       emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
       continue;
@@ -438,6 +449,17 @@ export function scrollToKeepVisible(
     return rowIndex - viewportRows + 1;
   }
   return offset;
+}
+
+/**
+ * Pane headers are inert separators the cursor can never land on. The SINGLE
+ * predicate shared by keyboard navigation (`createNavigateTree` skips inert
+ * items) and mouse hit-testing (`resolveMouseAction` refuses to select them),
+ * so a click can never select a row that follow-up keys treat inconsistently.
+ * Add any future inert row kind here, never at the call sites.
+ */
+export function isInertTreeItem(item: TreeItem | undefined): boolean {
+  return item?.type === "detail" && item.detailKind === "pane-header";
 }
 
 /**

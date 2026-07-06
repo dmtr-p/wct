@@ -13,6 +13,14 @@ interface Props {
    * continuation line — the label piece indented to align under the first.
    */
   pieceIndex?: number;
+  /**
+   * The precomputed wrapped label line for `pieceIndex`, carried on the
+   * `TreeRow` by `buildTreeRows` so the render consumes exactly the lines the
+   * row model counted (and never re-wraps per render). When absent (direct
+   * component use outside the row model), the line is derived here through
+   * the same shared `wrapPrLabel` helper.
+   */
+  prLine?: string;
 }
 
 function rollupIcon(
@@ -50,6 +58,7 @@ export function DetailRow({
   isSelected,
   maxWidth,
   pieceIndex = 0,
+  prLine,
 }: Props) {
   const { detailKind, label } = item;
   const prefix = isSelected ? "▸ " : "  ";
@@ -81,17 +90,19 @@ export function DetailRow({
       const iconColor = rollupColor(rollupState);
       const hasIcon = rollupState !== null;
       // The full title is shown, wrapping onto extra lines rather than being
-      // truncated. `buildTreeRows` emits one continuation row per wrapped line
-      // via this same helper, so counted rows == rendered lines and mouse
-      // hit-testing stays aligned.
-      const lines = wrapPrLabel(label, maxWidth, hasIcon);
+      // truncated. The wrapped line for this piece normally arrives
+      // precomputed on the TreeRow (`prLine`), so counted rows == rendered
+      // lines by construction and nothing re-wraps per render; the fallback
+      // goes through the same shared helper `buildTreeRows` uses.
+      const line =
+        prLine ?? wrapPrLabel(label, maxWidth, hasIcon)[pieceIndex] ?? "";
 
       if (pieceIndex > 0) {
         return (
           <Box>
             <Text>{" ".repeat(prLabelStart(hasIcon))}</Text>
             <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
-              {lines[pieceIndex] ?? ""}
+              {line}
             </Text>
           </Box>
         );
@@ -110,7 +121,7 @@ export function DetailRow({
           </Text>
           {icon ? <Text color={iconColor}>{icon} </Text> : null}
           <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
-            {lines[0] ?? ""}
+            {line}
           </Text>
         </Box>
       );

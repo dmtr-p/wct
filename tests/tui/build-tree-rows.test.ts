@@ -7,6 +7,7 @@ import {
   isWithinExpandedSubtree,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
+import { wrapPrLabel } from "../../src/tui/pr-layout";
 import { type PendingAction, pendingKey } from "../../src/tui/types";
 
 function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
@@ -562,6 +563,17 @@ describe("buildTreeRows", () => {
       itemIndex: 3,
       kind: "worktree",
     });
+
+    // Every PR row carries its own wrapped line text so the render consumes
+    // exactly the lines this model counted (DetailRow never re-wraps): the
+    // detail row holds line 0 and each continuation row holds its piece.
+    const prItem = items[2];
+    if (prItem?.type !== "detail") throw new Error("expected detail item");
+    const expectedLines = wrapPrLabel(prItem.label, 40, true);
+    const prRows = rows.filter(
+      (r) => r.kind === "detail" || r.kind === "detail-pr-cont",
+    );
+    expect(prRows.map((r) => r.prLine)).toEqual(expectedLines);
   });
 
   test("a PR label that fits on one line emits no continuation rows", () => {

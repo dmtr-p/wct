@@ -1,5 +1,9 @@
 import type { RepoInfo } from "../hooks/useRegistry";
-import { isWithinExpandedSubtree, type TreeRow } from "../tree-helpers";
+import {
+  isInertTreeItem,
+  isWithinExpandedSubtree,
+  type TreeRow,
+} from "../tree-helpers";
 import type { Mode, TreeItem } from "../types";
 
 /**
@@ -32,6 +36,30 @@ const SGR_CHUNK = /^(?:\x1b?\[<\d+;\d+;\d+[Mm])+$/;
 /** Global matcher used to split a mouse-only chunk into single sequences. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
 const SGR_SPLIT = /\x1b?\[<\d+;\d+;\d+[Mm]/g;
+
+/**
+ * Legacy X10 mouse-report prefix (`ESC [ M`). `MOUSE_ENABLE` requests ?1000
+ * (report clicks) and ?1006 (SGR encoding) together; a terminal that honors
+ * ?1000 but ignores ?1006 (PuTTY < 0.77, urxvt < 9.25, old mosh) reports in
+ * X10 encoding instead: `ESC [ M` followed by exactly 3 raw bytes (button+32,
+ * col+32, row+32). Ink's input parser terminates the CSI at the `M` final
+ * byte, so the prefix arrives as its own `useInput` event (leading ESC
+ * stripped) and the 3 coordinate bytes — often printable characters — arrive
+ * as a SEPARATE event that `isMouseSequence` cannot recognise by shape. The
+ * guard uses this predicate to swallow the prefix AND arm a 3-byte swallow
+ * for the bytes that follow, so a click on such a terminal cannot type junk
+ * into Search or a modal text field. X10 events are only swallowed, never
+ * acted on: acting requires SGR.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
+const X10_PREFIX = /^\x1b?\[M$/;
+
+/** Bytes of X10 payload (button, col, row) that follow an `ESC [ M` prefix. */
+export const X10_PAYLOAD_BYTES = 3;
+
+export function isX10MousePrefix(input: string): boolean {
+  return X10_PREFIX.test(input);
+}
 
 export type MouseEvent =
   | { kind: "wheel"; dir: 1 | -1 }
@@ -100,7 +128,10 @@ export function parseSgrMouse(input: string): MouseEvent | null {
   const row = Number(m[3]); // 1-based
   const isRelease = m[4] === "m";
   if ((cb & 64) === 64) {
-    // wheel: 64 = up, 65 = down (up → -1, down → +1)
+    // wheel: the low 2 bits distinguish 64 = up, 65 = down, 66 = wheel-left,
+    // 67 = wheel-right (tilt wheel / horizontal trackpad swipe). Horizontal
+    // ticks must be ignored, not decoded by bit 0 as vertical scrolling.
+    if ((cb & 3) >= 2) return null;
     return { kind: "wheel", dir: (cb & 1) === 0 ? -1 : 1 };
   }
   if (cb & 32) return null; // motion/drag — ignored in v1
@@ -168,11 +199,9 @@ export function resolveMouseAction(
     return { kind: "none" }; // phantom row / padding
   }
 
-  // Pane headers are inert separators the keyboard can never land on
-  // (createNavigateTree skips them with this exact predicate); mirror that so
-  // a click cannot select a row that follow-up keys treat inconsistently.
-  const item = ctx.treeItems[itemIndex];
-  if (item?.type === "detail" && item.detailKind === "pane-header") {
+  // Inert rows (pane headers) are skipped by keyboard navigation via the same
+  // shared predicate, so a click cannot select a row arrow keys refuse.
+  if (isInertTreeItem(ctx.treeItems[itemIndex])) {
     return { kind: "none" };
   }
 

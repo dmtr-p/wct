@@ -3,6 +3,7 @@ import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   HEADER_OFFSET,
   isMouseSequence,
+  isX10MousePrefix,
   type MouseActionContext,
   parseSgrMouse,
   resolveMouseAction,
@@ -14,6 +15,23 @@ import {
   type TreeRow,
 } from "../../src/tui/tree-helpers";
 import { Mode, type PaneInfo, pendingKey } from "../../src/tui/types";
+
+describe("isX10MousePrefix", () => {
+  test("matches the legacy X10 report prefix, with or without leading ESC", () => {
+    // Ink terminates the CSI at the `M` final byte and strips each event's
+    // leading ESC, so the prefix arrives as "[M" (or "\x1b[M" defensively).
+    expect(isX10MousePrefix("[M")).toBe(true);
+    expect(isX10MousePrefix("\x1b[M")).toBe(true);
+  });
+
+  test("rejects SGR sequences and ordinary input", () => {
+    expect(isX10MousePrefix("[<0;5;5M")).toBe(false);
+    expect(isX10MousePrefix("M")).toBe(false);
+    expect(isX10MousePrefix("[Mx")).toBe(false);
+    expect(isX10MousePrefix("q")).toBe(false);
+    expect(isX10MousePrefix("")).toBe(false);
+  });
+});
 
 describe("parseSgrMouse", () => {
   test("decodes wheel up (cb=64) as wheel, NOT a click (the %4 bug is absent)", () => {
@@ -60,6 +78,24 @@ describe("parseSgrMouse", () => {
 
   test("ignores a release (trailing m)", () => {
     expect(parseSgrMouse("[<0;45;12m")).toBeNull();
+  });
+
+  test("ignores horizontal wheel (cb=66 wheel-left, cb=67 wheel-right)", () => {
+    // Tilt wheels / horizontal trackpad swipes must not decode by bit 0 as
+    // vertical scrolling (66 → up, 67 → down) — they are not vertical events.
+    expect(parseSgrMouse("[<66;10;5M")).toBeNull();
+    expect(parseSgrMouse("[<67;10;5M")).toBeNull();
+  });
+
+  test("ignores horizontal wheel with modifier bits set", () => {
+    // shift=4, ctrl=16 on top of 66/67 keep the low 2 bits horizontal.
+    expect(parseSgrMouse("[<70;10;5M")).toBeNull(); // 66 + shift
+    expect(parseSgrMouse("[<83;10;5M")).toBeNull(); // 67 + ctrl
+  });
+
+  test("still decodes vertical wheel with modifier bits set", () => {
+    expect(parseSgrMouse("[<68;10;5M")).toEqual({ kind: "wheel", dir: -1 }); // 64 + shift
+    expect(parseSgrMouse("[<81;10;5M")).toEqual({ kind: "wheel", dir: 1 }); // 65 + ctrl
   });
 
   test("ignores motion/drag (cb & 32)", () => {

@@ -4,7 +4,7 @@ import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { OpenModal } from "./components/OpenModal";
-import { StatusBar } from "./components/StatusBar";
+import { StatusBar, statusBarRowCount } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
@@ -40,6 +40,7 @@ import {
   treeItemId,
 } from "./tree-helpers";
 import { Mode, type PendingAction, type PRInfo } from "./types";
+import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
 // 2 rows the mouse hit-test skips, so it is sourced from a single constant to
@@ -191,36 +192,30 @@ export function App() {
     ],
   );
 
-  // The 3 true modals do not scroll the tree — rendering it in full keeps the
-  // modal on-screen. The interactive layout (Navigate/Expanded/Search) windows
-  // the tree under the StatusBar + optional error lines.
-  const isTrueModal =
-    mode.type === "OpenModal" ||
-    mode.type === "UpModal" ||
-    mode.type === "AddProjectModal";
+  // Bottom chrome: optional tmux/action error line (mutually exclusive, so at
+  // most one row) + the StatusBar's rows — counted by statusBarRowCount, the
+  // helper co-located with StatusBar's render branches so the budget cannot
+  // drift from what it renders. Every chrome line renders with wrap="truncate"
+  // AND is collapsed to a single line (toSingleLine), so each one is exactly
+  // one terminal row at any width and for any message — otherwise the budget
+  // would under-count, and the overflowing layout would misalign mouse
+  // hit-testing.
+  //
+  // True modals (OpenModal/UpModal/AddProjectModal) replace the StatusBar but
+  // budget the SAME virtual row count: viewportRows must not change when a
+  // modal opens, or the clamp/keep-visible effects would rewrite a
+  // wheel-scrolled offset the user expects back on cancel. The modal being
+  // taller than the budgeted chrome is absorbed by the tree box's
+  // overflowY="hidden" clipping (see the render below), which keeps the modal
+  // fully on-screen without inflating the viewport.
+  const bottomChromeRows =
+    statusBarRowCount(mode, Boolean(repoError)) +
+    (tmuxError || actionError ? 1 : 0);
 
-  // Bottom chrome in the interactive layout: optional tmux/action error line
-  // (mutually exclusive) + StatusBar (1 divider + optional repoError line + 2
-  // hint lines). Search renders an extra query line in place of one hint, but
-  // the line count stays at 3 either way. StatusBar only renders the repoError
-  // line in its default Navigate/Expanded branch (Confirm/Search return early),
-  // so only budget for it there. Every chrome line renders with
-  // wrap="truncate" (here and in StatusBar), so each one is exactly one
-  // terminal row at any width — otherwise a narrow terminal would wrap a hint
-  // or error line, the budget would under-count, and the overflowing layout
-  // would misalign mouse hit-testing.
-  const bottomChromeRows = isTrueModal
-    ? 0
-    : 1 + // divider
-      2 + // two hint lines (or query + hint in Search)
-      (repoError && (mode.type === "Navigate" || mode.type === "Expanded")
-        ? 1
-        : 0) +
-      ((tmuxError && !actionError) || actionError ? 1 : 0);
-
-  const viewportRows = isTrueModal
-    ? Math.max(1, rows.length)
-    : Math.max(1, termRows - TOP_CHROME_ROWS - bottomChromeRows);
+  const viewportRows = Math.max(
+    1,
+    termRows - TOP_CHROME_ROWS - bottomChromeRows,
+  );
 
   const effectiveScrollOffset = clampScrollOffset(
     scrollOffset,
@@ -231,6 +226,18 @@ export function App() {
   // Identity-based selection recovery: when the tree structure changes
   // (background refresh, async worktree add/remove), find the previously-
   // selected item by stable identity instead of blindly clamping by length.
+  //
+  // INVARIANT for prevSelectionIdRef: the recovery effect treats it as "the
+  // selected item's identity as of the last commit" and normally rewrites it
+  // exactly once per commit. Any handler that BOTH reshapes the tree AND
+  // moves the selection to a different item in the same commit must pre-write
+  // the ref with the NEW selection's identity before calling setSelectedIndex
+  // (see selectAndExitExpanded in handleMouse): when the new index collides
+  // with the current one, setSelectedIndex is a no-op, selectionChanged stays
+  // false, and recovery would otherwise chase the OLD identity through the
+  // reshaped tree and snap the cursor back. Handlers that only move the
+  // selection (no reshape) or preserve the selected item's identity are safe
+  // without it.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
@@ -606,6 +613,19 @@ export function App() {
   // text inputs). Actionable events arrive via onMouseEvent, in order.
   useGuardedInput(
     (input, key) => {
+      // Ctrl+C exits from EVERY mode (parity with Ink's default), but through
+      // the same disable-mouse-first sequence as `q`: startTui renders with
+      // exitOnCtrlC: false precisely so Ctrl+C reaches this handler instead
+      // of Ink's own \x03 shortcut, whose handleExit turns off raw mode
+      // before React unmount — too late for the unmount-cleanup disable, so
+      // mouse reports emitted in that window would echo as escape garbage on
+      // the shell prompt after exit.
+      if (key.ctrl && input === "c") {
+        disableMouse();
+        exit();
+        return;
+      }
+
       if (
         input === "q" &&
         mode.type !== "OpenModal" &&
@@ -670,85 +690,118 @@ export function App() {
 
   return (
     <Box flexDirection="column" height={termRows}>
-      <Text bold>wct</Text>
-      <Text> </Text>
-      <Box flexDirection="column" flexGrow={1}>
-        <TreeView
-          repos={filteredRepos}
-          sessions={sessions}
-          expandedRepos={expandedRepos}
-          selectedIndex={selectedIndex}
-          items={treeItems}
-          pendingActions={pendingActions}
-          prData={prData}
-          panes={panes}
-          expandedWorktreeKey={expandedWorktreeKey}
-          maxWidth={termCols}
-          refreshingProjects={refreshingProjects}
-          errors={githubErrors}
-          scrollOffset={effectiveScrollOffset}
-          viewportRows={viewportRows}
-        />
+      {/* Every sibling of the tree box is flexShrink={0}: when the content
+          exceeds termRows, the tree box must be the ONLY thing Yoga shrinks —
+          otherwise the header/spacer lines get squeezed to zero height and
+          later rows paint over them. */}
+      <Box flexDirection="column" flexShrink={0}>
+        <Text bold>wct</Text>
+        <Text> </Text>
       </Box>
-      {mode.type === "OpenModal" ? (
-        <OpenModal
-          visible
-          width={Math.min(termCols, 60)}
-          defaultBase={openModalBase ?? ""}
-          profileNames={openModalProfiles}
-          repoProject={openModalRepoProject}
-          repoPath={openModalRepoPath}
-          ideDefaults={openModalIdeDefaults}
-          prList={openModalPRList}
-          isRefreshing={refreshingProjects.has(openModalRepoProject)}
-          onRefresh={openModalOnRefresh}
-          onSubmit={modalActions.handleOpen}
-          onCancel={() => setMode(Mode.Navigate)}
-        />
-      ) : mode.type === "UpModal" ? (
-        <UpModal
-          visible
-          width={Math.min(termCols, 60)}
-          profileNames={mode.profileNames}
-          ideDefaults={mode.ideDefaults}
-          onSubmit={modalActions.handleUpSubmit}
-          onCancel={() => {
-            setSelectedIndex(upModalReturnSelectedIndexRef.current);
-            setMode(upModalReturnModeRef.current);
-          }}
-        />
-      ) : mode.type === "AddProjectModal" ? (
-        <AddProjectModal
-          visible
-          width={Math.min(termCols, 60)}
-          onSubmit={modalActions.handleAddProject}
-          onCancel={() => setMode(Mode.Navigate)}
-        />
-      ) : (
-        <Box flexDirection="column">
-          {tmuxError && !actionError ? (
-            <Text color="yellow" wrap="truncate">
-              {tmuxError}
-            </Text>
-          ) : null}
-          {actionError ? (
-            <Text color="red" wrap="truncate">
-              {actionError}
-            </Text>
-          ) : null}
-          <StatusBar
-            {...statusBarProps}
-            searchQuery={searchQuery}
-            hasClient={tmuxClient !== null}
-            repoError={repoError}
+      {/* overflowY="hidden" + flexShrink is what lets a true modal exceed the
+          budgeted bottom-chrome rows: Yoga shrinks THIS box and the excess
+          tree rows clip cleanly at its bottom edge, instead of the
+          overflowing frame painting over the modal. The inner flexShrink={0}
+          wrapper keeps the rows at their natural height so they overflow (and
+          clip) rather than being squeezed into interleaved garbage. In the
+          interactive layout the tree content equals the budget exactly, so
+          nothing is ever clipped there. */}
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        overflowY="hidden"
+      >
+        <Box flexDirection="column" flexShrink={0}>
+          <TreeView
+            repos={filteredRepos}
+            sessions={sessions}
+            expandedRepos={expandedRepos}
+            selectedIndex={selectedIndex}
+            items={treeItems}
+            rows={rows}
+            pendingActions={pendingActions}
+            prData={prData}
+            panes={panes}
+            expandedWorktreeKey={expandedWorktreeKey}
+            maxWidth={termCols}
+            refreshingProjects={refreshingProjects}
+            errors={githubErrors}
+            scrollOffset={effectiveScrollOffset}
+            viewportRows={viewportRows}
           />
         </Box>
-      )}
+      </Box>
+      {/* flexShrink={0} pins the bottom area (modal or status chrome) to its
+          natural height so the tree box above is the only child Yoga shrinks. */}
+      <Box flexDirection="column" flexShrink={0}>
+        {mode.type === "OpenModal" ? (
+          <OpenModal
+            visible
+            width={Math.min(termCols, 60)}
+            defaultBase={openModalBase ?? ""}
+            profileNames={openModalProfiles}
+            repoProject={openModalRepoProject}
+            repoPath={openModalRepoPath}
+            ideDefaults={openModalIdeDefaults}
+            prList={openModalPRList}
+            isRefreshing={refreshingProjects.has(openModalRepoProject)}
+            onRefresh={openModalOnRefresh}
+            onSubmit={modalActions.handleOpen}
+            onCancel={() => setMode(Mode.Navigate)}
+          />
+        ) : mode.type === "UpModal" ? (
+          <UpModal
+            visible
+            width={Math.min(termCols, 60)}
+            profileNames={mode.profileNames}
+            ideDefaults={mode.ideDefaults}
+            onSubmit={modalActions.handleUpSubmit}
+            onCancel={() => {
+              setSelectedIndex(upModalReturnSelectedIndexRef.current);
+              setMode(upModalReturnModeRef.current);
+            }}
+          />
+        ) : mode.type === "AddProjectModal" ? (
+          <AddProjectModal
+            visible
+            width={Math.min(termCols, 60)}
+            onSubmit={modalActions.handleAddProject}
+            onCancel={() => setMode(Mode.Navigate)}
+          />
+        ) : (
+          <Box flexDirection="column">
+            {tmuxError && !actionError ? (
+              <Text color="yellow" wrap="truncate">
+                {toSingleLine(tmuxError)}
+              </Text>
+            ) : null}
+            {actionError ? (
+              <Text color="red" wrap="truncate">
+                {toSingleLine(actionError)}
+              </Text>
+            ) : null}
+            <StatusBar
+              {...statusBarProps}
+              searchQuery={searchQuery}
+              hasClient={tmuxClient !== null}
+              repoError={repoError}
+            />
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }
 
 export async function startTui(): Promise<void> {
-  const instance = render(<App />, { alternateScreen: true });
+  // exitOnCtrlC stays OFF: the guarded input dispatcher in App owns Ctrl+C so
+  // it can write MOUSE_DISABLE before Ink turns raw mode off (Ink's built-in
+  // \x03 shortcut disables raw mode before React unmount, which would leak
+  // mouse reports onto the shell — the same ordering bug the `q` path avoids).
+  const instance = render(<App />, {
+    alternateScreen: true,
+    exitOnCtrlC: false,
+  });
   await instance.waitUntilExit();
 }

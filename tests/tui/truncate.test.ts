@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  toSingleLine,
   truncateBranch,
   truncateWithPrefix,
 } from "../../src/tui/utils/truncate";
@@ -67,5 +68,28 @@ describe("truncateWithPrefix", () => {
   test("handles empty rest", () => {
     expect(truncateWithPrefix("1:0 ", "", 10)).toBe("1:0 ");
     expect(truncateWithPrefix("1:0 ", "", 4)).toBe("1:0 ");
+  });
+});
+
+describe("toSingleLine", () => {
+  test("returns a single-line string unchanged", () => {
+    expect(toSingleLine("fatal: not a git repository")).toBe(
+      "fatal: not a git repository",
+    );
+  });
+
+  test("collapses git-style multi-line stderr onto one line", () => {
+    // The exact shape that breaks the one-row-per-error budget: wrap="truncate"
+    // does not remove embedded newlines, so this MUST be collapsed before render.
+    expect(toSingleLine("fatal: something went wrong\nhint: try again")).toBe(
+      "fatal: something went wrong hint: try again",
+    );
+  });
+
+  test("squashes CRLF, indentation after the break, and trailing newlines", () => {
+    expect(toSingleLine("error: HTTP 502\r\n   advice: retry later\n")).toBe(
+      "error: HTTP 502 advice: retry later",
+    );
+    expect(toSingleLine("a\n\n\nb")).toBe("a b");
   });
 });

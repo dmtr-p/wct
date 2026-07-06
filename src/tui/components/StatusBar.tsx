@@ -1,6 +1,7 @@
 // src/tui/components/StatusBar.tsx
 import { Box, Text, useWindowSize } from "ink";
 import type { Mode } from "../types";
+import { toSingleLine } from "../utils/truncate";
 
 interface Props {
   mode: Mode;
@@ -75,6 +76,37 @@ function getHints(
   }
 }
 
+/**
+ * The number of terminal rows StatusBar renders for a mode — the single
+ * source App.tsx's viewport budget consumes, co-located with the render
+ * branches below so the two cannot drift. The count is a pure function of the
+ * mode branch and repoError presence: every line renders with wrap="truncate"
+ * (and the divider is width-repeated), so width never changes the row count,
+ * and searchQuery/selectedPaneRow/hasClient only change text, never lines.
+ *
+ * True-modal modes (OpenModal/UpModal/AddProjectModal) do not render
+ * StatusBar at all — the modal replaces the bottom chrome — but they return
+ * the default-branch count anyway: App budgets the tree viewport with this
+ * VIRTUAL count so opening a modal does not change viewportRows (which would
+ * clamp/re-anchor the scroll state); the modal's extra height is absorbed by
+ * the tree box's overflow clipping instead.
+ */
+export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
+  switch (mode.type) {
+    // divider + confirm question + hint line
+    case "ConfirmKill":
+    case "ConfirmDown":
+    case "ConfirmClose":
+    case "ConfirmCloseForce":
+    // divider + query line + hint line
+    case "Search":
+      return 3;
+    // divider + optional repoError + two hint lines
+    default:
+      return 3 + (hasRepoError ? 1 : 0);
+  }
+}
+
 export function StatusBar({
   mode,
   searchQuery,
@@ -130,7 +162,7 @@ export function StatusBar({
       <Text dimColor>{divider}</Text>
       {repoError ? (
         <Text color="yellow" wrap="truncate">
-          ⚠ {repoError}
+          ⚠ {toSingleLine(repoError)}
         </Text>
       ) : null}
       <Text dimColor wrap="truncate">

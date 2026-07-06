@@ -3,7 +3,7 @@ import React from "react";
 import { describe, expect, test } from "vitest";
 import { TreeView } from "../../src/tui/components/TreeView";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
-import { buildTreeItems } from "../../src/tui/tree-helpers";
+import { buildTreeItems, buildTreeRows } from "../../src/tui/tree-helpers";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -42,6 +42,16 @@ describe("TreeView maxWidth wiring", () => {
       panes: new Map(),
       jumpToPane: () => undefined,
     });
+    // TreeView renders the row model its owner built — the same contract
+    // App.tsx uses (one buildTreeRows call shared with hit-testing).
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey: null,
+      pendingActions: new Map(),
+      maxWidth: 15,
+    });
 
     const { stdout, stdin } = createStdoutStdin();
     const chunks: string[] = [];
@@ -57,6 +67,7 @@ describe("TreeView maxWidth wiring", () => {
         expandedRepos,
         selectedIndex: 0,
         items,
+        rows,
         pendingActions: new Map(),
         prData: new Map(),
         panes: new Map(),
@@ -103,6 +114,14 @@ describe("TreeView windowing", () => {
       panes: new Map(),
       jumpToPane: () => undefined,
     });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedRepos,
+      expandedWorktreeKey: null,
+      pendingActions: new Map(),
+      maxWidth: 80,
+    });
     const { stdout, stdin } = createStdoutStdin();
     const chunks: string[] = [];
     stdout.on("data", (chunk) => {
@@ -116,6 +135,7 @@ describe("TreeView windowing", () => {
         expandedRepos,
         selectedIndex: 0,
         items,
+        rows,
         pendingActions: new Map(),
         prData: new Map(),
         panes: new Map(),

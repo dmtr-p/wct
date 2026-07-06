@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
-import { buildTreeRows, type TreeRow } from "../tree-helpers";
+import type { TreeRow } from "../tree-helpers";
 import {
   type PaneInfo,
   type PendingAction,
@@ -24,6 +24,13 @@ interface Props {
   expandedRepos: Set<string>;
   selectedIndex: number;
   items: TreeItem[];
+  /**
+   * The visual-row model to render, built ONCE by the owner (App.tsx) with
+   * `buildTreeRows` and shared with windowing and mouse hit-testing — TreeView
+   * never rebuilds it, so the rendered rows and the hit-test rows cannot
+   * diverge.
+   */
+  rows: TreeRow[];
   pendingActions: Map<string, PendingAction>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
@@ -54,6 +61,7 @@ export function TreeView({
   expandedRepos,
   selectedIndex,
   items,
+  rows,
   pendingActions,
   prData,
   panes,
@@ -67,26 +75,6 @@ export function TreeView({
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.name, s])),
     [sessions],
-  );
-
-  const rows = useMemo(
-    () =>
-      buildTreeRows({
-        items,
-        repos,
-        expandedRepos,
-        expandedWorktreeKey,
-        pendingActions,
-        maxWidth,
-      }),
-    [
-      items,
-      repos,
-      expandedRepos,
-      expandedWorktreeKey,
-      pendingActions,
-      maxWidth,
-    ],
   );
 
   const selectedItem = items[selectedIndex];
@@ -174,9 +162,9 @@ function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
     case "worktree":
       return renderWorktreeRow(row.itemIndex, ctx);
     case "detail":
-      return renderDetailRow(row.itemIndex, ctx, 0);
+      return renderDetailRow(row.itemIndex, ctx, 0, row.prLine);
     case "detail-pr-cont":
-      return renderDetailRow(row.itemIndex, ctx, row.pieceIndex);
+      return renderDetailRow(row.itemIndex, ctx, row.pieceIndex, row.prLine);
   }
 }
 
@@ -254,6 +242,7 @@ function renderDetailRow(
   idx: number,
   ctx: RenderRowContext,
   pieceIndex: number,
+  prLine?: string,
 ): React.ReactNode {
   const item = ctx.items[idx];
   if (item?.type !== "detail") return null;
@@ -271,6 +260,7 @@ function renderDetailRow(
       isSelected={idx === ctx.selectedIndex}
       maxWidth={ctx.maxWidth}
       pieceIndex={pieceIndex}
+      prLine={prLine}
     />
   );
 }

@@ -244,16 +244,31 @@ export function App() {
   const prevSelectedIndexRef = useRef(selectedIndex);
   const selectionChanged = selectedIndex !== prevSelectedIndexRef.current;
 
-  // viewportShrank mirrors selectionChanged for the viewport dimension: an
-  // action/repo error line appearing or the terminal being resized shorter
-  // shrinks viewportRows without any selection change. The clamp in the
-  // recovery effect below can only ever DECREASE the offset (and a shrink
-  // raises the max offset, so it does nothing), so without this signal a
-  // selection sitting on the last visible row would silently fall below the
-  // window with no path to bring it back until the next navigation key.
+  // prevSelectionWasVisibleRef mirrors selectionChanged for PASSIVE layout
+  // changes — ones that move the selection's visual row or the window without
+  // touching selectedIndex: the viewport shrinking (an action/repo error line
+  // appearing, the terminal resized shorter) or rows above the selection
+  // reflowing (a PR title wrapping differently after a width change, a check
+  // rollup arriving, phantom rows appearing). The clamp in the recovery
+  // effect below can only ever DECREASE the offset, so without this signal a
+  // selection sitting on a visible row could silently leave the window with
+  // no path back until the next navigation key. Tracked as "was the selection
+  // visible last commit" rather than one signal per cause so every passive
+  // cause is covered, while a wheel-scrolled viewport whose selection was
+  // already off-screen stays put.
+  const selectionRowIndex = firstRowForItem(rows, selectedIndex);
+  const selectionVisible =
+    selectionRowIndex !== null &&
+    selectionRowIndex >= effectiveScrollOffset &&
+    selectionRowIndex < effectiveScrollOffset + viewportRows;
+  const prevSelectionWasVisibleRef = useRef(selectionVisible);
+  // Last commit's row/viewport values, so the keep-visible effect can tell a
+  // REAL passive layout change apart from merely having re-run: its deps also
+  // re-fire it on the falling edge of selectionChanged (true → false on the
+  // commit after a deliberate change), where re-anchoring would undo a wheel
+  // tick that just hid the still-"was visible" selection.
+  const prevSelectionRowIndexRef = useRef(selectionRowIndex);
   const prevViewportRowsRef = useRef(viewportRows);
-  const prevViewportRows = prevViewportRowsRef.current;
-  const viewportShrank = viewportRows < prevViewportRows;
 
   useEffect(() => {
     const prevTree = prevTreeRef.current;
@@ -273,6 +288,13 @@ export function App() {
       // `selectionChanged` stays false and the keep-visible effect below never
       // fires — leaving the first match scrolled off-screen without this.
       setScrollOffset(0);
+      // Also suppress the keep-visible effect for THIS commit (this effect
+      // runs first, so the write is seen by its read below): the stale
+      // selectedIndex now indexes the FILTERED rows, so its visual row
+      // "moves" spuriously and a still-visible old selection would hijack
+      // the reset for one frame. The unconditional trailing write restores
+      // the real visibility at the end of the commit.
+      prevSelectionWasVisibleRef.current = false;
       return;
     }
 
@@ -311,44 +333,52 @@ export function App() {
 
   // Keyboard ↑/↓ (and mouse clicks) are viewport-aware: after a DELIBERATE
   // selection change, nudge the scroll offset minimally to keep the selection
-  // on screen. Gated on `selectionChanged` so a background refresh that gives
-  // `rows` a new reference (useRegistry always calls setRepos, even when
-  // content is unchanged) does not re-fire this and snap a wheel-scrolled
-  // viewport back to the selection. A viewport SHRINK also re-fires it — but
-  // only re-anchors when the shrink actually hid a previously-visible
-  // selection, so a wheel-scrolled viewport whose selection was already
-  // off-screen stays put. Keyed on [selectedIndex, rows, viewportRows] but
-  // NOT scrollOffset, and uses a functional update so it never fights a
-  // future wheel scroll (slice 02).
+  // on screen. A PASSIVE layout change (the row moved or the viewport
+  // resized) that hid a previously-visible selection re-anchors too (see
+  // prevSelectionWasVisibleRef above); since scrollToKeepVisible is a no-op
+  // while the selection is still visible, that gate is exactly "re-anchor
+  // only when the change hid it". Keyed on the selection's VISUAL row and the
+  // viewport height — values, not the `rows` reference — so a background
+  // refresh that only produces new object references (useRegistry always
+  // calls setRepos, even when content is unchanged) cannot re-fire this and
+  // snap a wheel-scrolled viewport back to the selection. NOT keyed on
+  // scrollOffset, and uses a functional update, so it never fights a future
+  // wheel scroll (slice 02).
   useEffect(() => {
-    if (!selectionChanged && !viewportShrank) return;
-    const rowIndex = firstRowForItem(rows, selectedIndex);
-    if (rowIndex === null) return;
-    setScrollOffset((prev) => {
-      if (!selectionChanged) {
-        const wasVisible =
-          rowIndex >= prev && rowIndex < prev + prevViewportRows;
-        if (!wasVisible) return prev;
-      }
-      return scrollToKeepVisible(rowIndex, prev, viewportRows);
-    });
-  }, [
-    selectedIndex,
-    rows,
-    viewportRows,
-    selectionChanged,
-    viewportShrank,
-    prevViewportRows,
-  ]);
+    // All three refs are read BEFORE the trailing effects below rewrite them,
+    // so they are last commit's values. A passive re-anchor requires the row
+    // or viewport to have ACTUALLY changed — a run where neither did (the
+    // falling edge of selectionChanged, with only the wheel's scrollOffset
+    // different) must leave the viewport alone.
+    const rowMoved = selectionRowIndex !== prevSelectionRowIndexRef.current;
+    const viewportResized = viewportRows !== prevViewportRowsRef.current;
+    const passiveLayoutChange =
+      prevSelectionWasVisibleRef.current && (rowMoved || viewportResized);
+    if (!selectionChanged && !passiveLayoutChange) return;
+    if (selectionRowIndex === null) return;
+    setScrollOffset((prev) =>
+      scrollToKeepVisible(selectionRowIndex, prev, viewportRows),
+    );
+  }, [selectionRowIndex, viewportRows, selectionChanged]);
 
-  // The only place these refs are written, keeping them in sync for the next
-  // render's selectionChanged/viewportShrank computations.
+  // The trailing writes keeping the prev-* refs one commit behind for the
+  // selectionChanged computation and the keep-visible effect above. The
+  // visibility ref alone has a second writer (the searchQueryChanged branch
+  // suppressing one commit) and so must be unconditionally rewritten here —
+  // a keyed write would skip commits where visibility didn't change and
+  // leave that suppression stuck.
   useEffect(() => {
     prevSelectedIndexRef.current = selectedIndex;
   }, [selectedIndex]);
   useEffect(() => {
+    prevSelectionRowIndexRef.current = selectionRowIndex;
+  }, [selectionRowIndex]);
+  useEffect(() => {
     prevViewportRowsRef.current = viewportRows;
   }, [viewportRows]);
+  useEffect(() => {
+    prevSelectionWasVisibleRef.current = selectionVisible;
+  });
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);

@@ -621,6 +621,47 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
       }
     });
 
+    test("a wheel right after a no-nudge click is not undone (selectionChanged falling edge)", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      setTallWorktrees(40);
+
+      const rendered = await renderApp(<App />, 14);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        // Wheel the viewport down so the selection (repo, row 0) is
+        // off-screen, then click the TOP visible row (feature/3, row 5 at
+        // offset 5). The click is a deliberate selection change but needs NO
+        // nudge — the row is already visible — so the keep-visible effect's
+        // functional update returns the same offset and React bails without
+        // an extra commit that would consume the selectionChanged edge.
+        for (let i = 0; i < 5; i++) {
+          await sendKeys(rendered.stdin, sgrWheel(1), 1);
+        }
+        await tick(5);
+        expect(selectedLine(rendered.lines())).toBeUndefined();
+
+        await sendKeys(rendered.stdin, sgrPress(3, sgrRowFor(0)));
+        expect(selectedLine(rendered.lines())).toContain("feature/3");
+
+        // The very next wheel tick scrolls the just-clicked selection off the
+        // top. This commit re-fires the keep-visible effect purely via the
+        // FALLING edge of selectionChanged (true -> false) while the
+        // visibility ref still says "was visible" — without requiring the
+        // row/viewport to have actually changed, the effect would re-anchor
+        // and snap the offset straight back, eating the wheel tick.
+        await sendKeys(rendered.stdin, sgrWheel(1), 1);
+        await tick(5);
+
+        expect(selectedLine(rendered.lines())).toBeUndefined();
+      } finally {
+        rendered.unmount();
+      }
+    });
+
     test("a genuine selectedIndex change still nudges the viewport", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },
@@ -726,6 +767,138 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         expect(after.find((l) => /feature\/\d+/.test(l))).toEqual(
           firstVisibleBefore,
         );
+      } finally {
+        rendered.unmount();
+      }
+    });
+  });
+
+  describe("Bug: row reflow above the selection must not hide it (PR #104 r3530858752)", () => {
+    // 52 chars: the PR label ("PR #7: <title> (OPEN)", 66 chars) renders on
+    // ONE row at 100 columns (92-column label budget after the 8-column
+    // indent/selector chrome) but wraps onto TWO at 60 columns (52-column
+    // budget) — so narrowing the terminal shifts every row below the PR down
+    // by one while selectedIndex and viewportRows stay unchanged.
+    const wrappingTitle =
+      "Keep the selection visible when rows above it reflow";
+
+    function setupRepoWithPr(featureCount: number) {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      worktreeFixtures.byRepoPath.set(repoPath, [
+        worktree("main"),
+        worktree("feature/0"),
+        ...Array.from({ length: featureCount }, (_, i) =>
+          worktree(`feature/${i + 1}`),
+        ),
+      ]);
+      githubFixtures.prsByRepoPath.set(repoPath, [
+        {
+          number: 7,
+          title: wrappingTitle,
+          state: "OPEN",
+          headRefName: "feature/0",
+          rollupState: null,
+        },
+      ]);
+    }
+
+    test("a PR title wrapping after a width resize keeps a bottom-row selection visible", async () => {
+      setupRepoWithPr(20);
+
+      const rendered = await renderApp(<App />, 14, 100);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        // Put the PR detail row in the tree: select feature/0, fetch PRs via
+        // the real Navigate-only "r" path, then expand it. Items while
+        // Expanded: repo-1(0), main(1), feature/0(2), PR-detail(3),
+        // feature/1(4), … — Expanded ↑/↓ then walks the whole tree without
+        // exiting the mode, so the detail row stays rendered.
+        await sendKeys(rendered.stdin, "\x1b[B"); // repo -> main
+        await sendKeys(rendered.stdin, "\x1b[B"); // main -> feature/0
+        await sendKeys(rendered.stdin, "r"); // fetch PRs for repo "alpha"
+        await tick(15);
+        await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/0
+        expect(rendered.output()).toContain("PR #7");
+
+        // Walk the cursor well past the first viewport so the keep-visible
+        // effect pins it to the BOTTOM visible row (12 downs from feature/0
+        // land on feature/11 at row index 14, past the PR detail row).
+        for (let i = 0; i < 12; i++) {
+          await sendKeys(rendered.stdin, "\x1b[B", 2);
+        }
+        await tick(5);
+        expect(selectedLine(rendered.lines())).toContain("feature/11");
+
+        // Narrow the terminal. The PR label above the window wraps onto a
+        // second row, pushing the selection's visual row down by one while
+        // selectedIndex AND viewportRows stay unchanged — so neither the
+        // selectionChanged gate nor a viewport-shrink signal fires, and the
+        // recovery effect's clamp only ever DECREASES the offset. Without
+        // reflow handling the bottom-pinned cursor falls below the window
+        // and disappears until the next navigation key.
+        rendered.stdout.columns = 60;
+        rendered.stdout.emit("resize");
+        await tick(10);
+
+        expect(selectedLine(rendered.lines())).toContain("feature/11");
+
+        // Prove the reflow actually happened — otherwise this test passes
+        // vacuously if the resize ever stops propagating `columns` (the
+        // visible worktree set is identical pre/post resize by construction).
+        // Wheel back to the top: the PR label must now wrap onto a
+        // continuation row ("reflow (OPEN)" on its own line, no "PR #7").
+        for (let i = 0; i < 10; i++) {
+          await sendKeys(rendered.stdin, sgrWheel(-1), 1);
+        }
+        await tick(5);
+        const contLine = rendered
+          .lines()
+          .find((l) => l.includes("reflow (OPEN)"));
+        expect(contLine).toBeDefined();
+        expect(contLine).not.toContain("PR #7");
+      } finally {
+        rendered.unmount();
+      }
+    });
+
+    test("a reflow with the selection already wheel-scrolled off-screen leaves the viewport alone", async () => {
+      setupRepoWithPr(40);
+
+      const rendered = await renderApp(<App />, 14, 100);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        await sendKeys(rendered.stdin, "\x1b[B"); // repo -> main
+        await sendKeys(rendered.stdin, "\x1b[B"); // main -> feature/0
+        await sendKeys(rendered.stdin, "r"); // fetch PRs for repo "alpha"
+        await tick(15);
+        await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/0
+        expect(rendered.output()).toContain("PR #7");
+
+        // Park the cursor BELOW the PR detail row (feature/1, row 4) so the
+        // wrap will move its visual row, then wheel the viewport away — the
+        // deliberate PRD §3 state with the selection off-screen above.
+        await sendKeys(rendered.stdin, "\x1b[B"); // feature/0 -> PR detail
+        await sendKeys(rendered.stdin, "\x1b[B"); // PR detail -> feature/1
+        for (let i = 0; i < 15; i++) {
+          await sendKeys(rendered.stdin, sgrWheel(1), 1);
+        }
+        await tick(5);
+        expect(selectedLine(rendered.lines())).toBeUndefined();
+
+        // The reflow moves the selection's visual row (4 -> 5), but the
+        // selection was already off-screen — re-anchoring would discard the
+        // wheel scroll, so the viewport must stay put.
+        rendered.stdout.columns = 60;
+        rendered.stdout.emit("resize");
+        await tick(10);
+
+        expect(selectedLine(rendered.lines())).toBeUndefined();
       } finally {
         rendered.unmount();
       }

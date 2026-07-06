@@ -10,9 +10,9 @@ type TestStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-function createStdoutStdin() {
+function createStdoutStdin(columns = 80) {
   const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = 80;
+  stdout.columns = columns;
   stdout.rows = 24;
   const stdin = new PassThrough() as unknown as TestStdin;
   stdin.isTTY = false;
@@ -20,8 +20,11 @@ function createStdoutStdin() {
   return { stdout, stdin };
 }
 
-async function renderStatusBar(props: React.ComponentProps<typeof StatusBar>) {
-  const { stdout, stdin } = createStdoutStdin();
+async function renderStatusBar(
+  props: React.ComponentProps<typeof StatusBar>,
+  columns = 80,
+) {
+  const { stdout, stdin } = createStdoutStdin(columns);
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {
     chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
@@ -39,6 +42,7 @@ async function renderStatusBar(props: React.ComponentProps<typeof StatusBar>) {
 
   return {
     output: chunks.join(""),
+    lastFrame: () => chunks[chunks.length - 1] ?? "",
     unmount() {
       instance.unmount();
     },
@@ -151,5 +155,44 @@ describe("StatusBar", () => {
     expect(rendered.output).not.toContain("x:kill");
 
     rendered.unmount();
+  });
+
+  // App.tsx budgets bottomChromeRows assuming every StatusBar line occupies
+  // exactly one terminal row — a hint or error line wrapping in a narrow
+  // terminal would silently overflow the viewport and misalign mouse
+  // hit-testing, so these pin the truncate behaviour at widths where the
+  // hint text is longer than the terminal.
+  describe("narrow terminals (one row per chrome line)", () => {
+    test("Navigate hints truncate instead of wrapping", async () => {
+      // With a client, line1 is ~60 chars — well past 40 columns.
+      const rendered = await renderStatusBar(
+        { mode: Mode.Navigate, hasClient: true },
+        40,
+      );
+
+      // divider + 2 hint lines, regardless of hint text length.
+      expect(rendered.lastFrame().trimEnd().split("\n")).toHaveLength(3);
+      expect(rendered.output).toContain("↑↓:navigate");
+
+      rendered.unmount();
+    });
+
+    test("a long repoError line truncates instead of wrapping", async () => {
+      const rendered = await renderStatusBar(
+        {
+          mode: Mode.Navigate,
+          hasClient: false,
+          repoError:
+            "gh: HTTP 502 from api.github.com while fetching pull requests for a-very-long-project-name",
+        },
+        40,
+      );
+
+      // divider + repoError + 2 hint lines.
+      expect(rendered.lastFrame().trimEnd().split("\n")).toHaveLength(4);
+      expect(rendered.output).toContain("⚠ gh: HTTP 502");
+
+      rendered.unmount();
+    });
   });
 });

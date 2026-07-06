@@ -204,7 +204,11 @@ export function App() {
   // hint lines). Search renders an extra query line in place of one hint, but
   // the line count stays at 3 either way. StatusBar only renders the repoError
   // line in its default Navigate/Expanded branch (Confirm/Search return early),
-  // so only budget for it there.
+  // so only budget for it there. Every chrome line renders with
+  // wrap="truncate" (here and in StatusBar), so each one is exactly one
+  // terminal row at any width — otherwise a narrow terminal would wrap a hint
+  // or error line, the budget would under-count, and the overflowing layout
+  // would misalign mouse hit-testing.
   const bottomChromeRows = isTrueModal
     ? 0
     : 1 + // divider
@@ -239,6 +243,17 @@ export function App() {
   // answer. The ref itself is written exactly once, in the trailing effect.
   const prevSelectedIndexRef = useRef(selectedIndex);
   const selectionChanged = selectedIndex !== prevSelectedIndexRef.current;
+
+  // viewportShrank mirrors selectionChanged for the viewport dimension: an
+  // action/repo error line appearing or the terminal being resized shorter
+  // shrinks viewportRows without any selection change. The clamp in the
+  // recovery effect below can only ever DECREASE the offset (and a shrink
+  // raises the max offset, so it does nothing), so without this signal a
+  // selection sitting on the last visible row would silently fall below the
+  // window with no path to bring it back until the next navigation key.
+  const prevViewportRowsRef = useRef(viewportRows);
+  const prevViewportRows = prevViewportRowsRef.current;
+  const viewportShrank = viewportRows < prevViewportRows;
 
   useEffect(() => {
     const prevTree = prevTreeRef.current;
@@ -299,23 +314,41 @@ export function App() {
   // on screen. Gated on `selectionChanged` so a background refresh that gives
   // `rows` a new reference (useRegistry always calls setRepos, even when
   // content is unchanged) does not re-fire this and snap a wheel-scrolled
-  // viewport back to the selection. Keyed on [selectedIndex, rows,
-  // viewportRows] but NOT scrollOffset, and uses a functional update so it
-  // never fights a future wheel scroll (slice 02).
+  // viewport back to the selection. A viewport SHRINK also re-fires it — but
+  // only re-anchors when the shrink actually hid a previously-visible
+  // selection, so a wheel-scrolled viewport whose selection was already
+  // off-screen stays put. Keyed on [selectedIndex, rows, viewportRows] but
+  // NOT scrollOffset, and uses a functional update so it never fights a
+  // future wheel scroll (slice 02).
   useEffect(() => {
-    if (!selectionChanged) return;
+    if (!selectionChanged && !viewportShrank) return;
     const rowIndex = firstRowForItem(rows, selectedIndex);
     if (rowIndex === null) return;
-    setScrollOffset((prev) =>
-      scrollToKeepVisible(rowIndex, prev, viewportRows),
-    );
-  }, [selectedIndex, rows, viewportRows, selectionChanged]);
+    setScrollOffset((prev) => {
+      if (!selectionChanged) {
+        const wasVisible =
+          rowIndex >= prev && rowIndex < prev + prevViewportRows;
+        if (!wasVisible) return prev;
+      }
+      return scrollToKeepVisible(rowIndex, prev, viewportRows);
+    });
+  }, [
+    selectedIndex,
+    rows,
+    viewportRows,
+    selectionChanged,
+    viewportShrank,
+    prevViewportRows,
+  ]);
 
-  // The only place that writes prevSelectedIndexRef, keeping it in sync with
-  // selectedIndex for the next render's selectionChanged computation.
+  // The only place these refs are written, keeping them in sync for the next
+  // render's selectionChanged/viewportShrank computations.
   useEffect(() => {
     prevSelectedIndexRef.current = selectedIndex;
   }, [selectedIndex]);
+  useEffect(() => {
+    prevViewportRowsRef.current = viewportRows;
+  }, [viewportRows]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -512,6 +545,19 @@ export function App() {
         // that collapse the same way the keyboard left-arrow/escape path does
         // (src/tui/input/expanded.ts) so the cursor lands on the row the user
         // actually clicked, not a stale post-collapse index.
+        //
+        // The adjusted index can equal the CURRENT selectedIndex (the clicked
+        // row's post-collapse position collides with the cursor's pre-collapse
+        // one, e.g. rows [A, PR detail, B(selected), C(clicked)]). Then
+        // setSelectedIndex is a no-op, selectionChanged stays false, and the
+        // identity-recovery effect would treat the collapse as a background
+        // tree change and snap the cursor back to the old item. Pre-store the
+        // clicked item's identity (stable across the collapse) so recovery
+        // sees the clicked row as already-current and stays put.
+        const clicked = treeItems[action.itemIndex];
+        prevSelectionIdRef.current = clicked
+          ? treeItemId(clicked, filteredRepos)
+          : null;
         setMode(Mode.Navigate);
         setSelectedIndex(
           adjustIndexForDetailCollapse(treeItems, action.itemIndex),
@@ -651,9 +697,15 @@ export function App() {
       ) : (
         <Box flexDirection="column">
           {tmuxError && !actionError ? (
-            <Text color="yellow">{tmuxError}</Text>
+            <Text color="yellow" wrap="truncate">
+              {tmuxError}
+            </Text>
           ) : null}
-          {actionError ? <Text color="red">{actionError}</Text> : null}
+          {actionError ? (
+            <Text color="red" wrap="truncate">
+              {actionError}
+            </Text>
+          ) : null}
           <StatusBar
             {...statusBarProps}
             searchQuery={searchQuery}

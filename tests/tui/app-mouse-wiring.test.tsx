@@ -148,9 +148,9 @@ type TestStdin = NodeJS.ReadStream & {
   unref: () => NodeJS.ReadStream;
 };
 
-function createStdoutStdin(rows: number) {
+function createStdoutStdin(rows: number, columns = 100) {
   const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = 100;
+  stdout.columns = columns;
   stdout.rows = rows;
   const stdin = new PassThrough() as unknown as TestStdin;
   stdin.isTTY = true;
@@ -182,8 +182,12 @@ async function tick(count = 1) {
   }
 }
 
-async function renderApp(node: React.ReactElement, termRows = 32) {
-  const { stdout, stdin } = createStdoutStdin(termRows);
+async function renderApp(
+  node: React.ReactElement,
+  termRows = 32,
+  termCols = 100,
+) {
+  const { stdout, stdin } = createStdoutStdin(termRows, termCols);
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {
     chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
@@ -200,6 +204,7 @@ async function renderApp(node: React.ReactElement, termRows = 32) {
 
   return {
     stdin,
+    stdout,
     // The last full frame Ink wrote, split into lines, ANSI stripped.
     lines: () => stripAnsi(chunks[chunks.length - 1] ?? "").split("\n"),
     output: () => stripAnsi(chunks.join("\n")),
@@ -380,6 +385,64 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         expect(line).toContain("feature/b");
         expect(line).not.toContain("feature/a");
         expect(line).not.toContain("main");
+      } finally {
+        rendered.unmount();
+      }
+    });
+
+    test("selects the clicked row even when its post-collapse index equals the cursor's (PR #104 r3511242204)", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      worktreeFixtures.byRepoPath.set(repoPath, [
+        worktree("main"),
+        worktree("feature/a"),
+        worktree("feature/b"),
+        worktree("feature/c"),
+      ]);
+      githubFixtures.prsByRepoPath.set(repoPath, [
+        {
+          number: 7,
+          title: "Add thing",
+          state: "OPEN",
+          headRefName: "feature/a",
+          rollupState: null,
+        },
+      ]);
+
+      const rendered = await renderApp(<App />);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("feature/c");
+
+        await sendKeys(rendered.stdin, "\x1b[B"); // repo -> main
+        await sendKeys(rendered.stdin, "\x1b[B"); // main -> feature/a
+        await sendKeys(rendered.stdin, "r"); // fetch PRs (Navigate-only key)
+        await tick(15);
+        await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/a
+        expect(rendered.output()).toContain("PR #7");
+
+        // Items while Expanded: repo-1(0), main(1), feature/a(2),
+        // PR-detail(3), feature/b(4), feature/c(5). Walk the cursor PAST the
+        // detail block onto feature/b — Expanded ↑/↓ navigates the whole
+        // tree without exiting the mode.
+        await sendKeys(rendered.stdin, "\x1b[B"); // feature/a -> PR detail
+        await sendKeys(rendered.stdin, "\x1b[B"); // PR detail -> feature/b
+        expect(selectedLine(rendered.lines())).toContain("feature/b");
+
+        // Click feature/c (item 5). Collapsing removes the PR detail row, so
+        // feature/c's adjusted index is 4 — exactly the cursor's pre-collapse
+        // index. setSelectedIndex(4) is then a no-op and selectionChanged
+        // stays false; without pre-storing the clicked item's identity, the
+        // recovery effect would treat the collapse as a background tree
+        // change and snap the cursor back to feature/b.
+        const sgrRow = sgrRowFor(5);
+        await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
+        await sendKeys(rendered.stdin, sgrRelease(3, sgrRow));
+
+        const line = selectedLine(rendered.lines());
+        expect(line).toContain("feature/c");
+        expect(line).not.toContain("feature/b");
       } finally {
         rendered.unmount();
       }
@@ -581,6 +644,129 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
 
         const line = selectedLine(rendered.lines());
         expect(line).toBeDefined();
+      } finally {
+        rendered.unmount();
+      }
+    });
+  });
+
+  describe("Bug: a viewport shrink must not hide the selection (PR #104 r3512096209)", () => {
+    test("resizing the terminal shorter keeps a bottom-row selection visible", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      worktreeFixtures.byRepoPath.set(repoPath, [
+        worktree("main"),
+        ...Array.from({ length: 40 }, (_, i) => worktree(`feature/${i}`)),
+      ]);
+
+      const rendered = await renderApp(<App />, 14);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        // Walk the cursor well past the first viewport; the keep-visible
+        // effect pins it to the bottom visible row (rows are 1:1 with items
+        // here, so 12 downs land on feature/10 at row index 12).
+        for (let i = 0; i < 12; i++) {
+          await sendKeys(rendered.stdin, "\x1b[B", 2);
+        }
+        await tick(5);
+        expect(selectedLine(rendered.lines())).toContain("feature/10");
+
+        // Shrink the terminal by two rows. selectedIndex is unchanged, so
+        // the keep-visible effect's selectionChanged gate alone skips it,
+        // and the recovery effect's clamp can only DECREASE the offset (a
+        // shrink raises the max offset) — without the viewport-shrink signal
+        // the selected bottom row falls below the window and the cursor
+        // disappears until the next navigation key.
+        rendered.stdout.rows = 12;
+        rendered.stdout.emit("resize");
+        await tick(10);
+
+        expect(selectedLine(rendered.lines())).toContain("feature/10");
+      } finally {
+        rendered.unmount();
+      }
+    });
+
+    test("a shrink with the selection already wheel-scrolled off-screen leaves the viewport alone", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      worktreeFixtures.byRepoPath.set(repoPath, [
+        worktree("main"),
+        ...Array.from({ length: 40 }, (_, i) => worktree(`feature/${i}`)),
+      ]);
+
+      const rendered = await renderApp(<App />, 14);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        // Selection stays on the repo row (index 0); wheel the viewport away
+        // so the selected row is off-screen — the deliberate PRD §3 state.
+        for (let i = 0; i < 15; i++) {
+          await sendKeys(rendered.stdin, sgrWheel(1), 1);
+        }
+        await tick(5);
+        const before = rendered.lines();
+        expect(selectedLine(before)).toBeUndefined();
+        const firstVisibleBefore = before.find((l) => /feature\/\d+/.test(l));
+
+        // A shrink must NOT re-anchor to a selection that was already
+        // off-screen — the wheel-scrolled region stays put (its top row is
+        // unchanged; the shrink only trims rows off the bottom).
+        rendered.stdout.rows = 12;
+        rendered.stdout.emit("resize");
+        await tick(10);
+
+        const after = rendered.lines();
+        expect(selectedLine(after)).toBeUndefined();
+        expect(after.find((l) => /feature\/\d+/.test(l))).toEqual(
+          firstVisibleBefore,
+        );
+      } finally {
+        rendered.unmount();
+      }
+    });
+  });
+
+  describe("Bug: narrow terminals must not wrap bottom chrome (PR #104 r3520956519)", () => {
+    test("the frame stays within terminal rows when a hint line exceeds the width", async () => {
+      registryItems.items = [
+        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      ];
+      worktreeFixtures.byRepoPath.set(repoPath, [
+        worktree("main"),
+        ...Array.from({ length: 20 }, (_, i) => worktree(`feature/${i}`)),
+      ]);
+
+      // 45 columns: BOTH the Navigate hint line (46 chars without a tmux
+      // client) and the tmux-error line ("No tmux client found — …", 49
+      // chars, always shown in this clientless test env) no longer fit.
+      // Without truncation Ink wraps each onto a second row, the 14-row
+      // budget (2 header + 8 viewport + 4 chrome: tmux error, divider, 2
+      // hints) under-counts, and the overflowing layout clips rows and
+      // misaligns mouse hit-testing.
+      const rendered = await renderApp(<App />, 14, 45);
+      try {
+        await tick(20);
+        expect(rendered.output()).toContain("main");
+
+        const frame = rendered.lines();
+        while (
+          frame.length > 0 &&
+          (frame[frame.length - 1] ?? "").trim() === ""
+        ) {
+          frame.pop();
+        }
+        expect(frame.length).toBeLessThanOrEqual(14);
+        // The full budgeted layout must actually be present: the last of the
+        // 8 viewport rows (repo, main, feature/0..5) and the second hint
+        // line's tail must both have survived.
+        expect(frame.some((l) => l.includes("feature/5"))).toBe(true);
+        expect(frame[frame.length - 1]).toContain("q:quit");
       } finally {
         rendered.unmount();
       }

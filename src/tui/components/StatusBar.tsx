@@ -85,6 +85,11 @@ export function StatusBar({
   const { columns: cols } = useWindowSize();
   const divider = "─".repeat(Math.max(1, cols));
 
+  // Every line below renders with wrap="truncate": App.tsx budgets
+  // bottomChromeRows assuming each chrome line occupies exactly one terminal
+  // row, so a hint/error line wrapping in a narrow terminal would overflow
+  // the viewport and misalign mouse hit-testing.
+
   if (
     mode.type === "ConfirmKill" ||
     mode.type === "ConfirmDown" ||
@@ -95,10 +100,12 @@ export function StatusBar({
     return (
       <Box flexDirection="column">
         <Text dimColor>{divider}</Text>
-        <Text color="red" bold>
+        <Text color="red" bold wrap="truncate">
           {line1}
         </Text>
-        <Text dimColor>{line2}</Text>
+        <Text dimColor wrap="truncate">
+          {line2}
+        </Text>
       </Box>
     );
   }
@@ -107,8 +114,12 @@ export function StatusBar({
     return (
       <Box flexDirection="column">
         <Text dimColor>{divider}</Text>
-        <Text color="cyan">/{searchQuery}</Text>
-        <Text dimColor>{getHints(mode, undefined, hasClient)[1]}</Text>
+        <Text color="cyan" wrap="truncate">
+          /{searchQuery}
+        </Text>
+        <Text dimColor wrap="truncate">
+          {getHints(mode, undefined, hasClient)[1]}
+        </Text>
       </Box>
     );
   }
@@ -117,9 +128,17 @@ export function StatusBar({
   return (
     <Box flexDirection="column">
       <Text dimColor>{divider}</Text>
-      {repoError ? <Text color="yellow">⚠ {repoError}</Text> : null}
-      <Text dimColor>{line1}</Text>
-      <Text dimColor>{line2}</Text>
+      {repoError ? (
+        <Text color="yellow" wrap="truncate">
+          ⚠ {repoError}
+        </Text>
+      ) : null}
+      <Text dimColor wrap="truncate">
+        {line1}
+      </Text>
+      <Text dimColor wrap="truncate">
+        {line2}
+      </Text>
     </Box>
   );
 }

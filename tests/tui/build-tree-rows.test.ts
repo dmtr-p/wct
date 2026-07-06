@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { wrapPrLabel } from "../../src/tui/pr-layout";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -7,7 +8,6 @@ import {
   isWithinExpandedSubtree,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
-import { wrapPrLabel } from "../../src/tui/pr-layout";
 import { type PendingAction, pendingKey } from "../../src/tui/types";
 
 function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {

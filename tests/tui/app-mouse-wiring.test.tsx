@@ -4,247 +4,30 @@
 // a hand-copied reimplementation of its effects — so reverting the fix in
 // App.tsx actually fails these tests.
 //
-// Mocking strategy mirrors the established pattern in this test suite
-// (tests/tui/use-tmux.test.ts, tests/tui/session-actions.test.ts,
-// tests/tui/modal-actions.test.ts): mock each `XService.use(selector)` to
-// call `selector` synchronously against a controllable fake service object
-// (so it returns a plain Promise, not a real Effect), and mock
-// `tuiRuntime.runPromise`/`runSync` as a transparent pass-through. Since the
-// `.use()` mocks already resolve the "effect" argument to a real Promise or
-// plain value before it reaches `runPromise`, the pass-through is enough —
-// the one caller that does NOT go through a `.use()` seam (`loadConfig` in
-// `getIdeDefaults`) is wrapped in a try/catch with a safe fallback in the
-// real code, so passing it through unresolved is harmless.
+// Service mocks and the Ink render harness live in tests/tui/app-harness.tsx
+// (shared with tests/tui/app-review-fixes.test.tsx); see the mocking-strategy
+// note there.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
-import type React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Worktree } from "../../src/services/worktree-service";
-
-const runtimeMock = vi.hoisted(() => ({
-  runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
-  // The `.use()` mocks below already resolve the "effect" argument to a
-  // plain value before it reaches here, so this is a transparent pass-through
-  // (like runPromise), not a stub that discards its argument.
-  runSync: vi.fn((effect: unknown) => effect),
-}));
-
-vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: runtimeMock,
-  runTuiSilentPromise: (effect: unknown) => runtimeMock.runPromise(effect),
-}));
-
-// --- RegistryService: repos controllable per test via registryItems. ---
-const registryItems = vi.hoisted(() => ({
-  items: [] as Array<{ id: string; repo_path: string; project: string }>,
-}));
-
-vi.mock("../../src/services/registry-service", () => ({
-  RegistryService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        listRepos: () => Promise.resolve(registryItems.items),
-      }),
-  },
-}));
-
-// --- WorktreeService: worktrees keyed by repoPath, controllable per test. ---
-const worktreeFixtures = vi.hoisted(() => ({
-  byRepoPath: new Map<string, Worktree[]>(),
-}));
-
-vi.mock("../../src/services/worktree-service", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/worktree-service")
-  >("../../src/services/worktree-service");
-  return {
-    ...actual,
-    WorktreeService: {
-      use: (selector: (svc: unknown) => unknown) =>
-        selector({
-          listWorktrees: (repoPath: string) =>
-            Promise.resolve(worktreeFixtures.byRepoPath.get(repoPath) ?? []),
-          getDefaultBranch: () => Promise.resolve("main"),
-          getChangedFileCount: () => Promise.resolve(0),
-          getAheadBehind: () =>
-            Promise.resolve({ ahead: 0, behind: 0 }) as Promise<{
-              ahead: number;
-              behind: number;
-            } | null>,
-        }),
-    },
-  };
-});
-
-// --- TmuxService: no client, no sessions — App renders without tmux. ---
-vi.mock("../../src/services/tmux", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/tmux")
-  >("../../src/services/tmux");
-  return {
-    ...actual,
-    TmuxService: {
-      use: (selector: (svc: unknown) => unknown) =>
-        selector({
-          listClients: () => Promise.resolve([]),
-          listSessions: () => Promise.resolve(null),
-          listPanes: () => Promise.resolve([]),
-        }),
-    },
-  };
-});
-
-// --- GitHubService + PrCacheService: no PRs by default. useGitHub never
-// fetches on a fresh App mount for the current repo (its mount effect reads
-// `repos`, which is always `[]` on the very first render — before
-// useRegistry's async listRepos() resolves — and its callback identity never
-// changes, so it doesn't re-run once repos populate). The one REAL,
-// keyboard-reachable path that calls GitHubService.listPrs is pressing "r" in
-// Navigate mode (src/tui/input/navigate.ts calls ctx.refreshRepo), so a test
-// that needs a PR row drives that key rather than relying on mount timing.
-const githubFixtures = vi.hoisted(() => ({
-  prsByRepoPath: new Map<
-    string,
-    Array<{
-      number: number;
-      title: string;
-      state: "OPEN" | "MERGED" | "CLOSED";
-      headRefName: string;
-      rollupState: "success" | "failure" | "pending" | null;
-    }>
-  >(),
-}));
-
-vi.mock("../../src/services/github-service", () => ({
-  GitHubService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        listPrs: (repoPath: string) =>
-          Promise.resolve(githubFixtures.prsByRepoPath.get(repoPath) ?? []),
-      }),
-  },
-}));
-
-vi.mock("../../src/services/pr-cache-service", () => ({
-  PrCacheService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        getCached: () => null,
-        setCached: () => Promise.resolve(),
-        setError: () => Promise.resolve(),
-      }),
-  },
-}));
+import {
+  githubFixtures,
+  makeWorktree,
+  registryItems,
+  renderApp,
+  resetHarnessFixtures,
+  selectedLine,
+  sendKeys,
+  sgrPress,
+  sgrRelease,
+  sgrRowFor,
+  sgrWheel,
+  tick,
+  worktreeFixtures,
+} from "./app-harness";
 
 const { App } = await import("../../src/tui/App");
-
-type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
-type TestStdin = NodeJS.ReadStream & {
-  isTTY: boolean;
-  setRawMode: (mode: boolean) => NodeJS.ReadStream;
-  ref: () => NodeJS.ReadStream;
-  unref: () => NodeJS.ReadStream;
-};
-
-function createStdoutStdin(rows: number, columns = 100) {
-  const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = columns;
-  stdout.rows = rows;
-  const stdin = new PassThrough() as unknown as TestStdin;
-  stdin.isTTY = true;
-  stdin.setRawMode = () => stdin;
-  stdin.ref = () => stdin;
-  stdin.unref = () => stdin;
-  return { stdout, stdin };
-}
-
-function stripAnsi(value: string) {
-  let output = "";
-  for (let i = 0; i < value.length; i += 1) {
-    const char = value.charAt(i);
-    if (char === "" && value.charAt(i + 1) === "[") {
-      i += 2;
-      while (i < value.length && !/[\x40-\x7E]/.test(value.charAt(i))) {
-        i += 1;
-      }
-      continue;
-    }
-    output += char;
-  }
-  return output;
-}
-
-async function tick(count = 1) {
-  for (let i = 0; i < count; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-}
-
-async function renderApp(
-  node: React.ReactElement,
-  termRows = 32,
-  termCols = 100,
-) {
-  const { stdout, stdin } = createStdoutStdin(termRows, termCols);
-  const chunks: string[] = [];
-  stdout.on("data", (chunk) => {
-    chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
-  });
-
-  const { render } = await import("ink");
-  const instance = render(node, {
-    stdout,
-    stdin,
-    debug: true,
-    patchConsole: false,
-    exitOnCtrlC: false,
-  });
-
-  return {
-    stdin,
-    stdout,
-    // The last full frame Ink wrote, split into lines, ANSI stripped.
-    lines: () => stripAnsi(chunks[chunks.length - 1] ?? "").split("\n"),
-    output: () => stripAnsi(chunks.join("\n")),
-    unmount() {
-      instance.unmount();
-    },
-  };
-}
-
-async function sendKeys(stdin: NodeJS.ReadStream, sequence: string, ticks = 5) {
-  stdin.write(sequence);
-  await tick(ticks);
-}
-
-function sgrPress(col: number, row: number): string {
-  return `\x1b[<0;${col};${row}M`;
-}
-
-function sgrRelease(col: number, row: number): string {
-  return `\x1b[<0;${col};${row}m`;
-}
-
-function sgrWheel(dir: 1 | -1): string {
-  // 64 = wheel up (dir -1), 65 = wheel down (dir 1)
-  const cb = dir === -1 ? 64 : 65;
-  return `\x1b[<${cb};1;1M`;
-}
-
-// Mirrors App.tsx's TOP_CHROME_ROWS (== HEADER_OFFSET): the `wct` header line
-// + a blank spacer line above the tree viewport.
-const HEADER_OFFSET = 2;
-
-function sgrRowFor(viewportRow: number): number {
-  return viewportRow + 1 + HEADER_OFFSET;
-}
-
-/** The single rendered line containing the ❯ selection cursor, or undefined. */
-function selectedLine(lines: string[]): string | undefined {
-  return lines.find((l) => l.includes("❯"));
-}
 
 describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
   let homeDir: string;
@@ -260,11 +43,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     // refresh via a file write under it actually land.
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
-    registryItems.items = [];
-    worktreeFixtures.byRepoPath.clear();
-    githubFixtures.prsByRepoPath.clear();
-    runtimeMock.runPromise.mockClear();
-    runtimeMock.runSync.mockClear();
+    resetHarnessFixtures();
   });
 
   afterEach(() => {
@@ -273,13 +52,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     rmSync(repoPath, { recursive: true, force: true });
   });
 
-  function worktree(branch: string): Worktree {
-    return {
-      path: join(repoPath, branch.replaceAll("/", "-")),
-      branch,
-      commit: "abc123",
-      isBare: false,
-    };
+  function worktree(branch: string) {
+    return makeWorktree(repoPath, branch);
   }
 
   describe("Bug 1: click-to-exit-Expanded selects the clicked sibling, not the old identity", () => {
@@ -359,9 +133,10 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
 
         // Fetch PRs for real via the actual keyboard-reachable refresh path
         // (pressing "r" in Navigate calls ctx.refreshRepo -> refreshGitHub ->
-        // GitHubService.use(listPrs); see the githubFixtures comment above
-        // for why this is the only real path to populate PR data here). "r"
-        // is Navigate-only, so collapse out of Expanded first, then re-expand.
+        // GitHubService.use(listPrs); see the githubFixtures comment in
+        // app-harness.tsx for why this is the only real path to populate PR
+        // data here). "r" is Navigate-only, so collapse out of Expanded
+        // first, then re-expand.
         await sendKeys(rendered.stdin, "\x1b[D"); // left: collapse to Navigate
         await sendKeys(rendered.stdin, "r"); // refresh PRs for repo "alpha"
         await tick(15);
@@ -451,11 +226,10 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
 
   describe("Bug 2: background refresh (new `rows`/`repos` ref, same selectedIndex) must not re-anchor a wheel-scrolled viewport", () => {
     function setTallWorktrees(n: number) {
-      const worktrees: Worktree[] = [
+      worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
         ...Array.from({ length: n }, (_, i) => worktree(`feature/${i}`)),
-      ];
-      worktreeFixtures.byRepoPath.set(repoPath, worktrees);
+      ]);
     }
 
     test("a background refresh (repos ref change, selectedIndex unchanged) does not move the viewport", async () => {

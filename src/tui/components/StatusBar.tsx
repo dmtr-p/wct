@@ -1,5 +1,6 @@
 // src/tui/components/StatusBar.tsx
 import { Box, Text, useWindowSize } from "ink";
+import type { ComponentProps } from "react";
 import type { Mode } from "../types";
 import { toSingleLine } from "../utils/truncate";
 
@@ -107,6 +108,18 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
   }
 }
 
+/**
+ * A single bottom-chrome line. App.tsx budgets bottomChromeRows assuming each
+ * chrome line occupies EXACTLY one terminal row (see statusBarRowCount), so a
+ * line wrapping in a narrow terminal would overflow the viewport and misalign
+ * mouse hit-testing. Rendering every line through this wrapper — never a raw
+ * <Text> — enforces wrap="truncate" structurally: the prop is applied AFTER
+ * the spread, so no call site can override it.
+ */
+function ChromeLine(props: ComponentProps<typeof Text>) {
+  return <Text {...props} wrap="truncate" />;
+}
+
 export function StatusBar({
   mode,
   searchQuery,
@@ -117,11 +130,6 @@ export function StatusBar({
   const { columns: cols } = useWindowSize();
   const divider = "─".repeat(Math.max(1, cols));
 
-  // Every line below renders with wrap="truncate": App.tsx budgets
-  // bottomChromeRows assuming each chrome line occupies exactly one terminal
-  // row, so a hint/error line wrapping in a narrow terminal would overflow
-  // the viewport and misalign mouse hit-testing.
-
   if (
     mode.type === "ConfirmKill" ||
     mode.type === "ConfirmDown" ||
@@ -131,13 +139,11 @@ export function StatusBar({
     const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
     return (
       <Box flexDirection="column">
-        <Text dimColor>{divider}</Text>
-        <Text color="red" bold wrap="truncate">
+        <ChromeLine dimColor>{divider}</ChromeLine>
+        <ChromeLine color="red" bold>
           {line1}
-        </Text>
-        <Text dimColor wrap="truncate">
-          {line2}
-        </Text>
+        </ChromeLine>
+        <ChromeLine dimColor>{line2}</ChromeLine>
       </Box>
     );
   }
@@ -145,13 +151,11 @@ export function StatusBar({
   if (mode.type === "Search") {
     return (
       <Box flexDirection="column">
-        <Text dimColor>{divider}</Text>
-        <Text color="cyan" wrap="truncate">
-          /{searchQuery}
-        </Text>
-        <Text dimColor wrap="truncate">
+        <ChromeLine dimColor>{divider}</ChromeLine>
+        <ChromeLine color="cyan">/{searchQuery}</ChromeLine>
+        <ChromeLine dimColor>
           {getHints(mode, undefined, hasClient)[1]}
-        </Text>
+        </ChromeLine>
       </Box>
     );
   }
@@ -159,18 +163,12 @@ export function StatusBar({
   const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
   return (
     <Box flexDirection="column">
-      <Text dimColor>{divider}</Text>
+      <ChromeLine dimColor>{divider}</ChromeLine>
       {repoError ? (
-        <Text color="yellow" wrap="truncate">
-          ⚠ {toSingleLine(repoError)}
-        </Text>
+        <ChromeLine color="yellow">⚠ {toSingleLine(repoError)}</ChromeLine>
       ) : null}
-      <Text dimColor wrap="truncate">
-        {line1}
-      </Text>
-      <Text dimColor wrap="truncate">
-        {line2}
-      </Text>
+      <ChromeLine dimColor>{line1}</ChromeLine>
+      <ChromeLine dimColor>{line2}</ChromeLine>
     </Box>
   );
 }

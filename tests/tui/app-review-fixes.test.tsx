@@ -9,217 +9,34 @@
 // 3. Ctrl+C writes MOUSE_DISABLE BEFORE Ink turns raw mode off (same ordering
 //    fix as the `q` path; requires exitOnCtrlC to be off so the app owns \x03).
 // 4. Legacy X10 mouse bytes (terminal honors ?1000 but not ?1006) are
-//    swallowed by the guard instead of typing junk into the Search query.
+//    swallowed by the guard instead of typing junk into the Search query —
+//    including payload bytes ≥ 0x80 that UTF-8 decode merges into ONE
+//    multi-byte character (the guard must count raw bytes, not characters).
 // 5. Horizontal wheel events (SGR cb 66/67) do not scroll the viewport.
+// 6. A multi-line bracketed paste into Search is collapsed onto one query row
+//    (StatusBar budgets the query line as exactly one terminal row).
 //
-// Mocking strategy is identical to tests/tui/app-mouse-wiring.test.tsx.
+// Service mocks and the Ink render harness live in tests/tui/app-harness.tsx
+// (shared with tests/tui/app-mouse-wiring.test.tsx); see the mocking-strategy
+// note there.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
-import type React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Worktree } from "../../src/services/worktree-service";
-
-const runtimeMock = vi.hoisted(() => ({
-  runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
-  runSync: vi.fn((effect: unknown) => effect),
-}));
-
-vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: runtimeMock,
-  runTuiSilentPromise: (effect: unknown) => runtimeMock.runPromise(effect),
-}));
-
-const registryItems = vi.hoisted(() => ({
-  items: [] as Array<{ id: string; repo_path: string; project: string }>,
-}));
-
-vi.mock("../../src/services/registry-service", () => ({
-  RegistryService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        listRepos: () => Promise.resolve(registryItems.items),
-      }),
-  },
-}));
-
-const worktreeFixtures = vi.hoisted(() => ({
-  byRepoPath: new Map<string, Worktree[]>(),
-}));
-
-vi.mock("../../src/services/worktree-service", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/worktree-service")
-  >("../../src/services/worktree-service");
-  return {
-    ...actual,
-    WorktreeService: {
-      use: (selector: (svc: unknown) => unknown) =>
-        selector({
-          listWorktrees: (repoPath: string) =>
-            Promise.resolve(worktreeFixtures.byRepoPath.get(repoPath) ?? []),
-          getDefaultBranch: () => Promise.resolve("main"),
-          getChangedFileCount: () => Promise.resolve(0),
-          getAheadBehind: () =>
-            Promise.resolve({ ahead: 0, behind: 0 }) as Promise<{
-              ahead: number;
-              behind: number;
-            } | null>,
-        }),
-    },
-  };
-});
-
-vi.mock("../../src/services/tmux", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/tmux")
-  >("../../src/services/tmux");
-  return {
-    ...actual,
-    TmuxService: {
-      use: (selector: (svc: unknown) => unknown) =>
-        selector({
-          listClients: () => Promise.resolve([]),
-          listSessions: () => Promise.resolve(null),
-          listPanes: () => Promise.resolve([]),
-        }),
-    },
-  };
-});
-
-vi.mock("../../src/services/github-service", () => ({
-  GitHubService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        listPrs: () => Promise.resolve([]),
-      }),
-  },
-}));
-
-vi.mock("../../src/services/pr-cache-service", () => ({
-  PrCacheService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        getCached: () => null,
-        setCached: () => Promise.resolve(),
-        setError: () => Promise.resolve(),
-      }),
-  },
-}));
+import {
+  makeWorktree,
+  registryItems,
+  renderApp,
+  resetHarnessFixtures,
+  selectedLine,
+  sendKeys,
+  sgrWheel,
+  tick,
+  worktreeFixtures,
+} from "./app-harness";
 
 const { App } = await import("../../src/tui/App");
 const { MOUSE_DISABLE } = await import("../../src/tui/hooks/useMouse");
-
-type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
-type TestStdin = NodeJS.ReadStream & {
-  isTTY: boolean;
-  setRawMode: (mode: boolean) => NodeJS.ReadStream;
-  ref: () => NodeJS.ReadStream;
-  unref: () => NodeJS.ReadStream;
-};
-
-function stripAnsi(value: string) {
-  let output = "";
-  for (let i = 0; i < value.length; i += 1) {
-    const char = value.charAt(i);
-    if (char === "" && value.charAt(i + 1) === "[") {
-      i += 2;
-      while (i < value.length && !/[\x40-\x7E]/.test(value.charAt(i))) {
-        i += 1;
-      }
-      continue;
-    }
-    output += char;
-  }
-  return output;
-}
-
-async function tick(count = 1) {
-  for (let i = 0; i < count; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-}
-
-async function renderApp(
-  node: React.ReactElement,
-  termRows = 32,
-  termCols = 100,
-) {
-  const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = termCols;
-  stdout.rows = termRows;
-  const stdin = new PassThrough() as unknown as TestStdin;
-  stdin.isTTY = true;
-
-  // Ordered event log shared by stdout writes and raw-mode flips, so tests
-  // can assert real orderings (e.g. MOUSE_DISABLE before setRawMode(false)).
-  // stdout.write is patched (not the 'data' event) because write is
-  // synchronous with the caller while 'data' emission may be deferred.
-  const events: Array<
-    { kind: "write"; data: string } | { kind: "rawmode"; mode: boolean }
-  > = [];
-  // Forward EVERY argument: Ink resolves waitUntilExit via an empty write's
-  // completion callback, so dropping the callback would hang the exit path.
-  const originalWrite = stdout.write.bind(stdout) as (
-    ...args: unknown[]
-  ) => boolean;
-  stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
-    events.push({
-      kind: "write",
-      data:
-        typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"),
-    });
-    return originalWrite(chunk, ...rest);
-  }) as typeof stdout.write;
-  stdin.setRawMode = (mode: boolean) => {
-    events.push({ kind: "rawmode", mode });
-    return stdin;
-  };
-  stdin.ref = () => stdin;
-  stdin.unref = () => stdin;
-
-  const chunks: string[] = [];
-  stdout.on("data", (chunk) => {
-    chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
-  });
-
-  const { render } = await import("ink");
-  const instance = render(node, {
-    stdout,
-    stdin,
-    debug: true,
-    patchConsole: false,
-    exitOnCtrlC: false,
-  });
-
-  return {
-    stdin,
-    stdout,
-    events,
-    instance,
-    lines: () => stripAnsi(chunks[chunks.length - 1] ?? "").split("\n"),
-    output: () => stripAnsi(chunks.join("\n")),
-    unmount() {
-      instance.unmount();
-    },
-  };
-}
-
-async function sendKeys(stdin: NodeJS.ReadStream, sequence: string, ticks = 5) {
-  stdin.write(sequence);
-  await tick(ticks);
-}
-
-function sgrWheel(dir: 1 | -1): string {
-  const cb = dir === -1 ? 64 : 65;
-  return `\x1b[<${cb};1;1M`;
-}
-
-/** The single rendered line containing the ❯ selection cursor, or undefined. */
-function selectedLine(lines: string[]): string | undefined {
-  return lines.find((l) => l.includes("❯"));
-}
 
 describe("App.tsx review fixes (real App)", () => {
   let homeDir: string;
@@ -230,10 +47,7 @@ describe("App.tsx review fixes (real App)", () => {
     repoPath = mkdtempSync(join(tmpdir(), "wct-app-review-repo-"));
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
-    registryItems.items = [];
-    worktreeFixtures.byRepoPath.clear();
-    runtimeMock.runPromise.mockClear();
-    runtimeMock.runSync.mockClear();
+    resetHarnessFixtures();
   });
 
   afterEach(() => {
@@ -242,19 +56,12 @@ describe("App.tsx review fixes (real App)", () => {
     rmSync(repoPath, { recursive: true, force: true });
   });
 
-  function worktree(branch: string): Worktree {
-    return {
-      path: join(repoPath, branch.replaceAll("/", "-")),
-      branch,
-      commit: "abc123",
-      isBare: false,
-    };
-  }
-
   function setTallWorktrees(n: number) {
     worktreeFixtures.byRepoPath.set(repoPath, [
-      worktree("main"),
-      ...Array.from({ length: n }, (_, i) => worktree(`feature/${i}`)),
+      makeWorktree(repoPath, "main"),
+      ...Array.from({ length: n }, (_, i) =>
+        makeWorktree(repoPath, `feature/${i}`),
+      ),
     ]);
     registryItems.items = [
       { id: "repo-1", repo_path: repoPath, project: "alpha" },
@@ -381,6 +188,105 @@ describe("App.tsx review fixes (real App)", () => {
       // the query line rendered as "/f" and no payload junk appended.
       expect(rendered.lines().some((l) => l.trim() === "/f")).toBe(true);
       expect(selectedLine(rendered.lines())).toBeDefined();
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("X10 payload bytes that UTF-8 decode merges into one character do not desync the guard", async () => {
+    setTallWorktrees(5);
+
+    const rendered = await renderApp(<App />, 20);
+    try {
+      await tick(20);
+      expect(rendered.output()).toContain("main");
+
+      await sendKeys(rendered.stdin, "/"); // enter Search
+      // An X10 left-click press+release at col 163, row 137: the coordinate
+      // bytes are col+32 = 0xC3 and row+32 = 0xA9, which stdin's UTF-8
+      // decode merges into the SINGLE character "é" — the 3-byte payload
+      // arrives as the two-character string " é". A guard that decrements by
+      // string length drains only 2 of the 3 armed bytes, stays armed, and
+      // eats the next real keystroke; the byte-counted guard drains exactly.
+      await sendKeys(rendered.stdin, "\x1b[M é\x1b[M#é");
+      await sendKeys(rendered.stdin, "f");
+      await tick(5);
+
+      // The "f" typed after the click must reach the query (rendered "/f"),
+      // and no payload characters may leak in.
+      expect(rendered.lines().some((l) => l.trim() === "/f")).toBe(true);
+      expect(selectedLine(rendered.lines())).toBeDefined();
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("X10 payload bytes that are INVALID UTF-8 are swallowed, not leaked to the query", async () => {
+    setTallWorktrees(5);
+
+    const rendered = await renderApp(<App />, 20);
+    try {
+      await tick(20);
+      expect(rendered.output()).toContain("main");
+
+      await sendKeys(rendered.stdin, "/"); // enter Search
+      // An X10 left-click press+release at col 100, row 8: the col byte is
+      // col+32 = 0x84 — a lone UTF-8 continuation byte, which stdin's decode
+      // replaces with U+FFFD (THREE UTF-8 bytes standing in for ONE raw
+      // byte). Counting the replacement char at its encoded width overshoots
+      // the 3-byte counter, drops the guard, and leaks "�(" into the query;
+      // counting it as the single raw byte it replaced drains exactly. The
+      // bytes must be written RAW (a JS string would re-encode 0x84 as two
+      // valid UTF-8 bytes and never produce the replacement char).
+      rendered.stdin.write(
+        Buffer.from([
+          0x1b,
+          0x5b,
+          0x4d,
+          0x20,
+          0x84,
+          0x28, // press:   ESC [ M 0x20 0x84 0x28
+          0x1b,
+          0x5b,
+          0x4d,
+          0x23,
+          0x84,
+          0x28, // release: ESC [ M 0x23 0x84 0x28
+        ]),
+      );
+      await tick(5);
+      await sendKeys(rendered.stdin, "f");
+      await tick(5);
+
+      expect(rendered.lines().some((l) => l.trim() === "/f")).toBe(true);
+      expect(selectedLine(rendered.lines())).toBeDefined();
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("a multi-line bracketed paste into Search stays on one query row", async () => {
+    setTallWorktrees(5);
+
+    const rendered = await renderApp(<App />, 20);
+    try {
+      await tick(20);
+      expect(rendered.output()).toContain("main");
+
+      await sendKeys(rendered.stdin, "/"); // enter Search
+      // Ink's bracketed-paste fallback (no paste listener registered)
+      // delivers the pasted text as ONE input event, embedded newline
+      // included. statusBarRowCount(Search) budgets the query as exactly one
+      // row and wrap="truncate" cannot remove newlines — un-collapsed, the
+      // paste would render an extra chrome row and desync mouse hit-testing.
+      await sendKeys(rendered.stdin, "\x1b[200~feat\nure\x1b[201~");
+      await tick(5);
+
+      const lines = rendered.lines();
+      // The newline is collapsed to a space on a single query row...
+      expect(lines.some((l) => l.trim() === "/feat ure")).toBe(true);
+      // ...and no second line carries the paste's tail.
+      expect(lines.some((l) => l.trim() === "ure")).toBe(false);
     } finally {
       rendered.unmount();
     }

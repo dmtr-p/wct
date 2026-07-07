@@ -71,12 +71,27 @@ export function useGuardedInput(
         return;
       }
       if (x10PayloadRemaining.current > 0) {
-        // Payload bytes may arrive in one event or split across several;
-        // anything longer than the remaining payload is not X10 payload
-        // (drop the counter rather than eat a real keystroke's tail), and an
-        // empty `input` is a special key (arrow/escape), never payload bytes.
-        if (input.length > 0 && input.length <= x10PayloadRemaining.current) {
-          x10PayloadRemaining.current -= input.length;
+        // Payload bytes may arrive in one event or split across several.
+        // Count RAW bytes, not string length: coordinate bytes for col/row
+        // > 95 are ≥ 0x80, and stdin's UTF-8 decode (Ink setEncoding's
+        // string_decoder) transforms them two ways. A byte run that happens
+        // to BE valid UTF-8 merges into one multi-byte character —
+        // `input.length` would undercount, leave the counter armed, and eat
+        // the next real keystroke; `Buffer.byteLength` recovers the raw
+        // count exactly. A byte that is NOT valid UTF-8 (e.g. a lone
+        // continuation byte — any col ≥ 96 with an ASCII row) becomes
+        // U+FFFD, which weighs 3 UTF-8 bytes for what was ONE raw byte —
+        // uncorrected, the inflated count overshoots the counter and the
+        // payload garbage falls through to the handler, so count each
+        // replacement char as the single raw byte it stands in for.
+        // Anything still longer than the remaining payload is not X10
+        // payload (drop the counter and let the handler have it — a real
+        // keystroke, never payload), and an empty `input` is a special key
+        // (arrow/escape), never payload bytes.
+        const replacements = input.split("�").length - 1;
+        const bytes = Buffer.byteLength(input, "utf8") - 2 * replacements;
+        if (bytes > 0 && bytes <= x10PayloadRemaining.current) {
+          x10PayloadRemaining.current -= bytes;
           return;
         }
         x10PayloadRemaining.current = 0;

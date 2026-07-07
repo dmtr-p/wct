@@ -506,7 +506,14 @@ export function App() {
     } else if (key.return) {
       setMode(Mode.Navigate);
     } else if (input && !key.ctrl && !key.meta) {
-      setSearchQuery((q) => q + input);
+      // Ink's bracketed-paste fallback can deliver a multi-line string as ONE
+      // input event. StatusBar budgets the query as exactly one terminal row
+      // and wrap="truncate" cannot remove embedded newlines, so an
+      // un-collapsed paste would render extra chrome rows and desync mouse
+      // hit-testing. Collapse every CR/LF run (with surrounding indentation)
+      // to a single space — NOT toSingleLine(), whose trim would drop a
+      // legitimate lone-space keystroke.
+      setSearchQuery((q) => q + input.replace(/[ \t]*[\r\n]\s*/g, " "));
     }
   }
 

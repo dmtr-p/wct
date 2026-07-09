@@ -97,11 +97,20 @@ export function DetailRow({
       const line =
         prLine ?? wrapPrLabel(label, maxWidth, hasIcon)[pieceIndex] ?? "";
 
+      // wrap="truncate-end" on the label pieces is a backstop for the row
+      // model: wrapPrLabel budgets lines by display width, and if its
+      // measurement ever disagrees with Ink's, an over-wide piece must clip a
+      // glyph — soft-wrapping would add a terminal row buildTreeRows did not
+      // count and desync mouse hit-testing.
       if (pieceIndex > 0) {
         return (
           <Box>
             <Text>{" ".repeat(prLabelStart(hasIcon))}</Text>
-            <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
+            <Text
+              color={isSelected ? "cyan" : undefined}
+              bold={isSelected}
+              wrap="truncate-end"
+            >
               {line}
             </Text>
           </Box>
@@ -120,7 +129,11 @@ export function DetailRow({
             {prefix}
           </Text>
           {icon ? <Text color={iconColor}>{icon} </Text> : null}
-          <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
+          <Text
+            color={isSelected ? "cyan" : undefined}
+            bold={isSelected}
+            wrap="truncate-end"
+          >
             {line}
           </Text>
         </Box>

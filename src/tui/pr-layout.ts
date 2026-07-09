@@ -8,13 +8,15 @@
 // label through this single pure helper — same input, same line breaks, so the
 // counted rows and the rendered lines can never diverge.
 //
-// Column width is approximated by code-point count (matching the truncate
-// helpers). That is exact for the ASCII text PR titles almost always contain,
-// but a double-width glyph (CJK/emoji) renders wider than its code-point count,
-// so Ink could soft-wrap a piece we counted as one line and re-introduce a
-// smaller version of the desync. Fixing that needs a wcwidth measurement, which
-// would pull in a dependency the project forbids (effect + platform-bun only),
-// so it is a deliberately accepted limitation, not an oversight.
+// Column width is measured as terminal display width (`utils/display-width`):
+// CJK and emoji glyphs count two columns, matching how Ink (via
+// `string-width`) decides whether a line soft-wraps. That measurement is
+// biased to never undercount, so a line this helper emits is never wider than
+// its budget under Ink's measurement — and DetailRow renders label lines with
+// wrap="truncate-end" as a backstop, so even a measurement disagreement could
+// only clip a glyph, never add a terminal row.
+
+import { displayWidth, graphemeWidths } from "./utils/display-width";
 
 /** Leading indent columns of a PR detail line. */
 export const PR_INDENT = 6;
@@ -34,36 +36,51 @@ export function prLabelStart(hasIcon: boolean): number {
 }
 
 /**
- * Greedy word-wrap `text` into lines no wider than `width` columns. A word
- * longer than `width` is hard-broken on code-point boundaries (never splitting
- * a surrogate pair into lone halves). Code-point count is treated as column
- * width, matching the truncate helpers. Always returns at least one (possibly
- * empty) line.
+ * Greedy word-wrap `text` into lines no wider than `width` display columns
+ * (CJK/emoji glyphs count 2). A word wider than `width` is hard-broken on
+ * grapheme boundaries — never splitting a surrogate pair or an emoji ZWJ
+ * sequence. Always returns at least one (possibly empty) line.
  */
 function wrapWords(text: string, width: number): string[] {
   if (width <= 0) return [text];
   const lines: string[] = [];
   let current = "";
+  let currentWidth = 0;
   for (const word of text.split(" ")) {
-    // Code points, so a hard break never severs a surrogate pair.
-    let chars = [...word];
-    while (chars.length > width) {
+    let w = word;
+    let wordWidth = displayWidth(word);
+    if (wordWidth > width) {
+      // Hard-break: flush the current line, emit full-width pieces, and carry
+      // the final piece forward as this iteration's word.
       if (current !== "") {
         lines.push(current);
         current = "";
+        currentWidth = 0;
       }
-      lines.push(chars.slice(0, width).join(""));
-      chars = chars.slice(width);
+      let piece = "";
+      let pieceWidth = 0;
+      for (const [grapheme, graphemeW] of graphemeWidths(word)) {
+        if (piece !== "" && pieceWidth + graphemeW > width) {
+          lines.push(piece);
+          piece = "";
+          pieceWidth = 0;
+        }
+        piece += grapheme;
+        pieceWidth += graphemeW;
+      }
+      w = piece;
+      wordWidth = pieceWidth;
     }
-    const w = chars.join("");
-    const wLen = chars.length;
     if (current === "") {
       current = w;
-    } else if ([...current].length + 1 + wLen <= width) {
+      currentWidth = wordWidth;
+    } else if (currentWidth + 1 + wordWidth <= width) {
       current += ` ${w}`;
+      currentWidth += 1 + wordWidth;
     } else {
       lines.push(current);
       current = w;
+      currentWidth = wordWidth;
     }
   }
   lines.push(current);

@@ -32,6 +32,19 @@ describe("truncateBranch", () => {
   test("returns empty string when available is 0", () => {
     expect(truncateBranch("feature/branch", 0)).toBe("");
   });
+
+  test("budgets CJK glyphs at two display columns each", () => {
+    // "日本語ブランチ" is 7 glyphs = 14 columns. At 9 columns, only four
+    // glyphs (8) fit before the 1-column ellipsis. Counting code points would
+    // keep 8 of them and render 17 columns wide — soft-wrapping the tree row.
+    expect(truncateBranch("日本語ブランチ", 9)).toBe("日本語ブ…");
+    expect(truncateBranch("日本語ブランチ", 14)).toBe("日本語ブランチ");
+  });
+
+  test("never splits an emoji ZWJ sequence when truncating", () => {
+    const family = "👨‍👩‍👧‍👦"; // one grapheme (4 code points + ZWJs), 2 columns
+    expect(truncateBranch(family.repeat(3), 5)).toBe(`${family.repeat(2)}…`);
+  });
 });
 
 describe("truncateWithPrefix", () => {
@@ -68,6 +81,12 @@ describe("truncateWithPrefix", () => {
   test("handles empty rest", () => {
     expect(truncateWithPrefix("1:0 ", "", 10)).toBe("1:0 ");
     expect(truncateWithPrefix("1:0 ", "", 4)).toBe("1:0 ");
+  });
+
+  test("measures the rest by display width", () => {
+    // prefix "1:0 " (4 cols), rest "🎉🎉🎉" (6 cols), available 8 → rest gets
+    // 4 columns: one 2-column emoji + the ellipsis.
+    expect(truncateWithPrefix("1:0 ", "🎉🎉🎉", 8)).toBe("1:0 🎉…");
   });
 });
 

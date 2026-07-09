@@ -1,8 +1,9 @@
 import * as path from "node:path";
 import { Effect, FileSystem } from "effect";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import { useBlink } from "../hooks/useBlink";
+import { useGuardedInput } from "../hooks/useGuardedInput";
 import { runTuiSilentPromise } from "../runtime";
 import { isSubmitShortcut, SubmitButton } from "./form-controls";
 import { Modal } from "./Modal";
@@ -101,7 +102,7 @@ export function AddProjectModal({
     onSubmit({ path: expanded, name, nameManuallyEdited: manuallyEdited });
   }, [isGitRepo, pathValue, nameValue, nameAutoFilled, onSubmit]);
 
-  useInput(
+  useGuardedInput(
     (_input, key) => {
       if (key.escape) {
         onCancel();
@@ -134,7 +135,7 @@ export function AddProjectModal({
   );
 
   // Name field input handling
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (key.backspace) {
         setNameValue((prev) => prev.slice(0, -1));

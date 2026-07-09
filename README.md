@@ -174,6 +174,25 @@ profiles:
 
 When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace storage (state and configuration of installed extensions, UI layout, settings) from your main repo into the new worktree. This means each worktree opens with the same extensions, sidebar state, and editor layout as your main workspace — no manual reconfiguration needed. Requires that you've opened the main repo in VS Code at least once. Supported on macOS and Linux.
 
+## TUI
+
+`wct tui` opens an interactive sidebar for browsing repos and worktrees, switching tmux sessions, and managing worktrees from the keyboard. Use `↑`/`↓` to move, `←`/`→` to expand/collapse, and the on-screen hints at the bottom for the rest.
+
+### Mouse
+
+Mouse support is **on by default**:
+
+- **Wheel** scrolls the worktree viewport one row per tick. The selection stays put and may scroll out of view — the wheel never moves the cursor.
+- **Left-click** selects the row under the cursor. Click only selects; it never activates. All activation (switching sessions, expanding) stays on the keyboard.
+
+Mouse works in the **Navigate** and **Expanded** views only; modals and Search are mouse-free. In the Expanded view, clicking a row outside the expanded worktree's subtree returns to Navigate and selects that row.
+
+**Disabling it:** set `WCT_DISABLE_MOUSE=1` to turn the whole feature off. It's an environment variable rather than a `.wct.yaml` key because the TUI is a global, cross-repo view while config is per-project.
+
+**Text selection:** while mouse reporting is on, the terminal intercepts click-drag, so its native text selection is unavailable. Hold **Shift** while dragging (works in most terminals) to bypass the app and select/copy text normally.
+
+**tmux:** if you run tmux with `set -g mouse on`, both tmux and wct enable mouse reporting and can fight over events. `WCT_DISABLE_MOUSE=1` is the escape hatch.
+
 ## Development
 
 To install dependencies:

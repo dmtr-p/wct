@@ -50,7 +50,6 @@ describe("RepoNode", () => {
       expanded: false,
       isSelected: false,
       isChildSelected: false,
-      worktreeCount: 1,
       maxWidth: 40,
     });
     expect(output).toContain("my-project");
@@ -64,7 +63,6 @@ describe("RepoNode", () => {
       expanded: false,
       isSelected: false,
       isChildSelected: false,
-      worktreeCount: 1,
       maxWidth: 10,
     });
     expect(output).toContain("my-pr…");
@@ -79,7 +77,6 @@ describe("RepoNode", () => {
       expanded: false,
       isSelected: false,
       isChildSelected: false,
-      worktreeCount: 1,
       maxWidth: 14,
     });
     expect(output).toContain("my-project");

@@ -1,5 +1,6 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { useGuardedInput } from "../hooks/useGuardedInput";
 import {
   type SessionIdeDefaults,
   useSessionOptionsState,
@@ -80,7 +81,7 @@ export function UpModal({
     if (visible) setFocusIndex(0);
   }, [visible]);
 
-  useInput(
+  useGuardedInput(
     (_input, key) => {
       if (key.escape) {
         onCancel();

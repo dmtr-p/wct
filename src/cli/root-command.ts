@@ -258,7 +258,9 @@ const projectsCliCommand = Command.make("projects").pipe(
 );
 
 const tuiCliCommand = Command.make("tui", {}, () => tuiCommand()).pipe(
-  Command.withDescription("Interactive TUI sidebar for managing worktrees"),
+  Command.withDescription(
+    "Interactive TUI sidebar for managing worktrees. Mouse on by default (wheel scrolls, click selects); set WCT_DISABLE_MOUSE=1 to disable.",
+  ),
 );
 
 export const rootCommand = Command.make("wct").pipe(

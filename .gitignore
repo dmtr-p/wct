@@ -40,3 +40,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .vscode
 .superpowers/
 .scratch
+
+# Claude Code local settings
+.claude/settings.local.json

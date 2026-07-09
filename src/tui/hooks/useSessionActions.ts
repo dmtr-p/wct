@@ -14,7 +14,7 @@ import {
   resolveSessionHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
-import { resolveSelectedWorktreeIndex } from "../tree-helpers";
+import { isInertTreeItem, resolveSelectedWorktreeIndex } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
@@ -51,8 +51,7 @@ export function createNavigateTree(deps: SessionActionDeps) {
     deps.setSelectedIndex((prev) => {
       let next = prev + direction;
       while (next >= 0 && next < deps.treeItems.length) {
-        const item = deps.treeItems[next];
-        if (item?.type === "detail" && item.detailKind === "pane-header") {
+        if (isInertTreeItem(deps.treeItems[next])) {
           next += direction;
           continue;
         }

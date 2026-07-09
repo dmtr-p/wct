@@ -643,14 +643,10 @@ describe("filterMissingEditors", () => {
       const root = (state.serializedGrid as Record<string, unknown>)
         .root as Record<string, unknown>;
       const leaves = root.data as Record<string, unknown>[];
-      expect(
-        ((leaves[0]?.data as Record<string, unknown>).editors as unknown[])
-          .length,
-      ).toBe(1);
-      expect(
-        ((leaves[1]?.data as Record<string, unknown>).editors as unknown[])
-          .length,
-      ).toBe(0);
+      const leaf0Data = leaves[0]?.data as Record<string, unknown>;
+      expect((leaf0Data.editors as unknown[]).length).toBe(1);
+      const leaf1Data = leaves[1]?.data as Record<string, unknown>;
+      expect((leaf1Data.editors as unknown[]).length).toBe(0);
     } finally {
       await rm(tmpFile, { force: true });
     }

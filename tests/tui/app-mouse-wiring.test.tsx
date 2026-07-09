@@ -19,6 +19,7 @@ import {
   resetHarnessFixtures,
   selectedLine,
   sendKeys,
+  setTallWorktrees,
   sgrPress,
   sgrRelease,
   sgrRowFor,
@@ -225,18 +226,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
   });
 
   describe("Bug 2: background refresh (new `rows`/`repos` ref, same selectedIndex) must not re-anchor a wheel-scrolled viewport", () => {
-    function setTallWorktrees(n: number) {
-      worktreeFixtures.byRepoPath.set(repoPath, [
-        worktree("main"),
-        ...Array.from({ length: n }, (_, i) => worktree(`feature/${i}`)),
-      ]);
-    }
-
     test("a background refresh (repos ref change, selectedIndex unchanged) does not move the viewport", async () => {
-      registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
-      ];
-      setTallWorktrees(40);
+      setTallWorktrees(repoPath, 40);
 
       // A short terminal forces a small viewport so the tree scrolls.
       const rendered = await renderApp(<App />, 14);
@@ -295,10 +286,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
 
     test("entering Search after a wheel scroll (selection already at index 0) resets the viewport to the first match", async () => {
-      registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
-      ];
-      setTallWorktrees(40);
+      setTallWorktrees(repoPath, 40);
 
       const rendered = await renderApp(<App />, 14);
       try {
@@ -332,10 +320,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
 
     test("two wheel-downs written as one stdin chunk scroll twice end-to-end (guard integration)", async () => {
-      registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
-      ];
-      setTallWorktrees(40);
+      setTallWorktrees(repoPath, 40);
 
       const rendered = await renderApp(<App />, 14);
       try {
@@ -364,10 +349,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
 
     test("a click's press+release written as one chunk leaves the Search query clean (guard integration)", async () => {
-      registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
-      ];
-      setTallWorktrees(5);
+      setTallWorktrees(repoPath, 5);
 
       const rendered = await renderApp(<App />, 20);
       try {
@@ -396,10 +378,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
 
     test("a wheel right after a no-nudge click is not undone (selectionChanged falling edge)", async () => {
-      registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
-      ];
-      setTallWorktrees(40);
+      setTallWorktrees(repoPath, 40);
 
       const rendered = await renderApp(<App />, 14);
       try {
@@ -437,10 +416,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
 
     test("a genuine selectedIndex change still nudges the viewport", async () => {
-      registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
-      ];
-      setTallWorktrees(40);
+      setTallWorktrees(repoPath, 40);
 
       const rendered = await renderApp(<App />, 14);
       try {

@@ -24,15 +24,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-  makeWorktree,
-  registryItems,
   renderApp,
   resetHarnessFixtures,
   selectedLine,
   sendKeys,
+  setTallWorktrees,
   sgrWheel,
   tick,
-  worktreeFixtures,
 } from "./app-harness";
 
 const { App } = await import("../../src/tui/App");
@@ -56,20 +54,8 @@ describe("App.tsx review fixes (real App)", () => {
     rmSync(repoPath, { recursive: true, force: true });
   });
 
-  function setTallWorktrees(n: number) {
-    worktreeFixtures.byRepoPath.set(repoPath, [
-      makeWorktree(repoPath, "main"),
-      ...Array.from({ length: n }, (_, i) =>
-        makeWorktree(repoPath, `feature/${i}`),
-      ),
-    ]);
-    registryItems.items = [
-      { id: "repo-1", repo_path: repoPath, project: "alpha" },
-    ];
-  }
-
   test("opening and cancelling a modal preserves a wheel-scrolled viewport", async () => {
-    setTallWorktrees(40);
+    setTallWorktrees(repoPath, 40);
 
     const rendered = await renderApp(<App />, 14);
     try {
@@ -111,7 +97,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("a modal over a tree taller than the terminal renders intact (no garble)", async () => {
-    setTallWorktrees(40);
+    setTallWorktrees(repoPath, 40);
 
     const rendered = await renderApp(<App />, 14);
     try {
@@ -145,7 +131,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("Ctrl+C disables mouse reporting BEFORE raw mode is turned off, then exits", async () => {
-    setTallWorktrees(3);
+    setTallWorktrees(repoPath, 3);
 
     const rendered = await renderApp(<App />, 20);
     await tick(20);
@@ -168,7 +154,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("legacy X10 mouse bytes are swallowed instead of typed into the Search query", async () => {
-    setTallWorktrees(5);
+    setTallWorktrees(repoPath, 5);
 
     const rendered = await renderApp(<App />, 20);
     try {
@@ -194,7 +180,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("X10 payload bytes that UTF-8 decode merges into one character do not desync the guard", async () => {
-    setTallWorktrees(5);
+    setTallWorktrees(repoPath, 5);
 
     const rendered = await renderApp(<App />, 20);
     try {
@@ -222,7 +208,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("X10 payload bytes that are INVALID UTF-8 are swallowed, not leaked to the query", async () => {
-    setTallWorktrees(5);
+    setTallWorktrees(repoPath, 5);
 
     const rendered = await renderApp(<App />, 20);
     try {
@@ -266,7 +252,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("a multi-line bracketed paste into Search stays on one query row", async () => {
-    setTallWorktrees(5);
+    setTallWorktrees(repoPath, 5);
 
     const rendered = await renderApp(<App />, 20);
     try {
@@ -293,7 +279,7 @@ describe("App.tsx review fixes (real App)", () => {
   });
 
   test("horizontal wheel events (cb 66/67) do not scroll the viewport", async () => {
-    setTallWorktrees(40);
+    setTallWorktrees(repoPath, 40);
 
     const rendered = await renderApp(<App />, 14);
     try {

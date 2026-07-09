@@ -26,6 +26,7 @@ import { PassThrough } from "node:stream";
 import type React from "react";
 import { vi } from "vitest";
 import type { Worktree } from "../../src/services/worktree-service";
+import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 
 const runtimeMock = vi.hoisted(() => ({
   runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
@@ -170,6 +171,24 @@ export function makeWorktree(repoPath: string, branch: string): Worktree {
   };
 }
 
+/**
+ * Register a single repo ("repo-1" / project "alpha") whose tree is tall
+ * enough to scroll: `main` plus `n` `feature/<i>` worktrees. Configures BOTH
+ * the worktree and registry fixtures so callers can't drift apart on which
+ * halves they set up.
+ */
+export function setTallWorktrees(repoPath: string, n: number): void {
+  worktreeFixtures.byRepoPath.set(repoPath, [
+    makeWorktree(repoPath, "main"),
+    ...Array.from({ length: n }, (_, i) =>
+      makeWorktree(repoPath, `feature/${i}`),
+    ),
+  ]);
+  registryItems.items = [
+    { id: "repo-1", repo_path: repoPath, project: "alpha" },
+  ];
+}
+
 export function stripAnsi(value: string): string {
   let output = "";
   for (let i = 0; i < value.length; i += 1) {
@@ -281,9 +300,9 @@ export function sgrWheel(dir: 1 | -1): string {
   return `\x1b[<${cb};1;1M`;
 }
 
-// Mirrors App.tsx's TOP_CHROME_ROWS (== HEADER_OFFSET): the `wct` header line
-// + a blank spacer line above the tree viewport.
-export const HEADER_OFFSET = 2;
+// HEADER_OFFSET (== App.tsx's TOP_CHROME_ROWS) is imported from the
+// production module so the mapping stays aligned if the chrome layout changes.
+export { HEADER_OFFSET };
 
 export function sgrRowFor(viewportRow: number): number {
   return viewportRow + 1 + HEADER_OFFSET;

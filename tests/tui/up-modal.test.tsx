@@ -135,9 +135,8 @@ describe("UpModal", () => {
           ([props]) => (props as SessionOptionsSectionProps).canSubmit,
         );
         expect(call).toBeDefined();
-        expect((call?.[0] as SessionOptionsSectionProps).focusedField).toBe(
-          "profile",
-        );
+        const props = call?.[0] as SessionOptionsSectionProps;
+        expect(props.focusedField).toBe("profile");
       });
     } finally {
       instance?.unmount();

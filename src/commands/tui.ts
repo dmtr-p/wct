@@ -5,7 +5,8 @@ import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "tui",
-  description: "Interactive TUI sidebar for managing worktrees",
+  description:
+    "Interactive TUI sidebar for managing worktrees (mouse on by default; WCT_DISABLE_MOUSE=1 to disable)",
 };
 
 export function tuiCommand(): Effect.Effect<void, WctError, WctServices> {

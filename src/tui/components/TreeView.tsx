@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
+import type { TreeRow } from "../tree-helpers";
 import {
   type PaneInfo,
   type PendingAction,
@@ -12,88 +13,36 @@ import {
   type TreeItem,
 } from "../types";
 import { DetailRow } from "./DetailRow";
+import { RepoEmptyRow } from "./RepoEmptyRow";
 import { RepoNode } from "./RepoNode";
 import { WorktreeItem } from "./WorktreeItem";
+import { WorktreeStatsRow } from "./WorktreeStatsRow";
 
 interface Props {
   repos: RepoInfo[];
   sessions: Array<{ name: string; attached: boolean }>;
+  expandedRepos?: Set<string>;
   selectedIndex: number;
   items: TreeItem[];
+  /**
+   * The visual-row model to render, built ONCE by the owner (App.tsx) with
+   * `buildTreeRows` and shared with windowing and mouse hit-testing — TreeView
+   * never rebuilds it, so the rendered rows and the hit-test rows cannot
+   * diverge.
+   */
+  rows: TreeRow[];
   pendingActions: Map<string, PendingAction>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
-  expandedWorktreeKeys: Set<string>;
+  expandedWorktreeKeys?: Set<string>;
+  expandedWorktreeKey?: string | null;
   maxWidth: number;
-  renderedRows?: Array<number | null>;
-  scrollOffset?: number;
-  viewportHeight?: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
-}
-
-interface TreeElementWindowEntry {
-  elementIndex: number;
-  hiddenTop: number;
-  height: number;
-}
-
-export function getTreeElementHeights(
-  renderedRows: Array<number | null>,
-): number[] {
-  const heights: number[] = [];
-  let previousItem: number | null | undefined;
-
-  for (const itemIndex of renderedRows) {
-    if (
-      itemIndex !== null &&
-      itemIndex === previousItem &&
-      heights.length > 0
-    ) {
-      const lastIndex = heights.length - 1;
-      heights[lastIndex] = (heights[lastIndex] ?? 0) + 1;
-    } else {
-      heights.push(1);
-    }
-    previousItem = itemIndex;
-  }
-
-  return heights;
-}
-
-export function getTreeElementWindow(
-  elementHeights: number[],
-  scrollOffset: number,
-  viewportHeight: number,
-): TreeElementWindowEntry[] {
-  const windowStart = Math.max(0, scrollOffset);
-  const windowEnd = windowStart + Math.max(0, viewportHeight);
-  const visible: TreeElementWindowEntry[] = [];
-  let elementStart = 0;
-
-  for (
-    let elementIndex = 0;
-    elementIndex < elementHeights.length;
-    elementIndex++
-  ) {
-    const elementHeight = elementHeights[elementIndex] ?? 0;
-    const elementEnd = elementStart + elementHeight;
-    const visibleStart = Math.max(elementStart, windowStart);
-    const visibleEnd = Math.min(elementEnd, windowEnd);
-
-    if (visibleStart < visibleEnd) {
-      visible.push({
-        elementIndex,
-        hiddenTop: visibleStart - elementStart,
-        height: visibleEnd - visibleStart,
-      });
-    }
-
-    elementStart = elementEnd;
-    if (elementStart >= windowEnd) break;
-  }
-
-  return visible;
+  /** First visual row to render. Defaults to 0 (no scrolling). */
+  scrollOffset?: number;
+  /** Number of visual rows to render. Defaults to rendering all rows. */
+  viewportRows?: number;
 }
 
 export function getDetailRowKey(
@@ -112,201 +61,209 @@ export function TreeView({
   sessions,
   selectedIndex,
   items,
+  rows,
   pendingActions,
   prData,
   panes,
   expandedWorktreeKeys,
+  expandedWorktreeKey,
   maxWidth,
-  renderedRows,
-  scrollOffset = 0,
-  viewportHeight = Number.POSITIVE_INFINITY,
   refreshingProjects,
   errors,
+  scrollOffset = 0,
+  viewportRows,
 }: Props) {
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.name, s])),
     [sessions],
   );
 
-  const { phantomsByProject } = useMemo(() => {
-    const keys = new Set<string>();
-    for (const repo of repos) {
-      for (const wt of repo.worktrees) {
-        keys.add(pendingKey(repo.project, wt.branch));
-      }
-    }
-    const phantoms = new Map<string, PendingAction[]>();
-    for (const [key, action] of pendingActions) {
-      if (action.type === "opening" && !keys.has(key)) {
-        const existing = phantoms.get(action.project) ?? [];
-        existing.push(action);
-        phantoms.set(action.project, existing);
-      }
-    }
-    return { phantomsByProject: phantoms };
-  }, [repos, pendingActions]);
-
-  const elements: React.ReactElement[] = [];
   const selectedItem = items[selectedIndex];
 
-  for (let idx = 0; idx < items.length; idx++) {
-    const item = items[idx];
-    if (!item) continue;
+  const visibleRows =
+    viewportRows === undefined
+      ? rows
+      : rows.slice(scrollOffset, scrollOffset + viewportRows);
 
-    const repo = repos[item.repoIndex];
-    if (!repo) continue;
+  const elements: React.ReactNode[] = [];
 
-    if (item.type === "repo") {
-      const childSelected =
-        idx !== selectedIndex &&
-        !!selectedItem &&
-        selectedItem.type !== "repo" &&
-        selectedItem.repoIndex === item.repoIndex;
-
-      elements.push(
-        <RepoNode
-          key={`repo-${repo.id}`}
-          project={repo.project}
-          isSelected={idx === selectedIndex}
-          isChildSelected={childSelected}
-          worktreeCount={repo.worktrees.length}
-          maxWidth={maxWidth}
-          isRefreshing={refreshingProjects?.has(repo.project)}
-          hasError={errors?.has(repo.project)}
-        />,
-      );
-      continue;
-    }
-
-    if (item.type === "detail") {
-      elements.push(
-        <DetailRow
-          key={getDetailRowKey(repo.id, item)}
-          item={item}
-          isSelected={idx === selectedIndex}
-          maxWidth={maxWidth}
-        />,
-      );
-      continue;
-    }
-
-    const worktreeIndex = item.worktreeIndex;
-    if (worktreeIndex === undefined) continue;
-
-    const wt = repo.worktrees[worktreeIndex];
-    if (!wt) continue;
-
-    const sessionName = formatSessionName(basename(wt.path));
-    const session = sessionMap.get(sessionName);
-    const wtKey = pendingKey(repo.project, wt.branch);
-    const pending = pendingActions.get(wtKey);
-
-    const wtPr = prData.get(wtKey);
-    const wtPanes = panes.get(sessionName);
-    const hasExpandableData = !!wtPr || (wtPanes && wtPanes.length > 0);
-
-    const wtChildSelected =
-      idx !== selectedIndex &&
-      !!selectedItem &&
-      selectedItem.type === "detail" &&
-      selectedItem.repoIndex === item.repoIndex &&
-      selectedItem.worktreeIndex === worktreeIndex;
-
-    elements.push(
-      <WorktreeItem
-        key={`wt-${repo.id}-${wt.branch}`}
-        branch={wt.branch}
-        hasSession={!!session}
-        isAttached={session?.attached ?? false}
-        sync={formatSync(wt.sync)}
-        changedFiles={wt.changedFiles}
-        isSelected={idx === selectedIndex}
-        isChildSelected={wtChildSelected}
-        pendingStatus={pending?.type}
-        isExpanded={expandedWorktreeKeys.has(wtKey)}
-        hasExpandableData={!!hasExpandableData}
-        maxWidth={maxWidth}
-      />,
-    );
-
-    const nextItem = items[idx + 1];
-    const isLastWorktreeForRepo =
-      !nextItem ||
-      nextItem.type === "repo" ||
-      nextItem.repoIndex !== item.repoIndex;
-
-    if (isLastWorktreeForRepo) {
-      const phantoms = phantomsByProject.get(repo.project);
-      if (phantoms) {
-        for (const phantom of phantoms) {
-          elements.push(
-            <WorktreeItem
-              key={`phantom-${repo.id}-${phantom.branch}`}
-              branch={phantom.branch}
-              hasSession={false}
-              isAttached={false}
-              sync=""
-              changedFiles={0}
-              isSelected={false}
-              pendingStatus="opening"
-              maxWidth={maxWidth}
-            />,
-          );
-        }
-      }
-    }
+  for (let i = 0; i < visibleRows.length; i++) {
+    const row = visibleRows[i];
+    if (!row) continue;
+    const element = renderRow(row, {
+      repos,
+      items,
+      selectedIndex,
+      selectedItem,
+      expandedWorktreeKeys,
+      expandedWorktreeKey,
+      sessionMap,
+      prData,
+      panes,
+      pendingActions,
+      maxWidth,
+      refreshingProjects,
+      errors,
+    });
+    if (element) elements.push(element);
   }
 
-  // Phantoms for repos with no worktrees
-  for (const repo of repos) {
-    if (repo.worktrees.length > 0) continue;
-    const phantoms = phantomsByProject.get(repo.project);
-    if (!phantoms) continue;
-    for (const phantom of phantoms) {
-      elements.push(
+  return <Box flexDirection="column">{elements}</Box>;
+}
+
+interface RenderRowContext {
+  repos: RepoInfo[];
+  items: TreeItem[];
+  selectedIndex: number;
+  selectedItem: TreeItem | undefined;
+  expandedWorktreeKeys?: Set<string>;
+  expandedWorktreeKey?: string | null;
+  sessionMap: Map<string, { name: string; attached: boolean }>;
+  prData: Map<string, PRInfo>;
+  panes: Map<string, PaneInfo[]>;
+  pendingActions: Map<string, PendingAction>;
+  maxWidth: number;
+  refreshingProjects?: Set<string>;
+  errors?: Map<string, string>;
+}
+
+function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
+  switch (row.kind) {
+    case "repo-empty":
+      return <RepoEmptyRow key={`repo-empty-${row.repoIndex}`} />;
+    case "phantom": {
+      const repo = ctx.repos[row.repoIndex];
+      if (!repo) return null;
+      return (
         <WorktreeItem
-          key={`phantom-${repo.id}-${phantom.branch}`}
-          branch={phantom.branch}
+          key={`phantom-${repo.id}-${row.branch}`}
+          branch={row.branch}
           hasSession={false}
           isAttached={false}
-          sync=""
-          changedFiles={0}
           isSelected={false}
           pendingStatus="opening"
-          maxWidth={maxWidth}
-        />,
+          maxWidth={ctx.maxWidth}
+        />
       );
     }
+    case "worktree-stats": {
+      const repo = ctx.repos[row.repoIndex];
+      const wt = repo?.worktrees[row.worktreeIndex];
+      if (!repo || !wt) return null;
+      return (
+        <WorktreeStatsRow
+          key={`wt-stats-${repo.id}-${wt.branch}`}
+          sync={formatSync(wt.sync)}
+          changedFiles={wt.changedFiles}
+        />
+      );
+    }
+    case "repo":
+      return renderRepoRow(row.itemIndex, ctx);
+    case "worktree":
+      return renderWorktreeRow(row.itemIndex, ctx);
+    case "detail":
+      return renderDetailRow(row.itemIndex, ctx, 0, row.prLine);
+    case "detail-pr-cont":
+      return renderDetailRow(row.itemIndex, ctx, row.pieceIndex, row.prLine);
   }
+}
 
-  const elementHeights = renderedRows
-    ? getTreeElementHeights(renderedRows)
-    : elements.map(() => 1);
-  const visibleElements = getTreeElementWindow(
-    elementHeights,
-    scrollOffset,
-    viewportHeight,
-  ).flatMap(({ elementIndex, hiddenTop, height }) => {
-    const element = elements[elementIndex];
-    if (!element) return [];
+function renderRepoRow(idx: number, ctx: RenderRowContext): React.ReactNode {
+  const item = ctx.items[idx];
+  if (item?.type !== "repo") return null;
+  const repo = ctx.repos[item.repoIndex];
+  if (!repo) return null;
 
-    const elementHeight = elementHeights[elementIndex] ?? 1;
-    if (hiddenTop === 0 && height === elementHeight) return [element];
+  const childSelected =
+    idx !== ctx.selectedIndex &&
+    !!ctx.selectedItem &&
+    ctx.selectedItem.type !== "repo" &&
+    ctx.selectedItem.repoIndex === item.repoIndex;
 
-    return [
-      <Box
-        key={`viewport-${String(element.key ?? elementIndex)}`}
-        flexDirection="column"
-        height={height}
-        flexShrink={0}
-        overflowY="hidden"
-      >
-        <Box flexDirection="column" position="relative" top={-hiddenTop}>
-          {element}
-        </Box>
-      </Box>,
-    ];
-  });
+  return (
+    <RepoNode
+      key={`repo-${repo.id}`}
+      project={repo.project}
+      isSelected={idx === ctx.selectedIndex}
+      isChildSelected={childSelected}
+      maxWidth={ctx.maxWidth}
+      isRefreshing={ctx.refreshingProjects?.has(repo.project)}
+      hasError={ctx.errors?.has(repo.project)}
+    />
+  );
+}
 
-  return <Box flexDirection="column">{visibleElements}</Box>;
+function renderWorktreeRow(
+  idx: number,
+  ctx: RenderRowContext,
+): React.ReactNode {
+  const item = ctx.items[idx];
+  if (item?.type !== "worktree") return null;
+  const repo = ctx.repos[item.repoIndex];
+  if (!repo) return null;
+
+  const wt = repo.worktrees[item.worktreeIndex];
+  if (!wt) return null;
+
+  const sessionName = formatSessionName(basename(wt.path));
+  const session = ctx.sessionMap.get(sessionName);
+  const wtKey = pendingKey(repo.project, wt.branch);
+  const pending = ctx.pendingActions.get(wtKey);
+
+  const wtPr = ctx.prData.get(wtKey);
+  const wtPanes = ctx.panes.get(sessionName);
+  const hasExpandableData = !!wtPr || (wtPanes && wtPanes.length > 0);
+
+  const wtChildSelected =
+    idx !== ctx.selectedIndex &&
+    !!ctx.selectedItem &&
+    ctx.selectedItem.type === "detail" &&
+    ctx.selectedItem.repoIndex === item.repoIndex &&
+    ctx.selectedItem.worktreeIndex === item.worktreeIndex;
+
+  return (
+    <WorktreeItem
+      key={`wt-${repo.id}-${wt.branch}`}
+      branch={wt.branch}
+      hasSession={!!session}
+      isAttached={session?.attached ?? false}
+      isSelected={idx === ctx.selectedIndex}
+      isChildSelected={wtChildSelected}
+      pendingStatus={pending?.type}
+      isExpanded={
+        ctx.expandedWorktreeKeys?.has(wtKey) ??
+        ctx.expandedWorktreeKey === wtKey
+      }
+      hasExpandableData={!!hasExpandableData}
+      maxWidth={ctx.maxWidth}
+    />
+  );
+}
+
+function renderDetailRow(
+  idx: number,
+  ctx: RenderRowContext,
+  pieceIndex: number,
+  prLine?: string,
+): React.ReactNode {
+  const item = ctx.items[idx];
+  if (item?.type !== "detail") return null;
+  const repo = ctx.repos[item.repoIndex];
+  if (!repo) return null;
+
+  return (
+    <DetailRow
+      key={
+        pieceIndex > 0
+          ? `${getDetailRowKey(repo.id, item)}-cont-${pieceIndex}`
+          : getDetailRowKey(repo.id, item)
+      }
+      item={item}
+      isSelected={idx === ctx.selectedIndex}
+      maxWidth={ctx.maxWidth}
+      pieceIndex={pieceIndex}
+      prLine={prLine}
+    />
+  );
 }

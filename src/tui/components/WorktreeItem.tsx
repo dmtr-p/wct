@@ -10,8 +10,6 @@ interface Props {
   branch: string;
   hasSession: boolean;
   isAttached: boolean;
-  sync: string;
-  changedFiles: number;
   isSelected: boolean;
   isChildSelected?: boolean;
   pendingStatus?: "opening" | "closing" | "starting" | "stopping";
@@ -28,8 +26,6 @@ export function WorktreeItem({
   branch,
   hasSession,
   isAttached,
-  sync,
-  changedFiles,
   isSelected,
   isChildSelected,
   pendingStatus,
@@ -38,54 +34,28 @@ export function WorktreeItem({
   maxWidth,
 }: Props) {
   const active = isSelected || !!isChildSelected;
-  const indicator = hasSession ? "\u25CF" : "\u25CB";
+  const indicator = hasSession ? "●" : "○";
   const indicatorColor = hasSession ? "green" : "gray";
   const attached = isAttached ? " *" : "";
-  const expandIcon = isExpanded
-    ? "\u25BC "
-    : hasExpandableData
-      ? "\u25B6 "
-      : "";
-
+  const expandIcon = isExpanded ? "▼ " : hasExpandableData ? "▶ " : "";
   const prefix = "   ";
-  const openingDisplayBranch = truncateBranch(
-    branch,
-    branchBudget(
-      maxWidth,
-      prefix.length + "\u25CB ".length + " opening...".length,
-    ),
-  );
-  const closingDisplayBranch = truncateBranch(
-    branch,
-    branchBudget(
-      maxWidth,
-      prefix.length + `${indicator} `.length + " closing...".length,
-    ),
-  );
-  const stoppingDisplayBranch = truncateBranch(
-    branch,
-    branchBudget(
-      maxWidth,
-      prefix.length + `${indicator} `.length + " stopping...".length,
-    ),
-  );
-  const mainSuffix =
-    attached + (pendingStatus === "starting" ? " starting..." : "");
-  const mainDisplayBranch = truncateBranch(
-    branch,
-    branchBudget(
-      maxWidth,
-      prefix.length +
-        expandIcon.length +
-        indicator.length +
-        1 +
-        mainSuffix.length,
-    ),
-  );
-  const hasStats = (sync && sync !== "\u2713") || changedFiles > 0;
+
+  const pendingRow = (
+    suffix: "opening..." | "closing..." | "stopping...",
+    rowIndicator: string,
+  ) => {
+    const displayBranch = truncateBranch(
+      branch,
+      branchBudget(
+        maxWidth,
+        prefix.length + rowIndicator.length + 1 + suffix.length + 1,
+      ),
+    );
+    return { content: `${prefix}${rowIndicator} ${displayBranch} ${suffix}`, displayBranch };
+  };
 
   if (pendingStatus === "opening") {
-    const content = `${prefix}\u25CB ${openingDisplayBranch} opening...`;
+    const { content, displayBranch } = pendingRow("opening...", "○");
     return (
       <Box>
         <Text
@@ -94,17 +64,16 @@ export function WorktreeItem({
           wrap="truncate"
         >
           {prefix}
-          <Text italic>
-            {"\u25CB"} {openingDisplayBranch} opening...
-          </Text>
+          <Text italic>○ {displayBranch} opening...</Text>
           {selectedRowFill(isSelected, maxWidth, content)}
         </Text>
       </Box>
     );
   }
 
-  if (pendingStatus === "closing") {
-    const content = `${prefix}${indicator} ${closingDisplayBranch} closing...`;
+  if (pendingStatus === "closing" || pendingStatus === "stopping") {
+    const suffix = pendingStatus === "closing" ? "closing..." : "stopping...";
+    const { content, displayBranch } = pendingRow(suffix, indicator);
     return (
       <Box>
         <Text
@@ -114,74 +83,37 @@ export function WorktreeItem({
           wrap="truncate"
         >
           {prefix}
-          {indicator} {closingDisplayBranch} closing...
+          {indicator} {displayBranch} {suffix}
           {selectedRowFill(isSelected, maxWidth, content)}
         </Text>
       </Box>
     );
   }
 
-  if (pendingStatus === "stopping") {
-    const content = `${prefix}${indicator} ${stoppingDisplayBranch} stopping...`;
-    return (
-      <Box>
-        <Text
-          color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
-          backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-          dimColor={!isSelected}
-          wrap="truncate"
-        >
-          {prefix}
-          {indicator} {stoppingDisplayBranch} stopping...
-          {selectedRowFill(isSelected, maxWidth, content)}
-        </Text>
-      </Box>
-    );
-  }
+  const starting = pendingStatus === "starting" ? " starting..." : "";
+  const displayBranch = truncateBranch(
+    branch,
+    branchBudget(
+      maxWidth,
+      prefix.length + expandIcon.length + indicator.length + 1 + attached.length + starting.length,
+    ),
+  );
+  const content = `${prefix}${expandIcon}${indicator} ${displayBranch}${attached}${starting}`;
 
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text
-          color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
-          backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-          wrap="truncate"
-        >
-          {prefix}
-          {expandIcon ? <Text dimColor={!isSelected}>{expandIcon}</Text> : null}
-          <Text color={isSelected ? undefined : indicatorColor}>
-            {indicator}
-            {pendingStatus === "starting" ? (
-              <Text dimColor={!isSelected}> starting...</Text>
-            ) : null}
-          </Text>
-          <Text bold={active}> {mainDisplayBranch}</Text>
-          <Text dimColor={!isSelected}>{attached}</Text>
-          {selectedRowFill(
-            isSelected,
-            maxWidth,
-            prefix +
-              expandIcon +
-              indicator +
-              (pendingStatus === "starting" ? " starting..." : "") +
-              ` ${mainDisplayBranch}` +
-              attached,
-          )}
-        </Text>
-      </Box>
-      {isExpanded && hasStats ? (
-        <Box>
-          <Text wrap="truncate">
-            {"       "}
-            {sync && sync !== "\u2713" ? <Text dimColor>{sync}</Text> : null}
-            {changedFiles > 0 ? (
-              <Text color="yellow">
-                {sync && sync !== "\u2713" ? " " : ""}~{changedFiles}
-              </Text>
-            ) : null}
-          </Text>
-        </Box>
-      ) : null}
+    <Box>
+      <Text
+        color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
+        backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
+        wrap="truncate"
+      >
+        {prefix}
+        {expandIcon ? <Text dimColor={!isSelected}>{expandIcon}</Text> : null}
+        <Text color={isSelected ? undefined : indicatorColor}>{indicator}</Text>
+        <Text bold={active}> {displayBranch}</Text>
+        <Text dimColor={!isSelected}>{attached}{starting}</Text>
+        {selectedRowFill(isSelected, maxWidth, content)}
+      </Text>
     </Box>
   );
 }

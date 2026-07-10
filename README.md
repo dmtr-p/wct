@@ -21,10 +21,6 @@ wct projects list                      # List registered projects
 
 Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
 
-### TUI controls
-
-Run `wct tui` to browse registered projects. Repos stay expanded; use the mouse wheel or arrow keys to navigate. A single click selects a row. Double-click a branch to expand or collapse its details, a PR to open it, or a tmux pane to switch to it. Multiple branches can remain expanded; use `←` to collapse the selected branch.
-
 ## Installation
 
 ### Homebrew (recommended)
@@ -177,6 +173,22 @@ profiles:
 ### VS Code Workspace Sync
 
 When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace storage (state and configuration of installed extensions, UI layout, settings) from your main repo into the new worktree. This means each worktree opens with the same extensions, sidebar state, and editor layout as your main workspace — no manual reconfiguration needed. Requires that you've opened the main repo in VS Code at least once. Supported on macOS and Linux.
+
+## TUI
+
+`wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
+
+### Mouse
+
+Mouse support is **on by default**:
+
+- **Wheel** scrolls the worktree viewport one row per tick. The selection stays put and may scroll out of view — the wheel never moves the cursor.
+- **Left-click** selects a row.
+- **Double-click** expands or collapses a branch, opens a PR, or switches to a tmux pane.
+
+Mouse works in the Navigate and Expanded views only; modals and Search are mouse-free. Set `WCT_DISABLE_MOUSE=1` to disable it.
+
+Hold **Shift** while dragging to use native terminal text selection. If tmux mouse mode conflicts with the TUI, use `WCT_DISABLE_MOUSE=1`.
 
 ## Development
 

@@ -1,7 +1,8 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
+import { useGuardedInput } from "../hooks/useGuardedInput";
 import {
   type SessionIdeDefaults,
   useSessionOptionsState,
@@ -61,7 +62,7 @@ function ModeSelector({
     { label: "Existing Branch", step: "existingBranch" },
   ];
 
-  useInput(
+  useGuardedInput(
     (_input, key) => {
       if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
       if (key.downArrow)
@@ -109,7 +110,7 @@ function BracketInput({
   const cursorVisible = useBlink();
   const displayValue = value || (!isFocused || !cursorVisible ? " " : "");
 
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (!isFocused) return;
       if (key.backspace) {
@@ -144,7 +145,7 @@ function PromptArea({
 }) {
   const cursorVisible = useBlink();
 
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (!isFocused) return;
       if (key.backspace) {
@@ -242,7 +243,7 @@ export function NewBranchForm({
     });
   };
 
-  useInput(
+  useGuardedInput(
     (_input, key) => {
       if (key.escape) {
         onBack();
@@ -423,7 +424,7 @@ export function FromPRForm({
     });
   };
 
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (key.escape) {
         onBack();
@@ -638,7 +639,7 @@ export function ExistingBranchForm({
     });
   };
 
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (key.escape) {
         onBack();

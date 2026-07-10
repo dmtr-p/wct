@@ -1,6 +1,8 @@
 // src/tui/components/StatusBar.tsx
 import { Box, Text, useWindowSize } from "ink";
+import type { ComponentProps } from "react";
 import type { Mode } from "../types";
+import { toSingleLine } from "../utils/truncate";
 
 interface Props {
   mode: Mode;
@@ -8,10 +10,6 @@ interface Props {
   selectedPaneRow?: boolean;
   hasClient?: boolean;
   repoError?: string;
-}
-
-export function singleLineFooterText(text: string): string {
-  return text.replace(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/gu, " ").trim();
 }
 
 function join(...parts: (string | false)[]): string {
@@ -79,6 +77,49 @@ function getHints(
   }
 }
 
+/**
+ * The number of terminal rows StatusBar renders for a mode — the single
+ * source App.tsx's viewport budget consumes, co-located with the render
+ * branches below so the two cannot drift. The count is a pure function of the
+ * mode branch and repoError presence: every line renders with wrap="truncate"
+ * (and the divider is width-repeated), so width never changes the row count,
+ * and searchQuery/selectedPaneRow/hasClient only change text, never lines.
+ *
+ * True-modal modes (OpenModal/UpModal/AddProjectModal) do not render
+ * StatusBar at all — the modal replaces the bottom chrome — but they return
+ * the default-branch count anyway: App budgets the tree viewport with this
+ * VIRTUAL count so opening a modal does not change viewportRows (which would
+ * clamp/re-anchor the scroll state); the modal's extra height is absorbed by
+ * the tree box's overflow clipping instead.
+ */
+export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
+  switch (mode.type) {
+    // divider + confirm question + hint line
+    case "ConfirmKill":
+    case "ConfirmDown":
+    case "ConfirmClose":
+    case "ConfirmCloseForce":
+    // divider + query line + hint line
+    case "Search":
+      return 3;
+    // divider + optional repoError + two hint lines
+    default:
+      return 3 + (hasRepoError ? 1 : 0);
+  }
+}
+
+/**
+ * A single bottom-chrome line. App.tsx budgets bottomChromeRows assuming each
+ * chrome line occupies EXACTLY one terminal row (see statusBarRowCount), so a
+ * line wrapping in a narrow terminal would overflow the viewport and misalign
+ * mouse hit-testing. Rendering every line through this wrapper — never a raw
+ * <Text> — enforces wrap="truncate" structurally: the prop is applied AFTER
+ * the spread, so no call site can override it.
+ */
+function ChromeLine(props: ComponentProps<typeof Text>) {
+  return <Text {...props} wrap="truncate" />;
+}
+
 export function StatusBar({
   mode,
   searchQuery,
@@ -98,15 +139,11 @@ export function StatusBar({
     const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
     return (
       <Box flexDirection="column">
-        <Text dimColor wrap="truncate">
-          {divider}
-        </Text>
-        <Text color="red" bold wrap="truncate">
-          {singleLineFooterText(line1)}
-        </Text>
-        <Text dimColor wrap="truncate">
-          {singleLineFooterText(line2)}
-        </Text>
+        <ChromeLine dimColor>{divider}</ChromeLine>
+        <ChromeLine color="red" bold>
+          {line1}
+        </ChromeLine>
+        <ChromeLine dimColor>{line2}</ChromeLine>
       </Box>
     );
   }
@@ -114,15 +151,11 @@ export function StatusBar({
   if (mode.type === "Search") {
     return (
       <Box flexDirection="column">
-        <Text dimColor wrap="truncate">
-          {divider}
-        </Text>
-        <Text color="cyan" wrap="truncate">
-          /{singleLineFooterText(searchQuery ?? "")}
-        </Text>
-        <Text dimColor wrap="truncate">
+        <ChromeLine dimColor>{divider}</ChromeLine>
+        <ChromeLine color="cyan">/{searchQuery}</ChromeLine>
+        <ChromeLine dimColor>
           {getHints(mode, undefined, hasClient)[1]}
-        </Text>
+        </ChromeLine>
       </Box>
     );
   }
@@ -130,20 +163,12 @@ export function StatusBar({
   const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
   return (
     <Box flexDirection="column">
-      <Text dimColor wrap="truncate">
-        {divider}
-      </Text>
+      <ChromeLine dimColor>{divider}</ChromeLine>
       {repoError ? (
-        <Text color="yellow" wrap="truncate">
-          ⚠ {singleLineFooterText(repoError)}
-        </Text>
+        <ChromeLine color="yellow">⚠ {toSingleLine(repoError)}</ChromeLine>
       ) : null}
-      <Text dimColor wrap="truncate">
-        {singleLineFooterText(line1)}
-      </Text>
-      <Text dimColor wrap="truncate">
-        {singleLineFooterText(line2)}
-      </Text>
+      <ChromeLine dimColor>{line1}</ChromeLine>
+      <ChromeLine dimColor>{line2}</ChromeLine>
     </Box>
   );
 }

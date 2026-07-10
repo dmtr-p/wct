@@ -52,7 +52,6 @@ src/
 │   └── registry-service.ts # Effect service for multi-repo registry
 ├── tui/
 │   ├── App.tsx            # Root Ink component, data fetching, input routing, viewport
-│   ├── mouse.ts           # SGR mouse parsing, double-clicks, and row mapping
 │   ├── runtime.ts         # ManagedRuntime for TUI-specific Effect services
 │   ├── types.ts           # TUI mode, detail kind, and PR info type definitions
 │   ├── components/
@@ -64,9 +63,12 @@ src/
 │   │   ├── StatusBar.tsx  # Bottom keybinding hints
 │   │   ├── Modal.tsx      # Generic modal wrapper
 │   │   ├── DetailRow.tsx  # Single row in detail/status views
+│   │   ├── RepoEmptyRow.tsx # Empty-repo visual row
+│   │   ├── WorktreeStatsRow.tsx # Worktree status visual row
 │   │   └── ScrollableList.tsx # Scrollable list with cursor blinking
 │   └── hooks/
-│       ├── useTerminalMouse.ts # Terminal mouse reporting lifecycle
+│       ├── useMouse.ts    # Terminal mouse reporting lifecycle
+│       ├── useGuardedInput.ts # Keyboard/mouse input routing
 │       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
 │       ├── useRefresh.ts  # Hybrid poll + fs.watch
 │       ├── useTmux.ts     # switch-client, list-clients

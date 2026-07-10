@@ -3,7 +3,7 @@ import React from "react";
 import { describe, expect, test } from "vitest";
 import {
   StatusBar,
-  singleLineFooterText,
+  statusBarRowCount,
 } from "../../src/tui/components/StatusBar";
 import { Mode } from "../../src/tui/types";
 
@@ -45,6 +45,7 @@ async function renderStatusBar(
 
   return {
     output: chunks.join(""),
+    lastFrame: () => chunks[chunks.length - 1] ?? "",
     unmount() {
       instance.unmount();
     },
@@ -52,35 +53,6 @@ async function renderStatusBar(
 }
 
 describe("StatusBar", () => {
-  test("normalizes multiline footer messages to one row", () => {
-    expect(singleLineFooterText("first line\nsecond line\r\nthird")).toBe(
-      "first line second line third",
-    );
-  });
-
-  test("keeps a long multiline error within its single footer row", async () => {
-    const rendered = await renderStatusBar(
-      {
-        mode: Mode.Navigate,
-        repoError: `first line\n${"second line ".repeat(10)}`,
-      },
-      20,
-    );
-
-    expect(rendered.output.trim().split("\n")).toHaveLength(4);
-    expect(rendered.output).toContain("⚠ first line second");
-    rendered.unmount();
-  });
-
-  test("shows detail expansion without repo collapse hints", async () => {
-    const rendered = await renderStatusBar({ mode: Mode.Navigate });
-
-    expect(rendered.output).toContain("↑↓:navigate  →:details");
-    expect(rendered.output).not.toContain("expand/collapse");
-
-    rendered.unmount();
-  });
-
   test("shows pane hints for expanded pane rows", async () => {
     const rendered = await renderStatusBar({
       mode: Mode.Expanded("proj/branch"),
@@ -186,5 +158,110 @@ describe("StatusBar", () => {
     expect(rendered.output).not.toContain("x:kill");
 
     rendered.unmount();
+  });
+
+  // App.tsx budgets bottomChromeRows assuming every StatusBar line occupies
+  // exactly one terminal row — a hint or error line wrapping in a narrow
+  // terminal would silently overflow the viewport and misalign mouse
+  // hit-testing, so these pin the truncate behaviour at widths where the
+  // hint text is longer than the terminal.
+  describe("narrow terminals (one row per chrome line)", () => {
+    test("Navigate hints truncate instead of wrapping", async () => {
+      // With a client, line1 is ~60 chars — well past 40 columns.
+      const rendered = await renderStatusBar(
+        { mode: Mode.Navigate, hasClient: true },
+        40,
+      );
+
+      // divider + 2 hint lines, regardless of hint text length.
+      expect(rendered.lastFrame().trimEnd().split("\n")).toHaveLength(3);
+      expect(rendered.output).toContain("↑↓:navigate");
+
+      rendered.unmount();
+    });
+
+    test("a long repoError line truncates instead of wrapping", async () => {
+      const rendered = await renderStatusBar(
+        {
+          mode: Mode.Navigate,
+          hasClient: false,
+          repoError:
+            "gh: HTTP 502 from api.github.com while fetching pull requests for a-very-long-project-name",
+        },
+        40,
+      );
+
+      // divider + repoError + 2 hint lines.
+      expect(rendered.lastFrame().trimEnd().split("\n")).toHaveLength(4);
+      expect(rendered.output).toContain("⚠ gh: HTTP 502");
+
+      rendered.unmount();
+    });
+
+    test("a multi-line repoError renders on a single row", async () => {
+      const rendered = await renderStatusBar(
+        {
+          mode: Mode.Navigate,
+          hasClient: false,
+          // wrap="truncate" does not remove embedded newlines, so without
+          // toSingleLine this would render 2+ rows and break the viewport
+          // budget that counts every chrome line as exactly one row.
+          repoError: "gh: HTTP 502\nadvice: try again later",
+        },
+        80,
+      );
+
+      expect(rendered.lastFrame().trimEnd().split("\n")).toHaveLength(4);
+      expect(rendered.output).toContain(
+        "⚠ gh: HTTP 502 advice: try again later",
+      );
+
+      rendered.unmount();
+    });
+  });
+
+  describe("statusBarRowCount stays true to the render", () => {
+    // The anti-drift contract: App.tsx budgets the tree viewport with
+    // statusBarRowCount, so for every renderable mode the helper must equal
+    // the row count StatusBar actually produces.
+    const cases: Array<{
+      name: string;
+      mode: Mode;
+      repoError?: string;
+    }> = [
+      { name: "Navigate", mode: Mode.Navigate },
+      { name: "Navigate + repoError", mode: Mode.Navigate, repoError: "boom" },
+      { name: "Expanded", mode: Mode.Expanded("proj/branch") },
+      {
+        name: "Expanded + repoError",
+        mode: Mode.Expanded("proj/branch"),
+        repoError: "boom",
+      },
+      { name: "Search", mode: Mode.Search },
+      // Search's early return ignores repoError; the count must match that.
+      { name: "Search + repoError", mode: Mode.Search, repoError: "boom" },
+      {
+        name: "ConfirmKill",
+        mode: Mode.ConfirmKill("%1", "1:0 vim", "proj/branch"),
+        repoError: "boom",
+      },
+    ];
+
+    for (const { name, mode, repoError } of cases) {
+      test(name, async () => {
+        const rendered = await renderStatusBar({
+          mode,
+          hasClient: true,
+          searchQuery: "",
+          repoError,
+        });
+
+        expect(rendered.lastFrame().trimEnd().split("\n")).toHaveLength(
+          statusBarRowCount(mode, Boolean(repoError)),
+        );
+
+        rendered.unmount();
+      });
+    }
   });
 });

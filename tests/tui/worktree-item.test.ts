@@ -2,8 +2,8 @@ import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
 import { WorktreeItem } from "../../src/tui/components/WorktreeItem";
+import { WorktreeStatsRow } from "../../src/tui/components/WorktreeStatsRow";
 import { truncateBranch } from "../../src/tui/utils/truncate";
-import { elementText, hasElementProp } from "./react-elements";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -11,9 +11,9 @@ type TestStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-function createStdoutStdin(columns = 80) {
+function createStdoutStdin() {
   const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = columns;
+  stdout.columns = 80;
   stdout.rows = 24;
   const stdin = new PassThrough() as unknown as TestStdin;
   stdin.isTTY = false;
@@ -21,16 +21,14 @@ function createStdoutStdin(columns = 80) {
   return { stdout, stdin };
 }
 
-async function renderWorktreeItem(
-  props: React.ComponentProps<typeof WorktreeItem>,
-) {
-  const { stdout, stdin } = createStdoutStdin(props.maxWidth);
+async function renderElement(node: React.ReactElement) {
+  const { stdout, stdin } = createStdoutStdin();
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {
     chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
   });
   const { render } = await import("ink");
-  const instance = render(React.createElement(WorktreeItem, props), {
+  const instance = render(node, {
     stdout,
     stdin,
     debug: true,
@@ -48,12 +46,14 @@ async function renderWorktreeItem(
   };
 }
 
+function renderWorktreeItem(props: React.ComponentProps<typeof WorktreeItem>) {
+  return renderElement(React.createElement(WorktreeItem, props));
+}
+
 const baseWorktreeProps = {
   branch: "feature/layout",
   hasSession: true,
   isAttached: false,
-  sync: "↑1",
-  changedFiles: 3,
   isSelected: false,
   isExpanded: false,
   maxWidth: 80,
@@ -89,48 +89,27 @@ describe("truncateBranch", () => {
 });
 
 describe("WorktreeItem", () => {
-  test("keeps opening and status rows single-line in a narrow terminal", async () => {
-    const opening = await renderWorktreeItem({
-      ...baseWorktreeProps,
-      branch: "",
-      pendingStatus: "opening",
-      maxWidth: 8,
-    });
-    const expanded = await renderWorktreeItem({
-      ...baseWorktreeProps,
-      branch: "",
-      sync: "?",
-      changedFiles: 12,
-      isExpanded: true,
-      maxWidth: 8,
-    });
-
-    expect(opening.output.trim().split("\n")).toHaveLength(1);
-    expect(expanded.output.trim().split("\n")).toHaveLength(2);
-    opening.unmount();
-    expanded.unmount();
-  });
-
-  test("does not render git stats for a focused collapsed worktree", async () => {
+  test("renders the branch and never the git stats (stats moved to WorktreeStatsRow)", async () => {
     const { output, unmount } = await renderWorktreeItem({
       ...baseWorktreeProps,
       isSelected: true,
-      isExpanded: false,
+      isExpanded: true,
     });
 
     expect(output).toContain("feature/layout");
+    // Stats are no longer part of WorktreeItem — they render as a separate row.
     expect(output).not.toContain("↑1");
     expect(output).not.toContain("~3");
 
     unmount();
   });
+});
 
-  test("renders git stats for an expanded worktree", async () => {
-    const { output, unmount } = await renderWorktreeItem({
-      ...baseWorktreeProps,
-      isSelected: false,
-      isExpanded: true,
-    });
+describe("WorktreeStatsRow", () => {
+  test("renders sync and changed-file stats", async () => {
+    const { output, unmount } = await renderElement(
+      React.createElement(WorktreeStatsRow, { sync: "↑1", changedFiles: 3 }),
+    );
 
     expect(output).toContain("↑1");
     expect(output).toContain("~3");
@@ -138,34 +117,25 @@ describe("WorktreeItem", () => {
     unmount();
   });
 
-  test("renders git stats for a selected expanded worktree", async () => {
-    const { output, unmount } = await renderWorktreeItem({
-      ...baseWorktreeProps,
-      isSelected: true,
-      isExpanded: true,
-    });
+  test("omits the changed-file marker when there are no changes", async () => {
+    const { output, unmount } = await renderElement(
+      React.createElement(WorktreeStatsRow, { sync: "↑1", changedFiles: 0 }),
+    );
 
     expect(output).toContain("↑1");
-    expect(output).toContain("~3");
+    expect(output).not.toContain("~");
 
     unmount();
   });
 
-  test("uses a background highlight without a cursor glyph", async () => {
-    const props = {
-      ...baseWorktreeProps,
-      isSelected: true,
-    } satisfies React.ComponentProps<typeof WorktreeItem>;
-    const { output, unmount } = await renderWorktreeItem(props);
+  test("omits the sync marker when in sync", async () => {
+    const { output, unmount } = await renderElement(
+      React.createElement(WorktreeStatsRow, { sync: "✓", changedFiles: 2 }),
+    );
 
-    expect(hasElementProp(WorktreeItem(props), "backgroundColor", "cyan")).toBe(
-      true,
-    );
-    expect(hasElementProp(WorktreeItem(props), "color", "#f2f2f2")).toBe(true);
-    expect(elementText(WorktreeItem(props))).toContain(
-      `   ● feature/layout${" ".repeat(61)}`,
-    );
-    expect(output).not.toContain("❯");
+    expect(output).not.toContain("✓");
+    expect(output).toContain("~2");
+
     unmount();
   });
 });

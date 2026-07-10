@@ -1,4 +1,4 @@
-import { displayWidth } from "../utils/truncate";
+import { displayWidth } from "../utils/display-width";
 
 export const SELECTED_ROW_BACKGROUND = "cyan" as const;
 export const SELECTED_ROW_FOREGROUND = "#f2f2f2" as const;

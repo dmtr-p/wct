@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { PR_INDENT, prLabelStart, wrapPrLabel } from "../pr-layout";
 import type { TreeItem } from "../types";
 import { truncateBranch, truncateWithPrefix } from "../utils/truncate";
 import {
@@ -11,20 +12,18 @@ interface Props {
   item: Extract<TreeItem, { type: "detail" }>;
   isSelected: boolean;
   maxWidth: number;
+  pieceIndex?: number;
+  prLine?: string;
 }
 
 function rollupIcon(
   rollupState: "success" | "failure" | "pending" | null,
 ): string {
   switch (rollupState) {
-    case "success":
-      return "✓";
-    case "failure":
-      return "✗";
-    case "pending":
-      return "◌";
-    default:
-      return "";
+    case "success": return "✓";
+    case "failure": return "✗";
+    case "pending": return "◌";
+    default: return "";
   }
 }
 
@@ -32,40 +31,34 @@ function rollupColor(
   rollupState: "success" | "failure" | "pending" | null,
 ): "green" | "red" | "yellow" | undefined {
   switch (rollupState) {
-    case "success":
-      return "green";
-    case "failure":
-      return "red";
-    case "pending":
-      return "yellow";
-    default:
-      return undefined;
+    case "success": return "green";
+    case "failure": return "red";
+    case "pending": return "yellow";
+    default: return undefined;
   }
 }
 
-export function DetailRow({ item, isSelected, maxWidth }: Props) {
-  const { detailKind, label } = item;
-  const indent =
-    detailKind === "pr" || detailKind === "pane-header"
-      ? "     " // 5 spaces
-      : "       "; // 7 spaces
+export function DetailRow({
+  item,
+  isSelected,
+  maxWidth,
+  pieceIndex = 0,
+  prLine,
+}: Props) {
+  const selectedProps = {
+    color: isSelected ? SELECTED_ROW_FOREGROUND : undefined,
+    backgroundColor: isSelected ? SELECTED_ROW_BACKGROUND : undefined,
+  };
 
   switch (item.detailKind) {
     case "pane-header": {
-      // overhead: indent(5)
-      const displayLabel = truncateBranch(label, maxWidth - indent.length);
+      const indent = "     ";
+      const displayLabel = truncateBranch(item.label, maxWidth - indent.length);
+      const content = indent + displayLabel;
       return (
         <Box>
-          <Text
-            color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
-            backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-            bold={isSelected}
-            dimColor={!isSelected}
-            wrap="truncate"
-          >
-            {indent}
-            {displayLabel}
-            {selectedRowFill(isSelected, maxWidth, indent + displayLabel)}
+          <Text {...selectedProps} bold={isSelected} dimColor={!isSelected} wrap="truncate">
+            {content}{selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>
       );
@@ -74,63 +67,54 @@ export function DetailRow({ item, isSelected, maxWidth }: Props) {
     case "pr": {
       const { rollupState } = item.meta;
       const icon = rollupIcon(rollupState);
-      const iconColor = rollupColor(rollupState);
       const iconText = icon ? `${icon} ` : "";
-      const displayLabel = truncateBranch(
-        label,
-        maxWidth - indent.length - iconText.length,
-      );
+      const line =
+        prLine ?? wrapPrLabel(item.label, maxWidth, icon !== "")[pieceIndex] ?? "";
+      const indent = " ".repeat(prLabelStart(icon !== ""));
+
+      if (pieceIndex > 0) {
+        const content = indent + line;
+        return (
+          <Box>
+            <Text {...selectedProps} bold={isSelected} wrap="truncate-end">
+              {content}{selectedRowFill(isSelected, maxWidth, content)}
+            </Text>
+          </Box>
+        );
+      }
+
+      const leading = " ".repeat(PR_INDENT);
+      const content = leading + iconText + line;
       return (
         <Box>
-          <Text
-            color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
-            backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-            bold={isSelected}
-            wrap="truncate"
-          >
-            {indent}
+          <Text {...selectedProps} bold={isSelected} wrap="truncate-end">
+            {leading}
             {icon ? (
-              <Text color={isSelected ? undefined : iconColor}>{iconText}</Text>
+              <Text color={isSelected ? undefined : rollupColor(rollupState)}>
+                {iconText}
+              </Text>
             ) : null}
-            {displayLabel}
-            {selectedRowFill(
-              isSelected,
-              maxWidth,
-              indent + iconText + displayLabel,
-            )}
+            {line}{selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>
       );
     }
 
     case "pane": {
+      const indent = "       ";
       const { window, paneIndex, command, zoomed, active } = item.meta;
       const zoomedEmoji = zoomed && active ? "🔍 " : "";
-      // overhead: indent(7) + zoomedEmoji(3 if shown, else 0)
-      const overhead = indent.length + (zoomedEmoji ? 3 : 0);
       const panePrefix = `${window}:${paneIndex} `;
       const displayLabel = truncateWithPrefix(
         panePrefix,
         command,
-        maxWidth - overhead,
+        maxWidth - indent.length - (zoomedEmoji ? 3 : 0),
       );
+      const content = indent + zoomedEmoji + displayLabel;
       return (
         <Box>
-          <Text
-            color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
-            backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-            dimColor={!isSelected}
-            bold={isSelected}
-            wrap="truncate"
-          >
-            {indent}
-            {zoomedEmoji}
-            {displayLabel}
-            {selectedRowFill(
-              isSelected,
-              maxWidth,
-              indent + zoomedEmoji + displayLabel,
-            )}
+          <Text {...selectedProps} dimColor={!isSelected} bold={isSelected} wrap="truncate">
+            {content}{selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>
       );

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -15,9 +15,34 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "ink": {
+                "importNames": ["useInput"],
+                "message": "Use useGuardedInput (src/tui/hooks/useGuardedInput.ts) instead: raw useInput handlers receive SGR mouse escape chunks as printable input and paste them into text fields."
+              }
+            }
+          }
+        }
+      }
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/tui/hooks/useGuardedInput.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double"

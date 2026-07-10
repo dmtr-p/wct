@@ -1,5 +1,6 @@
-import { Box, useInput } from "ink";
+import { Box } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { useGuardedInput } from "../hooks/useGuardedInput";
 import { SubmitButton, ToggleRow } from "./form-controls";
 import { filterItems, ScrollableList } from "./ScrollableList";
 import {
@@ -72,7 +73,7 @@ export function SessionOptionsSection({
     );
   }, [profileNames, filteredProfiles, selectedProfileIndex, onProfileChange]);
 
-  useInput(
+  useGuardedInput(
     (input, key) => {
       if (key.upArrow) {
         setSelectedProfileIndex((prev) =>

@@ -59,6 +59,7 @@ export function isX10MousePrefix(input: string): boolean {
 
 export type MouseEvent =
   | { kind: "wheel"; dir: 1 | -1 }
+  | { kind: "move"; col: number; row: number }
   | {
       kind: "press";
       button: "left" | "middle" | "right";
@@ -126,11 +127,11 @@ export function resolveTreeDoubleClickAction(
 /**
  * True for ANY SGR mouse escape sequence — press, release, motion/drag, and
  * extra-button events alike — regardless of whether `parseSgrMouse` resolves
- * it to an actionable `MouseEvent`. Used by the `useInput` dispatcher guard to
+ * it to a recognised `MouseEvent`. Used by the `useInput` dispatcher guard to
  * swallow every mouse sequence (ADR 0002 / PRD §6.6): a click emits BOTH a
  * press and a release sequence, and `parseSgrMouse` intentionally returns
- * `null` for the release half (and for motion/extra-button events) because
- * those are not actionable — but non-actionable is not the same as "not a
+ * `null` for the release half (and extra-button events); motion is surfaced
+ * for hover hit-testing. Non-actionable is not the same as "not a
  * mouse sequence." Falling through the dispatcher guard would let those bytes
  * reach mode-specific handlers (e.g. Search's text input), corrupting state.
  *
@@ -168,7 +169,7 @@ export function splitMouseSequences(input: string): string[] {
 /**
  * Parse a single SGR mouse sequence out of the string Ink forwards to
  * `useInput`. Returns `null` for anything that is not a recognised mouse event
- * we act on (release, motion/drag, malformed input).
+ * we recognise (release, extra buttons, malformed input).
  *
  * The button is decoded with a BITMASK — never `Cb % 4`, which turns wheel-up
  * (Cb 64) into button 0 and misfires clicks on scroll (Ink PR #955 bug).
@@ -187,7 +188,7 @@ export function parseSgrMouse(input: string): MouseEvent | null {
     if ((cb & 3) >= 2) return null;
     return { kind: "wheel", dir: (cb & 1) === 0 ? -1 : 1 };
   }
-  if (cb & 32) return null; // motion/drag — ignored in v1
+  if (cb & 32) return { kind: "move", col, row };
   if (isRelease) return null; // act on press only
   // Additional buttons (8+: back/forward on multi-button mice) set bit 7 and
   // would otherwise misdecode as a left press via `(cb & 3) === 0`. Ignore them.
@@ -232,6 +233,10 @@ export function resolveMouseAction(
 
   if (event.kind === "wheel") {
     return { kind: "scroll", delta: event.dir };
+  }
+
+  if (event.kind === "move") {
+    return { kind: "none" };
   }
 
   if (event.button !== "left") {

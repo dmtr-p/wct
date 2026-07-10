@@ -46,6 +46,7 @@ const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
 const BATCHED_CLICK = "[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m";
 const SINGLE_PRESS = "\x1b[<0;12;38M";
 const SINGLE_RELEASE = "\x1b[<0;12;38m";
+const click = (col: number, row: number) => `\x1b[<0;${col};${row}M`;
 
 function renderNewBranchForm(onSubmit: (result: unknown) => void) {
   return renderWithInput(
@@ -138,6 +139,109 @@ describe("modal text inputs never consume mouse sequences as text", () => {
       const result = onSubmitMock.mock.calls[0]?.[0] as { path: string };
       expect(result.path).toBe(process.env.HOME ?? "/tmp");
       expect(result.path).not.toContain("[<");
+    } finally {
+      rendered.unmount();
+    }
+  });
+});
+
+describe("modal mouse controls", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    runPromiseMock.mockReset();
+  });
+
+  test("clicking an unfocused input focuses it before typing", async () => {
+    const onSubmitMock = vi.fn();
+    const rendered = await renderNewBranchForm(onSubmitMock);
+
+    try {
+      await sendKeys(rendered.stdin, "feature-x");
+      // NewBranchForm's Base input content is rendered on row 7.
+      await sendKeys(rendered.stdin, click(5, 7));
+      await sendKeys(rendered.stdin, "-next");
+      await sendKeys(rendered.stdin, CTRL_ENTER);
+
+      expect(onSubmitMock).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: "feature-x", base: "main-next" }),
+      );
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("clicking a visible profile option selects it", async () => {
+    const onSubmitMock = vi.fn();
+    const rendered = await renderNewBranchForm(onSubmitMock);
+
+    try {
+      await sendKeys(rendered.stdin, "feature-x");
+      // Profile rows are 13=(default), 14=default profile.
+      await sendKeys(rendered.stdin, click(5, 14));
+      await sendKeys(rendered.stdin, CTRL_ENTER);
+
+      expect(onSubmitMock).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: "feature-x", profile: "default" }),
+      );
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("clicking the enabled Submit row submits", async () => {
+    const onSubmitMock = vi.fn();
+    const rendered = await renderNewBranchForm(onSubmitMock);
+
+    try {
+      await sendKeys(rendered.stdin, "feature-x");
+      // Submit text follows the profile box, spacer, and two toggles.
+      await sendKeys(rendered.stdin, click(5, 20));
+
+      expect(onSubmitMock).toHaveBeenCalledTimes(1);
+      expect(onSubmitMock).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: "feature-x" }),
+      );
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("two Submit presses delivered together submit only once", async () => {
+    const onSubmitMock = vi.fn();
+    const rendered = await renderNewBranchForm(onSubmitMock);
+
+    try {
+      await sendKeys(rendered.stdin, "feature-x");
+      const submitClick = click(5, 20);
+      await sendKeys(rendered.stdin, `${submitClick}${submitClick}`);
+
+      expect(onSubmitMock).toHaveBeenCalledTimes(1);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("the blank spacer above Submit is not clickable", async () => {
+    const onSubmitMock = vi.fn();
+    const rendered = await renderNewBranchForm(onSubmitMock);
+
+    try {
+      await sendKeys(rendered.stdin, "feature-x");
+      await sendKeys(rendered.stdin, click(5, 19));
+
+      expect(onSubmitMock).not.toHaveBeenCalled();
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("clicking the disabled Submit row does not submit", async () => {
+    const onSubmitMock = vi.fn();
+    const rendered = await renderNewBranchForm(onSubmitMock);
+
+    try {
+      await sendKeys(rendered.stdin, click(5, 20));
+      expect(onSubmitMock).not.toHaveBeenCalled();
     } finally {
       rendered.unmount();
     }

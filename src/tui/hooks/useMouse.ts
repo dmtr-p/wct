@@ -1,10 +1,10 @@
 import { useStdout } from "ink";
 import { useEffect, useRef } from "react";
 
-/** Enable SGR mouse reporting: button press/release (?1000) + SGR coords (?1006). */
-export const MOUSE_ENABLE = "\x1b[?1000h\x1b[?1006h";
-/** Disable in REVERSE order (?1006 then ?1000) so ?1006 unwinds first. */
-export const MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
+/** Enable click + pointer-motion reporting (?1003) with SGR coords (?1006). */
+export const MOUSE_ENABLE = "\x1b[?1000h\x1b[?1003h\x1b[?1006h";
+/** Disable in reverse order so coordinate and motion modes unwind first. */
+export const MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 
 interface MouseWriter {
   write: (data: string) => void;

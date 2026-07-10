@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlink } from "../hooks/useBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { runTuiSilentPromise } from "../runtime";
+import { MouseClickable } from "./MouseClickable";
 import { getVisibleWindow, type ListItem } from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
 
@@ -37,6 +38,7 @@ interface PathInputProps {
   isFocused: boolean;
   isGitRepo: boolean;
   width?: number;
+  onFocus?: () => void;
 }
 
 export function PathInput({
@@ -45,6 +47,7 @@ export function PathInput({
   isFocused,
   isGitRepo,
   width,
+  onFocus,
 }: PathInputProps) {
   const cursorVisible = useBlink();
   const [completions, setCompletions] = useState<ListItem[]>([]);
@@ -176,32 +179,47 @@ export function PathInput({
   const visible = window ? filtered.slice(window.start, window.end) : [];
 
   return (
-    <TitledBox title={title} isFocused={isFocused} width={width}>
-      <Text dimColor={!isFocused}>
-        {displayValue}
-        {isFocused ? (cursorVisible ? "▎" : " ") : ""}
-      </Text>
-      {showCompletions && window && (
-        <>
-          {window.hasAbove && <Text dimColor> ▲</Text>}
-          {visible.map((item, i) => {
-            const actualIndex = window.start + i;
-            const isSelected = actualIndex === selectedCompletionIndex;
-            return (
-              <Text
-                key={item.value}
-                color={isSelected ? "cyan" : undefined}
-                dimColor={!isSelected}
-                bold={isSelected}
-              >
-                {isSelected ? "▸ " : "  "}
-                {item.label}/
-              </Text>
-            );
-          })}
-          {window.hasBelow && <Text dimColor> ▼</Text>}
-        </>
+    <MouseClickable onClick={() => onFocus?.()}>
+      {(isHovered) => (
+        <TitledBox
+          title={title}
+          isFocused={isFocused}
+          isHovered={isHovered}
+          width={width}
+        >
+          <Text dimColor={!isFocused}>
+            {displayValue}
+            {isFocused ? (cursorVisible ? "▎" : " ") : ""}
+          </Text>
+          {showCompletions && window && (
+            <>
+              {window.hasAbove && <Text dimColor> ▲</Text>}
+              {visible.map((item, i) => {
+                const actualIndex = window.start + i;
+                const isSelected = actualIndex === selectedCompletionIndex;
+                return (
+                  <MouseClickable
+                    key={item.value}
+                    onClick={() => setSelectedCompletionIndex(actualIndex)}
+                  >
+                    {(isHovered) => (
+                      <Text
+                        color={isSelected || isHovered ? "cyan" : undefined}
+                        dimColor={!isSelected && !isHovered}
+                        bold={isSelected || isHovered}
+                      >
+                        {isSelected ? "▸ " : "  "}
+                        {item.label}/
+                      </Text>
+                    )}
+                  </MouseClickable>
+                );
+              })}
+              {window.hasBelow && <Text dimColor> ▼</Text>}
+            </>
+          )}
+        </TitledBox>
       )}
-    </TitledBox>
+    </MouseClickable>
   );
 }

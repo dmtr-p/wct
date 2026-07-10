@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { useBlink } from "../hooks/useBlink";
+import { MouseClickable } from "./MouseClickable";
 
 export interface ListItem {
   label: string;
@@ -48,6 +49,7 @@ interface Props {
   filterQuery: string;
   maxVisible?: number;
   isFocused: boolean;
+  onSelect?: (index: number) => void;
 }
 
 export function ScrollableList({
@@ -56,6 +58,7 @@ export function ScrollableList({
   filterQuery,
   maxVisible = 10,
   isFocused,
+  onSelect,
 }: Props) {
   const cursorVisible = useBlink();
   const filtered = filterItems(items, filterQuery);
@@ -73,20 +76,36 @@ export function ScrollableList({
         const actualIndex = start + i;
         const isSelected = actualIndex === selectedIndex;
         return (
-          <Box key={item.value}>
-            <Text color={isSelected && isFocused ? "cyan" : undefined}>
-              {isSelected ? "▸ " : "  "}
-            </Text>
-            <Text bold={isSelected} dimColor={!isSelected} wrap="truncate">
-              {item.label}
-            </Text>
-            {item.description && (
-              <Text dimColor wrap="truncate">
-                {" "}
-                {item.description}
-              </Text>
+          <MouseClickable
+            key={item.value}
+            onClick={() => onSelect?.(actualIndex)}
+            isActive={Boolean(onSelect)}
+          >
+            {(isHovered) => (
+              <Box>
+                <Text
+                  color={
+                    (isSelected && isFocused) || isHovered ? "cyan" : undefined
+                  }
+                >
+                  {isSelected ? "▸ " : "  "}
+                </Text>
+                <Text
+                  bold={isSelected || isHovered}
+                  dimColor={!isSelected && !isHovered}
+                  wrap="truncate"
+                >
+                  {item.label}
+                </Text>
+                {item.description && (
+                  <Text dimColor wrap="truncate">
+                    {" "}
+                    {item.description}
+                  </Text>
+                )}
+              </Box>
             )}
-          </Box>
+          </MouseClickable>
         );
       })}
       {hasBelow && <Text dimColor> ▼</Text>}

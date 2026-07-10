@@ -6,6 +6,7 @@ interface Props {
   isFocused: boolean;
   width?: number;
   children: ReactNode;
+  isHovered?: boolean;
 }
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, {
@@ -53,7 +54,13 @@ function bottomBorder(width: number) {
   return `╰${"─".repeat(width - 2)}╯`;
 }
 
-export function TitledBox({ title, isFocused, width, children }: Props) {
+export function TitledBox({
+  title,
+  isFocused,
+  width,
+  children,
+  isHovered = false,
+}: Props) {
   const boxWidth = Math.max(width ?? 40, 0);
   const normalizedChildren = Children.map(children, (child) =>
     typeof child === "string" || typeof child === "number" ? (
@@ -62,10 +69,11 @@ export function TitledBox({ title, isFocused, width, children }: Props) {
       child
     ),
   );
+  const isHighlighted = isFocused || isHovered;
   const lineProps = {
-    color: isFocused ? "cyan" : undefined,
-    bold: isFocused,
-    dimColor: !isFocused,
+    color: isHighlighted ? "cyan" : undefined,
+    bold: isHighlighted,
+    dimColor: !isHighlighted,
   } as const;
 
   return (
@@ -77,11 +85,11 @@ export function TitledBox({ title, isFocused, width, children }: Props) {
         borderStyle="round"
         borderTop={false}
         borderBottom={false}
-        borderColor={isFocused ? "cyan" : undefined}
-        borderLeftColor={isFocused ? "cyan" : undefined}
-        borderRightColor={isFocused ? "cyan" : undefined}
-        borderLeftDimColor={!isFocused}
-        borderRightDimColor={!isFocused}
+        borderColor={isHighlighted ? "cyan" : undefined}
+        borderLeftColor={isHighlighted ? "cyan" : undefined}
+        borderRightColor={isHighlighted ? "cyan" : undefined}
+        borderLeftDimColor={!isHighlighted}
+        borderRightDimColor={!isHighlighted}
       >
         {normalizedChildren}
       </Box>

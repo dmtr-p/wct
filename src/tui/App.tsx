@@ -36,13 +36,14 @@ import {
   clampScrollOffset,
   findOwningWorktreeIndex,
   firstRowForItem,
+  reconcileExpandedWorktreeKeys,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
   resolveTreeReturnMode,
   scrollToKeepVisible,
   treeItemId,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
+import { Mode, type PendingAction, type PRInfo } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -130,26 +131,11 @@ export function App() {
     () => new Set(filteredRepos.map((repo) => repo.id)),
     [filteredRepos],
   );
-  const availableWorktreeKeys = useMemo(
-    () =>
-      new Set(
-        repos.flatMap((repo) =>
-          repo.worktrees.map((worktree) =>
-            pendingKey(repo.project, worktree.branch),
-          ),
-        ),
-      ),
-    [repos],
-  );
-
   useEffect(() => {
-    setExpandedWorktreeKeys((previous) => {
-      const next = new Set(
-        [...previous].filter((key) => availableWorktreeKeys.has(key)),
-      );
-      return next.size === previous.size ? previous : next;
-    });
-  }, [availableWorktreeKeys]);
+    setExpandedWorktreeKeys((previous) =>
+      reconcileExpandedWorktreeKeys(previous, repos),
+    );
+  }, [repos]);
 
   useEffect(() => {
     if (

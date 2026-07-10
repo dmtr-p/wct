@@ -146,6 +146,30 @@ export function resolveTreeReturnMode(mode: Mode): Mode {
   return mode.type === "Expanded" ? mode : Mode.Navigate;
 }
 
+export function reconcileExpandedWorktreeKeys(
+  previous: Set<string>,
+  repos: RepoInfo[],
+): Set<string> {
+  const available = new Set(
+    repos.flatMap((repo) =>
+      repo.worktrees.map((worktree) =>
+        pendingKey(repo.project, worktree.branch),
+      ),
+    ),
+  );
+  const uncertainRepoPrefixes = repos
+    .filter((repo) => repo.error !== undefined)
+    .map((repo) => pendingKey(repo.project, ""));
+  const next = new Set(
+    [...previous].filter(
+      (key) =>
+        available.has(key) ||
+        uncertainRepoPrefixes.some((prefix) => key.startsWith(prefix)),
+    ),
+  );
+  return next.size === previous.size ? previous : next;
+}
+
 export function buildTreeItems({
   repos,
   expandedWorktreeKeys,

@@ -4,11 +4,41 @@ import { formatSessionName } from "../../src/services/tmux";
 import {
   buildTreeItems,
   findOwningWorktreeIndex,
+  reconcileExpandedWorktreeKeys,
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
 import { type PaneInfo, pendingKey, type TreeItem } from "../../src/tui/types";
 
 describe("buildTreeItems", () => {
+  test("preserves expanded keys for errored repo snapshots", () => {
+    const alphaKey = pendingKey("alpha", "feature/a");
+    const betaKey = pendingKey("beta", "feature/b");
+    const previous = new Set([alphaKey, betaKey]);
+    const repos = [
+      {
+        id: "repo-1",
+        repoPath: "/tmp/alpha",
+        project: "alpha",
+        worktrees: [],
+        profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        error: "Failed to inspect repository",
+      },
+      {
+        id: "repo-2",
+        repoPath: "/tmp/beta",
+        project: "beta",
+        worktrees: [],
+        profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+      },
+    ];
+
+    expect(reconcileExpandedWorktreeKeys(previous, repos)).toEqual(
+      new Set([alphaKey]),
+    );
+  });
+
   test("keeps detail rows for multiple expanded worktrees", () => {
     const repos = [
       {

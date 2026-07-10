@@ -57,6 +57,33 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     return makeWorktree(repoPath, branch);
   }
 
+  test("keyboard input breaks a pending double-click pair", async () => {
+    registryItems.items = [
+      { id: "repo-1", repo_path: repoPath, project: "alpha" },
+    ];
+    worktreeFixtures.byRepoPath.set(repoPath, [
+      worktree("main"),
+      worktree("feature/a"),
+    ]);
+
+    const rendered = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(rendered.stdin, "\x1b[B");
+      await sendKeys(rendered.stdin, "\x1b[B");
+
+      const row = sgrRowFor(2);
+      await sendKeys(rendered.stdin, sgrPress(3, row));
+      await sendKeys(rendered.stdin, "\x1b[C");
+      expect(selectedLine(rendered.lines())).toContain("▼");
+
+      await sendKeys(rendered.stdin, sgrPress(3, row));
+      expect(selectedLine(rendered.lines())).toContain("▼");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   describe("Bug 1: click-to-exit-Expanded selects the clicked sibling, not the old identity", () => {
     test("without a detail row on the expanded worktree", async () => {
       registryItems.items = [

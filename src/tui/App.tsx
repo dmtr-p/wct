@@ -670,6 +670,10 @@ export function App() {
   // text inputs). Actionable events arrive via onMouseEvent, in order.
   useGuardedInput(
     (input, key) => {
+      // Double-clicks require consecutive mouse presses. Any keyboard event
+      // breaks the pair, even when it leaves the same row selected.
+      lastMouseClickRef.current = null;
+
       // Ctrl+C exits from EVERY mode (parity with Ink's default), but through
       // the same disable-mouse-first sequence as `q`: startTui renders with
       // exitOnCtrlC: false precisely so Ctrl+C reaches this handler instead

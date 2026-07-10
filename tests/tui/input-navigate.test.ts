@@ -35,12 +35,11 @@ function makeCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     treeItems: [],
     filteredRepos: [],
     selectedIndex: 0,
-    expandedRepos: new Set<string>(),
     tmuxClient: { tty: "/dev/pts/1", session: "test" },
     setMode: vi.fn(),
     setSearchQuery: vi.fn(),
+    expandWorktree: vi.fn(),
     navigateTree: vi.fn(),
-    toggleExpanded: vi.fn(),
     prepareOpenModal: vi.fn(),
     prepareUpModal: vi.fn(),
     handleSpaceSwitch: vi.fn(),
@@ -114,7 +113,7 @@ describe("handleNavigateInput", () => {
     expect(ctx.navigateTree).toHaveBeenCalledWith(1);
   });
 
-  test("left arrow on repo row calls toggleExpanded when repo is expanded", () => {
+  test("left arrow on repo row does nothing", () => {
     const repos = [
       { id: "repo1", project: "myproj", worktrees: [] },
     ] as unknown as RepoInfo[];
@@ -122,14 +121,13 @@ describe("handleNavigateInput", () => {
     const ctx = makeCtx({
       treeItems: items,
       filteredRepos: repos,
-      expandedRepos: new Set(["repo1"]),
       selectedIndex: 0,
     });
     handleNavigateInput(ctx, "", { ...noKey, leftArrow: true });
-    expect(ctx.toggleExpanded).toHaveBeenCalledWith("repo1");
+    expect(ctx.setMode).not.toHaveBeenCalled();
   });
 
-  test("left arrow on repo row does nothing when repo is NOT expanded", () => {
+  test("right arrow on repo row does nothing", () => {
     const repos = [
       { id: "repo1", project: "myproj", worktrees: [] },
     ] as unknown as RepoInfo[];
@@ -137,29 +135,13 @@ describe("handleNavigateInput", () => {
     const ctx = makeCtx({
       treeItems: items,
       filteredRepos: repos,
-      expandedRepos: new Set(),
-      selectedIndex: 0,
-    });
-    handleNavigateInput(ctx, "", { ...noKey, leftArrow: true });
-    expect(ctx.toggleExpanded).not.toHaveBeenCalled();
-  });
-
-  test("right arrow on repo row calls toggleExpanded when not expanded", () => {
-    const repos = [
-      { id: "repo1", project: "myproj", worktrees: [] },
-    ] as unknown as RepoInfo[];
-    const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
-    const ctx = makeCtx({
-      treeItems: items,
-      filteredRepos: repos,
-      expandedRepos: new Set(),
       selectedIndex: 0,
     });
     handleNavigateInput(ctx, "", { ...noKey, rightArrow: true });
-    expect(ctx.toggleExpanded).toHaveBeenCalledWith("repo1");
+    expect(ctx.setMode).not.toHaveBeenCalled();
   });
 
-  test("right arrow on worktree row sets mode to Expanded with correct worktreeKey", () => {
+  test("right arrow expands the selected worktree", () => {
     const repos = [
       {
         id: "repo1",
@@ -176,7 +158,7 @@ describe("handleNavigateInput", () => {
       selectedIndex: 0,
     });
     handleNavigateInput(ctx, "", { ...noKey, rightArrow: true });
-    expect(ctx.setMode).toHaveBeenCalledWith(Mode.Expanded("myproj/feat"));
+    expect(ctx.expandWorktree).toHaveBeenCalledWith("myproj/feat");
   });
 
   test("c fires handleCloseSelectedWorktree when selected item is worktree type", () => {

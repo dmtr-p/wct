@@ -3,6 +3,7 @@ import React from "react";
 import { describe, expect, test } from "vitest";
 import { DetailRow } from "../../src/tui/components/DetailRow";
 import type { TreeItem } from "../../src/tui/types";
+import { elementText, hasElementProp } from "./react-elements";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -10,9 +11,9 @@ type TestStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-function createStdoutStdin() {
+function createStdoutStdin(columns = 80) {
   const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = 80;
+  stdout.columns = columns;
   stdout.rows = 24;
   const stdin = new PassThrough() as unknown as TestStdin;
   stdin.isTTY = false;
@@ -21,7 +22,7 @@ function createStdoutStdin() {
 }
 
 async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
-  const { stdout, stdin } = createStdoutStdin();
+  const { stdout, stdin } = createStdoutStdin(props.maxWidth);
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {
     chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
@@ -46,6 +47,48 @@ async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
 }
 
 describe("DetailRow", () => {
+  test("keeps minimum-width detail rows single-line", async () => {
+    const { output, unmount } = await renderDetailRow({
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane-header",
+        label: "Panes (20)",
+      },
+      isSelected: false,
+      maxWidth: 4,
+    });
+
+    expect(output.trim().split("\n")).toHaveLength(1);
+    unmount();
+  });
+
+  test("uses a background highlight without a cursor glyph", async () => {
+    const props = {
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pane-header",
+        label: "Panes (2)",
+      },
+      isSelected: true,
+      maxWidth: 80,
+    } satisfies React.ComponentProps<typeof DetailRow>;
+    const { output, unmount } = await renderDetailRow(props);
+
+    expect(hasElementProp(DetailRow(props), "backgroundColor", "cyan")).toBe(
+      true,
+    );
+    expect(hasElementProp(DetailRow(props), "color", "#f2f2f2")).toBe(true);
+    expect(elementText(DetailRow(props))).toContain(
+      `     Panes (2)${" ".repeat(66)}`,
+    );
+    expect(output).not.toContain("▸");
+    unmount();
+  });
+
   test("renders a zoom indicator only for the active zoomed pane", async () => {
     const zoomedActive = await renderDetailRow({
       item: {
@@ -140,7 +183,7 @@ describe("DetailRow", () => {
   });
 
   test("preserves window:index prefix when command is long", async () => {
-    // overhead=10 (indent 8 + selectorPrefix 2), maxWidth=20 → available=10
+    // overhead=7, maxWidth=17 → available=10
     // prefix "1:0 " (4), rest "bun run dev" (11)
     // 15 > 10, available(10) > prefix+1(5) → "1:0 " + truncateBranch("bun run dev", 6)
     // → "1:0 bun r…"
@@ -161,7 +204,7 @@ describe("DetailRow", () => {
         },
       } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
       isSelected: false,
-      maxWidth: 20,
+      maxWidth: 17,
     });
     expect(output).toContain("1:0 ");
     expect(output).toContain("bun r…");
@@ -170,7 +213,7 @@ describe("DetailRow", () => {
   });
 
   test("truncates pane-header label when width is tight", async () => {
-    // overhead=8 (indent 6 + selectorPrefix 2), maxWidth=15 → available=7
+    // overhead=5, maxWidth=12 → available=7
     // "Panes (3)" (9) → "Panes …"
     const { output, unmount } = await renderDetailRow({
       item: {
@@ -181,7 +224,7 @@ describe("DetailRow", () => {
         label: "Panes (3)",
       } as Extract<TreeItem, { type: "detail"; detailKind: "pane-header" }>,
       isSelected: false,
-      maxWidth: 15,
+      maxWidth: 12,
     });
     expect(output).toContain("Panes …");
     expect(output).not.toContain("Panes (3)");
@@ -203,6 +246,31 @@ describe("DetailRow", () => {
     });
     expect(output).toContain("✓");
     expect(output).toContain("PR #42: fix login (OPEN)");
+    unmount();
+  });
+
+  test("truncates long PR labels to one physical row", async () => {
+    const label =
+      "PR #99: this pull request title is much wider than the terminal (OPEN)";
+    const props = {
+      item: {
+        type: "detail",
+        repoIndex: 0,
+        worktreeIndex: 0,
+        detailKind: "pr",
+        label,
+        meta: { rollupState: "success" as const },
+      },
+      isSelected: false,
+      maxWidth: 24,
+    } satisfies React.ComponentProps<typeof DetailRow>;
+    const { output, unmount } = await renderDetailRow(props);
+    const text = elementText(DetailRow(props));
+
+    expect(text.length).toBeLessThanOrEqual(24);
+    expect(text).toContain("…");
+    expect(text).not.toContain(label);
+    expect(output.trim().split("\n")).toHaveLength(1);
     unmount();
   });
 

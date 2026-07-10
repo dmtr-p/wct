@@ -21,6 +21,10 @@ wct projects list                      # List registered projects
 
 Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
 
+### TUI controls
+
+Run `wct tui` to browse registered projects. Repos stay expanded; use the mouse wheel or arrow keys to navigate. A single click selects a row. Double-click a branch to expand or collapse its details, a PR to open it, or a tmux pane to switch to it. Multiple branches can remain expanded; use `←` to collapse the selected branch.
+
 ## Installation
 
 ### Homebrew (recommended)

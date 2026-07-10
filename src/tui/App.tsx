@@ -12,7 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { OpenModal } from "./components/OpenModal";
-import { StatusBar } from "./components/StatusBar";
+import { StatusBar, singleLineFooterText } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
@@ -22,6 +22,7 @@ import { useRefresh } from "./hooks/useRefresh";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
+import { useTerminalMouse } from "./hooks/useTerminalMouse";
 import { useTmux } from "./hooks/useTmux";
 import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
@@ -29,15 +30,30 @@ import { handleExpandedInput } from "./input/expanded";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import {
+  detectDoubleClick,
+  getTreeRenderedRows,
+  type MouseClick,
+  type MouseClickHistory,
+  parseMouseClick,
+  parseMouseScroll,
+  resolveTreeDoubleClickAction,
+  resolveTreeMouseTarget,
+  resolveTreeViewportHeight,
+  revealTreeItem,
+  scrollTreeViewport,
+} from "./mouse";
+import {
   buildTreeItems,
   findOwningWorktreeIndex,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
+  resolveTreeReturnMode,
   treeItemId,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo } from "./types";
+import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
 
 export function App() {
+  useTerminalMouse();
   const { exit } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
@@ -61,9 +77,8 @@ export function App() {
     discoverClient,
   } = useTmux();
 
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
-  const [didInitialExpand, setDidInitialExpand] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [treeScrollOffset, setTreeScrollOffset] = useState(0);
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
@@ -71,6 +86,9 @@ export function App() {
   const [openModalIdeDefaults, setOpenModalIdeDefaults] =
     useState<SessionIdeDefaults>({ baseNoIde: true, profileNoIde: {} });
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
+  const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
+    new Set(),
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const { actionError, showActionError, clearActionError } = useActionError();
   const [pendingActions, setPendingActions] = useState<
@@ -82,14 +100,9 @@ export function App() {
   const confirmCloseReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
-
-  // Auto-expand all repos on first load
-  useEffect(() => {
-    if (!didInitialExpand && repos.length > 0) {
-      setExpandedRepos(new Set(repos.map((r) => r.id)));
-      setDidInitialExpand(true);
-    }
-  }, [repos, didInitialExpand]);
+  const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
   // Reset selection when search query changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run on searchQuery change
@@ -115,36 +128,53 @@ export function App() {
       );
   }, [repos, searchQuery]);
 
-  const expandedWorktreeKey =
-    mode.type === "Expanded" ||
-    mode.type === "ConfirmKill" ||
-    (mode.type === "UpModal" &&
-      upModalReturnModeRef.current.type === "Expanded") ||
-    (mode.type === "ConfirmDown" &&
-      confirmDownReturnModeRef.current.type === "Expanded") ||
-    ((mode.type === "ConfirmClose" || mode.type === "ConfirmCloseForce") &&
-      confirmCloseReturnModeRef.current.type === "Expanded")
-      ? mode.worktreeKey
-      : null;
+  const availableWorktreeKeys = useMemo(
+    () =>
+      new Set(
+        repos.flatMap((repo) =>
+          repo.worktrees.map((worktree) =>
+            pendingKey(repo.project, worktree.branch),
+          ),
+        ),
+      ),
+    [repos],
+  );
+
+  useEffect(() => {
+    setExpandedWorktreeKeys((previous) => {
+      const next = new Set(
+        [...previous].filter((key) => availableWorktreeKeys.has(key)),
+      );
+      return next.size === previous.size ? previous : next;
+    });
+  }, [availableWorktreeKeys]);
+
+  useEffect(() => {
+    if (
+      mode.type !== "Expanded" ||
+      expandedWorktreeKeys.has(mode.worktreeKey)
+    ) {
+      return;
+    }
+
+    const remainingKey = expandedWorktreeKeys.values().next().value;
+    setMode(
+      typeof remainingKey === "string"
+        ? Mode.Expanded(remainingKey)
+        : Mode.Navigate,
+    );
+  }, [expandedWorktreeKeys, mode]);
 
   const treeItems = useMemo(
     () =>
       buildTreeItems({
         repos: filteredRepos,
-        expandedRepos,
-        expandedWorktreeKey,
+        expandedWorktreeKeys,
         prData,
         panes,
         jumpToPane,
       }),
-    [
-      filteredRepos,
-      expandedRepos,
-      expandedWorktreeKey,
-      prData,
-      panes,
-      jumpToPane,
-    ],
+    [filteredRepos, expandedWorktreeKeys, prData, panes, jumpToPane],
   );
 
   // Identity-based selection recovery: when the tree structure changes
@@ -191,6 +221,58 @@ export function App() {
     selectedIndex,
     repos: filteredRepos,
   });
+  const selectedRepoError = statusBarProps.selectedProject
+    ? githubErrors.get(statusBarProps.selectedProject)
+    : undefined;
+  const hasActionMessage = !!actionError || (!!tmuxError && !actionError);
+  const treeFooterHeight =
+    3 + (hasActionMessage ? 1 : 0) + (selectedRepoError ? 1 : 0);
+  const modalVisible =
+    mode.type === "OpenModal" ||
+    mode.type === "UpModal" ||
+    mode.type === "AddProjectModal";
+  const treeViewportHeight = resolveTreeViewportHeight(
+    termRows,
+    treeFooterHeight,
+    modalVisible,
+  );
+  const renderedTreeRows = useMemo(
+    () =>
+      getTreeRenderedRows({
+        items: treeItems,
+        repos: filteredRepos,
+        pendingActions,
+        expandedWorktreeKeys,
+      }),
+    [filteredRepos, pendingActions, treeItems, expandedWorktreeKeys],
+  );
+  const renderedTreeRowsSignature = renderedTreeRows
+    .map((row) => row ?? "phantom")
+    .join(",");
+  const selectedTreeItemIdentity = treeItems[selectedIndex]
+    ? treeItemId(treeItems[selectedIndex], filteredRepos)
+    : null;
+  const renderedTreeRowsRef = useRef(renderedTreeRows);
+  renderedTreeRowsRef.current = renderedTreeRows;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: semantic triggers prevent refresh-only row-array changes from resetting manual scroll
+  useEffect(() => {
+    if (treeViewportHeight === 0) return;
+    setTreeScrollOffset((currentOffset) =>
+      revealTreeItem(
+        renderedTreeRowsRef.current,
+        selectedIndex,
+        currentOffset,
+        treeViewportHeight,
+      ),
+    );
+  }, [
+    renderedTreeRowsSignature,
+    searchQuery,
+    selectedIndex,
+    selectedTreeItemIdentity,
+    treeViewportHeight,
+  ]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
@@ -198,17 +280,30 @@ export function App() {
 
   useRefresh(refreshAll);
 
-  const toggleExpanded = useCallback((repoId: string) => {
-    setExpandedRepos((prev) => {
-      const next = new Set(prev);
-      if (next.has(repoId)) {
-        next.delete(repoId);
-      } else {
-        next.add(repoId);
-      }
+  const expandWorktree = useCallback((worktreeKey: string) => {
+    setExpandedWorktreeKeys((previous) => {
+      const next = new Set(previous);
+      next.add(worktreeKey);
       return next;
     });
+    setMode(Mode.Expanded(worktreeKey));
   }, []);
+
+  const collapseWorktree = useCallback(
+    (worktreeKey: string) => {
+      const next = new Set(expandedWorktreeKeys);
+      next.delete(worktreeKey);
+      setExpandedWorktreeKeys(next);
+
+      const remainingKey = next.values().next().value;
+      setMode(
+        typeof remainingKey === "string"
+          ? Mode.Expanded(remainingKey)
+          : Mode.Navigate,
+      );
+    },
+    [expandedWorktreeKeys],
+  );
 
   const openModalPRList = useMemo(() => {
     const prs: PRInfo[] = [];
@@ -272,18 +367,28 @@ export function App() {
     refreshAll,
     upModalReturnModeRef,
     upModalReturnSelectedIndexRef,
+    modalReturnModeRef,
   });
+
+  const setTreeInputMode = useCallback(
+    (nextMode: Mode) => {
+      if (nextMode.type === "Search") {
+        searchReturnModeRef.current = resolveTreeReturnMode(mode);
+      }
+      setMode(nextMode);
+    },
+    [mode],
+  );
 
   const navCtx: NavigateContext = {
     treeItems,
     filteredRepos,
     selectedIndex,
-    expandedRepos,
     tmuxClient,
-    setMode,
+    setMode: setTreeInputMode,
     setSearchQuery,
+    expandWorktree,
     navigateTree: sessionActions.navigateTree,
-    toggleExpanded,
     prepareOpenModal: modalActions.prepareOpenModal,
     prepareUpModal: modalActions.prepareUpModal,
     prepareAddProjectModal: modalActions.prepareAddProjectModal,
@@ -300,16 +405,111 @@ export function App() {
     zoomPane,
     killPane,
     refreshSessions,
+    collapseWorktree,
   };
+
+  const handleMouseClick = useCallback(
+    (click: MouseClick) => {
+      if (mode.type !== "Navigate" && mode.type !== "Expanded") {
+        lastMouseClickRef.current = null;
+        return;
+      }
+
+      // The tree begins after the title and spacer rows. SGR rows are 1-based.
+      const visibleRow = click.row - 3;
+      if (visibleRow < 0 || visibleRow >= treeViewportHeight) {
+        lastMouseClickRef.current = null;
+        return;
+      }
+
+      const targetIndex = resolveTreeMouseTarget({
+        row: visibleRow,
+        scrollOffset: treeScrollOffset,
+        items: treeItems,
+        repos: filteredRepos,
+        pendingActions,
+        expandedWorktreeKeys,
+      });
+      if (targetIndex === null) {
+        lastMouseClickRef.current = null;
+        return;
+      }
+
+      const target = treeItems[targetIndex];
+      if (!target) return;
+      setSelectedIndex(targetIndex);
+
+      const targetId = treeItemId(target, filteredRepos);
+      if (!targetId) {
+        lastMouseClickRef.current = null;
+        return;
+      }
+      const detection = detectDoubleClick(
+        lastMouseClickRef.current,
+        targetId,
+        Date.now(),
+      );
+      lastMouseClickRef.current = detection.history;
+      if (!detection.isDoubleClick) return;
+
+      const action = resolveTreeDoubleClickAction(
+        target,
+        filteredRepos,
+        expandedWorktreeKeys,
+      );
+      switch (action.type) {
+        case "expand-worktree":
+          expandWorktree(action.worktreeKey);
+          break;
+        case "collapse-worktree":
+          collapseWorktree(action.worktreeKey);
+          break;
+        case "activate-detail":
+          action.action();
+          break;
+      }
+    },
+    [
+      collapseWorktree,
+      expandWorktree,
+      expandedWorktreeKeys,
+      filteredRepos,
+      mode.type,
+      pendingActions,
+      treeScrollOffset,
+      treeItems,
+      treeViewportHeight,
+    ],
+  );
+
+  const handleMouseScroll = useCallback(
+    (row: number, direction: -1 | 1) => {
+      lastMouseClickRef.current = null;
+      if (mode.type !== "Navigate" && mode.type !== "Expanded") return;
+
+      const visibleRow = row - 3;
+      if (visibleRow < 0 || visibleRow >= treeViewportHeight) return;
+
+      setTreeScrollOffset((currentOffset) =>
+        scrollTreeViewport(
+          currentOffset,
+          direction * 3,
+          renderedTreeRows.length,
+          treeViewportHeight,
+        ),
+      );
+    },
+    [mode.type, renderedTreeRows.length, treeViewportHeight],
+  );
 
   function handleSearchInput(input: string, key: Key) {
     if (key.escape) {
-      setMode(Mode.Navigate);
+      setMode(searchReturnModeRef.current);
       setSearchQuery("");
     } else if (key.backspace) {
       setSearchQuery((q) => q.slice(0, -1));
     } else if (key.return) {
-      setMode(Mode.Navigate);
+      setMode(searchReturnModeRef.current);
     } else if (input && !key.ctrl && !key.meta) {
       setSearchQuery((q) => q + input);
     }
@@ -359,6 +559,18 @@ export function App() {
   }
 
   useInput((input, key) => {
+    const mouseScroll = parseMouseScroll(input);
+    if (mouseScroll) {
+      handleMouseScroll(mouseScroll.row, mouseScroll.direction);
+      return;
+    }
+
+    const mouseClick = parseMouseClick(input);
+    if (mouseClick) {
+      handleMouseClick(mouseClick);
+      return;
+    }
+
     if (
       input === "q" &&
       mode.type !== "OpenModal" &&
@@ -417,25 +629,34 @@ export function App() {
   }
 
   return (
-    <Box flexDirection="column" height={termRows}>
+    <Box flexDirection="column" height={termRows} overflow="hidden">
       <Text bold>wct</Text>
       <Text> </Text>
-      <Box flexDirection="column" flexGrow={1}>
-        <TreeView
-          repos={filteredRepos}
-          sessions={sessions}
-          expandedRepos={expandedRepos}
-          selectedIndex={selectedIndex}
-          items={treeItems}
-          pendingActions={pendingActions}
-          prData={prData}
-          panes={panes}
-          expandedWorktreeKey={expandedWorktreeKey}
-          maxWidth={termCols}
-          refreshingProjects={refreshingProjects}
-          errors={githubErrors}
-        />
-      </Box>
+      {treeViewportHeight > 0 ? (
+        <Box
+          flexDirection="column"
+          height={treeViewportHeight}
+          flexShrink={0}
+          overflowY="hidden"
+        >
+          <TreeView
+            repos={filteredRepos}
+            sessions={sessions}
+            selectedIndex={selectedIndex}
+            items={treeItems}
+            pendingActions={pendingActions}
+            prData={prData}
+            panes={panes}
+            expandedWorktreeKeys={expandedWorktreeKeys}
+            maxWidth={termCols}
+            renderedRows={renderedTreeRows}
+            scrollOffset={treeScrollOffset}
+            viewportHeight={treeViewportHeight}
+            refreshingProjects={refreshingProjects}
+            errors={githubErrors}
+          />
+        </Box>
+      ) : null}
       {mode.type === "OpenModal" ? (
         <OpenModal
           visible
@@ -449,7 +670,7 @@ export function App() {
           isRefreshing={refreshingProjects.has(openModalRepoProject)}
           onRefresh={openModalOnRefresh}
           onSubmit={modalActions.handleOpen}
-          onCancel={() => setMode(Mode.Navigate)}
+          onCancel={() => setMode(modalReturnModeRef.current)}
         />
       ) : mode.type === "UpModal" ? (
         <UpModal
@@ -468,23 +689,25 @@ export function App() {
           visible
           width={Math.min(termCols, 60)}
           onSubmit={modalActions.handleAddProject}
-          onCancel={() => setMode(Mode.Navigate)}
+          onCancel={() => setMode(modalReturnModeRef.current)}
         />
       ) : (
         <Box flexDirection="column">
           {tmuxError && !actionError ? (
-            <Text color="yellow">{tmuxError}</Text>
+            <Text color="yellow" wrap="truncate">
+              {singleLineFooterText(tmuxError)}
+            </Text>
           ) : null}
-          {actionError ? <Text color="red">{actionError}</Text> : null}
+          {actionError ? (
+            <Text color="red" wrap="truncate">
+              {singleLineFooterText(actionError)}
+            </Text>
+          ) : null}
           <StatusBar
             {...statusBarProps}
             searchQuery={searchQuery}
             hasClient={tmuxClient !== null}
-            repoError={
-              statusBarProps.selectedProject
-                ? githubErrors.get(statusBarProps.selectedProject)
-                : undefined
-            }
+            repoError={selectedRepoError}
           />
         </Box>
       )}

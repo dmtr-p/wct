@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  displayWidth,
   truncateBranch,
   truncateWithPrefix,
 } from "../../src/tui/utils/truncate";
@@ -30,6 +31,12 @@ describe("truncateBranch", () => {
 
   test("returns empty string when available is 0", () => {
     expect(truncateBranch("feature/branch", 0)).toBe("");
+  });
+
+  test("truncates wide glyphs by terminal columns", () => {
+    const result = truncateBranch("功能分支", 5);
+    expect(result).toBe("功能…");
+    expect(displayWidth(result)).toBe(5);
   });
 });
 
@@ -67,5 +74,11 @@ describe("truncateWithPrefix", () => {
   test("handles empty rest", () => {
     expect(truncateWithPrefix("1:0 ", "", 10)).toBe("1:0 ");
     expect(truncateWithPrefix("1:0 ", "", 4)).toBe("1:0 ");
+  });
+
+  test("preserves the prefix while truncating wide command glyphs", () => {
+    const result = truncateWithPrefix("1:0 ", "开发服务器", 9);
+    expect(result).toBe("1:0 开发…");
+    expect(displayWidth(result)).toBe(9);
   });
 });

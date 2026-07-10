@@ -32,11 +32,9 @@ describe("TreeView maxWidth wiring", () => {
         ideDefaults: { baseNoIde: true, profileNoIde: {} },
       },
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       prData: new Map(),
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -53,13 +51,12 @@ describe("TreeView maxWidth wiring", () => {
       React.createElement(TreeView, {
         repos,
         sessions: [],
-        expandedRepos,
         selectedIndex: 0,
         items,
         pendingActions: new Map(),
         prData: new Map(),
         panes: new Map(),
-        expandedWorktreeKey: null,
+        expandedWorktreeKeys: new Set<string>(),
         maxWidth: 15,
       }),
       { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false },
@@ -68,9 +65,8 @@ describe("TreeView maxWidth wiring", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const output = chunks.join("");
 
-    // "very-long-project-name" (22 chars), maxWidth=15, overhead=4 → available=11
-    // truncateBranch("very-long-project-name", 11) → "very-long-…"
-    expect(output).toContain("very-long-…");
+    // The one-column tree inset leaves 14 columns for the project name.
+    expect(output).toContain("very-long-pro…");
     expect(output).not.toContain("very-long-project-name");
 
     instance.unmount();

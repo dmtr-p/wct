@@ -14,7 +14,10 @@ import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
-import { resolveSelectedWorktreeIndex } from "../tree-helpers";
+import {
+  resolveSelectedWorktreeIndex,
+  resolveTreeReturnMode,
+} from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { SessionIdeDefaults } from "./useSessionOptionsState";
@@ -66,10 +69,12 @@ export interface ModalActionDeps {
 
   upModalReturnModeRef: MutableRefObject<Mode>;
   upModalReturnSelectedIndexRef: MutableRefObject<number>;
+  modalReturnModeRef: MutableRefObject<Mode>;
 }
 
 export function createPrepareOpenModal(deps: ModalActionDeps) {
   return () => {
+    deps.modalReturnModeRef.current = resolveTreeReturnMode(deps.mode);
     const selected = deps.treeItems[deps.selectedIndex];
     let base: string | undefined;
     let profiles: string[] = [];
@@ -105,7 +110,7 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
 
 export function createHandleOpen(deps: ModalActionDeps) {
   return (opts: OpenModalResult) => {
-    deps.setMode(Mode.Navigate);
+    deps.setMode(deps.modalReturnModeRef.current);
     const requestedBranch = opts.pr ? undefined : opts.branch;
     const project = deps.openModalRepoProject || "unknown";
     const key = pendingKey(project, opts.branch);
@@ -281,6 +286,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
 
 export function createPrepareAddProjectModal(deps: ModalActionDeps) {
   return () => {
+    deps.modalReturnModeRef.current = resolveTreeReturnMode(deps.mode);
     deps.setMode(Mode.AddProjectModal);
   };
 }
@@ -288,7 +294,7 @@ export function createPrepareAddProjectModal(deps: ModalActionDeps) {
 export function createHandleAddProject(deps: ModalActionDeps) {
   return (result: AddProjectModalResult) => {
     deps.clearActionError();
-    deps.setMode(Mode.Navigate);
+    deps.setMode(deps.modalReturnModeRef.current);
     (async () => {
       try {
         await runTuiSilentPromise(

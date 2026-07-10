@@ -18,16 +18,82 @@ import { WorktreeItem } from "./WorktreeItem";
 interface Props {
   repos: RepoInfo[];
   sessions: Array<{ name: string; attached: boolean }>;
-  expandedRepos: Set<string>;
   selectedIndex: number;
   items: TreeItem[];
   pendingActions: Map<string, PendingAction>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
-  expandedWorktreeKey: string | null;
+  expandedWorktreeKeys: Set<string>;
   maxWidth: number;
+  renderedRows?: Array<number | null>;
+  scrollOffset?: number;
+  viewportHeight?: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
+}
+
+interface TreeElementWindowEntry {
+  elementIndex: number;
+  hiddenTop: number;
+  height: number;
+}
+
+export function getTreeElementHeights(
+  renderedRows: Array<number | null>,
+): number[] {
+  const heights: number[] = [];
+  let previousItem: number | null | undefined;
+
+  for (const itemIndex of renderedRows) {
+    if (
+      itemIndex !== null &&
+      itemIndex === previousItem &&
+      heights.length > 0
+    ) {
+      const lastIndex = heights.length - 1;
+      heights[lastIndex] = (heights[lastIndex] ?? 0) + 1;
+    } else {
+      heights.push(1);
+    }
+    previousItem = itemIndex;
+  }
+
+  return heights;
+}
+
+export function getTreeElementWindow(
+  elementHeights: number[],
+  scrollOffset: number,
+  viewportHeight: number,
+): TreeElementWindowEntry[] {
+  const windowStart = Math.max(0, scrollOffset);
+  const windowEnd = windowStart + Math.max(0, viewportHeight);
+  const visible: TreeElementWindowEntry[] = [];
+  let elementStart = 0;
+
+  for (
+    let elementIndex = 0;
+    elementIndex < elementHeights.length;
+    elementIndex++
+  ) {
+    const elementHeight = elementHeights[elementIndex] ?? 0;
+    const elementEnd = elementStart + elementHeight;
+    const visibleStart = Math.max(elementStart, windowStart);
+    const visibleEnd = Math.min(elementEnd, windowEnd);
+
+    if (visibleStart < visibleEnd) {
+      visible.push({
+        elementIndex,
+        hiddenTop: visibleStart - elementStart,
+        height: visibleEnd - visibleStart,
+      });
+    }
+
+    elementStart = elementEnd;
+    if (elementStart >= windowEnd) break;
+  }
+
+  return visible;
 }
 
 export function getDetailRowKey(
@@ -44,14 +110,16 @@ export function getDetailRowKey(
 export function TreeView({
   repos,
   sessions,
-  expandedRepos,
   selectedIndex,
   items,
   pendingActions,
   prData,
   panes,
-  expandedWorktreeKey,
+  expandedWorktreeKeys,
   maxWidth,
+  renderedRows,
+  scrollOffset = 0,
+  viewportHeight = Number.POSITIVE_INFINITY,
   refreshingProjects,
   errors,
 }: Props) {
@@ -78,7 +146,7 @@ export function TreeView({
     return { phantomsByProject: phantoms };
   }, [repos, pendingActions]);
 
-  const elements: React.ReactNode[] = [];
+  const elements: React.ReactElement[] = [];
   const selectedItem = items[selectedIndex];
 
   for (let idx = 0; idx < items.length; idx++) {
@@ -99,7 +167,6 @@ export function TreeView({
         <RepoNode
           key={`repo-${repo.id}`}
           project={repo.project}
-          expanded={expandedRepos.has(repo.id)}
           isSelected={idx === selectedIndex}
           isChildSelected={childSelected}
           worktreeCount={repo.worktrees.length}
@@ -156,7 +223,7 @@ export function TreeView({
         isSelected={idx === selectedIndex}
         isChildSelected={wtChildSelected}
         pendingStatus={pending?.type}
-        isExpanded={expandedWorktreeKey === wtKey}
+        isExpanded={expandedWorktreeKeys.has(wtKey)}
         hasExpandableData={!!hasExpandableData}
         maxWidth={maxWidth}
       />,
@@ -190,9 +257,8 @@ export function TreeView({
     }
   }
 
-  // Phantoms for expanded repos with no worktrees
+  // Phantoms for repos with no worktrees
   for (const repo of repos) {
-    if (!expandedRepos.has(repo.id)) continue;
     if (repo.worktrees.length > 0) continue;
     const phantoms = phantomsByProject.get(repo.project);
     if (!phantoms) continue;
@@ -213,5 +279,34 @@ export function TreeView({
     }
   }
 
-  return <Box flexDirection="column">{elements}</Box>;
+  const elementHeights = renderedRows
+    ? getTreeElementHeights(renderedRows)
+    : elements.map(() => 1);
+  const visibleElements = getTreeElementWindow(
+    elementHeights,
+    scrollOffset,
+    viewportHeight,
+  ).flatMap(({ elementIndex, hiddenTop, height }) => {
+    const element = elements[elementIndex];
+    if (!element) return [];
+
+    const elementHeight = elementHeights[elementIndex] ?? 1;
+    if (hiddenTop === 0 && height === elementHeight) return [element];
+
+    return [
+      <Box
+        key={`viewport-${String(element.key ?? elementIndex)}`}
+        flexDirection="column"
+        height={height}
+        flexShrink={0}
+        overflowY="hidden"
+      >
+        <Box flexDirection="column" position="relative" top={-hiddenTop}>
+          {element}
+        </Box>
+      </Box>,
+    ];
+  });
+
+  return <Box flexDirection="column">{visibleElements}</Box>;
 }

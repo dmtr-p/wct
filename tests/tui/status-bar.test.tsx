@@ -1,7 +1,10 @@
 import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
-import { StatusBar } from "../../src/tui/components/StatusBar";
+import {
+  StatusBar,
+  singleLineFooterText,
+} from "../../src/tui/components/StatusBar";
 import { Mode } from "../../src/tui/types";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
@@ -10,9 +13,9 @@ type TestStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-function createStdoutStdin() {
+function createStdoutStdin(columns = 80) {
   const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = 80;
+  stdout.columns = columns;
   stdout.rows = 24;
   const stdin = new PassThrough() as unknown as TestStdin;
   stdin.isTTY = false;
@@ -20,8 +23,11 @@ function createStdoutStdin() {
   return { stdout, stdin };
 }
 
-async function renderStatusBar(props: React.ComponentProps<typeof StatusBar>) {
-  const { stdout, stdin } = createStdoutStdin();
+async function renderStatusBar(
+  props: React.ComponentProps<typeof StatusBar>,
+  columns = 80,
+) {
+  const { stdout, stdin } = createStdoutStdin(columns);
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {
     chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
@@ -46,6 +52,35 @@ async function renderStatusBar(props: React.ComponentProps<typeof StatusBar>) {
 }
 
 describe("StatusBar", () => {
+  test("normalizes multiline footer messages to one row", () => {
+    expect(singleLineFooterText("first line\nsecond line\r\nthird")).toBe(
+      "first line second line third",
+    );
+  });
+
+  test("keeps a long multiline error within its single footer row", async () => {
+    const rendered = await renderStatusBar(
+      {
+        mode: Mode.Navigate,
+        repoError: `first line\n${"second line ".repeat(10)}`,
+      },
+      20,
+    );
+
+    expect(rendered.output.trim().split("\n")).toHaveLength(4);
+    expect(rendered.output).toContain("⚠ first line second");
+    rendered.unmount();
+  });
+
+  test("shows detail expansion without repo collapse hints", async () => {
+    const rendered = await renderStatusBar({ mode: Mode.Navigate });
+
+    expect(rendered.output).toContain("↑↓:navigate  →:details");
+    expect(rendered.output).not.toContain("expand/collapse");
+
+    rendered.unmount();
+  });
+
   test("shows pane hints for expanded pane rows", async () => {
     const rendered = await renderStatusBar({
       mode: Mode.Expanded("proj/branch"),

@@ -51,11 +51,13 @@ src/
 │   ├── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
 │   └── registry-service.ts # Effect service for multi-repo registry
 ├── tui/
-│   ├── App.tsx            # Root Ink component, data fetching, keyboard routing
+│   ├── App.tsx            # Root Ink component, data fetching, input routing, viewport
+│   ├── mouse.ts           # SGR mouse parsing, double-clicks, and row mapping
 │   ├── runtime.ts         # ManagedRuntime for TUI-specific Effect services
 │   ├── types.ts           # TUI mode, detail kind, and PR info type definitions
 │   ├── components/
-│   │   ├── TreeView.tsx   # Collapsible repo/worktree list
+│   │   ├── TreeView.tsx   # Always-expanded repo list and worktree details
+│   │   ├── tree-row.ts    # Shared selected-row styling and width-aware fill
 │   │   ├── RepoNode.tsx   # Single repo group
 │   │   ├── WorktreeItem.tsx # Branch line with status indicators
 │   │   ├── OpenModal.tsx  # Modal for wct open
@@ -64,6 +66,7 @@ src/
 │   │   ├── DetailRow.tsx  # Single row in detail/status views
 │   │   └── ScrollableList.tsx # Scrollable list with cursor blinking
 │   └── hooks/
+│       ├── useTerminalMouse.ts # Terminal mouse reporting lifecycle
 │       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
 │       ├── useRefresh.ts  # Hybrid poll + fs.watch
 │       ├── useTmux.ts     # switch-client, list-clients

@@ -7,6 +7,7 @@ import {
   resolveExpandedRightArrowAction,
   resolveRecoveredSelectionIndex,
   resolveSelectedWorktreeIndex,
+  resolveTreeReturnMode,
   treeItemId,
 } from "../../src/tui/tree-helpers";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
@@ -50,6 +51,17 @@ function fakeRepo(id: string, branches: string[]): RepoInfo {
     ideDefaults: { baseNoIde: true, profileNoIde: {} },
   };
 }
+
+describe("resolveTreeReturnMode", () => {
+  test("preserves Expanded mode across temporary interactions", () => {
+    const expanded = Mode.Expanded("repo-a/main");
+    expect(resolveTreeReturnMode(expanded)).toEqual(expanded);
+  });
+
+  test("falls back to Navigate for non-tree modes", () => {
+    expect(resolveTreeReturnMode(Mode.Search)).toEqual(Mode.Navigate);
+  });
+});
 
 describe("adjustIndexForDetailCollapse", () => {
   // [0] Repo A
@@ -373,32 +385,7 @@ describe("resolveCloseSelectedWorktreeAction", () => {
 });
 
 describe("resolveExpandedRightArrowAction", () => {
-  test("expands a collapsed repo while another repo's worktree is expanded", () => {
-    const repos: RepoInfo[] = [
-      fakeRepo("repo-a", ["main"]),
-      fakeRepo("repo-b", ["feature-b"]),
-    ];
-    const items: TreeItem[] = [
-      repo(0),
-      worktree(0, 0),
-      detail(0, 0, "pr"),
-      repo(1),
-    ];
-
-    expect(
-      resolveExpandedRightArrowAction({
-        repos,
-        items,
-        selectedIndex: 3,
-        expandedRepos: new Set(["repo-a"]),
-      }),
-    ).toEqual({
-      type: "expand-repo",
-      repoId: "repo-b",
-    });
-  });
-
-  test("switches the expanded worktree using the collapsed tree index", () => {
+  test("expands another worktree without collapsing existing detail rows", () => {
     const repos: RepoInfo[] = [fakeRepo("repo-a", ["main", "feature-b"])];
     const items: TreeItem[] = [
       repo(0),
@@ -413,12 +400,11 @@ describe("resolveExpandedRightArrowAction", () => {
         repos,
         items,
         selectedIndex: 4,
-        expandedRepos: new Set(["repo-a"]),
       }),
     ).toEqual({
       type: "expand-worktree",
-      nextMode: Mode.Expanded(pendingKey("repo-a", "feature-b")),
-      nextSelectedIndex: 2,
+      worktreeKey: pendingKey("repo-a", "feature-b"),
+      nextSelectedIndex: 4,
     });
   });
 });

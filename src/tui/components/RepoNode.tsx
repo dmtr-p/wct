@@ -1,9 +1,13 @@
 import { Box, Text } from "ink";
 import { truncateBranch } from "../utils/truncate";
+import {
+  SELECTED_ROW_BACKGROUND,
+  SELECTED_ROW_FOREGROUND,
+  selectedRowFill,
+} from "./tree-row";
 
 interface Props {
   project: string;
-  expanded: boolean;
   isSelected: boolean;
   isChildSelected: boolean;
   worktreeCount: number;
@@ -14,7 +18,6 @@ interface Props {
 
 export function RepoNode({
   project,
-  expanded,
   isSelected,
   isChildSelected,
   worktreeCount,
@@ -22,32 +25,43 @@ export function RepoNode({
   isRefreshing,
   hasError,
 }: Props) {
-  const arrow = expanded ? "▼" : "▶";
   const active = isSelected || isChildSelected;
-  const prefix = isSelected ? "❯ " : "  ";
-  // overhead: prefix (2) + arrow (1) + space (1) = 4
-  // plus " ↻" (2) when refreshing, plus " ⚠" (2) when errored
+  // Overhead is only the optional refresh/error suffixes. Repo rows no longer
+  // reserve space for a selection pointer or disclosure icon.
   const refreshSuffix = isRefreshing ? " ↻" : "";
   const errorSuffix = hasError ? " ⚠" : "";
+  const prefix = " ";
   const displayProject = truncateBranch(
     project,
-    maxWidth - 4 - refreshSuffix.length - errorSuffix.length,
+    maxWidth - prefix.length - refreshSuffix.length - errorSuffix.length,
   );
+  const content = prefix + displayProject + refreshSuffix + errorSuffix;
 
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={isSelected ? "cyan" : undefined}>{prefix}</Text>
-        <Text color={isSelected ? "cyan" : "yellow"} bold={active}>
-          {arrow} {displayProject}
+        <Text
+          color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
+          backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
+          wrap="truncate"
+        >
+          {prefix}
+          <Text color={isSelected ? undefined : "yellow"} bold={active}>
+            {displayProject}
+          </Text>
+          {isRefreshing ? <Text dimColor={!isSelected}> ↻</Text> : null}
+          {hasError ? (
+            <Text color={isSelected ? undefined : "yellow"}> ⚠</Text>
+          ) : null}
+          {selectedRowFill(isSelected, maxWidth, content)}
         </Text>
-        {isRefreshing ? <Text dimColor> ↻</Text> : null}
-        {hasError ? <Text color="yellow"> ⚠</Text> : null}
       </Box>
-      {expanded && worktreeCount === 0 ? (
+      {worktreeCount === 0 ? (
         <Box>
-          <Text>{"    "}</Text>
-          <Text dimColor>(no worktrees)</Text>
+          <Text wrap="truncate">
+            {"   "}
+            <Text dimColor>(no worktrees)</Text>
+          </Text>
         </Box>
       ) : null}
     </Box>

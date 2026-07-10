@@ -10,6 +10,10 @@ interface Props {
   repoError?: string;
 }
 
+export function singleLineFooterText(text: string): string {
+  return text.replace(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/gu, " ").trim();
+}
+
 function join(...parts: (string | false)[]): string {
   return parts.filter(Boolean).join("  ");
 }
@@ -24,7 +28,7 @@ function getHints(
       return [
         join(
           "↑↓:navigate",
-          "←→:expand/collapse",
+          "→:details",
           hasClient && "space:switch",
           "o:open",
           "a:add",
@@ -94,11 +98,15 @@ export function StatusBar({
     const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
     return (
       <Box flexDirection="column">
-        <Text dimColor>{divider}</Text>
-        <Text color="red" bold>
-          {line1}
+        <Text dimColor wrap="truncate">
+          {divider}
         </Text>
-        <Text dimColor>{line2}</Text>
+        <Text color="red" bold wrap="truncate">
+          {singleLineFooterText(line1)}
+        </Text>
+        <Text dimColor wrap="truncate">
+          {singleLineFooterText(line2)}
+        </Text>
       </Box>
     );
   }
@@ -106,9 +114,15 @@ export function StatusBar({
   if (mode.type === "Search") {
     return (
       <Box flexDirection="column">
-        <Text dimColor>{divider}</Text>
-        <Text color="cyan">/{searchQuery}</Text>
-        <Text dimColor>{getHints(mode, undefined, hasClient)[1]}</Text>
+        <Text dimColor wrap="truncate">
+          {divider}
+        </Text>
+        <Text color="cyan" wrap="truncate">
+          /{singleLineFooterText(searchQuery ?? "")}
+        </Text>
+        <Text dimColor wrap="truncate">
+          {getHints(mode, undefined, hasClient)[1]}
+        </Text>
       </Box>
     );
   }
@@ -116,10 +130,20 @@ export function StatusBar({
   const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
   return (
     <Box flexDirection="column">
-      <Text dimColor>{divider}</Text>
-      {repoError ? <Text color="yellow">⚠ {repoError}</Text> : null}
-      <Text dimColor>{line1}</Text>
-      <Text dimColor>{line2}</Text>
+      <Text dimColor wrap="truncate">
+        {divider}
+      </Text>
+      {repoError ? (
+        <Text color="yellow" wrap="truncate">
+          ⚠ {singleLineFooterText(repoError)}
+        </Text>
+      ) : null}
+      <Text dimColor wrap="truncate">
+        {singleLineFooterText(line1)}
+      </Text>
+      <Text dimColor wrap="truncate">
+        {singleLineFooterText(line2)}
+      </Text>
     </Box>
   );
 }

@@ -13,8 +13,7 @@ import {
 
 interface BuildTreeOptions {
   repos: RepoInfo[];
-  expandedRepos: Set<string>;
-  expandedWorktreeKey: string | null;
+  expandedWorktreeKeys: Set<string>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
@@ -44,7 +43,6 @@ interface ResolveExpandedRightArrowActionOptions {
   repos: RepoInfo[];
   items: TreeItem[];
   selectedIndex: number;
-  expandedRepos: Set<string>;
 }
 
 interface ResolveRecoveredSelectionIndexOptions {
@@ -65,8 +63,11 @@ interface ResolveCloseSelectedWorktreeActionOptions {
 
 type ExpandedRightArrowAction =
   | { type: "noop" }
-  | { type: "expand-repo"; repoId: string }
-  | { type: "expand-worktree"; nextMode: Mode; nextSelectedIndex: number };
+  | {
+      type: "expand-worktree";
+      worktreeKey: string;
+      nextSelectedIndex: number;
+    };
 
 type CloseSelectedWorktreeAction =
   | { type: "noop" }
@@ -85,10 +86,13 @@ export interface ResolvedStatusBarProps {
   selectedProject?: string;
 }
 
+export function resolveTreeReturnMode(mode: Mode): Mode {
+  return mode.type === "Expanded" ? mode : Mode.Navigate;
+}
+
 export function buildTreeItems({
   repos,
-  expandedRepos,
-  expandedWorktreeKey,
+  expandedWorktreeKeys,
   prData,
   panes,
   jumpToPane,
@@ -101,62 +105,60 @@ export function buildTreeItems({
     }
 
     items.push({ type: "repo", repoIndex: ri });
-    if (expandedRepos.has(repo.id)) {
-      for (let wi = 0; wi < repo.worktrees.length; wi++) {
-        items.push({ type: "worktree", repoIndex: ri, worktreeIndex: wi });
+    for (let wi = 0; wi < repo.worktrees.length; wi++) {
+      items.push({ type: "worktree", repoIndex: ri, worktreeIndex: wi });
 
-        const wt = repo.worktrees[wi];
-        if (!wt) continue;
-        const wtKey = pendingKey(repo.project, wt.branch);
-        if (wtKey !== expandedWorktreeKey) continue;
+      const wt = repo.worktrees[wi];
+      if (!wt) continue;
+      const wtKey = pendingKey(repo.project, wt.branch);
+      if (!expandedWorktreeKeys.has(wtKey)) continue;
 
-        const sessionName = formatSessionName(basename(wt.path));
+      const sessionName = formatSessionName(basename(wt.path));
 
-        // PR data for this worktree
-        const pr = prData.get(wtKey);
-        if (pr) {
+      // PR data for this worktree
+      const pr = prData.get(wtKey);
+      if (pr) {
+        items.push({
+          type: "detail",
+          repoIndex: ri,
+          worktreeIndex: wi,
+          detailKind: "pr",
+          label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
+          meta: { rollupState: pr.rollupState },
+          action: () =>
+            Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
+              cwd: repo.repoPath,
+            }),
+        });
+      }
+
+      // Panes for this worktree
+      const sessionPanes = panes.get(sessionName);
+      if (sessionPanes && sessionPanes.length > 0) {
+        items.push({
+          type: "detail",
+          repoIndex: ri,
+          worktreeIndex: wi,
+          detailKind: "pane-header",
+          label: `Panes (${sessionPanes.length})`,
+        });
+        for (const pane of sessionPanes) {
           items.push({
             type: "detail",
             repoIndex: ri,
             worktreeIndex: wi,
-            detailKind: "pr",
-            label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
-            meta: { rollupState: pr.rollupState },
-            action: () =>
-              Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
-                cwd: repo.repoPath,
-              }),
+            detailKind: "pane",
+            label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
+            meta: {
+              paneId: pane.paneId,
+              zoomed: pane.zoomed,
+              active: pane.active,
+              window: pane.window,
+              paneIndex: pane.paneIndex,
+              command: pane.command,
+            },
+            action: () => jumpToPane(pane.paneId),
           });
-        }
-
-        // Panes for this worktree
-        const sessionPanes = panes.get(sessionName);
-        if (sessionPanes && sessionPanes.length > 0) {
-          items.push({
-            type: "detail",
-            repoIndex: ri,
-            worktreeIndex: wi,
-            detailKind: "pane-header",
-            label: `Panes (${sessionPanes.length})`,
-          });
-          for (const pane of sessionPanes) {
-            items.push({
-              type: "detail",
-              repoIndex: ri,
-              worktreeIndex: wi,
-              detailKind: "pane",
-              label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
-              meta: {
-                paneId: pane.paneId,
-                zoomed: pane.zoomed,
-                active: pane.active,
-                window: pane.window,
-                paneIndex: pane.paneIndex,
-                command: pane.command,
-              },
-              action: () => jumpToPane(pane.paneId),
-            });
-          }
         }
       }
     }
@@ -311,7 +313,6 @@ export function resolveExpandedRightArrowAction({
   repos,
   items,
   selectedIndex,
-  expandedRepos,
 }: ResolveExpandedRightArrowActionOptions): ExpandedRightArrowAction {
   const current = items[selectedIndex];
   if (!current) {
@@ -321,14 +322,6 @@ export function resolveExpandedRightArrowAction({
   const repo = repos[current.repoIndex];
   if (!repo) {
     return { type: "noop" };
-  }
-
-  if (current.type === "repo") {
-    if (expandedRepos.has(repo.id)) {
-      return { type: "noop" };
-    }
-
-    return { type: "expand-repo", repoId: repo.id };
   }
 
   if (current.type !== "worktree") {
@@ -342,8 +335,8 @@ export function resolveExpandedRightArrowAction({
 
   return {
     type: "expand-worktree",
-    nextMode: Mode.Expanded(pendingKey(repo.project, worktree.branch)),
-    nextSelectedIndex: adjustIndexForDetailCollapse(items, selectedIndex),
+    worktreeKey: pendingKey(repo.project, worktree.branch),
+    nextSelectedIndex: selectedIndex,
   };
 }
 

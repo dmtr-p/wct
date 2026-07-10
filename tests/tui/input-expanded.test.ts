@@ -6,14 +6,14 @@ import {
 } from "../../src/tui/input/expanded";
 import type { NavigateContext } from "../../src/tui/input/navigate";
 import {
-  adjustIndexForDetailCollapse,
+  findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
 import { Mode } from "../../src/tui/types";
 
 vi.mock("../../src/tui/tree-helpers", () => ({
-  adjustIndexForDetailCollapse: vi.fn(() => 0),
+  findOwningWorktreeIndex: vi.fn(() => null),
   resolveExpandedRightArrowAction: vi.fn(() => ({ type: "noop" })),
   resolveSelectedPane: vi.fn(() => null),
 }));
@@ -46,12 +46,11 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     treeItems: [],
     filteredRepos: [],
     selectedIndex: 0,
-    expandedRepos: new Set<string>(),
     tmuxClient: { tty: "/dev/pts/1", session: "test" },
     setMode: vi.fn(),
     setSearchQuery: vi.fn(),
+    expandWorktree: vi.fn(),
     navigateTree: vi.fn(),
-    toggleExpanded: vi.fn(),
     prepareOpenModal: vi.fn(),
     prepareUpModal: vi.fn(),
     handleSpaceSwitch: vi.fn(),
@@ -71,6 +70,7 @@ function makeExpCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
     zoomPane: vi.fn(() => Promise.resolve(true)),
     killPane: vi.fn(() => Promise.resolve(true)),
     refreshSessions: vi.fn(() => Promise.resolve([])),
+    collapseWorktree: vi.fn(),
     ...overrides,
   };
 }
@@ -78,31 +78,50 @@ function makeExpCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
 describe("handleExpandedInput", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(adjustIndexForDetailCollapse).mockImplementation(() => 0);
+    vi.mocked(findOwningWorktreeIndex).mockImplementation(() => null);
     vi.mocked(resolveExpandedRightArrowAction).mockImplementation(() => ({
       type: "noop",
     }));
     vi.mocked(resolveSelectedPane).mockImplementation(() => null);
   });
 
-  test("left arrow calls adjustIndexForDetailCollapse and returns to Navigate", () => {
-    vi.mocked(adjustIndexForDetailCollapse).mockReturnValue(2);
-    const ctx = makeExpCtx();
+  test("left arrow collapses only the owning worktree", () => {
+    vi.mocked(findOwningWorktreeIndex).mockReturnValue(0);
+    const ctx = makeExpCtx({
+      treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
+      filteredRepos: [
+        {
+          id: "repo",
+          project: "proj",
+          repoPath: "/tmp/repo",
+          worktrees: [
+            {
+              branch: "feat",
+              path: "/tmp/repo/feat",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+          profileNames: [],
+          ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        },
+      ],
+    });
     handleExpandedInput(ctx, "", { ...noKey, leftArrow: true });
-    expect(adjustIndexForDetailCollapse).toHaveBeenCalledWith(
+    expect(findOwningWorktreeIndex).toHaveBeenCalledWith(
       ctx.treeItems,
       ctx.selectedIndex,
     );
-    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(2);
-    expect(ctx.setMode).toHaveBeenCalledWith(Mode.Navigate);
+    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(0);
+    expect(ctx.collapseWorktree).toHaveBeenCalledWith("proj/feat");
   });
 
-  test("escape calls adjustIndexForDetailCollapse and returns to Navigate", () => {
-    vi.mocked(adjustIndexForDetailCollapse).mockReturnValue(1);
+  test("escape does not collapse worktrees", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "", { ...noKey, escape: true });
-    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(1);
-    expect(ctx.setMode).toHaveBeenCalledWith(Mode.Navigate);
+    expect(ctx.setSelectedIndex).not.toHaveBeenCalled();
+    expect(ctx.collapseWorktree).not.toHaveBeenCalled();
   });
 
   test("up arrow calls navigateTree(-1)", () => {
@@ -117,27 +136,16 @@ describe("handleExpandedInput", () => {
     expect(ctx.navigateTree).toHaveBeenCalledWith(1);
   });
 
-  test("right arrow handles expand-repo action", () => {
-    vi.mocked(resolveExpandedRightArrowAction).mockReturnValue({
-      type: "expand-repo",
-      repoId: "repo1",
-    });
-    const ctx = makeExpCtx();
-    handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
-    expect(ctx.toggleExpanded).toHaveBeenCalledWith("repo1");
-  });
-
   test("right arrow handles expand-worktree action", () => {
-    const nextMode = Mode.Expanded("proj/feat");
     vi.mocked(resolveExpandedRightArrowAction).mockReturnValue({
       type: "expand-worktree",
-      nextMode,
+      worktreeKey: "proj/feat",
       nextSelectedIndex: 3,
     });
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
     expect(ctx.setSelectedIndex).toHaveBeenCalledWith(3);
-    expect(ctx.setMode).toHaveBeenCalledWith(nextMode);
+    expect(ctx.expandWorktree).toHaveBeenCalledWith("proj/feat");
   });
 
   test("space with tmuxClient calls handleSpaceSwitch", () => {

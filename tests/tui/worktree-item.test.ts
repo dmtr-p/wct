@@ -3,6 +3,7 @@ import React from "react";
 import { describe, expect, test } from "vitest";
 import { WorktreeItem } from "../../src/tui/components/WorktreeItem";
 import { truncateBranch } from "../../src/tui/utils/truncate";
+import { elementText, hasElementProp } from "./react-elements";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -10,9 +11,9 @@ type TestStdin = NodeJS.ReadStream & {
   setRawMode: (mode: boolean) => NodeJS.ReadStream;
 };
 
-function createStdoutStdin() {
+function createStdoutStdin(columns = 80) {
   const stdout = new PassThrough() as unknown as TestStdout;
-  stdout.columns = 80;
+  stdout.columns = columns;
   stdout.rows = 24;
   const stdin = new PassThrough() as unknown as TestStdin;
   stdin.isTTY = false;
@@ -23,7 +24,7 @@ function createStdoutStdin() {
 async function renderWorktreeItem(
   props: React.ComponentProps<typeof WorktreeItem>,
 ) {
-  const { stdout, stdin } = createStdoutStdin();
+  const { stdout, stdin } = createStdoutStdin(props.maxWidth);
   const chunks: string[] = [];
   stdout.on("data", (chunk) => {
     chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
@@ -88,6 +89,28 @@ describe("truncateBranch", () => {
 });
 
 describe("WorktreeItem", () => {
+  test("keeps opening and status rows single-line in a narrow terminal", async () => {
+    const opening = await renderWorktreeItem({
+      ...baseWorktreeProps,
+      branch: "",
+      pendingStatus: "opening",
+      maxWidth: 8,
+    });
+    const expanded = await renderWorktreeItem({
+      ...baseWorktreeProps,
+      branch: "",
+      sync: "?",
+      changedFiles: 12,
+      isExpanded: true,
+      maxWidth: 8,
+    });
+
+    expect(opening.output.trim().split("\n")).toHaveLength(1);
+    expect(expanded.output.trim().split("\n")).toHaveLength(2);
+    opening.unmount();
+    expanded.unmount();
+  });
+
   test("does not render git stats for a focused collapsed worktree", async () => {
     const { output, unmount } = await renderWorktreeItem({
       ...baseWorktreeProps,
@@ -125,6 +148,24 @@ describe("WorktreeItem", () => {
     expect(output).toContain("↑1");
     expect(output).toContain("~3");
 
+    unmount();
+  });
+
+  test("uses a background highlight without a cursor glyph", async () => {
+    const props = {
+      ...baseWorktreeProps,
+      isSelected: true,
+    } satisfies React.ComponentProps<typeof WorktreeItem>;
+    const { output, unmount } = await renderWorktreeItem(props);
+
+    expect(hasElementProp(WorktreeItem(props), "backgroundColor", "cyan")).toBe(
+      true,
+    );
+    expect(hasElementProp(WorktreeItem(props), "color", "#f2f2f2")).toBe(true);
+    expect(elementText(WorktreeItem(props))).toContain(
+      `   ● feature/layout${" ".repeat(61)}`,
+    );
+    expect(output).not.toContain("❯");
     unmount();
   });
 });

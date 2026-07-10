@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { getDetailRowKey } from "../../src/tui/components/TreeView";
+import {
+  getDetailRowKey,
+  getTreeElementHeights,
+  getTreeElementWindow,
+} from "../../src/tui/components/TreeView";
 import type { TreeItem } from "../../src/tui/types";
 
 describe("getDetailRowKey", () => {
@@ -52,5 +56,31 @@ describe("getDetailRowKey", () => {
     } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>;
 
     expect(getDetailRowKey("repo-1", prItem)).toBe("detail-repo-1-2-pr-PR #42");
+  });
+});
+
+describe("tree element window", () => {
+  test("groups secondary physical rows with their owning element", () => {
+    expect(getTreeElementHeights([0, 1, 1, 2, null, null, 3])).toEqual([
+      1, 2, 1, 1, 1, 1,
+    ]);
+  });
+
+  test("returns only visible elements and clips viewport-edge rows locally", () => {
+    expect(getTreeElementWindow([1, 2, 1, 2], 2, 3)).toEqual([
+      { elementIndex: 1, height: 1, hiddenTop: 1 },
+      { elementIndex: 2, height: 1, hiddenTop: 0 },
+      { elementIndex: 3, height: 1, hiddenTop: 0 },
+    ]);
+  });
+
+  test("returns every element when no viewport is supplied", () => {
+    expect(
+      getTreeElementWindow([1, 2, 1], 0, Number.POSITIVE_INFINITY),
+    ).toEqual([
+      { elementIndex: 0, height: 1, hiddenTop: 0 },
+      { elementIndex: 1, height: 2, hiddenTop: 0 },
+      { elementIndex: 2, height: 1, hiddenTop: 0 },
+    ]);
   });
 });

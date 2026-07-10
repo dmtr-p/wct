@@ -5,7 +5,6 @@ import {
   buildTreeItems,
   buildTreeRows,
   clampScrollOffset,
-  isWithinExpandedSubtree,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
 import { type PendingAction, pendingKey } from "../../src/tui/types";
@@ -47,15 +46,14 @@ describe("buildTreeRows", () => {
     const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions: new Map(),
     });
 
@@ -85,15 +83,14 @@ describe("buildTreeRows", () => {
     const expandedWorktreeKey = pendingKey("alpha", branch);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions: new Map(),
     });
 
@@ -128,15 +125,14 @@ describe("buildTreeRows", () => {
     const expandedWorktreeKey = pendingKey("alpha", branch);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions: new Map(),
     });
 
@@ -148,15 +144,14 @@ describe("buildTreeRows", () => {
     const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions: new Map(),
     });
 
@@ -173,15 +168,14 @@ describe("buildTreeRows", () => {
     const expandedRepos = new Set<string>();
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions: new Map(),
     });
 
@@ -213,15 +207,14 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions,
     });
 
@@ -280,8 +273,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -290,7 +282,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions,
     });
 
@@ -354,8 +346,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -364,7 +355,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions,
     });
 
@@ -408,15 +399,14 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions,
     });
 
@@ -466,8 +456,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -476,7 +465,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions: new Map(),
     });
 
@@ -530,8 +519,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -540,7 +528,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions: new Map(),
       maxWidth: 40,
     });
@@ -609,8 +597,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -619,7 +606,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions: new Map(),
       maxWidth: 80,
     });
@@ -662,8 +649,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -672,7 +658,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
       pendingActions: new Map(),
       maxWidth: 40,
     });
@@ -727,85 +713,5 @@ describe("scrollToKeepVisible", () => {
 
   test("returns the offset unchanged for a zero/negative viewport", () => {
     expect(scrollToKeepVisible(3, 2, 0)).toBe(2);
-  });
-});
-
-describe("isWithinExpandedSubtree", () => {
-  const repos = [
-    repo({
-      id: "repo-1",
-      project: "alpha",
-      worktrees: [
-        {
-          branch: "feature/a",
-          path: "/tmp/a",
-          isMainWorktree: false,
-          changedFiles: 0,
-          sync: null,
-        },
-        {
-          branch: "feature/b",
-          path: "/tmp/b",
-          isMainWorktree: false,
-          changedFiles: 0,
-          sync: null,
-        },
-      ],
-    }),
-    repo({
-      id: "repo-2",
-      project: "beta",
-      worktrees: [
-        {
-          branch: "feature/c",
-          path: "/tmp/c",
-          isMainWorktree: false,
-          changedFiles: 0,
-          sync: null,
-        },
-      ],
-    }),
-  ];
-  const expandedKey = pendingKey("alpha", "feature/a");
-  // items: 0 repo-1, 1 wt feature/a, 2 detail(a), 3 wt feature/b,
-  //        4 repo-2, 5 wt feature/c
-  const items = [
-    { type: "repo" as const, repoIndex: 0 },
-    { type: "worktree" as const, repoIndex: 0, worktreeIndex: 0 },
-    {
-      type: "detail" as const,
-      repoIndex: 0,
-      worktreeIndex: 0,
-      detailKind: "pr" as const,
-      label: "PR #1",
-      meta: { rollupState: "success" as const },
-    },
-    { type: "worktree" as const, repoIndex: 0, worktreeIndex: 1 },
-    { type: "repo" as const, repoIndex: 1 },
-    { type: "worktree" as const, repoIndex: 1, worktreeIndex: 0 },
-  ];
-
-  test("a detail row owned by the expanded worktree is within the subtree", () => {
-    expect(isWithinExpandedSubtree(items, 2, expandedKey, repos)).toBe(true);
-  });
-
-  test("the expanded worktree row itself is within the subtree", () => {
-    expect(isWithinExpandedSubtree(items, 1, expandedKey, repos)).toBe(true);
-  });
-
-  test("a sibling worktree in the same repo is NOT within the subtree", () => {
-    expect(isWithinExpandedSubtree(items, 3, expandedKey, repos)).toBe(false);
-  });
-
-  test("a worktree in another repo is NOT within the subtree", () => {
-    expect(isWithinExpandedSubtree(items, 5, expandedKey, repos)).toBe(false);
-  });
-
-  test("a repo row resolves to no owning worktree and is not within", () => {
-    expect(isWithinExpandedSubtree(items, 0, expandedKey, repos)).toBe(false);
-  });
-
-  test("returns false when no worktree is expanded", () => {
-    expect(isWithinExpandedSubtree(items, 1, null, repos)).toBe(false);
   });
 });

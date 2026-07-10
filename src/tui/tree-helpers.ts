@@ -16,8 +16,7 @@ import {
 
 interface BuildTreeOptions {
   repos: RepoInfo[];
-  expandedRepos: Set<string>;
-  expandedWorktreeKey: string | null;
+  expandedWorktreeKeys?: Set<string>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
@@ -26,8 +25,9 @@ interface BuildTreeOptions {
 interface BuildTreeRowsOptions {
   items: TreeItem[];
   repos: RepoInfo[];
-  expandedRepos: Set<string>;
-  expandedWorktreeKey: string | null;
+  /** Repos are always expanded in production; retained for test fixtures. */
+  expandedRepos?: Set<string>;
+  expandedWorktreeKeys?: Set<string>;
   pendingActions: Map<string, PendingAction>;
   /**
    * Terminal width in columns, used to count how many terminal lines a PR
@@ -94,7 +94,6 @@ interface ResolveExpandedRightArrowActionOptions {
   repos: RepoInfo[];
   items: TreeItem[];
   selectedIndex: number;
-  expandedRepos: Set<string>;
 }
 
 interface ResolveRecoveredSelectionIndexOptions {
@@ -115,8 +114,11 @@ interface ResolveCloseSelectedWorktreeActionOptions {
 
 type ExpandedRightArrowAction =
   | { type: "noop" }
-  | { type: "expand-repo"; repoId: string }
-  | { type: "expand-worktree"; nextMode: Mode; nextSelectedIndex: number };
+  | {
+      type: "expand-worktree";
+      worktreeKey: string;
+      nextSelectedIndex: number;
+    };
 
 type CloseSelectedWorktreeAction =
   | { type: "noop" }
@@ -135,10 +137,37 @@ export interface ResolvedStatusBarProps {
   selectedProject?: string;
 }
 
+export function resolveTreeReturnMode(mode: Mode): Mode {
+  return mode.type === "Expanded" ? mode : Mode.Navigate;
+}
+
+export function reconcileExpandedWorktreeKeys(
+  previous: Set<string>,
+  repos: RepoInfo[],
+): Set<string> {
+  const available = new Set(
+    repos.flatMap((repo) =>
+      repo.worktrees.map((worktree) =>
+        pendingKey(repo.project, worktree.branch),
+      ),
+    ),
+  );
+  const uncertainRepoPrefixes = repos
+    .filter((repo) => repo.error !== undefined)
+    .map((repo) => pendingKey(repo.project, ""));
+  const next = new Set(
+    [...previous].filter(
+      (key) =>
+        available.has(key) ||
+        uncertainRepoPrefixes.some((prefix) => key.startsWith(prefix)),
+    ),
+  );
+  return next.size === previous.size ? previous : next;
+}
+
 export function buildTreeItems({
   repos,
-  expandedRepos,
-  expandedWorktreeKey,
+  expandedWorktreeKeys,
   prData,
   panes,
   jumpToPane,
@@ -151,62 +180,61 @@ export function buildTreeItems({
     }
 
     items.push({ type: "repo", repoIndex: ri });
-    if (expandedRepos.has(repo.id)) {
-      for (let wi = 0; wi < repo.worktrees.length; wi++) {
-        items.push({ type: "worktree", repoIndex: ri, worktreeIndex: wi });
+    for (let wi = 0; wi < repo.worktrees.length; wi++) {
+      items.push({ type: "worktree", repoIndex: ri, worktreeIndex: wi });
 
-        const wt = repo.worktrees[wi];
-        if (!wt) continue;
-        const wtKey = pendingKey(repo.project, wt.branch);
-        if (wtKey !== expandedWorktreeKey) continue;
+      const wt = repo.worktrees[wi];
+      if (!wt) continue;
+      const wtKey = pendingKey(repo.project, wt.branch);
+      const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
+      if (!isExpanded) continue;
 
-        const sessionName = formatSessionName(basename(wt.path));
+      const sessionName = formatSessionName(basename(wt.path));
 
-        // PR data for this worktree
-        const pr = prData.get(wtKey);
-        if (pr) {
+      // PR data for this worktree
+      const pr = prData.get(wtKey);
+      if (pr) {
+        items.push({
+          type: "detail",
+          repoIndex: ri,
+          worktreeIndex: wi,
+          detailKind: "pr",
+          label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
+          meta: { rollupState: pr.rollupState },
+          action: () =>
+            Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
+              cwd: repo.repoPath,
+            }),
+        });
+      }
+
+      // Panes for this worktree
+      const sessionPanes = panes.get(sessionName);
+      if (sessionPanes && sessionPanes.length > 0) {
+        items.push({
+          type: "detail",
+          repoIndex: ri,
+          worktreeIndex: wi,
+          detailKind: "pane-header",
+          label: `Panes (${sessionPanes.length})`,
+        });
+        for (const pane of sessionPanes) {
           items.push({
             type: "detail",
             repoIndex: ri,
             worktreeIndex: wi,
-            detailKind: "pr",
-            label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
-            meta: { rollupState: pr.rollupState },
-            action: () =>
-              Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
-                cwd: repo.repoPath,
-              }),
+            detailKind: "pane",
+            label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
+            meta: {
+              paneId: pane.paneId,
+              zoomed: pane.zoomed,
+              active: pane.active,
+              window: pane.window,
+              paneIndex: pane.paneIndex,
+              command: pane.command,
+            },
+            action: () => jumpToPane(pane.paneId),
           });
-        }
-
-        // Panes for this worktree
-        const sessionPanes = panes.get(sessionName);
-        if (sessionPanes && sessionPanes.length > 0) {
-          items.push({
-            type: "detail",
-            repoIndex: ri,
-            worktreeIndex: wi,
-            detailKind: "pane-header",
-            label: `Panes (${sessionPanes.length})`,
-          });
-          for (const pane of sessionPanes) {
-            items.push({
-              type: "detail",
-              repoIndex: ri,
-              worktreeIndex: wi,
-              detailKind: "pane",
-              label: `${pane.window}:${pane.paneIndex} ${pane.command}`,
-              meta: {
-                paneId: pane.paneId,
-                zoomed: pane.zoomed,
-                active: pane.active,
-                window: pane.window,
-                paneIndex: pane.paneIndex,
-                command: pane.command,
-              },
-              action: () => jumpToPane(pane.paneId),
-            });
-          }
         }
       }
     }
@@ -259,8 +287,8 @@ function phantomsByProject(
 export function buildTreeRows({
   items,
   repos,
-  expandedRepos,
-  expandedWorktreeKey,
+  expandedRepos = new Set(repos.map((repo) => repo.id)),
+  expandedWorktreeKeys,
   pendingActions,
   maxWidth = Number.POSITIVE_INFINITY,
 }: BuildTreeRowsOptions): TreeRow[] {
@@ -349,7 +377,7 @@ export function buildTreeRows({
     rows.push({ itemIndex: idx, kind: "worktree" });
 
     const wtKey = pendingKey(repo.project, wt.branch);
-    const isExpanded = expandedWorktreeKey === wtKey;
+    const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
     const pending = pendingActions.get(wtKey);
     // opening/closing/stopping worktrees render as a single line (no stats
     // row); `starting` falls through to the normal render and can show stats.
@@ -460,28 +488,6 @@ export function scrollToKeepVisible(
  */
 export function isInertTreeItem(item: TreeItem | undefined): boolean {
   return item?.type === "detail" && item.detailKind === "pane-header";
-}
-
-/**
- * Resolve the owning worktree key for an item (a worktree row's own key, or a
- * detail row's owning-worktree key) and compare it to `expandedWorktreeKey`.
- * Used by the click handler to decide whether a click stays in Expanded mode.
- */
-export function isWithinExpandedSubtree(
-  items: TreeItem[],
-  itemIndex: number,
-  expandedWorktreeKey: string | null,
-  repos: RepoInfo[],
-): boolean {
-  if (!expandedWorktreeKey) return false;
-  const worktreeIndex = findOwningWorktreeIndex(items, itemIndex);
-  if (worktreeIndex === null) return false;
-  const worktree = items[worktreeIndex];
-  if (worktree?.type !== "worktree") return false;
-  const repo = repos[worktree.repoIndex];
-  const wt = repo?.worktrees[worktree.worktreeIndex];
-  if (!repo || !wt) return false;
-  return pendingKey(repo.project, wt.branch) === expandedWorktreeKey;
 }
 
 /**
@@ -631,7 +637,6 @@ export function resolveExpandedRightArrowAction({
   repos,
   items,
   selectedIndex,
-  expandedRepos,
 }: ResolveExpandedRightArrowActionOptions): ExpandedRightArrowAction {
   const current = items[selectedIndex];
   if (!current) {
@@ -641,14 +646,6 @@ export function resolveExpandedRightArrowAction({
   const repo = repos[current.repoIndex];
   if (!repo) {
     return { type: "noop" };
-  }
-
-  if (current.type === "repo") {
-    if (expandedRepos.has(repo.id)) {
-      return { type: "noop" };
-    }
-
-    return { type: "expand-repo", repoId: repo.id };
   }
 
   if (current.type !== "worktree") {
@@ -662,8 +659,8 @@ export function resolveExpandedRightArrowAction({
 
   return {
     type: "expand-worktree",
-    nextMode: Mode.Expanded(pendingKey(repo.project, worktree.branch)),
-    nextSelectedIndex: adjustIndexForDetailCollapse(items, selectedIndex),
+    worktreeKey: pendingKey(repo.project, worktree.branch),
+    nextSelectedIndex: selectedIndex,
   };
 }
 

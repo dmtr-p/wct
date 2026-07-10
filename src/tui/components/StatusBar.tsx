@@ -10,6 +10,7 @@ interface Props {
   selectedPaneRow?: boolean;
   hasClient?: boolean;
   repoError?: string;
+  canCollapse?: boolean;
 }
 
 function join(...parts: (string | false)[]): string {
@@ -20,13 +21,14 @@ function getHints(
   mode: Mode,
   selectedPaneRow?: boolean,
   hasClient = true,
+  canCollapse = false,
 ): [string, string] {
   switch (mode.type) {
     case "Navigate":
       return [
         join(
           "↑↓:navigate",
-          "←→:expand/collapse",
+          "→:details",
           hasClient && "space:switch",
           "o:open",
           "a:add",
@@ -42,7 +44,7 @@ function getHints(
         return [
           join(
             "↑↓:navigate",
-            "←:collapse",
+            canCollapse && "←:collapse",
             hasClient && "space:jump",
             hasClient && "z:zoom",
             hasClient && "x:kill",
@@ -53,7 +55,7 @@ function getHints(
       return [
         join(
           "↑↓:navigate",
-          "←:collapse",
+          canCollapse && "←:collapse",
           hasClient && "space:action",
           "o:open",
           "a:add",
@@ -126,6 +128,7 @@ export function StatusBar({
   selectedPaneRow,
   hasClient,
   repoError,
+  canCollapse,
 }: Props) {
   const { columns: cols } = useWindowSize();
   const divider = "─".repeat(Math.max(1, cols));
@@ -136,7 +139,12 @@ export function StatusBar({
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce"
   ) {
-    const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
+    const [line1, line2] = getHints(
+      mode,
+      selectedPaneRow,
+      hasClient,
+      canCollapse,
+    );
     return (
       <Box flexDirection="column">
         <ChromeLine dimColor>{divider}</ChromeLine>
@@ -160,7 +168,12 @@ export function StatusBar({
     );
   }
 
-  const [line1, line2] = getHints(mode, selectedPaneRow, hasClient);
+  const [line1, line2] = getHints(
+    mode,
+    selectedPaneRow,
+    hasClient,
+    canCollapse,
+  );
   return (
     <Box flexDirection="column">
       <ChromeLine dimColor>{divider}</ChromeLine>

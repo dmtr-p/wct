@@ -1,11 +1,11 @@
 import type { Key } from "ink";
 import type { TmuxSessionInfo } from "../hooks/useTmux";
 import {
-  adjustIndexForDetailCollapse,
+  findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
   resolveSelectedPane,
 } from "../tree-helpers";
-import { Mode, type PaneInfo } from "../types";
+import { Mode, type PaneInfo, pendingKey } from "../types";
 import type { NavigateContext } from "./navigate";
 
 export interface ExpandedContext extends NavigateContext {
@@ -14,6 +14,7 @@ export interface ExpandedContext extends NavigateContext {
   zoomPane: (paneId: string) => Promise<boolean>;
   killPane: (paneId: string) => Promise<boolean>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
+  collapseWorktree: (worktreeKey: string) => void;
 }
 
 export function handleExpandedInput(
@@ -21,11 +22,20 @@ export function handleExpandedInput(
   input: string,
   key: Key,
 ): void {
-  if (key.leftArrow || key.escape) {
-    ctx.setSelectedIndex(
-      adjustIndexForDetailCollapse(ctx.treeItems, ctx.selectedIndex),
+  if (key.leftArrow) {
+    const worktreeIndex = findOwningWorktreeIndex(
+      ctx.treeItems,
+      ctx.selectedIndex,
     );
-    ctx.setMode(Mode.Navigate);
+    if (worktreeIndex === null) return;
+    const item = ctx.treeItems[worktreeIndex];
+    if (item?.type !== "worktree") return;
+    const repo = ctx.filteredRepos[item.repoIndex];
+    const worktree = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !worktree) return;
+
+    ctx.setSelectedIndex(worktreeIndex);
+    ctx.collapseWorktree(pendingKey(repo.project, worktree.branch));
     return;
   }
 
@@ -44,17 +54,11 @@ export function handleExpandedInput(
       repos: ctx.filteredRepos,
       items: ctx.treeItems,
       selectedIndex: ctx.selectedIndex,
-      expandedRepos: ctx.expandedRepos,
     });
-
-    if (action.type === "expand-repo") {
-      ctx.toggleExpanded(action.repoId);
-      return;
-    }
 
     if (action.type === "expand-worktree") {
       ctx.setSelectedIndex(action.nextSelectedIndex);
-      ctx.setMode(action.nextMode);
+      ctx.expandWorktree(action.worktreeKey);
     }
 
     return;

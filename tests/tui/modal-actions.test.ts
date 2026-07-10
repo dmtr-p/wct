@@ -93,12 +93,26 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     handleStartResult: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue(undefined),
     upModalReturnModeRef: { current: Mode.Navigate },
+    modalReturnModeRef: { current: Mode.Navigate },
     upModalReturnSelectedIndexRef: { current: 0 },
     ...overrides,
   };
 }
 
 describe("createPrepareOpenModal", () => {
+  test("remembers Expanded mode for modal return", () => {
+    const expanded = Mode.Expanded("proj/feat");
+    const returnModeRef = { current: Mode.Navigate };
+    const deps = makeDeps({
+      mode: expanded,
+      modalReturnModeRef: returnModeRef,
+    });
+
+    createPrepareOpenModal(deps)();
+
+    expect(returnModeRef.current).toEqual(expanded);
+  });
+
   test("extracts base, profiles, project, repoPath from selected worktree item", () => {
     const items: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
@@ -842,6 +856,19 @@ describe("createHandleUpSubmit", () => {
 });
 
 describe("createPrepareAddProjectModal", () => {
+  test("remembers Expanded mode for modal return", () => {
+    const expanded = Mode.Expanded("proj/feat");
+    const returnModeRef = { current: Mode.Navigate };
+    const deps = makeDeps({
+      mode: expanded,
+      modalReturnModeRef: returnModeRef,
+    });
+
+    createPrepareAddProjectModal(deps)();
+
+    expect(returnModeRef.current).toEqual(expanded);
+  });
+
   test("sets mode to AddProjectModal", () => {
     const deps = makeDeps();
     const prepare = createPrepareAddProjectModal(deps);

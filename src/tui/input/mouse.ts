@@ -1,10 +1,6 @@
 import type { RepoInfo } from "../hooks/useRegistry";
-import {
-  isInertTreeItem,
-  isWithinExpandedSubtree,
-  type TreeRow,
-} from "../tree-helpers";
-import type { Mode, TreeItem } from "../types";
+import { isInertTreeItem, type TreeRow } from "../tree-helpers";
+import { type Mode, pendingKey, type TreeItem } from "../types";
 
 /**
  * Rows of fixed chrome above the tree viewport: the `wct` header line + a blank
@@ -69,6 +65,63 @@ export type MouseEvent =
       col: number;
       row: number;
     };
+
+export interface MouseClickHistory {
+  targetId: string;
+  timestamp: number;
+}
+
+export const DOUBLE_CLICK_INTERVAL_MS = 400;
+
+export function mouseClickTargetId(itemId: string, rowIndex: number): string {
+  return `${itemId}:row:${rowIndex}`;
+}
+
+export function detectDoubleClick(
+  previous: MouseClickHistory | null,
+  targetId: string,
+  timestamp: number,
+): { isDoubleClick: boolean; history: MouseClickHistory | null } {
+  const elapsed = previous ? timestamp - previous.timestamp : -1;
+  const isDoubleClick =
+    previous?.targetId === targetId &&
+    elapsed >= 0 &&
+    elapsed <= DOUBLE_CLICK_INTERVAL_MS;
+  return {
+    isDoubleClick,
+    history: isDoubleClick ? null : { targetId, timestamp },
+  };
+}
+
+export type TreeDoubleClickAction =
+  | { type: "noop" }
+  | { type: "expand-worktree"; worktreeKey: string }
+  | { type: "collapse-worktree"; worktreeKey: string }
+  | { type: "activate-detail"; action: () => void };
+
+export function resolveTreeDoubleClickAction(
+  item: TreeItem,
+  repos: RepoInfo[],
+  expandedWorktreeKeys: Set<string>,
+): TreeDoubleClickAction {
+  if (item.type === "worktree") {
+    const repo = repos[item.repoIndex];
+    const worktree = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !worktree) return { type: "noop" };
+    const worktreeKey = pendingKey(repo.project, worktree.branch);
+    return expandedWorktreeKeys.has(worktreeKey)
+      ? { type: "collapse-worktree", worktreeKey }
+      : { type: "expand-worktree", worktreeKey };
+  }
+  if (
+    item.type === "detail" &&
+    (item.detailKind === "pr" || item.detailKind === "pane") &&
+    item.action
+  ) {
+    return { type: "activate-detail", action: item.action };
+  }
+  return { type: "noop" };
+}
 
 /**
  * True for ANY SGR mouse escape sequence — press, release, motion/drag, and
@@ -151,14 +204,12 @@ export interface MouseActionContext {
   viewportRows: number;
   treeItems: TreeItem[];
   repos: RepoInfo[];
-  expandedWorktreeKey: string | null;
 }
 
 export type MouseAction =
   | { kind: "none" }
   | { kind: "scroll"; delta: 1 | -1 }
-  | { kind: "select"; itemIndex: number }
-  | { kind: "selectAndExitExpanded"; itemIndex: number };
+  | { kind: "select"; itemIndex: number; rowIndex: number };
 
 /**
  * Resolve a parsed mouse event into a pure description of what should happen,
@@ -167,10 +218,9 @@ export type MouseAction =
  * still swallowed upstream so no escape garble reaches the screen).
  *
  * - Wheel → scroll only; the selection is untouched and may scroll out of view.
- * - Left-click → hit-test the row under the cursor and select it. In Expanded
- *   mode, a click within the expanded worktree's subtree stays; a click outside
- *   exits to Navigate. Non-left buttons and clicks on chrome/phantom rows or
- *   inert pane-header rows (which keyboard navigation also skips) are `none`.
+ * - Left-click → hit-test the row under the cursor and select it. Activation
+ *   is resolved separately after double-click detection. Non-left buttons and
+ *   clicks on chrome/phantom rows or inert pane headers are `none`.
  */
 export function resolveMouseAction(
   event: MouseEvent,
@@ -205,21 +255,9 @@ export function resolveMouseAction(
     return { kind: "none" };
   }
 
-  if (ctx.mode.type === "Navigate") {
-    return { kind: "select", itemIndex };
-  }
-
-  // Expanded: stay if the click landed within the expanded worktree's subtree,
-  // otherwise exit to Navigate and select the clicked row.
-  if (
-    isWithinExpandedSubtree(
-      ctx.treeItems,
-      itemIndex,
-      ctx.expandedWorktreeKey,
-      ctx.repos,
-    )
-  ) {
-    return { kind: "select", itemIndex };
-  }
-  return { kind: "selectAndExitExpanded", itemIndex };
+  return {
+    kind: "select",
+    itemIndex,
+    rowIndex: ctx.effectiveScrollOffset + viewportRow,
+  };
 }

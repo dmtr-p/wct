@@ -176,22 +176,19 @@ When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace stor
 
 ## TUI
 
-`wct tui` opens an interactive sidebar for browsing repos and worktrees, switching tmux sessions, and managing worktrees from the keyboard. Use `↑`/`↓` to move, `←`/`→` to expand/collapse, and the on-screen hints at the bottom for the rest.
+`wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
 
 ### Mouse
 
 Mouse support is **on by default**:
 
 - **Wheel** scrolls the worktree viewport one row per tick. The selection stays put and may scroll out of view — the wheel never moves the cursor.
-- **Left-click** selects the row under the cursor. Click only selects; it never activates. All activation (switching sessions, expanding) stays on the keyboard.
+- **Left-click** selects a row.
+- **Double-click** expands or collapses a branch, opens a PR, or switches to a tmux pane.
 
-Mouse works in the **Navigate** and **Expanded** views only; modals and Search are mouse-free. In the Expanded view, clicking a row outside the expanded worktree's subtree returns to Navigate and selects that row.
+Mouse works in the Navigate and Expanded views only; modals and Search are mouse-free. Set `WCT_DISABLE_MOUSE=1` to disable it.
 
-**Disabling it:** set `WCT_DISABLE_MOUSE=1` to turn the whole feature off. It's an environment variable rather than a `.wct.yaml` key because the TUI is a global, cross-repo view while config is per-project.
-
-**Text selection:** while mouse reporting is on, the terminal intercepts click-drag, so its native text selection is unavailable. Hold **Shift** while dragging (works in most terminals) to bypass the app and select/copy text normally.
-
-**tmux:** if you run tmux with `set -g mouse on`, both tmux and wct enable mouse reporting and can fight over events. `WCT_DISABLE_MOUSE=1` is the escape hatch.
+Hold **Shift** while dragging to use native terminal text selection. If tmux mouse mode conflicts with the TUI, use `WCT_DISABLE_MOUSE=1`.
 
 ## Development
 

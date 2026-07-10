@@ -7,14 +7,13 @@ export interface NavigateContext {
   treeItems: TreeItem[];
   filteredRepos: RepoInfo[];
   selectedIndex: number;
-  expandedRepos: Set<string>;
   tmuxClient: TmuxClient | null;
 
   setMode: (m: Mode) => void;
   setSearchQuery: (q: string) => void;
+  expandWorktree: (worktreeKey: string) => void;
 
   navigateTree: (dir: 1 | -1) => void;
-  toggleExpanded: (repoId: string) => void;
   prepareOpenModal: () => void;
   prepareUpModal: () => void;
   handleSpaceSwitch: () => void;
@@ -86,23 +85,10 @@ export function handleNavigateInput(
       ? currentRepo.worktrees[currentItem.worktreeIndex]
       : undefined;
 
-  if (key.leftArrow && currentItem.type === "repo") {
-    if (ctx.expandedRepos.has(currentRepo.id)) {
-      ctx.toggleExpanded(currentRepo.id);
-    }
-    return;
-  }
-
   if (key.rightArrow) {
-    if (currentItem.type === "repo") {
-      if (!ctx.expandedRepos.has(currentRepo.id)) {
-        ctx.toggleExpanded(currentRepo.id);
-      }
-      return;
-    }
     if (currentItem.type === "worktree" && currentWorktree) {
-      ctx.setMode(
-        Mode.Expanded(pendingKey(currentRepo.project, currentWorktree.branch)),
+      ctx.expandWorktree(
+        pendingKey(currentRepo.project, currentWorktree.branch),
       );
       return;
     }

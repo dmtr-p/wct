@@ -14,13 +14,15 @@ export function WorktreeStatsRow({ sync, changedFiles }: Props) {
   const hasSync = sync && sync !== "✓";
   return (
     <Box>
-      <Text>{"        "}</Text>
-      {hasSync ? <Text dimColor>{sync}</Text> : null}
-      {changedFiles > 0 ? (
-        <Text color="yellow">
-          {hasSync ? " " : ""}~{changedFiles}
-        </Text>
-      ) : null}
+      <Text wrap="truncate">
+        {"       "}
+        {hasSync ? <Text dimColor>{sync}</Text> : null}
+        {changedFiles > 0 ? (
+          <Text color="yellow">
+            {hasSync ? " " : ""}~{changedFiles}
+          </Text>
+        ) : null}
+      </Text>
     </Box>
   );
 }

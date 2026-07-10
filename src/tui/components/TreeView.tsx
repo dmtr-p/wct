@@ -21,7 +21,6 @@ import { WorktreeStatsRow } from "./WorktreeStatsRow";
 interface Props {
   repos: RepoInfo[];
   sessions: Array<{ name: string; attached: boolean }>;
-  expandedRepos: Set<string>;
   selectedIndex: number;
   items: TreeItem[];
   /**
@@ -34,7 +33,7 @@ interface Props {
   pendingActions: Map<string, PendingAction>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
-  expandedWorktreeKey: string | null;
+  expandedWorktreeKeys?: Set<string>;
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
@@ -58,14 +57,13 @@ export function getDetailRowKey(
 export function TreeView({
   repos,
   sessions,
-  expandedRepos,
   selectedIndex,
   items,
   rows,
   pendingActions,
   prData,
   panes,
-  expandedWorktreeKey,
+  expandedWorktreeKeys,
   maxWidth,
   refreshingProjects,
   errors,
@@ -94,8 +92,7 @@ export function TreeView({
       items,
       selectedIndex,
       selectedItem,
-      expandedRepos,
-      expandedWorktreeKey,
+      expandedWorktreeKeys,
       sessionMap,
       prData,
       panes,
@@ -115,8 +112,7 @@ interface RenderRowContext {
   items: TreeItem[];
   selectedIndex: number;
   selectedItem: TreeItem | undefined;
-  expandedRepos: Set<string>;
-  expandedWorktreeKey: string | null;
+  expandedWorktreeKeys?: Set<string>;
   sessionMap: Map<string, { name: string; attached: boolean }>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
@@ -184,7 +180,6 @@ function renderRepoRow(idx: number, ctx: RenderRowContext): React.ReactNode {
     <RepoNode
       key={`repo-${repo.id}`}
       project={repo.project}
-      expanded={ctx.expandedRepos.has(repo.id)}
       isSelected={idx === ctx.selectedIndex}
       isChildSelected={childSelected}
       maxWidth={ctx.maxWidth}
@@ -231,7 +226,7 @@ function renderWorktreeRow(
       isSelected={idx === ctx.selectedIndex}
       isChildSelected={wtChildSelected}
       pendingStatus={pending?.type}
-      isExpanded={ctx.expandedWorktreeKey === wtKey}
+      isExpanded={ctx.expandedWorktreeKeys?.has(wtKey) ?? false}
       hasExpandableData={!!hasExpandableData}
       maxWidth={ctx.maxWidth}
     />

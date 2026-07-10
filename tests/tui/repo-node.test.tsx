@@ -47,7 +47,6 @@ describe("RepoNode", () => {
     // overhead=4, project="my-project" (10), available=36 → no truncation
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
-      expanded: false,
       isSelected: false,
       isChildSelected: false,
       maxWidth: 40,
@@ -57,27 +56,25 @@ describe("RepoNode", () => {
   });
 
   test("truncates project name when maxWidth is tight", async () => {
-    // overhead=4, project="my-project" (10), maxWidth=10 → available=6 → "my-pr…"
+    // One-column inset leaves 9 columns for the project name.
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
-      expanded: false,
       isSelected: false,
       isChildSelected: false,
       maxWidth: 10,
     });
-    expect(output).toContain("my-pr…");
+    expect(output).toContain("my-proje…");
     expect(output).not.toContain("my-project");
     unmount();
   });
 
   test("renders full name at exact available width", async () => {
-    // overhead=4, project="my-project" (10), maxWidth=14 → available=10 → fits exactly
+    // One-column inset + ten-column project name fits exactly.
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
-      expanded: false,
       isSelected: false,
       isChildSelected: false,
-      maxWidth: 14,
+      maxWidth: 11,
     });
     expect(output).toContain("my-project");
     unmount();

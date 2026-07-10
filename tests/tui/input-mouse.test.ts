@@ -1,12 +1,15 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
+  detectDoubleClick,
   HEADER_OFFSET,
   isMouseSequence,
   isX10MousePrefix,
   type MouseActionContext,
+  mouseClickTargetId,
   parseSgrMouse,
   resolveMouseAction,
+  resolveTreeDoubleClickAction,
   splitMouseSequences,
 } from "../../src/tui/input/mouse";
 import {
@@ -128,6 +131,88 @@ describe("parseSgrMouse", () => {
       button: "left",
       col: 5,
       row: 6,
+    });
+  });
+});
+
+describe("double-click actions", () => {
+  test("requires two clicks on the same target within the interval", () => {
+    const first = detectDoubleClick(null, "wt:alpha/a", 1000);
+    expect(first.isDoubleClick).toBe(false);
+    expect(detectDoubleClick(first.history, "wt:alpha/a", 1300)).toEqual({
+      isDoubleClick: true,
+      history: null,
+    });
+    expect(
+      detectDoubleClick(first.history, "wt:alpha/b", 1300).isDoubleClick,
+    ).toBe(false);
+    expect(
+      detectDoubleClick(first.history, "wt:alpha/a", 1500).isDoubleClick,
+    ).toBe(false);
+  });
+
+  test("treats different wrapped lines of one item as different targets", () => {
+    const first = detectDoubleClick(
+      null,
+      mouseClickTargetId("detail:alpha/pr-1", 4),
+      1000,
+    );
+    expect(
+      detectDoubleClick(
+        first.history,
+        mouseClickTargetId("detail:alpha/pr-1", 5),
+        1200,
+      ).isDoubleClick,
+    ).toBe(false);
+  });
+
+  test("toggles worktrees and activates only PR or pane details", () => {
+    const repo = {
+      id: "repo-1",
+      repoPath: "/tmp/alpha",
+      project: "alpha",
+      worktrees: [
+        {
+          branch: "feature/a",
+          path: "/tmp/a",
+          isMainWorktree: false,
+          changedFiles: 0,
+          sync: null,
+        },
+      ],
+      profileNames: [],
+      ideDefaults: { baseNoIde: true, profileNoIde: {} },
+    } satisfies RepoInfo;
+    const worktree = {
+      type: "worktree",
+      repoIndex: 0,
+      worktreeIndex: 0,
+    } as const;
+    const key = pendingKey("alpha", "feature/a");
+    expect(resolveTreeDoubleClickAction(worktree, [repo], new Set())).toEqual({
+      type: "expand-worktree",
+      worktreeKey: key,
+    });
+    expect(
+      resolveTreeDoubleClickAction(worktree, [repo], new Set([key])),
+    ).toEqual({
+      type: "collapse-worktree",
+      worktreeKey: key,
+    });
+
+    const action = () => undefined;
+    const pr = {
+      type: "detail",
+      repoIndex: 0,
+      worktreeIndex: 0,
+      detailKind: "pr",
+      label: "PR #1",
+      meta: { rollupState: null },
+      action,
+    } as const;
+    expect(resolveTreeDoubleClickAction(pr, [repo], new Set())).toEqual({
+      type: "activate-detail",
+      action,
     });
   });
 });
@@ -356,10 +441,12 @@ function buildCtx(
   panes: Map<string, PaneInfo[]> = new Map(),
 ): MouseActionContext {
   const expandedRepos = new Set(["repo-1", "repo-2"]);
+  const expandedWorktreeKeys = expandedWorktreeKey
+    ? new Set([expandedWorktreeKey])
+    : new Set<string>();
   const treeItems = buildTreeItems({
     repos,
-    expandedRepos,
-    expandedWorktreeKey,
+    expandedWorktreeKeys,
     prData: new Map(),
     panes,
     jumpToPane: () => undefined,
@@ -368,7 +455,7 @@ function buildCtx(
     items: treeItems,
     repos,
     expandedRepos,
-    expandedWorktreeKey,
+    expandedWorktreeKeys,
     pendingActions: new Map(),
   });
   return {
@@ -378,7 +465,6 @@ function buildCtx(
     viewportRows: rows.length,
     treeItems,
     repos,
-    expandedWorktreeKey,
     ...overrides,
   };
 }
@@ -406,7 +492,7 @@ describe("resolveMouseAction", () => {
         { kind: "press", button: "left", col: 3, row: sgrRow },
         ctx,
       ),
-    ).toEqual({ kind: "select", itemIndex: 1 });
+    ).toEqual({ kind: "select", itemIndex: 1, rowIndex: 1 });
   });
 
   test("non-left buttons resolve to none", () => {
@@ -466,10 +552,10 @@ describe("resolveMouseAction", () => {
         { kind: "press", button: "left", col: 3, row: sgrRow },
         ctx,
       ),
-    ).toEqual({ kind: "select", itemIndex: 1 });
+    ).toEqual({ kind: "select", itemIndex: 1, rowIndex: 1 });
   });
 
-  test("Expanded: outside-subtree click exits to Navigate and selects", () => {
+  test("Expanded: outside-subtree click selects without collapsing", () => {
     const key = pendingKey("alpha", "feature/a");
     const ctx = buildCtx(Mode.Expanded(key), key);
     // Click the sibling worktree feature/b. Find its row index in rows.
@@ -485,7 +571,7 @@ describe("resolveMouseAction", () => {
         { kind: "press", button: "left", col: 3, row: sgrRow },
         ctx,
       ),
-    ).toEqual({ kind: "selectAndExitExpanded", itemIndex });
+    ).toEqual({ kind: "select", itemIndex, rowIndex });
   });
 
   test("a click on an inert pane-header row resolves to none, but a pane row selects (keyboard parity)", () => {
@@ -549,7 +635,11 @@ describe("resolveMouseAction", () => {
         },
         ctx,
       ),
-    ).toEqual({ kind: "select", itemIndex: paneItemIndex });
+    ).toEqual({
+      kind: "select",
+      itemIndex: paneItemIndex,
+      rowIndex: paneRowIndex,
+    });
   });
 
   test("Expanded: a click on a wrapped PR's continuation row selects the PR", () => {
@@ -570,8 +660,7 @@ describe("resolveMouseAction", () => {
     const expandedRepos = new Set(["repo-1", "repo-2"]);
     const treeItems = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: key,
+      expandedWorktreeKeys: new Set([key]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -580,7 +669,7 @@ describe("resolveMouseAction", () => {
       items: treeItems,
       repos,
       expandedRepos,
-      expandedWorktreeKey: key,
+      expandedWorktreeKeys: new Set([key]),
       pendingActions: new Map(),
       maxWidth: 40, // forces the PR title to wrap
     });
@@ -591,7 +680,6 @@ describe("resolveMouseAction", () => {
       viewportRows: rows.length,
       treeItems,
       repos,
-      expandedWorktreeKey: key,
     };
 
     // The continuation row carries the PR's own itemIndex, so clicking the
@@ -617,7 +705,11 @@ describe("resolveMouseAction", () => {
         },
         ctx,
       ),
-    ).toEqual({ kind: "select", itemIndex: prItemIndex });
+    ).toEqual({
+      kind: "select",
+      itemIndex: prItemIndex,
+      rowIndex: contRowIndex,
+    });
   });
 
   test("non-interactive modes (Search/modals/confirm) resolve to none", () => {
@@ -659,6 +751,7 @@ describe("resolveMouseAction", () => {
         expect(action).toEqual({
           kind: "select",
           itemIndex: expectedRow.itemIndex,
+          rowIndex: ctx.effectiveScrollOffset + viewportRow,
         });
       }
     }

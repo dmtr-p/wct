@@ -21,25 +21,30 @@ import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
+  detectDoubleClick,
   HEADER_OFFSET,
+  type MouseClickHistory,
   type MouseEvent,
+  mouseClickTargetId,
   resolveMouseAction,
+  resolveTreeDoubleClickAction,
 } from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import {
-  adjustIndexForDetailCollapse,
   buildTreeItems,
   buildTreeRows,
   clampScrollOffset,
   findOwningWorktreeIndex,
   firstRowForItem,
+  reconcileExpandedWorktreeKeys,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
+  resolveTreeReturnMode,
   scrollToKeepVisible,
   treeItemId,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo } from "./types";
+import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -72,8 +77,6 @@ export function App() {
     discoverClient,
   } = useTmux();
 
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
-  const [didInitialExpand, setDidInitialExpand] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
@@ -83,6 +86,9 @@ export function App() {
   const [openModalIdeDefaults, setOpenModalIdeDefaults] =
     useState<SessionIdeDefaults>({ baseNoIde: true, profileNoIde: {} });
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
+  const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
+    new Set(),
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const { actionError, showActionError, clearActionError } = useActionError();
   const [pendingActions, setPendingActions] = useState<
@@ -94,14 +100,9 @@ export function App() {
   const confirmCloseReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
-
-  // Auto-expand all repos on first load
-  useEffect(() => {
-    if (!didInitialExpand && repos.length > 0) {
-      setExpandedRepos(new Set(repos.map((r) => r.id)));
-      setDidInitialExpand(true);
-    }
-  }, [repos, didInitialExpand]);
+  const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
   // Reset selection when search query changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run on searchQuery change
@@ -127,36 +128,37 @@ export function App() {
       );
   }, [repos, searchQuery]);
 
-  const expandedWorktreeKey =
-    mode.type === "Expanded" ||
-    mode.type === "ConfirmKill" ||
-    (mode.type === "UpModal" &&
-      upModalReturnModeRef.current.type === "Expanded") ||
-    (mode.type === "ConfirmDown" &&
-      confirmDownReturnModeRef.current.type === "Expanded") ||
-    ((mode.type === "ConfirmClose" || mode.type === "ConfirmCloseForce") &&
-      confirmCloseReturnModeRef.current.type === "Expanded")
-      ? mode.worktreeKey
-      : null;
+  useEffect(() => {
+    setExpandedWorktreeKeys((previous) =>
+      reconcileExpandedWorktreeKeys(previous, repos),
+    );
+  }, [repos]);
+
+  useEffect(() => {
+    if (
+      mode.type !== "Expanded" ||
+      expandedWorktreeKeys.has(mode.worktreeKey)
+    ) {
+      return;
+    }
+    const remainingKey = expandedWorktreeKeys.values().next().value;
+    setMode(
+      typeof remainingKey === "string"
+        ? Mode.Expanded(remainingKey)
+        : Mode.Navigate,
+    );
+  }, [expandedWorktreeKeys, mode]);
 
   const treeItems = useMemo(
     () =>
       buildTreeItems({
         repos: filteredRepos,
-        expandedRepos,
-        expandedWorktreeKey,
+        expandedWorktreeKeys,
         prData,
         panes,
         jumpToPane,
       }),
-    [
-      filteredRepos,
-      expandedRepos,
-      expandedWorktreeKey,
-      prData,
-      panes,
-      jumpToPane,
-    ],
+    [filteredRepos, expandedWorktreeKeys, prData, panes, jumpToPane],
   );
 
   const statusBarProps = resolveStatusBarProps({
@@ -165,6 +167,29 @@ export function App() {
     selectedIndex,
     repos: filteredRepos,
   });
+  const selectedWorktreeIndex = findOwningWorktreeIndex(
+    treeItems,
+    selectedIndex,
+  );
+  const selectedWorktree =
+    selectedWorktreeIndex === null
+      ? undefined
+      : treeItems[selectedWorktreeIndex];
+  const selectedWorktreeRepo =
+    selectedWorktree?.type === "worktree"
+      ? filteredRepos[selectedWorktree.repoIndex]
+      : undefined;
+  const selectedWorktreeData =
+    selectedWorktree?.type === "worktree"
+      ? selectedWorktreeRepo?.worktrees[selectedWorktree.worktreeIndex]
+      : undefined;
+  const canCollapse = Boolean(
+    selectedWorktreeRepo &&
+      selectedWorktreeData &&
+      expandedWorktreeKeys.has(
+        pendingKey(selectedWorktreeRepo.project, selectedWorktreeData.branch),
+      ),
+  );
 
   const repoError = statusBarProps.selectedProject
     ? githubErrors.get(statusBarProps.selectedProject)
@@ -177,19 +202,11 @@ export function App() {
       buildTreeRows({
         items: treeItems,
         repos: filteredRepos,
-        expandedRepos,
-        expandedWorktreeKey,
+        expandedWorktreeKeys,
         pendingActions,
         maxWidth: termCols,
       }),
-    [
-      treeItems,
-      filteredRepos,
-      expandedRepos,
-      expandedWorktreeKey,
-      pendingActions,
-      termCols,
-    ],
+    [treeItems, filteredRepos, expandedWorktreeKeys, pendingActions, termCols],
   );
 
   // Bottom chrome: optional tmux/action error line (mutually exclusive, so at
@@ -213,7 +230,7 @@ export function App() {
     (tmuxError || actionError ? 1 : 0);
 
   const viewportRows = Math.max(
-    1,
+    0,
     termRows - TOP_CHROME_ROWS - bottomChromeRows,
   );
 
@@ -229,15 +246,7 @@ export function App() {
   //
   // INVARIANT for prevSelectionIdRef: the recovery effect treats it as "the
   // selected item's identity as of the last commit" and normally rewrites it
-  // exactly once per commit. Any handler that BOTH reshapes the tree AND
-  // moves the selection to a different item in the same commit must pre-write
-  // the ref with the NEW selection's identity before calling setSelectedIndex
-  // (see selectAndExitExpanded in handleMouse): when the new index collides
-  // with the current one, setSelectedIndex is a no-op, selectionChanged stays
-  // false, and recovery would otherwise chase the OLD identity through the
-  // reshaped tree and snap the cursor back. Handlers that only move the
-  // selection (no reshape) or preserve the selected item's identity are safe
-  // without it.
+  // exactly once per commit.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
@@ -393,14 +402,19 @@ export function App() {
 
   useRefresh(refreshAll);
 
-  const toggleExpanded = useCallback((repoId: string) => {
-    setExpandedRepos((prev) => {
-      const next = new Set(prev);
-      if (next.has(repoId)) {
-        next.delete(repoId);
-      } else {
-        next.add(repoId);
-      }
+  const expandWorktree = useCallback((worktreeKey: string) => {
+    setExpandedWorktreeKeys((previous) => {
+      const next = new Set(previous);
+      next.add(worktreeKey);
+      return next;
+    });
+    setMode(Mode.Expanded(worktreeKey));
+  }, []);
+
+  const collapseWorktree = useCallback((worktreeKey: string) => {
+    setExpandedWorktreeKeys((previous) => {
+      const next = new Set(previous);
+      next.delete(worktreeKey);
       return next;
     });
   }, []);
@@ -467,18 +481,28 @@ export function App() {
     refreshAll,
     upModalReturnModeRef,
     upModalReturnSelectedIndexRef,
+    modalReturnModeRef,
   });
+
+  const setTreeInputMode = useCallback(
+    (nextMode: Mode) => {
+      if (nextMode.type === "Search") {
+        searchReturnModeRef.current = resolveTreeReturnMode(mode);
+      }
+      setMode(nextMode);
+    },
+    [mode],
+  );
 
   const navCtx: NavigateContext = {
     treeItems,
     filteredRepos,
     selectedIndex,
-    expandedRepos,
     tmuxClient,
-    setMode,
+    setMode: setTreeInputMode,
     setSearchQuery,
+    expandWorktree,
     navigateTree: sessionActions.navigateTree,
-    toggleExpanded,
     prepareOpenModal: modalActions.prepareOpenModal,
     prepareUpModal: modalActions.prepareUpModal,
     prepareAddProjectModal: modalActions.prepareAddProjectModal,
@@ -495,16 +519,17 @@ export function App() {
     zoomPane,
     killPane,
     refreshSessions,
+    collapseWorktree,
   };
 
   function handleSearchInput(input: string, key: Key) {
     if (key.escape) {
-      setMode(Mode.Navigate);
+      setMode(searchReturnModeRef.current);
       setSearchQuery("");
     } else if (key.backspace) {
       setSearchQuery((q) => q.slice(0, -1));
     } else if (key.return) {
-      setMode(Mode.Navigate);
+      setMode(searchReturnModeRef.current);
     } else if (input && !key.ctrl && !key.meta) {
       // Ink's bracketed-paste fallback can deliver a multi-line string as ONE
       // input event. StatusBar budgets the query as exactly one terminal row
@@ -568,44 +593,51 @@ export function App() {
       viewportRows,
       treeItems,
       repos: filteredRepos,
-      expandedWorktreeKey,
     });
     switch (action.kind) {
       case "none":
+        if (event.kind === "press") lastMouseClickRef.current = null;
         return;
       case "scroll":
+        lastMouseClickRef.current = null;
         // Wheel scrolls the viewport only; the selection is untouched.
         setScrollOffset((prev) =>
           clampScrollOffset(prev + action.delta, rows.length, viewportRows),
         );
         return;
-      case "select":
+      case "select": {
         setSelectedIndex(action.itemIndex);
-        return;
-      case "selectAndExitExpanded": {
-        // Collapsing Expanded can remove the clicked item's detail rows (if
-        // the previously-expanded worktree had a PR/tmux detail row), which
-        // shifts every later item's index. Adjust the clicked itemIndex for
-        // that collapse the same way the keyboard left-arrow/escape path does
-        // (src/tui/input/expanded.ts) so the cursor lands on the row the user
-        // actually clicked, not a stale post-collapse index.
-        //
-        // The adjusted index can equal the CURRENT selectedIndex (the clicked
-        // row's post-collapse position collides with the cursor's pre-collapse
-        // one, e.g. rows [A, PR detail, B(selected), C(clicked)]). Then
-        // setSelectedIndex is a no-op, selectionChanged stays false, and the
-        // identity-recovery effect would treat the collapse as a background
-        // tree change and snap the cursor back to the old item. Pre-store the
-        // clicked item's identity (stable across the collapse) so recovery
-        // sees the clicked row as already-current and stays put.
-        const clicked = treeItems[action.itemIndex];
-        prevSelectionIdRef.current = clicked
-          ? treeItemId(clicked, filteredRepos)
-          : null;
-        setMode(Mode.Navigate);
-        setSelectedIndex(
-          adjustIndexForDetailCollapse(treeItems, action.itemIndex),
+        const target = treeItems[action.itemIndex];
+        if (!target) return;
+        const itemId = treeItemId(target, filteredRepos);
+        const targetId = itemId && mouseClickTargetId(itemId, action.rowIndex);
+        if (!targetId) return;
+        const detection = detectDoubleClick(
+          lastMouseClickRef.current,
+          targetId,
+          Date.now(),
         );
+        lastMouseClickRef.current = detection.history;
+        if (!detection.isDoubleClick) return;
+
+        const doubleClickAction = resolveTreeDoubleClickAction(
+          target,
+          filteredRepos,
+          expandedWorktreeKeys,
+        );
+        switch (doubleClickAction.type) {
+          case "expand-worktree":
+            expandWorktree(doubleClickAction.worktreeKey);
+            return;
+          case "collapse-worktree":
+            collapseWorktree(doubleClickAction.worktreeKey);
+            return;
+          case "activate-detail":
+            doubleClickAction.action();
+            return;
+          case "noop":
+            return;
+        }
         return;
       }
     }
@@ -620,6 +652,10 @@ export function App() {
   // text inputs). Actionable events arrive via onMouseEvent, in order.
   useGuardedInput(
     (input, key) => {
+      // Double-clicks require consecutive mouse presses. Any keyboard event
+      // breaks the pair, even when it leaves the same row selected.
+      lastMouseClickRef.current = null;
+
       // Ctrl+C exits from EVERY mode (parity with Ink's default), but through
       // the same disable-mouse-first sequence as `q`: startTui renders with
       // exitOnCtrlC: false precisely so Ctrl+C reaches this handler instead
@@ -723,14 +759,13 @@ export function App() {
           <TreeView
             repos={filteredRepos}
             sessions={sessions}
-            expandedRepos={expandedRepos}
             selectedIndex={selectedIndex}
             items={treeItems}
             rows={rows}
             pendingActions={pendingActions}
             prData={prData}
             panes={panes}
-            expandedWorktreeKey={expandedWorktreeKey}
+            expandedWorktreeKeys={expandedWorktreeKeys}
             maxWidth={termCols}
             refreshingProjects={refreshingProjects}
             errors={githubErrors}
@@ -755,7 +790,7 @@ export function App() {
             isRefreshing={refreshingProjects.has(openModalRepoProject)}
             onRefresh={openModalOnRefresh}
             onSubmit={modalActions.handleOpen}
-            onCancel={() => setMode(Mode.Navigate)}
+            onCancel={() => setMode(modalReturnModeRef.current)}
           />
         ) : mode.type === "UpModal" ? (
           <UpModal
@@ -774,7 +809,7 @@ export function App() {
             visible
             width={Math.min(termCols, 60)}
             onSubmit={modalActions.handleAddProject}
-            onCancel={() => setMode(Mode.Navigate)}
+            onCancel={() => setMode(modalReturnModeRef.current)}
           />
         ) : (
           <Box flexDirection="column">
@@ -792,6 +827,7 @@ export function App() {
               {...statusBarProps}
               searchQuery={searchQuery}
               hasClient={tmuxClient !== null}
+              canCollapse={canCollapse}
               repoError={repoError}
             />
           </Box>

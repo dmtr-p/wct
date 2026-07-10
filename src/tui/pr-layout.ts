@@ -19,16 +19,16 @@
 import { displayWidth, graphemeWidths } from "./utils/display-width";
 
 /** Leading indent columns of a PR detail line. */
-export const PR_INDENT = 6;
-/** Selector-prefix columns ("▸ " / "  "). */
-export const PR_SELECTOR = 2;
+export const PR_INDENT = 5;
+/** Selected rows use a background, so no selector glyph reserves columns. */
+export const PR_SELECTOR = 0;
 /** Rollup-icon columns ("✓ ") when a rollup state is present. */
 export const PR_ICON = 2;
 
 /**
  * Columns consumed before the PR label on its first line. Continuation lines
  * are indented by this same amount so the wrapped text aligns under the label.
- * DetailRow renders exactly this much leading chrome (indent + selector + icon),
+ * DetailRow renders exactly this much leading chrome (indent + icon),
  * so `maxWidth - prLabelStart` is the true per-line budget for the label.
  */
 export function prLabelStart(hasIcon: boolean): number {

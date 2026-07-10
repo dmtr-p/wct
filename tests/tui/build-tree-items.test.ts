@@ -4,11 +4,107 @@ import { formatSessionName } from "../../src/services/tmux";
 import {
   buildTreeItems,
   findOwningWorktreeIndex,
+  reconcileExpandedWorktreeKeys,
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
 import { type PaneInfo, pendingKey, type TreeItem } from "../../src/tui/types";
 
 describe("buildTreeItems", () => {
+  test("preserves expanded keys for errored repo snapshots", () => {
+    const alphaKey = pendingKey("alpha", "feature/a");
+    const betaKey = pendingKey("beta", "feature/b");
+    const previous = new Set([alphaKey, betaKey]);
+    const repos = [
+      {
+        id: "repo-1",
+        repoPath: "/tmp/alpha",
+        project: "alpha",
+        worktrees: [],
+        profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+        error: "Failed to inspect repository",
+      },
+      {
+        id: "repo-2",
+        repoPath: "/tmp/beta",
+        project: "beta",
+        worktrees: [],
+        profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+      },
+    ];
+
+    expect(reconcileExpandedWorktreeKeys(previous, repos)).toEqual(
+      new Set([alphaKey]),
+    );
+  });
+
+  test("keeps detail rows for multiple expanded worktrees", () => {
+    const repos = [
+      {
+        id: "repo-1",
+        repoPath: "/tmp/example-repo",
+        project: "example",
+        worktrees: ["main", "feature"].map((branch) => ({
+          branch,
+          path: `/tmp/example-${branch}`,
+          isMainWorktree: branch === "main",
+          changedFiles: 0,
+          sync: null,
+        })),
+        profileNames: [],
+        ideDefaults: { baseNoIde: true, profileNoIde: {} },
+      },
+    ];
+    const prData = new Map([
+      [
+        pendingKey("example", "main"),
+        {
+          number: 1,
+          title: "Main PR",
+          state: "OPEN" as const,
+          headRefName: "main",
+          rollupState: null,
+        },
+      ],
+      [
+        pendingKey("example", "feature"),
+        {
+          number: 2,
+          title: "Feature PR",
+          state: "OPEN" as const,
+          headRefName: "feature",
+          rollupState: null,
+        },
+      ],
+    ]);
+
+    const items = buildTreeItems({
+      repos,
+      expandedWorktreeKeys: new Set([
+        pendingKey("example", "main"),
+        pendingKey("example", "feature"),
+      ]),
+      prData,
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+
+    expect(
+      items.map((item) =>
+        item.type === "detail"
+          ? `${item.type}:${item.worktreeIndex}:${item.detailKind}`
+          : `${item.type}:${item.type === "worktree" ? item.worktreeIndex : ""}`,
+      ),
+    ).toEqual([
+      "repo:",
+      "worktree:0",
+      "detail:0:pr",
+      "worktree:1",
+      "detail:1:pr",
+    ]);
+  });
+
   test("passes zoomed and active pane metadata into pane detail rows", () => {
     const repoPath = "/tmp/example-repo";
     const branch = "feature/zoomed-pane";
@@ -43,8 +139,7 @@ describe("buildTreeItems", () => {
           ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
-      expandedRepos: new Set(["repo-1"]),
-      expandedWorktreeKey: pendingKey("example", branch),
+      expandedWorktreeKeys: new Set([pendingKey("example", branch)]),
       prData: new Map(),
       panes: new Map([[sessionName, panes]]),
       jumpToPane: () => undefined,
@@ -106,8 +201,7 @@ describe("buildTreeItems", () => {
           ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
-      expandedRepos: new Set(["repo-1"]),
-      expandedWorktreeKey: pendingKey("example", branch),
+      expandedWorktreeKeys: new Set([pendingKey("example", branch)]),
       prData: new Map(),
       panes: new Map([[sessionName, sessionPanes]]),
       jumpToPane: () => undefined,

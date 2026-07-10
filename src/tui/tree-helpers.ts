@@ -16,10 +16,7 @@ import {
 
 interface BuildTreeOptions {
   repos: RepoInfo[];
-  /** Repos are always expanded in production; retained for row-model callers. */
-  expandedRepos?: Set<string>;
   expandedWorktreeKeys?: Set<string>;
-  expandedWorktreeKey?: string | null;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
@@ -31,8 +28,6 @@ interface BuildTreeRowsOptions {
   /** Repos are always expanded in production; retained for test fixtures. */
   expandedRepos?: Set<string>;
   expandedWorktreeKeys?: Set<string>;
-  /** Compatibility for callers that model one expanded worktree. */
-  expandedWorktreeKey?: string | null;
   pendingActions: Map<string, PendingAction>;
   /**
    * Terminal width in columns, used to count how many terminal lines a PR
@@ -173,7 +168,6 @@ export function reconcileExpandedWorktreeKeys(
 export function buildTreeItems({
   repos,
   expandedWorktreeKeys,
-  expandedWorktreeKey,
   prData,
   panes,
   jumpToPane,
@@ -192,8 +186,7 @@ export function buildTreeItems({
       const wt = repo.worktrees[wi];
       if (!wt) continue;
       const wtKey = pendingKey(repo.project, wt.branch);
-      const isExpanded =
-        expandedWorktreeKeys?.has(wtKey) ?? expandedWorktreeKey === wtKey;
+      const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
       if (!isExpanded) continue;
 
       const sessionName = formatSessionName(basename(wt.path));
@@ -296,7 +289,6 @@ export function buildTreeRows({
   repos,
   expandedRepos = new Set(repos.map((repo) => repo.id)),
   expandedWorktreeKeys,
-  expandedWorktreeKey,
   pendingActions,
   maxWidth = Number.POSITIVE_INFINITY,
 }: BuildTreeRowsOptions): TreeRow[] {
@@ -385,8 +377,7 @@ export function buildTreeRows({
     rows.push({ itemIndex: idx, kind: "worktree" });
 
     const wtKey = pendingKey(repo.project, wt.branch);
-    const isExpanded =
-      expandedWorktreeKeys?.has(wtKey) ?? expandedWorktreeKey === wtKey;
+    const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
     const pending = pendingActions.get(wtKey);
     // opening/closing/stopping worktrees render as a single line (no stats
     // row); `starting` falls through to the normal render and can show stats.
@@ -497,28 +488,6 @@ export function scrollToKeepVisible(
  */
 export function isInertTreeItem(item: TreeItem | undefined): boolean {
   return item?.type === "detail" && item.detailKind === "pane-header";
-}
-
-/**
- * Resolve the owning worktree key for an item (a worktree row's own key, or a
- * detail row's owning-worktree key) and compare it to `expandedWorktreeKey`.
- * Used by the click handler to decide whether a click stays in Expanded mode.
- */
-export function isWithinExpandedSubtree(
-  items: TreeItem[],
-  itemIndex: number,
-  expandedWorktreeKey: string | null,
-  repos: RepoInfo[],
-): boolean {
-  if (!expandedWorktreeKey) return false;
-  const worktreeIndex = findOwningWorktreeIndex(items, itemIndex);
-  if (worktreeIndex === null) return false;
-  const worktree = items[worktreeIndex];
-  if (worktree?.type !== "worktree") return false;
-  const repo = repos[worktree.repoIndex];
-  const wt = repo?.worktrees[worktree.worktreeIndex];
-  if (!repo || !wt) return false;
-  return pendingKey(repo.project, wt.branch) === expandedWorktreeKey;
 }
 
 /**

@@ -23,6 +23,7 @@ import { handleExpandedInput } from "./input/expanded";
 import {
   detectDoubleClick,
   HEADER_OFFSET,
+  mouseClickTargetId,
   type MouseClickHistory,
   type MouseEvent,
   resolveMouseAction,
@@ -43,7 +44,7 @@ import {
   scrollToKeepVisible,
   treeItemId,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo } from "./types";
+import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -127,10 +128,6 @@ export function App() {
       );
   }, [repos, searchQuery]);
 
-  const expandedRepos = useMemo(
-    () => new Set(filteredRepos.map((repo) => repo.id)),
-    [filteredRepos],
-  );
   useEffect(() => {
     setExpandedWorktreeKeys((previous) =>
       reconcileExpandedWorktreeKeys(previous, repos),
@@ -170,6 +167,29 @@ export function App() {
     selectedIndex,
     repos: filteredRepos,
   });
+  const selectedWorktreeIndex = findOwningWorktreeIndex(
+    treeItems,
+    selectedIndex,
+  );
+  const selectedWorktree =
+    selectedWorktreeIndex === null
+      ? undefined
+      : treeItems[selectedWorktreeIndex];
+  const selectedWorktreeRepo =
+    selectedWorktree?.type === "worktree"
+      ? filteredRepos[selectedWorktree.repoIndex]
+      : undefined;
+  const selectedWorktreeData =
+    selectedWorktree?.type === "worktree"
+      ? selectedWorktreeRepo?.worktrees[selectedWorktree.worktreeIndex]
+      : undefined;
+  const canCollapse = Boolean(
+    selectedWorktreeRepo &&
+      selectedWorktreeData &&
+      expandedWorktreeKeys.has(
+        pendingKey(selectedWorktreeRepo.project, selectedWorktreeData.branch),
+      ),
+  );
 
   const repoError = statusBarProps.selectedProject
     ? githubErrors.get(statusBarProps.selectedProject)
@@ -182,19 +202,11 @@ export function App() {
       buildTreeRows({
         items: treeItems,
         repos: filteredRepos,
-        expandedRepos,
         expandedWorktreeKeys,
         pendingActions,
         maxWidth: termCols,
       }),
-    [
-      treeItems,
-      filteredRepos,
-      expandedRepos,
-      expandedWorktreeKeys,
-      pendingActions,
-      termCols,
-    ],
+    [treeItems, filteredRepos, expandedWorktreeKeys, pendingActions, termCols],
   );
 
   // Bottom chrome: optional tmux/action error line (mutually exclusive, so at
@@ -234,15 +246,7 @@ export function App() {
   //
   // INVARIANT for prevSelectionIdRef: the recovery effect treats it as "the
   // selected item's identity as of the last commit" and normally rewrites it
-  // exactly once per commit. Any handler that BOTH reshapes the tree AND
-  // moves the selection to a different item in the same commit must pre-write
-  // the ref with the NEW selection's identity before calling setSelectedIndex
-  // (see selectAndExitExpanded in handleMouse): when the new index collides
-  // with the current one, setSelectedIndex is a no-op, selectionChanged stays
-  // false, and recovery would otherwise chase the OLD identity through the
-  // reshaped tree and snap the cursor back. Handlers that only move the
-  // selection (no reshape) or preserve the selected item's identity are safe
-  // without it.
+  // exactly once per commit.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
@@ -407,20 +411,13 @@ export function App() {
     setMode(Mode.Expanded(worktreeKey));
   }, []);
 
-  const collapseWorktree = useCallback(
-    (worktreeKey: string) => {
-      const next = new Set(expandedWorktreeKeys);
+  const collapseWorktree = useCallback((worktreeKey: string) => {
+    setExpandedWorktreeKeys((previous) => {
+      const next = new Set(previous);
       next.delete(worktreeKey);
-      setExpandedWorktreeKeys(next);
-      const remainingKey = next.values().next().value;
-      setMode(
-        typeof remainingKey === "string"
-          ? Mode.Expanded(remainingKey)
-          : Mode.Navigate,
-      );
-    },
-    [expandedWorktreeKeys],
-  );
+      return next;
+    });
+  }, []);
 
   const openModalPRList = useMemo(() => {
     const prs: PRInfo[] = [];
@@ -612,7 +609,8 @@ export function App() {
         setSelectedIndex(action.itemIndex);
         const target = treeItems[action.itemIndex];
         if (!target) return;
-        const targetId = treeItemId(target, filteredRepos);
+        const itemId = treeItemId(target, filteredRepos);
+        const targetId = itemId && mouseClickTargetId(itemId, action.rowIndex);
         if (!targetId) return;
         const detection = detectDoubleClick(
           lastMouseClickRef.current,
@@ -642,8 +640,6 @@ export function App() {
         }
         return;
       }
-      case "selectAndExitExpanded":
-        return;
     }
   }
 
@@ -763,7 +759,6 @@ export function App() {
           <TreeView
             repos={filteredRepos}
             sessions={sessions}
-            expandedRepos={expandedRepos}
             selectedIndex={selectedIndex}
             items={treeItems}
             rows={rows}
@@ -832,6 +827,7 @@ export function App() {
               {...statusBarProps}
               searchQuery={searchQuery}
               hasClient={tmuxClient !== null}
+              canCollapse={canCollapse}
               repoError={repoError}
             />
           </Box>

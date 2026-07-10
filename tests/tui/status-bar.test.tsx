@@ -57,6 +57,7 @@ describe("StatusBar", () => {
     const rendered = await renderStatusBar({
       mode: Mode.Expanded("proj/branch"),
       selectedPaneRow: true,
+      canCollapse: true,
     });
 
     expect(rendered.output).toContain(
@@ -71,6 +72,7 @@ describe("StatusBar", () => {
     const rendered = await renderStatusBar({
       mode: Mode.Expanded("proj/branch"),
       selectedPaneRow: false,
+      canCollapse: true,
     });
 
     expect(rendered.output).toContain(
@@ -80,6 +82,17 @@ describe("StatusBar", () => {
       "u:up  d:down  c:close  /:search  q:quit",
     );
 
+    rendered.unmount();
+  });
+
+  test("hides collapse when the selected row has no expanded owner", async () => {
+    const rendered = await renderStatusBar({
+      mode: Mode.Expanded("proj/branch"),
+      selectedPaneRow: false,
+      canCollapse: false,
+    });
+
+    expect(rendered.output).not.toContain("←:collapse");
     rendered.unmount();
   });
 

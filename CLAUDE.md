@@ -54,6 +54,9 @@ src/
 │   ├── App.tsx            # Root Ink component, data fetching, input routing, viewport
 │   ├── runtime.ts         # ManagedRuntime for TUI-specific Effect services
 │   ├── types.ts           # TUI mode, detail kind, and PR info type definitions
+│   ├── tree-helpers.ts    # Logical items, physical rows, selection and viewport helpers
+│   ├── pr-layout.ts       # Terminal-width-aware PR title wrapping
+│   ├── input/             # Mode-specific keyboard and guarded mouse routing
 │   ├── components/
 │   │   ├── TreeView.tsx   # Always-expanded repo list and worktree details
 │   │   ├── tree-row.ts    # Shared selected-row styling and width-aware fill
@@ -69,6 +72,10 @@ src/
 │   └── hooks/
 │       ├── useMouse.ts    # Terminal mouse reporting lifecycle
 │       ├── useGuardedInput.ts # Keyboard/mouse input routing
+│       ├── useSessionActions.ts # Tree navigation and tmux/worktree actions
+│       ├── useModalActions.ts # Open/up/add modal orchestration
+│       ├── useSessionOptionsState.ts # Shared session option state
+│       ├── useActionError.ts # Timed action error state
 │       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
 │       ├── useRefresh.ts  # Hybrid poll + fs.watch
 │       ├── useTmux.ts     # switch-client, list-clients

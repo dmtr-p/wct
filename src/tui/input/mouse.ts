@@ -73,6 +73,10 @@ export interface MouseClickHistory {
 
 export const DOUBLE_CLICK_INTERVAL_MS = 400;
 
+export function mouseClickTargetId(itemId: string, rowIndex: number): string {
+  return `${itemId}:row:${rowIndex}`;
+}
+
 export function detectDoubleClick(
   previous: MouseClickHistory | null,
   targetId: string,
@@ -200,14 +204,12 @@ export interface MouseActionContext {
   viewportRows: number;
   treeItems: TreeItem[];
   repos: RepoInfo[];
-  expandedWorktreeKey?: string | null;
 }
 
 export type MouseAction =
   | { kind: "none" }
   | { kind: "scroll"; delta: 1 | -1 }
-  | { kind: "select"; itemIndex: number }
-  | { kind: "selectAndExitExpanded"; itemIndex: number };
+  | { kind: "select"; itemIndex: number; rowIndex: number };
 
 /**
  * Resolve a parsed mouse event into a pure description of what should happen,
@@ -253,5 +255,9 @@ export function resolveMouseAction(
     return { kind: "none" };
   }
 
-  return { kind: "select", itemIndex };
+  return {
+    kind: "select",
+    itemIndex,
+    rowIndex: ctx.effectiveScrollOffset + viewportRow,
+  };
 }

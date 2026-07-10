@@ -47,7 +47,7 @@ describe("TreeView maxWidth wiring", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions: new Map(),
       maxWidth: 15,
     });
@@ -105,8 +105,7 @@ describe("TreeView windowing", () => {
     const expandedRepos = new Set<string>();
     const items = buildTreeItems({
       repos,
-      expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       prData: new Map(),
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -115,7 +114,7 @@ describe("TreeView windowing", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKey: null,
+      expandedWorktreeKeys: new Set<string>(),
       pendingActions: new Map(),
       maxWidth: 80,
     });
@@ -129,14 +128,13 @@ describe("TreeView windowing", () => {
       React.createElement(TreeView, {
         repos,
         sessions: [],
-        expandedRepos,
         selectedIndex: 0,
         items,
         rows,
         pendingActions: new Map(),
         prData: new Map(),
         panes: new Map(),
-        expandedWorktreeKey: null,
+        expandedWorktreeKeys: new Set<string>(),
         maxWidth: 80,
         ...props,
       }),

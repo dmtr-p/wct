@@ -21,7 +21,6 @@ import { WorktreeStatsRow } from "./WorktreeStatsRow";
 interface Props {
   repos: RepoInfo[];
   sessions: Array<{ name: string; attached: boolean }>;
-  expandedRepos?: Set<string>;
   selectedIndex: number;
   items: TreeItem[];
   /**
@@ -35,7 +34,6 @@ interface Props {
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   expandedWorktreeKeys?: Set<string>;
-  expandedWorktreeKey?: string | null;
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
@@ -66,7 +64,6 @@ export function TreeView({
   prData,
   panes,
   expandedWorktreeKeys,
-  expandedWorktreeKey,
   maxWidth,
   refreshingProjects,
   errors,
@@ -96,7 +93,6 @@ export function TreeView({
       selectedIndex,
       selectedItem,
       expandedWorktreeKeys,
-      expandedWorktreeKey,
       sessionMap,
       prData,
       panes,
@@ -117,7 +113,6 @@ interface RenderRowContext {
   selectedIndex: number;
   selectedItem: TreeItem | undefined;
   expandedWorktreeKeys?: Set<string>;
-  expandedWorktreeKey?: string | null;
   sessionMap: Map<string, { name: string; attached: boolean }>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
@@ -231,10 +226,7 @@ function renderWorktreeRow(
       isSelected={idx === ctx.selectedIndex}
       isChildSelected={wtChildSelected}
       pendingStatus={pending?.type}
-      isExpanded={
-        ctx.expandedWorktreeKeys?.has(wtKey) ??
-        ctx.expandedWorktreeKey === wtKey
-      }
+      isExpanded={ctx.expandedWorktreeKeys?.has(wtKey) ?? false}
       hasExpandableData={!!hasExpandableData}
       maxWidth={ctx.maxWidth}
     />

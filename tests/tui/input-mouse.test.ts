@@ -3,10 +3,10 @@ import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   detectDoubleClick,
   HEADER_OFFSET,
-  mouseClickTargetId,
   isMouseSequence,
   isX10MousePrefix,
   type MouseActionContext,
+  mouseClickTargetId,
   parseSgrMouse,
   resolveMouseAction,
   resolveTreeDoubleClickAction,

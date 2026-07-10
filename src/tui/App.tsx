@@ -23,9 +23,9 @@ import { handleExpandedInput } from "./input/expanded";
 import {
   detectDoubleClick,
   HEADER_OFFSET,
-  mouseClickTargetId,
   type MouseClickHistory,
   type MouseEvent,
+  mouseClickTargetId,
   resolveMouseAction,
   resolveTreeDoubleClickAction,
 } from "./input/mouse";

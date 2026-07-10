@@ -20,10 +20,14 @@ function rollupIcon(
   rollupState: "success" | "failure" | "pending" | null,
 ): string {
   switch (rollupState) {
-    case "success": return "✓";
-    case "failure": return "✗";
-    case "pending": return "◌";
-    default: return "";
+    case "success":
+      return "✓";
+    case "failure":
+      return "✗";
+    case "pending":
+      return "◌";
+    default:
+      return "";
   }
 }
 
@@ -31,10 +35,14 @@ function rollupColor(
   rollupState: "success" | "failure" | "pending" | null,
 ): "green" | "red" | "yellow" | undefined {
   switch (rollupState) {
-    case "success": return "green";
-    case "failure": return "red";
-    case "pending": return "yellow";
-    default: return undefined;
+    case "success":
+      return "green";
+    case "failure":
+      return "red";
+    case "pending":
+      return "yellow";
+    default:
+      return undefined;
   }
 }
 
@@ -57,8 +65,14 @@ export function DetailRow({
       const content = indent + displayLabel;
       return (
         <Box>
-          <Text {...selectedProps} bold={isSelected} dimColor={!isSelected} wrap="truncate">
-            {content}{selectedRowFill(isSelected, maxWidth, content)}
+          <Text
+            {...selectedProps}
+            bold={isSelected}
+            dimColor={!isSelected}
+            wrap="truncate"
+          >
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>
       );
@@ -69,7 +83,9 @@ export function DetailRow({
       const icon = rollupIcon(rollupState);
       const iconText = icon ? `${icon} ` : "";
       const line =
-        prLine ?? wrapPrLabel(item.label, maxWidth, icon !== "")[pieceIndex] ?? "";
+        prLine ??
+        wrapPrLabel(item.label, maxWidth, icon !== "")[pieceIndex] ??
+        "";
       const indent = " ".repeat(prLabelStart(icon !== ""));
 
       if (pieceIndex > 0) {
@@ -77,7 +93,8 @@ export function DetailRow({
         return (
           <Box>
             <Text {...selectedProps} bold={isSelected} wrap="truncate-end">
-              {content}{selectedRowFill(isSelected, maxWidth, content)}
+              {content}
+              {selectedRowFill(isSelected, maxWidth, content)}
             </Text>
           </Box>
         );
@@ -94,7 +111,8 @@ export function DetailRow({
                 {iconText}
               </Text>
             ) : null}
-            {line}{selectedRowFill(isSelected, maxWidth, content)}
+            {line}
+            {selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>
       );
@@ -113,8 +131,14 @@ export function DetailRow({
       const content = indent + zoomedEmoji + displayLabel;
       return (
         <Box>
-          <Text {...selectedProps} dimColor={!isSelected} bold={isSelected} wrap="truncate">
-            {content}{selectedRowFill(isSelected, maxWidth, content)}
+          <Text
+            {...selectedProps}
+            dimColor={!isSelected}
+            bold={isSelected}
+            wrap="truncate"
+          >
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>
       );

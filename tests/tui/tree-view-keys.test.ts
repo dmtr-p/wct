@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  getDetailRowKey,
-} from "../../src/tui/components/TreeView";
+import { getDetailRowKey } from "../../src/tui/components/TreeView";
 import type { TreeItem } from "../../src/tui/types";
 
 describe("getDetailRowKey", () => {

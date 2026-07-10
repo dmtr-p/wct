@@ -21,8 +21,8 @@ import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
-  HEADER_OFFSET,
   detectDoubleClick,
+  HEADER_OFFSET,
   type MouseClickHistory,
   type MouseEvent,
   resolveMouseAction,
@@ -654,6 +654,7 @@ export function App() {
           case "noop":
             return;
         }
+        return;
       }
       case "selectAndExitExpanded":
         return;

@@ -51,7 +51,10 @@ export function WorktreeItem({
         prefix.length + rowIndicator.length + 1 + suffix.length + 1,
       ),
     );
-    return { content: `${prefix}${rowIndicator} ${displayBranch} ${suffix}`, displayBranch };
+    return {
+      content: `${prefix}${rowIndicator} ${displayBranch} ${suffix}`,
+      displayBranch,
+    };
   };
 
   if (pendingStatus === "opening") {
@@ -95,7 +98,12 @@ export function WorktreeItem({
     branch,
     branchBudget(
       maxWidth,
-      prefix.length + expandIcon.length + indicator.length + 1 + attached.length + starting.length,
+      prefix.length +
+        expandIcon.length +
+        indicator.length +
+        1 +
+        attached.length +
+        starting.length,
     ),
   );
   const content = `${prefix}${expandIcon}${indicator} ${displayBranch}${attached}${starting}`;
@@ -111,7 +119,10 @@ export function WorktreeItem({
         {expandIcon ? <Text dimColor={!isSelected}>{expandIcon}</Text> : null}
         <Text color={isSelected ? undefined : indicatorColor}>{indicator}</Text>
         <Text bold={active}> {displayBranch}</Text>
-        <Text dimColor={!isSelected}>{attached}{starting}</Text>
+        <Text dimColor={!isSelected}>
+          {attached}
+          {starting}
+        </Text>
         {selectedRowFill(isSelected, maxWidth, content)}
       </Text>
     </Box>

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
-  HEADER_OFFSET,
   detectDoubleClick,
+  HEADER_OFFSET,
   isMouseSequence,
   isX10MousePrefix,
   type MouseActionContext,
@@ -142,8 +142,12 @@ describe("double-click actions", () => {
       isDoubleClick: true,
       history: null,
     });
-    expect(detectDoubleClick(first.history, "wt:alpha/b", 1300).isDoubleClick).toBe(false);
-    expect(detectDoubleClick(first.history, "wt:alpha/a", 1500).isDoubleClick).toBe(false);
+    expect(
+      detectDoubleClick(first.history, "wt:alpha/b", 1300).isDoubleClick,
+    ).toBe(false);
+    expect(
+      detectDoubleClick(first.history, "wt:alpha/a", 1500).isDoubleClick,
+    ).toBe(false);
   });
 
   test("toggles worktrees and activates only PR or pane details", () => {
@@ -151,23 +155,31 @@ describe("double-click actions", () => {
       id: "repo-1",
       repoPath: "/tmp/alpha",
       project: "alpha",
-      worktrees: [{
-        branch: "feature/a",
-        path: "/tmp/a",
-        isMainWorktree: false,
-        changedFiles: 0,
-        sync: null,
-      }],
+      worktrees: [
+        {
+          branch: "feature/a",
+          path: "/tmp/a",
+          isMainWorktree: false,
+          changedFiles: 0,
+          sync: null,
+        },
+      ],
       profileNames: [],
       ideDefaults: { baseNoIde: true, profileNoIde: {} },
     } satisfies RepoInfo;
-    const worktree = { type: "worktree", repoIndex: 0, worktreeIndex: 0 } as const;
+    const worktree = {
+      type: "worktree",
+      repoIndex: 0,
+      worktreeIndex: 0,
+    } as const;
     const key = pendingKey("alpha", "feature/a");
     expect(resolveTreeDoubleClickAction(worktree, [repo], new Set())).toEqual({
       type: "expand-worktree",
       worktreeKey: key,
     });
-    expect(resolveTreeDoubleClickAction(worktree, [repo], new Set([key]))).toEqual({
+    expect(
+      resolveTreeDoubleClickAction(worktree, [repo], new Set([key])),
+    ).toEqual({
       type: "collapse-worktree",
       worktreeKey: key,
     });

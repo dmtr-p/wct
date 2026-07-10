@@ -249,7 +249,7 @@ describe("DetailRow", () => {
     unmount();
   });
 
-  test("truncates long PR labels to one physical row", async () => {
+  test("renders one wrapped PR piece as one physical row", async () => {
     const label =
       "PR #99: this pull request title is much wider than the terminal (OPEN)";
     const props = {
@@ -263,12 +263,13 @@ describe("DetailRow", () => {
       },
       isSelected: false,
       maxWidth: 24,
+      prLine: "PR #99: this pull",
     } satisfies React.ComponentProps<typeof DetailRow>;
     const { output, unmount } = await renderDetailRow(props);
     const text = elementText(DetailRow(props));
 
     expect(text.length).toBeLessThanOrEqual(24);
-    expect(text).toContain("…");
+    expect(text).not.toContain("…");
     expect(text).not.toContain(label);
     expect(output.trim().split("\n")).toHaveLength(1);
     unmount();

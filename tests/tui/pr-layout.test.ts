@@ -28,12 +28,12 @@ describe("displayWidth", () => {
 });
 
 describe("prLabelStart", () => {
-  test("reserves indent(6) + selector(2) with no icon", () => {
-    expect(prLabelStart(false)).toBe(8);
+  test("reserves the five-column indent with no cursor glyph", () => {
+    expect(prLabelStart(false)).toBe(5);
   });
 
   test("reserves an extra 2 columns for the rollup icon", () => {
-    expect(prLabelStart(true)).toBe(10);
+    expect(prLabelStart(true)).toBe(7);
   });
 });
 
@@ -51,9 +51,9 @@ describe("wrapPrLabel", () => {
       true,
     );
     expect(lines.length).toBeGreaterThan(1);
-    // Each line must fit the label budget (maxWidth - prLabelStart = 30).
+    const budget = 40 - prLabelStart(true);
     for (const line of lines) {
-      expect(line.length).toBeLessThanOrEqual(30);
+      expect(displayWidth(line)).toBeLessThanOrEqual(budget);
     }
     // No content is lost: joining the lines reproduces the label.
     expect(lines.join(" ")).toBe(
@@ -63,10 +63,10 @@ describe("wrapPrLabel", () => {
 
   test("hard-breaks a single word longer than the budget", () => {
     const lines = wrapPrLabel("x".repeat(50), 20, false);
-    // budget = 20 - 8 = 12
+    const budget = 20 - prLabelStart(false);
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
-      expect(line.length).toBeLessThanOrEqual(12);
+      expect(displayWidth(line)).toBeLessThanOrEqual(budget);
     }
     expect(lines.join("")).toBe("x".repeat(50));
   });
@@ -76,27 +76,24 @@ describe("wrapPrLabel", () => {
   });
 
   test("wraps by display width, not code points, for a CJK title", () => {
-    // budget = 20 - 8 = 12 columns; each glyph is 2 columns, so only six fit
-    // per line even though twelve code points would.
+    // budget = 15 columns; each glyph is 2 columns, so seven fit per line.
     const lines = wrapPrLabel("日本語のタイトル", 20, false);
-    expect(lines).toEqual(["日本語のタイ", "トル"]);
+    expect(lines).toEqual(["日本語のタイト", "ル"]);
     for (const line of lines) {
-      expect(displayWidth(line)).toBeLessThanOrEqual(12);
+      expect(displayWidth(line)).toBeLessThanOrEqual(15);
     }
   });
 
   test("wraps emoji words by their two-column width", () => {
-    // budget = 18 - 8 = 10 columns; the five-emoji word is exactly 10 columns
-    // and cannot share a line with "fix" (3 + 1 + 10 > 10).
+    // budget = 13 columns; the emoji word cannot share a line with "fix".
     const lines = wrapPrLabel("fix 🎉🎉🎉🎉🎉", 18, false);
     expect(lines).toEqual(["fix", "🎉🎉🎉🎉🎉"]);
   });
 
   test("never splits an emoji ZWJ sequence when hard-breaking", () => {
     const family = "👨‍👩‍👧‍👦"; // one grapheme (4 code points + ZWJs), 2 columns
-    // budget = 12 - 8 = 4 columns; the unbroken 8-column "word" must split
-    // into whole-family pieces, two per line.
+    // budget = 7 columns; the unbroken word splits on grapheme boundaries.
     const lines = wrapPrLabel(family.repeat(4), 12, false);
-    expect(lines).toEqual([family.repeat(2), family.repeat(2)]);
+    expect(lines).toEqual([family.repeat(3), family]);
   });
 });

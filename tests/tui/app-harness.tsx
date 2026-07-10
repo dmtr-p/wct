@@ -41,6 +41,26 @@ vi.mock("../../src/tui/runtime", () => ({
   runTuiSilentPromise: (effect: unknown) => runtimeMock.runPromise(effect),
 }));
 
+// Ink disables ANSI colors for this PassThrough-based harness, so the selected
+// background cannot be observed in serialized frames. Replace one fill space
+// with a width-neutral private-use marker in this test worker only.
+vi.mock("../../src/tui/components/tree-row", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/tui/components/tree-row")
+  >("../../src/tui/components/tree-row");
+  return {
+    ...actual,
+    selectedRowFill: (
+      isSelected: boolean,
+      maxWidth: number,
+      content: string,
+    ) => {
+      const fill = actual.selectedRowFill(isSelected, maxWidth, content);
+      return fill ? `${fill.slice(0, -1)}\uE000` : fill;
+    },
+  };
+});
+
 // --- RegistryService: repos controllable per test via registryItems. ---
 const registryItems = vi.hoisted(() => ({
   items: [] as Array<{ id: string; repo_path: string; project: string }>,
@@ -308,7 +328,7 @@ export function sgrRowFor(viewportRow: number): number {
   return viewportRow + 1 + HEADER_OFFSET;
 }
 
-/** The single rendered line containing the ❯ selection cursor, or undefined. */
+/** The selected row, identified by the width-neutral test marker above. */
 export function selectedLine(lines: string[]): string | undefined {
-  return lines.find((l) => l.includes("❯"));
+  return lines.find((line) => line.includes("\uE000"));
 }

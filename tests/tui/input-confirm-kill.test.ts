@@ -19,7 +19,7 @@ function makeContext(
 }
 
 describe("executeConfirmKill", () => {
-  test("restores expanded state and refreshes sessions after a successful kill", async () => {
+  test("calls onSuccess and refreshes sessions after a successful kill", async () => {
     const ctx = makeContext();
 
     await executeConfirmKill(ctx);
@@ -30,7 +30,7 @@ describe("executeConfirmKill", () => {
     expect(ctx.showActionError).not.toHaveBeenCalled();
   });
 
-  test("reports failure without leaving confirmation or refreshing sessions", async () => {
+  test("reports failure without calling onSuccess or refreshing sessions", async () => {
     const ctx = makeContext({
       killPane: vi.fn().mockResolvedValue(false),
     });

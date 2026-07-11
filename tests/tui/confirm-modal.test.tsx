@@ -60,4 +60,29 @@ describe("ConfirmModal", () => {
       rendered.unmount();
     }
   });
+
+  test("keeps long confirmation copy to one terminal row", async () => {
+    const rendered = await renderWithInput(
+      <ConfirmModal
+        mode={
+          Mode.ConfirmDown(
+            "myapp-feature",
+            `feature/with-a-very-long-name-${"x".repeat(80)}`,
+            "/tmp/myapp-feature",
+            "proj/feature",
+          ) as ConfirmMode
+        }
+        width={40}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(rendered.output().trimEnd().split("\n")).toHaveLength(5);
+      expect(rendered.output()).toContain("enter:confirm  esc:cancel");
+    } finally {
+      rendered.unmount();
+    }
+  });
 });

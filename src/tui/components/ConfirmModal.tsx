@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import type { Mode } from "../types";
+import { toSingleLine } from "../utils/truncate";
 import { Modal } from "./Modal";
 import { MouseClickable } from "./MouseClickable";
 
@@ -80,7 +81,7 @@ export function ConfirmModal({ mode, width, onConfirm, onCancel }: Props) {
   return (
     <Modal title={title} visible width={width} accentColor="red" dimAccent>
       <Box flexDirection="column" paddingX={1}>
-        <Text>{question}</Text>
+        <Text wrap="truncate">{toSingleLine(question)}</Text>
         <Box gap={2} marginTop={1}>
           <Action label={confirmLabel} onClick={onConfirm} destructive />
           <Action label="esc:cancel" onClick={onCancel} />

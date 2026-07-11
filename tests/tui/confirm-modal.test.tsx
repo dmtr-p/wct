@@ -61,7 +61,7 @@ describe("ConfirmModal", () => {
     }
   });
 
-  test("keeps long confirmation copy to one terminal row", async () => {
+  test("wraps long confirmation copy without hiding the actions", async () => {
     const rendered = await renderWithInput(
       <ConfirmModal
         mode={
@@ -79,7 +79,10 @@ describe("ConfirmModal", () => {
     );
 
     try {
-      expect(rendered.output().trimEnd().split("\n")).toHaveLength(5);
+      expect(rendered.output().trimEnd().split("\n").length).toBeGreaterThan(
+        5,
+      );
+      expect(rendered.output()).toContain("xxxxxxxxxxxxxxxx");
       expect(rendered.output()).toContain("enter:confirm  esc:cancel");
     } finally {
       rendered.unmount();

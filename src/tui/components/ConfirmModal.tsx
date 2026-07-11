@@ -81,7 +81,7 @@ export function ConfirmModal({ mode, width, onConfirm, onCancel }: Props) {
   return (
     <Modal title={title} visible width={width} accentColor="red" dimAccent>
       <Box flexDirection="column" paddingX={1}>
-        <Text wrap="truncate">{toSingleLine(question)}</Text>
+        <Text wrap="wrap">{toSingleLine(question)}</Text>
         <Box gap={2} marginTop={1}>
           <Action label={confirmLabel} onClick={onConfirm} destructive />
           <Action label="esc:cancel" onClick={onCancel} />

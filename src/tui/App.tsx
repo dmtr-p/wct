@@ -103,6 +103,7 @@ export function App() {
   const upModalReturnSelectedIndexRef = useRef<number>(0);
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const confirmKillPendingRef = useRef(false);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
   // Reset selection when search query changes
@@ -564,6 +565,8 @@ export function App() {
   function submitConfirm() {
     switch (mode.type) {
       case "ConfirmKill": {
+        if (confirmKillPendingRef.current) return;
+        confirmKillPendingRef.current = true;
         const { paneId, worktreeKey } = mode;
         const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
         clearActionError();
@@ -576,6 +579,8 @@ export function App() {
             if (parentIndex !== null) setSelectedIndex(parentIndex);
             setMode(Mode.Expanded(worktreeKey));
           },
+        }).finally(() => {
+          confirmKillPendingRef.current = false;
         });
         return;
       }

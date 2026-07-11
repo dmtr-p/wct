@@ -79,9 +79,7 @@ describe("ConfirmModal", () => {
     );
 
     try {
-      expect(rendered.output().trimEnd().split("\n").length).toBeGreaterThan(
-        5,
-      );
+      expect(rendered.output().trimEnd().split("\n").length).toBeGreaterThan(5);
       expect(rendered.output()).toContain("xxxxxxxxxxxxxxxx");
       expect(rendered.output()).toContain("enter:confirm  esc:cancel");
     } finally {

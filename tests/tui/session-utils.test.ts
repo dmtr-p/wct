@@ -14,6 +14,7 @@ function workspaceUpResult(
     projectName: "proj",
     env: {
       WCT_WORKTREE_DIR: "/repo/feat",
+      WCT_WORK_DIR: "/repo/feat",
       WCT_MAIN_DIR: "/repo",
       WCT_BRANCH: "feat",
       WCT_PROJECT: "proj",

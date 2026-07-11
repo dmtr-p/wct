@@ -599,6 +599,7 @@ describe("open workflow", () => {
       created: true,
       env: {
         WCT_WORKTREE_DIR: "/tmp/myapp-no-registration",
+        WCT_WORK_DIR: "/tmp/myapp-no-registration",
         WCT_MAIN_DIR: fixture.repoDir,
         WCT_BRANCH: "no-registration",
         WCT_PROJECT: "myapp",
@@ -665,6 +666,7 @@ describe("open workflow", () => {
       created: true,
       env: {
         WCT_WORKTREE_DIR: "/tmp/myapp-json",
+        WCT_WORK_DIR: "/tmp/myapp-json",
         WCT_MAIN_DIR: fixture.repoDir,
         WCT_BRANCH: "json",
         WCT_PROJECT: "myapp",
@@ -764,6 +766,7 @@ describe("open workflow", () => {
       created: true,
       env: {
         WCT_WORKTREE_DIR: "/tmp/myapp-human",
+        WCT_WORK_DIR: "/tmp/myapp-human",
         WCT_MAIN_DIR: fixture.repoDir,
         WCT_BRANCH: "human",
         WCT_PROJECT: "myapp",
@@ -852,6 +855,7 @@ describe("open workflow", () => {
       created: true,
       env: {
         WCT_WORKTREE_DIR: "/tmp/myapp-pr-branch",
+        WCT_WORK_DIR: "/tmp/myapp-pr-branch",
         WCT_MAIN_DIR: fixture.repoDir,
         WCT_BRANCH: "pr-branch",
         WCT_PROJECT: "myapp",

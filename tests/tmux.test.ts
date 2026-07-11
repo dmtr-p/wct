@@ -9,6 +9,7 @@ import {
 
 const TEST_ENV = {
   WCT_WORKTREE_DIR: "/worktrees/feature-auth",
+  WCT_WORK_DIR: "/worktrees/feature-auth",
   WCT_MAIN_DIR: "/repos/main",
   WCT_BRANCH: "feature-auth",
   WCT_PROJECT: "myapp",
@@ -190,6 +191,8 @@ describe("buildWindowsPaneCommands", () => {
           "-e",
           "WCT_WORKTREE_DIR=/worktrees/feature-auth",
           "-e",
+          "WCT_WORK_DIR=/worktrees/feature-auth",
+          "-e",
           "WCT_MAIN_DIR=/repos/main",
           "-e",
           "WCT_BRANCH=feature-auth",
@@ -209,6 +212,10 @@ describe("buildWindowsPaneCommands", () => {
           "WCT_WORKTREE_DIR",
           "/worktrees/feature-auth",
         ],
+      },
+      {
+        type: "set-environment",
+        args: ["-t", "test-session", "WCT_WORK_DIR", "/worktrees/feature-auth"],
       },
       {
         type: "set-environment",
@@ -273,6 +280,8 @@ describe("buildWindowsPaneCommands", () => {
         "test-session",
         "-e",
         "WCT_WORKTREE_DIR=/worktrees/feature-auth",
+        "-e",
+        "WCT_WORK_DIR=/worktrees/feature-auth",
         "-e",
         "WCT_MAIN_DIR=/repos/main",
         "-e",

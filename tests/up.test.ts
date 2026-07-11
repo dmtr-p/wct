@@ -290,6 +290,7 @@ describe("upCommand", () => {
             projectName: "myapp",
             env: {
               WCT_WORKTREE_DIR: "/tmp/myapp-feature",
+              WCT_WORK_DIR: "/tmp/myapp-feature",
               WCT_MAIN_DIR: "/tmp/myapp",
               WCT_BRANCH: "feature",
               WCT_PROJECT: "myapp",
@@ -768,6 +769,7 @@ tmux:
           projectName: "myapp",
           env: {
             WCT_WORKTREE_DIR: "/tmp/myapp-feature",
+            WCT_WORK_DIR: "/tmp/myapp-feature",
             WCT_MAIN_DIR: "/tmp/myapp",
             WCT_BRANCH: "feature",
             WCT_PROJECT: "myapp",

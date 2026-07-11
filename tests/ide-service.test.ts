@@ -13,8 +13,8 @@ describe("substituteEnvVars", () => {
     };
 
     const bracedVariable = "${" + "WCT_WORK_DIR}";
-    expect(
-      substituteEnvVars(`tool $WCT_WORK_DIR ${bracedVariable}`, env),
-    ).toBe("tool /repos/myapp-feature/apps/web /repos/myapp-feature/apps/web");
+    expect(substituteEnvVars(`tool $WCT_WORK_DIR ${bracedVariable}`, env)).toBe(
+      "tool /repos/myapp-feature/apps/web /repos/myapp-feature/apps/web",
+    );
   });
 });

@@ -3,5 +3,4 @@ export interface WctEnv {
   WCT_MAIN_DIR: string;
   WCT_BRANCH: string;
   WCT_PROJECT: string;
-  WCT_PROMPT?: string;
 }

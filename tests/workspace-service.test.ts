@@ -214,7 +214,7 @@ describe("WorkspaceService open", () => {
     };
   }
 
-  test("opens a branch workspace with base-config path and WCT_PROMPT", async () => {
+  test("opens a branch workspace with base-config path", async () => {
     await writeConfig(
       repoDir,
       `profiles:
@@ -231,7 +231,6 @@ describe("WorkspaceService open", () => {
             branch: "feature",
             base: "main",
             cwd: repoDir,
-            prompt: "ship it",
             profile: "prof",
           }),
         ),
@@ -265,7 +264,6 @@ describe("WorkspaceService open", () => {
       profileName: "prof",
     });
     expect(result.env.WCT_PROJECT).toBe("myapp");
-    expect(result.env.WCT_PROMPT).toBe("ship it");
     expect(createCalls).toEqual([
       {
         path: join(worktreeRoot, "myapp-feature"),
@@ -277,28 +275,7 @@ describe("WorkspaceService open", () => {
     ]);
   });
 
-  test("omits WCT_PROMPT from open env when prompt is absent", async () => {
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) =>
-          service.open({
-            branch: "without-prompt",
-            cwd: repoDir,
-          }),
-        ),
-        {
-          worktree: makeWorktreeService(),
-        },
-      ),
-    );
-
-    expect(result.env).not.toHaveProperty("WCT_PROMPT");
-    expect(JSON.parse(JSON.stringify(result)).env).not.toHaveProperty(
-      "WCT_PROMPT",
-    );
-  });
-
-  test("keeps WCT_PROMPT open-only and profile lifecycle overrides out of path naming", async () => {
+  test("keeps profile lifecycle overrides out of path naming", async () => {
     await writeConfig(
       repoDir,
       `profiles:
@@ -316,7 +293,6 @@ describe("WorkspaceService open", () => {
           service.open({
             branch: "profiled",
             cwd: repoDir,
-            prompt: "open prompt",
             profile: "prof",
           }),
         ),
@@ -343,12 +319,10 @@ describe("WorkspaceService open", () => {
 
     expect(openResult.worktreePath).toBe(join(worktreeRoot, "myapp-profiled"));
     expect(openResult.env.WCT_PROJECT).toBe("myapp");
-    expect(openResult.env.WCT_PROMPT).toBe("open prompt");
     expect(openResult.attempts.copy).toMatchObject({
       attempted: true,
       ok: true,
     });
-    expect(upResult.env).not.toHaveProperty("WCT_PROMPT");
     expect(upResult.env.WCT_PROJECT).toBe("myapp");
   });
 

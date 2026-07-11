@@ -176,40 +176,12 @@ describe("Ctrl+Enter submit", () => {
       }
     });
 
-    test("Ctrl+Enter from the Prompt field submits without inserting a newline", async () => {
-      const onSubmitMock = vi.fn();
-      const rendered = await renderForm(onSubmitMock);
-
-      try {
-        await sendKeys(rendered.stdin, "feature-x");
-        await sendKeys(rendered.stdin, TAB);
-        await tick(2);
-        await sendKeys(rendered.stdin, TAB);
-        await tick(2);
-        await sendKeys(rendered.stdin, "my prompt text");
-        await sendKeys(rendered.stdin, CTRL_ENTER);
-
-        expect(onSubmitMock).toHaveBeenCalledTimes(1);
-        expect(onSubmitMock).toHaveBeenCalledWith(
-          expect.objectContaining({
-            branch: "feature-x",
-            prompt: "my prompt text",
-            existing: false,
-          }),
-        );
-      } finally {
-        rendered.unmount();
-      }
-    });
-
     test("Ctrl+Enter from the Submit field fires onSubmit exactly once (no double-fire)", async () => {
       const onSubmitMock = vi.fn();
       const rendered = await renderForm(onSubmitMock);
 
       try {
         await sendKeys(rendered.stdin, "feature-x");
-        await sendKeys(rendered.stdin, TAB);
-        await tick(2);
         await sendKeys(rendered.stdin, TAB);
         await tick(2);
         await sendKeys(rendered.stdin, TAB);

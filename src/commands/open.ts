@@ -53,13 +53,6 @@ export const commandDef: CommandDef = {
       description: "Open worktree from a GitHub PR",
     },
     {
-      name: "prompt",
-      short: "p",
-      type: "string",
-      placeholder: "text",
-      description: "Set WCT_PROMPT env var in tmux session",
-    },
-    {
       name: "profile",
       short: "P",
       type: "string",
@@ -77,7 +70,6 @@ export interface OpenOptions {
   cwd?: string;
   ide?: boolean;
   noIde?: boolean;
-  prompt?: string;
   profile?: string;
 }
 

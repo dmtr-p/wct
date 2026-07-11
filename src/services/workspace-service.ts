@@ -144,7 +144,6 @@ export interface WorkspaceOpenOptions {
   ide?: boolean;
   noIde?: boolean;
   pr?: string;
-  prompt?: string;
   profile?: string;
   reporter?: WorkspaceReporter;
 }
@@ -332,7 +331,6 @@ function resolveOpenIntent(
       ide = false,
       noIde = false,
       pr,
-      prompt,
       profile,
     } = options;
 
@@ -429,7 +427,6 @@ function resolveOpenIntent(
         cwd,
         ide,
         noIde,
-        prompt,
         profile,
       };
     }
@@ -440,7 +437,7 @@ function resolveOpenIntent(
       );
     }
 
-    return { branch, existing, base, cwd, ide, noIde, prompt, profile };
+    return { branch, existing, base, cwd, ide, noIde, profile };
   });
 }
 
@@ -460,7 +457,7 @@ function openImpl(
   return Effect.gen(function* () {
     const reporter = options.reporter;
     const resolvedOptions = yield* resolveOpenIntent(options);
-    const { branch, existing, base, cwd, ide, noIde, prompt, profile } =
+    const { branch, existing, base, cwd, ide, noIde, profile } =
       resolvedOptions;
 
     const repo = yield* WorktreeService.use((service) =>
@@ -541,7 +538,6 @@ function openImpl(
       WCT_MAIN_DIR: mainRepoPath,
       WCT_BRANCH: branch,
       WCT_PROJECT: config.project_name,
-      ...(prompt !== undefined ? { WCT_PROMPT: prompt } : {}),
     };
 
     yield* emitReporter(reporter, {

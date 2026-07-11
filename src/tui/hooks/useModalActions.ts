@@ -149,7 +149,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
                 cwd: deps.openModalRepoPath || undefined,
                 pr: opts.pr,
                 profile: opts.profile,
-                prompt: opts.prompt,
                 existing: opts.existing,
                 ide: !opts.noIde,
                 noIde: opts.noIde,

@@ -155,6 +155,27 @@ describe("App.tsx review fixes (real App)", () => {
     expect(disableIndex).toBeLessThan(rawModeOffIndex);
   });
 
+  test("q quits while the shortcuts modal is open", async () => {
+    setTallWorktrees(repoPath, 3);
+
+    const rendered = await renderApp(<App />, 24);
+    await tick(20);
+
+    await sendKeys(rendered.stdin, "?");
+    expect(rendered.output()).toContain("Shortcuts");
+    expect(rendered.output()).toContain("quit");
+
+    await sendKeys(rendered.stdin, "q");
+    await rendered.instance.waitUntilExit();
+
+    expect(
+      rendered.events.some(
+        (event) =>
+          event.kind === "write" && event.data.includes(MOUSE_DISABLE),
+      ),
+    ).toBe(true);
+  });
+
   test("legacy X10 mouse bytes are swallowed instead of typed into the Search query", async () => {
     setTallWorktrees(repoPath, 5);
 

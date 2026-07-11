@@ -683,7 +683,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
   });
 
   describe("Bug: narrow terminals must not wrap bottom chrome (PR #104 r3520956519)", () => {
-    test("the frame stays within terminal rows when a hint line exceeds the width", async () => {
+    test("the frame stays within terminal rows when an error exceeds the width", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },
       ];
@@ -692,13 +692,11 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         ...Array.from({ length: 20 }, (_, i) => worktree(`feature/${i}`)),
       ]);
 
-      // 45 columns: BOTH the Navigate hint line (46 chars without a tmux
-      // client) and the tmux-error line ("No tmux client found — …", 49
-      // chars, always shown in this clientless test env) no longer fit.
-      // Without truncation Ink wraps each onto a second row, the 14-row
-      // budget (2 header + 8 viewport + 4 chrome: tmux error, divider, 2
-      // hints) under-counts, and the overflowing layout clips rows and
-      // misaligns mouse hit-testing.
+      // At 45 columns the tmux-error line ("No tmux client found — …", 49
+      // chars, always shown in this clientless test env) does not fit. Without
+      // truncation Ink wraps it onto a second row, the 14-row budget (2 header
+      // + 11 viewport + 1 error) under-counts, and the overflowing layout
+      // clips rows and misaligns mouse hit-testing.
       const rendered = await renderApp(<App />, 14, 45);
       try {
         await tick(20);
@@ -713,10 +711,10 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         }
         expect(frame.length).toBeLessThanOrEqual(14);
         // The full budgeted layout must actually be present: the last of the
-        // 8 viewport rows (repo, main, feature/0..5) and the second hint
-        // line's tail must both have survived.
-        expect(frame.some((l) => l.includes("feature/5"))).toBe(true);
-        expect(frame[frame.length - 1]).toContain("q:quit");
+        // 11 viewport rows (repo, main, feature/0..8) and the single error
+        // line must both have survived.
+        expect(frame.some((l) => l.includes("feature/8"))).toBe(true);
+        expect(frame[frame.length - 1]).toContain("No tmux client found");
       } finally {
         rendered.unmount();
       }

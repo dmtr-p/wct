@@ -32,7 +32,7 @@ function copyFor(mode: ConfirmMode): {
       };
     case "ConfirmDown":
       return {
-        title: "Stop Session",
+        title: "Kill Session",
         question: `Kill session for ${mode.branch}?`,
         confirmLabel: "enter:confirm",
       };

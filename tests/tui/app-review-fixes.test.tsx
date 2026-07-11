@@ -116,8 +116,10 @@ describe("App.tsx review fixes (real App)", () => {
       // The whole frame must fit the terminal (the overflowing tree clips
       // inside its own box instead of painting over the modal)...
       expect(frame.length).toBeLessThanOrEqual(14);
-      // ...the header must survive (the garbled layout corrupted it to " ct")...
-      expect(frame[0]).toBe("wct");
+      // ...the header must survive (the garbled layout corrupted it to " ct")
+      // and retain the right-aligned add-project control.
+      expect(frame[0]?.startsWith("wct")).toBe(true);
+      expect(frame[0]).toContain("[+Add]");
       // ...and the modal must be fully present: title on its top border and
       // an intact bottom border, in order.
       const topBorder = frame.findIndex((l) => l.includes("Select mode"));

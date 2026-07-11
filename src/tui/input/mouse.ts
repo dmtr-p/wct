@@ -8,6 +8,7 @@ import { type Mode, pendingKey, type TreeItem } from "../types";
  * this offset (and the 1-based → 0-based conversion).
  */
 export const HEADER_OFFSET = 2;
+export const ADD_PROJECT_BUTTON_LABEL = "[+Add]";
 
 /** SGR extended mouse event (DECSET ?1006). ESC is already stripped by Ink. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the ESC (\x1b) byte is the literal start of an SGR mouse sequence and must be matched
@@ -66,6 +67,35 @@ export type MouseEvent =
       col: number;
       row: number;
     };
+
+export function isAddProjectButtonTarget(
+  event: MouseEvent,
+  mode: Mode,
+  terminalColumns: number,
+): boolean {
+  if (mode.type !== "Navigate" && mode.type !== "Expanded") return false;
+  if (event.kind === "wheel" || event.row !== 1) {
+    return false;
+  }
+
+  const firstButtonColumn = Math.max(
+    1,
+    terminalColumns - ADD_PROJECT_BUTTON_LABEL.length + 1,
+  );
+  return event.col >= firstButtonColumn && event.col <= terminalColumns;
+}
+
+export function isAddProjectButtonPress(
+  event: MouseEvent,
+  mode: Mode,
+  terminalColumns: number,
+): boolean {
+  return (
+    event.kind === "press" &&
+    event.button === "left" &&
+    isAddProjectButtonTarget(event, mode, terminalColumns)
+  );
+}
 
 export interface MouseClickHistory {
   targetId: string;

@@ -103,7 +103,7 @@ export function App() {
   const upModalReturnSelectedIndexRef = useRef<number>(0);
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
-  const confirmKillPendingRef = useRef(false);
+  const confirmPendingRef = useRef(false);
   const confirmKillAttemptRef = useRef(0);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
@@ -550,7 +550,7 @@ export function App() {
     switch (mode.type) {
       case "ConfirmKill":
         confirmKillAttemptRef.current += 1;
-        confirmKillPendingRef.current = false;
+        confirmPendingRef.current = false;
         setMode(Mode.Expanded(mode.worktreeKey));
         return;
       case "ConfirmDown":
@@ -568,8 +568,8 @@ export function App() {
   function submitConfirm() {
     switch (mode.type) {
       case "ConfirmKill": {
-        if (confirmKillPendingRef.current) return;
-        confirmKillPendingRef.current = true;
+        if (confirmPendingRef.current) return;
+        confirmPendingRef.current = true;
         const attempt = ++confirmKillAttemptRef.current;
         const { paneId, worktreeKey } = mode;
         const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
@@ -586,31 +586,45 @@ export function App() {
           },
         }).finally(() => {
           if (confirmKillAttemptRef.current === attempt) {
-            confirmKillPendingRef.current = false;
+            confirmPendingRef.current = false;
           }
         });
         return;
       }
-      case "ConfirmDown":
-        void sessionActions.executeDown(
-          mode.sessionName,
-          mode.branch,
-          mode.worktreePath,
-          mode.worktreeKey,
-        );
+      case "ConfirmDown": {
+        if (confirmPendingRef.current) return;
+        confirmPendingRef.current = true;
+        void sessionActions
+          .executeDown(
+            mode.sessionName,
+            mode.branch,
+            mode.worktreePath,
+            mode.worktreeKey,
+          )
+          .finally(() => {
+            confirmPendingRef.current = false;
+          });
         return;
+      }
       case "ConfirmClose":
-      case "ConfirmCloseForce":
-        void sessionActions.executeClose(
-          mode.sessionName,
-          mode.branch,
-          mode.worktreePath,
-          mode.worktreeKey,
-          mode.repoPath,
-          mode.project,
-          mode.type === "ConfirmCloseForce",
-        );
+      case "ConfirmCloseForce": {
+        if (confirmPendingRef.current) return;
+        confirmPendingRef.current = true;
+        void sessionActions
+          .executeClose(
+            mode.sessionName,
+            mode.branch,
+            mode.worktreePath,
+            mode.worktreeKey,
+            mode.repoPath,
+            mode.project,
+            mode.type === "ConfirmCloseForce",
+          )
+          .finally(() => {
+            confirmPendingRef.current = false;
+          });
         return;
+      }
     }
   }
 

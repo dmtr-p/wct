@@ -104,6 +104,7 @@ export function App() {
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmKillPendingRef = useRef(false);
+  const confirmKillAttemptRef = useRef(0);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
   // Reset selection when search query changes
@@ -548,6 +549,8 @@ export function App() {
   function cancelConfirm() {
     switch (mode.type) {
       case "ConfirmKill":
+        confirmKillAttemptRef.current += 1;
+        confirmKillPendingRef.current = false;
         setMode(Mode.Expanded(mode.worktreeKey));
         return;
       case "ConfirmDown":
@@ -567,6 +570,7 @@ export function App() {
       case "ConfirmKill": {
         if (confirmKillPendingRef.current) return;
         confirmKillPendingRef.current = true;
+        const attempt = ++confirmKillAttemptRef.current;
         const { paneId, worktreeKey } = mode;
         const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
         clearActionError();
@@ -574,13 +578,16 @@ export function App() {
           paneId,
           killPane,
           refreshSessions,
+          isCurrent: () => confirmKillAttemptRef.current === attempt,
           showActionError,
           onSuccess: () => {
             if (parentIndex !== null) setSelectedIndex(parentIndex);
             setMode(Mode.Expanded(worktreeKey));
           },
         }).finally(() => {
-          confirmKillPendingRef.current = false;
+          if (confirmKillAttemptRef.current === attempt) {
+            confirmKillPendingRef.current = false;
+          }
         });
         return;
       }

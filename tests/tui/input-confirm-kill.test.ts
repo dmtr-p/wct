@@ -11,6 +11,7 @@ function makeContext(
     paneId: "%5",
     killPane: vi.fn().mockResolvedValue(true),
     refreshSessions: vi.fn().mockResolvedValue([]),
+    isCurrent: vi.fn(() => true),
     onSuccess: vi.fn(),
     showActionError: vi.fn(),
     ...overrides,
@@ -38,6 +39,18 @@ describe("executeConfirmKill", () => {
 
     expect(ctx.showActionError).toHaveBeenCalledWith("Failed to kill pane");
     expect(ctx.onSuccess).not.toHaveBeenCalled();
+    expect(ctx.refreshSessions).not.toHaveBeenCalled();
+  });
+
+  test("ignores a stale completion after the confirmation is cancelled", async () => {
+    const ctx = makeContext({
+      isCurrent: vi.fn(() => false),
+    });
+
+    await executeConfirmKill(ctx);
+
+    expect(ctx.onSuccess).not.toHaveBeenCalled();
+    expect(ctx.showActionError).not.toHaveBeenCalled();
     expect(ctx.refreshSessions).not.toHaveBeenCalled();
   });
 });

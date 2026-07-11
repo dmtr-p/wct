@@ -11,6 +11,7 @@ import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
+import { MouseClickable } from "./MouseClickable";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { SessionOptionsSection } from "./SessionOptionsSection";
 import { resolveSessionOptionsSubmitState } from "./session-options";
@@ -79,15 +80,18 @@ function ModeSelector({
       {options.map((opt, i) => {
         const isSel = i === selected;
         return (
-          <Text
-            key={opt.step}
-            color={isSel ? "cyan" : undefined}
-            dimColor={!isSel}
-            bold={isSel}
-          >
-            {isSel ? "▸ " : "  "}
-            {opt.label}
-          </Text>
+          <MouseClickable key={opt.step} onClick={() => onSelect(opt.step)}>
+            {(isHovered) => (
+              <Text
+                color={isSel || isHovered ? "cyan" : undefined}
+                dimColor={!isSel && !isHovered}
+                bold={isSel || isHovered}
+              >
+                {isSel ? "▸ " : "  "}
+                {opt.label}
+              </Text>
+            )}
+          </MouseClickable>
         );
       })}
     </TitledBox>
@@ -99,12 +103,14 @@ function BracketInput({
   value,
   isFocused,
   onChange,
+  onFocus,
   width,
 }: {
   label: string;
   value: string;
   isFocused: boolean;
   onChange: (v: string) => void;
+  onFocus: () => void;
   width?: number;
 }) {
   const cursorVisible = useBlink();
@@ -123,12 +129,21 @@ function BracketInput({
   );
 
   return (
-    <TitledBox title={label} isFocused={isFocused} width={width}>
-      <Text dimColor={!isFocused}>
-        {displayValue}
-        {isFocused ? (cursorVisible ? "▎" : " ") : ""}
-      </Text>
-    </TitledBox>
+    <MouseClickable onClick={onFocus}>
+      {(isHovered) => (
+        <TitledBox
+          title={label}
+          isFocused={isFocused}
+          isHovered={isHovered}
+          width={width}
+        >
+          <Text dimColor={!isFocused}>
+            {displayValue}
+            {isFocused ? (cursorVisible ? "▎" : " ") : ""}
+          </Text>
+        </TitledBox>
+      )}
+    </MouseClickable>
   );
 }
 
@@ -136,11 +151,13 @@ function PromptArea({
   value,
   isFocused,
   onChange,
+  onFocus,
   width,
 }: {
   value: string;
   isFocused: boolean;
   onChange: (v: string) => void;
+  onFocus: () => void;
   width?: number;
 }) {
   const cursorVisible = useBlink();
@@ -160,12 +177,21 @@ function PromptArea({
   );
 
   return (
-    <TitledBox title="Prompt" isFocused={isFocused} width={width}>
-      <Text dimColor={!isFocused}>
-        {value || (isFocused ? "" : "optional")}
-        {isFocused ? (cursorVisible ? "▎" : " ") : ""}
-      </Text>
-    </TitledBox>
+    <MouseClickable onClick={onFocus}>
+      {(isHovered) => (
+        <TitledBox
+          title="Prompt"
+          isFocused={isFocused}
+          isHovered={isHovered}
+          width={width}
+        >
+          <Text dimColor={!isFocused}>
+            {value || (isFocused ? "" : "optional")}
+            {isFocused ? (cursorVisible ? "▎" : " ") : ""}
+          </Text>
+        </TitledBox>
+      )}
+    </MouseClickable>
   );
 }
 
@@ -270,6 +296,7 @@ export function NewBranchForm({
         value={branch}
         isFocused={currentField === "branch"}
         onChange={setBranch}
+        onFocus={() => setFocusIndex(fields.indexOf("branch"))}
         width={width}
       />
       <BracketInput
@@ -277,12 +304,14 @@ export function NewBranchForm({
         value={base}
         isFocused={currentField === "base"}
         onChange={setBase}
+        onFocus={() => setFocusIndex(fields.indexOf("base"))}
         width={width}
       />
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
+        onFocus={() => setFocusIndex(fields.indexOf("prompt"))}
         width={width}
       />
       <SessionOptionsSection
@@ -302,6 +331,7 @@ export function NewBranchForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
+        onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
         resetKey="new-branch"
         width={width}
       />
@@ -500,12 +530,17 @@ export function FromPRForm({
           filterQuery={filterQuery}
           maxVisible={8}
           isFocused={currentField === "prList"}
+          onSelect={(index) => {
+            setFocusIndex(fields.indexOf("prList"));
+            setSelectedPRIndex(index);
+          }}
         />
       </TitledBox>
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
+        onFocus={() => setFocusIndex(fields.indexOf("prompt"))}
         width={width}
       />
       <SessionOptionsSection
@@ -529,6 +564,7 @@ export function FromPRForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
+        onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
         resetKey="from-pr"
         width={width}
       />
@@ -695,12 +731,17 @@ export function ExistingBranchForm({
           filterQuery={filterQuery}
           maxVisible={10}
           isFocused={currentField === "branchList"}
+          onSelect={(index) => {
+            setFocusIndex(fields.indexOf("branchList"));
+            setSelectedBranchIndex(index);
+          }}
         />
       </TitledBox>
       <PromptArea
         value={prompt}
         isFocused={currentField === "prompt"}
         onChange={setPrompt}
+        onFocus={() => setFocusIndex(fields.indexOf("prompt"))}
         width={width}
       />
       <SessionOptionsSection
@@ -723,6 +764,7 @@ export function ExistingBranchForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
+        onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
         resetKey="existing-branch"
         width={width}
       />

@@ -2,6 +2,7 @@ import { Box } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { SubmitButton, ToggleRow } from "./form-controls";
+import { MouseClickable } from "./MouseClickable";
 import { filterItems, ScrollableList } from "./ScrollableList";
 import {
   buildProfileItems,
@@ -22,6 +23,7 @@ export interface SessionOptionsSectionProps {
   onAutoSwitchToggle: () => void;
   onSubmit: () => void;
   onProfileChange: (profile: string | undefined) => void;
+  onFocusField: (field: "profile" | "noIde" | "autoSwitch" | "submit") => void;
   resetKey: string;
   width?: number;
 }
@@ -36,6 +38,7 @@ export function SessionOptionsSection({
   onAutoSwitchToggle,
   onSubmit,
   onProfileChange,
+  onFocusField,
   resetKey,
   width,
 }: SessionOptionsSectionProps) {
@@ -112,27 +115,53 @@ export function SessionOptionsSection({
             filterQuery={profileQuery}
             isFocused={focusedField === "profile"}
             maxVisible={6}
+            onSelect={(index) => {
+              onFocusField("profile");
+              setSelectedProfileIndex(index);
+            }}
           />
         </TitledBox>
       ) : null}
       <Box height={1} />
-      <ToggleRow
-        label="No IDE"
-        checked={noIde}
-        isFocused={focusedField === "noIde"}
-        onToggle={onNoIdeToggle}
-      />
-      <ToggleRow
-        label="Auto-switch"
-        checked={autoSwitch}
-        isFocused={focusedField === "autoSwitch"}
-        onToggle={onAutoSwitchToggle}
-      />
-      <SubmitButton
-        isFocused={focusedField === "submit"}
-        disabled={!canSubmit}
-        onSubmit={onSubmit}
-      />
+      <MouseClickable
+        onClick={() => {
+          onFocusField("noIde");
+          onNoIdeToggle();
+        }}
+      >
+        {(isHovered) => (
+          <ToggleRow
+            label="No IDE"
+            checked={noIde}
+            isFocused={focusedField === "noIde"}
+            onToggle={onNoIdeToggle}
+            isHovered={isHovered}
+          />
+        )}
+      </MouseClickable>
+      <MouseClickable
+        onClick={() => {
+          onFocusField("autoSwitch");
+          onAutoSwitchToggle();
+        }}
+      >
+        {(isHovered) => (
+          <ToggleRow
+            label="Auto-switch"
+            checked={autoSwitch}
+            isFocused={focusedField === "autoSwitch"}
+            onToggle={onAutoSwitchToggle}
+            isHovered={isHovered}
+          />
+        )}
+      </MouseClickable>
+      <MouseClickable onClick={() => onFocusField("submit")}>
+        <SubmitButton
+          isFocused={focusedField === "submit"}
+          disabled={!canSubmit}
+          onSubmit={onSubmit}
+        />
+      </MouseClickable>
     </Box>
   );
 }

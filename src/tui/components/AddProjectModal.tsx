@@ -7,6 +7,7 @@ import { useGuardedInput } from "../hooks/useGuardedInput";
 import { runTuiSilentPromise } from "../runtime";
 import { isSubmitShortcut, SubmitButton } from "./form-controls";
 import { Modal } from "./Modal";
+import { MouseClickable } from "./MouseClickable";
 import { expandTilde, PathInput } from "./PathInput";
 import { TitledBox } from "./TitledBox";
 
@@ -174,13 +175,28 @@ export function AddProjectModal({
           isFocused={currentField === "path"}
           isGitRepo={isGitRepo}
           width={innerWidth}
+          onFocus={() => setFocusIndex(0)}
         />
-        <TitledBox title="Name" isFocused={nameFocused} width={innerWidth}>
-          <Text dimColor={!nameFocused}>
-            {nameDisplay}
-            {nameFocused ? (cursorVisible ? "▎" : " ") : ""}
-          </Text>
-        </TitledBox>
+        <MouseClickable
+          onClick={() => {
+            autoFillName();
+            setFocusIndex(1);
+          }}
+        >
+          {(isHovered) => (
+            <TitledBox
+              title="Name"
+              isFocused={nameFocused}
+              isHovered={isHovered}
+              width={innerWidth}
+            >
+              <Text dimColor={!nameFocused}>
+                {nameDisplay}
+                {nameFocused ? (cursorVisible ? "▎" : " ") : ""}
+              </Text>
+            </TitledBox>
+          )}
+        </MouseClickable>
         <SubmitButton
           isFocused={currentField === "submit"}
           disabled={!isGitRepo}

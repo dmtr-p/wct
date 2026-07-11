@@ -101,10 +101,18 @@ describe("parseSgrMouse", () => {
     expect(parseSgrMouse("[<81;10;5M")).toEqual({ kind: "wheel", dir: 1 }); // 65 + ctrl
   });
 
-  test("ignores motion/drag (cb & 32)", () => {
-    // 32 = motion bit; 35 = motion + left button held (drag)
-    expect(parseSgrMouse("[<35;45;12M")).toBeNull();
-    expect(parseSgrMouse("[<32;45;12M")).toBeNull();
+  test("decodes motion/drag coordinates for hover hit-testing (cb & 32)", () => {
+    // Both no-button motion and button-held drag update hover position.
+    expect(parseSgrMouse("[<35;45;12M")).toEqual({
+      kind: "move",
+      col: 45,
+      row: 12,
+    });
+    expect(parseSgrMouse("[<32;45;12M")).toEqual({
+      kind: "move",
+      col: 45,
+      row: 12,
+    });
   });
 
   test("ignores additional buttons 8+ (back/forward) instead of misdecoding as left", () => {
@@ -220,8 +228,8 @@ describe("double-click actions", () => {
 describe("isMouseSequence", () => {
   // Bug 3 regression: a single click emits BOTH a press (`M`) and a release
   // (`m`) SGR sequence. `parseSgrMouse` intentionally returns `null` for the
-  // release half (and for motion/extra-button events) because they aren't
-  // actionable — but the dispatcher guard must still swallow them by SHAPE,
+  // release half (and extra-button events); motion parses for hover. The
+  // dispatcher guard must still swallow every mouse report by SHAPE,
   // not by whether they parsed to an action, or the raw escape bytes fall
   // through to mode-specific handlers (e.g. corrupting the Search query).
   test("matches a release sequence (trailing m)", () => {
@@ -279,11 +287,17 @@ describe("isMouseSequence", () => {
   });
 
   test("agrees with parseSgrMouse on every case where parseSgrMouse is non-null", () => {
-    // Whenever parseSgrMouse resolves an actionable event, isMouseSequence
+    // Whenever parseSgrMouse resolves a recognised event, isMouseSequence
     // must also be true — parseSgrMouse being non-null is a strict subset of
     // "is a mouse sequence."
-    const actionable = ["[<64;10;5M", "[<0;45;12M", "[<1;3;4M", "[<2;3;4M"];
-    for (const seq of actionable) {
+    const recognised = [
+      "[<64;10;5M",
+      "[<0;45;12M",
+      "[<1;3;4M",
+      "[<2;3;4M",
+      "[<35;10;5M",
+    ];
+    for (const seq of recognised) {
       expect(parseSgrMouse(seq)).not.toBeNull();
       expect(isMouseSequence(seq)).toBe(true);
     }

@@ -119,6 +119,7 @@ export function UpModal({
           onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
           onSubmit={doSubmit}
           onProfileChange={setSelectedProfileValue}
+          onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
           resetKey={visible ? "visible" : "hidden"}
           width={width ? width - 2 : undefined}
         />

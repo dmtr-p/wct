@@ -95,6 +95,41 @@ async function renderTitledBox(props: React.ComponentProps<typeof TitledBox>) {
 }
 
 describe("TitledBox", () => {
+  test("hover highlights with foreground color and never paints a background", () => {
+    const tree = TitledBox({
+      title: "Branch",
+      isFocused: false,
+      isHovered: true,
+      width: 20,
+      children: "feature-x",
+    });
+    const elements = collectElements(tree, () => true);
+    const primitiveChild = elements.find(
+      (element) =>
+        element.type === Text &&
+        (element.props as Record<string, unknown>).children === "feature-x",
+    );
+
+    expect(primitiveChild).toBeDefined();
+    if (!primitiveChild) throw new Error("primitive child Text was not found");
+    expect((primitiveChild.props as Record<string, unknown>).dimColor).toBe(
+      false,
+    );
+    expect(
+      elements.some(
+        (element) =>
+          (element.props as Record<string, unknown>).color === "cyan",
+      ),
+    ).toBe(true);
+    expect(
+      elements.every(
+        (element) =>
+          (element.props as Record<string, unknown>).backgroundColor ===
+          undefined,
+      ),
+    ).toBe(true);
+  });
+
   test("renders the top border with an embedded title and a bottom border", async () => {
     let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 

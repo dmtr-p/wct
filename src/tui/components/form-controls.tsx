@@ -1,5 +1,7 @@
 import { Box, Text } from "ink";
+import { useRef } from "react";
 import { useGuardedInput } from "../hooks/useGuardedInput";
+import { MouseClickable } from "./MouseClickable";
 
 export function isSubmitShortcut(key: {
   ctrl?: boolean;
@@ -13,11 +15,13 @@ export function ToggleRow({
   checked,
   isFocused,
   onToggle,
+  isHovered = false,
 }: {
   label: string;
   checked: boolean;
   isFocused: boolean;
   onToggle: () => void;
+  isHovered?: boolean;
 }) {
   useGuardedInput(
     (input) => {
@@ -28,9 +32,9 @@ export function ToggleRow({
 
   return (
     <Text
-      color={isFocused ? "cyan" : undefined}
-      dimColor={!isFocused}
-      bold={isFocused}
+      color={isFocused || isHovered ? "cyan" : undefined}
+      dimColor={!isFocused && !isHovered}
+      bold={isFocused || isHovered}
     >
       {checked ? "[x]" : "[ ]"} {label}
     </Text>
@@ -46,22 +50,38 @@ export function SubmitButton({
   disabled?: boolean;
   onSubmit: () => void;
 }) {
+  const activationPendingRef = useRef(false);
+  const activate = () => {
+    if (disabled || activationPendingRef.current) return;
+    activationPendingRef.current = true;
+    queueMicrotask(() => {
+      activationPendingRef.current = false;
+    });
+    onSubmit();
+  };
+
   useGuardedInput(
     (input, key) => {
-      if ((key.return && !key.ctrl) || input === " ") onSubmit();
+      if ((key.return && !key.ctrl) || input === " ") activate();
     },
     { isActive: isFocused && !disabled },
   );
 
   return (
     <Box marginTop={1}>
-      <Text
-        color={!disabled && isFocused ? "cyan" : undefined}
-        dimColor={disabled || !isFocused}
-        bold={isFocused}
-      >
-        {isFocused ? "▸ " : "  "}Submit
-      </Text>
+      <MouseClickable onClick={activate}>
+        {(isHovered) => (
+          <Box>
+            <Text
+              color={!disabled && (isFocused || isHovered) ? "cyan" : undefined}
+              dimColor={disabled || (!isFocused && !isHovered)}
+              bold={isFocused || isHovered}
+            >
+              {isFocused ? "▸ " : "  "}Submit
+            </Text>
+          </Box>
+        )}
+      </MouseClickable>
     </Box>
   );
 }

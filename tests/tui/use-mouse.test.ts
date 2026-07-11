@@ -36,9 +36,9 @@ describe("createMouseController", () => {
     expect(writes).toEqual([]);
   });
 
-  test("enable bytes turn on ?1000 + ?1006; disable reverses ?1006 then ?1000", () => {
-    expect(MOUSE_ENABLE).toBe("\x1b[?1000h\x1b[?1006h");
-    expect(MOUSE_DISABLE).toBe("\x1b[?1006l\x1b[?1000l");
+  test("enable bytes add any-motion + SGR reporting; disable in reverse", () => {
+    expect(MOUSE_ENABLE).toBe("\x1b[?1000h\x1b[?1003h\x1b[?1006h");
+    expect(MOUSE_DISABLE).toBe("\x1b[?1006l\x1b[?1003l\x1b[?1000l");
   });
 });
 

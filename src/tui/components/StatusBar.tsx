@@ -37,6 +37,7 @@ function getHints(
       ];
     case "Search":
       return ["type to filter", "esc:cancel  enter:done"];
+    case "Shortcuts":
     case "OpenModal":
       return ["", ""];
     case "Expanded":
@@ -87,12 +88,10 @@ function getHints(
  * (and the divider is width-repeated), so width never changes the row count,
  * and searchQuery/selectedPaneRow/hasClient only change text, never lines.
  *
- * True-modal modes (OpenModal/UpModal/AddProjectModal) do not render
- * StatusBar at all — the modal replaces the bottom chrome — but they return
- * the default-branch count anyway: App budgets the tree viewport with this
- * VIRTUAL count so opening a modal does not change viewportRows (which would
- * clamp/re-anchor the scroll state); the modal's extra height is absorbed by
- * the tree box's overflow clipping instead.
+ * Normal navigation has no shortcut footer; it only reserves a row when a
+ * repository error is visible. True-modal modes use that same virtual count,
+ * so opening a modal does not clamp or re-anchor the scroll position. The
+ * modal's extra height is absorbed by the tree box's overflow clipping.
  */
 export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
   switch (mode.type) {
@@ -104,9 +103,17 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
     // divider + query line + hint line
     case "Search":
       return 3;
-    // divider + optional repoError + two hint lines
+    // Shortcut and form modals replace the footer. Their virtual count matches
+    // the normal tree footer so opening one does not disturb scroll position.
+    case "Shortcuts":
+    case "OpenModal":
+    case "UpModal":
+    case "AddProjectModal":
+      return hasRepoError ? 1 : 0;
+    // The normal tree only reserves room for an error; shortcuts live in the
+    // on-demand shortcuts modal.
     default:
-      return 3 + (hasRepoError ? 1 : 0);
+      return hasRepoError ? 1 : 0;
   }
 }
 
@@ -166,6 +173,12 @@ export function StatusBar({
         </ChromeLine>
       </Box>
     );
+  }
+
+  if (mode.type === "Navigate" || mode.type === "Expanded") {
+    return repoError ? (
+      <ChromeLine color="yellow">⚠ {toSingleLine(repoError)}</ChromeLine>
+    ) : null;
   }
 
   const [line1, line2] = getHints(

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatusBar, statusBarRowCount } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
@@ -107,6 +108,7 @@ export function App() {
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const shortcutsReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmPendingRef = useRef(false);
   const confirmKillAttemptRef = useRef(0);
@@ -226,7 +228,8 @@ export function App() {
   // would under-count, and the overflowing layout would misalign mouse
   // hit-testing.
   //
-  // True modals replace the StatusBar but budget the SAME virtual row count:
+  // True modals replace the StatusBar but budget the SAME virtual row count
+  // as the now-hidden default shortcut footer (zero, or one repo-error row):
   // viewportRows must not change when a modal opens, or the clamp/keep-visible
   // effects would rewrite a wheel-scrolled offset the user expects back on
   // cancel. Confirmation modals render below the header; the other modals
@@ -752,11 +755,23 @@ export function App() {
         return;
       }
 
+      if (
+        input === "?" &&
+        (mode.type === "Navigate" || mode.type === "Expanded")
+      ) {
+        shortcutsReturnModeRef.current = mode;
+        setMode(Mode.Shortcuts);
+        return;
+      }
+
       switch (mode.type) {
         case "Navigate":
           return handleNavigateInput(navCtx, input, key);
         case "Search":
           return handleSearchInput(input, key);
+        case "Shortcuts":
+          if (key.escape) setMode(shortcutsReturnModeRef.current);
+          return;
         case "OpenModal":
         case "UpModal":
         case "AddProjectModal":
@@ -857,7 +872,12 @@ export function App() {
           its natural height so the tree box above is the only child Yoga
           shrinks. Confirmations render below the header instead. */}
       <Box flexDirection="column" flexShrink={0}>
-        {mode.type === "OpenModal" ? (
+        {mode.type === "Shortcuts" ? (
+          <ShortcutsModal
+            width={Math.min(termCols, 60)}
+            onHide={() => setMode(shortcutsReturnModeRef.current)}
+          />
+        ) : mode.type === "OpenModal" ? (
           <OpenModal
             visible
             width={Math.min(termCols, 60)}

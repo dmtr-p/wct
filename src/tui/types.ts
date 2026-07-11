@@ -6,6 +6,7 @@ import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
 export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
+  | { type: "Shortcuts" }
   | { type: "OpenModal" }
   | { type: "AddProjectModal" }
   | {
@@ -52,6 +53,7 @@ export type Mode =
 export const Mode = {
   Navigate: { type: "Navigate" } as Mode,
   Search: { type: "Search" } as Mode,
+  Shortcuts: { type: "Shortcuts" } as Mode,
   OpenModal: { type: "OpenModal" } as Mode,
   AddProjectModal: { type: "AddProjectModal" } as Mode,
   UpModal: (

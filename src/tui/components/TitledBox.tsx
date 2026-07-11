@@ -62,14 +62,14 @@ export function TitledBox({
   isHovered = false,
 }: Props) {
   const boxWidth = Math.max(width ?? 40, 0);
+  const isHighlighted = isFocused || isHovered;
   const normalizedChildren = Children.map(children, (child) =>
     typeof child === "string" || typeof child === "number" ? (
-      <Text dimColor={!isFocused}>{child}</Text>
+      <Text dimColor={!isHighlighted}>{child}</Text>
     ) : (
       child
     ),
   );
-  const isHighlighted = isFocused || isHovered;
   const lineProps = {
     color: isHighlighted ? "cyan" : undefined,
     bold: isHighlighted,

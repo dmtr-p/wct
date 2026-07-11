@@ -104,7 +104,17 @@ describe("TitledBox", () => {
       children: "feature-x",
     });
     const elements = collectElements(tree, () => true);
+    const primitiveChild = elements.find(
+      (element) =>
+        element.type === Text &&
+        (element.props as Record<string, unknown>).children === "feature-x",
+    );
 
+    expect(primitiveChild).toBeDefined();
+    if (!primitiveChild) throw new Error("primitive child Text was not found");
+    expect((primitiveChild.props as Record<string, unknown>).dimColor).toBe(
+      false,
+    );
     expect(
       elements.some(
         (element) =>

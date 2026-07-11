@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, type TextProps } from "ink";
 import { Children, type ReactNode } from "react";
 
 interface Props {
@@ -7,6 +7,8 @@ interface Props {
   width?: number;
   children: ReactNode;
   isHovered?: boolean;
+  accentColor?: TextProps["color"];
+  dimAccent?: boolean;
 }
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, {
@@ -60,6 +62,8 @@ export function TitledBox({
   width,
   children,
   isHovered = false,
+  accentColor = "cyan",
+  dimAccent = false,
 }: Props) {
   const boxWidth = Math.max(width ?? 40, 0);
   const isHighlighted = isFocused || isHovered;
@@ -71,9 +75,9 @@ export function TitledBox({
     ),
   );
   const lineProps = {
-    color: isHighlighted ? "cyan" : undefined,
-    bold: isHighlighted,
-    dimColor: !isHighlighted,
+    color: isHighlighted ? accentColor : undefined,
+    bold: isHighlighted && !dimAccent,
+    dimColor: !isHighlighted || dimAccent,
   } as const;
 
   return (
@@ -85,11 +89,11 @@ export function TitledBox({
         borderStyle="round"
         borderTop={false}
         borderBottom={false}
-        borderColor={isHighlighted ? "cyan" : undefined}
-        borderLeftColor={isHighlighted ? "cyan" : undefined}
-        borderRightColor={isHighlighted ? "cyan" : undefined}
-        borderLeftDimColor={!isHighlighted}
-        borderRightDimColor={!isHighlighted}
+        borderColor={isHighlighted ? accentColor : undefined}
+        borderLeftColor={isHighlighted ? accentColor : undefined}
+        borderRightColor={isHighlighted ? accentColor : undefined}
+        borderLeftDimColor={!isHighlighted || dimAccent}
+        borderRightDimColor={!isHighlighted || dimAccent}
       >
         {normalizedChildren}
       </Box>

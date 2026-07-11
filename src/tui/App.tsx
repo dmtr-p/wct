@@ -18,6 +18,7 @@ import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
 import { useTmux } from "./hooks/useTmux";
+import { executeConfirmKill } from "./input/confirm-kill";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
@@ -565,9 +566,17 @@ export function App() {
       case "ConfirmKill": {
         const { paneId, worktreeKey } = mode;
         const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
-        if (parentIndex !== null) setSelectedIndex(parentIndex);
-        setMode(Mode.Expanded(worktreeKey));
-        void killPane(paneId).then(() => refreshSessions());
+        clearActionError();
+        void executeConfirmKill({
+          paneId,
+          killPane,
+          refreshSessions,
+          showActionError,
+          onSuccess: () => {
+            if (parentIndex !== null) setSelectedIndex(parentIndex);
+            setMode(Mode.Expanded(worktreeKey));
+          },
+        });
         return;
       }
       case "ConfirmDown":

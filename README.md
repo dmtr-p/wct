@@ -96,6 +96,9 @@ worktree_dir: ".."
 # Defaults to the git repo directory name
 project_name: "myapp"
 
+# Working directory for setup commands and tmux panes (relative to each worktree)
+work_dir: "apps/web"
+
 # Files/directories to copy from main repo into new worktrees
 copy:
   - .env
@@ -129,6 +132,7 @@ tmux:
 profiles:
   ci:
     match: "ci/*"
+    work_dir: "apps/worker"
     setup:
       - name: "Install (CI)"
         command: "bun install --frozen-lockfile"
@@ -144,13 +148,13 @@ profiles:
       - .env.production
 ```
 
-Environment variables `WCT_WORKTREE_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands and the `ide.command`.
+Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands, tmux panes, and `ide.command`. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
 
 A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
 
 ### Config Profiles
 
-Profiles let you override `copy`, `setup`, `ide`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
+Profiles let you override `work_dir`, `copy`, `setup`, `ide`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
 
 ```yaml
 profiles:

@@ -279,6 +279,7 @@ function applyProfile(
   const { profiles: _, ...base } = config;
   return {
     ...base,
+    work_dir: profile.work_dir ?? base.work_dir,
     setup: profile.setup ?? base.setup,
     ide: mergeIdeConfig(base.ide, profile.ide),
     tmux: profile.tmux ?? base.tmux,

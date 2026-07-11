@@ -1,3 +1,4 @@
+import { isAbsolute, win32 } from "node:path";
 import { Schema } from "effect";
 import { type ResolvedConfig, type WctConfig, WctConfigSchema } from "./schema";
 
@@ -81,6 +82,14 @@ function validateTmuxWindowNames(config: WctConfig): string[] {
   return errors;
 }
 
+function validateWorkDir(workDir: string | undefined, path: string): string[] {
+  if (workDir === undefined) return [];
+  if (isAbsolute(workDir) || win32.isAbsolute(workDir)) {
+    return [`${path} must be a relative path.`];
+  }
+  return [];
+}
+
 export function validateConfig(config: unknown): ValidationResult {
   const errors = formatSchemaIssues(config);
   if (errors.length > 0) {
@@ -88,12 +97,19 @@ export function validateConfig(config: unknown): ValidationResult {
   }
 
   const decoded = Schema.decodeUnknownSync(WctConfigSchema)(config);
+  errors.push(...validateWorkDir(decoded.work_dir, "work_dir"));
   if (decoded.tmux?.windows) {
     errors.push(...validateTmuxWindowNames(decoded));
   }
 
   if (decoded.profiles) {
     for (const [profileName, profile] of Object.entries(decoded.profiles)) {
+      errors.push(
+        ...validateWorkDir(
+          profile.work_dir,
+          `profiles.${profileName}.work_dir`,
+        ),
+      );
       if (profile.tmux?.windows) {
         const profileErrors = validateTmuxWindowNames({
           tmux: profile.tmux,
@@ -119,10 +135,12 @@ export function resolveConfig(
     projectDir.split("/").filter(Boolean).pop() ??
     "project";
   const worktreeDir = config.worktree_dir ?? "../worktrees";
+  const workDir = config.work_dir ?? ".";
 
   return {
     ...config,
     worktree_dir: worktreeDir,
+    work_dir: workDir,
     project_name: projectName,
   };
 }

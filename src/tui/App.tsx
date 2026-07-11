@@ -22,8 +22,11 @@ import { executeConfirmKill } from "./input/confirm-kill";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
+  ADD_PROJECT_BUTTON_LABEL,
   detectDoubleClick,
   HEADER_OFFSET,
+  isAddProjectButtonPress,
+  isAddProjectButtonTarget,
   type MouseClickHistory,
   type MouseEvent,
   mouseClickTargetId,
@@ -91,6 +94,8 @@ export function App() {
     new Set(),
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [isAddProjectButtonHovered, setIsAddProjectButtonHovered] =
+    useState(false);
   const { actionError, showActionError, clearActionError } = useActionError();
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
@@ -634,6 +639,18 @@ export function App() {
   }
 
   function handleMouse(event: MouseEvent) {
+    if (event.kind === "move" || event.kind === "press") {
+      setIsAddProjectButtonHovered(
+        isAddProjectButtonTarget(event, mode, termCols),
+      );
+    }
+
+    if (isAddProjectButtonPress(event, mode, termCols)) {
+      lastMouseClickRef.current = null;
+      modalActions.prepareAddProjectModal();
+      return;
+    }
+
     const action = resolveMouseAction(event, {
       mode,
       rows,
@@ -772,7 +789,12 @@ export function App() {
           otherwise the header/spacer lines get squeezed to zero height and
           later rows paint over them. */}
       <Box flexDirection="column" flexShrink={0}>
-        <Text bold>wct</Text>
+        <Box justifyContent="space-between">
+          <Text bold>wct</Text>
+          <Text bold color="cyan" inverse={isAddProjectButtonHovered}>
+            {ADD_PROJECT_BUTTON_LABEL}
+          </Text>
+        </Box>
         {mode.type === "ConfirmKill" ||
         mode.type === "ConfirmDown" ||
         mode.type === "ConfirmClose" ||

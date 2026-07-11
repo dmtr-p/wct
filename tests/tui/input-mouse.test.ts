@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
+  ADD_PROJECT_BUTTON_LABEL,
   detectDoubleClick,
   HEADER_OFFSET,
+  isAddProjectButtonPress,
+  isAddProjectButtonTarget,
   isMouseSequence,
   isX10MousePrefix,
   type MouseActionContext,
@@ -18,6 +21,69 @@ import {
   type TreeRow,
 } from "../../src/tui/tree-helpers";
 import { Mode, type PaneInfo, pendingKey } from "../../src/tui/types";
+
+describe("add-project button mouse targeting", () => {
+  test("matches a left click on the right-aligned header button", () => {
+    const columns = 80;
+    const firstButtonColumn = columns - ADD_PROJECT_BUTTON_LABEL.length + 1;
+
+    expect(
+      isAddProjectButtonPress(
+        { kind: "press", button: "left", col: firstButtonColumn, row: 1 },
+        Mode.Navigate,
+        columns,
+      ),
+    ).toBe(true);
+    expect(
+      isAddProjectButtonPress(
+        { kind: "press", button: "left", col: columns, row: 1 },
+        Mode.Navigate,
+        columns,
+      ),
+    ).toBe(true);
+  });
+
+  test("identifies pointer movement over the button for hover styling", () => {
+    expect(
+      isAddProjectButtonTarget(
+        { kind: "move", col: 80, row: 1 },
+        Mode.Navigate,
+        80,
+      ),
+    ).toBe(true);
+    expect(
+      isAddProjectButtonTarget(
+        { kind: "move", col: 73, row: 1 },
+        Mode.Navigate,
+        80,
+      ),
+    ).toBe(false);
+  });
+
+  test("rejects clicks outside the button and while another mode owns input", () => {
+    expect(
+      isAddProjectButtonPress(
+        { kind: "press", button: "left", col: 74, row: 1 },
+        Mode.Navigate,
+        80,
+      ),
+    ).toBe(false);
+    expect(
+      isAddProjectButtonPress(
+        { kind: "press", button: "left", col: 80, row: 2 },
+        Mode.Navigate,
+        80,
+      ),
+    ).toBe(false);
+    expect(
+      isAddProjectButtonPress(
+        { kind: "press", button: "left", col: 80, row: 1 },
+        Mode.AddProjectModal,
+        80,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("isX10MousePrefix", () => {
   test("matches the legacy X10 report prefix, with or without leading ESC", () => {

@@ -29,7 +29,7 @@ ide:
 tmux:
   windows:
     - name: "ai"
-      command: "claude $WCT_PROMPT"
+      command: "claude"
     - name: "dev"
       split: "vertical"
       panes:
@@ -41,7 +41,7 @@ profiles:
     tmux:
       windows:
         - name: "ai"
-          command: "codex $WCT_PROMPT"
+          command: "codex"
         - name: "dev"
           split: "vertical"
           panes:

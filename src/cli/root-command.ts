@@ -186,12 +186,6 @@ const openCliCommand = Command.make(
       undefined,
       "NUMBER_OR_URL",
     ),
-    prompt: optionalStringFlag(
-      "prompt",
-      "Set WCT_PROMPT env var in tmux session",
-      "p",
-      "TEXT",
-    ),
     profile: optionalStringFlag(
       "profile",
       "Use a named config profile",
@@ -199,7 +193,7 @@ const openCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ branch, base, existing, ide, noIde, noAttach, pr, prompt, profile }) =>
+  ({ branch, base, existing, ide, noIde, noAttach, pr, profile }) =>
     openCommand({
       branch: optionToUndefined(branch),
       base: optionToUndefined(base),
@@ -208,7 +202,6 @@ const openCliCommand = Command.make(
       noIde,
       noAttach,
       pr: optionToUndefined(pr),
-      prompt: optionToUndefined(prompt),
       profile: optionToUndefined(profile),
     }),
 ).pipe(

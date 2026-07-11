@@ -22,7 +22,6 @@ export interface OpenModalResult {
   base?: string;
   pr?: string;
   profile?: string;
-  prompt?: string;
   existing: boolean;
   noIde: boolean;
   noAttach: boolean;
@@ -147,61 +146,12 @@ function BracketInput({
   );
 }
 
-function PromptArea({
-  value,
-  isFocused,
-  onChange,
-  onFocus,
-  width,
-}: {
-  value: string;
-  isFocused: boolean;
-  onChange: (v: string) => void;
-  onFocus: () => void;
-  width?: number;
-}) {
-  const cursorVisible = useBlink();
-
-  useGuardedInput(
-    (input, key) => {
-      if (!isFocused) return;
-      if (key.backspace) {
-        onChange(value.slice(0, -1));
-      } else if (key.return && !key.ctrl) {
-        onChange(`${value}\n`);
-      } else if (input && !key.ctrl && !key.meta) {
-        onChange(value + input);
-      }
-    },
-    { isActive: isFocused },
-  );
-
-  return (
-    <MouseClickable onClick={onFocus}>
-      {(isHovered) => (
-        <TitledBox
-          title="Prompt"
-          isFocused={isFocused}
-          isHovered={isHovered}
-          width={width}
-        >
-          <Text dimColor={!isFocused}>
-            {value || (isFocused ? "" : "optional")}
-            {isFocused ? (cursorVisible ? "▎" : " ") : ""}
-          </Text>
-        </TitledBox>
-      )}
-    </MouseClickable>
-  );
-}
-
 // ─── NewBranchForm ───────────────────────────────────────────────
 
 type NewBranchField =
   | "branch"
   | "base"
   | "profile"
-  | "prompt"
   | "noIde"
   | "autoSwitch"
   | "submit";
@@ -232,10 +182,8 @@ export function NewBranchForm({
     autoSwitch,
     setAutoSwitch,
   } = useSessionOptionsState(profileNames, true, ideDefaults);
-  const [prompt, setPrompt] = useState("");
-
   const fields = useMemo(() => {
-    const f: NewBranchField[] = ["branch", "base", "prompt"];
+    const f: NewBranchField[] = ["branch", "base"];
     if (profileNames.length > 0) f.push("profile");
     f.push("noIde", "autoSwitch", "submit");
     return f;
@@ -262,7 +210,6 @@ export function NewBranchForm({
       branch: branch.trim(),
       base: base.trim() || undefined,
       profile: submission.profile,
-      prompt: prompt.trim() || undefined,
       existing: false,
       noIde,
       noAttach: !autoSwitch,
@@ -307,13 +254,6 @@ export function NewBranchForm({
         onFocus={() => setFocusIndex(fields.indexOf("base"))}
         width={width}
       />
-      <PromptArea
-        value={prompt}
-        isFocused={currentField === "prompt"}
-        onChange={setPrompt}
-        onFocus={() => setFocusIndex(fields.indexOf("prompt"))}
-        width={width}
-      />
       <SessionOptionsSection
         profileNames={profileNames}
         focusedField={
@@ -341,13 +281,7 @@ export function NewBranchForm({
 
 // ─── FromPRForm ──────────────────────────────────────────────────
 
-type FromPRField =
-  | "prList"
-  | "profile"
-  | "prompt"
-  | "noIde"
-  | "autoSwitch"
-  | "submit";
+type FromPRField = "prList" | "profile" | "noIde" | "autoSwitch" | "submit";
 
 /** @internal */
 export function FromPRForm({
@@ -379,10 +313,8 @@ export function FromPRForm({
     autoSwitch,
     setAutoSwitch,
   } = useSessionOptionsState(profileNames, true, ideDefaults);
-  const [prompt, setPrompt] = useState("");
-
   const fields = useMemo(() => {
-    const f: FromPRField[] = ["prList", "prompt"];
+    const f: FromPRField[] = ["prList"];
     if (profileNames.length > 0) f.push("profile");
     f.push("noIde", "autoSwitch", "submit");
     return f;
@@ -447,7 +379,6 @@ export function FromPRForm({
       branch: pr.headRefName,
       pr: String(pr.number),
       profile: submission.profile,
-      prompt: prompt.trim() || undefined,
       existing: false,
       noIde,
       noAttach: !autoSwitch,
@@ -536,13 +467,6 @@ export function FromPRForm({
           }}
         />
       </TitledBox>
-      <PromptArea
-        value={prompt}
-        isFocused={currentField === "prompt"}
-        onChange={setPrompt}
-        onFocus={() => setFocusIndex(fields.indexOf("prompt"))}
-        width={width}
-      />
       <SessionOptionsSection
         profileNames={profileNames}
         focusedField={
@@ -577,7 +501,6 @@ export function FromPRForm({
 type ExistingBranchField =
   | "branchList"
   | "profile"
-  | "prompt"
   | "noIde"
   | "autoSwitch"
   | "submit";
@@ -609,10 +532,8 @@ export function ExistingBranchForm({
     autoSwitch,
     setAutoSwitch,
   } = useSessionOptionsState(profileNames, true, ideDefaults);
-  const [prompt, setPrompt] = useState("");
-
   const fields = useMemo(() => {
-    const nextFields: ExistingBranchField[] = ["branchList", "prompt"];
+    const nextFields: ExistingBranchField[] = ["branchList"];
     if (profileNames.length > 0) nextFields.push("profile");
     nextFields.push("noIde", "autoSwitch", "submit");
     return nextFields;
@@ -668,7 +589,6 @@ export function ExistingBranchForm({
     onSubmit({
       branch: selectedBranch.value,
       profile: submission.profile,
-      prompt: prompt.trim() || undefined,
       existing: true,
       noIde,
       noAttach: !autoSwitch,
@@ -737,13 +657,6 @@ export function ExistingBranchForm({
           }}
         />
       </TitledBox>
-      <PromptArea
-        value={prompt}
-        isFocused={currentField === "prompt"}
-        onChange={setPrompt}
-        onFocus={() => setFocusIndex(fields.indexOf("prompt"))}
-        width={width}
-      />
       <SessionOptionsSection
         profileNames={profileNames}
         focusedField={

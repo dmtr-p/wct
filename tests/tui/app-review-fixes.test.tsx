@@ -170,8 +170,7 @@ describe("App.tsx review fixes (real App)", () => {
 
     expect(
       rendered.events.some(
-        (event) =>
-          event.kind === "write" && event.data.includes(MOUSE_DISABLE),
+        (event) => event.kind === "write" && event.data.includes(MOUSE_DISABLE),
       ),
     ).toBe(true);
   });

@@ -8,7 +8,14 @@ export interface ConfirmKillContext {
 }
 
 export async function executeConfirmKill(ctx: ConfirmKillContext) {
-  const killed = await ctx.killPane(ctx.paneId);
+  let killed: boolean;
+  try {
+    killed = await ctx.killPane(ctx.paneId);
+  } catch {
+    if (ctx.isCurrent()) ctx.showActionError("Failed to kill pane");
+    return;
+  }
+
   if (!ctx.isCurrent()) return;
 
   if (!killed) {

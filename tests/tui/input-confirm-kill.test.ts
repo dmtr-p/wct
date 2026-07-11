@@ -42,8 +42,21 @@ describe("executeConfirmKill", () => {
     expect(ctx.refreshSessions).not.toHaveBeenCalled();
   });
 
+  test("reports a rejected pane kill through the action error flow", async () => {
+    const ctx = makeContext({
+      killPane: vi.fn().mockRejectedValue(new Error("tmux failed")),
+    });
+
+    await executeConfirmKill(ctx);
+
+    expect(ctx.showActionError).toHaveBeenCalledWith("Failed to kill pane");
+    expect(ctx.onSuccess).not.toHaveBeenCalled();
+    expect(ctx.refreshSessions).not.toHaveBeenCalled();
+  });
+
   test("ignores a stale completion after the confirmation is cancelled", async () => {
     const ctx = makeContext({
+      killPane: vi.fn().mockRejectedValue(new Error("tmux failed")),
       isCurrent: vi.fn(() => false),
     });
 

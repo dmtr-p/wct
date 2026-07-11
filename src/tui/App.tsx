@@ -3,6 +3,7 @@
 import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
+import { ConfirmModal } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
 import { StatusBar, statusBarRowCount } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
@@ -17,7 +18,6 @@ import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
 import { useTmux } from "./hooks/useTmux";
-import { handleConfirmCloseInput } from "./input/confirm-close";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
@@ -218,13 +218,14 @@ export function App() {
   // would under-count, and the overflowing layout would misalign mouse
   // hit-testing.
   //
-  // True modals (OpenModal/UpModal/AddProjectModal) replace the StatusBar but
-  // budget the SAME virtual row count: viewportRows must not change when a
-  // modal opens, or the clamp/keep-visible effects would rewrite a
-  // wheel-scrolled offset the user expects back on cancel. The modal being
-  // taller than the budgeted chrome is absorbed by the tree box's
-  // overflowY="hidden" clipping (see the render below), which keeps the modal
-  // fully on-screen without inflating the viewport.
+  // True modals replace the StatusBar but budget the SAME virtual row count:
+  // viewportRows must not change when a modal opens, or the clamp/keep-visible
+  // effects would rewrite a wheel-scrolled offset the user expects back on
+  // cancel. Confirmation modals render below the header; the other modals
+  // render below the tree. A modal being taller than the budgeted chrome is
+  // absorbed by the tree box's overflowY="hidden" clipping (see the render
+  // below), which keeps the modal fully on-screen without inflating the
+  // viewport.
   const bottomChromeRows =
     statusBarRowCount(mode, Boolean(repoError)) +
     (tmuxError || actionError ? 1 : 0);
@@ -542,47 +543,59 @@ export function App() {
     }
   }
 
-  function handleConfirmKillInput(_input: string, key: Key) {
-    if (mode.type !== "ConfirmKill") {
-      return;
-    }
-
-    if (key.escape) {
-      setMode(Mode.Expanded(mode.worktreeKey));
-      return;
-    }
-
-    if (key.return) {
-      const { paneId, worktreeKey } = mode;
-      const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
-      if (parentIndex !== null) {
-        setSelectedIndex(parentIndex);
-      }
-      setMode(Mode.Expanded(worktreeKey));
-      killPane(paneId).then(() => refreshSessions());
+  function cancelConfirm() {
+    switch (mode.type) {
+      case "ConfirmKill":
+        setMode(Mode.Expanded(mode.worktreeKey));
+        return;
+      case "ConfirmDown":
+        setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
+        setMode(confirmDownReturnModeRef.current);
+        return;
+      case "ConfirmClose":
+      case "ConfirmCloseForce":
+        setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
+        setMode(confirmCloseReturnModeRef.current);
+        return;
     }
   }
 
-  function handleConfirmDownInput(_input: string, key: Key) {
-    if (mode.type !== "ConfirmDown") {
-      return;
+  function submitConfirm() {
+    switch (mode.type) {
+      case "ConfirmKill": {
+        const { paneId, worktreeKey } = mode;
+        const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
+        if (parentIndex !== null) setSelectedIndex(parentIndex);
+        setMode(Mode.Expanded(worktreeKey));
+        void killPane(paneId).then(() => refreshSessions());
+        return;
+      }
+      case "ConfirmDown":
+        void sessionActions.executeDown(
+          mode.sessionName,
+          mode.branch,
+          mode.worktreePath,
+          mode.worktreeKey,
+        );
+        return;
+      case "ConfirmClose":
+      case "ConfirmCloseForce":
+        void sessionActions.executeClose(
+          mode.sessionName,
+          mode.branch,
+          mode.worktreePath,
+          mode.worktreeKey,
+          mode.repoPath,
+          mode.project,
+          mode.type === "ConfirmCloseForce",
+        );
+        return;
     }
+  }
 
-    if (key.escape) {
-      setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
-      setMode(confirmDownReturnModeRef.current);
-      return;
-    }
-
-    if (key.return) {
-      const { branch, worktreeKey, worktreePath, sessionName } = mode;
-      void sessionActions.executeDown(
-        sessionName,
-        branch,
-        worktreePath,
-        worktreeKey,
-      );
-    }
+  function handleConfirmInput(key: Key) {
+    if (key.escape) cancelConfirm();
+    else if (key.return) submitConfirm();
   }
 
   function handleMouse(event: MouseEvent) {
@@ -699,24 +712,10 @@ export function App() {
         case "Expanded":
           return handleExpandedInput(expCtx, input, key);
         case "ConfirmKill":
-          return handleConfirmKillInput(input, key);
         case "ConfirmDown":
-          return handleConfirmDownInput(input, key);
         case "ConfirmClose":
         case "ConfirmCloseForce":
-          return handleConfirmCloseInput(
-            {
-              mode,
-              returnMode: confirmCloseReturnModeRef.current,
-              returnSelectedIndex: confirmCloseReturnSelectedIndexRef.current,
-              setMode,
-              setSelectedIndex,
-              executeClose: (...args) =>
-                void sessionActions.executeClose(...args),
-            },
-            input,
-            key,
-          );
+          return handleConfirmInput(key);
       }
     },
     { onMouseEvent: handleMouse },
@@ -739,6 +738,29 @@ export function App() {
           later rows paint over them. */}
       <Box flexDirection="column" flexShrink={0}>
         <Text bold>wct</Text>
+        {mode.type === "ConfirmKill" ||
+        mode.type === "ConfirmDown" ||
+        mode.type === "ConfirmClose" ||
+        mode.type === "ConfirmCloseForce" ? (
+          <Box flexDirection="column">
+            {tmuxError && !actionError ? (
+              <Text color="yellow" wrap="truncate">
+                {toSingleLine(tmuxError)}
+              </Text>
+            ) : null}
+            {actionError ? (
+              <Text color="red" wrap="truncate">
+                {toSingleLine(actionError)}
+              </Text>
+            ) : null}
+            <ConfirmModal
+              mode={mode}
+              width={Math.min(termCols, 60)}
+              onConfirm={submitConfirm}
+              onCancel={cancelConfirm}
+            />
+          </Box>
+        ) : null}
         <Text> </Text>
       </Box>
       {/* overflowY="hidden" + flexShrink is what lets a true modal exceed the
@@ -774,8 +796,9 @@ export function App() {
           />
         </Box>
       </Box>
-      {/* flexShrink={0} pins the bottom area (modal or status chrome) to its
-          natural height so the tree box above is the only child Yoga shrinks. */}
+      {/* flexShrink={0} pins the bottom area (form modal or status chrome) to
+          its natural height so the tree box above is the only child Yoga
+          shrinks. Confirmations render below the header instead. */}
       <Box flexDirection="column" flexShrink={0}>
         {mode.type === "OpenModal" ? (
           <OpenModal
@@ -811,7 +834,10 @@ export function App() {
             onSubmit={modalActions.handleAddProject}
             onCancel={() => setMode(modalReturnModeRef.current)}
           />
-        ) : (
+        ) : mode.type === "ConfirmKill" ||
+          mode.type === "ConfirmDown" ||
+          mode.type === "ConfirmClose" ||
+          mode.type === "ConfirmCloseForce" ? null : (
           <Box flexDirection="column">
             {tmuxError && !actionError ? (
               <Text color="yellow" wrap="truncate">

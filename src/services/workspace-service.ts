@@ -314,6 +314,22 @@ function setupWarning(result: SetupResult): WorkspaceWarning | undefined {
   };
 }
 
+function createWctEnv(
+  worktreePath: string,
+  workDir: string,
+  mainRepoPath: string,
+  branch: string,
+  projectName: string,
+): WctEnv {
+  return {
+    WCT_WORKTREE_DIR: worktreePath,
+    WCT_WORK_DIR: resolve(worktreePath, workDir),
+    WCT_MAIN_DIR: mainRepoPath,
+    WCT_BRANCH: branch,
+    WCT_PROJECT: projectName,
+  };
+}
+
 function resolveOpenIntent(
   options: WorkspaceOpenOptions,
 ): Effect.Effect<
@@ -533,12 +549,14 @@ function openImpl(
       ...(base ? { base } : {}),
     });
     const sessionName = formatSessionName(basename(worktreePath));
-    const env: WctEnv = {
-      WCT_WORKTREE_DIR: worktreePath,
-      WCT_MAIN_DIR: mainRepoPath,
-      WCT_BRANCH: branch,
-      WCT_PROJECT: config.project_name,
-    };
+    const env = createWctEnv(
+      worktreePath,
+      resolved.work_dir,
+      mainRepoPath,
+      branch,
+      config.project_name,
+    );
+    const workingDir = env.WCT_WORK_DIR;
 
     yield* emitReporter(reporter, {
       operation: "open",
@@ -655,7 +673,7 @@ function openImpl(
       resolved.setup && resolved.setup.length > 0
         ? yield* captureAttempt(
             SetupService.use((service) =>
-              service.runSetupCommands(resolved.setup ?? [], worktreePath, env),
+              service.runSetupCommands(resolved.setup ?? [], workingDir, env),
             ),
           )
         : skippedAttempt<SetupResult[]>("setup_not_configured");
@@ -686,12 +704,7 @@ function openImpl(
     const startTmux = resolved.tmux
       ? captureAttempt(
           TmuxService.use((service) =>
-            service.createSession(
-              sessionName,
-              worktreePath,
-              resolved.tmux,
-              env,
-            ),
+            service.createSession(sessionName, workingDir, resolved.tmux, env),
           ),
         )
       : Effect.succeed(
@@ -918,12 +931,14 @@ function upImpl(
 
     const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
     const sessionName = formatSessionName(basename(worktreePath));
-    const env: WctEnv = {
-      WCT_WORKTREE_DIR: worktreePath,
-      WCT_MAIN_DIR: mainRepoPath,
-      WCT_BRANCH: branch,
-      WCT_PROJECT: config.project_name,
-    };
+    const env = createWctEnv(
+      worktreePath,
+      resolved.work_dir,
+      mainRepoPath,
+      branch,
+      config.project_name,
+    );
+    const workingDir = env.WCT_WORK_DIR;
 
     if (resolved.tmux) {
       yield* emitReporter(reporter, {
@@ -944,12 +959,7 @@ function upImpl(
     const startTmux = resolved.tmux
       ? captureAttempt(
           TmuxService.use((service) =>
-            service.createSession(
-              sessionName,
-              worktreePath,
-              resolved.tmux,
-              env,
-            ),
+            service.createSession(sessionName, workingDir, resolved.tmux, env),
           ),
         )
       : Effect.succeed(

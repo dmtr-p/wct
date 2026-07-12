@@ -6,6 +6,7 @@ function baseConfig(overrides?: Partial<ResolvedConfig>): ResolvedConfig {
   return {
     worktree_dir: "../worktrees",
     project_name: "test",
+    work_dir: ".",
     setup: [{ name: "Install", command: "bun install" }],
     ide: { command: "code ." },
     tmux: { windows: [{ name: "main" }] },
@@ -39,6 +40,15 @@ describe("resolveProfile", () => {
     });
     const { config: result } = resolveProfile(config, "feature/backend-auth");
     expect(result.tmux).toEqual(config.tmux);
+  });
+
+  test("profile overrides work_dir", () => {
+    const config = baseConfig({
+      work_dir: "apps/web",
+      profiles: { api: { match: "api/*", work_dir: "apps/api" } },
+    });
+    const { config: result } = resolveProfile(config, "api/users");
+    expect(result.work_dir).toBe("apps/api");
   });
 
   test("auto-matches profile by branch glob", () => {

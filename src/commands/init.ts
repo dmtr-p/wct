@@ -21,6 +21,9 @@ worktree_dir: ".."
 # Project name (used for tmux session naming: "project-branch")
 # project_name: "myapp"
 
+# Directory used for setup commands and tmux panes (relative to each worktree)
+# work_dir: "apps/web"
+
 # Files/directories to copy to new worktree
 copy:
   - .env
@@ -36,7 +39,7 @@ setup:
   #   command: "bun run codegen"
   #   optional: true  # continue if fails
 
-# IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
+# IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_WORK_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
 ide:
   open: true
   name: vscode

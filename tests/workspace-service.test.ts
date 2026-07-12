@@ -621,6 +621,7 @@ describe("WorkspaceService open", () => {
 setup:
   - name: bootstrap
     command: "echo setup"
+work_dir: "packages/app"
 ide:
   name: vscode
   command: "code"
@@ -631,9 +632,9 @@ ide:
     const calls: string[] = [];
     const setup: SetupService = {
       ...liveSetupService,
-      runSetupCommands: () =>
+      runSetupCommands: (_commands, workingDir, env) =>
         Effect.sync(() => {
-          calls.push("setup");
+          calls.push(`setup:${workingDir}:${env.WCT_WORK_DIR}`);
           return [{ _tag: "Succeeded", name: "bootstrap" }];
         }),
     };
@@ -679,11 +680,17 @@ ide:
       attempted: true,
       ok: true,
     });
+    const workingDir = join(result.worktreePath, "packages/app");
+    expect(calls).toContain(`setup:${workingDir}:${workingDir}`);
     expect(result.attempts.vscode).toMatchObject({
       attempted: true,
       ok: true,
     });
-    expect(calls).toEqual(["worktree", "vscode", "setup"]);
+    expect(calls).toEqual([
+      "worktree",
+      "vscode",
+      `setup:${workingDir}:${workingDir}`,
+    ]);
   });
 
   test("returns typed warnings for setup, VS Code, tmux, and IDE failures", async () => {
@@ -885,6 +892,7 @@ describe("WorkspaceService up", () => {
       repoDir,
       `copy:
   - ".env.local"
+work_dir: "apps/web"
 `,
     );
 
@@ -934,7 +942,10 @@ describe("WorkspaceService up", () => {
       value: null,
     });
     expect(result.warnings).toEqual([]);
-    expect(calls).toContain(`tmux:myapp-feature:${worktreePath}`);
+    expect(calls).toContain(
+      `tmux:myapp-feature:${join(worktreePath, "apps/web")}`,
+    );
+    expect(result.env.WCT_WORK_DIR).toBe(join(worktreePath, "apps/web"));
     expect(calls).toContain("ide:feature");
     expect(calls).not.toContain("setup");
     expect(await Bun.file(copiedFile).exists()).toBe(false);
@@ -945,6 +956,7 @@ describe("WorkspaceService up", () => {
       repoDir,
       `profiles:
   focused:
+    work_dir: "apps/focused"
     tmux:
       windows:
         - name: "profile-window"
@@ -953,6 +965,7 @@ describe("WorkspaceService up", () => {
 `,
     );
     const tmuxWindowNames: Array<string | undefined> = [];
+    const tmuxWorkingDirs: string[] = [];
     const ideCommands: string[] = [];
 
     const result = await runBunPromise(
@@ -969,8 +982,9 @@ describe("WorkspaceService up", () => {
           },
           tmux: {
             ...noopTmuxService,
-            createSession: (name, _workingDir, config) =>
+            createSession: (name, workingDir, config) =>
               Effect.sync(() => {
+                tmuxWorkingDirs.push(workingDir);
                 tmuxWindowNames.push(config?.windows?.[0]?.name);
                 return { _tag: "Created" as const, sessionName: name };
               }),
@@ -987,6 +1001,7 @@ describe("WorkspaceService up", () => {
 
     expect(result.profileName).toBe("focused");
     expect(tmuxWindowNames).toEqual(["profile-window"]);
+    expect(tmuxWorkingDirs).toEqual([join(worktreePath, "apps/focused")]);
     expect(ideCommands).toEqual(["echo profile-ide"]);
   });
 

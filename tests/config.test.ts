@@ -30,6 +30,7 @@ describe("validateConfig", () => {
     const result = validateConfig({
       version: 1,
       worktree_dir: "../worktrees",
+      work_dir: "apps/web",
       project_name: "myapp",
       copy: [".env", ".env.local"],
       setup: [
@@ -70,6 +71,27 @@ describe("validateConfig", () => {
     const result = validateConfig({ worktree_dir: 123 });
     expect(result.valid).toBe(false);
     expectValidationError(result.errors, "worktree_dir: Expected string");
+  });
+
+  test("accepts relative work_dir in base and profile configs", () => {
+    const result = validateConfig({
+      work_dir: "apps/web",
+      profiles: { api: { work_dir: "apps/api" } },
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  test("rejects absolute work_dir in base and profile configs", () => {
+    const result = validateConfig({
+      work_dir: "/tmp/web",
+      profiles: { api: { work_dir: "C:\\apps\\api" } },
+    });
+    expect(result.valid).toBe(false);
+    expectValidationError(result.errors, "work_dir must be a relative path");
+    expectValidationError(
+      result.errors,
+      "profiles.api.work_dir must be a relative path",
+    );
   });
 
   test("rejects invalid copy array items", () => {
@@ -436,6 +458,7 @@ describe("resolveConfig", () => {
     const result = resolveConfig({}, "/home/user/projects/myapp");
     expect(result.project_name).toBe("myapp");
     expect(result.worktree_dir).toBe("../worktrees");
+    expect(result.work_dir).toBe(".");
   });
 
   test("preserves specified values", () => {
@@ -443,11 +466,13 @@ describe("resolveConfig", () => {
       {
         project_name: "custom",
         worktree_dir: "~/worktrees",
+        work_dir: "packages/app",
       },
       "/home/user/projects/myapp",
     );
     expect(result.project_name).toBe("custom");
     expect(result.worktree_dir).toBe("~/worktrees");
+    expect(result.work_dir).toBe("packages/app");
   });
 });
 

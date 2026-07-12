@@ -7,10 +7,12 @@ import { execShell, getProcessErrorMessage } from "./process";
 export function substituteEnvVars(command: string, env: WctEnv): string {
   return command
     .replace(/\$WCT_WORKTREE_DIR/g, env.WCT_WORKTREE_DIR)
+    .replace(/\$WCT_WORK_DIR/g, env.WCT_WORK_DIR)
     .replace(/\$WCT_MAIN_DIR/g, env.WCT_MAIN_DIR)
     .replace(/\$WCT_BRANCH/g, env.WCT_BRANCH)
     .replace(/\$WCT_PROJECT/g, env.WCT_PROJECT)
     .replace(/\$\{WCT_WORKTREE_DIR\}/g, env.WCT_WORKTREE_DIR)
+    .replace(/\$\{WCT_WORK_DIR\}/g, env.WCT_WORK_DIR)
     .replace(/\$\{WCT_MAIN_DIR\}/g, env.WCT_MAIN_DIR)
     .replace(/\$\{WCT_BRANCH\}/g, env.WCT_BRANCH)
     .replace(/\$\{WCT_PROJECT\}/g, env.WCT_PROJECT);

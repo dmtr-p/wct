@@ -21,7 +21,6 @@ describe("buildTreeItems", () => {
         project: "alpha",
         worktrees: [],
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         error: "Failed to inspect repository",
       },
       {
@@ -30,7 +29,6 @@ describe("buildTreeItems", () => {
         project: "beta",
         worktrees: [],
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
       },
     ];
 
@@ -53,7 +51,6 @@ describe("buildTreeItems", () => {
           sync: null,
         })),
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
       },
     ];
     const prData = new Map([
@@ -136,7 +133,6 @@ describe("buildTreeItems", () => {
             },
           ],
           profileNames: [],
-          ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
       expandedWorktreeKeys: new Set([pendingKey("example", branch)]),
@@ -198,7 +194,6 @@ describe("buildTreeItems", () => {
             },
           ],
           profileNames: [],
-          ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
       expandedWorktreeKeys: new Set([pendingKey("example", branch)]),
@@ -230,7 +225,6 @@ describe("buildTreeItems", () => {
             },
           ],
           profileNames: [],
-          ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
       items,
@@ -315,7 +309,6 @@ describe("buildTreeItems", () => {
             },
           ],
           profileNames: [],
-          ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
       items,

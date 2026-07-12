@@ -54,14 +54,5 @@ export function resolveStartActionMessage(
     result.attempts.tmux.attempted && !result.attempts.tmux.ok
       ? result.attempts.tmux.error.message
       : null;
-  const ideError =
-    result.attempts.ide.attempted && !result.attempts.ide.ok
-      ? result.attempts.ide.error.message
-      : null;
-
-  if (tmuxError && ideError) {
-    return `${tmuxError} (IDE also failed: ${ideError})`;
-  }
-
-  return tmuxError ?? ideError;
+  return tmuxError;
 }

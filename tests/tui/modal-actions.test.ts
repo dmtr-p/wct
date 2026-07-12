@@ -1,12 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  type Mock,
-  test,
-  vi,
-} from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { WorkspaceService } from "../../src/services/workspace-service";
 import type { ModalActionDeps } from "../../src/tui/hooks/useModalActions";
 import {
@@ -43,8 +35,6 @@ vi.mock("../../src/services/project-registration", () => ({
   registerProject: registerProjectMock,
 }));
 
-const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
-
 function makeOpenResult(overrides: Record<string, unknown> = {}) {
   return {
     operation: "open" as const,
@@ -58,11 +48,9 @@ function makeOpenResult(overrides: Record<string, unknown> = {}) {
     warnings: [],
     attempts: {
       worktree: { attempted: true, ok: true, value: {} },
-      vscode: { attempted: false, reason: "not_configured" },
       copy: { attempted: false, reason: "not_configured" },
       setup: { attempted: false, reason: "not_configured" },
       tmux: { attempted: true, ok: true, value: { _tag: "Created" } },
-      ide: { attempted: false, reason: "disabled" },
     },
     ...overrides,
   };
@@ -85,7 +73,6 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setOpenModalProfiles: vi.fn(),
     setOpenModalRepoProject: vi.fn(),
     setOpenModalRepoPath: vi.fn(),
-    setOpenModalIdeDefaults: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
@@ -123,7 +110,6 @@ describe("createPrepareOpenModal", () => {
         project: "myproj",
         repoPath: "/home/user/myproj",
         profileNames: ["dev", "ci"],
-        ideDefaults: defaultIdeDefaults,
         worktrees: [
           {
             branch: "feat-a",
@@ -148,9 +134,6 @@ describe("createPrepareOpenModal", () => {
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev", "ci"]);
     expect(deps.setOpenModalRepoProject).toHaveBeenCalledWith("myproj");
     expect(deps.setOpenModalRepoPath).toHaveBeenCalledWith("/home/user/myproj");
-    expect(deps.setOpenModalIdeDefaults).toHaveBeenCalledWith(
-      defaultIdeDefaults,
-    );
     expect(deps.setMode).toHaveBeenCalledWith(Mode.OpenModal);
   });
 
@@ -162,7 +145,6 @@ describe("createPrepareOpenModal", () => {
         project: "myproj",
         repoPath: "/repo",
         profileNames: ["dev"],
-        ideDefaults: defaultIdeDefaults,
         worktrees: [],
       },
     ];
@@ -177,30 +159,6 @@ describe("createPrepareOpenModal", () => {
 
     expect(deps.setOpenModalBase).toHaveBeenCalledWith(undefined);
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev"]);
-    expect(deps.setOpenModalIdeDefaults).toHaveBeenCalledWith(
-      defaultIdeDefaults,
-    );
-  });
-
-  test("uses No IDE defaults when no repo is selected", () => {
-    const deps = makeDeps();
-    const prepare = createPrepareOpenModal(deps);
-
-    prepare();
-
-    expect(deps.setOpenModalIdeDefaults).toHaveBeenCalledWith(
-      defaultIdeDefaults,
-    );
-  });
-});
-
-describe("createHandleOpen", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   test("opens a branch through WorkspaceService, refreshes, and clears pending without registering", async () => {
@@ -230,7 +188,6 @@ describe("createHandleOpen", () => {
       pr: "",
       profile: "dev",
       existing: false,
-      noIde: true,
       noAttach: true,
     });
 
@@ -245,8 +202,6 @@ describe("createHandleOpen", () => {
         pr: "",
         profile: "dev",
         existing: false,
-        ide: false,
-        noIde: true,
       });
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-open-effect");
       expect(refreshAll).toHaveBeenCalled();
@@ -275,7 +230,6 @@ describe("createHandleOpen", () => {
       pr: "123",
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: true,
     });
 
@@ -287,8 +241,6 @@ describe("createHandleOpen", () => {
         pr: "123",
         profile: undefined,
         existing: false,
-        ide: true,
-        noIde: false,
       });
       expect(deps.refreshAll).toHaveBeenCalled();
     });
@@ -319,7 +271,6 @@ describe("createHandleOpen", () => {
       pr: "",
       profile: "",
       existing: false,
-      noIde: false,
       noAttach: true,
     });
 
@@ -331,8 +282,6 @@ describe("createHandleOpen", () => {
         pr: "",
         profile: "",
         existing: false,
-        ide: true,
-        noIde: false,
       });
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
@@ -372,7 +321,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: true,
     });
 
@@ -401,7 +349,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: true,
     });
 
@@ -439,7 +386,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: false,
     });
 
@@ -474,7 +420,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: false,
     });
 
@@ -507,7 +452,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: false,
     });
 
@@ -540,7 +484,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: false,
     });
 
@@ -573,7 +516,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: true,
     });
 
@@ -614,7 +556,6 @@ describe("createHandleOpen", () => {
       pr: undefined,
       profile: undefined,
       existing: false,
-      noIde: false,
       noAttach: false,
     });
 
@@ -639,7 +580,6 @@ describe("createPrepareUpModal", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: ["dev"],
-        ideDefaults: defaultIdeDefaults,
         worktrees: [
           {
             branch: "feat",
@@ -667,12 +607,7 @@ describe("createPrepareUpModal", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.UpModal(
-        "/repo/feat",
-        pendingKey("proj", "feat"),
-        ["dev"],
-        defaultIdeDefaults,
-      ),
+      Mode.UpModal("/repo/feat", pendingKey("proj", "feat"), ["dev"]),
     );
   });
 
@@ -699,7 +634,6 @@ describe("createPrepareUpModal", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: defaultIdeDefaults,
         worktrees: [
           {
             branch: "feat",
@@ -744,7 +678,6 @@ describe("createHandleUpSubmit", () => {
       warnings: [],
       attempts: {
         tmux: { attempted: false, reason: "tmux_not_configured" },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     };
     (tuiRuntime.runPromise as Mock).mockResolvedValue(upResult);
@@ -759,12 +692,7 @@ describe("createHandleUpSubmit", () => {
       return pendingActions;
     });
     const deps = makeDeps({
-      mode: Mode.UpModal(
-        "/repo/feat",
-        "proj/feat",
-        ["dev"],
-        defaultIdeDefaults,
-      ),
+      mode: Mode.UpModal("/repo/feat", "proj/feat", ["dev"]),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
       handleStartResult,
@@ -772,7 +700,7 @@ describe("createHandleUpSubmit", () => {
     });
     const handleUp = createHandleUpSubmit(deps);
 
-    handleUp({ profile: "dev", noIde: false, autoSwitch: true });
+    handleUp({ profile: "dev", autoSwitch: true });
 
     expect(deps.clearActionError).toHaveBeenCalled();
     expect(deps.setSelectedIndex).toHaveBeenCalledWith(3);
@@ -785,8 +713,6 @@ describe("createHandleUpSubmit", () => {
       expect(workspaceUp).toHaveBeenCalledWith({
         path: "/repo/feat",
         profile: "dev",
-        ide: true,
-        noIde: false,
       });
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith(
         "mock-workspace-effect",
@@ -811,14 +737,14 @@ describe("createHandleUpSubmit", () => {
       return pendingActions;
     });
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", [], defaultIdeDefaults),
+      mode: Mode.UpModal("/repo/feat", "proj/feat", []),
       upModalReturnModeRef: { current: Mode.Navigate },
       upModalReturnSelectedIndexRef: { current: 0 },
       setPendingActions,
     });
     const handleUp = createHandleUpSubmit(deps);
 
-    handleUp({ profile: undefined, noIde: false, autoSwitch: false });
+    handleUp({ profile: undefined, autoSwitch: false });
 
     await vi.waitFor(() => {
       expect(deps.showActionError).toHaveBeenCalled();
@@ -834,7 +760,7 @@ describe("createHandleUpSubmit", () => {
     const deps = makeDeps({ mode: Mode.Navigate });
     const handleUp = createHandleUpSubmit(deps);
 
-    handleUp({ profile: undefined, noIde: false, autoSwitch: false });
+    handleUp({ profile: undefined, autoSwitch: false });
 
     expect(deps.clearActionError).not.toHaveBeenCalled();
     expect(deps.setMode).not.toHaveBeenCalled();

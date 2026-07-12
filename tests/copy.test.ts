@@ -36,7 +36,7 @@ describe("detectEntryType", () => {
   });
 
   test("detects directory entries with trailing slash", () => {
-    expect(detectEntryType(".vscode/")).toBe("directory");
+    expect(detectEntryType(".settings/")).toBe("directory");
     expect(detectEntryType("config/")).toBe("directory");
     expect(detectEntryType("nested/path/dir/")).toBe("directory");
   });
@@ -88,13 +88,13 @@ describe("expandEntry", () => {
   });
 
   test("expands directory to all files recursively", async () => {
-    await mkdir(join(tempDir, ".vscode"), { recursive: true });
-    await Bun.write(join(tempDir, ".vscode/settings.json"), "{}");
-    await Bun.write(join(tempDir, ".vscode/extensions.json"), "[]");
+    await mkdir(join(tempDir, ".settings"), { recursive: true });
+    await Bun.write(join(tempDir, ".settings/settings.json"), "{}");
+    await Bun.write(join(tempDir, ".settings/extensions.json"), "[]");
 
-    const files = await runEffect<string[]>(expandEntry(".vscode/", tempDir));
+    const files = await runEffect<string[]>(expandEntry(".settings/", tempDir));
     expect(files.sort()).toEqual(
-      [".vscode/settings.json", ".vscode/extensions.json"].sort(),
+      [".settings/settings.json", ".settings/extensions.json"].sort(),
     );
   });
 
@@ -185,27 +185,27 @@ describe("copyEntries", () => {
   });
 
   test("copies directory contents", async () => {
-    await mkdir(join(sourceDir, ".vscode"), { recursive: true });
+    await mkdir(join(sourceDir, ".settings"), { recursive: true });
     await Bun.write(
-      join(sourceDir, ".vscode/settings.json"),
+      join(sourceDir, ".settings/settings.json"),
       '{"editor.tabSize": 2}',
     );
-    await Bun.write(join(sourceDir, ".vscode/extensions.json"), "[]");
+    await Bun.write(join(sourceDir, ".settings/extensions.json"), "[]");
 
     const results = await runEffect(
-      copyEntries([".vscode/"], sourceDir, targetDir),
+      copyEntries([".settings/"], sourceDir, targetDir),
     );
 
     expect(results).toHaveLength(2);
     expect(results.every((r) => r.success)).toBe(true);
 
     const settings = await Bun.file(
-      join(targetDir, ".vscode/settings.json"),
+      join(targetDir, ".settings/settings.json"),
     ).text();
     expect(settings).toBe('{"editor.tabSize": 2}');
 
     const extensions = await Bun.file(
-      join(targetDir, ".vscode/extensions.json"),
+      join(targetDir, ".settings/extensions.json"),
     ).text();
     expect(extensions).toBe("[]");
   });
@@ -245,14 +245,18 @@ describe("copyEntries", () => {
 
   test("copies mixed entry types", async () => {
     await Bun.write(join(sourceDir, ".env"), "ENV=prod");
-    await mkdir(join(sourceDir, ".vscode"), { recursive: true });
-    await Bun.write(join(sourceDir, ".vscode/settings.json"), "{}");
+    await mkdir(join(sourceDir, ".settings"), { recursive: true });
+    await Bun.write(join(sourceDir, ".settings/settings.json"), "{}");
     await mkdir(join(sourceDir, "config"), { recursive: true });
     await Bun.write(join(sourceDir, "config/app.json"), "{}");
     await Bun.write(join(sourceDir, "config/db.json"), "{}");
 
     const results = await runEffect(
-      copyEntries([".env", ".vscode/", "config/*.json"], sourceDir, targetDir),
+      copyEntries(
+        [".env", ".settings/", "config/*.json"],
+        sourceDir,
+        targetDir,
+      ),
     );
 
     expect(results).toHaveLength(4);

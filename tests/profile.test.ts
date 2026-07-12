@@ -8,7 +8,6 @@ function baseConfig(overrides?: Partial<ResolvedConfig>): ResolvedConfig {
     project_name: "test",
     work_dir: ".",
     setup: [{ name: "Install", command: "bun install" }],
-    ide: { command: "code ." },
     tmux: { windows: [{ name: "main" }] },
     copy: [".env"],
     ...overrides,
@@ -20,7 +19,6 @@ describe("resolveProfile", () => {
     const config = baseConfig();
     const { config: result } = resolveProfile(config, "feature/auth");
     expect(result.tmux).toEqual(config.tmux);
-    expect(result.ide).toEqual(config.ide);
   });
 
   test("returns no profileName when no profiles defined", () => {
@@ -90,11 +88,11 @@ describe("resolveProfile", () => {
       profiles: {
         specific: {
           match: "feature/frontend-auth",
-          ide: { command: "cursor ." },
+          tmux: { windows: [{ name: "specific" }] },
         },
         broad: {
           match: "feature/*",
-          ide: { command: "vim ." },
+          tmux: { windows: [{ name: "broad" }] },
         },
       },
     });
@@ -102,7 +100,7 @@ describe("resolveProfile", () => {
       config,
       "feature/frontend-auth",
     );
-    expect(result.ide).toEqual({ command: "cursor ." });
+    expect(result.tmux).toEqual({ windows: [{ name: "specific" }] });
     expect(profileName).toBe("specific");
   });
 
@@ -147,18 +145,16 @@ describe("resolveProfile", () => {
     });
     const { config: result } = resolveProfile(config, "feature/frontend-auth");
     expect(result.tmux).toEqual({ windows: [{ name: "dev" }] });
-    expect(result.ide).toEqual({ command: "code ." });
     expect(result.setup).toEqual([{ name: "Install", command: "bun install" }]);
     expect(result.copy).toEqual([".env"]);
   });
 
-  test("profile can replace all four sections", () => {
+  test("profile can replace all configurable sections", () => {
     const config = baseConfig({
       profiles: {
         full: {
           match: "full/*",
           setup: [{ name: "Build", command: "make" }],
-          ide: { command: "vim ." },
           tmux: { windows: [{ name: "editor" }] },
           copy: [".gitignore"],
         },
@@ -166,54 +162,8 @@ describe("resolveProfile", () => {
     });
     const { config: result } = resolveProfile(config, "full/test");
     expect(result.setup).toEqual([{ name: "Build", command: "make" }]);
-    expect(result.ide).toEqual({ command: "vim ." });
     expect(result.tmux).toEqual({ windows: [{ name: "editor" }] });
     expect(result.copy).toEqual([".gitignore"]);
-  });
-
-  test("profile ide.open overrides base ide without discarding command", () => {
-    const config = baseConfig({
-      ide: {
-        name: "vscode",
-        command: "code $WCT_WORKTREE_DIR",
-        fork_workspace: true,
-      },
-      profiles: {
-        quiet: {
-          ide: { open: false },
-        },
-      },
-    });
-
-    const { config: result } = resolveProfile(config, "any-branch", "quiet");
-
-    expect(result.ide).toEqual({
-      name: "vscode",
-      command: "code $WCT_WORKTREE_DIR",
-      fork_workspace: true,
-      open: false,
-    });
-  });
-
-  test("profile ide command overrides base command and inherits open flag", () => {
-    const config = baseConfig({
-      ide: {
-        open: false,
-        command: "code $WCT_WORKTREE_DIR",
-      },
-      profiles: {
-        cursor: {
-          ide: { command: "cursor $WCT_WORKTREE_DIR" },
-        },
-      },
-    });
-
-    const { config: result } = resolveProfile(config, "any-branch", "cursor");
-
-    expect(result.ide).toEqual({
-      open: false,
-      command: "cursor $WCT_WORKTREE_DIR",
-    });
   });
 
   test("empty string profile treated as no profile", () => {

@@ -13,7 +13,7 @@
 // `.use()` mocks already resolve the "effect" argument to a real Promise or
 // plain value before it reaches `runPromise`, the pass-through is enough —
 // the one caller that does NOT go through a `.use()` seam (`loadConfig` in
-// `getIdeDefaults`) is wrapped in a try/catch with a safe fallback in the
+// config discovery is wrapped in a try/catch with a safe fallback in the
 // real code, so passing it through unresolved is harmless.
 //
 // The `vi.mock` calls below execute when a test file imports this module —

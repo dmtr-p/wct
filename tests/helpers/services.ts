@@ -7,11 +7,6 @@ import {
   liveGitHubService,
 } from "../../src/services/github-service";
 import {
-  IdeService,
-  type IdeService as IdeServiceApi,
-  liveIdeService,
-} from "../../src/services/ide-service";
-import {
   livePrCacheService,
   PrCacheService,
   type PrCacheServiceApi,
@@ -31,11 +26,6 @@ import {
   type TmuxService as TmuxServiceApi,
 } from "../../src/services/tmux";
 import {
-  liveVSCodeWorkspaceService,
-  VSCodeWorkspaceService,
-  type VSCodeWorkspaceService as VSCodeWorkspaceServiceApi,
-} from "../../src/services/vscode-workspace";
-import {
   liveWorkspaceService,
   WorkspaceService,
   type WorkspaceService as WorkspaceServiceApi,
@@ -50,13 +40,11 @@ type JsonFlagRequirement = "effect/unstable/cli/GlobalFlag/json";
 
 export interface ServiceOverrides {
   github?: GitHubServiceApi;
-  ide?: IdeServiceApi;
   json?: boolean;
   prCache?: PrCacheServiceApi;
   registry?: RegistryServiceApi;
   setup?: SetupServiceApi;
   tmux?: TmuxServiceApi;
-  vscodeWorkspace?: VSCodeWorkspaceServiceApi;
   worktree?: WorktreeServiceApi;
   workspace?: WorkspaceServiceApi;
 }
@@ -99,11 +87,6 @@ export function withTestServices<A, E, R>(
   );
   provided = Effect.provideService(
     provided,
-    IdeService,
-    overrides.ide ?? liveIdeService,
-  );
-  provided = Effect.provideService(
-    provided,
     SetupService,
     overrides.setup ?? liveSetupService,
   );
@@ -111,11 +94,6 @@ export function withTestServices<A, E, R>(
     provided,
     TmuxService,
     overrides.tmux ?? noopTmuxService,
-  );
-  provided = Effect.provideService(
-    provided,
-    VSCodeWorkspaceService,
-    overrides.vscodeWorkspace ?? liveVSCodeWorkspaceService,
   );
   provided = Effect.provideService(
     provided,

@@ -32,16 +32,6 @@ export const commandDef: CommandDef = {
       description: "Use existing branch",
     },
     {
-      name: "ide",
-      type: "boolean",
-      description: "Force opening IDE",
-    },
-    {
-      name: "no-ide",
-      type: "boolean",
-      description: "Skip opening IDE",
-    },
-    {
       name: "no-attach",
       type: "boolean",
       description: "Do not attach to tmux outside tmux",
@@ -68,8 +58,6 @@ export interface OpenOptions {
   existing: boolean;
   base?: string;
   cwd?: string;
-  ide?: boolean;
-  noIde?: boolean;
   profile?: string;
 }
 
@@ -87,18 +75,6 @@ function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
       yield* logger.success(`Created worktree at ${result.worktreePath}`);
     } else {
       yield* logger.info("Worktree already exists");
-    }
-
-    if (result.attempts.vscode.attempted) {
-      if (result.attempts.vscode.ok) {
-        yield* result.attempts.vscode.value.skipped
-          ? logger.info("VS Code workspace already exists, skipping sync")
-          : logger.success("VS Code workspace state synced");
-      } else {
-        yield* logger.warn(
-          `VS Code workspace sync failed: ${result.attempts.vscode.error.message}`,
-        );
-      }
     }
 
     if (result.attempts.copy.attempted && result.attempts.copy.ok) {
@@ -144,16 +120,6 @@ function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
       }
     }
 
-    if (result.attempts.ide.attempted) {
-      if (result.attempts.ide.ok) {
-        yield* logger.success("IDE opened");
-      } else {
-        yield* logger.warn(
-          `Failed to open IDE: ${result.attempts.ide.error.message}`,
-        );
-      }
-    }
-
     yield* logger.success(`Worktree '${result.branch}' is ready`);
   });
 }
@@ -181,16 +147,12 @@ function createOpenHumanReporter(
               resolvedBase ? ` based on '${resolvedBase}'` : ""
             }`,
           );
-        case "vscode":
-          return logger.info("Syncing VS Code workspace state...");
         case "copy":
           return logger.info("Copying files...");
         case "setup":
           return logger.info("Running setup commands...");
         case "tmux":
           return logger.info("Creating tmux session...");
-        case "ide":
-          return logger.info("Opening IDE...");
       }
     },
   };

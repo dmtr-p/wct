@@ -1,7 +1,5 @@
 // src/tui/types.ts
 
-import type { SessionIdeDefaults } from "./hooks/useSessionOptionsState";
-
 /** TUI interaction modes */
 export type Mode =
   | { type: "Navigate" }
@@ -14,7 +12,6 @@ export type Mode =
       worktreePath: string;
       worktreeKey: string;
       profileNames: string[];
-      ideDefaults: SessionIdeDefaults;
     }
   | { type: "Expanded"; worktreeKey: string }
   | {
@@ -60,13 +57,11 @@ export const Mode = {
     worktreePath: string,
     worktreeKey: string,
     profileNames: string[],
-    ideDefaults: SessionIdeDefaults,
   ): Mode => ({
     type: "UpModal",
     worktreePath,
     worktreeKey,
     profileNames,
-    ideDefaults,
   }),
   Expanded: (worktreeKey: string): Mode => ({
     type: "Expanded",

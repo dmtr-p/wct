@@ -2,7 +2,6 @@ import { BunServices } from "@effect/platform-bun";
 import { Console, Effect, Layer, ManagedRuntime } from "effect";
 import type { WctServices } from "../effect/services";
 import { GitHubService, liveGitHubService } from "../services/github-service";
-import { IdeService, liveIdeService } from "../services/ide-service";
 import {
   livePrCacheService,
   PrCacheService,
@@ -13,10 +12,6 @@ import {
 } from "../services/registry-service";
 import { liveSetupService, SetupService } from "../services/setup-service";
 import { liveTmuxService, TmuxService } from "../services/tmux";
-import {
-  liveVSCodeWorkspaceService,
-  VSCodeWorkspaceService,
-} from "../services/vscode-workspace";
 import {
   liveWorkspaceService,
   WorkspaceService,
@@ -30,10 +25,8 @@ const tuiLayer = Layer.mergeAll(
   Layer.succeed(TmuxService, liveTmuxService),
   Layer.succeed(WorktreeService, liveWorktreeService),
   Layer.succeed(GitHubService, liveGitHubService),
-  Layer.succeed(IdeService, liveIdeService),
   Layer.succeed(RegistryService, liveRegistryService),
   Layer.succeed(SetupService, liveSetupService),
-  Layer.succeed(VSCodeWorkspaceService, liveVSCodeWorkspaceService),
   Layer.succeed(WorkspaceService, liveWorkspaceService),
   Layer.succeed(PrCacheService, livePrCacheService),
   BunServices.layer,

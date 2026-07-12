@@ -33,13 +33,6 @@ export const TmuxConfigSchema = Schema.Struct({
   windows: Schema.optional(Schema.Array(TmuxWindowSchema)),
 });
 
-export const IdeConfigSchema = Schema.Struct({
-  open: Schema.optional(Schema.Boolean),
-  name: Schema.optional(Schema.String),
-  command: Schema.optional(Schema.String),
-  fork_workspace: Schema.optional(Schema.Boolean),
-});
-
 export const ProfileSchema = Schema.Struct({
   match: Schema.optional(
     Schema.Union([Schema.String, Schema.Array(Schema.String)]),
@@ -47,7 +40,6 @@ export const ProfileSchema = Schema.Struct({
   copy: Schema.optional(Schema.Array(Schema.String)),
   work_dir: Schema.optional(Schema.String),
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
-  ide: Schema.optional(IdeConfigSchema),
   tmux: Schema.optional(TmuxConfigSchema),
 });
 
@@ -58,7 +50,6 @@ export const WctConfigSchema = Schema.Struct({
   work_dir: Schema.optional(Schema.String),
   copy: Schema.optional(Schema.Array(Schema.String)),
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
-  ide: Schema.optional(IdeConfigSchema),
   tmux: Schema.optional(TmuxConfigSchema),
   profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });
@@ -70,7 +61,6 @@ export const ResolvedConfigSchema = Schema.Struct({
   work_dir: Schema.String,
   copy: Schema.optional(Schema.Array(Schema.String)),
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
-  ide: Schema.optional(IdeConfigSchema),
   tmux: Schema.optional(TmuxConfigSchema),
   profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });
@@ -80,7 +70,6 @@ export type TmuxPane = typeof TmuxPaneSchema.Type;
 export type TmuxLayout = (typeof VALID_LAYOUTS)[number];
 export type TmuxWindow = typeof TmuxWindowSchema.Type;
 export type TmuxConfig = typeof TmuxConfigSchema.Type;
-export type IdeConfig = typeof IdeConfigSchema.Type;
 export type Profile = typeof ProfileSchema.Type;
 export type WctConfig = typeof WctConfigSchema.Type;
 export type ResolvedConfig = typeof ResolvedConfigSchema.Type;

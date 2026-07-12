@@ -77,7 +77,6 @@ function makeStartResult(
     warnings: [],
     attempts: {
       tmux: { attempted: false, reason: "tmux_not_configured" },
-      ide: { attempted: false, reason: "ide_not_configured" },
     },
     ...overrides,
   };
@@ -97,7 +96,6 @@ function makeWorkspaceUpResult(
     warnings: [],
     attempts: {
       tmux: { attempted: false, reason: "tmux_not_configured" },
-      ide: { attempted: false, reason: "ide_not_configured" },
     },
     ...overrides,
   };
@@ -207,7 +205,6 @@ describe("createHandleStartResult", () => {
           ok: true,
           value: { _tag: "Created", sessionName: "wt-feat" },
         },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -236,7 +233,6 @@ describe("createHandleStartResult", () => {
           ok: true,
           value: { _tag: "Created", sessionName: "wt-feat" },
         },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -257,7 +253,6 @@ describe("createHandleStartResult", () => {
           ok: true,
           value: { _tag: "Created", sessionName: "wt-feat" },
         },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -277,7 +272,6 @@ describe("createHandleStartResult", () => {
           ok: false,
           error: commandError("unexpected_error", "tmux failed"),
         },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
@@ -321,7 +315,6 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "main",
@@ -362,7 +355,6 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -417,7 +409,6 @@ describe("createHandleSpaceSwitch", () => {
           ok: true,
           value: { _tag: "Created", sessionName: "wt-feat" },
         },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
     (tuiRuntime.runPromise as Mock).mockResolvedValue(upResult);
@@ -431,7 +422,6 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -479,7 +469,6 @@ describe("createHandleSpaceSwitch", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -952,7 +941,6 @@ describe("createHandleDownSelectedWorktree", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -986,7 +974,6 @@ describe("createHandleDownSelectedWorktree", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",
@@ -1029,7 +1016,6 @@ describe("createHandleDownSelectedWorktree", () => {
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
         worktrees: [
           {
             branch: "feat",

@@ -255,7 +255,6 @@ describe("double-click actions", () => {
         },
       ],
       profileNames: [],
-      ideDefaults: { baseNoIde: true, profileNoIde: {} },
     } satisfies RepoInfo;
     const worktree = {
       type: "worktree",
@@ -474,7 +473,6 @@ function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
     project: overrides.project ?? overrides.id,
     worktrees: overrides.worktrees ?? [],
     profileNames: overrides.profileNames ?? [],
-    ideDefaults: overrides.ideDefaults ?? { baseNoIde: true, profileNoIde: {} },
   };
 }
 

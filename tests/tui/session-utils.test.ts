@@ -22,7 +22,6 @@ function workspaceUpResult(
     warnings: [],
     attempts: {
       tmux: { attempted: false, reason: "tmux_not_configured" },
-      ide: { attempted: false, reason: "ide_not_configured" },
     },
     ...overrides,
   };
@@ -40,28 +39,9 @@ describe("resolveStartActionMessage", () => {
             message: "tmux failed",
           },
         },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     });
 
     expect(resolveStartActionMessage(result)).toBe("tmux failed");
-  });
-
-  test("returns an IDE failure from WorkspaceService up results", () => {
-    const result = workspaceUpResult({
-      attempts: {
-        tmux: { attempted: false, reason: "tmux_not_configured" },
-        ide: {
-          attempted: true,
-          ok: false,
-          error: {
-            code: "ide_error",
-            message: "IDE failed",
-          },
-        },
-      },
-    });
-
-    expect(resolveStartActionMessage(result)).toBe("IDE failed");
   });
 });

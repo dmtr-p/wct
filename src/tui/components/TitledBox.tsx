@@ -3,6 +3,7 @@ import { Children, type ReactNode } from "react";
 
 interface Props {
   title: string;
+  footer?: string;
   isFocused: boolean;
   width?: number;
   children: ReactNode;
@@ -47,17 +48,24 @@ function topBorder(width: number, title: string) {
   return `╭ ${visibleTitle} ${"─".repeat(dashCount)}╮`;
 }
 
-function bottomBorder(width: number) {
+function bottomBorder(width: number, footer?: string) {
   if (width <= 0) return "";
   if (width === 1) return "╰";
   if (width === 2) return "╰╯";
   if (width === 3) return "╰─╯";
 
-  return `╰${"─".repeat(width - 2)}╯`;
+  if (!footer) return `╰${"─".repeat(width - 2)}╯`;
+
+  const footerWidth = width - 4;
+  const visibleFooter = truncateTitle(footer, footerWidth);
+  const dashCount = Math.max(footerWidth - visibleLength(visibleFooter), 0);
+
+  return `╰${"─".repeat(dashCount)} ${visibleFooter} ╯`;
 }
 
 export function TitledBox({
   title,
+  footer,
   isFocused,
   width,
   children,
@@ -97,7 +105,7 @@ export function TitledBox({
       >
         {normalizedChildren}
       </Box>
-      <Text {...lineProps}>{bottomBorder(boxWidth)}</Text>
+      <Text {...lineProps}>{bottomBorder(boxWidth, footer)}</Text>
     </Box>
   );
 }

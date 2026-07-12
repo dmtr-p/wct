@@ -102,6 +102,11 @@ export function SessionOptionsSection({
       {profileNames.length > 0 ? (
         <TitledBox
           title={profileQuery ? `Profile filter: ${profileQuery}` : "Profile"}
+          footer={
+            filteredProfiles.length > 0
+              ? `${selectedProfileIndex + 1} of ${filteredProfiles.length}`
+              : "0 of 0"
+          }
           isFocused={focusedField === "profile"}
           width={width}
         >

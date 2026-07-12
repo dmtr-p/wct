@@ -158,6 +158,56 @@ describe("TitledBox", () => {
     }
   });
 
+  test("renders a footer right-aligned in the bottom border", async () => {
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
+
+    try {
+      rendered = await renderTitledBox({
+        title: "Branches",
+        footer: "3 of 208",
+        isFocused: true,
+        width: 28,
+        children: "content",
+      });
+
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
+      const bottomBorder = lines[lines.length - 1];
+
+      expect(bottomBorder).toBe("╰──────────────── 3 of 208 ╯");
+      expect(bottomBorder?.length).toBe(28);
+    } finally {
+      rendered?.unmount();
+    }
+  });
+
+  test("truncates a footer when the box is too narrow", async () => {
+    let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
+
+    try {
+      rendered = await renderTitledBox({
+        title: "Items",
+        footer: "123 of 456",
+        isFocused: true,
+        width: 8,
+        children: "x",
+      });
+
+      const lines = rendered.output
+        .split("\n")
+        .map((line) => line.replace(/\s+$/, ""))
+        .filter((line) => line.length > 0);
+      const bottomBorder = lines[lines.length - 1];
+
+      expect(bottomBorder).toBe("╰ 123… ╯");
+      expect(bottomBorder?.length).toBe(8);
+    } finally {
+      rendered?.unmount();
+    }
+  });
+
   test("truncates the title with an ellipsis when the box is too narrow", async () => {
     let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 

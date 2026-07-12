@@ -5,10 +5,8 @@ import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { openCommand } from "../src/commands/open";
-import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { WctCommandError } from "../src/errors";
-import { type IdeService, liveIdeService } from "../src/services/ide-service";
 import {
   liveRegistryService,
   type RegistryItem,
@@ -113,20 +111,6 @@ async function cleanupOpenWorkflowFixture(
 }
 
 describe("WorkspaceService open validation", () => {
-  test("rejects --ide together with --no-ide", async () => {
-    await expectWctFailure(
-      withTestServices(
-        workspaceOpen({
-          branch: "feature-branch",
-          ide: true,
-          noIde: true,
-        }),
-      ),
-      "invalid_options",
-      "Options --ide and --no-ide cannot be used together",
-    );
-  });
-
   test("rejects branch argument together with --pr", async () => {
     await expectWctFailure(
       withTestServices(
@@ -188,20 +172,6 @@ describe("WorkspaceService open validation", () => {
       ),
       "pr_error",
       "Invalid --pr value: 'not-a-pr'",
-    );
-  });
-
-  test("validation ordering keeps --ide/--no-ide first for combined invalid inputs", async () => {
-    await expectWctFailure(
-      withTestServices(
-        workspaceOpen({
-          pr: "not-a-pr",
-          ide: true,
-          noIde: true,
-        }),
-      ),
-      "invalid_options",
-      "Options --ide and --no-ide cannot be used together",
     );
   });
 
@@ -371,73 +341,6 @@ describe("open workflow", () => {
       "base_branch_not_found",
       "Base branch 'missing-base' does not exist",
     );
-  });
-
-  test("does not open IDE by default when config omits ide", async () => {
-    const ideCalls: string[] = [];
-    const result = await runBunPromise(
-      withTestServices(
-        workspaceOpen({
-          branch: "no-default-ide-branch",
-          cwd: fixture.repoDir,
-          existing: false,
-        }),
-        {
-          ide: {
-            ...liveIdeService,
-            openIDE: (command) =>
-              Effect.sync(() => {
-                ideCalls.push(command);
-              }),
-          } satisfies IdeService,
-          worktree: {
-            ...liveWorktreeService,
-            isGitRepo: () => Effect.succeed(true),
-            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
-            branchExists: () => Effect.succeed(false),
-            createWorktree: (path) =>
-              Effect.succeed({ _tag: "Created" as const, path }),
-          },
-        },
-      ),
-    );
-
-    expect(result.attempts.tmux).toMatchObject({ attempted: false });
-    expect(ideCalls).toEqual([]);
-  });
-
-  test("opens fallback IDE when --ide is passed and config omits ide", async () => {
-    const ideCalls: string[] = [];
-    const result = await runBunPromise(
-      withTestServices(
-        workspaceOpen({
-          branch: "forced-default-ide-branch",
-          cwd: fixture.repoDir,
-          existing: false,
-          ide: true,
-        }),
-        {
-          ide: {
-            ...liveIdeService,
-            openIDE: (command) =>
-              Effect.sync(() => {
-                ideCalls.push(command);
-              }),
-          } satisfies IdeService,
-          worktree: {
-            ...liveWorktreeService,
-            isGitRepo: () => Effect.succeed(true),
-            getMainRepoPath: () => Effect.succeed(fixture.repoDir),
-            branchExists: () => Effect.succeed(false),
-            createWorktree: (path) =>
-              Effect.succeed({ _tag: "Created" as const, path }),
-          },
-        },
-      ),
-    );
-
-    expect(result.attempts.tmux).toMatchObject({ attempted: false });
-    expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
   });
 
   test("openCommand prints attach guidance when --no-attach is set and tmux started", async () => {
@@ -614,14 +517,9 @@ describe("open workflow", () => {
             path: "/tmp/myapp-no-registration",
           },
         },
-        vscode: {
-          attempted: false,
-          reason: "vscode_sync_not_configured",
-        },
         copy: { attempted: false, reason: "copy_not_configured" },
         setup: { attempted: false, reason: "setup_not_configured" },
         tmux: { attempted: false, reason: "tmux_not_configured" },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     };
 
@@ -687,10 +585,6 @@ describe("open workflow", () => {
           ok: true as const,
           value: { _tag: "Created" as const, path: "/tmp/myapp-json" },
         },
-        vscode: {
-          attempted: false as const,
-          reason: "vscode_sync_not_configured",
-        },
         copy: { attempted: false as const, reason: "copy_not_configured" },
         setup: { attempted: false as const, reason: "setup_not_configured" },
         tmux: {
@@ -701,7 +595,6 @@ describe("open workflow", () => {
             message: "tmux unavailable",
           },
         },
-        ide: { attempted: false as const, reason: "ide_not_configured" },
       },
     };
 
@@ -778,14 +671,9 @@ describe("open workflow", () => {
           ok: true as const,
           value: { _tag: "Created" as const, path: "/tmp/myapp-human" },
         },
-        vscode: {
-          attempted: false as const,
-          reason: "vscode_sync_not_configured",
-        },
         copy: { attempted: false as const, reason: "copy_not_configured" },
         setup: { attempted: false as const, reason: "setup_not_configured" },
         tmux: { attempted: false as const, reason: "tmux_not_configured" },
-        ide: { attempted: false as const, reason: "ide_not_configured" },
       },
     };
 
@@ -867,14 +755,9 @@ describe("open workflow", () => {
           ok: true,
           value: { _tag: "Created", path: "/tmp/myapp-pr-branch" },
         },
-        vscode: {
-          attempted: false,
-          reason: "vscode_sync_not_configured",
-        },
         copy: { attempted: false, reason: "copy_not_configured" },
         setup: { attempted: false, reason: "setup_not_configured" },
         tmux: { attempted: false, reason: "tmux_not_configured" },
-        ide: { attempted: false, reason: "ide_not_configured" },
       },
     };
 

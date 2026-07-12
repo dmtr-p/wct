@@ -5,10 +5,8 @@ import { describe, expect, test } from "vitest";
 import {
   ConfigError,
   DEFAULT_CONFIG,
-  DEFAULT_IDE_CONFIG,
   expandTilde,
   loadConfig,
-  resolveIdeLaunch,
   resolveWorktreePath,
   slugifyBranch,
 } from "../src/config/loader";
@@ -37,7 +35,6 @@ describe("validateConfig", () => {
         { name: "Install", command: "bun install" },
         { name: "Codegen", command: "bun run codegen", optional: true },
       ],
-      ide: { command: "code $WCT_WORKTREE_DIR" },
       tmux: {
         windows: [
           {
@@ -276,67 +273,6 @@ describe("validateConfig", () => {
     );
   });
 
-  test("accepts ide config with name and fork_workspace", () => {
-    const result = validateConfig({
-      ide: {
-        name: "vscode",
-        command: "code $WCT_WORKTREE_DIR",
-        fork_workspace: true,
-      },
-    });
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
-  });
-
-  test("accepts ide config with open false and no command", () => {
-    const result = validateConfig({
-      ide: {
-        open: false,
-      },
-    });
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
-  });
-
-  test("accepts ide config with open true and no command", () => {
-    const result = validateConfig({
-      ide: {
-        open: true,
-      },
-    });
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
-  });
-
-  test("rejects non-boolean ide.open", () => {
-    const result = validateConfig({
-      ide: {
-        open: "yes",
-      },
-    });
-    expect(result.valid).toBe(false);
-    expectValidationError(result.errors, "ide.open: Expected boolean");
-  });
-
-  test("rejects non-string ide.name", () => {
-    const result = validateConfig({
-      ide: { name: 123, command: "code ." },
-    });
-    expect(result.valid).toBe(false);
-    expectValidationError(result.errors, "ide.name: Expected string");
-  });
-
-  test("rejects non-boolean ide.fork_workspace", () => {
-    const result = validateConfig({
-      ide: { command: "code .", fork_workspace: "yes" },
-    });
-    expect(result.valid).toBe(false);
-    expectValidationError(
-      result.errors,
-      "ide.fork_workspace: Expected boolean",
-    );
-  });
-
   test("rejects tmux window name with colon", () => {
     const result = validateConfig({
       tmux: {
@@ -391,12 +327,10 @@ describe("validateConfig", () => {
     const result = validateConfig({
       version: 1,
       setup: [{ name: "Install", command: "bun install" }],
-      ide: { command: "code ." },
       tmux: { windows: [{ name: "main" }] },
       profiles: {
         frontend: {
           match: "feature/frontend-*",
-          ide: { command: "cursor ." },
           tmux: { windows: [{ name: "dev", command: "bun run dev" }] },
         },
         docs: {
@@ -521,67 +455,22 @@ describe("DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG.worktree_dir).toBe("..");
   });
 
-  test("does not include an IDE by default", () => {
-    expect(DEFAULT_CONFIG.ide).toBeUndefined();
-  });
-
-  test("exports a fallback IDE command for open-without-command behavior", () => {
-    expect(DEFAULT_IDE_CONFIG.command).toBe("code $WCT_WORKTREE_DIR");
-  });
-
   test("creates a single empty tmux window by default", () => {
     expect(DEFAULT_CONFIG.tmux?.windows).toHaveLength(1);
     expect(DEFAULT_CONFIG.tmux?.windows?.[0]?.name).toBe("main");
     expect(DEFAULT_CONFIG.tmux?.windows?.[0]?.command).toBeUndefined();
   });
 
-  test("loadConfig returns default config without IDE when no config files are present", async () => {
+  test("loadConfig returns the default config when no config files are present", async () => {
     const projectDir = mkdtempSync(join(tmpdir(), "wct-config-test-"));
     const result = await runBunPromise(loadConfig(projectDir));
 
     expect(result.worktree_dir).toBe(DEFAULT_CONFIG.worktree_dir);
-    expect(result.ide).toBeUndefined();
     expect(result.tmux?.windows).toHaveLength(1);
     expect(result.tmux?.windows?.[0]?.name).toBe(
       DEFAULT_CONFIG.tmux?.windows?.[0]?.name,
     );
     expect(result.tmux?.windows?.[0]?.command).toBeUndefined();
-  });
-
-  test("project ide.open overrides global ide command without discarding command", async () => {
-    const projectDir = mkdtempSync(join(tmpdir(), "wct-config-project-"));
-    const homeDir = mkdtempSync(join(tmpdir(), "wct-config-home-"));
-    const originalHome = process.env.HOME;
-    process.env.HOME = homeDir;
-    try {
-      await Bun.write(
-        join(homeDir, ".wct.yaml"),
-        `ide:
-  command: "cursor $WCT_WORKTREE_DIR"
-  fork_workspace: true
-`,
-      );
-      await Bun.write(
-        join(projectDir, ".wct.yaml"),
-        `ide:
-  open: false
-`,
-      );
-
-      const result = await runBunPromise(loadConfig(projectDir));
-
-      expect(result.ide).toEqual({
-        command: "cursor $WCT_WORKTREE_DIR",
-        fork_workspace: true,
-        open: false,
-      });
-    } finally {
-      if (originalHome === undefined) {
-        delete process.env.HOME;
-      } else {
-        process.env.HOME = originalHome;
-      }
-    }
   });
 
   test("loadConfig fails with ConfigError when YAML cannot be parsed", async () => {
@@ -591,87 +480,6 @@ describe("DEFAULT_CONFIG", () => {
     await expect(runBunPromise(loadConfig(projectDir))).rejects.toBeInstanceOf(
       ConfigError,
     );
-  });
-});
-
-describe("resolveIdeLaunch", () => {
-  test("skips IDE when no config and no force flag are present", () => {
-    expect(resolveIdeLaunch(undefined, {})).toEqual({
-      open: false,
-      command: undefined,
-      config: undefined,
-    });
-  });
-
-  test("opens fallback IDE when force flag is true and no config exists", () => {
-    expect(resolveIdeLaunch(undefined, { ide: true })).toEqual({
-      open: true,
-      command: DEFAULT_IDE_CONFIG.command,
-      config: DEFAULT_IDE_CONFIG,
-    });
-  });
-
-  test("opens configured IDE by default when ide object exists", () => {
-    const config = { command: "cursor $WCT_WORKTREE_DIR" };
-    expect(resolveIdeLaunch(config, {})).toEqual({
-      open: true,
-      command: "cursor $WCT_WORKTREE_DIR",
-      config,
-    });
-  });
-
-  test("opens fallback IDE by default when ide object has no command", () => {
-    const config = {};
-    expect(resolveIdeLaunch(config, {})).toEqual({
-      open: true,
-      command: DEFAULT_IDE_CONFIG.command,
-      config: DEFAULT_IDE_CONFIG,
-    });
-  });
-
-  test("opens fallback IDE when ide.open is true and no command is configured", () => {
-    const config = { open: true };
-    expect(resolveIdeLaunch(config, {})).toEqual({
-      open: true,
-      command: DEFAULT_IDE_CONFIG.command,
-      config: { ...DEFAULT_IDE_CONFIG, open: true },
-    });
-  });
-
-  test("skips configured IDE when open is false", () => {
-    const config = { open: false, command: "cursor $WCT_WORKTREE_DIR" };
-    expect(resolveIdeLaunch(config, {})).toEqual({
-      open: false,
-      command: "cursor $WCT_WORKTREE_DIR",
-      config,
-    });
-  });
-
-  test("force flag opens configured command even when open is false", () => {
-    const config = { open: false, command: "cursor $WCT_WORKTREE_DIR" };
-    expect(resolveIdeLaunch(config, { ide: true })).toEqual({
-      open: true,
-      command: "cursor $WCT_WORKTREE_DIR",
-      config,
-    });
-  });
-
-  test("force flag uses fallback command when config has open false but no command", () => {
-    const config = { open: false };
-    expect(resolveIdeLaunch(config, { ide: true })).toEqual({
-      open: true,
-      command: DEFAULT_IDE_CONFIG.command,
-      config: { ...DEFAULT_IDE_CONFIG, open: false },
-    });
-  });
-
-  test("noIde flag skips even configured IDE", () => {
-    const config = { command: "cursor $WCT_WORKTREE_DIR" };
-    expect(resolveIdeLaunch(config, { noIde: true })).toEqual({
-      open: false,
-      command: "cursor $WCT_WORKTREE_DIR",
-      config,
-    });
   });
 });
 

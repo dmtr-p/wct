@@ -16,7 +16,6 @@ function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
     project: overrides.project ?? overrides.id,
     worktrees: overrides.worktrees ?? [],
     profileNames: overrides.profileNames ?? [],
-    ideDefaults: overrides.ideDefaults ?? { baseNoIde: true, profileNoIde: {} },
   };
 }
 

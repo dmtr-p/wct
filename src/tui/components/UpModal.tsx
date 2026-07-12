@@ -1,10 +1,7 @@
 import { Box, Text } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedInput } from "../hooks/useGuardedInput";
-import {
-  type SessionIdeDefaults,
-  useSessionOptionsState,
-} from "../hooks/useSessionOptionsState";
+import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
 import { SessionOptionsSection } from "./SessionOptionsSection";
@@ -12,7 +9,6 @@ import { resolveSessionOptionsSubmitState } from "./session-options";
 
 export interface UpModalResult {
   profile?: string;
-  noIde: boolean;
   autoSwitch: boolean;
 }
 
@@ -20,12 +16,11 @@ export interface UpModalProps {
   visible: boolean;
   width?: number;
   profileNames: string[];
-  ideDefaults?: SessionIdeDefaults;
   onSubmit: (result: UpModalResult) => void;
   onCancel: () => void;
 }
 
-type UpModalField = "profile" | "noIde" | "autoSwitch" | "submit";
+type UpModalField = "profile" | "autoSwitch" | "submit";
 
 function clampFocusIndex(index: number, fields: readonly UpModalField[]) {
   if (fields.length === 0) return 0;
@@ -36,7 +31,6 @@ export function UpModal({
   visible,
   width,
   profileNames,
-  ideDefaults,
   onSubmit,
   onCancel,
 }: UpModalProps) {
@@ -44,16 +38,14 @@ export function UpModal({
   const {
     selectedProfileValue,
     setSelectedProfileValue,
-    noIde,
-    setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames, visible, ideDefaults);
+  } = useSessionOptionsState(profileNames, visible);
 
   const fields = useMemo<UpModalField[]>(() => {
     const nextFields: UpModalField[] = [];
     if (profileNames.length > 0) nextFields.push("profile");
-    nextFields.push("noIde", "autoSwitch", "submit");
+    nextFields.push("autoSwitch", "submit");
     return nextFields;
   }, [profileNames.length]);
 
@@ -68,7 +60,6 @@ export function UpModal({
     if (!submission.canSubmit) return;
     onSubmit({
       profile: submission.profile,
-      noIde,
       autoSwitch,
     });
   };
@@ -112,10 +103,8 @@ export function UpModal({
         <SessionOptionsSection
           profileNames={profileNames}
           focusedField={currentField}
-          noIde={noIde}
           autoSwitch={autoSwitch}
           canSubmit={submission.canSubmit}
-          onNoIdeToggle={() => setNoIde((prev) => !prev)}
           onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
           onSubmit={doSubmit}
           onProfileChange={setSelectedProfileValue}

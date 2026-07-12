@@ -38,7 +38,6 @@ function makeRepo(overrides: Partial<RepoInfo> = {}): RepoInfo {
     project: "myproject",
     worktrees: [],
     profileNames: [],
-    ideDefaults: { baseNoIde: true, profileNoIde: {} },
     ...overrides,
   };
 }

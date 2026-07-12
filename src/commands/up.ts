@@ -13,16 +13,6 @@ export const commandDef: CommandDef = {
   description: "Start configured environment for a worktree",
   options: [
     {
-      name: "ide",
-      type: "boolean",
-      description: "Force opening IDE",
-    },
-    {
-      name: "no-ide",
-      type: "boolean",
-      description: "Skip opening IDE",
-    },
-    {
       name: "no-attach",
       type: "boolean",
       description: "Do not attach to tmux outside tmux",
@@ -53,8 +43,6 @@ export const commandDef: CommandDef = {
 };
 
 export interface UpOptions {
-  ide?: boolean;
-  noIde?: boolean;
   noAttach?: boolean;
   profile?: string;
   path?: string;
@@ -69,9 +57,9 @@ export function upCommand(
   WctServices | "effect/unstable/cli/GlobalFlag/json"
 > {
   return Effect.gen(function* () {
-    const { ide, noIde, noAttach, profile, path, branch } = options ?? {};
+    const { noAttach, profile, path, branch } = options ?? {};
     const result = yield* WorkspaceService.use((service) =>
-      service.up({ ide, noIde, profile, path, branch }),
+      service.up({ profile, path, branch }),
     );
     const json = yield* JsonFlag;
 
@@ -92,16 +80,6 @@ export function upCommand(
       } else {
         yield* logger.warn(
           `Failed to create tmux session: ${result.attempts.tmux.error.message}`,
-        );
-      }
-    }
-
-    if (result.attempts.ide.attempted) {
-      if (result.attempts.ide.ok) {
-        yield* logger.success("IDE opened");
-      } else {
-        yield* logger.warn(
-          `Failed to open IDE: ${result.attempts.ide.error.message}`,
         );
       }
     }

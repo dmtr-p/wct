@@ -17,8 +17,6 @@ vi.mock("../../src/tui/hooks/useBlink", () => ({
 const { ExistingBranchForm, FromPRForm, NewBranchForm, OpenModal } =
   await import("../../src/tui/components/OpenModal");
 
-const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
-
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
   isTTY: boolean;
@@ -101,12 +99,11 @@ describe("OpenModal form variants", () => {
     runPromiseMock.mockReset();
   });
 
-  test("new branch form shows No IDE and Auto-switch toggles", async () => {
+  test("new branch form shows the Auto-switch toggle", async () => {
     const rendered = await renderNode(
       <NewBranchForm
         defaultBase="main"
         profileNames={["default"]}
-        ideDefaults={defaultIdeDefaults}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -114,8 +111,6 @@ describe("OpenModal form variants", () => {
     );
 
     try {
-      expect(rendered.output).toContain("No IDE");
-      expect(rendered.output).toContain("[x] No IDE");
       expect(rendered.output).toContain("Auto-switch");
       expect(rendered.output).not.toContain("No attach");
     } finally {
@@ -123,7 +118,7 @@ describe("OpenModal form variants", () => {
     }
   });
 
-  test("from PR form shows No IDE and Auto-switch toggles", async () => {
+  test("from PR form shows the Auto-switch toggle", async () => {
     const rendered = await renderNode(
       <FromPRForm
         prList={[
@@ -136,7 +131,6 @@ describe("OpenModal form variants", () => {
           },
         ]}
         profileNames={["backend"]}
-        ideDefaults={defaultIdeDefaults}
         isRefreshing={false}
         onRefresh={() => {}}
         onSubmit={() => {}}
@@ -146,7 +140,6 @@ describe("OpenModal form variants", () => {
     );
 
     try {
-      expect(rendered.output).toContain("No IDE");
       expect(rendered.output).toContain("Auto-switch");
       expect(rendered.output).not.toContain("No attach");
       expect(rendered.output).toContain("Select PR");
@@ -169,7 +162,6 @@ describe("OpenModal form variants", () => {
           },
         ]}
         profileNames={[]}
-        ideDefaults={defaultIdeDefaults}
         isRefreshing={false}
         onRefresh={() => {}}
         onSubmit={() => {}}
@@ -190,7 +182,6 @@ describe("OpenModal form variants", () => {
       <FromPRForm
         prList={[]}
         profileNames={[]}
-        ideDefaults={defaultIdeDefaults}
         isRefreshing={true}
         onRefresh={() => {}}
         onSubmit={() => {}}
@@ -222,7 +213,6 @@ describe("OpenModal form variants", () => {
           },
         ]}
         profileNames={[]}
-        ideDefaults={defaultIdeDefaults}
         isRefreshing={true}
         onRefresh={() => {}}
         onSubmit={() => {}}
@@ -249,7 +239,6 @@ describe("OpenModal form variants", () => {
       <FromPRForm
         prList={[]}
         profileNames={[]}
-        ideDefaults={defaultIdeDefaults}
         isRefreshing={true}
         onRefresh={() => {}}
         onSubmit={() => {}}
@@ -281,7 +270,6 @@ describe("OpenModal form variants", () => {
         profileNames={[]}
         repoProject="myproj"
         repoPath="/repo"
-        ideDefaults={defaultIdeDefaults}
         prList={[]}
         isRefreshing={false}
         onRefresh={onRefresh}
@@ -309,7 +297,6 @@ describe("OpenModal form variants", () => {
       <ExistingBranchForm
         repoPath="/repo"
         profileNames={["backend"]}
-        ideDefaults={defaultIdeDefaults}
         onSubmit={() => {}}
         onBack={() => {}}
         width={80}
@@ -317,7 +304,6 @@ describe("OpenModal form variants", () => {
     );
 
     try {
-      expect(rendered.output).toContain("No IDE");
       expect(rendered.output).toContain("Auto-switch");
       expect(rendered.output).not.toContain("No attach");
       expect(rendered.output).toContain("Profile");
@@ -345,7 +331,6 @@ describe("OpenModal", () => {
         profileNames={[]}
         repoProject="myproj"
         repoPath="/repo"
-        ideDefaults={defaultIdeDefaults}
         prList={[]}
         isRefreshing={false}
         onRefresh={onRefresh}
@@ -378,7 +363,6 @@ describe("OpenModal", () => {
         profileNames={[]}
         repoProject="myproj"
         repoPath="/repo"
-        ideDefaults={defaultIdeDefaults}
         prList={[]}
         isRefreshing={false}
         onRefresh={onRefresh}
@@ -405,7 +389,6 @@ describe("OpenModal", () => {
         profileNames={[]}
         repoProject="myproj"
         repoPath="/repo"
-        ideDefaults={defaultIdeDefaults}
         prList={[]}
         isRefreshing={true}
         onRefresh={() => {}}

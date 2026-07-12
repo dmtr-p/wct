@@ -3,10 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
 import { useBlink } from "../hooks/useBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
-import {
-  type SessionIdeDefaults,
-  useSessionOptionsState,
-} from "../hooks/useSessionOptionsState";
+import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { isSubmitShortcut } from "./form-controls";
@@ -23,7 +20,6 @@ export interface OpenModalResult {
   pr?: string;
   profile?: string;
   existing: boolean;
-  noIde: boolean;
   noAttach: boolean;
 }
 
@@ -38,7 +34,6 @@ export interface OpenModalProps {
   profileNames: string[];
   repoProject: string;
   repoPath: string;
-  ideDefaults: SessionIdeDefaults;
   prList: PRInfo[];
   isRefreshing: boolean;
   onRefresh: (signal?: AbortSignal) => void;
@@ -148,26 +143,18 @@ function BracketInput({
 
 // ─── NewBranchForm ───────────────────────────────────────────────
 
-type NewBranchField =
-  | "branch"
-  | "base"
-  | "profile"
-  | "noIde"
-  | "autoSwitch"
-  | "submit";
+type NewBranchField = "branch" | "base" | "profile" | "autoSwitch" | "submit";
 
 /** @internal */
 export function NewBranchForm({
   defaultBase,
   profileNames,
-  ideDefaults,
   onSubmit,
   onBack,
   width,
 }: {
   defaultBase: string;
   profileNames: string[];
-  ideDefaults: SessionIdeDefaults;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -177,15 +164,13 @@ export function NewBranchForm({
   const {
     selectedProfileValue,
     setSelectedProfileValue,
-    noIde,
-    setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames, true, ideDefaults);
+  } = useSessionOptionsState(profileNames, true);
   const fields = useMemo(() => {
     const f: NewBranchField[] = ["branch", "base"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("noIde", "autoSwitch", "submit");
+    f.push("autoSwitch", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -211,7 +196,6 @@ export function NewBranchForm({
       base: base.trim() || undefined,
       profile: submission.profile,
       existing: false,
-      noIde,
       noAttach: !autoSwitch,
     });
   };
@@ -258,16 +242,13 @@ export function NewBranchForm({
         profileNames={profileNames}
         focusedField={
           currentField === "profile" ||
-          currentField === "noIde" ||
           currentField === "autoSwitch" ||
           currentField === "submit"
             ? currentField
             : null
         }
-        noIde={noIde}
         autoSwitch={autoSwitch}
         canSubmit={submission.canSubmit && branch.trim().length > 0}
-        onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
@@ -281,13 +262,12 @@ export function NewBranchForm({
 
 // ─── FromPRForm ──────────────────────────────────────────────────
 
-type FromPRField = "prList" | "profile" | "noIde" | "autoSwitch" | "submit";
+type FromPRField = "prList" | "profile" | "autoSwitch" | "submit";
 
 /** @internal */
 export function FromPRForm({
   prList,
   profileNames,
-  ideDefaults,
   isRefreshing,
   onRefresh,
   onSubmit,
@@ -296,7 +276,6 @@ export function FromPRForm({
 }: {
   prList: PRInfo[];
   profileNames: string[];
-  ideDefaults: SessionIdeDefaults;
   isRefreshing: boolean;
   onRefresh: () => void;
   onSubmit: (result: OpenModalResult) => void;
@@ -308,15 +287,13 @@ export function FromPRForm({
   const {
     selectedProfileValue,
     setSelectedProfileValue,
-    noIde,
-    setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames, true, ideDefaults);
+  } = useSessionOptionsState(profileNames, true);
   const fields = useMemo(() => {
     const f: FromPRField[] = ["prList"];
     if (profileNames.length > 0) f.push("profile");
-    f.push("noIde", "autoSwitch", "submit");
+    f.push("autoSwitch", "submit");
     return f;
   }, [profileNames.length]);
 
@@ -380,7 +357,6 @@ export function FromPRForm({
       pr: String(pr.number),
       profile: submission.profile,
       existing: false,
-      noIde,
       noAttach: !autoSwitch,
     });
   };
@@ -471,20 +447,17 @@ export function FromPRForm({
         profileNames={profileNames}
         focusedField={
           currentField === "profile" ||
-          currentField === "noIde" ||
           currentField === "autoSwitch" ||
           currentField === "submit"
             ? currentField
             : null
         }
-        noIde={noIde}
         autoSwitch={autoSwitch}
         canSubmit={
           submission.canSubmit &&
           !isRefreshRowSelected &&
           Boolean(filteredPRItems[selectedPRIndex])
         }
-        onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
@@ -498,25 +471,18 @@ export function FromPRForm({
 
 // ─── ExistingBranchForm ──────────────────────────────────────────
 
-type ExistingBranchField =
-  | "branchList"
-  | "profile"
-  | "noIde"
-  | "autoSwitch"
-  | "submit";
+type ExistingBranchField = "branchList" | "profile" | "autoSwitch" | "submit";
 
 /** @internal */
 export function ExistingBranchForm({
   repoPath,
   profileNames,
-  ideDefaults,
   onSubmit,
   onBack,
   width,
 }: {
   repoPath: string;
   profileNames: string[];
-  ideDefaults: SessionIdeDefaults;
   onSubmit: (result: OpenModalResult) => void;
   onBack: () => void;
   width?: number;
@@ -527,15 +493,13 @@ export function ExistingBranchForm({
   const {
     selectedProfileValue,
     setSelectedProfileValue,
-    noIde,
-    setNoIde,
     autoSwitch,
     setAutoSwitch,
-  } = useSessionOptionsState(profileNames, true, ideDefaults);
+  } = useSessionOptionsState(profileNames, true);
   const fields = useMemo(() => {
     const nextFields: ExistingBranchField[] = ["branchList"];
     if (profileNames.length > 0) nextFields.push("profile");
-    nextFields.push("noIde", "autoSwitch", "submit");
+    nextFields.push("autoSwitch", "submit");
     return nextFields;
   }, [profileNames.length]);
 
@@ -590,7 +554,6 @@ export function ExistingBranchForm({
       branch: selectedBranch.value,
       profile: submission.profile,
       existing: true,
-      noIde,
       noAttach: !autoSwitch,
     });
   };
@@ -661,19 +624,16 @@ export function ExistingBranchForm({
         profileNames={profileNames}
         focusedField={
           currentField === "profile" ||
-          currentField === "noIde" ||
           currentField === "autoSwitch" ||
           currentField === "submit"
             ? currentField
             : null
         }
-        noIde={noIde}
         autoSwitch={autoSwitch}
         canSubmit={
           submission.canSubmit &&
           Boolean(filteredBranchItems[selectedBranchIndex])
         }
-        onNoIdeToggle={() => setNoIde((prev) => !prev)}
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
@@ -696,7 +656,6 @@ export function OpenModal({
   profileNames,
   repoProject: _repoProject,
   repoPath,
-  ideDefaults,
   prList,
   isRefreshing,
   onRefresh,
@@ -749,7 +708,6 @@ export function OpenModal({
         <NewBranchForm
           defaultBase={defaultBase}
           profileNames={profileNames}
-          ideDefaults={ideDefaults}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}
@@ -759,7 +717,6 @@ export function OpenModal({
         <FromPRForm
           prList={prList}
           profileNames={profileNames}
-          ideDefaults={ideDefaults}
           isRefreshing={isRefreshing}
           onRefresh={() => onRefresh(abortControllerRef.current?.signal)}
           onSubmit={onSubmit}
@@ -771,7 +728,6 @@ export function OpenModal({
         <ExistingBranchForm
           repoPath={repoPath}
           profileNames={profileNames}
-          ideDefaults={ideDefaults}
           onSubmit={onSubmit}
           onBack={() => setStep("selector")}
           width={innerWidth}

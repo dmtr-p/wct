@@ -133,8 +133,6 @@ const switchCliCommand = Command.make(
 const upCliCommand = Command.make(
   "up",
   {
-    ide: booleanFlag("ide", "Force opening IDE"),
-    noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     path: optionalStringFlag(
       "path",
@@ -155,10 +153,8 @@ const upCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ ide, noIde, noAttach, path, branch, profile }) =>
+  ({ noAttach, path, branch, profile }) =>
     upCommand({
-      ide,
-      noIde,
       noAttach,
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
@@ -177,8 +173,6 @@ const openCliCommand = Command.make(
       "BRANCH",
     ),
     existing: booleanFlag("existing", "Use existing branch", "e"),
-    ide: booleanFlag("ide", "Force opening IDE"),
-    noIde: booleanFlag("no-ide", "Skip opening IDE"),
     noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
     pr: optionalStringFlag(
       "pr",
@@ -193,13 +187,11 @@ const openCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ branch, base, existing, ide, noIde, noAttach, pr, profile }) =>
+  ({ branch, base, existing, noAttach, pr, profile }) =>
     openCommand({
       branch: optionToUndefined(branch),
       base: optionToUndefined(base),
       existing,
-      ide,
-      noIde,
       noAttach,
       pr: optionToUndefined(pr),
       profile: optionToUndefined(profile),

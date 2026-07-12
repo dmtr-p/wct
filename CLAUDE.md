@@ -46,9 +46,7 @@ src/
 │   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
 │   ├── setup-service.ts  # Effect service for setup command execution
 │   ├── tmux.ts           # Tmux session management
-│   ├── ide-service.ts    # Effect service for IDE launching
 │   ├── github-service.ts # Effect service for GitHub PR integration
-│   ├── vscode-workspace.ts # Effect service and helpers for VS Code workspace forking
 │   └── registry-service.ts # Effect service for multi-repo registry
 ├── tui/
 │   ├── App.tsx            # Root Ink component, data fetching, input routing, viewport

@@ -104,7 +104,6 @@ describe("handleExpandedInput", () => {
             },
           ],
           profileNames: [],
-          ideDefaults: { baseNoIde: true, profileNoIde: {} },
         },
       ],
     });

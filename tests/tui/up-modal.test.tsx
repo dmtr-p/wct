@@ -31,7 +31,6 @@ const profileItems: ListItem[] = [
   { label: "(default)", value: "" },
   { label: "backend", value: "backend" },
 ];
-const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
@@ -117,7 +116,6 @@ describe("UpModal", () => {
         <UpModal
           visible
           profileNames={["backend"]}
-          ideDefaults={defaultIdeDefaults}
           onSubmit={() => {}}
           onCancel={() => {}}
         />,
@@ -137,41 +135,6 @@ describe("UpModal", () => {
         expect(call).toBeDefined();
         const props = call?.[0] as SessionOptionsSectionProps;
         expect(props.focusedField).toBe("profile");
-      });
-    } finally {
-      instance?.unmount();
-    }
-  });
-
-  test("initializes No IDE from provided defaults", async () => {
-    sessionOptionsSectionMock.mockReset();
-    const { render } = await import("ink");
-    const { stdout, stdin } = createStdoutStdin();
-
-    let instance: ReturnType<typeof render> | undefined;
-    try {
-      instance = render(
-        <UpModal
-          visible
-          profileNames={[]}
-          ideDefaults={defaultIdeDefaults}
-          onSubmit={() => {}}
-          onCancel={() => {}}
-        />,
-        {
-          stdout,
-          stdin,
-          debug: true,
-          patchConsole: false,
-          exitOnCtrlC: false,
-        },
-      );
-
-      await vi.waitFor(() => {
-        const call = sessionOptionsSectionMock.mock.calls.find(
-          ([props]) => (props as SessionOptionsSectionProps).noIde,
-        );
-        expect(call).toBeDefined();
       });
     } finally {
       instance?.unmount();

@@ -3,7 +3,6 @@ import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
 import {
   loadConfig,
-  resolveIdeLaunch,
   resolveProfile,
   resolveWorktreePath,
 } from "../config/loader";
@@ -15,7 +14,6 @@ import {
   type GitHubService as GitHubServiceApi,
   parsePrArg,
 } from "./github-service";
-import { IdeService, type IdeService as IdeServiceApi } from "./ide-service";
 import {
   type SetupResult,
   SetupService,
@@ -27,11 +25,6 @@ import {
   TmuxService,
   type TmuxService as TmuxServiceApi,
 } from "./tmux";
-import {
-  type SyncResult,
-  VSCodeWorkspaceService,
-  type VSCodeWorkspaceService as VSCodeWorkspaceServiceApi,
-} from "./vscode-workspace";
 import {
   type CreateWorktreeResult,
   type RemoveWorktreeResult,
@@ -58,16 +51,6 @@ export type WorkspaceWarning =
       error: WorkspaceError;
     }
   | {
-      _tag: "IdeOpenFailed";
-      operation: "open" | "up";
-      error: WorkspaceError;
-    }
-  | {
-      _tag: "VSCodeSyncFailed";
-      operation: "open";
-      error: WorkspaceError;
-    }
-  | {
       _tag: "SetupFailed";
       operation: "open";
       name: string;
@@ -91,12 +74,12 @@ export type WorkspaceReporterEvent =
   | {
       operation: WorkspaceOperation;
       _tag: "AttemptStarted";
-      attempt: "worktree" | "vscode" | "copy" | "setup" | "tmux" | "ide";
+      attempt: "worktree" | "copy" | "setup" | "tmux";
     }
   | {
       operation: WorkspaceOperation;
       _tag: "AttemptCompleted";
-      attempt: "worktree" | "vscode" | "copy" | "setup" | "tmux" | "ide";
+      attempt: "worktree" | "copy" | "setup" | "tmux";
       ok: boolean;
     }
   | {
@@ -120,8 +103,6 @@ export interface ResolveWorkspaceTargetOptions {
 }
 
 export interface WorkspaceUpOptions extends ResolveWorkspaceTargetOptions {
-  ide?: boolean;
-  noIde?: boolean;
   profile?: string;
   reporter?: WorkspaceReporter;
 }
@@ -141,8 +122,6 @@ export interface WorkspaceOpenOptions {
   existing?: boolean;
   base?: string;
   cwd?: string;
-  ide?: boolean;
-  noIde?: boolean;
   pr?: string;
   profile?: string;
   reporter?: WorkspaceReporter;
@@ -161,11 +140,9 @@ export interface WorkspaceOpenResult {
   warnings: WorkspaceWarning[];
   attempts: {
     worktree: WorkspaceAttempt<CreateWorktreeResult>;
-    vscode: WorkspaceAttempt<SyncResult>;
     copy: WorkspaceAttempt<CopyResult[]>;
     setup: WorkspaceAttempt<SetupResult[]>;
     tmux: WorkspaceAttempt<CreateSessionResult>;
-    ide: WorkspaceAttempt<null>;
   };
 }
 
@@ -181,7 +158,6 @@ export interface WorkspaceUpResult {
   warnings: WorkspaceWarning[];
   attempts: {
     tmux: WorkspaceAttempt<CreateSessionResult>;
-    ide: WorkspaceAttempt<null>;
   };
 }
 
@@ -218,9 +194,7 @@ export interface WorkspaceService {
     WctError,
     | WorktreeServiceApi
     | TmuxServiceApi
-    | IdeServiceApi
     | SetupServiceApi
-    | VSCodeWorkspaceServiceApi
     | GitHubServiceApi
     | BunServices.BunServices
   >;
@@ -229,10 +203,7 @@ export interface WorkspaceService {
   ) => Effect.Effect<
     WorkspaceUpResult,
     WctError,
-    | WorktreeServiceApi
-    | TmuxServiceApi
-    | IdeServiceApi
-    | BunServices.BunServices
+    WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
   >;
   down: (
     options?: WorkspaceDownOptions,
@@ -339,25 +310,7 @@ function resolveOpenIntent(
   GitHubServiceApi | WorktreeServiceApi | BunServices.BunServices
 > {
   return Effect.gen(function* () {
-    const {
-      branch,
-      existing = false,
-      base,
-      cwd,
-      ide = false,
-      noIde = false,
-      pr,
-      profile,
-    } = options;
-
-    if (ide && noIde) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Options --ide and --no-ide cannot be used together",
-        ),
-      );
-    }
+    const { branch, existing = false, base, cwd, pr, profile } = options;
 
     if (pr && branch) {
       return yield* Effect.fail(
@@ -441,8 +394,6 @@ function resolveOpenIntent(
         existing: localExists,
         base: localExists ? undefined : `${remote}/${resolvedBranch}`,
         cwd,
-        ide,
-        noIde,
         profile,
       };
     }
@@ -453,7 +404,7 @@ function resolveOpenIntent(
       );
     }
 
-    return { branch, existing, base, cwd, ide, noIde, profile };
+    return { branch, existing, base, cwd, profile };
   });
 }
 
@@ -464,17 +415,14 @@ function openImpl(
   WctError,
   | WorktreeServiceApi
   | TmuxServiceApi
-  | IdeServiceApi
   | SetupServiceApi
-  | VSCodeWorkspaceServiceApi
   | GitHubServiceApi
   | BunServices.BunServices
 > {
   return Effect.gen(function* () {
     const reporter = options.reporter;
     const resolvedOptions = yield* resolveOpenIntent(options);
-    const { branch, existing, base, cwd, ide, noIde, profile } =
-      resolvedOptions;
+    const { branch, existing, base, cwd, profile } = resolvedOptions;
 
     const repo = yield* WorktreeService.use((service) =>
       service.isGitRepo(cwd),
@@ -510,8 +458,6 @@ function openImpl(
       _tag: "ProfileResolved",
       ...(profileName ? { profileName } : {}),
     });
-    const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
-
     if (existing && base) {
       return yield* Effect.fail(
         commandError(
@@ -582,44 +528,6 @@ function openImpl(
       attempt: "worktree",
       ok: true,
     });
-
-    const shouldSyncVSCode =
-      ideLaunch.open &&
-      (ideLaunch.config?.name ?? "vscode") === "vscode" &&
-      ideLaunch.config?.fork_workspace;
-    if (shouldSyncVSCode) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptStarted",
-        attempt: "vscode",
-      });
-    }
-    const vscode = shouldSyncVSCode
-      ? yield* captureAttempt(
-          VSCodeWorkspaceService.use((service) =>
-            service.syncWorkspaceState(mainRepoPath, worktreePath),
-          ).pipe(
-            Effect.flatMap((result) =>
-              result.success
-                ? Effect.succeed(result)
-                : Effect.fail(
-                    commandError(
-                      "worktree_error",
-                      result.error ?? "VS Code workspace sync failed",
-                    ),
-                  ),
-            ),
-          ),
-        )
-      : skippedAttempt<SyncResult>("vscode_sync_not_configured");
-    if (vscode.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptCompleted",
-        attempt: "vscode",
-        ok: vscode.ok,
-      });
-    }
 
     if (resolved.copy && resolved.copy.length > 0) {
       yield* emitReporter(reporter, {
@@ -693,14 +601,6 @@ function openImpl(
         attempt: "tmux",
       });
     }
-    if (ideLaunch.open && ideLaunch.command) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptStarted",
-        attempt: "ide",
-      });
-    }
-
     const startTmux = resolved.tmux
       ? captureAttempt(
           TmuxService.use((service) =>
@@ -710,20 +610,7 @@ function openImpl(
       : Effect.succeed(
           skippedAttempt<CreateSessionResult>("tmux_not_configured"),
         );
-    const startIde =
-      ideLaunch.open && ideLaunch.command
-        ? captureAttempt(
-            IdeService.use((service) =>
-              service
-                .openIDE(ideLaunch.command ?? "", env)
-                .pipe(Effect.as(null)),
-            ),
-          )
-        : Effect.succeed(skippedAttempt<null>("ide_not_configured"));
-
-    const [tmux, ideResult] = yield* Effect.all([startTmux, startIde], {
-      concurrency: "unbounded",
-    });
+    const tmux = yield* startTmux;
 
     if (tmux.attempted) {
       yield* emitReporter(reporter, {
@@ -733,23 +620,7 @@ function openImpl(
         ok: tmux.ok,
       });
     }
-    if (ideResult.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptCompleted",
-        attempt: "ide",
-        ok: ideResult.ok,
-      });
-    }
-
     const warnings: WorkspaceWarning[] = [];
-    if (vscode.attempted && !vscode.ok) {
-      warnings.push({
-        _tag: "VSCodeSyncFailed",
-        operation: "open",
-        error: vscode.error,
-      });
-    }
     if (setup.attempted && setup.ok) {
       warnings.push(
         ...setup.value.flatMap((result) => {
@@ -773,14 +644,6 @@ function openImpl(
         error: tmux.error,
       });
     }
-    if (ideResult.attempted && !ideResult.ok) {
-      warnings.push({
-        _tag: "IdeOpenFailed",
-        operation: "open",
-        error: ideResult.error,
-      });
-    }
-
     return {
       operation: "open",
       worktreePath,
@@ -798,11 +661,9 @@ function openImpl(
           ok: true,
           value: worktreeResult,
         },
-        vscode,
         copy,
         setup,
         tmux,
-        ide: ideResult,
       },
     };
   });
@@ -863,19 +724,10 @@ function upImpl(
 ): Effect.Effect<
   WorkspaceUpResult,
   WctError,
-  WorktreeServiceApi | TmuxServiceApi | IdeServiceApi | BunServices.BunServices
+  WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
 > {
   return Effect.gen(function* () {
-    const { ide, noIde, profile, reporter } = options;
-
-    if (ide && noIde) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Options --ide and --no-ide cannot be used together",
-        ),
-      );
-    }
+    const { profile, reporter } = options;
 
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
@@ -929,7 +781,6 @@ function upImpl(
       ...(profileName ? { profileName } : {}),
     });
 
-    const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
     const sessionName = formatSessionName(basename(worktreePath));
     const env = createWctEnv(
       worktreePath,
@@ -948,14 +799,6 @@ function upImpl(
       });
     }
 
-    if (ideLaunch.open && ideLaunch.command) {
-      yield* emitReporter(reporter, {
-        operation: "up",
-        _tag: "AttemptStarted",
-        attempt: "ide",
-      });
-    }
-
     const startTmux = resolved.tmux
       ? captureAttempt(
           TmuxService.use((service) =>
@@ -966,20 +809,7 @@ function upImpl(
           skippedAttempt<CreateSessionResult>("tmux_not_configured"),
         );
 
-    const startIde =
-      ideLaunch.open && ideLaunch.command
-        ? captureAttempt(
-            IdeService.use((service) =>
-              service
-                .openIDE(ideLaunch.command ?? "", env)
-                .pipe(Effect.as(null)),
-            ),
-          )
-        : Effect.succeed(skippedAttempt<null>("ide_not_configured"));
-
-    const [tmux, ideResult] = yield* Effect.all([startTmux, startIde], {
-      concurrency: "unbounded",
-    });
+    const tmux = yield* startTmux;
 
     if (tmux.attempted) {
       yield* emitReporter(reporter, {
@@ -987,15 +817,6 @@ function upImpl(
         _tag: "AttemptCompleted",
         attempt: "tmux",
         ok: tmux.ok,
-      });
-    }
-
-    if (ideResult.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "up",
-        _tag: "AttemptCompleted",
-        attempt: "ide",
-        ok: ideResult.ok,
       });
     }
 
@@ -1007,14 +828,6 @@ function upImpl(
         error: tmux.error,
       });
     }
-    if (ideResult.attempted && !ideResult.ok) {
-      warnings.push({
-        _tag: "IdeOpenFailed",
-        operation: "up",
-        error: ideResult.error,
-      });
-    }
-
     return {
       operation: "up",
       worktreePath,
@@ -1025,10 +838,7 @@ function upImpl(
       ...(profileName ? { profileName } : {}),
       env,
       warnings,
-      attempts: {
-        tmux,
-        ide: ideResult,
-      },
+      attempts: { tmux },
     };
   });
 }

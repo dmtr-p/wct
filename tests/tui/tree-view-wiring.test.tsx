@@ -30,7 +30,6 @@ describe("TreeView maxWidth wiring", () => {
         project: "very-long-project-name",
         worktrees: [],
         profileNames: [],
-        ideDefaults: { baseNoIde: true, profileNoIde: {} },
       },
     ];
     const items = buildTreeItems({
@@ -94,7 +93,6 @@ describe("TreeView windowing", () => {
       project: `project-${i}`,
       worktrees: [],
       profileNames: [],
-      ideDefaults: { baseNoIde: true, profileNoIde: {} },
     }));
   }
 

@@ -10,7 +10,6 @@ function makeRepo(project: string): RepoInfo {
     project,
     worktrees: [],
     profileNames: [],
-    ideDefaults: { baseNoIde: true, profileNoIde: {} },
   };
 }
 

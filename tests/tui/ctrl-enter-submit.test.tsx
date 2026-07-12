@@ -24,14 +24,11 @@ const { AddProjectModal } = await import(
 const { CTRL_ENTER, DOWN_ARROW, ENTER, TAB, renderWithInput, sendKeys, tick } =
   await import("./keypress-harness");
 
-const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
-
 function renderForm(onSubmit: () => void) {
   return renderWithInput(
     <NewBranchForm
       defaultBase="main"
       profileNames={["default"]}
-      ideDefaults={defaultIdeDefaults}
       onSubmit={onSubmit}
       onBack={() => {}}
       width={80}
@@ -56,7 +53,6 @@ function renderFromPRForm(
     <FromPRForm
       prList={prList}
       profileNames={["default"]}
-      ideDefaults={defaultIdeDefaults}
       isRefreshing={false}
       onRefresh={onRefresh}
       onSubmit={onSubmit}
@@ -71,7 +67,6 @@ function renderExistingBranchForm(onSubmit: () => void) {
     <ExistingBranchForm
       repoPath="/repo"
       profileNames={["default"]}
-      ideDefaults={defaultIdeDefaults}
       onSubmit={onSubmit}
       onBack={() => {}}
       width={80}
@@ -87,7 +82,6 @@ function renderUpModal(
     <UpModal
       visible
       profileNames={profileNames}
-      ideDefaults={defaultIdeDefaults}
       onSubmit={onSubmit}
       onCancel={() => {}}
     />,
@@ -326,7 +320,6 @@ describe("Ctrl+Enter submit", () => {
         expect(onSubmitMock).toHaveBeenCalledTimes(1);
         expect(onSubmitMock).toHaveBeenCalledWith(
           expect.objectContaining({
-            noIde: expect.any(Boolean),
             autoSwitch: expect.any(Boolean),
           }),
         );

@@ -6,7 +6,6 @@ import {
   GitHubService,
   liveGitHubService,
 } from "../../src/services/github-service";
-import { IdeService, liveIdeService } from "../../src/services/ide-service";
 import {
   livePrCacheService,
   PrCacheService,
@@ -20,10 +19,6 @@ import {
   SetupService,
 } from "../../src/services/setup-service";
 import { liveTmuxService, TmuxService } from "../../src/services/tmux";
-import {
-  liveVSCodeWorkspaceService,
-  VSCodeWorkspaceService,
-} from "../../src/services/vscode-workspace";
 import {
   liveWorkspaceService,
   WorkspaceService,
@@ -56,13 +51,8 @@ export const WctTestLayer = Layer.mergeAll(WctServicesLayer, BunServices.layer);
 export function wctTestLayer(overrides: ServiceOverrides = {}) {
   return Layer.mergeAll(
     Layer.succeed(GitHubService, overrides.github ?? liveGitHubService),
-    Layer.succeed(IdeService, overrides.ide ?? liveIdeService),
     Layer.succeed(SetupService, overrides.setup ?? liveSetupService),
     Layer.succeed(TmuxService, overrides.tmux ?? liveTmuxService),
-    Layer.succeed(
-      VSCodeWorkspaceService,
-      overrides.vscodeWorkspace ?? liveVSCodeWorkspaceService,
-    ),
     Layer.succeed(WorktreeService, overrides.worktree ?? liveWorktreeService),
     Layer.succeed(
       WorkspaceService,
@@ -83,13 +73,11 @@ export function wctTestLayer(overrides: ServiceOverrides = {}) {
 // in `wctTestLayer` above.
 type _HandledOverrideKeys =
   | "github"
-  | "ide"
   | "json"
   | "prCache"
   | "registry"
   | "setup"
   | "tmux"
-  | "vscodeWorkspace"
   | "worktree"
   | "workspace";
 type _AssertOverridesExhaustive =

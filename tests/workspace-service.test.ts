@@ -9,17 +9,12 @@ import {
   type GitHubService,
   liveGitHubService,
 } from "../src/services/github-service";
-import { type IdeService, liveIdeService } from "../src/services/ide-service";
 import {
   liveSetupService,
   type SetupResult,
   type SetupService,
 } from "../src/services/setup-service";
 import type { TmuxService } from "../src/services/tmux";
-import {
-  liveVSCodeWorkspaceService,
-  type VSCodeWorkspaceService,
-} from "../src/services/vscode-workspace";
 import {
   liveWorkspaceService,
   type WorkspaceReporterEvent,
@@ -40,8 +35,6 @@ project_name: "myapp"
 tmux:
   windows:
     - name: "main"
-ide:
-  command: "echo ide"
 ${body}`,
   );
 }
@@ -163,9 +156,6 @@ describe("WorkspaceService target resolution", () => {
                   sessionName: name,
                 }),
             },
-            ide: {
-              openIDE: () => Effect.succeed(undefined),
-            },
           },
         ),
       );
@@ -246,10 +236,6 @@ describe("WorkspaceService open", () => {
             ...noopTmuxService,
             createSession: () =>
               Effect.succeed({ _tag: "Created", sessionName: "myapp-feature" }),
-          },
-          ide: {
-            ...liveIdeService,
-            openIDE: () => Effect.void,
           },
         },
       ),
@@ -365,7 +351,7 @@ describe("WorkspaceService open", () => {
     const result = await runBunPromise(
       withTestServices(
         WorkspaceService.use((service) =>
-          service.open({ pr: "42", cwd: repoDir, noIde: true }),
+          service.open({ pr: "42", cwd: repoDir }),
         ),
         { github, worktree },
       ),
@@ -423,7 +409,6 @@ describe("WorkspaceService open", () => {
           service.open({
             pr: "https://github.com/acme/wct/pull/42",
             cwd: repoDir,
-            noIde: true,
           }),
         ),
         { github, worktree },
@@ -468,7 +453,7 @@ describe("WorkspaceService open", () => {
     await runBunPromise(
       withTestServices(
         WorkspaceService.use((service) =>
-          service.open({ pr: "7", cwd: repoDir, noIde: true }),
+          service.open({ pr: "7", cwd: repoDir }),
         ),
         { github, worktree },
       ),
@@ -613,148 +598,6 @@ describe("WorkspaceService open", () => {
     ).rejects.toThrow("Failed to copy files");
   });
 
-  test("runs copy, setup, and VS Code sync when the worktree already exists", async () => {
-    await writeConfig(
-      repoDir,
-      `copy:
-  - existing.env
-setup:
-  - name: bootstrap
-    command: "echo setup"
-work_dir: "packages/app"
-ide:
-  name: vscode
-  command: "code"
-  fork_workspace: true
-`,
-    );
-    await Bun.write(join(repoDir, "existing.env"), "EXISTING=1\n");
-    const calls: string[] = [];
-    const setup: SetupService = {
-      ...liveSetupService,
-      runSetupCommands: (_commands, workingDir, env) =>
-        Effect.sync(() => {
-          calls.push(`setup:${workingDir}:${env.WCT_WORK_DIR}`);
-          return [{ _tag: "Succeeded", name: "bootstrap" }];
-        }),
-    };
-    const vscodeWorkspace: VSCodeWorkspaceService = {
-      ...liveVSCodeWorkspaceService,
-      syncWorkspaceState: () =>
-        Effect.sync(() => {
-          calls.push("vscode");
-          return { success: true, skipped: true };
-        }),
-    };
-    const worktree = makeWorktreeService({
-      createWorktree: (path) =>
-        Effect.sync(() => {
-          calls.push("worktree");
-          return { _tag: "AlreadyExists" as const, path };
-        }),
-    });
-
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) =>
-          service.open({ branch: "already", cwd: repoDir, ide: true }),
-        ),
-        {
-          ide: {
-            ...liveIdeService,
-            openIDE: () => Effect.void,
-          },
-          setup,
-          vscodeWorkspace,
-          worktree,
-        },
-      ),
-    );
-
-    expect(result.created).toBe(false);
-    expect(result.attempts.copy).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    expect(result.attempts.setup).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    const workingDir = join(result.worktreePath, "packages/app");
-    expect(calls).toContain(`setup:${workingDir}:${workingDir}`);
-    expect(result.attempts.vscode).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    expect(calls).toEqual([
-      "worktree",
-      "vscode",
-      `setup:${workingDir}:${workingDir}`,
-    ]);
-  });
-
-  test("returns typed warnings for setup, VS Code, tmux, and IDE failures", async () => {
-    await writeConfig(
-      repoDir,
-      `setup:
-  - name: required
-    command: "false"
-ide:
-  name: vscode
-  command: "code"
-  fork_workspace: true
-tmux: {}
-`,
-    );
-    const setup: SetupService = {
-      ...liveSetupService,
-      runSetupCommands: () =>
-        Effect.succeed([
-          { _tag: "Failed", name: "required", error: "boom" },
-        ] satisfies SetupResult[]),
-    };
-    const vscodeWorkspace: VSCodeWorkspaceService = {
-      ...liveVSCodeWorkspaceService,
-      syncWorkspaceState: () =>
-        Effect.succeed({ success: false, error: "state unavailable" }),
-    };
-    const tmux: TmuxService = {
-      ...noopTmuxService,
-      createSession: () => Effect.fail(commandError("tmux_error", "no tmux")),
-    };
-    const ide: IdeService = {
-      ...liveIdeService,
-      openIDE: () => Effect.fail(commandError("unexpected_error", "no ide")),
-    };
-
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) =>
-          service.open({ branch: "warnings", cwd: repoDir }),
-        ),
-        {
-          ide,
-          setup,
-          tmux,
-          vscodeWorkspace,
-          worktree: makeWorktreeService(),
-        },
-      ),
-    );
-
-    expect(result.warnings.map((warning) => warning._tag)).toEqual([
-      "VSCodeSyncFailed",
-      "SetupFailed",
-      "TmuxStartFailed",
-      "IdeOpenFailed",
-    ]);
-    expect(result.attempts.tmux).toMatchObject({
-      attempted: true,
-      ok: false,
-    });
-    expect(result.attempts.ide).toMatchObject({ attempted: true, ok: false });
-  });
-
   test("types optional setup failures as optional warnings", async () => {
     await writeConfig(
       repoDir,
@@ -794,264 +637,6 @@ tmux: {}
         message: "skipped",
       },
     });
-  });
-
-  test("starts open tmux and IDE in parallel after prerequisite work", async () => {
-    await writeConfig(repoDir, `tmux: {}\nide:\n  command: "code"\n`);
-    const calls: string[] = [];
-    let ideStarted = false;
-
-    const result = await Promise.race([
-      runBunPromise(
-        withTestServices(
-          WorkspaceService.use((service) =>
-            service.open({ branch: "parallel", cwd: repoDir }),
-          ),
-          {
-            worktree: makeWorktreeService({
-              createWorktree: (path) =>
-                Effect.sync(() => {
-                  calls.push("worktree");
-                  return { _tag: "Created" as const, path };
-                }),
-            }),
-            tmux: {
-              ...noopTmuxService,
-              createSession: (name) =>
-                Effect.promise(async () => {
-                  calls.push("tmux-started");
-                  while (!ideStarted) {
-                    await Bun.sleep(1);
-                  }
-                  calls.push("tmux-completed");
-                  return { _tag: "Created" as const, sessionName: name };
-                }),
-            },
-            ide: {
-              ...liveIdeService,
-              openIDE: () =>
-                Effect.promise(async () => {
-                  calls.push("ide-started");
-                  ideStarted = true;
-                  await Bun.sleep(1);
-                  calls.push("ide-completed");
-                }),
-            },
-          },
-        ),
-      ),
-      Bun.sleep(100).then(() => {
-        throw new Error(
-          "workspace open did not start tmux and IDE in parallel",
-        );
-      }),
-    ]);
-
-    expect(result.attempts.tmux).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    expect(result.attempts.ide).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    expect(calls).toEqual([
-      "worktree",
-      "tmux-started",
-      "ide-started",
-      "tmux-completed",
-      "ide-completed",
-    ]);
-  });
-});
-
-describe("WorkspaceService up", () => {
-  let repoDir: string;
-  let worktreeRoot: string;
-  let worktreePath: string;
-
-  beforeEach(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-workspace-repo-"));
-    worktreeRoot = await mkdtemp(join(tmpdir(), "wct-workspace-wt-"));
-    worktreePath = join(worktreeRoot, "myapp-feature");
-    await writeConfig(repoDir);
-  });
-
-  afterEach(async () => {
-    await rm(repoDir, { recursive: true, force: true });
-    await rm(worktreeRoot, { recursive: true, force: true });
-  });
-
-  test("starts tmux and IDE without running copy or setup", async () => {
-    const calls: string[] = [];
-    const sourceFile = join(repoDir, ".env.local");
-    const copiedFile = join(worktreePath, ".env.local");
-    await mkdir(worktreePath, { recursive: true });
-    await Bun.write(sourceFile, "SECRET=1\n");
-    await writeConfig(
-      repoDir,
-      `copy:
-  - ".env.local"
-work_dir: "apps/web"
-`,
-    );
-
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) => service.up({ path: worktreePath })),
-        {
-          worktree: {
-            ...liveWorktreeService,
-            isGitRepo: (cwd) => Effect.succeed(cwd === worktreePath),
-            getMainRepoPath: () => Effect.succeed(repoDir),
-            getCurrentBranch: () => Effect.succeed("feature"),
-          },
-          tmux: {
-            ...noopTmuxService,
-            createSession: (name, workingDir) =>
-              Effect.sync(() => {
-                calls.push(`tmux:${name}:${workingDir}`);
-                return { _tag: "AlreadyExists" as const, sessionName: name };
-              }),
-          },
-          ide: {
-            openIDE: (_command, env) =>
-              Effect.sync(() => {
-                calls.push(`ide:${env.WCT_BRANCH}`);
-              }),
-          },
-          setup: {
-            runSetupCommands: () =>
-              Effect.sync(() => {
-                calls.push("setup");
-                return [];
-              }),
-          },
-        },
-      ),
-    );
-
-    expect(result.attempts.tmux).toEqual({
-      attempted: true,
-      ok: true,
-      value: { _tag: "AlreadyExists", sessionName: "myapp-feature" },
-    });
-    expect(result.attempts.ide).toEqual({
-      attempted: true,
-      ok: true,
-      value: null,
-    });
-    expect(result.warnings).toEqual([]);
-    expect(calls).toContain(
-      `tmux:myapp-feature:${join(worktreePath, "apps/web")}`,
-    );
-    expect(result.env.WCT_WORK_DIR).toBe(join(worktreePath, "apps/web"));
-    expect(calls).toContain("ide:feature");
-    expect(calls).not.toContain("setup");
-    expect(await Bun.file(copiedFile).exists()).toBe(false);
-  });
-
-  test("uses explicit profile config for tmux and IDE behavior", async () => {
-    await writeConfig(
-      repoDir,
-      `profiles:
-  focused:
-    work_dir: "apps/focused"
-    tmux:
-      windows:
-        - name: "profile-window"
-    ide:
-      command: "echo profile-ide"
-`,
-    );
-    const tmuxWindowNames: Array<string | undefined> = [];
-    const tmuxWorkingDirs: string[] = [];
-    const ideCommands: string[] = [];
-
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) =>
-          service.up({ path: worktreePath, profile: "focused" }),
-        ),
-        {
-          worktree: {
-            ...liveWorktreeService,
-            isGitRepo: () => Effect.succeed(true),
-            getMainRepoPath: () => Effect.succeed(repoDir),
-            getCurrentBranch: () => Effect.succeed("feature"),
-          },
-          tmux: {
-            ...noopTmuxService,
-            createSession: (name, workingDir, config) =>
-              Effect.sync(() => {
-                tmuxWorkingDirs.push(workingDir);
-                tmuxWindowNames.push(config?.windows?.[0]?.name);
-                return { _tag: "Created" as const, sessionName: name };
-              }),
-          },
-          ide: {
-            openIDE: (command) =>
-              Effect.sync(() => {
-                ideCommands.push(command);
-              }),
-          },
-        },
-      ),
-    );
-
-    expect(result.profileName).toBe("focused");
-    expect(tmuxWindowNames).toEqual(["profile-window"]);
-    expect(tmuxWorkingDirs).toEqual([join(worktreePath, "apps/focused")]);
-    expect(ideCommands).toEqual(["echo profile-ide"]);
-  });
-
-  test("captures tmux and IDE failures as JSON-safe warnings and attempts", async () => {
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) => service.up({ path: worktreePath })),
-        {
-          worktree: {
-            ...liveWorktreeService,
-            isGitRepo: () => Effect.succeed(true),
-            getMainRepoPath: () => Effect.succeed(repoDir),
-            getCurrentBranch: () => Effect.succeed("feature"),
-          },
-          tmux: {
-            ...noopTmuxService,
-            createSession: () =>
-              Effect.fail(commandError("tmux_error", "tmux boom")),
-          },
-          ide: {
-            openIDE: () =>
-              Effect.fail(commandError("unexpected_error", "ide boom")),
-          },
-        },
-      ),
-    );
-
-    expect(result.attempts.tmux).toMatchObject({
-      attempted: true,
-      ok: false,
-      error: { code: "tmux_error", message: "tmux boom" },
-    });
-    expect(result.attempts.ide).toMatchObject({
-      attempted: true,
-      ok: false,
-      error: { code: "unexpected_error", message: "ide boom" },
-    });
-    expect(result.warnings).toEqual([
-      {
-        _tag: "TmuxStartFailed",
-        operation: "up",
-        error: { code: "tmux_error", message: "tmux boom" },
-      },
-      {
-        _tag: "IdeOpenFailed",
-        operation: "up",
-        error: { code: "unexpected_error", message: "ide boom" },
-      },
-    ]);
-    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
 });
 
@@ -1454,111 +1039,6 @@ describe("WorkspaceService reporter", () => {
 
   afterEach(async () => {
     await rm(repoDir, { recursive: true, force: true });
-  });
-
-  test("emits up events in deterministic operation order while starting tmux and IDE in parallel", async () => {
-    const events: WorkspaceReporterEvent[] = [];
-    const calls: string[] = [];
-    let ideStarted = false;
-
-    const reporter = {
-      event: (event: WorkspaceReporterEvent) =>
-        Effect.sync(() => {
-          events.push(event);
-        }),
-    };
-
-    const result = await Promise.race([
-      runBunPromise(
-        withTestServices(
-          WorkspaceService.use((service) =>
-            service.up({ path: "/tmp/myapp-feature", reporter }),
-          ),
-          {
-            worktree: {
-              ...liveWorktreeService,
-              isGitRepo: () => Effect.succeed(true),
-              getMainRepoPath: () => Effect.succeed(repoDir),
-              getCurrentBranch: () => Effect.succeed("feature"),
-            },
-            tmux: {
-              ...noopTmuxService,
-              createSession: (name) =>
-                Effect.promise(async () => {
-                  calls.push("tmux-started");
-                  while (!ideStarted) {
-                    await Bun.sleep(1);
-                  }
-                  calls.push("tmux-completed");
-                  return { _tag: "Created" as const, sessionName: name };
-                }),
-            },
-            ide: {
-              openIDE: () =>
-                Effect.promise(async () => {
-                  calls.push("ide-started");
-                  ideStarted = true;
-                  await Bun.sleep(1);
-                  calls.push("ide-completed");
-                }),
-            },
-          },
-        ),
-      ),
-      Bun.sleep(100).then(() => {
-        throw new Error("workspace up did not start tmux and IDE in parallel");
-      }),
-    ]);
-
-    expect(result.attempts.tmux).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    expect(result.attempts.ide).toMatchObject({
-      attempted: true,
-      ok: true,
-    });
-    expect(result).not.toHaveProperty("events");
-    expect(calls).toEqual([
-      "tmux-started",
-      "ide-started",
-      "tmux-completed",
-      "ide-completed",
-    ]);
-    expect(events).toEqual([
-      {
-        operation: "up",
-        _tag: "TargetResolved",
-        worktreePath: "/tmp/myapp-feature",
-      },
-      {
-        operation: "up",
-        _tag: "ProfileResolved",
-      },
-      {
-        operation: "up",
-        _tag: "AttemptStarted",
-        attempt: "tmux",
-      },
-      {
-        operation: "up",
-        _tag: "AttemptStarted",
-        attempt: "ide",
-      },
-      {
-        operation: "up",
-        _tag: "AttemptCompleted",
-        attempt: "tmux",
-        ok: true,
-      },
-      {
-        operation: "up",
-        _tag: "AttemptCompleted",
-        attempt: "ide",
-        ok: true,
-      },
-    ]);
-    expect(JSON.parse(JSON.stringify(events))).toEqual(events);
   });
 
   test("emits typed events in order and swallows reporter failures", async () => {

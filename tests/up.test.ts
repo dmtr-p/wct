@@ -5,7 +5,6 @@ import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { commandDef, upCommand } from "../src/commands/up";
-import { DEFAULT_IDE_CONFIG } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
@@ -261,18 +260,6 @@ describe("upCommand", () => {
     expect(branchOption?.completionValues).toBe("__wct_worktree_branches");
   });
 
-  test("includes ide command metadata option", () => {
-    const ideOption = commandDef.options?.find(
-      (option) => option.name === "ide",
-    );
-
-    expect(ideOption).toMatchObject({
-      name: "ide",
-      type: "boolean",
-      description: "Force opening IDE",
-    });
-  });
-
   test("passes CLI options through to WorkspaceService.up", async () => {
     const receivedOptions: unknown[] = [];
     const registerCalls: string[] = [];
@@ -301,7 +288,6 @@ describe("upCommand", () => {
                 attempted: false as const,
                 reason: "tmux_not_configured",
               },
-              ide: { attempted: false as const, reason: "ide_not_configured" },
             },
           };
         }),
@@ -312,8 +298,6 @@ describe("upCommand", () => {
     await runBunPromise(
       withTestServices(
         upCommand({
-          ide: true,
-          noIde: true,
           noAttach: true,
           profile: "focused",
           path: "/tmp/myapp-feature",
@@ -343,8 +327,6 @@ describe("upCommand", () => {
 
     expect(receivedOptions).toEqual([
       {
-        ide: true,
-        noIde: true,
         profile: "focused",
         path: "/tmp/myapp-feature",
         branch: "feature",
@@ -459,75 +441,6 @@ tmux:
     } finally {
       process.chdir(originalDir);
       await cleanupLinkedWorktreeFixture(fixture, originalDir);
-    }
-  });
-
-  test("passes ide flag through to session startup", async () => {
-    const fixture = await createLinkedWorktreeFixture(
-      "wct-up-ide-flag-",
-      "wct-up-ide-flag-wt-",
-    );
-    const originalDir = process.cwd();
-    const originalHome = process.env.HOME;
-    const homeDir = await mkdtemp(join(tmpdir(), "wct-up-home-"));
-    const wtPath = join(fixture.worktreeDir, "feature-branch");
-
-    try {
-      process.env.HOME = homeDir;
-      await Bun.write(
-        join(fixture.repoDir, ".wct.yaml"),
-        `version: 1
-worktree_dir: "../worktrees"
-project_name: "myapp"
-tmux:
-  windows:
-    - name: "main"
-`,
-      );
-
-      process.chdir(fixture.repoDir);
-
-      const ideCalls: string[] = [];
-      await runBunPromise(
-        withTestServices(
-          upCommand({ path: wtPath, ide: true, noAttach: true }),
-          {
-            worktree: {
-              ...liveWorktreeService,
-              isGitRepo: (cwd?: string) => Effect.succeed(cwd === wtPath),
-              getMainRepoPath: (cwd?: string) =>
-                Effect.succeed(cwd === wtPath ? fixture.repoDir : null),
-              getCurrentBranch: (cwd?: string) =>
-                Effect.succeed(cwd === wtPath ? "feature-branch" : null),
-            },
-            tmux: {
-              ...noopTmuxService,
-              createSession: (_name, _workingDir) =>
-                Effect.succeed({
-                  _tag: "Created" as const,
-                  sessionName: "test",
-                }),
-            },
-            ide: {
-              openIDE: (command) =>
-                Effect.sync(() => {
-                  ideCalls.push(command);
-                }),
-            },
-          },
-        ),
-      );
-
-      expect(ideCalls).toEqual([DEFAULT_IDE_CONFIG.command]);
-    } finally {
-      if (originalHome === undefined) {
-        delete process.env.HOME;
-      } else {
-        process.env.HOME = originalHome;
-      }
-      process.chdir(originalDir);
-      await cleanupLinkedWorktreeFixture(fixture, originalDir);
-      await rm(homeDir, { recursive: true, force: true });
     }
   });
 
@@ -787,7 +700,6 @@ tmux:
               ok: false,
               error: { code: "tmux_error", message: "tmux boom" },
             },
-            ide: { attempted: false, reason: "ide_not_configured" },
           },
         }),
       down: () => Effect.die("unused"),

@@ -20,7 +20,6 @@ import {
 } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
-import type { SessionIdeDefaults } from "./useSessionOptionsState";
 import type { TmuxClientDiscovery } from "./useTmux";
 
 function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
@@ -31,12 +30,8 @@ function formatWorkspaceWarning(warning: WorkspaceWarning): string {
   switch (warning._tag) {
     case "SetupFailed":
       return `${warning.optional ? "Optional setup failed" : "Setup failed"}: ${warning.name}: ${warning.error.message}`;
-    case "VSCodeSyncFailed":
-      return `VS Code workspace sync failed: ${warning.error.message}`;
     case "TmuxStartFailed":
       return `Failed to create tmux session: ${warning.error.message}`;
-    case "IdeOpenFailed":
-      return `Failed to open IDE: ${warning.error.message}`;
   }
 }
 
@@ -55,7 +50,6 @@ export interface ModalActionDeps {
   setOpenModalProfiles: (v: string[]) => void;
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
-  setOpenModalIdeDefaults: (v: SessionIdeDefaults) => void;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -80,14 +74,12 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
     let profiles: string[] = [];
     let project = "";
     let repoPath = "";
-    let ideDefaults: SessionIdeDefaults = { baseNoIde: true, profileNoIde: {} };
     if (selected) {
       const repo = deps.filteredRepos[selected.repoIndex];
       if (repo) {
         profiles = repo.profileNames;
         project = repo.project;
         repoPath = repo.repoPath;
-        ideDefaults = repo.ideDefaults;
       }
       if (
         repo &&
@@ -103,7 +95,6 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
     deps.setOpenModalProfiles(profiles);
     deps.setOpenModalRepoProject(project);
     deps.setOpenModalRepoPath(repoPath);
-    deps.setOpenModalIdeDefaults(ideDefaults);
     deps.setMode(Mode.OpenModal);
   };
 }
@@ -150,8 +141,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
                 pr: opts.pr,
                 profile: opts.profile,
                 existing: opts.existing,
-                ide: !opts.noIde,
-                noIde: opts.noIde,
               }),
             ),
           );
@@ -231,9 +220,7 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
-    deps.setMode(
-      Mode.UpModal(wt.path, worktreeKey, repo.profileNames, repo.ideDefaults),
-    );
+    deps.setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
   };
 }
 
@@ -263,8 +250,6 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
             service.up({
               path: worktreePath,
               profile: result.profile,
-              ide: !result.noIde,
-              noIde: result.noIde,
             }),
           ),
         );

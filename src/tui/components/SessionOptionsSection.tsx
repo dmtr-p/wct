@@ -15,15 +15,13 @@ import { TitledBox } from "./TitledBox";
 
 export interface SessionOptionsSectionProps {
   profileNames: string[];
-  focusedField: "profile" | "noIde" | "autoSwitch" | "submit" | null;
-  noIde: boolean;
+  focusedField: "profile" | "autoSwitch" | "submit" | null;
   autoSwitch: boolean;
   canSubmit: boolean;
-  onNoIdeToggle: () => void;
   onAutoSwitchToggle: () => void;
   onSubmit: () => void;
   onProfileChange: (profile: string | undefined) => void;
-  onFocusField: (field: "profile" | "noIde" | "autoSwitch" | "submit") => void;
+  onFocusField: (field: "profile" | "autoSwitch" | "submit") => void;
   resetKey: string;
   width?: number;
 }
@@ -31,10 +29,8 @@ export interface SessionOptionsSectionProps {
 export function SessionOptionsSection({
   profileNames,
   focusedField,
-  noIde,
   autoSwitch,
   canSubmit,
-  onNoIdeToggle,
   onAutoSwitchToggle,
   onSubmit,
   onProfileChange,
@@ -123,22 +119,6 @@ export function SessionOptionsSection({
         </TitledBox>
       ) : null}
       <Box height={1} />
-      <MouseClickable
-        onClick={() => {
-          onFocusField("noIde");
-          onNoIdeToggle();
-        }}
-      >
-        {(isHovered) => (
-          <ToggleRow
-            label="No IDE"
-            checked={noIde}
-            isFocused={focusedField === "noIde"}
-            onToggle={onNoIdeToggle}
-            isHovered={isHovered}
-          />
-        )}
-      </MouseClickable>
       <MouseClickable
         onClick={() => {
           onFocusField("autoSwitch");

@@ -38,8 +38,6 @@ const { CTRL_ENTER, renderWithInput, sendKeys } = await import(
   "./keypress-harness"
 );
 
-const defaultIdeDefaults = { baseNoIde: true, profileNoIde: {} };
-
 // The bug's press + release + release written as one stdin chunk. Ink's
 // parser splits this into three per-sequence useInput events (one leading
 // ESC stripped per event), so each event must be swallowed by the guard.
@@ -53,7 +51,6 @@ function renderNewBranchForm(onSubmit: (result: unknown) => void) {
     <NewBranchForm
       defaultBase="main"
       profileNames={["default"]}
-      ideDefaults={defaultIdeDefaults}
       onSubmit={onSubmit}
       onBack={() => {}}
       width={80}
@@ -194,8 +191,8 @@ describe("modal mouse controls", () => {
 
     try {
       await sendKeys(rendered.stdin, "feature-x");
-      // Submit text follows the profile box, spacer, and two toggles.
-      await sendKeys(rendered.stdin, click(5, 17));
+      // Submit text follows the profile box, spacer, and Auto-switch toggle.
+      await sendKeys(rendered.stdin, click(5, 16));
 
       expect(onSubmitMock).toHaveBeenCalledTimes(1);
       expect(onSubmitMock).toHaveBeenCalledWith(
@@ -212,7 +209,7 @@ describe("modal mouse controls", () => {
 
     try {
       await sendKeys(rendered.stdin, "feature-x");
-      const submitClick = click(5, 17);
+      const submitClick = click(5, 16);
       await sendKeys(rendered.stdin, `${submitClick}${submitClick}`);
 
       expect(onSubmitMock).toHaveBeenCalledTimes(1);
@@ -221,13 +218,13 @@ describe("modal mouse controls", () => {
     }
   });
 
-  test("the blank spacer above Submit is not clickable", async () => {
+  test("the blank spacer above the session controls is not clickable", async () => {
     const onSubmitMock = vi.fn();
     const rendered = await renderNewBranchForm(onSubmitMock);
 
     try {
       await sendKeys(rendered.stdin, "feature-x");
-      await sendKeys(rendered.stdin, click(5, 16));
+      await sendKeys(rendered.stdin, click(5, 14));
 
       expect(onSubmitMock).not.toHaveBeenCalled();
     } finally {
@@ -240,7 +237,7 @@ describe("modal mouse controls", () => {
     const rendered = await renderNewBranchForm(onSubmitMock);
 
     try {
-      await sendKeys(rendered.stdin, click(5, 17));
+      await sendKeys(rendered.stdin, click(5, 16));
       expect(onSubmitMock).not.toHaveBeenCalled();
     } finally {
       rendered.unmount();

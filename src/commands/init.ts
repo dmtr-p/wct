@@ -29,7 +29,6 @@ copy:
   - .env
   - .env.local
   # - CLAUDE.md
-  # - .vscode/settings.json
 
 # Commands to run after worktree creation (in order)
 setup:
@@ -38,14 +37,6 @@ setup:
   # - name: "Generate types"
   #   command: "bun run codegen"
   #   optional: true  # continue if fails
-
-# IDE command (environment variables available: WCT_WORKTREE_DIR, WCT_WORK_DIR, WCT_MAIN_DIR, WCT_BRANCH, WCT_PROJECT)
-ide:
-  open: true
-  name: vscode
-  command: "code $WCT_WORKTREE_DIR"
-  # command: "cursor $WCT_WORKTREE_DIR"
-  # fork_workspace: true  # (vscode only) copy VS Code workspace state to worktree; requires main repo opened in VS Code once
 
 # Tmux session configuration
 tmux:

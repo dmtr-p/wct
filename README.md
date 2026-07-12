@@ -1,12 +1,12 @@
 # wct
 
-Git worktree workflow automation CLI. Quickly create isolated development environments for different branches with pre-configured tooling, tmux sessions, and IDE integration.
+Git worktree workflow automation CLI. Quickly create isolated development environments for different branches with pre-configured tooling and tmux sessions.
 
 ## Usage
 
 ```bash
-wct open <branch>       # Create worktree, run setup, start tmux session, open IDE
-wct up                  # Start tmux session and open IDE in current directory
+wct open <branch>       # Create worktree, run setup, and start tmux session
+wct up                  # Start tmux session in current directory
 wct down                # Kill tmux session for current directory
 wct close <branch...>   # Kill tmux session and remove one or more worktrees
 wct list                # Show active worktrees with tmux session status
@@ -112,12 +112,6 @@ setup:
     command: "bun run codegen"
     optional: true # continue even if this fails
 
-# IDE configuration
-ide:
-  name: vscode # IDE identifier (use "vscode" for VS Code workspace sync)
-  command: "code $WCT_WORKTREE_DIR"
-  fork_workspace: true # sync VS Code workspace state to worktree
-
 # Tmux session layout
 tmux:
   windows:
@@ -148,13 +142,13 @@ profiles:
       - .env.production
 ```
 
-Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands, tmux panes, and `ide.command`. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
+Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands and tmux panes. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
 
 A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
 
 ### Config Profiles
 
-Profiles let you override `work_dir`, `copy`, `setup`, `ide`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
+Profiles let you override `work_dir`, `copy`, `setup`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
 
 ```yaml
 profiles:
@@ -173,10 +167,6 @@ profiles:
 **Auto-matching:** When you run `wct open <branch>`, profiles are matched against the branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
 
 **Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open` or `wct up` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
-
-### VS Code Workspace Sync
-
-When `ide.fork_workspace` is enabled, `wct open` copies VS Code's workspace storage (state and configuration of installed extensions, UI layout, settings) from your main repo into the new worktree. This means each worktree opens with the same extensions, sidebar state, and editor layout as your main workspace — no manual reconfiguration needed. Requires that you've opened the main repo in VS Code at least once. Supported on macOS and Linux.
 
 ## TUI
 

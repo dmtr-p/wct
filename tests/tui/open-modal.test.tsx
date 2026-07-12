@@ -28,8 +28,10 @@ function createStdoutStdin() {
   stdout.columns = 100;
   stdout.rows = 32;
   const stdin = new PassThrough() as unknown as TestStdin;
-  stdin.isTTY = false;
+  stdin.isTTY = true;
   stdin.setRawMode = () => stdin;
+  stdin.ref = () => stdin;
+  stdin.unref = () => stdin;
   return { stdout, stdin };
 }
 
@@ -72,6 +74,8 @@ async function renderNode(node: React.ReactElement) {
 
   return {
     output: stripAnsi(chunks.join("")),
+    currentOutput: () => stripAnsi(chunks.join("")),
+    stdin,
     unmount() {
       instance.unmount();
     },
@@ -172,6 +176,47 @@ describe("OpenModal form variants", () => {
 
     try {
       expect(rendered.output).toContain("↻ Refresh PRs");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("from PR form updates the position footer for filtered options", async () => {
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[
+          {
+            number: 1,
+            title: "First PR",
+            state: "OPEN",
+            headRefName: "feat-1",
+            rollupState: null,
+          },
+          {
+            number: 2,
+            title: "Second PR",
+            state: "OPEN",
+            headRefName: "feat-2",
+            rollupState: null,
+          },
+        ]}
+        profileNames={[]}
+        isRefreshing={false}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      expect(rendered.output).toContain("1 of 3");
+
+      rendered.stdin.write("2");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(rendered.currentOutput()).toContain("1 of 2");
     } finally {
       rendered.unmount();
     }

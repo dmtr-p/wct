@@ -24,11 +24,11 @@ function visibleLength(value: string) {
   return getGraphemes(value).length;
 }
 
-function truncateTitle(title: string, width: number) {
+function truncateText(value: string, width: number) {
   if (width <= 0) return "";
 
-  const graphemes = getGraphemes(title);
-  if (graphemes.length <= width) return title;
+  const graphemes = getGraphemes(value);
+  if (graphemes.length <= width) return value;
 
   if (width === 1) return "…";
 
@@ -42,7 +42,7 @@ function topBorder(width: number, title: string) {
   if (width === 3) return "╭─╮";
 
   const titleWidth = width - 4;
-  const visibleTitle = truncateTitle(title, titleWidth);
+  const visibleTitle = truncateText(title, titleWidth);
   const dashCount = Math.max(titleWidth - visibleLength(visibleTitle), 0);
 
   return `╭ ${visibleTitle} ${"─".repeat(dashCount)}╮`;
@@ -57,7 +57,7 @@ function bottomBorder(width: number, footer?: string) {
   if (!footer) return `╰${"─".repeat(width - 2)}╯`;
 
   const footerWidth = width - 4;
-  const visibleFooter = truncateTitle(footer, footerWidth);
+  const visibleFooter = truncateText(footer, footerWidth);
   const dashCount = Math.max(footerWidth - visibleLength(visibleFooter), 0);
 
   return `╰${"─".repeat(dashCount)} ${visibleFooter} ╯`;

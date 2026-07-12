@@ -132,6 +132,24 @@ describe("App.tsx review fixes (real App)", () => {
     }
   });
 
+  test("the open mode footer advances with keyboard selection", async () => {
+    setTallWorktrees(repoPath, 3);
+
+    const rendered = await renderApp(<App />, 24);
+    try {
+      await tick(20);
+      await sendKeys(rendered.stdin, "o");
+
+      expect(rendered.output()).toContain("1 of 3");
+
+      await sendKeys(rendered.stdin, "\x1b[B");
+
+      expect(rendered.output()).toContain("2 of 3");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("Ctrl+C disables mouse reporting BEFORE raw mode is turned off, then exits", async () => {
     setTallWorktrees(repoPath, 3);
 

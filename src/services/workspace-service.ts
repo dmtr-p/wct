@@ -314,6 +314,22 @@ function setupWarning(result: SetupResult): WorkspaceWarning | undefined {
   };
 }
 
+function createWctEnv(
+  worktreePath: string,
+  workDir: string,
+  mainRepoPath: string,
+  branch: string,
+  projectName: string,
+): WctEnv {
+  return {
+    WCT_WORKTREE_DIR: worktreePath,
+    WCT_WORK_DIR: resolve(worktreePath, workDir),
+    WCT_MAIN_DIR: mainRepoPath,
+    WCT_BRANCH: branch,
+    WCT_PROJECT: projectName,
+  };
+}
+
 function resolveOpenIntent(
   options: WorkspaceOpenOptions,
 ): Effect.Effect<
@@ -533,14 +549,14 @@ function openImpl(
       ...(base ? { base } : {}),
     });
     const sessionName = formatSessionName(basename(worktreePath));
-    const workingDir = resolve(worktreePath, resolved.work_dir);
-    const env: WctEnv = {
-      WCT_WORKTREE_DIR: worktreePath,
-      WCT_WORK_DIR: workingDir,
-      WCT_MAIN_DIR: mainRepoPath,
-      WCT_BRANCH: branch,
-      WCT_PROJECT: config.project_name,
-    };
+    const env = createWctEnv(
+      worktreePath,
+      resolved.work_dir,
+      mainRepoPath,
+      branch,
+      config.project_name,
+    );
+    const workingDir = env.WCT_WORK_DIR;
 
     yield* emitReporter(reporter, {
       operation: "open",
@@ -915,14 +931,14 @@ function upImpl(
 
     const ideLaunch = resolveIdeLaunch(resolved.ide, { ide, noIde });
     const sessionName = formatSessionName(basename(worktreePath));
-    const workingDir = resolve(worktreePath, resolved.work_dir);
-    const env: WctEnv = {
-      WCT_WORKTREE_DIR: worktreePath,
-      WCT_WORK_DIR: workingDir,
-      WCT_MAIN_DIR: mainRepoPath,
-      WCT_BRANCH: branch,
-      WCT_PROJECT: config.project_name,
-    };
+    const env = createWctEnv(
+      worktreePath,
+      resolved.work_dir,
+      mainRepoPath,
+      branch,
+      config.project_name,
+    );
+    const workingDir = env.WCT_WORK_DIR;
 
     if (resolved.tmux) {
       yield* emitReporter(reporter, {

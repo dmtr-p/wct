@@ -115,7 +115,7 @@ export function SessionOptionsSection({
             selectedIndex={selectedProfileIndex}
             filterQuery={profileQuery}
             isFocused={focusedField === "profile"}
-            maxVisible={6}
+            maxVisible={5}
             onSelect={(index) => {
               onFocusField("profile");
               setSelectedProfileIndex(index);

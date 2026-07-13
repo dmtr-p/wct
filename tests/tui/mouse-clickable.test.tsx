@@ -64,4 +64,49 @@ describe("MouseClickable", () => {
       rendered.unmount();
     }
   });
+
+  test("invokes the double-click action after two quick clicks", async () => {
+    const onClick = vi.fn();
+    const onDoubleClick = vi.fn();
+    const rendered = await renderWithInput(
+      <MouseClickable onClick={onClick} onDoubleClick={onDoubleClick}>
+        <Text>target</Text>
+      </MouseClickable>,
+    );
+
+    try {
+      await sendKeys(rendered.stdin, click(1, 1));
+      expect(onDoubleClick).not.toHaveBeenCalled();
+
+      await sendKeys(rendered.stdin, click(1, 1));
+      expect(onClick).toHaveBeenCalledTimes(2);
+      expect(onDoubleClick).toHaveBeenCalledTimes(1);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("does not treat clicks separated by another target as a double-click", async () => {
+    const firstDoubleClick = vi.fn();
+    const rendered = await renderWithInput(
+      <Box flexDirection="column">
+        <MouseClickable onClick={() => {}} onDoubleClick={firstDoubleClick}>
+          <Text>first</Text>
+        </MouseClickable>
+        <MouseClickable onClick={() => {}}>
+          <Text>second</Text>
+        </MouseClickable>
+      </Box>,
+    );
+
+    try {
+      await sendKeys(rendered.stdin, click(1, 1));
+      await sendKeys(rendered.stdin, click(1, 2));
+      await sendKeys(rendered.stdin, click(1, 1));
+
+      expect(firstDoubleClick).not.toHaveBeenCalled();
+    } finally {
+      rendered.unmount();
+    }
+  });
 });

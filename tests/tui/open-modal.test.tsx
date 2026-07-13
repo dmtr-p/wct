@@ -181,6 +181,41 @@ describe("OpenModal form variants", () => {
     }
   });
 
+  test("double-clicking the Refresh row triggers refresh once", async () => {
+    const onRefresh = vi.fn();
+    const rendered = await renderNode(
+      <FromPRForm
+        prList={[
+          {
+            number: 1,
+            title: "First PR",
+            state: "OPEN",
+            headRefName: "feat-1",
+            rollupState: null,
+          },
+        ]}
+        profileNames={[]}
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSubmit={() => {}}
+        onBack={() => {}}
+        width={80}
+      />,
+    );
+
+    try {
+      const refreshClick = "\x1b[<0;5;5M";
+      rendered.stdin.write(refreshClick);
+      rendered.stdin.write(refreshClick);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("from PR form updates the position footer for filtered options", async () => {
     const rendered = await renderNode(
       <FromPRForm

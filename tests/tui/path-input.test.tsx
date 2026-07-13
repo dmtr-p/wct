@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  completePathValue,
   expandTilde,
   getParentAndPrefix,
 } from "../../src/tui/components/PathInput";
@@ -55,5 +56,17 @@ describe("expandTilde", () => {
 
   test("returns path unchanged if no tilde", () => {
     expect(expandTilde("/usr/local")).toBe("/usr/local");
+  });
+});
+
+describe("completePathValue", () => {
+  test("completes a directory and appends a slash", () => {
+    expect(completePathValue("/Users/dmtr/co", "code")).toBe(
+      "/Users/dmtr/code/",
+    );
+  });
+
+  test("preserves a leading tilde", () => {
+    expect(completePathValue("~/co", "code")).toBe("~/code/");
   });
 });

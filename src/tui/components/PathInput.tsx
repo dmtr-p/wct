@@ -1,11 +1,18 @@
 import { Effect, FileSystem } from "effect";
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlink } from "../hooks/useBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { runTuiSilentPromise } from "../runtime";
 import { MouseClickable } from "./MouseClickable";
-import { getVisibleWindow, type ListItem } from "./ScrollableList";
+import {
+  clampListScrollOffset,
+  getListPaddingCount,
+  type ListItem,
+  ListPadding,
+  Scrollbar,
+  scrollToRevealListItem,
+} from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
 
 /** Expand leading ~/ or bare ~ to $HOME. Does not expand ~user syntax. */
@@ -32,6 +39,21 @@ export function getParentAndPrefix(input: string): {
   };
 }
 
+/** Apply a selected directory completion while preserving a leading tilde. */
+export function completePathValue(
+  value: string,
+  selectedValue: string,
+): string {
+  const expanded = expandTilde(value);
+  const { parent } = getParentAndPrefix(expanded);
+  const newExpanded = `${parent + selectedValue}/`;
+  const home = process.env.HOME ?? "/tmp";
+  return value.startsWith("~") &&
+    (newExpanded === home || newExpanded.startsWith(`${home}/`))
+    ? `~${newExpanded.slice(home.length)}`
+    : newExpanded;
+}
+
 interface PathInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -52,8 +74,10 @@ export function PathInput({
   const cursorVisible = useBlink();
   const [completions, setCompletions] = useState<ListItem[]>([]);
   const [selectedCompletionIndex, setSelectedCompletionIndex] = useState(0);
+  const [completionScrollOffset, setCompletionScrollOffset] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef<{ cancelled: boolean } | null>(null);
+  const maxVisible = 5;
 
   // Debounced directory listing
   const loadCompletions = useCallback((inputValue: string) => {
@@ -84,10 +108,12 @@ export function PathInput({
         if (token.cancelled) return;
         setCompletions(entries.map((d) => ({ label: d, value: d })));
         setSelectedCompletionIndex(0);
+        setCompletionScrollOffset(0);
       } catch {
         if (token.cancelled) return;
         setCompletions([]);
         setSelectedCompletionIndex(0);
+        setCompletionScrollOffset(0);
       }
     }, 100);
   }, []);
@@ -109,6 +135,15 @@ export function PathInput({
       )
     : completions;
 
+  const completePath = useCallback(
+    (selected: ListItem | undefined) => {
+      if (!selected) return;
+      onChange(completePathValue(value, selected.value));
+      setSelectedCompletionIndex(0);
+    },
+    [onChange, value],
+  );
+
   // Clamp selection when filtered list shrinks
   useEffect(() => {
     if (selectedCompletionIndex >= filtered.length && filtered.length > 0) {
@@ -116,6 +151,23 @@ export function PathInput({
     } else if (filtered.length === 0 && selectedCompletionIndex !== 0) {
       setSelectedCompletionIndex(0);
     }
+  }, [filtered.length, selectedCompletionIndex]);
+
+  const effectiveCompletionScrollOffset = clampListScrollOffset(
+    completionScrollOffset,
+    filtered.length,
+    maxVisible,
+  );
+
+  useEffect(() => {
+    setCompletionScrollOffset((offset) =>
+      scrollToRevealListItem(
+        offset,
+        selectedCompletionIndex,
+        filtered.length,
+        maxVisible,
+      ),
+    );
   }, [filtered.length, selectedCompletionIndex]);
 
   useGuardedInput(
@@ -133,21 +185,7 @@ export function PathInput({
         return;
       }
       if (key.rightArrow && filtered.length > 0) {
-        // Accept completion
-        const selected = filtered[selectedCompletionIndex];
-        if (selected) {
-          const { parent } = getParentAndPrefix(expanded);
-          // Reconstruct with tilde if original used it and path is under HOME
-          const newExpanded = `${parent + selected.value}/`;
-          const home = process.env.HOME ?? "/tmp";
-          const newValue =
-            value.startsWith("~") &&
-            (newExpanded === home || newExpanded.startsWith(`${home}/`))
-              ? `~${newExpanded.slice(home.length)}`
-              : newExpanded;
-          onChange(newValue);
-          setSelectedCompletionIndex(0);
-        }
+        completePath(filtered[selectedCompletionIndex]);
         return;
       }
       if (key.backspace) {
@@ -166,17 +204,30 @@ export function PathInput({
         onChange(value + input);
       }
     },
-    { isActive: isFocused },
+    {
+      isActive: isFocused,
+      onMouseEvent: (event) => {
+        if (event.kind !== "wheel") return;
+        setCompletionScrollOffset((offset) =>
+          clampListScrollOffset(
+            offset + event.dir,
+            filtered.length,
+            maxVisible,
+          ),
+        );
+      },
+    },
   );
 
   const title = isGitRepo ? "Path ✓" : "Path";
   const displayValue = value || (!isFocused || !cursorVisible ? " " : "");
   const showCompletions = isFocused && filtered.length > 0;
-  const maxVisible = 8;
-  const window = showCompletions
-    ? getVisibleWindow(filtered.length, selectedCompletionIndex, maxVisible)
-    : null;
-  const visible = window ? filtered.slice(window.start, window.end) : [];
+  const visible = showCompletions
+    ? filtered.slice(
+        effectiveCompletionScrollOffset,
+        effectiveCompletionScrollOffset + maxVisible,
+      )
+    : [];
 
   return (
     <MouseClickable onClick={() => onFocus?.()}>
@@ -196,18 +247,18 @@ export function PathInput({
             {displayValue}
             {isFocused ? (cursorVisible ? "▎" : " ") : ""}
           </Text>
-          {showCompletions && window && (
-            <>
-              {window.hasAbove && <Text dimColor> ▲</Text>}
-              {visible.map((item, i) => {
-                const actualIndex = window.start + i;
-                const isSelected = actualIndex === selectedCompletionIndex;
-                return (
-                  <MouseClickable
-                    key={item.value}
-                    onClick={() => setSelectedCompletionIndex(actualIndex)}
-                  >
-                    {(isHovered) => (
+          {showCompletions &&
+            visible.map((item, i) => {
+              const actualIndex = effectiveCompletionScrollOffset + i;
+              const isSelected = actualIndex === selectedCompletionIndex;
+              return (
+                <MouseClickable
+                  key={item.value}
+                  onClick={() => setSelectedCompletionIndex(actualIndex)}
+                  onDoubleClick={() => completePath(item)}
+                >
+                  {(isHovered) => (
+                    <Box position="relative" width="100%">
                       <Text
                         color={isSelected || isHovered ? "cyan" : undefined}
                         dimColor={!isSelected && !isHovered}
@@ -216,13 +267,21 @@ export function PathInput({
                         {isSelected ? "▸ " : "  "}
                         {item.label}/
                       </Text>
-                    )}
-                  </MouseClickable>
-                );
-              })}
-              {window.hasBelow && <Text dimColor> ▼</Text>}
-            </>
-          )}
+                      <Box flexGrow={1} />
+                      <Scrollbar
+                        row={i}
+                        totalItems={filtered.length}
+                        visibleItems={visible.length}
+                        windowStart={effectiveCompletionScrollOffset}
+                      />
+                    </Box>
+                  )}
+                </MouseClickable>
+              );
+            })}
+          <ListPadding
+            count={getListPaddingCount(visible.length, maxVisible)}
+          />
         </TitledBox>
       )}
     </MouseClickable>

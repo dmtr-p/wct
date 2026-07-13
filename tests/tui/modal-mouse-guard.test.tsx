@@ -191,8 +191,8 @@ describe("modal mouse controls", () => {
 
     try {
       await sendKeys(rendered.stdin, "feature-x");
-      // Submit text follows the profile box, spacer, and Auto-switch toggle.
-      await sendKeys(rendered.stdin, click(5, 16));
+      // The five-row profile box is followed by a spacer and Auto-switch.
+      await sendKeys(rendered.stdin, click(5, 19));
 
       expect(onSubmitMock).toHaveBeenCalledTimes(1);
       expect(onSubmitMock).toHaveBeenCalledWith(
@@ -209,7 +209,7 @@ describe("modal mouse controls", () => {
 
     try {
       await sendKeys(rendered.stdin, "feature-x");
-      const submitClick = click(5, 16);
+      const submitClick = click(5, 19);
       await sendKeys(rendered.stdin, `${submitClick}${submitClick}`);
 
       expect(onSubmitMock).toHaveBeenCalledTimes(1);
@@ -224,7 +224,7 @@ describe("modal mouse controls", () => {
 
     try {
       await sendKeys(rendered.stdin, "feature-x");
-      await sendKeys(rendered.stdin, click(5, 14));
+      await sendKeys(rendered.stdin, click(5, 17));
 
       expect(onSubmitMock).not.toHaveBeenCalled();
     } finally {
@@ -237,7 +237,7 @@ describe("modal mouse controls", () => {
     const rendered = await renderNewBranchForm(onSubmitMock);
 
     try {
-      await sendKeys(rendered.stdin, click(5, 16));
+      await sendKeys(rendered.stdin, click(5, 19));
       expect(onSubmitMock).not.toHaveBeenCalled();
     } finally {
       rendered.unmount();

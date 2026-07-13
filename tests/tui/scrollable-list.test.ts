@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
+  clampListScrollOffset,
   filterItems,
+  getListPaddingCount,
+  getScrollbarThumb,
   getVisibleWindow,
+  scrollToRevealListItem,
 } from "../../src/tui/components/ScrollableList";
 
 describe("filterItems", () => {
@@ -66,5 +70,42 @@ describe("getVisibleWindow", () => {
       hasAbove: true,
       hasBelow: false,
     });
+  });
+});
+
+describe("getScrollbarThumb", () => {
+  test("hides the scrollbar when every item fits", () => {
+    expect(getScrollbarThumb(8, 8, 0)).toBeNull();
+    expect(getScrollbarThumb(3, 8, 0)).toBeNull();
+  });
+
+  test("places the thumb at the start and end of an overflowing list", () => {
+    expect(getScrollbarThumb(20, 8, 0)).toEqual({ start: 0, end: 3 });
+    expect(getScrollbarThumb(20, 8, 12)).toEqual({ start: 5, end: 8 });
+  });
+
+  test("keeps a usable one-row thumb for very long lists", () => {
+    expect(getScrollbarThumb(209, 8, 100)).toEqual({ start: 3, end: 4 });
+  });
+});
+
+describe("list scroll offsets", () => {
+  test("clamps offsets to the scrollable range", () => {
+    expect(clampListScrollOffset(-1, 20, 8)).toBe(0);
+    expect(clampListScrollOffset(99, 20, 8)).toBe(12);
+  });
+
+  test("reveals keyboard and click selections with minimal movement", () => {
+    expect(scrollToRevealListItem(4, 3, 20, 8)).toBe(3);
+    expect(scrollToRevealListItem(4, 12, 20, 8)).toBe(5);
+    expect(scrollToRevealListItem(4, 8, 20, 8)).toBe(4);
+  });
+});
+
+describe("getListPaddingCount", () => {
+  test("reserves five option rows for short and empty lists", () => {
+    expect(getListPaddingCount(0, 5)).toBe(5);
+    expect(getListPaddingCount(1, 5)).toBe(4);
+    expect(getListPaddingCount(5, 5)).toBe(0);
   });
 });

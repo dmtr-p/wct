@@ -441,11 +441,16 @@ export function FromPRForm({
           items={displayItems}
           selectedIndex={selectedPRIndex}
           filterQuery={filterQuery}
-          maxVisible={8}
+          maxVisible={5}
           isFocused={currentField === "prList"}
           onSelect={(index) => {
             setFocusIndex(fields.indexOf("prList"));
             setSelectedPRIndex(index);
+          }}
+          onDoubleSelect={(index) => {
+            if (index === refreshRowIndex && isRefreshRowSelectable) {
+              onRefresh();
+            }
           }}
         />
       </TitledBox>
@@ -623,7 +628,7 @@ export function ExistingBranchForm({
           items={branchItems}
           selectedIndex={selectedBranchIndex}
           filterQuery={filterQuery}
-          maxVisible={10}
+          maxVisible={5}
           isFocused={currentField === "branchList"}
           onSelect={(index) => {
             setFocusIndex(fields.indexOf("branchList"));

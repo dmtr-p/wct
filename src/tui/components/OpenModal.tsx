@@ -70,7 +70,12 @@ function ModeSelector({
   );
 
   return (
-    <TitledBox title="Select mode" isFocused={true} width={width}>
+    <TitledBox
+      title="Select mode"
+      footer={`${selected + 1} of ${options.length}`}
+      isFocused={true}
+      width={width}
+    >
       {options.map((opt, i) => {
         const isSel = i === selected;
         return (
@@ -428,6 +433,7 @@ export function FromPRForm({
       <Box height={1} />
       <TitledBox
         title="Select PR"
+        footer={`${selectedPRIndex + 1} of ${displayItems.length}`}
         isFocused={currentField === "prList"}
         width={width}
       >
@@ -605,6 +611,11 @@ export function ExistingBranchForm({
       <Box height={1} />
       <TitledBox
         title="Select Branch"
+        footer={
+          filteredBranchItems.length > 0
+            ? `${selectedBranchIndex + 1} of ${filteredBranchItems.length}`
+            : "0 of 0"
+        }
         isFocused={currentField === "branchList"}
         width={width}
       >

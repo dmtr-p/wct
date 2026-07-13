@@ -183,6 +183,11 @@ export function PathInput({
       {(isHovered) => (
         <TitledBox
           title={title}
+          footer={
+            showCompletions
+              ? `${selectedCompletionIndex + 1} of ${filtered.length}`
+              : undefined
+          }
           isFocused={isFocused}
           isHovered={isHovered}
           width={width}

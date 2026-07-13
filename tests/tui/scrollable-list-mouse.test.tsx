@@ -144,23 +144,23 @@ describe("ScrollableList mouse input", () => {
   });
 
   test("ignores wheel input while unfocused", async () => {
-    const onSelect = vi.fn();
     const rendered = await renderWithInput(
       <ScrollableList
-        items={[
-          { label: "one", value: "one" },
-          { label: "two", value: "two" },
-        ]}
+        items={Array.from({ length: 6 }, (_, index) => ({
+          label: `item ${index}`,
+          value: String(index),
+        }))}
         selectedIndex={0}
         filterQuery=""
         isFocused={false}
-        onSelect={onSelect}
+        onSelect={() => {}}
       />,
     );
 
     try {
+      const initiallyVisible = rendered.output().match(/item \d+/g);
       await sendKeys(rendered.stdin, wheelDown);
-      expect(onSelect).not.toHaveBeenCalled();
+      expect(rendered.output().match(/item \d+/g)).toEqual(initiallyVisible);
     } finally {
       rendered.unmount();
     }

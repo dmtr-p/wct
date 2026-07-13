@@ -18,7 +18,7 @@ import { TitledBox } from "./TitledBox";
 /** Expand leading ~/ or bare ~ to $HOME. Does not expand ~user syntax. */
 export function expandTilde(path: string): string {
   if (path === "~" || path.startsWith("~/")) {
-    const home = process.env.HOME ?? "/tmp";
+    const home = Bun.env.HOME ?? "/tmp";
     return home + path.slice(1);
   }
   return path;
@@ -47,7 +47,7 @@ export function completePathValue(
   const expanded = expandTilde(value);
   const { parent } = getParentAndPrefix(expanded);
   const newExpanded = `${parent + selectedValue}/`;
-  const home = process.env.HOME ?? "/tmp";
+  const home = Bun.env.HOME ?? "/tmp";
   return value.startsWith("~") &&
     (newExpanded === home || newExpanded.startsWith(`${home}/`))
     ? `~${newExpanded.slice(home.length)}`

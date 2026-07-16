@@ -89,17 +89,17 @@ function getHints(
  * and searchQuery/selectedPaneRow/hasClient only change text, never lines.
  *
  * Normal navigation has no shortcut footer; it only reserves a row when a
- * repository error is visible. True-modal modes use that same virtual count,
- * so opening a modal does not clamp or re-anchor the scroll position. The
- * modal's extra height is absorbed by the tree box's overflow clipping.
+ * repository error is visible. Form modals use that same virtual count, so
+ * opening one does not clamp or re-anchor the scroll position. Confirmation
+ * modals are part of the tree row model and therefore reserve no footer rows.
  */
 export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
   switch (mode.type) {
-    // divider + confirm question + hint line
     case "ConfirmKill":
     case "ConfirmDown":
     case "ConfirmClose":
     case "ConfirmCloseForce":
+      return 0;
     // divider + query line + hint line
     case "Search":
       return 3;
@@ -146,21 +146,7 @@ export function StatusBar({
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce"
   ) {
-    const [line1, line2] = getHints(
-      mode,
-      selectedPaneRow,
-      hasClient,
-      canCollapse,
-    );
-    return (
-      <Box flexDirection="column">
-        <ChromeLine dimColor>{divider}</ChromeLine>
-        <ChromeLine color="red" bold>
-          {line1}
-        </ChromeLine>
-        <ChromeLine dimColor>{line2}</ChromeLine>
-      </Box>
-    );
+    return null;
   }
 
   if (mode.type === "Search") {

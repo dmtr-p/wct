@@ -3,7 +3,7 @@
 import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
-import { ConfirmModal } from "./components/ConfirmModal";
+import { confirmModalRowCount, isConfirmMode } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatusBar, statusBarRowCount } from "./components/StatusBar";
@@ -39,12 +39,16 @@ import {
   buildTreeItems,
   buildTreeRows,
   clampScrollOffset,
+  confirmationRowRange,
   findOwningWorktreeIndex,
   firstRowForItem,
+  insertConfirmationRows,
   reconcileExpandedWorktreeKeys,
+  resolveConfirmationAnchorItemIndex,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
   resolveTreeReturnMode,
+  scrollRangeToKeepVisible,
   scrollToKeepVisible,
   treeItemId,
 } from "./tree-helpers";
@@ -109,6 +113,8 @@ export function App() {
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmPendingRef = useRef(false);
   const confirmKillAttemptRef = useRef(0);
+  const confirmReturnScrollOffsetRef = useRef(0);
+  const wasConfirmingRef = useRef(false);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
   // Reset selection when search query changes
@@ -204,7 +210,7 @@ export function App() {
 
   // The shared visual-row model drives both windowing here and the row-by-row
   // render in TreeView. Logical items are not 1:1 with terminal rows.
-  const rows = useMemo(
+  const baseRows = useMemo(
     () =>
       buildTreeRows({
         items: treeItems,
@@ -216,6 +222,29 @@ export function App() {
     [treeItems, filteredRepos, expandedWorktreeKeys, pendingActions, termCols],
   );
 
+  const confirmationMode = isConfirmMode(mode) ? mode : null;
+  const confirmationWidth = Math.min(termCols, 60);
+  const confirmationAnchorItemIndex = useMemo(
+    () => resolveConfirmationAnchorItemIndex(mode, treeItems, filteredRepos),
+    [mode, treeItems, filteredRepos],
+  );
+  const rows = useMemo(() => {
+    if (!confirmationMode || confirmationAnchorItemIndex === null) {
+      return baseRows;
+    }
+    return insertConfirmationRows(
+      baseRows,
+      confirmationAnchorItemIndex,
+      confirmModalRowCount(confirmationMode, confirmationWidth),
+    );
+  }, [
+    baseRows,
+    confirmationMode,
+    confirmationAnchorItemIndex,
+    confirmationWidth,
+  ]);
+  const confirmationRange = useMemo(() => confirmationRowRange(rows), [rows]);
+
   // Bottom chrome: optional tmux/action error line (mutually exclusive, so at
   // most one row) + the StatusBar's rows — counted by statusBarRowCount, the
   // helper co-located with StatusBar's render branches so the budget cannot
@@ -225,12 +254,12 @@ export function App() {
   // would under-count, and the overflowing layout would misalign mouse
   // hit-testing.
   //
-  // True modals replace the StatusBar but budget the SAME virtual row count
+  // Form modals replace the StatusBar but budget the SAME virtual row count
   // as the now-hidden default shortcut footer (zero, or one repo-error row):
   // viewportRows must not change when a modal opens, or the clamp/keep-visible
   // effects would rewrite a wheel-scrolled offset the user expects back on
-  // cancel. Confirmation modals render below the header; the other modals
-  // render below the tree. A modal being taller than the budgeted chrome is
+  // cancel. Confirmation modals are anchored inside the tree's visual-row
+  // model. A form modal being taller than the budgeted chrome is
   // absorbed by the tree box's overflowY="hidden" clipping (see the render
   // below), which keeps the modal fully on-screen without inflating the
   // viewport.
@@ -248,6 +277,14 @@ export function App() {
     rows.length,
     viewportRows,
   );
+
+  useEffect(() => {
+    const isConfirming = confirmationMode !== null;
+    if (isConfirming && !wasConfirmingRef.current) {
+      confirmReturnScrollOffsetRef.current = effectiveScrollOffset;
+    }
+    wasConfirmingRef.current = isConfirming;
+  }, [confirmationMode, effectiveScrollOffset]);
 
   // Identity-based selection recovery: when the tree structure changes
   // (background refresh, async worktree add/remove), find the previously-
@@ -386,6 +423,39 @@ export function App() {
     );
   }, [selectionRowIndex, viewportRows, selectionChanged]);
 
+  useEffect(() => {
+    if (!confirmationRange) return;
+    setScrollOffset((prev) =>
+      clampScrollOffset(
+        scrollRangeToKeepVisible(confirmationRange, prev, viewportRows),
+        rows.length,
+        viewportRows,
+      ),
+    );
+  }, [confirmationRange, rows.length, viewportRows]);
+
+  useEffect(() => {
+    if (!confirmationMode || confirmationAnchorItemIndex !== null) return;
+
+    setScrollOffset(confirmReturnScrollOffsetRef.current);
+    switch (mode.type) {
+      case "ConfirmKill":
+        confirmKillAttemptRef.current += 1;
+        confirmPendingRef.current = false;
+        setMode(Mode.Expanded(mode.worktreeKey));
+        return;
+      case "ConfirmDown":
+        setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
+        setMode(confirmDownReturnModeRef.current);
+        return;
+      case "ConfirmClose":
+      case "ConfirmCloseForce":
+        setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
+        setMode(confirmCloseReturnModeRef.current);
+        return;
+    }
+  }, [confirmationMode, confirmationAnchorItemIndex, mode]);
+
   // The trailing writes keeping the prev-* refs one commit behind for the
   // selectionChanged computation and the keep-visible effect above. The
   // visibility ref alone has a second writer (the searchQueryChanged branch
@@ -408,6 +478,10 @@ export function App() {
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
   }, [refreshRegistry, refreshSessions, discoverClient]);
+
+  const restoreConfirmationViewport = useCallback(() => {
+    setScrollOffset(confirmReturnScrollOffsetRef.current);
+  }, []);
 
   useRefresh(refreshAll);
 
@@ -461,6 +535,7 @@ export function App() {
     discoverClient,
     refreshSessions,
     refreshAll,
+    restoreConfirmationViewport,
     confirmDownReturnModeRef,
     confirmDownReturnSelectedIndexRef,
     confirmCloseReturnModeRef,
@@ -551,6 +626,7 @@ export function App() {
   }
 
   function cancelConfirm() {
+    setScrollOffset(confirmReturnScrollOffsetRef.current);
     switch (mode.type) {
       case "ConfirmKill":
         confirmKillAttemptRef.current += 1;
@@ -570,6 +646,10 @@ export function App() {
   }
 
   function submitConfirm() {
+    if (confirmationAnchorItemIndex === null) {
+      cancelConfirm();
+      return;
+    }
     switch (mode.type) {
       case "ConfirmKill": {
         if (confirmPendingRef.current) return;
@@ -585,6 +665,7 @@ export function App() {
           isCurrent: () => confirmKillAttemptRef.current === attempt,
           showActionError,
           onSuccess: () => {
+            restoreConfirmationViewport();
             if (parentIndex !== null) setSelectedIndex(parentIndex);
             setMode(Mode.Expanded(worktreeKey));
           },
@@ -806,29 +887,6 @@ export function App() {
             {ADD_PROJECT_BUTTON_LABEL}
           </Text>
         </Box>
-        {mode.type === "ConfirmKill" ||
-        mode.type === "ConfirmDown" ||
-        mode.type === "ConfirmClose" ||
-        mode.type === "ConfirmCloseForce" ? (
-          <Box flexDirection="column">
-            {tmuxError && !actionError ? (
-              <Text color="yellow" wrap="truncate">
-                {toSingleLine(tmuxError)}
-              </Text>
-            ) : null}
-            {actionError ? (
-              <Text color="red" wrap="truncate">
-                {toSingleLine(actionError)}
-              </Text>
-            ) : null}
-            <ConfirmModal
-              mode={mode}
-              width={Math.min(termCols, 60)}
-              onConfirm={submitConfirm}
-              onCancel={cancelConfirm}
-            />
-          </Box>
-        ) : null}
         <Text> </Text>
       </Box>
       {/* overflowY="hidden" + flexShrink is what lets a true modal exceed the
@@ -861,12 +919,22 @@ export function App() {
             errors={githubErrors}
             scrollOffset={effectiveScrollOffset}
             viewportRows={viewportRows}
+            confirmation={
+              confirmationMode
+                ? {
+                    mode: confirmationMode,
+                    width: confirmationWidth,
+                    onConfirm: submitConfirm,
+                    onCancel: cancelConfirm,
+                  }
+                : undefined
+            }
           />
         </Box>
       </Box>
       {/* flexShrink={0} pins the bottom area (form modal or status chrome) to
           its natural height so the tree box above is the only child Yoga
-          shrinks. Confirmations render below the header instead. */}
+          shrinks. Confirmations render inside the tree instead. */}
       <Box flexDirection="column" flexShrink={0}>
         {mode.type === "Shortcuts" ? (
           <ShortcutsModal
@@ -905,10 +973,7 @@ export function App() {
             onSubmit={modalActions.handleAddProject}
             onCancel={() => setMode(modalReturnModeRef.current)}
           />
-        ) : mode.type === "ConfirmKill" ||
-          mode.type === "ConfirmDown" ||
-          mode.type === "ConfirmClose" ||
-          mode.type === "ConfirmCloseForce" ? null : (
+        ) : (
           <Box flexDirection="column">
             {tmuxError && !actionError ? (
               <Text color="yellow" wrap="truncate">
@@ -920,13 +985,15 @@ export function App() {
                 {toSingleLine(actionError)}
               </Text>
             ) : null}
-            <StatusBar
-              {...statusBarProps}
-              searchQuery={searchQuery}
-              hasClient={tmuxClient !== null}
-              canCollapse={canCollapse}
-              repoError={repoError}
-            />
+            {!confirmationMode ? (
+              <StatusBar
+                {...statusBarProps}
+                searchQuery={searchQuery}
+                hasClient={tmuxClient !== null}
+                canCollapse={canCollapse}
+                repoError={repoError}
+              />
+            ) : null}
           </Box>
         )}
       </Box>

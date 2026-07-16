@@ -5,9 +5,13 @@ import {
   buildTreeItems,
   buildTreeRows,
   clampScrollOffset,
+  confirmationRowRange,
+  insertConfirmationRows,
+  resolveConfirmationAnchorItemIndex,
+  scrollRangeToKeepVisible,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
-import { type PendingAction, pendingKey } from "../../src/tui/types";
+import { Mode, type PendingAction, pendingKey } from "../../src/tui/types";
 
 function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
   return {
@@ -712,5 +716,63 @@ describe("scrollToKeepVisible", () => {
 
   test("returns the offset unchanged for a zero/negative viewport", () => {
     expect(scrollToKeepVisible(3, 2, 0)).toBe(2);
+  });
+});
+
+describe("anchored confirmation rows", () => {
+  const repos = [
+    repo({
+      id: "repo-1",
+      project: "alpha",
+      worktrees: [
+        {
+          branch: "feature/x",
+          path: "/tmp/alpha-x",
+          isMainWorktree: false,
+          changedFiles: 0,
+          sync: { ahead: 0, behind: 0 },
+        },
+      ],
+    }),
+  ];
+  const items = buildTreeItems({
+    repos,
+    expandedWorktreeKeys: new Set<string>(),
+    ...emptyOpts,
+  });
+
+  test("inserts the modal immediately below its worktree", () => {
+    const baseRows = buildTreeRows({
+      items,
+      repos,
+      pendingActions: new Map(),
+    });
+    const mode = Mode.ConfirmClose(
+      "alpha-x",
+      "feature/x",
+      "/tmp/alpha-x",
+      "alpha/feature/x",
+      "/tmp/alpha",
+      "alpha",
+      0,
+    );
+    const anchor = resolveConfirmationAnchorItemIndex(mode, items, repos);
+    expect(anchor).toBe(1);
+
+    const rows = insertConfirmationRows(baseRows, anchor ?? -1, 5);
+    expect(rows.map((row) => row.kind)).toEqual([
+      "repo",
+      "worktree",
+      "confirmation",
+      "confirmation",
+      "confirmation",
+      "confirmation",
+      "confirmation",
+    ]);
+    expect(confirmationRowRange(rows)).toEqual({ start: 2, end: 6 });
+  });
+
+  test("scrolls the entire modal into a viewport when it opens below it", () => {
+    expect(scrollRangeToKeepVisible({ start: 12, end: 16 }, 0, 8)).toBe(9);
   });
 });

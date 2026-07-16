@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   ConfirmModal,
   type ConfirmMode,
+  confirmModalRowCount,
 } from "../../src/tui/components/ConfirmModal";
 import { Mode } from "../../src/tui/types";
 import { renderWithInput, sendKeys } from "./keypress-harness";
@@ -82,6 +83,34 @@ describe("ConfirmModal", () => {
       expect(rendered.output().trimEnd().split("\n").length).toBeGreaterThan(5);
       expect(rendered.output()).toContain("xxxxxxxxxxxxxxxx");
       expect(rendered.output()).toContain("enter:confirm  esc:cancel");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("keeps row accounting exact when narrow actions cannot fit side by side", async () => {
+    const mode = Mode.ConfirmCloseForce(
+      "myapp-feature",
+      "feature",
+      "/tmp/myapp-feature",
+      "proj/feature",
+      "/tmp/myapp",
+      "proj",
+    ) as ConfirmMode;
+    const width = 20;
+    const rendered = await renderWithInput(
+      <ConfirmModal
+        mode={mode}
+        width={width}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(rendered.output().trimEnd().split("\n")).toHaveLength(
+        confirmModalRowCount(mode, width),
+      );
     } finally {
       rendered.unmount();
     }

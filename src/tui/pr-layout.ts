@@ -16,7 +16,7 @@
 // wrap="truncate-end" as a backstop, so even a measurement disagreement could
 // only clip a glyph, never add a terminal row.
 
-import { displayWidth, graphemeWidths } from "./utils/display-width";
+import { wrapText } from "./utils/wrap-text";
 
 /** Leading indent columns of a PR detail line. */
 export const PR_INDENT = 5;
@@ -36,58 +36,6 @@ export function prLabelStart(hasIcon: boolean): number {
 }
 
 /**
- * Greedy word-wrap `text` into lines no wider than `width` display columns
- * (CJK/emoji glyphs count 2). A word wider than `width` is hard-broken on
- * grapheme boundaries — never splitting a surrogate pair or an emoji ZWJ
- * sequence. Always returns at least one (possibly empty) line.
- */
-function wrapWords(text: string, width: number): string[] {
-  if (width <= 0) return [text];
-  const lines: string[] = [];
-  let current = "";
-  let currentWidth = 0;
-  for (const word of text.split(" ")) {
-    let w = word;
-    let wordWidth = displayWidth(word);
-    if (wordWidth > width) {
-      // Hard-break: flush the current line, emit full-width pieces, and carry
-      // the final piece forward as this iteration's word.
-      if (current !== "") {
-        lines.push(current);
-        current = "";
-        currentWidth = 0;
-      }
-      let piece = "";
-      let pieceWidth = 0;
-      for (const [grapheme, graphemeW] of graphemeWidths(word)) {
-        if (piece !== "" && pieceWidth + graphemeW > width) {
-          lines.push(piece);
-          piece = "";
-          pieceWidth = 0;
-        }
-        piece += grapheme;
-        pieceWidth += graphemeW;
-      }
-      w = piece;
-      wordWidth = pieceWidth;
-    }
-    if (current === "") {
-      current = w;
-      currentWidth = wordWidth;
-    } else if (currentWidth + 1 + wordWidth <= width) {
-      current += ` ${w}`;
-      currentWidth += 1 + wordWidth;
-    } else {
-      lines.push(current);
-      current = w;
-      currentWidth = wordWidth;
-    }
-  }
-  lines.push(current);
-  return lines;
-}
-
-/**
  * Split a PR label into the terminal lines it occupies at `maxWidth`. Line 0 is
  * rendered after the indent/selector/icon; any further lines are continuation
  * lines indented by `prLabelStart` to align under line 0's label.
@@ -97,5 +45,5 @@ export function wrapPrLabel(
   maxWidth: number,
   hasIcon: boolean,
 ): string[] {
-  return wrapWords(label, Math.max(1, maxWidth - prLabelStart(hasIcon)));
+  return wrapText(label, Math.max(1, maxWidth - prLabelStart(hasIcon)));
 }

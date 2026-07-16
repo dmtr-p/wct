@@ -80,18 +80,17 @@ describe("StatusBar", () => {
     rendered.unmount();
   });
 
-  test("shows the kill confirmation prompt", async () => {
+  test("does not duplicate the anchored kill confirmation", async () => {
     const rendered = await renderStatusBar({
       mode: Mode.ConfirmKill("%1", "shell:1 vim", "proj/branch"),
     });
 
-    expect(rendered.output).toContain("Kill pane shell:1 vim?");
-    expect(rendered.output).toContain("enter:confirm  esc:cancel");
+    expect(rendered.lastFrame()).toBe("");
 
     rendered.unmount();
   });
 
-  test("shows the down confirmation prompt", async () => {
+  test("does not duplicate the anchored down confirmation", async () => {
     const rendered = await renderStatusBar({
       mode: Mode.ConfirmDown(
         "myapp-feature",
@@ -101,8 +100,7 @@ describe("StatusBar", () => {
       ),
     });
 
-    expect(rendered.output).toContain("Kill session for feature?");
-    expect(rendered.output).toContain("enter:confirm  esc:cancel");
+    expect(rendered.lastFrame()).toBe("");
 
     rendered.unmount();
   });

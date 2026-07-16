@@ -39,6 +39,7 @@ export interface SessionActionDeps {
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
 
   refreshAll: () => Promise<void>;
+  restoreConfirmationViewport: () => void;
 
   confirmDownReturnModeRef: MutableRefObject<Mode>;
   confirmDownReturnSelectedIndexRef: MutableRefObject<number>;
@@ -227,6 +228,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
       return;
     }
 
+    deps.restoreConfirmationViewport();
     deps.setSelectedIndex(deps.confirmDownReturnSelectedIndexRef.current);
     deps.setMode(deps.confirmDownReturnModeRef.current);
 
@@ -315,6 +317,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
       return;
     }
 
+    deps.restoreConfirmationViewport();
     deps.setSelectedIndex(deps.confirmCloseReturnSelectedIndexRef.current);
     deps.setMode(deps.confirmCloseReturnModeRef.current);
 

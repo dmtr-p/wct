@@ -36,9 +36,22 @@ const runtimeMock = vi.hoisted(() => ({
   runSync: vi.fn((effect: unknown) => effect),
 }));
 
+const refreshHarness = vi.hoisted(() => ({
+  callback: null as (() => void | Promise<void>) | null,
+}));
+
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: runtimeMock,
   runTuiSilentPromise: (effect: unknown) => runtimeMock.runPromise(effect),
+}));
+
+// App-level tests need to drive a background refresh deterministically. The
+// useRefresh hook's filesystem/timer delivery is a separate concern; capture
+// the exact refreshAll callback App registers and invoke it directly.
+vi.mock("../../src/tui/hooks/useRefresh", () => ({
+  useRefresh: (callback: () => void | Promise<void>) => {
+    refreshHarness.callback = callback;
+  },
 }));
 
 // Ink disables ANSI colors for this PassThrough-based harness, so the selected
@@ -172,6 +185,11 @@ export function resetHarnessFixtures(): void {
   githubFixtures.prsByRepoPath.clear();
   runtimeMock.runPromise.mockClear();
   runtimeMock.runSync.mockClear();
+  refreshHarness.callback = null;
+}
+
+export async function triggerRefresh(): Promise<void> {
+  await refreshHarness.callback?.();
 }
 
 export type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };

@@ -55,6 +55,7 @@ function makeDeps(
     discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
     refreshSessions: vi.fn().mockResolvedValue([]),
     refreshAll: vi.fn().mockResolvedValue(undefined),
+    restoreConfirmationViewport: vi.fn(),
     confirmDownReturnModeRef: { current: Mode.Navigate },
     confirmDownReturnSelectedIndexRef: { current: 0 },
     confirmCloseReturnModeRef: { current: Mode.Navigate },
@@ -572,6 +573,7 @@ describe("createExecuteClose", () => {
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
     expect(deps.setPendingActions).toHaveBeenCalled();
     expect(deps.refreshAll).toHaveBeenCalled();
+    expect(deps.restoreConfirmationViewport).toHaveBeenCalledOnce();
     expect(deps.showActionError).not.toHaveBeenCalled();
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);
@@ -704,6 +706,10 @@ describe("createExecuteClose", () => {
         "proj",
       ),
     );
+    expect(deps.restoreConfirmationViewport).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(deps.restoreConfirmationViewport).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);
@@ -829,6 +835,10 @@ describe("createExecuteDown", () => {
     expect(workspaceDown).toHaveBeenCalledWith({ path: "/tmp/wt" });
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
     expect(deps.refreshAll).toHaveBeenCalled();
+    expect(deps.restoreConfirmationViewport).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(deps.restoreConfirmationViewport).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.showActionError).not.toHaveBeenCalled();
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);

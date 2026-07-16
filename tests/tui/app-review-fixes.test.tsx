@@ -24,13 +24,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  githubFixtures,
   renderApp,
   resetHarnessFixtures,
   selectedLine,
   sendKeys,
   setTallWorktrees,
+  sgrPress,
   sgrWheel,
   tick,
+  triggerRefresh,
+  worktreeFixtures,
 } from "./app-harness";
 
 const { App } = await import("../../src/tui/App");
@@ -127,6 +131,123 @@ describe("App.tsx review fixes (real App)", () => {
       expect(topBorder).toBeGreaterThan(-1);
       expect(frame[topBorder]).toContain("╭");
       expect(bottomBorder).toBeGreaterThan(topBorder);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("anchors close confirmation below the branch and scrolls it into view", async () => {
+    setTallWorktrees(repoPath, 20);
+
+    const rendered = await renderApp(<App />, 10);
+    try {
+      await tick(20);
+
+      // repo -> main -> feature/0 ... -> feature/15
+      for (let i = 0; i < 17; i++) {
+        await sendKeys(rendered.stdin, "\x1b[B", 1);
+      }
+      expect(selectedLine(rendered.lines())).toContain("feature/15");
+
+      await sendKeys(rendered.stdin, "c");
+      const frame = rendered.lines();
+      const branchRow = frame.findIndex((line) => line.includes("feature/15"));
+      const modalRow = frame.findIndex((line) =>
+        line.includes("Close Worktree"),
+      );
+
+      expect(branchRow).toBeGreaterThan(-1);
+      expect(modalRow).toBe(branchRow + 1);
+      expect(frame.some((line) => line.includes("enter:confirm"))).toBe(true);
+
+      // Background clicks, navigation, and quit shortcuts are inert while
+      // confirming; only the modal's own click targets remain active.
+      const backgroundBranchRow = frame.findIndex(
+        (line) => /feature\/\d+/.test(line) && !line.includes("feature/15"),
+      );
+      expect(backgroundBranchRow).toBeGreaterThan(-1);
+      await sendKeys(rendered.stdin, sgrPress(3, backgroundBranchRow + 1));
+      await sendKeys(rendered.stdin, "q\x1b[B");
+      expect(selectedLine(rendered.lines())).toContain("feature/15");
+      expect(
+        rendered.lines().some((line) => line.includes("Close Worktree")),
+      ).toBe(true);
+
+      await sendKeys(rendered.stdin, "\x1b");
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(
+        rendered.lines().some((line) => line.includes("Close Worktree")),
+      ).toBe(false);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("restores a selected detail row to the viewport after cancellation", async () => {
+    setTallWorktrees(repoPath, 20);
+    githubFixtures.prsByRepoPath.set(repoPath, [
+      {
+        number: 42,
+        title: "Selected detail",
+        state: "OPEN",
+        headRefName: "feature/15",
+        rollupState: "success",
+      },
+    ]);
+
+    const rendered = await renderApp(<App />, 8);
+    try {
+      await tick(20);
+      await sendKeys(rendered.stdin, "r");
+      for (let i = 0; i < 17; i++) {
+        await sendKeys(rendered.stdin, "\x1b[B", 1);
+      }
+      await sendKeys(rendered.stdin, "\x1b[C");
+      await sendKeys(rendered.stdin, "\x1b[B");
+      expect(selectedLine(rendered.lines())).toContain("PR #42");
+
+      await sendKeys(rendered.stdin, "c");
+      expect(
+        rendered.lines().some((line) => line.includes("Close Worktree")),
+      ).toBe(true);
+      expect(selectedLine(rendered.lines())).toBeUndefined();
+
+      await sendKeys(rendered.stdin, "\x1b");
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(selectedLine(rendered.lines())).toContain("PR #42");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("cancels confirmation when a refresh removes its anchor", async () => {
+    setTallWorktrees(repoPath, 5);
+
+    const rendered = await renderApp(<App />, 12);
+    try {
+      await tick(20);
+      // repo -> main -> feature/0 -> feature/1 -> feature/2
+      for (let i = 0; i < 4; i++) {
+        await sendKeys(rendered.stdin, "\x1b[B", 1);
+      }
+      expect(selectedLine(rendered.lines())).toContain("feature/2");
+      await sendKeys(rendered.stdin, "c");
+      expect(
+        rendered.lines().some((line) => line.includes("Close Worktree")),
+      ).toBe(true);
+
+      worktreeFixtures.byRepoPath.set(
+        repoPath,
+        (worktreeFixtures.byRepoPath.get(repoPath) ?? []).filter(
+          (worktree) => worktree.branch !== "feature/2",
+        ),
+      );
+      await triggerRefresh();
+      await tick(10);
+
+      expect(
+        rendered.lines().some((line) => line.includes("Close Worktree")),
+      ).toBe(false);
     } finally {
       rendered.unmount();
     }

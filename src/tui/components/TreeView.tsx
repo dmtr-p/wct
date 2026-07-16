@@ -12,6 +12,7 @@ import {
   pendingKey,
   type TreeItem,
 } from "../types";
+import { ConfirmModal, type ConfirmMode } from "./ConfirmModal";
 import { DetailRow } from "./DetailRow";
 import { RepoEmptyRow } from "./RepoEmptyRow";
 import { RepoNode } from "./RepoNode";
@@ -41,6 +42,12 @@ interface Props {
   scrollOffset?: number;
   /** Number of visual rows to render. Defaults to rendering all rows. */
   viewportRows?: number;
+  confirmation?: {
+    mode: ConfirmMode;
+    width: number;
+    onConfirm: () => void;
+    onCancel: () => void;
+  };
 }
 
 export function getDetailRowKey(
@@ -69,6 +76,7 @@ export function TreeView({
   errors,
   scrollOffset = 0,
   viewportRows,
+  confirmation,
 }: Props) {
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.name, s])),
@@ -100,6 +108,7 @@ export function TreeView({
       maxWidth,
       refreshingProjects,
       errors,
+      confirmation,
     });
     if (element) elements.push(element);
   }
@@ -120,10 +129,22 @@ interface RenderRowContext {
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
+  confirmation?: Props["confirmation"];
 }
 
 function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
   switch (row.kind) {
+    case "confirmation":
+      if (row.partIndex !== 0 || !ctx.confirmation) return null;
+      return (
+        <ConfirmModal
+          key="confirmation"
+          mode={ctx.confirmation.mode}
+          width={ctx.confirmation.width}
+          onConfirm={ctx.confirmation.onConfirm}
+          onCancel={ctx.confirmation.onCancel}
+        />
+      );
     case "repo-empty":
       return <RepoEmptyRow key={`repo-empty-${row.repoIndex}`} />;
     case "phantom": {

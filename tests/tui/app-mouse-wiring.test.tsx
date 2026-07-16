@@ -7,7 +7,7 @@
 // Service mocks and the Ink render harness live in tests/tui/app-harness.tsx
 // (shared with tests/tui/app-review-fixes.test.tsx); see the mocking-strategy
 // note there.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -25,6 +25,7 @@ import {
   sgrRowFor,
   sgrWheel,
   tick,
+  triggerRefresh,
   worktreeFixtures,
 } from "./app-harness";
 
@@ -282,20 +283,11 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         );
         expect(visibleBefore.length).toBeGreaterThan(0);
 
-        // Trigger a REAL background refresh through useRefresh's fs.watch
-        // path (not a simulated re-render): useRefresh watches
-        // `${HOME}/.wct/` for `.db`/`-wal` changes with a 150ms debounce and
-        // calls refreshAll -> refreshRegistry -> useRegistry's refresh(),
-        // which re-fetches from RegistryService/WorktreeService. Our mocks
-        // re-read their fixture maps fresh on every call and return brand-new
-        // arrays each time — exactly like the real services — so this is a
-        // content-identical, reference-different refresh, which is the exact
-        // condition useRegistry.ts triggers on (it has no equality bail-out
-        // before calling setRepos).
-        const wctDir = join(homeDir, ".wct");
-        mkdirSync(wctDir, { recursive: true });
-        writeFileSync(join(wctDir, "registry.db"), "trigger");
-        await new Promise((resolve) => setTimeout(resolve, 250)); // past the 150ms debounce
+        // Trigger the exact refreshAll callback App registered with
+        // useRefresh. The service mocks re-read their fixtures and return
+        // brand-new arrays, matching a real content-identical background
+        // refresh without relying on filesystem-watcher timing.
+        await triggerRefresh();
         await tick(10);
 
         const afterRefresh = rendered.lines();

@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { Mode } from "../types";
 import { toSingleLine } from "../utils/truncate";
+import { wrapText } from "../utils/wrap-text";
 import { Modal } from "./Modal";
 import { MouseClickable } from "./MouseClickable";
 
@@ -11,6 +12,15 @@ export type ConfirmMode = Extract<
   }
 >;
 
+export function isConfirmMode(mode: Mode): mode is ConfirmMode {
+  return (
+    mode.type === "ConfirmKill" ||
+    mode.type === "ConfirmDown" ||
+    mode.type === "ConfirmClose" ||
+    mode.type === "ConfirmCloseForce"
+  );
+}
+
 interface Props {
   mode: ConfirmMode;
   width?: number;
@@ -18,7 +28,7 @@ interface Props {
   onCancel: () => void;
 }
 
-function copyFor(mode: ConfirmMode): {
+export function copyFor(mode: ConfirmMode): {
   title: string;
   question: string;
   confirmLabel: string;
@@ -51,6 +61,23 @@ function copyFor(mode: ConfirmMode): {
   }
 }
 
+/**
+ * The titled border consumes two columns and the content's horizontal padding
+ * consumes two more. Rendering these pre-wrapped lines with truncation keeps
+ * the modal's measured height identical to `confirmModalRowCount`.
+ */
+export function confirmationQuestionLines(
+  mode: ConfirmMode,
+  width: number,
+): string[] {
+  return wrapText(copyFor(mode).question, Math.max(1, width - 4));
+}
+
+export function confirmModalRowCount(mode: ConfirmMode, width: number): number {
+  // top border + question lines + margin + actions + bottom border
+  return confirmationQuestionLines(mode, width).length + 4;
+}
+
 function Action({
   label,
   onClick,
@@ -64,6 +91,7 @@ function Action({
     <MouseClickable onClick={onClick}>
       {(isHovered) => (
         <Text
+          wrap="truncate"
           color={destructive ? (isHovered ? "redBright" : "red") : undefined}
           bold={isHovered}
           dimColor={!destructive && !isHovered}
@@ -76,12 +104,16 @@ function Action({
 }
 
 export function ConfirmModal({ mode, width, onConfirm, onCancel }: Props) {
-  const { title, question, confirmLabel } = copyFor(mode);
+  const modalWidth = width ?? 40;
+  const { title, confirmLabel } = copyFor(mode);
+  const questionLines = confirmationQuestionLines(mode, modalWidth);
 
   return (
     <Modal title={title} visible width={width} accentColor="red" dimAccent>
       <Box flexDirection="column" paddingX={1}>
-        <Text wrap="wrap">{toSingleLine(question)}</Text>
+        <Text wrap="truncate">
+          {questionLines.map(toSingleLine).join("\n")}
+        </Text>
         <Box gap={2} marginTop={1}>
           <Action label={confirmLabel} onClick={onConfirm} destructive />
           <Action label="esc:cancel" onClick={onCancel} />

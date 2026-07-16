@@ -68,7 +68,61 @@ export type TreeRow =
       pieceIndex: number;
       prLine: string;
     }
-  | { itemIndex: null; kind: "phantom"; repoIndex: number; branch: string };
+  | { itemIndex: null; kind: "phantom"; repoIndex: number; branch: string }
+  | { itemIndex: null; kind: "confirmation"; partIndex: number };
+
+export function insertConfirmationRows(
+  rows: TreeRow[],
+  anchorItemIndex: number,
+  rowCount: number,
+): TreeRow[] {
+  const anchorRowIndex = rows.findIndex(
+    (row) => row.itemIndex === anchorItemIndex,
+  );
+  if (anchorRowIndex === -1 || rowCount <= 0) return rows;
+
+  const confirmationRows: TreeRow[] = Array.from(
+    { length: rowCount },
+    (_, partIndex) => ({
+      itemIndex: null,
+      kind: "confirmation",
+      partIndex,
+    }),
+  );
+  return [
+    ...rows.slice(0, anchorRowIndex + 1),
+    ...confirmationRows,
+    ...rows.slice(anchorRowIndex + 1),
+  ];
+}
+
+export function confirmationRowRange(
+  rows: TreeRow[],
+): { start: number; end: number } | null {
+  const start = rows.findIndex(
+    (row) => row.kind === "confirmation" && row.partIndex === 0,
+  );
+  if (start === -1) return null;
+
+  let end = start;
+  while (rows[end + 1]?.kind === "confirmation") end += 1;
+  return { start, end };
+}
+
+export function scrollRangeToKeepVisible(
+  range: { start: number; end: number },
+  scrollOffset: number,
+  viewportRows: number,
+): number {
+  if (viewportRows <= 0) return scrollOffset;
+  const rangeRows = range.end - range.start + 1;
+  if (rangeRows > viewportRows) return range.start;
+  if (range.start < scrollOffset) return range.start;
+  if (range.end >= scrollOffset + viewportRows) {
+    return range.end - viewportRows + 1;
+  }
+  return scrollOffset;
+}
 
 interface ResolveSelectedPaneOptions {
   repos: RepoInfo[];
@@ -110,6 +164,47 @@ interface ResolveCloseSelectedWorktreeActionOptions {
   repos: RepoInfo[];
   items: TreeItem[];
   selectedIndex: number;
+}
+
+export function resolveConfirmationAnchorItemIndex(
+  mode: Mode,
+  items: TreeItem[],
+  repos: RepoInfo[],
+): number | null {
+  if (mode.type === "ConfirmKill") {
+    const paneIndex = items.findIndex((item) => {
+      if (item.type !== "detail" || item.detailKind !== "pane") return false;
+      if (item.meta.paneId !== mode.paneId) return false;
+      const repo = repos[item.repoIndex];
+      const worktree = repo?.worktrees[item.worktreeIndex];
+      return (
+        repo !== undefined &&
+        worktree !== undefined &&
+        pendingKey(repo.project, worktree.branch) === mode.worktreeKey
+      );
+    });
+    return paneIndex === -1 ? null : paneIndex;
+  }
+
+  if (
+    mode.type !== "ConfirmDown" &&
+    mode.type !== "ConfirmClose" &&
+    mode.type !== "ConfirmCloseForce"
+  ) {
+    return null;
+  }
+
+  const worktreeIndex = items.findIndex((item) => {
+    if (item.type !== "worktree") return false;
+    const repo = repos[item.repoIndex];
+    const worktree = repo?.worktrees[item.worktreeIndex];
+    return (
+      repo !== undefined &&
+      worktree !== undefined &&
+      pendingKey(repo.project, worktree.branch) === mode.worktreeKey
+    );
+  });
+  return worktreeIndex === -1 ? null : worktreeIndex;
 }
 
 type ExpandedRightArrowAction =

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import { Modal } from "./Modal";
-import { MouseClickable } from "./MouseClickable";
+import { ModalShortcut } from "./ModalShortcut";
 
 interface Props {
   width?: number;
@@ -36,13 +36,7 @@ export function ShortcutsModal({ width, onHide }: Props) {
           </Box>
         ))}
         <Box marginTop={1}>
-          <MouseClickable onClick={onHide}>
-            {(isHovered) => (
-              <Text bold={isHovered} dimColor={!isHovered}>
-                esc:hide
-              </Text>
-            )}
-          </MouseClickable>
+          <ModalShortcut label="esc:close" onClick={onHide} />
         </Box>
       </Box>
     </Modal>

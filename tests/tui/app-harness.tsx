@@ -45,9 +45,6 @@ vi.mock("../../src/tui/runtime", () => ({
   runTuiSilentPromise: (effect: unknown) => runtimeMock.runPromise(effect),
 }));
 
-// App-level tests need to drive a background refresh deterministically. The
-// useRefresh hook's filesystem/timer delivery is a separate concern; capture
-// the exact refreshAll callback App registers and invoke it directly.
 vi.mock("../../src/tui/hooks/useRefresh", () => ({
   useRefresh: (callback: () => void | Promise<void>) => {
     refreshHarness.callback = callback;

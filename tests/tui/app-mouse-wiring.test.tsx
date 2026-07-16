@@ -283,10 +283,6 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         );
         expect(visibleBefore.length).toBeGreaterThan(0);
 
-        // Trigger the exact refreshAll callback App registered with
-        // useRefresh. The service mocks re-read their fixtures and return
-        // brand-new arrays, matching a real content-identical background
-        // refresh without relying on filesystem-watcher timing.
         await triggerRefresh();
         await tick(10);
 

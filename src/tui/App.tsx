@@ -278,9 +278,6 @@ export function App() {
     viewportRows,
   );
 
-  // Capture the reading position once, before the anchored-modal effect below
-  // scrolls the viewport. Cancellation restores this exact tree viewport so a
-  // detail row that sits below the modal does not remain selected off-screen.
   useEffect(() => {
     const isConfirming = confirmationMode !== null;
     if (isConfirming && !wasConfirmingRef.current) {
@@ -426,10 +423,6 @@ export function App() {
     );
   }, [selectionRowIndex, viewportRows, selectionChanged]);
 
-  // Confirmation rows must be wholly visible so the prompt and both actions
-  // cannot open below the viewport. This runs after selection anchoring and
-  // wins only while a confirmation is present; wheel/tree input is inert in
-  // confirmation modes, so the modal remains on screen until it is resolved.
   useEffect(() => {
     if (!confirmationRange) return;
     setScrollOffset((prev) =>
@@ -441,9 +434,6 @@ export function App() {
     );
   }, [confirmationRange, rows.length, viewportRows]);
 
-  // A refresh can remove the worktree/pane being confirmed. Leave the stale
-  // confirmation immediately: without an anchor it cannot be rendered, and
-  // Enter must not remain capable of executing an action against stale data.
   useEffect(() => {
     if (!confirmationMode || confirmationAnchorItemIndex !== null) return;
 

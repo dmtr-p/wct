@@ -61,11 +61,6 @@ export function copyFor(mode: ConfirmMode): {
   }
 }
 
-/**
- * The titled border consumes two columns and the content's horizontal padding
- * consumes two more. Rendering these pre-wrapped lines with truncation keeps
- * the modal's measured height identical to `confirmModalRowCount`.
- */
 export function confirmationQuestionLines(
   mode: ConfirmMode,
   width: number,
@@ -74,7 +69,6 @@ export function confirmationQuestionLines(
 }
 
 export function confirmModalRowCount(mode: ConfirmMode, width: number): number {
-  // top border + question lines + margin + actions + bottom border
   return confirmationQuestionLines(mode, width).length + 4;
 }
 

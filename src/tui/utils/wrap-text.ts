@@ -1,9 +1,5 @@
 import { displayWidth, graphemeWidths } from "./display-width";
 
-/**
- * Greedy word-wrap `text` into lines no wider than `width` display columns.
- * Overlong words are hard-broken on grapheme boundaries.
- */
 export function wrapText(text: string, width: number): string[] {
   if (width <= 0) return [text];
   const lines: string[] = [];

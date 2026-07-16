@@ -143,7 +143,6 @@ describe("App.tsx review fixes (real App)", () => {
     try {
       await tick(20);
 
-      // repo -> main -> feature/0 ... -> feature/15
       for (let i = 0; i < 17; i++) {
         await sendKeys(rendered.stdin, "\x1b[B", 1);
       }
@@ -160,8 +159,6 @@ describe("App.tsx review fixes (real App)", () => {
       expect(modalRow).toBe(branchRow + 1);
       expect(frame.some((line) => line.includes("enter:confirm"))).toBe(true);
 
-      // Background clicks, navigation, and quit shortcuts are inert while
-      // confirming; only the modal's own click targets remain active.
       const backgroundBranchRow = frame.findIndex(
         (line) => /feature\/\d+/.test(line) && !line.includes("feature/15"),
       );
@@ -226,7 +223,6 @@ describe("App.tsx review fixes (real App)", () => {
     const rendered = await renderApp(<App />, 12);
     try {
       await tick(20);
-      // repo -> main -> feature/0 -> feature/1 -> feature/2
       for (let i = 0; i < 4; i++) {
         await sendKeys(rendered.stdin, "\x1b[B", 1);
       }

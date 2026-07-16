@@ -483,4 +483,34 @@ describe("OpenModal", () => {
       rendered.unmount();
     }
   });
+
+  test("shows close at the selector and back in a nested form", async () => {
+    const rendered = await renderNode(
+      <OpenModal
+        visible
+        width={60}
+        defaultBase="main"
+        profileNames={[]}
+        repoProject="myproj"
+        repoPath="/repo"
+        prList={[]}
+        isRefreshing={false}
+        onRefresh={() => {}}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(rendered.currentOutput()).toContain("esc:close");
+
+      rendered.stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(rendered.currentOutput()).toContain("esc:back");
+    } finally {
+      rendered.unmount();
+    }
+  });
 });

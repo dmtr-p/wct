@@ -4,6 +4,7 @@ import { useGuardedInput } from "../hooks/useGuardedInput";
 import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
+import { ModalShortcut } from "./ModalShortcut";
 import { SessionOptionsSection } from "./SessionOptionsSection";
 import { resolveSessionOptionsSubmitState } from "./session-options";
 
@@ -113,7 +114,10 @@ export function UpModal({
           width={width ? width - 2 : undefined}
         />
         <Box height={1} />
-        <Text dimColor>{"tab:next  shift+tab:prev  esc:cancel"}</Text>
+        <Box>
+          <Text dimColor>{"tab:next  shift+tab:prev  "}</Text>
+          <ModalShortcut label="esc:close" onClick={onCancel} />
+        </Box>
       </Box>
     </Modal>
   );

@@ -8,6 +8,7 @@ import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
+import { ModalShortcut } from "./ModalShortcut";
 import { MouseClickable } from "./MouseClickable";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
 import { SessionOptionsSection } from "./SessionOptionsSection";
@@ -699,6 +700,7 @@ export function OpenModal({
     abortControllerRef.current?.abort();
     onCancel();
   };
+  const handleBack = () => setStep("selector");
 
   if (!visible) return null;
 
@@ -725,7 +727,7 @@ export function OpenModal({
           defaultBase={defaultBase}
           profileNames={profileNames}
           onSubmit={onSubmit}
-          onBack={() => setStep("selector")}
+          onBack={handleBack}
           width={innerWidth}
         />
       )}
@@ -736,7 +738,7 @@ export function OpenModal({
           isRefreshing={isRefreshing}
           onRefresh={() => onRefresh(abortControllerRef.current?.signal)}
           onSubmit={onSubmit}
-          onBack={() => setStep("selector")}
+          onBack={handleBack}
           width={innerWidth}
         />
       )}
@@ -745,16 +747,20 @@ export function OpenModal({
           repoPath={repoPath}
           profileNames={profileNames}
           onSubmit={onSubmit}
-          onBack={() => setStep("selector")}
+          onBack={handleBack}
           width={innerWidth}
         />
       )}
       <Box marginTop={1}>
         <Text dimColor>
           {step === "selector"
-            ? "↑↓:select  enter:confirm  esc:cancel"
-            : "tab:next  shift+tab:prev  esc:back"}
+            ? "↑↓:select  enter:confirm  "
+            : "tab:next  shift+tab:prev  "}
         </Text>
+        <ModalShortcut
+          label={step === "selector" ? "esc:close" : "esc:back"}
+          onClick={step === "selector" ? handleCancel : handleBack}
+        />
       </Box>
     </Modal>
   );

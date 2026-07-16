@@ -7,6 +7,7 @@ import { useGuardedInput } from "../hooks/useGuardedInput";
 import { runTuiSilentPromise } from "../runtime";
 import { isSubmitShortcut, SubmitButton } from "./form-controls";
 import { Modal } from "./Modal";
+import { ModalShortcut } from "./ModalShortcut";
 import { MouseClickable } from "./MouseClickable";
 import { expandTilde, PathInput } from "./PathInput";
 import { TitledBox } from "./TitledBox";
@@ -204,8 +205,9 @@ export function AddProjectModal({
         />
         <Box marginTop={1}>
           <Text dimColor>
-            {"tab:next  shift+tab:prev  →:complete  enter:confirm  esc:cancel"}
+            {"tab:next  shift+tab:prev  →:complete  enter:confirm  "}
           </Text>
+          <ModalShortcut label="esc:close" onClick={onCancel} />
         </Box>
       </Box>
     </Modal>

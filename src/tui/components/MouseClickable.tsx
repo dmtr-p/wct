@@ -27,15 +27,7 @@ export function MouseClickable({
       if (!ref.current || event.kind === "wheel") {
         return;
       }
-      const { width, height } = measureElement(ref.current);
-      let x = 0;
-      let y = 0;
-      let node: DOMElement | undefined = ref.current;
-      while (node) {
-        x += node.yogaNode?.getComputedLeft() ?? 0;
-        y += node.yogaNode?.getComputedTop() ?? 0;
-        node = node.parentNode;
-      }
+      const { x, y, width, height } = measureElement(ref.current);
       const col = event.col - 1;
       const row = event.row - 1;
       const isInside =

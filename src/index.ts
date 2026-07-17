@@ -26,9 +26,11 @@ function toJsonModeWctError(
     return toWctError(error);
   }
 
+  if (error instanceof CliError.UnknownSubcommand) {
+    return commandError("unknown_command", error.message, error);
+  }
+
   switch (error._tag) {
-    case "UnknownSubcommand":
-      return commandError("unknown_command", error.message, error);
     case "UnrecognizedOption":
     case "DuplicateOption":
     case "MissingOption":

@@ -31,6 +31,8 @@ interface Props {
    * diverge.
    */
   rows: TreeRow[];
+  /** Tree-item index currently under the pointer, for hover styling. */
+  hoveredItemIndex?: number | null;
   pendingActions: Map<string, PendingAction>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
@@ -67,6 +69,7 @@ export function TreeView({
   selectedIndex,
   items,
   rows,
+  hoveredItemIndex = null,
   pendingActions,
   prData,
   panes,
@@ -100,6 +103,7 @@ export function TreeView({
       items,
       selectedIndex,
       selectedItem,
+      hoveredItemIndex,
       expandedWorktreeKeys,
       sessionMap,
       prData,
@@ -121,6 +125,7 @@ interface RenderRowContext {
   items: TreeItem[];
   selectedIndex: number;
   selectedItem: TreeItem | undefined;
+  hoveredItemIndex: number | null;
   expandedWorktreeKeys?: Set<string>;
   sessionMap: Map<string, { name: string; attached: boolean }>;
   prData: Map<string, PRInfo>;
@@ -203,6 +208,7 @@ function renderRepoRow(idx: number, ctx: RenderRowContext): React.ReactNode {
       project={repo.project}
       isSelected={idx === ctx.selectedIndex}
       isChildSelected={childSelected}
+      isHovered={idx === ctx.hoveredItemIndex}
       maxWidth={ctx.maxWidth}
       isRefreshing={ctx.refreshingProjects?.has(repo.project)}
       hasError={ctx.errors?.has(repo.project)}
@@ -246,6 +252,7 @@ function renderWorktreeRow(
       isAttached={session?.attached ?? false}
       isSelected={idx === ctx.selectedIndex}
       isChildSelected={wtChildSelected}
+      isHovered={idx === ctx.hoveredItemIndex}
       pendingStatus={pending?.type}
       isExpanded={ctx.expandedWorktreeKeys?.has(wtKey) ?? false}
       hasExpandableData={!!hasExpandableData}
@@ -274,6 +281,7 @@ function renderDetailRow(
       }
       item={item}
       isSelected={idx === ctx.selectedIndex}
+      isHovered={idx === ctx.hoveredItemIndex}
       maxWidth={ctx.maxWidth}
       pieceIndex={pieceIndex}
       prLine={prLine}

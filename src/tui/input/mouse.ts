@@ -243,6 +243,37 @@ export type MouseAction =
   | { kind: "select"; itemIndex: number; rowIndex: number };
 
 /**
+ * Map a 1-based SGR row to a clickable/hoverable tree item, shared by
+ * `resolveMouseAction` (press) and `resolveHoverItemIndex` (move) so the two
+ * can never disagree about which row a given terminal row hits. Returns
+ * `null` for chrome, phantom rows, and inert rows (pane headers) — the same
+ * predicate keyboard navigation uses, so a pointer can't select/hover a row
+ * arrow keys refuse.
+ */
+function hitTestTreeRow(
+  row: number,
+  ctx: MouseActionContext,
+): { itemIndex: number; rowIndex: number } | null {
+  if (ctx.mode.type !== "Navigate" && ctx.mode.type !== "Expanded") {
+    return null;
+  }
+  const viewportRow = row - 1 - HEADER_OFFSET;
+  if (viewportRow < 0 || viewportRow >= ctx.viewportRows) {
+    return null; // header / StatusBar / below the viewport
+  }
+  const rowIndex = ctx.effectiveScrollOffset + viewportRow;
+  const treeRow = ctx.rows[rowIndex];
+  const itemIndex = treeRow?.itemIndex;
+  if (itemIndex == null) {
+    return null; // phantom row / padding
+  }
+  if (isInertTreeItem(ctx.treeItems[itemIndex])) {
+    return null;
+  }
+  return { itemIndex, rowIndex };
+}
+
+/**
  * Resolve a parsed mouse event into a pure description of what should happen,
  * testable without React. Only Navigate and Expanded mode act on mouse; every
  * other mode (modals, Search, confirmations) resolves to `none` (the event is
@@ -273,26 +304,23 @@ export function resolveMouseAction(
     return { kind: "none" };
   }
 
-  // Hit-test: map the 1-based SGR row to a visible row, then to its item.
-  const viewportRow = event.row - 1 - HEADER_OFFSET;
-  if (viewportRow < 0 || viewportRow >= ctx.viewportRows) {
-    return { kind: "none" }; // header / StatusBar / below the viewport
-  }
-  const row = ctx.rows[ctx.effectiveScrollOffset + viewportRow];
-  const itemIndex = row?.itemIndex;
-  if (itemIndex == null) {
-    return { kind: "none" }; // phantom row / padding
-  }
-
-  // Inert rows (pane headers) are skipped by keyboard navigation via the same
-  // shared predicate, so a click cannot select a row arrow keys refuse.
-  if (isInertTreeItem(ctx.treeItems[itemIndex])) {
+  const hit = hitTestTreeRow(event.row, ctx);
+  if (!hit) {
     return { kind: "none" };
   }
 
-  return {
-    kind: "select",
-    itemIndex,
-    rowIndex: ctx.effectiveScrollOffset + viewportRow,
-  };
+  return { kind: "select", itemIndex: hit.itemIndex, rowIndex: hit.rowIndex };
+}
+
+/**
+ * The tree-item index currently under the pointer, for hover styling. `null`
+ * for anything that isn't a `move` event over a selectable row (chrome,
+ * phantom rows, inert pane headers, or a mode that doesn't act on mouse).
+ */
+export function resolveHoverItemIndex(
+  event: MouseEvent,
+  ctx: MouseActionContext,
+): number | null {
+  if (event.kind !== "move") return null;
+  return hitTestTreeRow(event.row, ctx)?.itemIndex ?? null;
 }

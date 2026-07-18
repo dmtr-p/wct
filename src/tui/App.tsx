@@ -30,6 +30,7 @@ import {
   type MouseClickHistory,
   type MouseEvent,
   mouseClickTargetId,
+  resolveHoverItemIndex,
   resolveMouseAction,
   resolveTreeDoubleClickAction,
 } from "./input/mouse";
@@ -98,6 +99,10 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddProjectButtonHovered, setIsAddProjectButtonHovered] =
     useState(false);
+  const [lastHoverPosition, setLastHoverPosition] = useState<{
+    col: number;
+    row: number;
+  } | null>(null);
   const { actionError, showActionError, clearActionError } = useActionError();
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
@@ -277,6 +282,32 @@ export function App() {
     rows.length,
     viewportRows,
   );
+
+  // Derived from the last raw pointer position rather than stored directly,
+  // so a mode change or tree reshape with no intervening mouse move can't
+  // leave a stale row hovered.
+  const hoveredItemIndex = useMemo(() => {
+    if (!lastHoverPosition) return null;
+    return resolveHoverItemIndex(
+      { kind: "move", col: lastHoverPosition.col, row: lastHoverPosition.row },
+      {
+        mode,
+        rows,
+        effectiveScrollOffset,
+        viewportRows,
+        treeItems,
+        repos: filteredRepos,
+      },
+    );
+  }, [
+    lastHoverPosition,
+    mode,
+    rows,
+    effectiveScrollOffset,
+    viewportRows,
+    treeItems,
+    filteredRepos,
+  ]);
 
   useEffect(() => {
     const isConfirming = confirmationMode !== null;
@@ -725,6 +756,10 @@ export function App() {
       );
     }
 
+    if (event.kind === "move") {
+      setLastHoverPosition({ col: event.col, row: event.row });
+    }
+
     if (isAddProjectButtonPress(event, mode, termCols)) {
       lastMouseClickRef.current = null;
       modalActions.prepareAddProjectModal();
@@ -910,6 +945,7 @@ export function App() {
             selectedIndex={selectedIndex}
             items={treeItems}
             rows={rows}
+            hoveredItemIndex={hoveredItemIndex}
             pendingActions={pendingActions}
             prData={prData}
             panes={panes}

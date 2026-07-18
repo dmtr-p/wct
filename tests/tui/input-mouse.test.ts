@@ -11,6 +11,7 @@ import {
   type MouseActionContext,
   mouseClickTargetId,
   parseSgrMouse,
+  resolveHoverItemIndex,
   resolveMouseAction,
   resolveTreeDoubleClickAction,
   splitMouseSequences,
@@ -832,6 +833,90 @@ describe("resolveMouseAction", () => {
           rowIndex: ctx.effectiveScrollOffset + viewportRow,
         });
       }
+    }
+  });
+});
+
+describe("resolveHoverItemIndex", () => {
+  test("move over a row resolves to that row's item, agreeing with resolveMouseAction's hit-test", () => {
+    const ctx = buildCtx(Mode.Navigate, null);
+    // rows: [repo-1(0), wt-a(1), wt-b(2), repo-2(3), wt-c(4)]
+    const sgrRow = 1 + 1 + HEADER_OFFSET;
+    expect(
+      resolveHoverItemIndex({ kind: "move", col: 3, row: sgrRow }, ctx),
+    ).toBe(1);
+    expect(
+      resolveMouseAction(
+        { kind: "press", button: "left", col: 3, row: sgrRow },
+        ctx,
+      ),
+    ).toEqual({ kind: "select", itemIndex: 1, rowIndex: 1 });
+  });
+
+  test("non-move events never resolve to a hover target", () => {
+    const ctx = buildCtx(Mode.Navigate, null);
+    const sgrRow = 1 + 1 + HEADER_OFFSET;
+    expect(resolveHoverItemIndex({ kind: "wheel", dir: -1 }, ctx)).toBeNull();
+    expect(
+      resolveHoverItemIndex(
+        { kind: "press", button: "left", col: 3, row: sgrRow },
+        ctx,
+      ),
+    ).toBeNull();
+  });
+
+  test("move over chrome, phantom rows, or an inert pane-header resolves to null", () => {
+    const ctx = buildCtx(Mode.Navigate, null);
+    // Header/spacer rows (SGR rows 1 and 2).
+    expect(
+      resolveHoverItemIndex({ kind: "move", col: 1, row: 1 }, ctx),
+    ).toBeNull();
+    expect(
+      resolveHoverItemIndex({ kind: "move", col: 1, row: 2 }, ctx),
+    ).toBeNull();
+
+    const key = pendingKey("alpha", "feature/a");
+    const panes = new Map<string, PaneInfo[]>([
+      [
+        "a",
+        [
+          {
+            paneId: "%1",
+            paneIndex: 0,
+            command: "vim",
+            window: "0",
+            zoomed: false,
+            active: true,
+          },
+        ],
+      ],
+    ]);
+    const expandedCtx = buildCtx(Mode.Expanded(key), key, undefined, panes);
+    const headerItemIndex = expandedCtx.treeItems.findIndex(
+      (item) => item.type === "detail" && item.detailKind === "pane-header",
+    );
+    const headerRowIndex = expandedCtx.rows.findIndex(
+      (r: TreeRow) => r.itemIndex === headerItemIndex,
+    );
+    expect(
+      resolveHoverItemIndex(
+        { kind: "move", col: 3, row: headerRowIndex + 1 + HEADER_OFFSET },
+        expandedCtx,
+      ),
+    ).toBeNull();
+  });
+
+  test("non-interactive modes (Search/modals/confirm) never resolve a hover target", () => {
+    for (const mode of [
+      Mode.Search,
+      Mode.OpenModal,
+      Mode.AddProjectModal,
+    ] as Mode[]) {
+      const ctx = buildCtx(mode, null);
+      const sgrRow = 1 + 1 + HEADER_OFFSET;
+      expect(
+        resolveHoverItemIndex({ kind: "move", col: 3, row: sgrRow }, ctx),
+      ).toBeNull();
     }
   });
 });

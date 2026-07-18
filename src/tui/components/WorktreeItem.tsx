@@ -12,6 +12,7 @@ interface Props {
   isAttached: boolean;
   isSelected: boolean;
   isChildSelected?: boolean;
+  isHovered?: boolean;
   pendingStatus?: "opening" | "closing" | "starting" | "stopping";
   isExpanded?: boolean;
   hasExpandableData?: boolean;
@@ -28,12 +29,13 @@ export function WorktreeItem({
   isAttached,
   isSelected,
   isChildSelected,
+  isHovered,
   pendingStatus,
   isExpanded,
   hasExpandableData,
   maxWidth,
 }: Props) {
-  const active = isSelected || !!isChildSelected;
+  const active = isSelected || !!isChildSelected || !!isHovered;
   const indicator = hasSession ? "●" : "○";
   const indicatorColor = hasSession ? "green" : "gray";
   const attached = isAttached ? " *" : "";
@@ -64,6 +66,7 @@ export function WorktreeItem({
         <Text
           color={isSelected ? SELECTED_ROW_FOREGROUND : "yellow"}
           backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
+          bold={isHovered}
           wrap="truncate"
         >
           {prefix}
@@ -82,7 +85,8 @@ export function WorktreeItem({
         <Text
           color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
           backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-          dimColor={!isSelected}
+          dimColor={!isSelected && !isHovered}
+          bold={isHovered}
           wrap="truncate"
         >
           {prefix}
@@ -116,10 +120,10 @@ export function WorktreeItem({
         wrap="truncate"
       >
         {prefix}
-        {expandIcon ? <Text dimColor={!isSelected}>{expandIcon}</Text> : null}
+        {expandIcon ? <Text dimColor={!active}>{expandIcon}</Text> : null}
         <Text color={isSelected ? undefined : indicatorColor}>{indicator}</Text>
         <Text bold={active}> {displayBranch}</Text>
-        <Text dimColor={!isSelected}>
+        <Text dimColor={!active} bold={isHovered}>
           {attached}
           {starting}
         </Text>

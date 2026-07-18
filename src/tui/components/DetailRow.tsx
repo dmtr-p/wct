@@ -11,6 +11,7 @@ import {
 interface Props {
   item: Extract<TreeItem, { type: "detail" }>;
   isSelected: boolean;
+  isHovered?: boolean;
   maxWidth: number;
   pieceIndex?: number;
   prLine?: string;
@@ -49,10 +50,12 @@ function rollupColor(
 export function DetailRow({
   item,
   isSelected,
+  isHovered,
   maxWidth,
   pieceIndex = 0,
   prLine,
 }: Props) {
+  const highlighted = isSelected || !!isHovered;
   const selectedProps = {
     color: isSelected ? SELECTED_ROW_FOREGROUND : undefined,
     backgroundColor: isSelected ? SELECTED_ROW_BACKGROUND : undefined,
@@ -92,7 +95,7 @@ export function DetailRow({
         const content = indent + line;
         return (
           <Box>
-            <Text {...selectedProps} bold={isSelected} wrap="truncate-end">
+            <Text {...selectedProps} bold={highlighted} wrap="truncate-end">
               {content}
               {selectedRowFill(isSelected, maxWidth, content)}
             </Text>
@@ -104,7 +107,7 @@ export function DetailRow({
       const content = leading + iconText + line;
       return (
         <Box>
-          <Text {...selectedProps} bold={isSelected} wrap="truncate-end">
+          <Text {...selectedProps} bold={highlighted} wrap="truncate-end">
             {leading}
             {icon ? (
               <Text color={isSelected ? undefined : rollupColor(rollupState)}>
@@ -133,8 +136,8 @@ export function DetailRow({
         <Box>
           <Text
             {...selectedProps}
-            dimColor={!isSelected}
-            bold={isSelected}
+            dimColor={!highlighted}
+            bold={highlighted}
             wrap="truncate"
           >
             {content}

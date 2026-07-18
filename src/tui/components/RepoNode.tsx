@@ -10,6 +10,7 @@ interface Props {
   project: string;
   isSelected: boolean;
   isChildSelected: boolean;
+  isHovered?: boolean;
   maxWidth: number;
   isRefreshing?: boolean;
   hasError?: boolean;
@@ -19,11 +20,12 @@ export function RepoNode({
   project,
   isSelected,
   isChildSelected,
+  isHovered,
   maxWidth,
   isRefreshing,
   hasError,
 }: Props) {
-  const active = isSelected || isChildSelected;
+  const active = isSelected || isChildSelected || !!isHovered;
   const prefix = " ";
   const refreshSuffix = isRefreshing ? " ↻" : "";
   const errorSuffix = hasError ? " ⚠" : "";
@@ -44,9 +46,11 @@ export function RepoNode({
         <Text color={isSelected ? undefined : "yellow"} bold={active}>
           {displayProject}
         </Text>
-        {isRefreshing ? <Text dimColor={!isSelected}> ↻</Text> : null}
+        {isRefreshing ? <Text dimColor={!active}> ↻</Text> : null}
         {hasError ? (
-          <Text color={isSelected ? undefined : "yellow"}> ⚠</Text>
+          <Text color={isSelected ? undefined : "yellow"} bold={active}>
+            {" ⚠"}
+          </Text>
         ) : null}
         {selectedRowFill(isSelected, maxWidth, content)}
       </Text>

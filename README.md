@@ -31,6 +31,12 @@ brew install dmtr-p/tools/wct
 
 Shell completions for bash, zsh, and fish are installed automatically.
 
+### mise
+
+```bash
+mise use -g github:dmtr-p/wct
+```
+
 ### Manual download
 
 Download the binary for your platform from [Releases](https://github.com/dmtr-p/wct/releases/latest):

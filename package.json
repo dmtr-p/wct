@@ -18,7 +18,7 @@
     "build:all": "bun run scripts/build-all.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.4",
+    "@biomejs/biome": "2.5.5",
     "@effect/vitest": "4.0.0-beta.98",
     "@types/bun": "1.3.14",
     "@types/react": "^19.2.17",

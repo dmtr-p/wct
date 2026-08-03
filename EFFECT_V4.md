@@ -262,10 +262,9 @@ type Reason<E> = Fail<E> | Die | Interrupt;
 
 `FiberRef` is removed. Use `ServiceMap.Reference` instead.
 
-| v3                            | v4                              |
-| ----------------------------- | ------------------------------- |
-| `FiberRef.currentLogLevel`    | `References.CurrentLogLevel`    |
-| `FiberRef.currentConcurrency` | `References.CurrentConcurrency` |
+| v3                         | v4                           |
+| -------------------------- | ---------------------------- |
+| `FiberRef.currentLogLevel` | `References.CurrentLogLevel` |
 
 ```ts
 // ❌ v3

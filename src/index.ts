@@ -5,7 +5,13 @@ import {
 } from "./cli/completions";
 import { JsonFlag } from "./cli/json-flag";
 import { rootCommand } from "./cli/root-command";
-import { CliError, CliOutput, Command } from "./effect/cli";
+import {
+  CliConfig,
+  CliError,
+  CliOutput,
+  Command,
+  GlobalFlag,
+} from "./effect/cli";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
 import { provideWctServices } from "./effect/services";
 import { commandError, toWctError } from "./errors";
@@ -18,6 +24,14 @@ const helpRequested = args.includes("--help") || args.includes("-h");
 const jsonRequested = args.includes("--json");
 const builtInActionRequested =
   args.includes("--version") || args.includes("--completions");
+const cliConfigLayer = CliConfig.layer({
+  builtIns: [
+    GlobalFlag.Help,
+    GlobalFlag.Version,
+    GlobalFlag.Completions,
+    GlobalFlag.LogLevel,
+  ],
+});
 
 function toJsonModeWctError(
   error: unknown,
@@ -35,6 +49,7 @@ function toJsonModeWctError(
     case "DuplicateOption":
     case "MissingOption":
     case "MissingArgument":
+    case "UnexpectedArgument":
     case "InvalidValue":
       return commandError("invalid_options", error.message, error);
     case "UserError":
@@ -56,9 +71,13 @@ if (customCompletionShell) {
   process.exit(0);
 }
 
+const commandProgram = Command.run(rootCommand, { version: VERSION }).pipe(
+  Effect.provide(cliConfigLayer),
+);
+
 const program = provideBunServices(
   provideWctServices(
-    Effect.catch(Command.run(rootCommand, { version: VERSION }), (error) => {
+    Effect.catch(commandProgram, (error) => {
       return Effect.gen(function* () {
         let json = false;
 

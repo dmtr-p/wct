@@ -52,10 +52,7 @@ describe("validateConfig", () => {
   test("rejects non-object config", () => {
     const result = validateConfig("not an object");
     expect(result.valid).toBe(false);
-    expectValidationError(
-      result.errors,
-      'Expected object, got "not an object"',
-    );
+    expectValidationError(result.errors, "Expected object");
   });
 
   test("rejects invalid version type", () => {

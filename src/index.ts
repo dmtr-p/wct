@@ -71,9 +71,10 @@ if (customCompletionShell) {
   process.exit(0);
 }
 
-const commandProgram = Command.run(rootCommand, { version: VERSION }).pipe(
-  Effect.provide(cliConfigLayer),
-);
+const commandProgram = Command.run(rootCommand, {
+  version: VERSION,
+  renderErrors: !jsonRequested,
+}).pipe(Effect.provide(cliConfigLayer));
 
 const program = provideBunServices(
   provideWctServices(

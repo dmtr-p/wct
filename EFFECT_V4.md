@@ -338,11 +338,11 @@ The runtime now automatically keeps the process alive while fibers are suspended
 | ---------------------------- | ------------------------------- |
 | `Schema.annotations(ann)`    | `Schema.annotate(ann)`          |
 | `Schema.compose(schemaB)`    | `Schema.decodeTo(schemaB)`      |
-| `Schema.parseJson()`         | `Schema.UnknownFromJsonString`  |
+| `Schema.parseJson()`         | `Schema.fromJsonString(Schema.Unknown)` |
 | `Schema.parseJson(schema)`   | `Schema.fromJsonString(schema)` |
 | `Schema.nonEmptyString`      | `Schema.isNonEmpty`             |
 | `Schema.BigIntFromSelf`      | `Schema.BigInt`                 |
-| `Schema.TaggedError`         | `Schema.TaggedErrorClass`       |
+| `Schema.TaggedError`         | `Schema.TaggedError`            |
 | `Schema.decodeUnknown`       | `Schema.decodeUnknownEffect`    |
 | `Schema.decode`              | `Schema.decodeEffect`           |
 | `Schema.decodeUnknownEither` | `Schema.decodeUnknownExit`      |
@@ -517,7 +517,7 @@ Result.err("error");
 
 ## Testing with @effect/vitest
 
-We use `@effect/vitest@4.0.0-beta.59` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
+We use `@effect/vitest@4.0.0-rc.108` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
 
 ### `it.effect` + `it.layer` — preferred for new tests
 

@@ -517,7 +517,7 @@ Result.err("error");
 
 ## Testing with @effect/vitest
 
-We use `@effect/vitest@4.0.0-rc.108` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
+We use `@effect/vitest@4.0.0-rc.111` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
 
 ### `it.effect` + `it.layer` — preferred for new tests
 

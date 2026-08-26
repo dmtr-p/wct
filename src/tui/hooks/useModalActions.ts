@@ -14,6 +14,7 @@ import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import {
   beginLifecycle,
+  type LifecycleClaims,
   type LifecycleState,
   lifecycleValidationWarning,
 } from "../lifecycle";
@@ -49,6 +50,12 @@ export interface ModalActionDeps {
   openModalRepoPath: string;
   /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle: LifecycleState;
+  /**
+   * The synchronous claim ledger arbitrating Workspace Identities, shared with
+   * `useSessionActions` so an `open` and an `up`/`down`/`close` cannot both
+   * claim one Workspace.
+   */
+  lifecycleClaims: LifecycleClaims;
 
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   setMode: (m: Mode) => void;
@@ -117,6 +124,32 @@ export function createHandleOpen(deps: ModalActionDeps) {
     const project = deps.openModalRepoProject || "unknown";
     const repoPath = deps.openModalRepoPath;
     const key = pendingKey(project, opts.branch);
+
+    // The Workspace does not exist yet, so this entry IS its representation in
+    // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
+    // row, both inert, both visible before git knows about the worktree.
+    //
+    // The claim comes FIRST, before any other bookkeeping: a refused open must
+    // leave the running operation's state — including the pending-action entry
+    // it shares this display key with — exactly as it found it (AC-28).
+    const lifecycle = beginLifecycle({
+      claims: deps.lifecycleClaims,
+      setLifecycle: deps.setLifecycle,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "open",
+        repoPath,
+        project,
+        branch: opts.branch,
+        phase: { _tag: "Preparing" },
+      },
+    });
+    // Refused: this Workspace Identity is already in flight. The refusal has
+    // been reported through the timed error display, and this handler must
+    // stop here — running `open` anyway would race the active operation and
+    // its teardown would take down the active operation's presentation.
+    if (!lifecycle) return;
+
     deps.setPendingActions((prev) =>
       new Map(prev).set(key, {
         type: "opening",
@@ -132,17 +165,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
         return next;
       });
     };
-
-    // The Workspace does not exist yet, so this entry IS its representation in
-    // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
-    // row, both inert, both visible before git knows about the worktree.
-    const lifecycle = beginLifecycle(deps.setLifecycle, {
-      operation: "open",
-      repoPath,
-      project,
-      branch: opts.branch,
-      phase: { _tag: "Preparing" },
-    });
 
     void (async () => {
       // Every outcome — a fatal failure, a partial build with warnings, a

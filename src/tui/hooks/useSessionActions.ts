@@ -13,6 +13,7 @@ import {
 } from "../../services/workspace-service";
 import {
   isLifecycleActive,
+  type LifecycleClaims,
   type LifecycleState,
   lifecycleBusyMessage,
   lifecycleEntryFor,
@@ -36,6 +37,12 @@ export interface SessionActionDeps {
   mode: Mode;
   /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle: LifecycleState;
+  /**
+   * The synchronous claim ledger arbitrating Workspace Identities. Shared with
+   * every other lifecycle-driving hook, because it is what makes a second
+   * operation for one identity impossible rather than merely unlikely.
+   */
+  lifecycleClaims: LifecycleClaims;
 
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
@@ -188,6 +195,7 @@ export function createStartWorkspace(deps: SessionActionDeps) {
 
   return (target: StartWorkspaceTarget): Promise<void> =>
     runLifecycleOperation<WorkspaceUpResult>({
+      claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
@@ -298,6 +306,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
     deps.setMode(deps.confirmDownReturnModeRef.current);
 
     await runLifecycleOperation<WorkspaceDownResult>({
+      claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
@@ -390,6 +399,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
     deps.setMode(deps.confirmCloseReturnModeRef.current);
 
     await runLifecycleOperation<WorkspaceCloseResult>({
+      claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,

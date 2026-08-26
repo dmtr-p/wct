@@ -10,8 +10,10 @@
 // branches in different repositories independent (AC-27).
 //
 // This module owns the key space, the canonical row labels, the width-aware
-// truncation AND the one shared run shape every lifecycle-driving handler uses
-// (`beginLifecycle` / `runLifecycleOperation`). Rendering lives in
+// truncation, the synchronous claim ledger that keeps one identity's operation
+// from clobbering another's (`LifecycleClaims`) AND the one shared run shape
+// every lifecycle-driving handler uses (`beginLifecycle` /
+// `runLifecycleOperation`). Rendering lives in
 // `components/LifecycleProgressRow` and row placement in
 // `tree-helpers.buildTreeRows`, so both consume ONE label mapping and no raw
 // setup command text can ever reach the screen.
@@ -64,6 +66,57 @@ export function lifecycleEntryFor(
   branch: string,
 ): LifecycleEntry | undefined {
   return lifecycle.get(lifecycleKey(mainRepoPath, branch));
+}
+
+/**
+ * The SYNCHRONOUS claim ledger for Workspace Identities.
+ *
+ * React state cannot arbitrate the claim on its own: a `setLifecycle` updater
+ * does not run until the next render, so two starts dispatched inside ONE tick
+ * would both read the identity as free from the render-time snapshot, and the
+ * second would go on to call the service and then `end()` — tearing down the
+ * first operation's entry. The ledger is a plain map mutated the instant an
+ * identity is claimed, so a second operation for the same identity is refused
+ * BEFORE any active lifecycle state can be overwritten (AC-28).
+ *
+ * It is written ONLY through the controller `beginLifecycle` returns (claim on
+ * begin, phase on `setPhase`, release on `end`), so it cannot drift from the
+ * `LifecycleState` the tree renders. Every entry is addressed by
+ * `lifecycleKey` — the (main repository path, branch) pair — so claiming,
+ * refusing or releasing one identity never reads or writes another's, no
+ * matter how the project display names or registry ids line up (AC-27).
+ */
+export interface LifecycleClaims {
+  /** Take the identity for `entry`; false when it is already claimed. */
+  claim: (entry: LifecycleEntry) => boolean;
+  /** Update a held claim in place; a no-op once the identity is released. */
+  record: (entry: LifecycleEntry) => void;
+  /** Release the identity. Idempotent, so a repeated teardown is harmless. */
+  release: (entry: LifecycleEntry) => void;
+  /** The entry currently holding this identity, if any. */
+  active: (mainRepoPath: string, branch: string) => LifecycleEntry | undefined;
+}
+
+export function createLifecycleClaims(): LifecycleClaims {
+  const held = new Map<string, LifecycleEntry>();
+  return {
+    claim: (entry) => {
+      const key = lifecycleKey(entry.repoPath, entry.branch);
+      if (held.has(key)) return false;
+      held.set(key, entry);
+      return true;
+    },
+    record: (entry) => {
+      const key = lifecycleKey(entry.repoPath, entry.branch);
+      if (!held.has(key)) return;
+      held.set(key, entry);
+    },
+    release: (entry) => {
+      held.delete(lifecycleKey(entry.repoPath, entry.branch));
+    },
+    active: (mainRepoPath, branch) =>
+      held.get(lifecycleKey(mainRepoPath, branch)),
+  };
 }
 
 /** True while a lifecycle operation owns this Workspace Identity. */
@@ -157,25 +210,70 @@ export interface LifecycleController {
   reporter: WorkspaceReporter;
 }
 
-/** Begin a lifecycle for ONE Workspace Identity. */
+export interface BeginLifecycleOptions {
+  /** The synchronous claim ledger arbitrating Workspace Identities. */
+  claims: LifecycleClaims;
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
+  /** The Workspace Identity and starting phase of this operation. */
+  entry: LifecycleEntry;
+  /** Reports a refusal through the existing timed action-error display. */
+  showActionError: (message: string) => void;
+}
+
+/**
+ * Begin a lifecycle for ONE Workspace Identity, or refuse it.
+ *
+ * This is the SINGLE entry point every verb shares, and therefore the single
+ * place the coordination rule is enforced: the identity is claimed from the
+ * ledger first, and a caller that finds it already claimed gets `null` — the
+ * refusal is reported through the existing timed action-error display and no
+ * lifecycle state, phase or claim belonging to the running operation is
+ * touched (AC-28). Returning `null` (rather than an inert controller) is what
+ * keeps the refused caller from going on to run the service and then tearing
+ * down the operation that legitimately owns the identity.
+ */
 export function beginLifecycle(
-  setLifecycle: Dispatch<SetStateAction<LifecycleState>>,
-  entry: LifecycleEntry,
-): LifecycleController {
+  options: BeginLifecycleOptions,
+): LifecycleController | null {
+  const { claims, setLifecycle, entry } = options;
   const key = lifecycleKey(entry.repoPath, entry.branch);
-  setLifecycle((previous) => new Map(previous).set(key, entry));
+
+  if (!claims.claim(entry)) {
+    options.showActionError(
+      lifecycleBusyMessage(
+        entry.branch,
+        claims.active(entry.repoPath, entry.branch)?.phase,
+      ),
+    );
+    return null;
+  }
+
+  setLifecycle((previous) => {
+    // The ledger has already refused a double claim, so an entry sitting here
+    // could only mean the two had drifted: keep the active one rather than
+    // overwrite it.
+    if (previous.has(key)) return previous;
+    return new Map(previous).set(key, entry);
+  });
 
   const setPhase = (phase: LifecyclePhase) => {
+    // The ledger is the synchronous truth about whether this operation still
+    // owns the identity, so a late reporter event after teardown is a no-op
+    // here — before it can queue a state write that would resurrect the row.
+    const current = claims.active(entry.repoPath, entry.branch);
+    if (!current) return;
+    claims.record({ ...current, phase });
     setLifecycle((previous) => {
-      const current = previous.get(key);
-      if (!current) return previous;
+      const held = previous.get(key);
+      if (!held) return previous;
       const next = new Map(previous);
-      next.set(key, { ...current, phase });
+      next.set(key, { ...held, phase });
       return next;
     });
   };
 
   const end = () => {
+    claims.release(entry);
     setLifecycle((previous) => {
       if (!previous.has(key)) return previous;
       const next = new Map(previous);
@@ -201,6 +299,8 @@ export function beginLifecycle(
 }
 
 export interface LifecycleRunOptions<T> {
+  /** The synchronous claim ledger arbitrating Workspace Identities. */
+  claims: LifecycleClaims;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   /**
    * Resolves the snapshot THIS validation observed, or `null` when the refresh
@@ -242,7 +342,17 @@ export async function runLifecycleOperation<T>(
 ): Promise<void> {
   const { entry } = options;
   const operation = entry.operation;
-  const lifecycle = beginLifecycle(options.setLifecycle, entry);
+  const lifecycle = beginLifecycle({
+    claims: options.claims,
+    setLifecycle: options.setLifecycle,
+    entry,
+    showActionError: options.showActionError,
+  });
+  // Refused: another operation already owns this Workspace Identity, the
+  // refusal has been reported, and NOTHING else may happen — running the
+  // service here would race the owner and the `finally` below would tear its
+  // presentation down (AC-28).
+  if (!lifecycle) return;
 
   const messages: string[] = [];
   const append = (message: string) => {

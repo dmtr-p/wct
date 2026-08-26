@@ -38,6 +38,7 @@ import {
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import type { LifecycleState } from "./lifecycle";
+import { createLifecycleClaims } from "./lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -48,6 +49,7 @@ import {
   insertConfirmationRows,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
+  resolveLifecycleReveal,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
   resolveTreeReturnMode,
@@ -111,6 +113,18 @@ export function App() {
   // path + branch) — never by the project display name, so two repos sharing a
   // display name cannot clobber each other's progress.
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
+  // The synchronous claim ledger behind `beginLifecycle`. Created once per App
+  // and shared by every verb, because it is what decides — in the same tick,
+  // before any state is written — whether an identity is already in flight.
+  const lifecycleClaimsRef = useRef(createLifecycleClaims());
+  const lifecycleClaims = lifecycleClaimsRef.current;
+  // Workspace Identities whose one-time viewport reveal has already happened.
+  // Pruned when their operation ends, so a later operation on the same
+  // identity is revealed again.
+  const revealedLifecyclesRef = useRef<Set<string>>(new Set());
+  // Set for exactly ONE commit by the reveal effect, cleared by a trailing
+  // effect below: the reveal owns the viewport for that commit.
+  const lifecycleRevealPendingRef = useRef(false);
   // TRANSITIONAL: `open` still records a coarse pending action for its own
   // bookkeeping (`close` no longer does — its progress and its teardown are
   // owned by the lifecycle entry). Nothing renders it any more, so this state
@@ -445,6 +459,40 @@ export function App() {
     selectionChanged,
   ]);
 
+  // The ONE-TIME viewport reveal for a lifecycle operation whose rows lie
+  // outside the visible window: nudge the independent scroll offset minimally
+  // (never a re-centre) so the progress row's own visual row index is on
+  // screen, then remember the identity as revealed. An already-visible
+  // operation resolves to the offset it already has and moves nothing, and a
+  // lifecycle whose repository the search filters out has no row to reveal
+  // (AC-29).
+  //
+  // Declared BEFORE the keep-visible effect so its suppression flag is already
+  // set when that effect runs in the same commit; everything after the reveal
+  // — later phases, validation, teardown, pending-to-discovered reconciliation
+  // — finds the key revealed and leaves the offset alone (AC-30).
+  useEffect(() => {
+    const revealed = revealedLifecyclesRef.current;
+    for (const key of revealed) {
+      if (!lifecycle.has(key)) revealed.delete(key);
+    }
+
+    const reveal = resolveLifecycleReveal({
+      rows,
+      repos: filteredRepos,
+      lifecycle,
+      revealed,
+      scrollOffset: effectiveScrollOffset,
+      viewportRows,
+    });
+    if (!reveal) return;
+
+    revealed.add(reveal.key);
+    if (reveal.scrollOffset === effectiveScrollOffset) return;
+    lifecycleRevealPendingRef.current = true;
+    setScrollOffset(reveal.scrollOffset);
+  }, [lifecycle, rows, filteredRepos, effectiveScrollOffset, viewportRows]);
+
   // Keyboard ↑/↓ (and mouse clicks) are viewport-aware: after a DELIBERATE
   // selection change, nudge the scroll offset minimally to keep the selection
   // on screen. A PASSIVE layout change (the row moved or the viewport
@@ -459,6 +507,13 @@ export function App() {
   // scrollOffset, and uses a functional update, so it never fights a future
   // wheel scroll (slice 02).
   useEffect(() => {
+    // The one-time lifecycle reveal owns the viewport for the commit it fires
+    // in: that same commit also reshapes the rows and may move the selection
+    // off a suppressed detail row (AC-18), either of which would otherwise
+    // re-anchor the offset straight back and undo the reveal (AC-29). The flag
+    // is cleared unconditionally by a trailing effect, so it can never swallow
+    // a later re-anchor.
+    if (lifecycleRevealPendingRef.current) return;
     // All three refs are read BEFORE the trailing effects below rewrite them,
     // so they are last commit's values. A passive re-anchor requires the row
     // or viewport to have ACTUALLY changed — a run where neither did (the
@@ -525,6 +580,10 @@ export function App() {
   }, [viewportRows]);
   useEffect(() => {
     prevSelectionWasVisibleRef.current = selectionVisible;
+  });
+  // The reveal's claim on the viewport lasts exactly one commit.
+  useEffect(() => {
+    lifecycleRevealPendingRef.current = false;
   });
 
   // Resolves the registry snapshot THIS refresh observed (or `null` when the
@@ -593,6 +652,7 @@ export function App() {
     selectedIndex,
     mode,
     lifecycle,
+    lifecycleClaims,
     setSelectedIndex,
     setMode,
     setLifecycle,
@@ -618,6 +678,7 @@ export function App() {
     openModalRepoProject,
     openModalRepoPath,
     lifecycle,
+    lifecycleClaims,
     setLifecycle,
     setMode,
     setSelectedIndex,

@@ -664,6 +664,95 @@ export function scrollToKeepVisible(
 }
 
 /**
+ * The visual row index of ONE Workspace Identity's Lifecycle Progress Row, or
+ * `null` when it has no row at all — its repository filtered out by the active
+ * search, or not loaded yet.
+ *
+ * Rows carry a repo INDEX, so the identity is matched by resolving that index
+ * back to its main repository path: two repositories sharing a project display
+ * name therefore cannot borrow each other's progress row (AC-27).
+ */
+export function lifecycleProgressRowIndex(
+  rows: TreeRow[],
+  repos: RepoInfo[],
+  mainRepoPath: string,
+  branch: string,
+): number | null {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row?.kind !== "lifecycle-progress") continue;
+    if (row.branch !== branch) continue;
+    if (repos[row.repoIndex]?.repoPath !== mainRepoPath) continue;
+    return i;
+  }
+  return null;
+}
+
+/** The one-time viewport reveal for a newly active lifecycle operation. */
+export interface LifecycleReveal {
+  /** The `lifecycleKey` to mark revealed, so this happens exactly once. */
+  key: string;
+  /** The offset that makes the progress row visible — minimally adjusted. */
+  scrollOffset: number;
+}
+
+/**
+ * Decide whether a newly active lifecycle operation needs the viewport moved.
+ *
+ * The FIRST active operation not yet revealed and whose progress row exists in
+ * the row model wins; the offset is nudged minimally with
+ * `scrollRangeToKeepVisible` (never re-centred) so that row's own visual index
+ * is inside the window, and an already-visible operation resolves to the
+ * offset it was given — no movement at all (AC-29). An operation with no rows
+ * (its repository filtered out by the search) is left unrevealed and moves
+ * nothing, so it still gets its one reveal if the filter later clears.
+ *
+ * Pure and one-shot BY DESIGN: everything that happens after the reveal —
+ * later phase events, the validating transition, teardown, pending-to-
+ * discovered reconciliation — finds the key already in `revealed` and cannot
+ * touch the offset again (AC-30).
+ */
+export function resolveLifecycleReveal({
+  rows,
+  repos,
+  lifecycle,
+  revealed,
+  scrollOffset,
+  viewportRows,
+}: {
+  rows: TreeRow[];
+  repos: RepoInfo[];
+  lifecycle: LifecycleState;
+  revealed: ReadonlySet<string>;
+  scrollOffset: number;
+  viewportRows: number;
+}): LifecycleReveal | null {
+  for (const [key, entry] of lifecycle) {
+    if (revealed.has(key)) continue;
+    const rowIndex = lifecycleProgressRowIndex(
+      rows,
+      repos,
+      entry.repoPath,
+      entry.branch,
+    );
+    if (rowIndex === null) continue;
+    return {
+      key,
+      scrollOffset: clampScrollOffset(
+        scrollRangeToKeepVisible(
+          { start: rowIndex, end: rowIndex },
+          scrollOffset,
+          viewportRows,
+        ),
+        rows.length,
+        viewportRows,
+      ),
+    };
+  }
+  return null;
+}
+
+/**
  * Pane headers are inert separators the cursor can never land on. The SINGLE
  * predicate shared by keyboard navigation (`createNavigateTree` skips inert
  * items) and mouse hit-testing (`resolveMouseAction` refuses to select them),

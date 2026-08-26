@@ -21,6 +21,7 @@ import {
   createSwitchClientAway,
 } from "../../src/tui/hooks/useSessionActions";
 import {
+  createLifecycleClaims,
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
@@ -62,6 +63,7 @@ function makeDeps(
     selectedIndex: 0,
     mode: Mode.Navigate,
     lifecycle: new Map(),
+    lifecycleClaims: createLifecycleClaims(),
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
     setLifecycle: vi.fn(),

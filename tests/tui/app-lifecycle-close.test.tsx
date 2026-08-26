@@ -18,7 +18,11 @@ import type {
   LifecyclePhase,
   LifecycleState,
 } from "../../src/tui/lifecycle";
-import { lifecycleKey, lifecyclePhaseLabel } from "../../src/tui/lifecycle";
+import {
+  createLifecycleClaims,
+  lifecycleKey,
+  lifecyclePhaseLabel,
+} from "../../src/tui/lifecycle";
 import { isWorktreeEffectivelyExpanded } from "../../src/tui/tree-helpers";
 import { Mode, pendingKey } from "../../src/tui/types";
 import {
@@ -79,6 +83,7 @@ function makeDeps(overrides: Partial<SessionActionDeps> = {}) {
     selectedIndex: 0,
     mode: Mode.Navigate,
     lifecycle: new Map(),
+    lifecycleClaims: createLifecycleClaims(),
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
     setLifecycle: vi.fn(),

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
+  HEADER_OFFSET,
+  resolveHoverItemIndex,
+  resolveMouseAction,
+} from "../../src/tui/input/mouse";
+import {
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
@@ -919,5 +924,88 @@ describe("lifecycle rows", () => {
       expect(rows[rowIndex as number]?.kind).not.toBe("lifecycle-progress");
       expect(rows[rowIndex as number]?.kind).not.toBe("pending-workspace");
     }
+  });
+
+  // AC-31
+  test("progress rows are counted by the shared row model and stay inert to the pointer", () => {
+    const branch = "feature/x";
+    const repos = repoWithWorktree(branch);
+    repos[0]?.worktrees.push({
+      branch: "feature/y",
+      path: "/tmp/alpha-y",
+      isMainWorktree: false,
+      changedFiles: 0,
+      sync: { ahead: 0, behind: 0 },
+    });
+
+    const clean = rowsFor(repos, new Map());
+    const active = rowsFor(
+      repos,
+      openLifecycle(repoPath, "alpha", branch, { _tag: "CopyingFiles" }),
+    );
+
+    // WINDOWING: the progress row is a real visual row, so it takes one row of
+    // the window and pushes every row below it down by exactly one. Both
+    // models describe the same logical items.
+    expect(active.items).toEqual(clean.items);
+    expect(active.rows).toHaveLength(clean.rows.length + 1);
+    const progressRowIndex = active.rows.findIndex(
+      (row) => row.kind === "lifecycle-progress",
+    );
+    expect(progressRowIndex).toBeGreaterThan(-1);
+    const siblingItemIndex = active.items.findIndex(
+      (item) =>
+        item.type === "worktree" &&
+        repos[item.repoIndex]?.worktrees[item.worktreeIndex]?.branch ===
+          "feature/y",
+    );
+    expect(firstRowForItem(active.rows, siblingItemIndex)).toBe(
+      (firstRowForItem(clean.rows, siblingItemIndex) as number) + 1,
+    );
+
+    // HIT-TESTING: the very same rows drive the pointer, and the progress row
+    // refuses both a click and a hover while the row below it — one visual row
+    // further down because of it — is hit normally.
+    const ctx = {
+      mode: Mode.Navigate,
+      rows: active.rows,
+      effectiveScrollOffset: 0,
+      viewportRows: active.rows.length,
+      treeItems: active.items,
+      repos,
+    };
+    const sgrRow = (rowIndex: number) => rowIndex + 1 + HEADER_OFFSET;
+    expect(
+      resolveMouseAction(
+        {
+          kind: "press",
+          button: "left",
+          col: 5,
+          row: sgrRow(progressRowIndex),
+        },
+        ctx,
+      ),
+    ).toEqual({ kind: "none" });
+    expect(
+      resolveHoverItemIndex(
+        { kind: "move", col: 5, row: sgrRow(progressRowIndex) },
+        ctx,
+      ),
+    ).toBeNull();
+    expect(
+      resolveMouseAction(
+        {
+          kind: "press",
+          button: "left",
+          col: 5,
+          row: sgrRow(progressRowIndex + 1),
+        },
+        ctx,
+      ),
+    ).toEqual({
+      kind: "select",
+      itemIndex: siblingItemIndex,
+      rowIndex: progressRowIndex + 1,
+    });
   });
 });

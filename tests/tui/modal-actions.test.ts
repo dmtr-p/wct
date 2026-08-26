@@ -10,6 +10,7 @@ import {
 } from "../../src/tui/hooks/useModalActions";
 import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
 import {
+  createLifecycleClaims,
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
@@ -92,6 +93,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     openModalRepoProject: "",
     openModalRepoPath: "",
     lifecycle: new Map(),
+    lifecycleClaims: createLifecycleClaims(),
     setLifecycle: vi.fn(),
     setMode: vi.fn(),
     setSelectedIndex: vi.fn(),

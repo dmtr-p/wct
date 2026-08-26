@@ -210,6 +210,12 @@ interface ResolveRecoveredSelectionIndexOptions {
   prevTree: TreeItem[];
   treeItems: TreeItem[];
   prevSelectionId: string | null;
+  /**
+   * Identity of the PARENT branch row of the previously selected item, when it
+   * was a detail row (see `treeItemParentId`). Used as the deterministic
+   * fallback when that detail row itself is gone from the tree.
+   */
+  prevSelectionParentId?: string | null;
   selectedIndex: number;
   repos: RepoInfo[];
   skipIdentityRecovery?: boolean;
@@ -686,6 +692,31 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
 }
 
 /**
+ * The identity of a detail row's PARENT branch row (`null` for anything else).
+ * Reuses `treeItemId` for the worktree form so the two identity spaces cannot
+ * drift apart.
+ *
+ * Selection recovery needs this because a Workspace's PR and pane detail items
+ * are suppressed for the duration of a lifecycle: the selected detail row
+ * simply ceases to exist, and the cursor must land on its Workspace rather
+ * than wherever the index shift left it.
+ */
+export function treeItemParentId(
+  item: TreeItem,
+  repos: RepoInfo[],
+): string | null {
+  if (item.type !== "detail") return null;
+  return treeItemId(
+    {
+      type: "worktree",
+      repoIndex: item.repoIndex,
+      worktreeIndex: item.worktreeIndex,
+    },
+    repos,
+  );
+}
+
+/**
  * Compute the adjusted selectedIndex after all detail rows are removed from the
  * tree (e.g. when exiting Expanded mode or switching expanded worktree).
  *
@@ -713,6 +744,7 @@ export function resolveRecoveredSelectionIndex({
   prevTree,
   treeItems,
   prevSelectionId,
+  prevSelectionParentId = null,
   selectedIndex,
   repos,
   skipIdentityRecovery = false,
@@ -730,6 +762,24 @@ export function resolveRecoveredSelectionIndex({
     const candidate = treeItems[i];
     if (candidate && treeItemId(candidate, repos) === prevSelectionId) {
       return i;
+    }
+  }
+
+  // The selected item is gone. When it was a detail row of a Workspace that is
+  // still in the tree — the case a starting lifecycle creates, since it
+  // suppresses that Workspace's PR and pane detail rows — snap to that
+  // Workspace's branch row. Deterministic, and it keeps the cursor on the
+  // Workspace the user was looking at instead of on whatever row inherited its
+  // index (AC-18).
+  if (prevSelectionParentId) {
+    for (let i = 0; i < treeItems.length; i++) {
+      const candidate = treeItems[i];
+      if (
+        candidate?.type === "worktree" &&
+        treeItemId(candidate, repos) === prevSelectionParentId
+      ) {
+        return i;
+      }
     }
   }
 

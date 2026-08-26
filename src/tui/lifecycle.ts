@@ -103,6 +103,19 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   }
 }
 
+/**
+ * The warning shown when a lifecycle's OWN validation refresh failed (its
+ * `refreshAll` resolved no snapshot). A failed validation is not a failed
+ * operation: the previous tree stays on screen, the lifecycle presentation
+ * still comes down, and the user is told through the ordinary timed
+ * action-error display that what they are looking at may be stale.
+ */
+export function lifecycleValidationWarning(
+  operation: WorkspaceOperation,
+): string {
+  return `Validation after ${operation} failed — showing the last known Workspace state`;
+}
+
 /** Static child connector: the progress row hangs under its Workspace. */
 export const LIFECYCLE_ROW_PREFIX = "     └ ";
 

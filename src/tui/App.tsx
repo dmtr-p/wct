@@ -54,6 +54,7 @@ import {
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
   treeItemId,
+  treeItemParentId,
 } from "./tree-helpers";
 import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
 import { toSingleLine } from "./utils/truncate";
@@ -335,6 +336,11 @@ export function App() {
   // exactly once per commit.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
+  // The parent branch row of a selected DETAIL row, tracked alongside the
+  // selection identity so recovery has a deterministic destination when the
+  // detail row itself disappears — which is exactly what starting a lifecycle
+  // on that Workspace does (AC-18).
+  const prevSelectionParentIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
 
   // selectionChanged distinguishes a deliberate selection change (e.g. a
@@ -375,6 +381,7 @@ export function App() {
   useEffect(() => {
     const prevTree = prevTreeRef.current;
     const prevId = prevSelectionIdRef.current;
+    const prevParentId = prevSelectionParentIdRef.current;
     const prevSearchQuery = prevSearchQueryRef.current;
     const searchQueryChanged = prevSearchQuery !== searchQuery;
 
@@ -385,6 +392,7 @@ export function App() {
     if (searchQueryChanged) {
       // Search transitions intentionally reset the cursor to the first match.
       prevSelectionIdRef.current = null;
+      prevSelectionParentIdRef.current = null;
       // Reset the scroll explicitly: when the cursor was already at index 0
       // (e.g. after a wheel scroll), setSelectedIndex(0) is a no-op, so
       // `selectionChanged` stays false and the keep-visible effect below never
@@ -402,6 +410,9 @@ export function App() {
 
     const item = treeItems[selectedIndex];
     prevSelectionIdRef.current = item ? treeItemId(item, filteredRepos) : null;
+    prevSelectionParentIdRef.current = item
+      ? treeItemParentId(item, filteredRepos)
+      : null;
 
     // Skip identity recovery for a deliberate selection change (e.g. a mouse
     // click that also collapsed Expanded) — otherwise it sees the new
@@ -410,6 +421,7 @@ export function App() {
       prevTree,
       treeItems,
       prevSelectionId: prevId,
+      prevSelectionParentId: prevParentId,
       selectedIndex,
       repos: filteredRepos,
       skipIdentityRecovery: selectionChanged,

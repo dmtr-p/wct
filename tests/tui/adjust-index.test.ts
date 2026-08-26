@@ -337,6 +337,71 @@ describe("resolveRecoveredSelectionIndex", () => {
       }),
     ).toBeNull();
   });
+
+  // AC-18
+  test("keeps a Workspace selection across a pending→discovered reshape and snaps a vanished detail row to its parent branch row", () => {
+    const repos: RepoInfo[] = [
+      fakeRepo("repo-a", ["main", "feat-new"]),
+      fakeRepo("repo-b", ["main"]),
+    ];
+
+    // A Pending Workspace became a discovered Workspace: repo-a gained a
+    // worktree row, shifting every later item index. The selected item is
+    // recovered by identity, so the cursor stays on the SAME logical item.
+    const beforeDiscovery: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      repo(1),
+      worktree(1, 0),
+    ];
+    const afterDiscovery: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      worktree(0, 1),
+      repo(1),
+      worktree(1, 0),
+    ];
+    expect(
+      resolveRecoveredSelectionIndex({
+        prevTree: beforeDiscovery,
+        treeItems: afterDiscovery,
+        prevSelectionId: "wt:repo-b/main",
+        selectedIndex: 3,
+        repos,
+      }),
+    ).toBe(4);
+
+    // A lifecycle starting on repo-a/feat-new suppresses its PR and pane
+    // detail rows. The selected detail row is gone, so selection moves
+    // deterministically to that Workspace's own branch row.
+    const withDetails: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      worktree(0, 1),
+      detail(0, 1, "pr"),
+      repo(1),
+      worktree(1, 0),
+    ];
+    // Without the parent fallback the tree is still long enough for index 3 to
+    // exist, so the cursor would silently sit on repo-b's header instead.
+    const withoutDetails: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      worktree(0, 1),
+      repo(1),
+      worktree(1, 0),
+    ];
+    expect(
+      resolveRecoveredSelectionIndex({
+        prevTree: withDetails,
+        treeItems: withoutDetails,
+        prevSelectionId: "detail:repo-a/feat-new/pr",
+        prevSelectionParentId: "wt:repo-a/feat-new",
+        selectedIndex: 3,
+        repos,
+      }),
+    ).toBe(2);
+  });
 });
 
 describe("resolveSelectedWorktreeIndex", () => {

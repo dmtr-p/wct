@@ -109,7 +109,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     switchSession: vi.fn().mockResolvedValue(true),
     discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
     handleStartResult: vi.fn().mockResolvedValue(undefined),
-    refreshAll: vi.fn().mockResolvedValue(undefined),
+    refreshAll: vi.fn().mockResolvedValue([]),
     upModalReturnModeRef: { current: Mode.Navigate },
     modalReturnModeRef: { current: Mode.Navigate },
     upModalReturnSelectedIndexRef: { current: 0 },
@@ -205,7 +205,7 @@ describe("createPrepareOpenModal", () => {
     });
     const openResult = makeOpenResult();
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(openResult);
-    const refreshAll = vi.fn().mockResolvedValue(undefined);
+    const refreshAll = vi.fn().mockResolvedValue([]);
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
@@ -254,7 +254,7 @@ describe("createPrepareOpenModal", () => {
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
 
     createHandleOpen(deps)({
@@ -279,7 +279,7 @@ describe("createPrepareOpenModal", () => {
     });
   });
 
-  test("does not register or refresh after fatal WorkspaceService failure and clears pending", async () => {
+  test("validates after a fatal WorkspaceService failure, does not register, and clears pending", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
     let pendingActions = new Map<string, unknown>();
@@ -320,7 +320,8 @@ describe("createPrepareOpenModal", () => {
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    expect(deps.refreshAll).not.toHaveBeenCalled();
+    // A fatal open still validates before its error is shown (AC-14).
+    expect(deps.refreshAll).toHaveBeenCalled();
     expect(pendingActions.size).toBe(0);
     expect(setPendingActions).toHaveBeenCalledTimes(2);
     expect(setTimeoutSpy).not.toHaveBeenCalled();
@@ -345,7 +346,7 @@ describe("createPrepareOpenModal", () => {
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -410,7 +411,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoPath: "/repo",
       discoverClient,
       switchSession,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -444,7 +445,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -476,7 +477,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -508,7 +509,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -540,7 +541,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoPath: "/repo",
       discoverClient,
       switchSession,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -581,7 +582,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
 
     createHandleOpen(deps)({
@@ -837,7 +838,7 @@ describe("createHandleAddProject", () => {
     });
 
     const deps = makeDeps({
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handle = createHandleAddProject(deps);
 
@@ -887,7 +888,7 @@ describe("open lifecycle reconciliation", () => {
     const refreshAll = vi.fn().mockImplementation(async () => {
       phaseAtRefresh.push(tracker.entry()?.phase);
       entryAtRefresh.push(tracker.state.size > 0);
-      return null;
+      return [];
     });
     const deps = makeDeps({
       openModalRepoProject: "proj",
@@ -926,6 +927,200 @@ describe("open lifecycle reconciliation", () => {
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
   });
 
+  // AC-14
+  test("validates and refreshes after a FAILED open before any lifecycle UI is removed", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
+      new Error("worktree add failed"),
+    );
+    const tracker = trackLifecycle();
+    const atRefresh: Array<{
+      phase: LifecyclePhase | undefined;
+      entries: number;
+    }> = [];
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      atRefresh.push({
+        phase: tracker.entry()?.phase,
+        entries: tracker.state.size,
+      });
+      return [];
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      refreshAll,
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith("worktree add failed");
+    });
+
+    // The failure branch validates too: the row read `Validating Workspace…`
+    // and the entry was still there while registry/worktree/tmux state was
+    // re-read — only afterwards was the presentation removed.
+    expect(atRefresh).toEqual([{ phase: { _tag: "Validating" }, entries: 1 }]);
+    expect(tracker.state.size).toBe(0);
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
+  });
+
+  // AC-17
+  test("defers warnings until validation has completed and progress is gone", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
+      makeOpenResult({
+        warnings: [
+          {
+            _tag: "SetupFailed",
+            operation: "open",
+            name: "bootstrap",
+            optional: false,
+            error: { code: "setup_failed", message: "exit 1" },
+          },
+          {
+            _tag: "TmuxStartFailed",
+            operation: "open",
+            error: { code: "tmux_failed", message: "no server" },
+          },
+        ],
+      }),
+    );
+    const tracker = trackLifecycle();
+    const order: string[] = [];
+    const showActionError = vi.fn((message: string) => {
+      order.push(`error(lifecycle=${tracker.state.size}):${message}`);
+    });
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      order.push(`refresh(errors=${showActionError.mock.calls.length})`);
+      return [];
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      showActionError,
+      refreshAll,
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(showActionError).toHaveBeenCalled();
+    });
+
+    // Nothing was reported while progress was on screen: validation ran with
+    // zero errors shown, and both warnings arrived afterwards, in one timed
+    // action-error, with no lifecycle entry left.
+    expect(order).toEqual([
+      "refresh(errors=0)",
+      "error(lifecycle=0):Setup failed: bootstrap: exit 1\nFailed to create tmux session: no server",
+    ]);
+  });
+
+  // AC-32
+  test("each concurrent open consumes its OWN validation snapshot and clears only its own identity", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    // One shared lifecycle state, exactly as React's single `setLifecycle`
+    // would be shared by two in-flight handlers.
+    let shared: LifecycleState = new Map();
+    const setLifecycle = (
+      update: LifecycleState | ((prev: LifecycleState) => LifecycleState),
+    ) => {
+      shared = typeof update === "function" ? update(shared) : update;
+    };
+    const defer = () => {
+      let resolve: (value: unknown[] | null) => void = () => undefined;
+      const promise = new Promise<unknown[] | null>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    };
+    const validationA = defer();
+    const validationB = defer();
+    (tuiRuntime.runPromise as Mock)
+      .mockResolvedValueOnce(makeOpenResult({ mainRepoPath: "/repo-a" }))
+      .mockResolvedValueOnce(makeOpenResult({ mainRepoPath: "/repo-b" }));
+
+    const errorsA: string[] = [];
+    const errorsB: string[] = [];
+    const depsA = makeDeps({
+      openModalRepoProject: "a",
+      openModalRepoPath: "/repo-a",
+      setLifecycle,
+      showActionError: (message: string) => errorsA.push(message),
+      refreshAll: vi.fn(
+        () => validationA.promise,
+      ) as unknown as ModalActionDeps["refreshAll"],
+    });
+    const depsB = makeDeps({
+      openModalRepoProject: "b",
+      openModalRepoPath: "/repo-b",
+      setLifecycle,
+      showActionError: (message: string) => errorsB.push(message),
+      refreshAll: vi.fn(
+        () => validationB.promise,
+      ) as unknown as ModalActionDeps["refreshAll"],
+    });
+
+    const submit = {
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    };
+    createHandleOpen(depsA)(submit);
+    createHandleOpen(depsB)(submit);
+
+    // Same branch name, two repositories: two independent identities, both
+    // waiting on their own validation.
+    await vi.waitFor(() => {
+      expect(shared.get(lifecycleKey("/repo-a", "feat"))?.phase).toEqual({
+        _tag: "Validating",
+      });
+      expect(shared.get(lifecycleKey("/repo-b", "feat"))?.phase).toEqual({
+        _tag: "Validating",
+      });
+    });
+
+    // A's own validation observed nothing (a failed refresh): A warns and A
+    // alone comes down — B's entry and phase are untouched.
+    validationA.resolve(null);
+    await vi.waitFor(() => {
+      expect(errorsA).toEqual([
+        "Validation after open failed — showing the last known Workspace state",
+      ]);
+    });
+    expect(shared.has(lifecycleKey("/repo-a", "feat"))).toBe(false);
+    expect(shared.get(lifecycleKey("/repo-b", "feat"))?.phase).toEqual({
+      _tag: "Validating",
+    });
+
+    // B's own validation observed a snapshot, so B reports nothing at all.
+    validationB.resolve([]);
+    await vi.waitFor(() => {
+      expect(shared.size).toBe(0);
+    });
+    expect(errorsB).toEqual([]);
+  });
+
   // AC-13
   test("switches the tmux client only after validation and lifecycle removal", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
@@ -934,7 +1129,7 @@ describe("open lifecycle reconciliation", () => {
     const order: string[] = [];
     const refreshAll = vi.fn().mockImplementation(async () => {
       order.push("refresh");
-      return null;
+      return [];
     });
     const discoverClient = vi.fn().mockImplementation(async () => {
       order.push(`discover(lifecycle=${tracker.state.size})`);

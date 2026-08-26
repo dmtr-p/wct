@@ -12,6 +12,7 @@ import {
   registryItems,
   renderApp,
   resetHarnessFixtures,
+  selectedLine,
   sendKeys,
   tick,
   worktreeFixtures,
@@ -88,6 +89,73 @@ describe("TUI open lifecycle", () => {
     await tick(3);
     expect(app.lines().join("\n")).toContain("Creating worktree…");
     expect(app.lines().join("\n")).not.toContain("Preparing Workspace…");
+
+    app.unmount();
+  });
+
+  // AC-15
+  test("removes the Pending Workspace when validation finds no managed worktree", async () => {
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />);
+    await tick(6);
+
+    await openBranchFromModal(app.stdin, "feature/new");
+    await tick(6);
+    expect(app.lines().join("\n")).toContain("Preparing Workspace…");
+
+    // The open fails before git creates anything, so the refresh that
+    // validation runs finds the repository exactly as it was.
+    const call = lastWorkspaceCall("open");
+    call.reject(new Error("worktree add failed"));
+    await tick(12);
+
+    const text = app.lines().join("\n");
+    expect(text).not.toContain("feature/new");
+    expect(text).not.toContain("Preparing Workspace…");
+    expect(text).not.toContain("Validating Workspace…");
+    // The fatal error arrives through the ordinary timed action-error display,
+    // only after validation — never as a lifecycle row.
+    expect(text).toContain("worktree add failed");
+    expect(text).toContain("main");
+
+    app.unmount();
+  });
+
+  // AC-16
+  test("replaces the Pending Workspace with the discovered Workspace when a later phase failed", async () => {
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />);
+    await tick(6);
+
+    await openBranchFromModal(app.stdin, "feature/new");
+    await tick(6);
+
+    const call = lastWorkspaceCall("open");
+    emitWorkspacePhase(call, { _tag: "CreatingWorktree" });
+    await tick(3);
+    expect(app.lines().join("\n")).toContain("Creating worktree…");
+
+    // The worktree WAS created; a later phase then failed fatally.
+    worktreeFixtures.byRepoPath.set(repoPath, [
+      makeWorktree(repoPath, "main"),
+      makeWorktree(repoPath, "feature/new"),
+    ]);
+    call.reject(new Error("setup command failed"));
+    await tick(12);
+
+    const text = app.lines().join("\n");
+    // The Workspace that really exists on disk stays in the tree, with no
+    // stale phase text left behind, and the failure is reported afterwards.
+    expect(text).toContain("feature/new");
+    expect(text).not.toContain("Creating worktree…");
+    expect(text).not.toContain("Validating Workspace…");
+    expect(text).toContain("setup command failed");
+
+    // It is the DISCOVERED Workspace, not the inert Pending Workspace: the
+    // cursor can now reach it (repo row → main → feature/new).
+    await sendKeys(app.stdin, "\x1b[B");
+    await sendKeys(app.stdin, "\x1b[B");
+    expect(selectedLine(app.lines())).toContain("feature/new");
 
     app.unmount();
   });

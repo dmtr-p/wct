@@ -20,6 +20,7 @@ import {
   type LifecyclePhase,
   type LifecycleState,
   lifecycleKey,
+  lifecycleValidationWarning,
 } from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
@@ -206,6 +207,10 @@ export function createHandleOpen(deps: ModalActionDeps) {
     });
 
     void (async () => {
+      // Every outcome — a fatal failure, a partial build with warnings, a
+      // clean open — is COLLECTED here and reported only once validation has
+      // finished (AC-17). Nothing about an outcome is ever painted as a
+      // lifecycle row.
       let warningMessage: string | undefined;
 
       const appendWarning = (message: string) => {
@@ -215,7 +220,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
       };
 
       try {
-        let result: WorkspaceOpenResult;
+        let result: WorkspaceOpenResult | undefined;
         try {
           result = await tuiRuntime.runPromise(
             WorkspaceService.use((service) =>
@@ -231,34 +236,57 @@ export function createHandleOpen(deps: ModalActionDeps) {
             ),
           );
         } catch (error) {
-          deps.showActionError(toWctError(error).message);
-          return;
+          // A fatal open does NOT skip validation: git may already have created
+          // the worktree before the failing phase, so the tree still has to be
+          // told the truth about what exists on disk before this error is shown
+          // (AC-14).
+          appendWarning(toWctError(error).message);
         }
 
-        if (result.warnings.length > 0) {
+        if (result && result.warnings.length > 0) {
           appendWarning(result.warnings.map(formatWorkspaceWarning).join("\n"));
         }
 
-        // Reconciliation, in this order and no other: the row says
-        // `Validating Workspace…` while registry/worktree/tmux state is
-        // re-read, and ONLY once that settles is the lifecycle presentation
+        // Reconciliation, in this order and no other and on BOTH branches: the
+        // row says `Validating Workspace…` while registry/worktree/tmux state
+        // is re-read, and ONLY once that settles is the lifecycle presentation
         // taken down. Removing it earlier would blink the Pending Workspace out
         // of the tree before the real worktree appeared in `repos`.
         lifecycle.setPhase({ _tag: "Validating" });
+        // Reconcile against the snapshot THIS closure's own validation
+        // observed — never the render-time `filteredRepos` capture and never a
+        // shared ref, which a concurrently finishing operation would have
+        // overwritten while this one awaited (AC-32). A `null` snapshot means
+        // validation could not observe anything: the previous tree stays on
+        // screen, the user is warned, and the lifecycle UI still comes down.
+        // The null check lives INSIDE the try so a throwing refresh is
+        // reported once, by its own message, rather than twice.
         try {
-          await deps.refreshAll();
+          const snapshot = await deps.refreshAll();
+          if (snapshot === null) {
+            appendWarning(lifecycleValidationWarning("open"));
+          }
         } catch (error) {
           appendWarning(
             `Refresh failed after open: ${toWctError(error).message}`,
           );
         }
+        // Ending THIS identity's entry is the whole reconciliation. The row
+        // model derives a Pending Workspace from (an `open` entry ∧ its branch
+        // absent from `repos`), and `refreshAll` has already committed the
+        // snapshot above, so in the SAME React commit: an identity that
+        // validation found no managed worktree for loses its Pending Workspace
+        // entirely (AC-15), while one whose worktree WAS created — a later copy,
+        // setup or tmux phase having failed — is rendered from `repos` as the
+        // discovered Workspace and simply stays there (AC-16). `end` is keyed,
+        // so another identity's concurrent lifecycle is untouched.
         lifecycle.end();
 
         // The automatic tmux client switch happens last, after validation and
         // after the progress row is gone: switching detaches the terminal this
         // TUI is drawn in, and a switch failure must surface as a plain action
         // error rather than resurrecting a progress row.
-        if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
+        if (result && !opts.noAttach && workspaceOpenStartedTmux(result)) {
           const liveClient = await deps.discoverClient();
           if (liveClient.type === "single") {
             const switched = await deps.switchSession(

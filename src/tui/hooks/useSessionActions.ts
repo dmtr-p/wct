@@ -46,6 +46,13 @@ export interface SessionActionDeps {
 
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
+  /**
+   * The LIVE mode, readable from async continuations. `mode` above is a
+   * render-time capture and is stale by the time a lifecycle settles, so an
+   * operation that wants to present something on completion has to ask this
+   * whether the user is still where the operation left them.
+   */
+  modeRef: MutableRefObject<Mode>;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
 
   showActionError: (msg: string) => void;
@@ -396,7 +403,8 @@ export function createExecuteClose(deps: SessionActionDeps) {
 
     deps.restoreConfirmationViewport();
     deps.setSelectedIndex(deps.confirmCloseReturnSelectedIndexRef.current);
-    deps.setMode(deps.confirmCloseReturnModeRef.current);
+    const restoredMode = deps.confirmCloseReturnModeRef.current;
+    deps.setMode(restoredMode);
 
     await runLifecycleOperation<WorkspaceCloseResult>({
       claims: deps.lifecycleClaims,
@@ -428,6 +436,14 @@ export function createExecuteClose(deps: SessionActionDeps) {
       // starts a fresh lifecycle rather than inheriting a stale phase or lock.
       afterCleanup: async (result) => {
         if (result.status !== "blocked_by_changes") return undefined;
+        // Validation takes as long as a registry refresh takes, and the user is
+        // free to move on while it runs — into search, a modal, another
+        // confirmation. The question is only ASKED if the tree is still in the
+        // mode this close restored; otherwise it is merely reported, so the
+        // refusal is never silent and never discards what the user is typing.
+        if (deps.modeRef.current !== restoredMode) {
+          return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
+        }
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,

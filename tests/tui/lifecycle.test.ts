@@ -113,7 +113,10 @@ describe("LifecycleProgressRow", () => {
 });
 
 describe("forced expansion is presentation-only", () => {
-  // AC-33
+  // AC-33. This is the row-model half of the criterion: the ORCHESTRATION half
+  // — that no lifecycle writes the preference, across a registry poll landing
+  // mid-operation — is asserted against the real App in
+  // tests/tui/app-lifecycle-close.test.tsx.
   test("lifecycle expansion never touches the stored expandedWorktreeKeys", () => {
     const repoPath = "/repos/alpha";
     const branch = "feature/x";

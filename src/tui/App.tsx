@@ -58,7 +58,7 @@ import {
   treeItemId,
   treeItemParentId,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
+import { Mode, type PRInfo, pendingKey } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -98,9 +98,20 @@ export function App() {
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
+  // The live `mode`, for async continuations that must not act on a stale
+  // render-time capture (see `SessionActionDeps.modeRef`).
+  const modeRef = useRef<Mode>(mode);
   const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
     new Set(),
   );
+  // Workspace Identities a just-finished `open` discovered on disk. A
+  // PRESENTATION-ONLY expansion override (AC-12, AC-16): the freshly opened
+  // Workspace is left expanded when its lifecycle row comes down, without its
+  // key ever entering the stored preference above (AC-33). Dropped as soon as
+  // the user collapses the row, and pruned by the stored preference's own rule.
+  const [discoveredWorktreeKeys, setDiscoveredWorktreeKeys] = useState<
+    Set<string>
+  >(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddProjectButtonHovered, setIsAddProjectButtonHovered] =
     useState(false);
@@ -125,11 +136,6 @@ export function App() {
   // Set for exactly ONE commit by the reveal effect, cleared by a trailing
   // effect below: the reveal owns the viewport for that commit.
   const lifecycleRevealPendingRef = useRef(false);
-  // TRANSITIONAL: `open` still records a coarse pending action for its own
-  // bookkeeping (`close` no longer does — its progress and its teardown are
-  // owned by the lifecycle entry). Nothing renders it any more, so this state
-  // and its one remaining hook dep disappear with the last write.
-  const [, setPendingActions] = useState<Map<string, PendingAction>>(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -170,10 +176,27 @@ export function App() {
   }, [repos, searchQuery]);
 
   useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
     setExpandedWorktreeKeys((previous) =>
       reconcileExpandedWorktreeKeys(previous, repos),
     );
+    setDiscoveredWorktreeKeys((previous) =>
+      reconcileExpandedWorktreeKeys(previous, repos),
+    );
   }, [repos]);
+
+  // What the tree PRESENTS as expanded: the stored preference plus the
+  // presentation-only overrides. Only `expandWorktree`/`collapseWorktree` write
+  // the stored set, so no lifecycle can leak into a durable user preference.
+  const presentedWorktreeKeys = useMemo(() => {
+    if (discoveredWorktreeKeys.size === 0) return expandedWorktreeKeys;
+    const next = new Set(expandedWorktreeKeys);
+    for (const key of discoveredWorktreeKeys) next.add(key);
+    return next;
+  }, [expandedWorktreeKeys, discoveredWorktreeKeys]);
 
   useEffect(() => {
     if (
@@ -194,13 +217,20 @@ export function App() {
     () =>
       buildTreeItems({
         repos: filteredRepos,
-        expandedWorktreeKeys,
+        expandedWorktreeKeys: presentedWorktreeKeys,
         lifecycle,
         prData,
         panes,
         jumpToPane,
       }),
-    [filteredRepos, expandedWorktreeKeys, lifecycle, prData, panes, jumpToPane],
+    [
+      filteredRepos,
+      presentedWorktreeKeys,
+      lifecycle,
+      prData,
+      panes,
+      jumpToPane,
+    ],
   );
 
   const statusBarProps = resolveStatusBarProps({
@@ -228,7 +258,7 @@ export function App() {
   const canCollapse = Boolean(
     selectedWorktreeRepo &&
       selectedWorktreeData &&
-      expandedWorktreeKeys.has(
+      presentedWorktreeKeys.has(
         pendingKey(selectedWorktreeRepo.project, selectedWorktreeData.branch),
       ),
   );
@@ -244,11 +274,11 @@ export function App() {
       buildTreeRows({
         items: treeItems,
         repos: filteredRepos,
-        expandedWorktreeKeys,
+        expandedWorktreeKeys: presentedWorktreeKeys,
         lifecycle,
         maxWidth: termCols,
       }),
-    [treeItems, filteredRepos, expandedWorktreeKeys, lifecycle, termCols],
+    [treeItems, filteredRepos, presentedWorktreeKeys, lifecycle, termCols],
   );
 
   const confirmationMode = isConfirmMode(mode) ? mode : null;
@@ -626,6 +656,23 @@ export function App() {
       next.delete(worktreeKey);
       return next;
     });
+    // A collapse is the user overruling the presentation override too,
+    // otherwise a freshly opened Workspace could never be collapsed.
+    setDiscoveredWorktreeKeys((previous) => {
+      if (!previous.has(worktreeKey)) return previous;
+      const next = new Set(previous);
+      next.delete(worktreeKey);
+      return next;
+    });
+  }, []);
+
+  const markWorkspaceDiscovered = useCallback((worktreeKey: string) => {
+    setDiscoveredWorktreeKeys((previous) => {
+      if (previous.has(worktreeKey)) return previous;
+      const next = new Set(previous);
+      next.add(worktreeKey);
+      return next;
+    });
   }, []);
 
   const openModalPRList = useMemo(() => {
@@ -655,6 +702,7 @@ export function App() {
     lifecycleClaims,
     setSelectedIndex,
     setMode,
+    modeRef,
     setLifecycle,
     showActionError,
     clearActionError,
@@ -682,11 +730,11 @@ export function App() {
     setLifecycle,
     setMode,
     setSelectedIndex,
-    setPendingActions,
     setOpenModalBase,
     setOpenModalProfiles,
     setOpenModalRepoProject,
     setOpenModalRepoPath,
+    markWorkspaceDiscovered,
     showActionError,
     clearActionError,
     switchSession,
@@ -904,7 +952,7 @@ export function App() {
         const doubleClickAction = resolveTreeDoubleClickAction(
           target,
           filteredRepos,
-          expandedWorktreeKeys,
+          presentedWorktreeKeys,
         );
         switch (doubleClickAction.type) {
           case "expand-worktree":
@@ -1050,7 +1098,7 @@ export function App() {
             lifecycle={lifecycle}
             prData={prData}
             panes={panes}
-            expandedWorktreeKeys={expandedWorktreeKeys}
+            expandedWorktreeKeys={presentedWorktreeKeys}
             maxWidth={termCols}
             refreshingProjects={refreshingProjects}
             errors={githubErrors}

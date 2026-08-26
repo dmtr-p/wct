@@ -26,6 +26,7 @@ import type {
   WorkspacePhase,
   WorkspaceReporter,
 } from "../services/workspace-service";
+import type { RepoInfo } from "./hooks/useRegistry";
 import { truncateBranch } from "./utils/truncate";
 
 /**
@@ -304,9 +305,11 @@ export interface LifecycleRunOptions<T> {
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   /**
    * Resolves the snapshot THIS validation observed, or `null` when the refresh
-   * could not observe anything (previous tree kept).
+   * could not observe anything (previous tree kept). The `null` arm is
+   * load-bearing — it is what makes the run warn instead of silently trusting a
+   * stale tree — so the type states it rather than leaving it to convention.
    */
-  refreshAll: () => Promise<unknown>;
+  refreshAll: () => Promise<readonly RepoInfo[] | null>;
   showActionError: (message: string) => void;
   /** The Workspace Identity and starting phase of this operation. */
   entry: LifecycleEntry;

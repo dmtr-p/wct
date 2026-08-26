@@ -66,6 +66,7 @@ function makeDeps(
     lifecycleClaims: createLifecycleClaims(),
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
+    modeRef: { current: Mode.Navigate },
     setLifecycle: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),

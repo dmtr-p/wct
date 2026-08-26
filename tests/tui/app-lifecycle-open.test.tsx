@@ -156,6 +156,60 @@ describe("TUI open lifecycle", () => {
     await sendKeys(app.stdin, "\x1b[B");
     await sendKeys(app.stdin, "\x1b[B");
     expect(selectedLine(app.lines())).toContain("feature/new");
+    // And it stays EXPANDED, exactly as the lifecycle row left it.
+    expect(selectedLine(app.lines())).toContain("▼");
+
+    app.unmount();
+  });
+
+  // AC-12
+  test("leaves the discovered Workspace expanded after a successful open", async () => {
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />);
+    await tick(6);
+
+    // `main` is collapsed, so expansion is not simply on for every row.
+    expect(app.lines().find((line) => line.includes("main"))).not.toContain(
+      "▼",
+    );
+
+    await openBranchFromModal(app.stdin, "feature/new");
+    await tick(6);
+    expect(app.lines().join("\n")).toContain("Preparing Workspace…");
+
+    // git has the worktree by the time validation re-reads the repository.
+    const call = lastWorkspaceCall("open");
+    worktreeFixtures.byRepoPath.set(repoPath, [
+      makeWorktree(repoPath, "main"),
+      makeWorktree(repoPath, "feature/new"),
+    ]);
+    call.resolve({
+      operation: "open",
+      worktreePath: join(repoPath, "feature-new"),
+      mainRepoPath: repoPath,
+      branch: "feature/new",
+      sessionName: "feature-new",
+      projectName: "alpha",
+      created: true,
+      env: {},
+      warnings: [],
+      attempts: {
+        worktree: { attempted: true, ok: true, value: {} },
+        copy: { attempted: false, reason: "not_configured" },
+        setup: { attempted: false, reason: "not_configured" },
+        tmux: { attempted: false, reason: "not_configured" },
+      },
+    });
+    await tick(14);
+
+    // No lifecycle row is left, and the Workspace validation discovered is
+    // LEFT EXPANDED — while `main`, which no operation touched, is not.
+    const frame = app.lines();
+    const text = frame.join("\n");
+    expect(text).not.toContain("Preparing Workspace…");
+    expect(text).not.toContain("Validating Workspace…");
+    expect(frame.find((line) => line.includes("feature/new"))).toContain("▼");
+    expect(frame.find((line) => line.includes("main"))).not.toContain("▼");
 
     app.unmount();
   });

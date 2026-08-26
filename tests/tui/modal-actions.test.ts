@@ -84,6 +84,30 @@ function makeOpenResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The registry snapshot a validation observes when `/repo` really does have a
+ * `feat` worktree — i.e. what `refreshAll` resolves after a successful open.
+ */
+function snapshotWithFeat(): ModalActionDeps["filteredRepos"] {
+  return [
+    {
+      id: "r1",
+      project: "proj",
+      repoPath: "/repo",
+      profileNames: [],
+      worktrees: [
+        {
+          branch: "feat",
+          path: "/repo/feat",
+          isMainWorktree: false,
+          changedFiles: 0,
+          sync: null,
+        },
+      ],
+    },
+  ];
+}
+
 function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
   return {
     treeItems: [],
@@ -97,9 +121,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setLifecycle: vi.fn(),
     setMode: vi.fn(),
     setSelectedIndex: vi.fn(),
-    setPendingActions: vi.fn((fn) => {
-      if (typeof fn === "function") fn(new Map());
-    }),
+    markWorkspaceDiscovered: vi.fn(),
     setOpenModalBase: vi.fn(),
     setOpenModalProfiles: vi.fn(),
     setOpenModalRepoProject: vi.fn(),
@@ -192,24 +214,17 @@ describe("createPrepareOpenModal", () => {
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev"]);
   });
 
-  test("opens a branch through WorkspaceService, refreshes, and clears pending without registering", async () => {
+  test("opens a branch through WorkspaceService, refreshes, and leaves the discovered Workspace expanded without registering", async () => {
     const { tuiRuntime, runTuiSilentPromise } = await import(
       "../../src/tui/runtime"
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const openResult = makeOpenResult();
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(openResult);
-    const refreshAll = vi.fn().mockResolvedValue([]);
+    const refreshAll = vi.fn().mockResolvedValue(snapshotWithFeat());
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      setPendingActions,
       refreshAll,
     });
 
@@ -223,7 +238,6 @@ describe("createPrepareOpenModal", () => {
     });
 
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    expect(pendingActions.has(pendingKey("proj", "feat"))).toBe(true);
 
     await vi.waitFor(() => {
       expect(workspaceOpen).toHaveBeenCalledWith({
@@ -241,8 +255,11 @@ describe("createPrepareOpenModal", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
     expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
+    // The Workspace validation found on disk is left EXPANDED (AC-12), through
+    // the presentation-only override rather than the stored preference (AC-33).
+    expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
+      pendingKey("proj", "feat"),
+    );
   });
 
   test("passes PR opens through WorkspaceService without branch pre-resolution", async () => {
@@ -279,15 +296,9 @@ describe("createPrepareOpenModal", () => {
     });
   });
 
-  test("validates after a fatal WorkspaceService failure, does not register, and clears pending", async () => {
+  test("validates after a fatal WorkspaceService failure, does not register, and records no discovered Workspace", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
       new Error("open failed"),
@@ -295,7 +306,6 @@ describe("createPrepareOpenModal", () => {
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      setPendingActions,
     });
 
     createHandleOpen(deps)({
@@ -320,10 +330,10 @@ describe("createPrepareOpenModal", () => {
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    // A fatal open still validates before its error is shown (AC-14).
+    // A fatal open still validates before its error is shown (AC-14), and a
+    // validation that found no worktree records no expansion override (AC-15).
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
+    expect(deps.markWorkspaceDiscovered).not.toHaveBeenCalled();
     expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 
@@ -717,9 +727,8 @@ describe("createHandleUpSubmit", () => {
     expect(deps.clearActionError).toHaveBeenCalled();
     expect(deps.setSelectedIndex).toHaveBeenCalledWith(3);
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    // The modal is only an option sheet: no coarse pending suffix is recorded
-    // any more, and the identity the lifecycle is keyed by comes from the mode.
-    expect(deps.setPendingActions).not.toHaveBeenCalled();
+    // The modal is only an option sheet: the identity the lifecycle is keyed
+    // by comes from the mode, and nothing is recorded here.
     expect(startWorkspace).toHaveBeenCalledWith({
       worktreePath: "/repo/feat",
       repoPath: "/repo",
@@ -828,7 +837,7 @@ describe("open lifecycle reconciliation", () => {
     const refreshAll = vi.fn().mockImplementation(async () => {
       phaseAtRefresh.push(tracker.entry()?.phase);
       entryAtRefresh.push(tracker.state.size > 0);
-      return [];
+      return snapshotWithFeat();
     });
     const deps = makeDeps({
       openModalRepoProject: "proj",
@@ -862,9 +871,90 @@ describe("open lifecycle reconciliation", () => {
     expect(entryAtRefresh).toEqual([true]);
     expect(tracker.phases).toContainEqual({ _tag: "Validating" });
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
-    // Expansion is presentation-only: nothing writes the stored preference,
-    // so the discovered Workspace is simply left as the lifecycle left it.
+    // The discovered Workspace is LEFT EXPANDED (AC-12) — and by the
+    // presentation-only override, not the stored preference, which these deps
+    // cannot even reach (AC-33).
+    expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
+      pendingKey("proj", "feat"),
+    );
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
+  });
+
+  // AC-15, AC-16
+  test("records the expansion override only for an identity validation found on disk", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+
+    // --- The worktree WAS created, a later phase then failed fatally: the
+    // discovered Workspace stays in the tree, expanded (AC-16).
+    (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
+      new Error("setup command failed"),
+    );
+    const partial = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(snapshotWithFeat()),
+    });
+    createHandleOpen(partial)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(partial.showActionError).toHaveBeenCalledWith(
+        "setup command failed",
+      );
+    });
+    expect(partial.markWorkspaceDiscovered).toHaveBeenCalledWith(
+      pendingKey("proj", "feat"),
+    );
+
+    // --- Another repository's worktree of the same NAME is not this identity:
+    // matching is on the main repository path (AC-27).
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const otherRepo = snapshotWithFeat().map((repo) => ({
+      ...repo,
+      repoPath: "/other-repo",
+    }));
+    const elsewhere = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(otherRepo),
+    });
+    createHandleOpen(elsewhere)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(elsewhere.refreshAll).toHaveBeenCalled();
+    });
+    expect(elsewhere.markWorkspaceDiscovered).not.toHaveBeenCalled();
+
+    // --- A validation that could observe nothing at all records nothing.
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const blind = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(null),
+    });
+    createHandleOpen(blind)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(blind.showActionError).toHaveBeenCalled();
+    });
+    expect(blind.markWorkspaceDiscovered).not.toHaveBeenCalled();
   });
 
   // AC-14

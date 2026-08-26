@@ -35,6 +35,7 @@ import {
   selectedLine,
   sendKeys,
   tick,
+  triggerRefresh,
   worktreeFixtures,
 } from "./app-harness";
 
@@ -86,6 +87,7 @@ function makeDeps(overrides: Partial<SessionActionDeps> = {}) {
     lifecycleClaims: createLifecycleClaims(),
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
+    modeRef: { current: Mode.Navigate },
     setLifecycle: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
@@ -281,6 +283,51 @@ describe("TUI close lifecycle", () => {
       expect(second.output()).not.toContain("Killing tmux session…");
       second.unmount();
     });
+
+    // AC-33
+    test("presents forced expansion across a mid-operation poll and writes no stored preference", async () => {
+      const { App } = await import("../../src/tui/App");
+      const app = await renderApp(<App />);
+      await tick(6);
+
+      const workspaceLine = () =>
+        app.lines().find((line) => line.includes("feature/x")) ?? "";
+
+      // repo row → main → feature/x. The user has expanded nothing, so no
+      // Workspace is presented as expanded.
+      await sendKeys(app.stdin, ARROW_DOWN);
+      await sendKeys(app.stdin, ARROW_DOWN);
+      expect(selectedLine(app.lines())).toContain("feature/x");
+      expect(workspaceLine()).not.toContain("▼");
+
+      await sendKeys(app.stdin, "c");
+      await sendKeys(app.stdin, ENTER);
+      await tick(8);
+      const call = lastWorkspaceCall("close");
+      emitWorkspacePhase(call, { _tag: "RemovingWorktree" });
+      await tick(3);
+      expect(app.lines().join("\n")).toContain("Removing worktree…");
+      // Mid-lifecycle the Workspace IS presented as expanded…
+      expect(workspaceLine()).toContain("▼");
+
+      // …and a registry poll landing mid-operation — which reconciles (prunes)
+      // the stored preference on every `repos` change — cannot disturb it,
+      // precisely because the expansion was never stored.
+      await triggerRefresh();
+      await tick(6);
+      expect(workspaceLine()).toContain("▼");
+      expect(app.lines().join("\n")).toContain("Removing worktree…");
+
+      // The close is refused, so the Workspace survives validation — and with
+      // the lifecycle entry gone it is back to the user's own preference:
+      // collapsed. Nothing was written, so there is nothing to restore.
+      call.reject(new Error("worktree busy"));
+      await tick(14);
+      expect(workspaceLine()).toContain("feature/x");
+      expect(workspaceLine()).not.toContain("▼");
+      expect(app.lines().join("\n")).not.toContain("Removing worktree…");
+      app.unmount();
+    });
   });
 
   // AC-24
@@ -341,6 +388,9 @@ describe("TUI close lifecycle", () => {
     const deps = makeDeps({ setLifecycle: tracker.setLifecycle });
     const run = await startClose(deps);
     expect(tracker.state.size).toBe(1);
+    // The lifecycle state the tree WOULD be rendering mid-flight, captured
+    // before teardown so the before/after comparison below has two real sides.
+    const midFlight: LifecycleState = new Map(tracker.state);
 
     run.call.reject(new Error("worktree has untracked files"));
     await run.settled;
@@ -349,20 +399,22 @@ describe("TUI close lifecycle", () => {
     expect(tracker.state.size).toBe(0);
     expect(tracker.labels().at(-1)).toBeNull();
 
-    // Expansion was a presentation override, never a stored write: with the
-    // entry gone, effective expansion is exactly the user's own preference —
-    // and nothing in these deps can even write that preference.
+    // Expansion was a presentation override, never a stored write: mid-flight
+    // the Workspace was presented as expanded no matter what the user's own
+    // preference said, and with the entry gone the preference alone decides —
+    // while nothing in these deps could ever write that preference.
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
     for (const stored of [new Set<string>(), new Set([WORKTREE_KEY])]) {
-      expect(
+      const forThisPreference = (lifecycle: LifecycleState) =>
         isWorktreeEffectivelyExpanded({
           expandedWorktreeKeys: stored,
-          lifecycle: tracker.state,
+          lifecycle,
           project: PROJECT,
           repoPath: REPO_PATH,
           branch: BRANCH,
-        }),
-      ).toBe(stored.has(WORKTREE_KEY));
+        });
+      expect(forThisPreference(midFlight)).toBe(true);
+      expect(forThisPreference(tracker.state)).toBe(stored.has(WORKTREE_KEY));
     }
 
     // The outcome is reported through the existing timed error display, and
@@ -427,7 +479,6 @@ describe("TUI close lifecycle", () => {
     const { handleConfirmCloseInput } = await import(
       "../../src/tui/input/confirm-close"
     );
-    const cancelled = trackLifecycle();
     const cancelSetMode = vi.fn();
     const executeClose = vi.fn();
     handleConfirmCloseInput(
@@ -451,6 +502,39 @@ describe("TUI close lifecycle", () => {
     );
     expect(cancelSetMode).toHaveBeenCalledWith(Mode.Navigate);
     expect(executeClose).not.toHaveBeenCalled();
-    expect(cancelled.state.size).toBe(0);
+  });
+
+  // AC-26
+  test("does not present the force confirmation over whatever the user moved on to", async () => {
+    const tracker = trackLifecycle();
+    const modeRef = { current: Mode.Navigate };
+    const setMode = vi.fn((next: Mode) => {
+      modeRef.current = next;
+    });
+    const deps = makeDeps({
+      setLifecycle: tracker.setLifecycle,
+      setMode,
+      modeRef,
+      // Validation is slow, and the user starts a search while it runs.
+      refreshAll: vi.fn(async () => {
+        modeRef.current = Mode.Search;
+        return [];
+      }),
+    });
+
+    const run = await startClose(deps);
+    run.call.resolve(blockedResult());
+    await run.settled;
+
+    // The question is not asked — the search is left alone — but the refusal is
+    // still reported, so it is never silent.
+    expect(setMode).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "ConfirmCloseForce" }),
+    );
+    expect(modeRef.current).toEqual(Mode.Search);
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      `Worktree '${BRANCH}' has uncommitted changes — press c to close it with force`,
+    );
+    expect(tracker.state.size).toBe(0);
   });
 });

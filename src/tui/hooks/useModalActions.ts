@@ -23,7 +23,7 @@ import {
   resolveSelectedWorktreeIndex,
   resolveTreeReturnMode,
 } from "../tree-helpers";
-import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
+import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { StartWorkspaceTarget } from "./useSessionActions";
 import type { TmuxClientDiscovery } from "./useTmux";
@@ -39,6 +39,30 @@ function formatWorkspaceWarning(warning: WorkspaceWarning): string {
     case "TmuxStartFailed":
       return `Failed to create tmux session: ${warning.error.message}`;
   }
+}
+
+/**
+ * The Workspace Identity key an `open` validation actually found on disk, or
+ * `undefined` when no managed worktree for this identity exists. Matched on the
+ * main repository PATH whenever the modal knew it — two repositories can share
+ * a project display name — and on the display name only as a fallback.
+ */
+function discoveredWorkspaceKey(
+  snapshot: readonly RepoInfo[],
+  repoPath: string,
+  project: string,
+  branch: string,
+): string | undefined {
+  for (const repo of snapshot) {
+    const isSameRepo = repoPath
+      ? repo.repoPath === repoPath
+      : repo.project === project;
+    if (!isSameRepo) continue;
+    const hasWorktree = repo.worktrees.some((wt) => wt.branch === branch);
+    if (!hasWorktree) continue;
+    return pendingKey(repo.project, branch);
+  }
+  return undefined;
 }
 
 export interface ModalActionDeps {
@@ -60,11 +84,18 @@ export interface ModalActionDeps {
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   setMode: (m: Mode) => void;
   setSelectedIndex: Dispatch<SetStateAction<number>>;
-  setPendingActions: Dispatch<SetStateAction<Map<string, PendingAction>>>;
   setOpenModalBase: (v: string | undefined) => void;
   setOpenModalProfiles: (v: string[]) => void;
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
+
+  /**
+   * Records a Workspace Identity as freshly discovered by an `open`, which
+   * PRESENTS it as expanded (AC-12, AC-16) without ever writing the stored
+   * `expandedWorktreeKeys` preference (AC-33) — the same presentation-only
+   * mechanism an active lifecycle already uses.
+   */
+  markWorkspaceDiscovered: (worktreeKey: string) => void;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -123,15 +154,13 @@ export function createHandleOpen(deps: ModalActionDeps) {
     const requestedBranch = opts.pr ? undefined : opts.branch;
     const project = deps.openModalRepoProject || "unknown";
     const repoPath = deps.openModalRepoPath;
-    const key = pendingKey(project, opts.branch);
 
     // The Workspace does not exist yet, so this entry IS its representation in
     // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
     // row, both inert, both visible before git knows about the worktree.
     //
     // The claim comes FIRST, before any other bookkeeping: a refused open must
-    // leave the running operation's state — including the pending-action entry
-    // it shares this display key with — exactly as it found it (AC-28).
+    // leave the running operation's state exactly as it found it (AC-28).
     const lifecycle = beginLifecycle({
       claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
@@ -149,22 +178,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
     // stop here — running `open` anyway would race the active operation and
     // its teardown would take down the active operation's presentation.
     if (!lifecycle) return;
-
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(key, {
-        type: "opening",
-        branch: opts.branch,
-        project,
-      }),
-    );
-
-    const clearPending = () => {
-      deps.setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
-    };
 
     void (async () => {
       // Every outcome — a fatal failure, a partial build with warnings, a
@@ -225,6 +238,19 @@ export function createHandleOpen(deps: ModalActionDeps) {
           const snapshot = await deps.refreshAll();
           if (snapshot === null) {
             appendWarning(lifecycleValidationWarning("open"));
+          } else {
+            // A Workspace validation DID find on disk is left expanded once the
+            // lifecycle presentation comes down (AC-12, AC-16). The override is
+            // presentation-only, so the stored expansion preference is still
+            // never written by lifecycle code (AC-33); an identity validation
+            // found nothing for (AC-15) records nothing and simply disappears.
+            const discovered = discoveredWorkspaceKey(
+              snapshot,
+              repoPath,
+              project,
+              opts.branch,
+            );
+            if (discovered) deps.markWorkspaceDiscovered(discovered);
           }
         } catch (error) {
           appendWarning(
@@ -278,7 +304,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
         }
       } finally {
         lifecycle.end();
-        clearPending();
       }
     })();
   };

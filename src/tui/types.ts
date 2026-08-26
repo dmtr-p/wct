@@ -173,17 +173,6 @@ type DetailItem<
       meta: TMeta;
     };
 
-/**
- * Pending action for optimistic UI. `up`/`down` no longer record one — their
- * progress is told by the Lifecycle Progress Row — so only the two operations
- * slices 04–05 still own remain.
- */
-export interface PendingAction {
-  type: "opening" | "closing";
-  branch: string;
-  project: string;
-}
-
 /** GitHub PR info from `gh` CLI */
 export interface PRInfo {
   number: number;
@@ -195,7 +184,7 @@ export interface PRInfo {
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
 
-/** Format a pending action key */
+/** Format a Workspace Identity display key: `<project>/<branch>`. */
 export function pendingKey(project: string, branch: string): string {
   return `${project}/${branch}`;
 }

@@ -184,7 +184,7 @@ describe("lifecycle identity", () => {
     await runLifecycleOperation({
       claims,
       setLifecycle: tracker.setLifecycle,
-      refreshAll: () => Promise.resolve({}),
+      refreshAll: () => Promise.resolve([]),
       showActionError,
       entry: entryFor("/repos/one", "alpha", "feature/x", "down"),
       run,

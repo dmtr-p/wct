@@ -42,6 +42,8 @@ describe("ConfirmModal", () => {
             "feature",
             "/tmp/myapp-feature",
             "proj/feature",
+            "/tmp/myapp",
+            "proj",
           ) as ConfirmMode
         }
         width={60}
@@ -71,6 +73,8 @@ describe("ConfirmModal", () => {
             `feature/with-a-very-long-name-${"x".repeat(80)}`,
             "/tmp/myapp-feature",
             "proj/feature",
+            "/tmp/myapp",
+            "proj",
           ) as ConfirmMode
         }
         width={40}

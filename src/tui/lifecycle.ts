@@ -9,14 +9,20 @@
 // blank out another repo's progress row; the identity key keeps same-named
 // branches in different repositories independent (AC-27).
 //
-// Everything here is pure: the key space, the canonical row labels and the
-// width-aware truncation. Rendering lives in `components/LifecycleProgressRow`
-// and row placement in `tree-helpers.buildTreeRows`, so both consume ONE label
-// mapping and no raw setup command text can ever reach the screen.
+// This module owns the key space, the canonical row labels, the width-aware
+// truncation AND the one shared run shape every lifecycle-driving handler uses
+// (`beginLifecycle` / `runLifecycleOperation`). Rendering lives in
+// `components/LifecycleProgressRow` and row placement in
+// `tree-helpers.buildTreeRows`, so both consume ONE label mapping and no raw
+// setup command text can ever reach the screen.
 
+import { Effect } from "effect";
+import type { Dispatch, SetStateAction } from "react";
+import { toWctError } from "../errors";
 import type {
   WorkspaceOperation,
   WorkspacePhase,
+  WorkspaceReporter,
 } from "../services/workspace-service";
 import { truncateBranch } from "./utils/truncate";
 
@@ -134,4 +140,147 @@ export function lifecycleProgressContent(
   const available = maxWidth - LIFECYCLE_ROW_PREFIX.length;
   if (available <= 0) return "";
   return `${LIFECYCLE_ROW_PREFIX}${truncateBranch(label, available)}`;
+}
+
+/**
+ * The three operations every lifecycle-driving handler needs: advance the
+ * phase, drive it from a `WorkspaceReporter`, and tear the presentation down.
+ *
+ * `setPhase`/`end` are no-ops once the entry is gone, so a late reporter event
+ * (or a second teardown from a `finally`) can never resurrect a progress row
+ * for a finished operation, and neither can they touch another identity's
+ * entry.
+ */
+export interface LifecycleController {
+  setPhase: (phase: LifecyclePhase) => void;
+  end: () => void;
+  reporter: WorkspaceReporter;
+}
+
+/** Begin a lifecycle for ONE Workspace Identity. */
+export function beginLifecycle(
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>,
+  entry: LifecycleEntry,
+): LifecycleController {
+  const key = lifecycleKey(entry.repoPath, entry.branch);
+  setLifecycle((previous) => new Map(previous).set(key, entry));
+
+  const setPhase = (phase: LifecyclePhase) => {
+    setLifecycle((previous) => {
+      const current = previous.get(key);
+      if (!current) return previous;
+      const next = new Map(previous);
+      next.set(key, { ...current, phase });
+      return next;
+    });
+  };
+
+  const end = () => {
+    setLifecycle((previous) => {
+      if (!previous.has(key)) return previous;
+      const next = new Map(previous);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  return {
+    setPhase,
+    end,
+    reporter: {
+      // Effect.sync, never a failing effect: the service also isolates
+      // reporter failures, but a progress reporter has no business being able
+      // to fail a lifecycle operation in the first place.
+      event: (event) =>
+        Effect.sync(() => {
+          if (event._tag !== "PhaseStarted") return;
+          setPhase(event.phase);
+        }),
+    },
+  };
+}
+
+export interface LifecycleRunOptions<T> {
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
+  /**
+   * Resolves the snapshot THIS validation observed, or `null` when the refresh
+   * could not observe anything (previous tree kept).
+   */
+  refreshAll: () => Promise<unknown>;
+  showActionError: (message: string) => void;
+  /** The Workspace Identity and starting phase of this operation. */
+  entry: LifecycleEntry;
+  /** The service call. The reporter it is handed drives the progress row. */
+  run: (reporter: WorkspaceReporter) => Promise<T>;
+  /** Outcome messages a settled result carries; reported after validation. */
+  resultWarnings?: (result: T) => readonly string[];
+  /**
+   * Work that must wait for BOTH validation and lifecycle teardown — the
+   * automatic tmux hand-off, which detaches the terminal this TUI is drawn in
+   * and whose failure must never resurrect a progress row.
+   */
+  afterCleanup?: (result: T) => Promise<string | undefined>;
+}
+
+/**
+ * The ONE shared lifecycle shape: present → run with the reporter → validate →
+ * tear down → hand off → report.
+ *
+ * Every outcome (a fatal failure, a partial result with warnings, a clean run)
+ * is COLLECTED and reported only once validation has finished, and validation
+ * runs on BOTH the success and the failure branch — a failed operation may
+ * still have changed worktree or tmux state, so the tree has to be told the
+ * truth about what exists before the error is shown.
+ *
+ * Expansion is deliberately absent from this flow: forced expansion during a
+ * lifecycle is presentation-only (`isWorktreeEffectivelyExpanded`), so the
+ * user's stored `expandedWorktreeKeys` preference is restored simply by the
+ * entry going away — nothing to save and nothing to write back.
+ */
+export async function runLifecycleOperation<T>(
+  options: LifecycleRunOptions<T>,
+): Promise<void> {
+  const { entry } = options;
+  const operation = entry.operation;
+  const lifecycle = beginLifecycle(options.setLifecycle, entry);
+
+  const messages: string[] = [];
+  const append = (message: string) => {
+    if (message) messages.push(message);
+  };
+
+  try {
+    let result: T | undefined;
+    try {
+      result = await options.run(lifecycle.reporter);
+    } catch (error) {
+      append(toWctError(error).message);
+    }
+
+    if (result !== undefined && options.resultWarnings) {
+      for (const warning of options.resultWarnings(result)) append(warning);
+    }
+
+    // The row says `Validating Workspace…` while registry, worktree and tmux
+    // state is re-read, and ONLY once that settles does the presentation come
+    // down. The null check lives INSIDE the try so a throwing refresh is
+    // reported once, by its own message, rather than twice.
+    lifecycle.setPhase({ _tag: "Validating" });
+    try {
+      if ((await options.refreshAll()) === null) {
+        append(lifecycleValidationWarning(operation));
+      }
+    } catch (error) {
+      append(`Refresh failed after ${operation}: ${toWctError(error).message}`);
+    }
+    lifecycle.end();
+
+    if (result !== undefined && options.afterCleanup) {
+      append((await options.afterCleanup(result)) ?? "");
+    }
+
+    if (messages.length > 0) options.showActionError(messages.join("\n"));
+  } finally {
+    lifecycle.end();
+  }
 }

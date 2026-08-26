@@ -111,9 +111,9 @@ export function App() {
   // path + branch) — never by the project display name, so two repos sharing a
   // display name cannot clobber each other's progress.
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
-  // TRANSITIONAL: `up`/`down`/`close` still record a coarse pending action for
+  // TRANSITIONAL: `open`/`close` still record a coarse pending action for
   // their own bookkeeping. Nothing renders it any more — progress is shown by
-  // the lifecycle rows — and slices 02–05 replace these writes with lifecycle
+  // the lifecycle rows — and slices 04–05 replace these writes with lifecycle
   // entries, at which point this state and its two hook deps disappear.
   const [, setPendingActions] = useState<Map<string, PendingAction>>(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -595,6 +595,7 @@ export function App() {
     lifecycle,
     setSelectedIndex,
     setMode,
+    setLifecycle,
     setPendingActions,
     showActionError,
     clearActionError,
@@ -630,7 +631,7 @@ export function App() {
     clearActionError,
     switchSession,
     discoverClient,
-    handleStartResult: sessionActions.handleStartResult,
+    startWorkspace: sessionActions.startWorkspace,
     refreshAll,
     upModalReturnModeRef,
     upModalReturnSelectedIndexRef,
@@ -754,7 +755,8 @@ export function App() {
             mode.sessionName,
             mode.branch,
             mode.worktreePath,
-            mode.worktreeKey,
+            mode.repoPath,
+            mode.project,
           )
           .finally(() => {
             confirmPendingRef.current = false;

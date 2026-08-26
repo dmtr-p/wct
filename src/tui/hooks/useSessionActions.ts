@@ -6,6 +6,7 @@ import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName } from "../../services/tmux";
 import {
+  type WorkspaceDownResult,
   WorkspaceService,
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
@@ -14,6 +15,7 @@ import {
   type LifecycleState,
   lifecycleBusyMessage,
   lifecycleEntryFor,
+  runLifecycleOperation,
 } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
@@ -36,6 +38,7 @@ export interface SessionActionDeps {
 
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   setPendingActions: Dispatch<SetStateAction<Map<string, PendingAction>>>;
 
   showActionError: (msg: string) => void;
@@ -132,44 +135,89 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
   };
 }
 
-export function createHandleStartResult(deps: SessionActionDeps) {
-  return async (result: WorkspaceUpResult, autoSwitch: boolean) => {
-    const actionMessage = resolveStartActionMessage(result);
+/** What one `up` needs to know: the Workspace Identity plus the run options. */
+export interface StartWorkspaceTarget {
+  worktreePath: string;
+  /** Main repository path — one half of the Workspace Identity. */
+  repoPath: string;
+  project: string;
+  branch: string;
+  profile?: string;
+  autoSwitch: boolean;
+}
 
-    if (
-      result.attempts.tmux.attempted &&
-      result.attempts.tmux.ok &&
-      autoSwitch
-    ) {
-      const liveClient = await deps.discoverClient();
-      if (liveClient.type === "single") {
-        const switched = await deps.switchSession(
-          result.sessionName,
-          liveClient.client,
-        );
-        await deps.refreshSessions();
-
-        if (!switched) {
-          deps.showActionError(
-            `Started session '${result.sessionName}', but failed to switch client`,
-          );
-        } else if (actionMessage) {
-          deps.showActionError(actionMessage);
-        }
-        return;
-      }
+/**
+ * The automatic tmux hand-off after a start. Runs LAST — after validation and
+ * after the lifecycle presentation is gone — because switching detaches the
+ * terminal this TUI is drawn in, and a failed switch must surface as a plain
+ * action error rather than resurrecting a progress row. Returns the message to
+ * report, or `undefined` when there is nothing to say.
+ */
+export function createSessionHandoff(deps: SessionActionDeps) {
+  return async (
+    result: WorkspaceUpResult,
+    autoSwitch: boolean,
+  ): Promise<string | undefined> => {
+    if (!autoSwitch) return undefined;
+    if (!(result.attempts.tmux.attempted && result.attempts.tmux.ok)) {
+      return undefined;
     }
 
-    await deps.refreshAll();
+    const liveClient = await deps.discoverClient();
+    if (liveClient.type !== "single") return undefined;
 
-    if (actionMessage) {
-      deps.showActionError(actionMessage);
-    }
+    const switched = await deps.switchSession(
+      result.sessionName,
+      liveClient.client,
+    );
+    await deps.refreshSessions();
+    return switched
+      ? undefined
+      : `Started session '${result.sessionName}', but failed to switch client`;
   };
 }
 
+/**
+ * The ONE `up` path, shared by the space-bar start and the up modal: begin a
+ * lifecycle for the Workspace Identity, run the service with the reporter that
+ * drives the progress row so only phases actually attempted are shown, then
+ * validate, tear down and hand off.
+ */
+export function createStartWorkspace(deps: SessionActionDeps) {
+  const sessionHandoff = createSessionHandoff(deps);
+
+  return (target: StartWorkspaceTarget): Promise<void> =>
+    runLifecycleOperation<WorkspaceUpResult>({
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "up",
+        repoPath: target.repoPath,
+        project: target.project,
+        branch: target.branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: (reporter) =>
+        tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.up({
+              path: target.worktreePath,
+              ...(target.profile ? { profile: target.profile } : {}),
+              reporter,
+            }),
+          ),
+        ),
+      resultWarnings: (result) => {
+        const message = resolveStartActionMessage(result);
+        return message ? [message] : [];
+      },
+      afterCleanup: (result) => sessionHandoff(result, target.autoSwitch),
+    });
+}
+
 export function createHandleSpaceSwitch(deps: SessionActionDeps) {
-  const handleStartResult = createHandleStartResult(deps);
+  const startWorkspace = createStartWorkspace(deps);
 
   return () => {
     const item = deps.treeItems[deps.selectedIndex];
@@ -213,32 +261,14 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
           );
         });
     } else {
-      const pendingActionKey = pendingKey(repo.project, wt.branch);
       deps.clearActionError();
-      deps.setPendingActions((prev) =>
-        new Map(prev).set(pendingActionKey, {
-          type: "starting",
-          branch: wt.branch,
-          project: repo.project,
-        }),
-      );
-      void (async () => {
-        try {
-          const upResult = await tuiRuntime.runPromise(
-            WorkspaceService.use((service) => service.up({ path: wt.path })),
-          );
-          await handleStartResult(upResult, true);
-        } catch (error) {
-          deps.showActionError(toWctError(error).message);
-          await deps.refreshAll();
-        } finally {
-          deps.setPendingActions((prev) => {
-            const next = new Map(prev);
-            next.delete(pendingActionKey);
-            return next;
-          });
-        }
-      })();
+      void startWorkspace({
+        worktreePath: wt.path,
+        repoPath: repo.repoPath,
+        project: repo.project,
+        branch: wt.branch,
+        autoSwitch: true,
+      });
     }
   };
 }
@@ -250,7 +280,8 @@ export function createExecuteDown(deps: SessionActionDeps) {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    worktreeKey: string,
+    repoPath: string,
+    project: string,
   ) => {
     deps.clearActionError();
 
@@ -266,30 +297,24 @@ export function createExecuteDown(deps: SessionActionDeps) {
     deps.setSelectedIndex(deps.confirmDownReturnSelectedIndexRef.current);
     deps.setMode(deps.confirmDownReturnModeRef.current);
 
-    const project = worktreeKey.split("/")[0] ?? "unknown";
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(worktreeKey, {
-        type: "stopping",
-        branch,
+    await runLifecycleOperation<WorkspaceDownResult>({
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "down",
+        repoPath,
         project,
-      }),
-    );
-
-    try {
-      await tuiRuntime.runPromise(
-        WorkspaceService.use((service) => service.down({ path: worktreePath })),
-      );
-      await deps.refreshAll();
-    } catch (error) {
-      deps.showActionError(toWctError(error).message);
-      await deps.refreshAll();
-    } finally {
-      deps.setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(worktreeKey);
-        return next;
-      });
-    }
+        branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: (reporter) =>
+        tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.down({ path: worktreePath, reporter }),
+          ),
+        ),
+    });
   };
 }
 
@@ -433,7 +458,14 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
     deps.setMode(
-      Mode.ConfirmDown(sessionName, wt.branch, wt.path, worktreeKey),
+      Mode.ConfirmDown(
+        sessionName,
+        wt.branch,
+        wt.path,
+        worktreeKey,
+        repo.repoPath,
+        repo.project,
+      ),
     );
   };
 }
@@ -442,7 +474,7 @@ export function useSessionActions(deps: SessionActionDeps) {
   return {
     navigateTree: createNavigateTree(deps),
     switchClientAwayFromSession: createSwitchClientAway(deps),
-    handleStartResult: createHandleStartResult(deps),
+    startWorkspace: createStartWorkspace(deps),
     handleSpaceSwitch: createHandleSpaceSwitch(deps),
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),
     executeClose: createExecuteClose(deps),

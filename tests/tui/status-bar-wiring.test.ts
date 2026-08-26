@@ -105,6 +105,8 @@ describe("resolveStatusBarProps", () => {
       "feature",
       "/tmp/myapp-feature",
       "proj/feature",
+      "/tmp/myapp",
+      "proj",
     );
 
     expect(

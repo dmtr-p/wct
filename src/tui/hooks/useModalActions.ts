@@ -1,25 +1,20 @@
 // src/tui/hooks/useModalActions.ts
 
-import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
 import {
   type WorkspaceOpenResult,
-  type WorkspaceReporter,
   WorkspaceService,
-  type WorkspaceUpResult,
   type WorkspaceWarning,
 } from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import {
-  type LifecycleEntry,
-  type LifecyclePhase,
+  beginLifecycle,
   type LifecycleState,
-  lifecycleKey,
   lifecycleValidationWarning,
 } from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
@@ -29,6 +24,7 @@ import {
 } from "../tree-helpers";
 import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
+import type { StartWorkspaceTarget } from "./useSessionActions";
 import type { TmuxClientDiscovery } from "./useTmux";
 
 function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
@@ -67,10 +63,8 @@ export interface ModalActionDeps {
   clearActionError: () => void;
   switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
-  handleStartResult: (
-    result: WorkspaceUpResult,
-    autoSwitch: boolean,
-  ) => Promise<void>;
+  /** The shared `up` lifecycle, owned by `useSessionActions`. */
+  startWorkspace: (target: StartWorkspaceTarget) => Promise<void>;
   /**
    * Resolves the registry snapshot the refresh observed, or `null` when it
    * failed (previous repos kept). Lifecycle reconciliation must read THAT
@@ -116,62 +110,6 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
   };
 }
 
-/**
- * Begin a lifecycle for one Workspace Identity and hand back the three
- * operations every lifecycle-driving handler needs: advance the phase, drive
- * it from a `WorkspaceReporter`, and tear the presentation down.
- *
- * `setPhase`/`end` are no-ops once the entry is gone, so a late reporter event
- * (or a second teardown from a `finally`) can never resurrect a progress row
- * for a finished operation, and neither can they touch another identity's
- * entry.
- */
-function beginLifecycle(
-  deps: ModalActionDeps,
-  entry: LifecycleEntry,
-): {
-  setPhase: (phase: LifecyclePhase) => void;
-  end: () => void;
-  reporter: WorkspaceReporter;
-} {
-  const key = lifecycleKey(entry.repoPath, entry.branch);
-  deps.setLifecycle((previous) => new Map(previous).set(key, entry));
-
-  const setPhase = (phase: LifecyclePhase) => {
-    deps.setLifecycle((previous) => {
-      const current = previous.get(key);
-      if (!current) return previous;
-      const next = new Map(previous);
-      next.set(key, { ...current, phase });
-      return next;
-    });
-  };
-
-  const end = () => {
-    deps.setLifecycle((previous) => {
-      if (!previous.has(key)) return previous;
-      const next = new Map(previous);
-      next.delete(key);
-      return next;
-    });
-  };
-
-  return {
-    setPhase,
-    end,
-    reporter: {
-      // Effect.sync, never a failing effect: the service also isolates
-      // reporter failures, but a progress reporter has no business being able
-      // to fail an open in the first place.
-      event: (event) =>
-        Effect.sync(() => {
-          if (event._tag !== "PhaseStarted") return;
-          setPhase(event.phase);
-        }),
-    },
-  };
-}
-
 export function createHandleOpen(deps: ModalActionDeps) {
   return (opts: OpenModalResult) => {
     deps.setMode(deps.modalReturnModeRef.current);
@@ -198,7 +136,7 @@ export function createHandleOpen(deps: ModalActionDeps) {
     // The Workspace does not exist yet, so this entry IS its representation in
     // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
     // row, both inert, both visible before git knows about the worktree.
-    const lifecycle = beginLifecycle(deps, {
+    const lifecycle = beginLifecycle(deps.setLifecycle, {
       operation: "open",
       repoPath,
       project,
@@ -345,7 +283,9 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
-    deps.setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
+    deps.setMode(
+      Mode.UpModal(wt.path, worktreeKey, repo.repoPath, repo.profileNames),
+    );
   };
 }
 
@@ -353,43 +293,25 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
   return (result: UpModalResult) => {
     if (deps.mode.type !== "UpModal") return;
 
-    const { worktreePath, worktreeKey } = deps.mode;
+    const { worktreePath, worktreeKey, repoPath } = deps.mode;
     deps.clearActionError();
     deps.setSelectedIndex(deps.upModalReturnSelectedIndexRef.current);
     deps.setMode(deps.upModalReturnModeRef.current);
 
     const branch = worktreeKey.split("/").slice(1).join("/");
     const project = worktreeKey.split("/")[0] ?? "unknown";
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(worktreeKey, {
-        type: "starting",
-        branch,
-        project,
-      }),
-    );
 
-    void (async () => {
-      try {
-        const upResult = await tuiRuntime.runPromise(
-          WorkspaceService.use((service) =>
-            service.up({
-              path: worktreePath,
-              profile: result.profile,
-            }),
-          ),
-        );
-        await deps.handleStartResult(upResult, result.autoSwitch);
-      } catch (error) {
-        deps.showActionError(toWctError(error).message);
-        await deps.refreshAll();
-      } finally {
-        deps.setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(worktreeKey);
-          return next;
-        });
-      }
-    })();
+    // The modal is only an option sheet: the start itself goes through the ONE
+    // shared `up` lifecycle, so the space-bar start and this one show the same
+    // phase-by-phase progress and validate identically.
+    void deps.startWorkspace({
+      worktreePath,
+      repoPath,
+      project,
+      branch,
+      ...(result.profile ? { profile: result.profile } : {}),
+      autoSwitch: result.autoSwitch,
+    });
   };
 }
 

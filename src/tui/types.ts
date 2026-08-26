@@ -11,6 +11,8 @@ export type Mode =
       type: "UpModal";
       worktreePath: string;
       worktreeKey: string;
+      /** Main repository path — one half of the Workspace Identity. */
+      repoPath: string;
       profileNames: string[];
     }
   | { type: "Expanded"; worktreeKey: string }
@@ -26,6 +28,9 @@ export type Mode =
       branch: string;
       worktreePath: string;
       worktreeKey: string;
+      /** Main repository path — one half of the Workspace Identity. */
+      repoPath: string;
+      project: string;
     }
   | {
       type: "ConfirmClose";
@@ -56,11 +61,13 @@ export const Mode = {
   UpModal: (
     worktreePath: string,
     worktreeKey: string,
+    repoPath: string,
     profileNames: string[],
   ): Mode => ({
     type: "UpModal",
     worktreePath,
     worktreeKey,
+    repoPath,
     profileNames,
   }),
   Expanded: (worktreeKey: string): Mode => ({
@@ -78,12 +85,16 @@ export const Mode = {
     branch: string,
     worktreePath: string,
     worktreeKey: string,
+    repoPath: string,
+    project: string,
   ): Mode => ({
     type: "ConfirmDown",
     sessionName,
     branch,
     worktreePath,
     worktreeKey,
+    repoPath,
+    project,
   }),
   ConfirmClose: (
     sessionName: string,
@@ -162,9 +173,13 @@ type DetailItem<
       meta: TMeta;
     };
 
-/** Pending action for optimistic UI */
+/**
+ * Pending action for optimistic UI. `up`/`down` no longer record one — their
+ * progress is told by the Lifecycle Progress Row — so only the two operations
+ * slices 04–05 still own remain.
+ */
 export interface PendingAction {
-  type: "opening" | "closing" | "starting" | "stopping";
+  type: "opening" | "closing";
   branch: string;
   project: string;
 }

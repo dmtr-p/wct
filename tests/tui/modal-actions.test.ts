@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import { WorkspaceService } from "../../src/services/workspace-service";
 import type { ModalActionDeps } from "../../src/tui/hooks/useModalActions";
 import {
   createHandleAddProject,
@@ -42,7 +41,6 @@ function trackLifecycle() {
 }
 
 const workspaceOpen = vi.hoisted(() => vi.fn(() => "mock-open-effect"));
-const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const registerProjectMock = vi.hoisted(() =>
   vi.fn(() => "register-project-effect"),
 );
@@ -56,7 +54,7 @@ vi.mock("../../src/tui/runtime", () => ({
 
 vi.mock("../../src/services/workspace-service", () => ({
   WorkspaceService: {
-    use: vi.fn((f) => f({ open: workspaceOpen, up: workspaceUp })),
+    use: vi.fn((f) => f({ open: workspaceOpen })),
   },
 }));
 
@@ -108,7 +106,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
     discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
-    handleStartResult: vi.fn().mockResolvedValue(undefined),
+    startWorkspace: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue([]),
     upModalReturnModeRef: { current: Mode.Navigate },
     modalReturnModeRef: { current: Mode.Navigate },
@@ -642,7 +640,7 @@ describe("createPrepareUpModal", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.UpModal("/repo/feat", pendingKey("proj", "feat"), ["dev"]),
+      Mode.UpModal("/repo/feat", pendingKey("proj", "feat"), "/repo", ["dev"]),
     );
   });
 
@@ -700,38 +698,15 @@ describe("createHandleUpSubmit", () => {
     vi.clearAllMocks();
   });
 
-  test("restores return mode and index, then delegates to handleStartResult", async () => {
-    const { tuiRuntime } = await import("../../src/tui/runtime");
-    const upResult = {
-      operation: "up" as const,
-      worktreePath: "/repo/feat",
-      mainRepoPath: "/repo",
-      branch: "feat",
-      sessionName: "feat",
-      projectName: "proj",
-      env: {},
-      warnings: [],
-      attempts: {
-        tmux: { attempted: false, reason: "tmux_not_configured" },
-      },
-    };
-    (tuiRuntime.runPromise as Mock).mockResolvedValue(upResult);
-
+  test("restores return mode and index, then delegates to the shared up lifecycle", async () => {
     const returnModeRef = { current: Mode.Navigate };
     const returnIndexRef = { current: 3 };
-    const handleStartResult = vi.fn().mockResolvedValue(undefined);
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
+    const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", ["dev"]),
+      mode: Mode.UpModal("/repo/feat", "proj/feat", "/repo", ["dev"]),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
-      handleStartResult,
-      setPendingActions,
+      startWorkspace,
     });
     const handleUp = createHandleUpSubmit(deps);
 
@@ -740,55 +715,18 @@ describe("createHandleUpSubmit", () => {
     expect(deps.clearActionError).toHaveBeenCalled();
     expect(deps.setSelectedIndex).toHaveBeenCalledWith(3);
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    expect(deps.setPendingActions).toHaveBeenCalled();
-
-    // Wait for the async operation
-    await vi.waitFor(() => {
-      expect(WorkspaceService.use).toHaveBeenCalled();
-      expect(workspaceUp).toHaveBeenCalledWith({
-        path: "/repo/feat",
-        profile: "dev",
-      });
-      expect(tuiRuntime.runPromise).toHaveBeenCalledWith(
-        "mock-workspace-effect",
-      );
-      expect(handleStartResult).toHaveBeenCalledWith(upResult, true);
+    // The modal is only an option sheet: no coarse pending suffix is recorded
+    // any more, and the identity the lifecycle is keyed by comes from the mode.
+    expect(deps.setPendingActions).not.toHaveBeenCalled();
+    expect(startWorkspace).toHaveBeenCalledWith({
+      worktreePath: "/repo/feat",
+      repoPath: "/repo",
+      project: "proj",
+      branch: "feat",
+      profile: "dev",
+      autoSwitch: true,
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
-  });
-
-  test("shows error and refreshes on failure", async () => {
-    const { tuiRuntime } = await import("../../src/tui/runtime");
-    (tuiRuntime.runPromise as Mock).mockRejectedValue(
-      new Error("session fail"),
-    );
-
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
-    const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", []),
-      upModalReturnModeRef: { current: Mode.Navigate },
-      upModalReturnSelectedIndexRef: { current: 0 },
-      setPendingActions,
-    });
-    const handleUp = createHandleUpSubmit(deps);
-
-    handleUp({ profile: undefined, autoSwitch: false });
-
-    await vi.waitFor(() => {
-      expect(deps.showActionError).toHaveBeenCalled();
-    });
-    await vi.waitFor(() => {
-      expect(deps.refreshAll).toHaveBeenCalled();
-    });
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
   test("no-op when mode is not UpModal", () => {

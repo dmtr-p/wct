@@ -24,6 +24,8 @@ describe("Mode", () => {
         "feature",
         "/tmp/myapp-feature",
         "proj/feature",
+        "/tmp/myapp",
+        "proj",
       ),
     ).toEqual({
       type: "ConfirmDown",
@@ -31,6 +33,8 @@ describe("Mode", () => {
       branch: "feature",
       worktreePath: "/tmp/myapp-feature",
       worktreeKey: "proj/feature",
+      repoPath: "/tmp/myapp",
+      project: "proj",
     });
   });
 });

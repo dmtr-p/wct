@@ -97,6 +97,8 @@ describe("StatusBar", () => {
         "feature",
         "/tmp/myapp-feature",
         "proj/feature",
+        "/tmp/myapp",
+        "proj",
       ),
     });
 

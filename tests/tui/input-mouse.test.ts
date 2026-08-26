@@ -535,7 +535,6 @@ function buildCtx(
     repos,
     expandedRepos,
     expandedWorktreeKeys,
-    pendingActions: new Map(),
   });
   return {
     mode,
@@ -749,7 +748,6 @@ describe("resolveMouseAction", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([key]),
-      pendingActions: new Map(),
       maxWidth: 40, // forces the PR title to wrap
     });
     const ctx: MouseActionContext = {

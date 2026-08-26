@@ -15,6 +15,7 @@ import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
 import { useRefresh } from "./hooks/useRefresh";
+import type { RepoInfo } from "./hooks/useRegistry";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useTmux } from "./hooks/useTmux";
@@ -36,6 +37,7 @@ import {
 } from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
+import type { LifecycleState } from "./lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -104,9 +106,15 @@ export function App() {
     row: number;
   } | null>(null);
   const { actionError, showActionError, clearActionError } = useActionError();
-  const [pendingActions, setPendingActions] = useState<
-    Map<string, PendingAction>
-  >(new Map());
+  // Active Workspace lifecycles, keyed by Workspace Identity (main repository
+  // path + branch) — never by the project display name, so two repos sharing a
+  // display name cannot clobber each other's progress.
+  const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
+  // TRANSITIONAL: `up`/`down`/`close` still record a coarse pending action for
+  // their own bookkeeping. Nothing renders it any more — progress is shown by
+  // the lifecycle rows — and slices 02–05 replace these writes with lifecycle
+  // entries, at which point this state and its two hook deps disappear.
+  const [, setPendingActions] = useState<Map<string, PendingAction>>(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -172,11 +180,12 @@ export function App() {
       buildTreeItems({
         repos: filteredRepos,
         expandedWorktreeKeys,
+        lifecycle,
         prData,
         panes,
         jumpToPane,
       }),
-    [filteredRepos, expandedWorktreeKeys, prData, panes, jumpToPane],
+    [filteredRepos, expandedWorktreeKeys, lifecycle, prData, panes, jumpToPane],
   );
 
   const statusBarProps = resolveStatusBarProps({
@@ -221,10 +230,10 @@ export function App() {
         items: treeItems,
         repos: filteredRepos,
         expandedWorktreeKeys,
-        pendingActions,
+        lifecycle,
         maxWidth: termCols,
       }),
-    [treeItems, filteredRepos, expandedWorktreeKeys, pendingActions, termCols],
+    [treeItems, filteredRepos, expandedWorktreeKeys, lifecycle, termCols],
   );
 
   const confirmationMode = isConfirmMode(mode) ? mode : null;
@@ -506,15 +515,30 @@ export function App() {
     prevSelectionWasVisibleRef.current = selectionVisible;
   });
 
-  const refreshAll = useCallback(async () => {
-    await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
+  // Resolves the registry snapshot THIS refresh observed (or `null` when the
+  // registry load failed and the previous repos were kept), so a lifecycle can
+  // reconcile against what it just validated instead of a stale render-time
+  // `repos` capture.
+  const refreshAll = useCallback(async (): Promise<RepoInfo[] | null> => {
+    const [refreshedRepos] = await Promise.all([
+      refreshRegistry(),
+      refreshSessions(),
+      discoverClient(),
+    ]);
+    return refreshedRepos;
   }, [refreshRegistry, refreshSessions, discoverClient]);
 
   const restoreConfirmationViewport = useCallback(() => {
     setScrollOffset(confirmReturnScrollOffsetRef.current);
   }, []);
 
-  useRefresh(refreshAll);
+  // The poll/watch path only needs the side effect, never the snapshot
+  // `refreshAll` now resolves.
+  const pollRefresh = useCallback(async (): Promise<void> => {
+    await refreshAll();
+  }, [refreshAll]);
+
+  useRefresh(pollRefresh);
 
   const expandWorktree = useCallback((worktreeKey: string) => {
     setExpandedWorktreeKeys((previous) => {
@@ -556,6 +580,7 @@ export function App() {
     sessions,
     selectedIndex,
     mode,
+    lifecycle,
     setSelectedIndex,
     setMode,
     setPendingActions,
@@ -580,6 +605,8 @@ export function App() {
     mode,
     openModalRepoProject,
     openModalRepoPath,
+    lifecycle,
+    setLifecycle,
     setMode,
     setSelectedIndex,
     setPendingActions,
@@ -946,7 +973,7 @@ export function App() {
             items={treeItems}
             rows={rows}
             hoveredItemIndex={hoveredItemIndex}
-            pendingActions={pendingActions}
+            lifecycle={lifecycle}
             prData={prData}
             panes={panes}
             expandedWorktreeKeys={expandedWorktreeKeys}

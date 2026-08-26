@@ -17,6 +17,7 @@ import {
 import type { TmuxService } from "../src/services/tmux";
 import {
   liveWorkspaceService,
+  type WorkspacePhase,
   type WorkspaceReporterEvent,
   WorkspaceService,
 } from "../src/services/workspace-service";
@@ -1076,6 +1077,11 @@ describe("WorkspaceService reporter", () => {
     expect(events).toEqual([
       {
         operation: "down",
+        _tag: "PhaseStarted",
+        phase: { _tag: "Preparing" },
+      },
+      {
+        operation: "down",
         _tag: "TargetResolved",
         worktreePath: "/tmp/myapp-feature",
       },
@@ -1122,4 +1128,342 @@ test("liveWorkspaceService exposes public lifecycle operations for this slice", 
   expect(typeof liveWorkspaceService.up).toBe("function");
   expect(typeof liveWorkspaceService.down).toBe("function");
   expect(typeof liveWorkspaceService.close).toBe("function");
+});
+
+describe("WorkspaceService semantic phases", () => {
+  let repoDir: string;
+  let worktreeRoot: string;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    repoDir = await mkdtemp(join(tmpdir(), "wct-workspace-phase-repo-"));
+    worktreeRoot = join(repoDir, "..", "worktrees");
+    await mkdir(worktreeRoot, { recursive: true });
+    await writeConfig(repoDir);
+    // liveSetupService logs a step line per command; keep test output clean.
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    logSpy.mockRestore();
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(worktreeRoot, { recursive: true, force: true });
+  });
+
+  function recordingReporter(events: WorkspaceReporterEvent[]) {
+    return {
+      event: (event: WorkspaceReporterEvent) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+    };
+  }
+
+  function phasesOf(events: WorkspaceReporterEvent[]): WorkspacePhase[] {
+    return events.flatMap((event) =>
+      event._tag === "PhaseStarted" ? [event.phase] : [],
+    );
+  }
+
+  function openWorktreeService(
+    overrides: Partial<WorktreeService> = {},
+  ): WorktreeService {
+    return {
+      ...liveWorktreeService,
+      isGitRepo: () => Effect.succeed(true),
+      getMainRepoPath: () => Effect.succeed(repoDir),
+      branchExists: () => Effect.succeed(true),
+      createWorktree: (path) =>
+        Effect.succeed({ _tag: "Created" as const, path }),
+      ...overrides,
+    };
+  }
+
+  test("open emits preparing first, then a phase per attempted step in execution order", async () => {
+    await writeConfig(
+      repoDir,
+      `copy:
+  - .wct.yaml
+setup:
+  - name: install
+    command: "true"
+  - name: build
+    command: "true"
+`,
+    );
+    const events: WorkspaceReporterEvent[] = [];
+
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({
+            branch: "phases",
+            cwd: repoDir,
+            reporter: recordingReporter(events),
+          }),
+        ),
+        { worktree: openWorktreeService() },
+      ),
+    );
+
+    expect(phasesOf(events)).toEqual([
+      { _tag: "Preparing" },
+      { _tag: "CreatingWorktree" },
+      { _tag: "CopyingFiles" },
+      { _tag: "RunningSetup", name: "install" },
+      { _tag: "RunningSetup", name: "build" },
+      { _tag: "CreatingTmuxSession" },
+    ]);
+    // Preparing is the very first reporter event of any kind.
+    expect(events[0]).toEqual({
+      operation: "open",
+      _tag: "PhaseStarted",
+      phase: { _tag: "Preparing" },
+    });
+
+    // Skipped optional work emits no phase: no copy entries, no setup, no tmux.
+    await Bun.write(
+      join(repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+`,
+    );
+    const bare: WorkspaceReporterEvent[] = [];
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({
+            branch: "phases-bare",
+            cwd: repoDir,
+            reporter: recordingReporter(bare),
+          }),
+        ),
+        { worktree: openWorktreeService() },
+      ),
+    );
+
+    expect(phasesOf(bare)).toEqual([
+      { _tag: "Preparing" },
+      { _tag: "CreatingWorktree" },
+    ]);
+  });
+
+  test("up emits preparing first and a tmux phase only when tmux is configured", async () => {
+    const worktree: WorktreeService = {
+      ...liveWorktreeService,
+      isGitRepo: () => Effect.succeed(true),
+      getMainRepoPath: () => Effect.succeed(repoDir),
+      getCurrentBranch: () => Effect.succeed("feature"),
+    };
+
+    const withTmux: WorkspaceReporterEvent[] = [];
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.up({
+            path: join(worktreeRoot, "myapp-feature"),
+            reporter: recordingReporter(withTmux),
+          }),
+        ),
+        { worktree },
+      ),
+    );
+    expect(phasesOf(withTmux)).toEqual([
+      { _tag: "Preparing" },
+      { _tag: "CreatingTmuxSession" },
+    ]);
+    expect(withTmux[0]?._tag).toBe("PhaseStarted");
+
+    await Bun.write(
+      join(repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+`,
+    );
+    const withoutTmux: WorkspaceReporterEvent[] = [];
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.up({
+            path: join(worktreeRoot, "myapp-feature"),
+            reporter: recordingReporter(withoutTmux),
+          }),
+        ),
+        { worktree },
+      ),
+    );
+    expect(phasesOf(withoutTmux)).toEqual([{ _tag: "Preparing" }]);
+  });
+
+  test("down and close emit the kill phase before killSession, and only when a session exists", async () => {
+    const worktree: WorktreeService = {
+      ...liveWorktreeService,
+      isGitRepo: () => Effect.succeed(true),
+      removeWorktree: (path) =>
+        Effect.succeed({ _tag: "Removed" as const, path }),
+    };
+
+    const runOperation = async (
+      operation: "down" | "close",
+      sessionExists: boolean,
+      trace: string[],
+    ): Promise<void> => {
+      const reporter = {
+        event: (event: WorkspaceReporterEvent) =>
+          Effect.sync(() => {
+            if (event._tag === "PhaseStarted") {
+              trace.push(`phase:${event.phase._tag}`);
+            }
+          }),
+      };
+      const overrides = {
+        worktree,
+        tmux: {
+          ...noopTmuxService,
+          sessionExists: () => Effect.succeed(sessionExists),
+          killSession: () =>
+            Effect.sync(() => {
+              trace.push("call:killSession");
+            }),
+        },
+      };
+      if (operation === "down") {
+        await runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              service.down({ path: "/tmp/myapp-feature", reporter }),
+            ),
+            overrides,
+          ),
+        );
+        return;
+      }
+      await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.close({ path: "/tmp/myapp-feature", reporter }),
+          ),
+          overrides,
+        ),
+      );
+    };
+
+    for (const operation of ["down", "close"] as const) {
+      const trace: string[] = [];
+      await runOperation(operation, true, trace);
+
+      expect(trace[0]).toBe("phase:Preparing");
+      const killPhaseIndex = trace.indexOf("phase:KillingTmuxSession");
+      const killCallIndex = trace.indexOf("call:killSession");
+      expect(killPhaseIndex).toBeGreaterThan(-1);
+      expect(killCallIndex).toBeGreaterThan(killPhaseIndex);
+
+      // No session → no kill phase, but still a preparing phase.
+      const absentTrace: string[] = [];
+      await runOperation(operation, false, absentTrace);
+      expect(absentTrace[0]).toBe("phase:Preparing");
+      expect(absentTrace).not.toContain("phase:KillingTmuxSession");
+      expect(absentTrace).not.toContain("call:killSession");
+    }
+  });
+
+  test("close emits the worktree-removal phase before removeWorktree runs", async () => {
+    const trace: string[] = [];
+    const reporter = {
+      event: (event: WorkspaceReporterEvent) =>
+        Effect.sync(() => {
+          if (event._tag === "PhaseStarted") {
+            trace.push(`phase:${event.phase._tag}`);
+          }
+        }),
+    };
+
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.close({ path: "/tmp/myapp-feature", reporter }),
+        ),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            isGitRepo: () => Effect.succeed(true),
+            removeWorktree: (path) =>
+              Effect.sync(() => {
+                trace.push("call:removeWorktree");
+                return { _tag: "Removed" as const, path };
+              }),
+          },
+          tmux: {
+            ...noopTmuxService,
+            sessionExists: () => Effect.succeed(false),
+          },
+        },
+      ),
+    );
+
+    const removePhaseIndex = trace.indexOf("phase:RemovingWorktree");
+    const removeCallIndex = trace.indexOf("call:removeWorktree");
+    expect(removePhaseIndex).toBeGreaterThan(-1);
+    expect(removeCallIndex).toBe(removePhaseIndex + 1);
+  });
+
+  test("a failing or synchronously throwing reporter cannot fail or change an open", async () => {
+    await writeConfig(
+      repoDir,
+      `copy:
+  - .wct.yaml
+setup:
+  - name: install
+    command: "true"
+`,
+    );
+
+    const runOpen = (
+      reporter?: { event: (event: WorkspaceReporterEvent) => never },
+      branch = "reporter-isolation",
+    ) =>
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch,
+              cwd: repoDir,
+              ...(reporter ? { reporter: reporter as never } : {}),
+            }),
+          ),
+          { worktree: openWorktreeService() },
+        ),
+      );
+
+    const baseline = await runOpen(undefined, "reporter-baseline");
+
+    // Fails INSIDE the returned Effect, including on the per-setup-command
+    // phase (which the setup boundary is given as a never-failing hook).
+    const failing = await runOpen({
+      event: (() => Effect.fail("reporter failed")) as never,
+    });
+    // Throws BEFORE returning an Effect at all.
+    const throwing = await runOpen(
+      {
+        event: (() => {
+          throw new Error("reporter construction failed");
+        }) as never,
+      },
+      "reporter-throwing",
+    );
+
+    for (const result of [failing, throwing]) {
+      expect(result.operation).toBe("open");
+      expect(result.warnings).toEqual(baseline.warnings);
+      expect(result.attempts.copy.attempted).toBe(
+        baseline.attempts.copy.attempted,
+      );
+      expect(result.attempts.setup).toEqual(baseline.attempts.setup);
+      expect(result.attempts.tmux.attempted).toBe(
+        baseline.attempts.tmux.attempted,
+      );
+    }
+  });
 });

@@ -1,11 +1,13 @@
 // src/tui/hooks/useModalActions.ts
 
+import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import type { TmuxClient } from "../../services/tmux";
 import {
   type WorkspaceOpenResult,
+  type WorkspaceReporter,
   WorkspaceService,
   type WorkspaceUpResult,
   type WorkspaceWarning,
@@ -13,6 +15,12 @@ import {
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
+import {
+  type LifecycleEntry,
+  type LifecyclePhase,
+  type LifecycleState,
+  lifecycleKey,
+} from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
   resolveSelectedWorktreeIndex,
@@ -42,7 +50,10 @@ export interface ModalActionDeps {
   mode: Mode;
   openModalRepoProject: string;
   openModalRepoPath: string;
+  /** Active lifecycle operations, keyed by Workspace Identity. */
+  lifecycle: LifecycleState;
 
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   setMode: (m: Mode) => void;
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setPendingActions: Dispatch<SetStateAction<Map<string, PendingAction>>>;
@@ -59,7 +70,12 @@ export interface ModalActionDeps {
     result: WorkspaceUpResult,
     autoSwitch: boolean,
   ) => Promise<void>;
-  refreshAll: () => Promise<void>;
+  /**
+   * Resolves the registry snapshot the refresh observed, or `null` when it
+   * failed (previous repos kept). Lifecycle reconciliation must read THAT
+   * snapshot, never the render-time `filteredRepos` capture.
+   */
+  refreshAll: () => Promise<RepoInfo[] | null>;
 
   upModalReturnModeRef: MutableRefObject<Mode>;
   upModalReturnSelectedIndexRef: MutableRefObject<number>;
@@ -99,11 +115,68 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
   };
 }
 
+/**
+ * Begin a lifecycle for one Workspace Identity and hand back the three
+ * operations every lifecycle-driving handler needs: advance the phase, drive
+ * it from a `WorkspaceReporter`, and tear the presentation down.
+ *
+ * `setPhase`/`end` are no-ops once the entry is gone, so a late reporter event
+ * (or a second teardown from a `finally`) can never resurrect a progress row
+ * for a finished operation, and neither can they touch another identity's
+ * entry.
+ */
+function beginLifecycle(
+  deps: ModalActionDeps,
+  entry: LifecycleEntry,
+): {
+  setPhase: (phase: LifecyclePhase) => void;
+  end: () => void;
+  reporter: WorkspaceReporter;
+} {
+  const key = lifecycleKey(entry.repoPath, entry.branch);
+  deps.setLifecycle((previous) => new Map(previous).set(key, entry));
+
+  const setPhase = (phase: LifecyclePhase) => {
+    deps.setLifecycle((previous) => {
+      const current = previous.get(key);
+      if (!current) return previous;
+      const next = new Map(previous);
+      next.set(key, { ...current, phase });
+      return next;
+    });
+  };
+
+  const end = () => {
+    deps.setLifecycle((previous) => {
+      if (!previous.has(key)) return previous;
+      const next = new Map(previous);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  return {
+    setPhase,
+    end,
+    reporter: {
+      // Effect.sync, never a failing effect: the service also isolates
+      // reporter failures, but a progress reporter has no business being able
+      // to fail an open in the first place.
+      event: (event) =>
+        Effect.sync(() => {
+          if (event._tag !== "PhaseStarted") return;
+          setPhase(event.phase);
+        }),
+    },
+  };
+}
+
 export function createHandleOpen(deps: ModalActionDeps) {
   return (opts: OpenModalResult) => {
     deps.setMode(deps.modalReturnModeRef.current);
     const requestedBranch = opts.pr ? undefined : opts.branch;
     const project = deps.openModalRepoProject || "unknown";
+    const repoPath = deps.openModalRepoPath;
     const key = pendingKey(project, opts.branch);
     deps.setPendingActions((prev) =>
       new Map(prev).set(key, {
@@ -121,6 +194,17 @@ export function createHandleOpen(deps: ModalActionDeps) {
       });
     };
 
+    // The Workspace does not exist yet, so this entry IS its representation in
+    // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
+    // row, both inert, both visible before git knows about the worktree.
+    const lifecycle = beginLifecycle(deps, {
+      operation: "open",
+      repoPath,
+      project,
+      branch: opts.branch,
+      phase: { _tag: "Preparing" },
+    });
+
     void (async () => {
       let warningMessage: string | undefined;
 
@@ -131,8 +215,9 @@ export function createHandleOpen(deps: ModalActionDeps) {
       };
 
       try {
+        let result: WorkspaceOpenResult;
         try {
-          const result = await tuiRuntime.runPromise(
+          result = await tuiRuntime.runPromise(
             WorkspaceService.use((service) =>
               service.open({
                 branch: requestedBranch,
@@ -141,46 +226,25 @@ export function createHandleOpen(deps: ModalActionDeps) {
                 pr: opts.pr,
                 profile: opts.profile,
                 existing: opts.existing,
+                reporter: lifecycle.reporter,
               }),
             ),
           );
-          if (result.warnings.length > 0) {
-            appendWarning(
-              result.warnings.map(formatWorkspaceWarning).join("\n"),
-            );
-          }
-
-          if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
-            const liveClient = await deps.discoverClient();
-            if (liveClient.type === "single") {
-              const switched = await deps.switchSession(
-                result.sessionName,
-                liveClient.client,
-              );
-              if (!switched) {
-                appendWarning(
-                  `Started session '${result.sessionName}', but failed to switch client`,
-                );
-              }
-            } else if (liveClient.type === "none") {
-              appendWarning(
-                "No tmux client found — start tmux in the other pane",
-              );
-            } else if (liveClient.type === "error") {
-              appendWarning(
-                `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
-              );
-            } else if (liveClient.type === "multiple") {
-              appendWarning(
-                "Cannot switch tmux client after open because multiple tmux clients are attached",
-              );
-            }
-          }
         } catch (error) {
           deps.showActionError(toWctError(error).message);
           return;
         }
 
+        if (result.warnings.length > 0) {
+          appendWarning(result.warnings.map(formatWorkspaceWarning).join("\n"));
+        }
+
+        // Reconciliation, in this order and no other: the row says
+        // `Validating Workspace…` while registry/worktree/tmux state is
+        // re-read, and ONLY once that settles is the lifecycle presentation
+        // taken down. Removing it earlier would blink the Pending Workspace out
+        // of the tree before the real worktree appeared in `repos`.
+        lifecycle.setPhase({ _tag: "Validating" });
         try {
           await deps.refreshAll();
         } catch (error) {
@@ -188,11 +252,44 @@ export function createHandleOpen(deps: ModalActionDeps) {
             `Refresh failed after open: ${toWctError(error).message}`,
           );
         }
+        lifecycle.end();
+
+        // The automatic tmux client switch happens last, after validation and
+        // after the progress row is gone: switching detaches the terminal this
+        // TUI is drawn in, and a switch failure must surface as a plain action
+        // error rather than resurrecting a progress row.
+        if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
+          const liveClient = await deps.discoverClient();
+          if (liveClient.type === "single") {
+            const switched = await deps.switchSession(
+              result.sessionName,
+              liveClient.client,
+            );
+            if (!switched) {
+              appendWarning(
+                `Started session '${result.sessionName}', but failed to switch client`,
+              );
+            }
+          } else if (liveClient.type === "none") {
+            appendWarning(
+              "No tmux client found — start tmux in the other pane",
+            );
+          } else if (liveClient.type === "error") {
+            appendWarning(
+              `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
+            );
+          } else if (liveClient.type === "multiple") {
+            appendWarning(
+              "Cannot switch tmux client after open because multiple tmux clients are attached",
+            );
+          }
+        }
 
         if (warningMessage) {
           deps.showActionError(warningMessage);
         }
       } finally {
+        lifecycle.end();
         clearPending();
       }
     })();

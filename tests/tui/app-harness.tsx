@@ -23,8 +23,13 @@
 // regardless of whether Vitest's hoisting transform rewrites this file.
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { Effect } from "effect";
 import type React from "react";
 import { vi } from "vitest";
+import type {
+  WorkspacePhase,
+  WorkspaceReporter,
+} from "../../src/services/workspace-service";
 import type { Worktree } from "../../src/services/worktree-service";
 import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 
@@ -162,6 +167,70 @@ vi.mock("../../src/services/github-service", () => ({
   },
 }));
 
+// --- WorkspaceService: every lifecycle call is DEFERRED. `open`/`up`/`down`/
+// `close` each return a promise the test resolves or rejects by hand, and the
+// call records the options it was given — including the `reporter` the TUI
+// passed — so a test can drive one phase at a time and assert on the frame
+// rendered between phases. Without the deferral, a lifecycle would settle
+// inside the same microtask that started it and no intermediate progress row
+// would ever be observable.
+interface WorkspaceCallShape {
+  operation: "open" | "up" | "down" | "close";
+  options: Record<string, unknown>;
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+  promise: Promise<unknown>;
+}
+
+const workspaceHarness = vi.hoisted(() => {
+  const calls: Array<{
+    operation: "open" | "up" | "down" | "close";
+    options: Record<string, unknown>;
+    resolve: (result: unknown) => void;
+    reject: (error: unknown) => void;
+    promise: Promise<unknown>;
+  }> = [];
+  const defer =
+    (operation: "open" | "up" | "down" | "close") =>
+    (options: Record<string, unknown> = {}) => {
+      let resolve: (result: unknown) => void = () => undefined;
+      let reject: (error: unknown) => void = () => undefined;
+      const promise = new Promise<unknown>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      // Nothing awaits a rejected deferred until the test rejects it, and the
+      // TUI always attaches its own catch — but an unhandled rejection would
+      // still be reported if a test never settles the call, so keep a no-op
+      // handler on the stored promise.
+      promise.catch(() => undefined);
+      calls.push({ operation, options, resolve, reject, promise });
+      return promise;
+    };
+  return {
+    calls,
+    service: {
+      open: defer("open"),
+      up: defer("up"),
+      down: defer("down"),
+      close: defer("close"),
+    },
+  };
+});
+
+vi.mock("../../src/services/workspace-service", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/services/workspace-service")
+  >("../../src/services/workspace-service");
+  return {
+    ...actual,
+    WorkspaceService: {
+      use: (selector: (svc: unknown) => unknown) =>
+        selector(workspaceHarness.service),
+    },
+  };
+});
+
 vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: {
     use: (selector: (svc: unknown) => unknown) =>
@@ -175,11 +244,57 @@ vi.mock("../../src/services/pr-cache-service", () => ({
 
 export { githubFixtures, registryItems, runtimeMock, worktreeFixtures };
 
+/** Lifecycle calls the App has made, oldest first. */
+export function workspaceCalls(
+  operation?: WorkspaceCallShape["operation"],
+): WorkspaceCallShape[] {
+  const calls = workspaceHarness.calls as WorkspaceCallShape[];
+  return operation
+    ? calls.filter((call) => call.operation === operation)
+    : calls;
+}
+
+export function lastWorkspaceCall(
+  operation?: WorkspaceCallShape["operation"],
+): WorkspaceCallShape {
+  const calls = workspaceCalls(operation);
+  const call = calls[calls.length - 1];
+  if (!call) {
+    throw new Error(
+      `no ${operation ?? "workspace"} call recorded by the harness`,
+    );
+  }
+  return call;
+}
+
+/**
+ * Deliver ONE semantic phase event to the reporter the App handed the service,
+ * exactly as the real service would. The reporter returns an Effect, so it is
+ * run here rather than merely constructed.
+ */
+export function emitWorkspacePhase(
+  call: WorkspaceCallShape,
+  phase: WorkspacePhase,
+): void {
+  const reporter = call.options.reporter as WorkspaceReporter | undefined;
+  if (!reporter) {
+    throw new Error(`${call.operation} was called without a reporter`);
+  }
+  Effect.runSync(
+    reporter.event({
+      operation: call.operation,
+      _tag: "PhaseStarted",
+      phase,
+    }) as Effect.Effect<void>,
+  );
+}
+
 /** Reset every controllable fixture and runtime spy; call from `beforeEach`. */
 export function resetHarnessFixtures(): void {
   registryItems.items = [];
   worktreeFixtures.byRepoPath.clear();
   githubFixtures.prsByRepoPath.clear();
+  workspaceHarness.calls.length = 0;
   runtimeMock.runPromise.mockClear();
   runtimeMock.runSync.mockClear();
   refreshHarness.callback = null;

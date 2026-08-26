@@ -6,6 +6,17 @@ import {
   selectedRowFill,
 } from "./tree-row";
 
+/**
+ * A Workspace's identity line: expansion marker, session dot, branch name.
+ *
+ * It deliberately carries NO lifecycle status. Progress used to be painted
+ * onto this row as an inline `opening…`/`closing…` suffix, which conflated
+ * identity with status, jittered the branch's truncation budget as the suffix
+ * changed, and could say nothing more specific than "something is happening".
+ * Status now lives on a separate `LifecycleProgressRow` beneath this row; the
+ * only thing a lifecycle changes here is that the Workspace is presented as
+ * expanded (see `isWorktreeEffectivelyExpanded`).
+ */
 interface Props {
   branch: string;
   hasSession: boolean;
@@ -13,7 +24,6 @@ interface Props {
   isSelected: boolean;
   isChildSelected?: boolean;
   isHovered?: boolean;
-  pendingStatus?: "opening" | "closing" | "starting" | "stopping";
   isExpanded?: boolean;
   hasExpandableData?: boolean;
   maxWidth: number;
@@ -30,7 +40,6 @@ export function WorktreeItem({
   isSelected,
   isChildSelected,
   isHovered,
-  pendingStatus,
   isExpanded,
   hasExpandableData,
   maxWidth,
@@ -42,62 +51,6 @@ export function WorktreeItem({
   const expandIcon = isExpanded ? "▼ " : hasExpandableData ? "▶ " : "";
   const prefix = "   ";
 
-  const pendingRow = (
-    suffix: "opening..." | "closing..." | "stopping...",
-    rowIndicator: string,
-  ) => {
-    const displayBranch = truncateBranch(
-      branch,
-      branchBudget(
-        maxWidth,
-        prefix.length + rowIndicator.length + 1 + suffix.length + 1,
-      ),
-    );
-    return {
-      content: `${prefix}${rowIndicator} ${displayBranch} ${suffix}`,
-      displayBranch,
-    };
-  };
-
-  if (pendingStatus === "opening") {
-    const { content, displayBranch } = pendingRow("opening...", "○");
-    return (
-      <Box>
-        <Text
-          color={isSelected ? SELECTED_ROW_FOREGROUND : "yellow"}
-          backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-          bold={isHovered}
-          wrap="truncate"
-        >
-          {prefix}
-          <Text italic>○ {displayBranch} opening...</Text>
-          {selectedRowFill(isSelected, maxWidth, content)}
-        </Text>
-      </Box>
-    );
-  }
-
-  if (pendingStatus === "closing" || pendingStatus === "stopping") {
-    const suffix = pendingStatus === "closing" ? "closing..." : "stopping...";
-    const { content, displayBranch } = pendingRow(suffix, indicator);
-    return (
-      <Box>
-        <Text
-          color={isSelected ? SELECTED_ROW_FOREGROUND : undefined}
-          backgroundColor={isSelected ? SELECTED_ROW_BACKGROUND : undefined}
-          dimColor={!isSelected && !isHovered}
-          bold={isHovered}
-          wrap="truncate"
-        >
-          {prefix}
-          {indicator} {displayBranch} {suffix}
-          {selectedRowFill(isSelected, maxWidth, content)}
-        </Text>
-      </Box>
-    );
-  }
-
-  const starting = pendingStatus === "starting" ? " starting..." : "";
   const displayBranch = truncateBranch(
     branch,
     branchBudget(
@@ -106,11 +59,10 @@ export function WorktreeItem({
         expandIcon.length +
         indicator.length +
         1 +
-        attached.length +
-        starting.length,
+        attached.length,
     ),
   );
-  const content = `${prefix}${expandIcon}${indicator} ${displayBranch}${attached}${starting}`;
+  const content = `${prefix}${expandIcon}${indicator} ${displayBranch}${attached}`;
 
   return (
     <Box>
@@ -125,7 +77,6 @@ export function WorktreeItem({
         <Text bold={active}> {displayBranch}</Text>
         <Text dimColor={!active} bold={isHovered}>
           {attached}
-          {starting}
         </Text>
         {selectedRowFill(isSelected, maxWidth, content)}
       </Text>

@@ -47,7 +47,6 @@ describe("TreeView maxWidth wiring", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions: new Map(),
       maxWidth: 15,
     });
 
@@ -65,7 +64,6 @@ describe("TreeView maxWidth wiring", () => {
         selectedIndex: 0,
         items,
         rows,
-        pendingActions: new Map(),
         prData: new Map(),
         panes: new Map(),
         expandedWorktreeKeys: new Set<string>(),
@@ -113,7 +111,6 @@ describe("TreeView windowing", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions: new Map(),
       maxWidth: 80,
     });
     const { stdout, stdin } = createStdoutStdin();
@@ -129,7 +126,6 @@ describe("TreeView windowing", () => {
         selectedIndex: 0,
         items,
         rows,
-        pendingActions: new Map(),
         prData: new Map(),
         panes: new Map(),
         expandedWorktreeKeys: new Set<string>(),

@@ -136,52 +136,68 @@ export function useRegistry() {
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    const opts = signal ? { signal } : undefined;
-    try {
-      const items = await tuiRuntime.runPromise(
-        RegistryService.use((s) => s.listRepos()),
-        opts,
-      );
-      const repoInfos: RepoInfo[] = await Promise.all(
-        items.map((item) =>
-          loadRepoInfo(item, {
-            pathExists: existsSync,
-            getProfileNames,
-            listWorktrees: (repoPath) =>
-              tuiRuntime.runPromise(
-                WorktreeService.use((s) => s.listWorktrees(repoPath)),
-                opts,
-              ),
-            getDefaultBranch: (repoPath) =>
-              tuiRuntime.runPromise(
-                WorktreeService.use((s) => s.getDefaultBranch(repoPath)),
-                opts,
-              ),
-            getChangedFileCount: (worktreePath) =>
-              tuiRuntime.runPromise(
-                WorktreeService.use((s) => s.getChangedFileCount(worktreePath)),
-                opts,
-              ),
-            getAheadBehind: (worktreePath, ref) =>
-              tuiRuntime.runPromise(
-                WorktreeService.use((s) => s.getAheadBehind(worktreePath, ref)),
-                opts,
-              ),
-          }),
-        ),
-      );
-      setRepos(repoInfos);
-    } catch {
-      // Swallow — previous repos preserved, next poll/watch will retry
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  /**
+   * Resolves the repos it just loaded, or `null` when the load was aborted or
+   * failed (the previous repos stay on screen in that case). Callers that
+   * reconcile against fresh registry state — the TUI's lifecycle validation —
+   * need the snapshot THIS refresh observed; the `repos` value they captured
+   * before awaiting is a render-time capture and is stale by definition.
+   */
+  const refresh = useCallback(
+    async (signal?: AbortSignal): Promise<RepoInfo[] | null> => {
+      const opts = signal ? { signal } : undefined;
+      try {
+        const items = await tuiRuntime.runPromise(
+          RegistryService.use((s) => s.listRepos()),
+          opts,
+        );
+        const repoInfos: RepoInfo[] = await Promise.all(
+          items.map((item) =>
+            loadRepoInfo(item, {
+              pathExists: existsSync,
+              getProfileNames,
+              listWorktrees: (repoPath) =>
+                tuiRuntime.runPromise(
+                  WorktreeService.use((s) => s.listWorktrees(repoPath)),
+                  opts,
+                ),
+              getDefaultBranch: (repoPath) =>
+                tuiRuntime.runPromise(
+                  WorktreeService.use((s) => s.getDefaultBranch(repoPath)),
+                  opts,
+                ),
+              getChangedFileCount: (worktreePath) =>
+                tuiRuntime.runPromise(
+                  WorktreeService.use((s) =>
+                    s.getChangedFileCount(worktreePath),
+                  ),
+                  opts,
+                ),
+              getAheadBehind: (worktreePath, ref) =>
+                tuiRuntime.runPromise(
+                  WorktreeService.use((s) =>
+                    s.getAheadBehind(worktreePath, ref),
+                  ),
+                  opts,
+                ),
+            }),
+          ),
+        );
+        setRepos(repoInfos);
+        return repoInfos;
+      } catch {
+        // Swallow — previous repos preserved, next poll/watch will retry
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    refresh(controller.signal);
+    void refresh(controller.signal);
     return () => controller.abort();
   }, [refresh]);
 

@@ -10,7 +10,36 @@ import {
   createPrepareUpModal,
 } from "../../src/tui/hooks/useModalActions";
 import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
+import {
+  type LifecycleEntry,
+  type LifecyclePhase,
+  type LifecycleState,
+  lifecycleKey,
+} from "../../src/tui/lifecycle";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
+
+/**
+ * A live `setLifecycle` stand-in: applies the functional updates exactly as
+ * React would, so a test can read the phase the tree WOULD be rendering at any
+ * point in the async flow.
+ */
+function trackLifecycle() {
+  const tracker = {
+    state: new Map() as LifecycleState,
+    phases: [] as Array<LifecyclePhase | null>,
+    setLifecycle: (
+      update: LifecycleState | ((prev: LifecycleState) => LifecycleState),
+    ) => {
+      tracker.state =
+        typeof update === "function" ? update(tracker.state) : update;
+      tracker.phases.push(tracker.entry()?.phase ?? null);
+      return tracker.state;
+    },
+    entry: (): LifecycleEntry | undefined =>
+      tracker.state.get(lifecycleKey("/repo", "feat")),
+  };
+  return tracker;
+}
 
 const workspaceOpen = vi.hoisted(() => vi.fn(() => "mock-open-effect"));
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -64,6 +93,8 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     mode: Mode.Navigate,
     openModalRepoProject: "",
     openModalRepoPath: "",
+    lifecycle: new Map(),
+    setLifecycle: vi.fn(),
     setMode: vi.fn(),
     setSelectedIndex: vi.fn(),
     setPendingActions: vi.fn((fn) => {
@@ -202,6 +233,7 @@ describe("createPrepareOpenModal", () => {
         pr: "",
         profile: "dev",
         existing: false,
+        reporter: expect.any(Object),
       });
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-open-effect");
       expect(refreshAll).toHaveBeenCalled();
@@ -241,6 +273,7 @@ describe("createPrepareOpenModal", () => {
         pr: "123",
         profile: undefined,
         existing: false,
+        reporter: expect.any(Object),
       });
       expect(deps.refreshAll).toHaveBeenCalled();
     });
@@ -282,6 +315,7 @@ describe("createPrepareOpenModal", () => {
         pr: "",
         profile: "",
         existing: false,
+        reporter: expect.any(Object),
       });
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
@@ -837,5 +871,112 @@ describe("createHandleAddProject", () => {
     await vi.waitFor(() => {
       expect(deps.showActionError).toHaveBeenCalledWith("already registered");
     });
+  });
+});
+
+describe("open lifecycle reconciliation", () => {
+  // AC-12
+  test("validates and refreshes before the lifecycle presentation is removed", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
+      makeOpenResult({ attempts: { ...makeOpenResult().attempts } }),
+    );
+    const tracker = trackLifecycle();
+    const phaseAtRefresh: Array<LifecyclePhase | undefined> = [];
+    const entryAtRefresh: Array<boolean> = [];
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      phaseAtRefresh.push(tracker.entry()?.phase);
+      entryAtRefresh.push(tracker.state.size > 0);
+      return null;
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      refreshAll,
+      // Keep the tmux switch out of this test's way.
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+
+    // The Pending Workspace exists immediately, before anything is awaited.
+    expect(tracker.entry()?.phase).toEqual({ _tag: "Preparing" });
+
+    await vi.waitFor(() => {
+      expect(refreshAll).toHaveBeenCalled();
+      expect(tracker.state.size).toBe(0);
+    });
+
+    // Validation ran WHILE the lifecycle row still existed, showing
+    // `Validating Workspace…`, and only then was the presentation removed.
+    expect(phaseAtRefresh).toEqual([{ _tag: "Validating" }]);
+    expect(entryAtRefresh).toEqual([true]);
+    expect(tracker.phases).toContainEqual({ _tag: "Validating" });
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
+    // Expansion is presentation-only: nothing writes the stored preference,
+    // so the discovered Workspace is simply left as the lifecycle left it.
+    expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
+  });
+
+  // AC-13
+  test("switches the tmux client only after validation and lifecycle removal", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const tracker = trackLifecycle();
+    const order: string[] = [];
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      order.push("refresh");
+      return null;
+    });
+    const discoverClient = vi.fn().mockImplementation(async () => {
+      order.push(`discover(lifecycle=${tracker.state.size})`);
+      return { type: "single", client: null } as unknown as TmuxClientDiscovery;
+    });
+    const switchSession = vi.fn().mockImplementation(async () => {
+      order.push(`switch(lifecycle=${tracker.state.size})`);
+      return false;
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      refreshAll,
+      discoverClient,
+      switchSession,
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(switchSession).toHaveBeenCalled();
+      expect(deps.showActionError).toHaveBeenCalled();
+    });
+
+    expect(order).toEqual([
+      "refresh",
+      "discover(lifecycle=0)",
+      "switch(lifecycle=0)",
+    ]);
+    // A failed switch reports an error and does NOT recreate a progress row.
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      "Started session 'feat', but failed to switch client",
+    );
+    expect(tracker.state.size).toBe(0);
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
   });
 });

@@ -4,16 +4,17 @@ import { useMemo } from "react";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
-import type { TreeRow } from "../tree-helpers";
+import type { LifecycleState } from "../lifecycle";
+import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
 import {
   type PaneInfo,
-  type PendingAction,
   type PRInfo,
   pendingKey,
   type TreeItem,
 } from "../types";
 import { ConfirmModal, type ConfirmMode } from "./ConfirmModal";
 import { DetailRow } from "./DetailRow";
+import { LifecycleProgressRow } from "./LifecycleProgressRow";
 import { RepoEmptyRow } from "./RepoEmptyRow";
 import { RepoNode } from "./RepoNode";
 import { WorktreeItem } from "./WorktreeItem";
@@ -33,7 +34,8 @@ interface Props {
   rows: TreeRow[];
   /** Tree-item index currently under the pointer, for hover styling. */
   hoveredItemIndex?: number | null;
-  pendingActions: Map<string, PendingAction>;
+  /** Active lifecycle operations, keyed by Workspace Identity. */
+  lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   expandedWorktreeKeys?: Set<string>;
@@ -51,6 +53,8 @@ interface Props {
     onCancel: () => void;
   };
 }
+
+const EMPTY_LIFECYCLE: LifecycleState = new Map();
 
 export function getDetailRowKey(
   repoId: string,
@@ -70,7 +74,7 @@ export function TreeView({
   items,
   rows,
   hoveredItemIndex = null,
-  pendingActions,
+  lifecycle = EMPTY_LIFECYCLE,
   prData,
   panes,
   expandedWorktreeKeys,
@@ -105,10 +109,10 @@ export function TreeView({
       selectedItem,
       hoveredItemIndex,
       expandedWorktreeKeys,
+      lifecycle,
       sessionMap,
       prData,
       panes,
-      pendingActions,
       maxWidth,
       refreshingProjects,
       errors,
@@ -127,10 +131,10 @@ interface RenderRowContext {
   selectedItem: TreeItem | undefined;
   hoveredItemIndex: number | null;
   expandedWorktreeKeys?: Set<string>;
+  lifecycle: LifecycleState;
   sessionMap: Map<string, { name: string; attached: boolean }>;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
-  pendingActions: Map<string, PendingAction>;
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
@@ -152,17 +156,31 @@ function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
       );
     case "repo-empty":
       return <RepoEmptyRow key={`repo-empty-${row.repoIndex}`} />;
-    case "phantom": {
+    case "pending-workspace": {
       const repo = ctx.repos[row.repoIndex];
       if (!repo) return null;
+      // Rendered as an ordinary (never selected, never hovered) branch row:
+      // the row says WHICH Workspace, the progress row beneath says what is
+      // happening to it.
       return (
         <WorktreeItem
-          key={`phantom-${repo.id}-${row.branch}`}
+          key={`pending-${repo.id}-${row.branch}`}
           branch={row.branch}
           hasSession={false}
           isAttached={false}
           isSelected={false}
-          pendingStatus="opening"
+          isExpanded
+          maxWidth={ctx.maxWidth}
+        />
+      );
+    }
+    case "lifecycle-progress": {
+      const repo = ctx.repos[row.repoIndex];
+      if (!repo) return null;
+      return (
+        <LifecycleProgressRow
+          key={`lifecycle-${repo.id}-${row.branch}`}
+          phase={row.phase}
           maxWidth={ctx.maxWidth}
         />
       );
@@ -231,7 +249,6 @@ function renderWorktreeRow(
   const sessionName = formatSessionName(basename(wt.path));
   const session = ctx.sessionMap.get(sessionName);
   const wtKey = pendingKey(repo.project, wt.branch);
-  const pending = ctx.pendingActions.get(wtKey);
 
   const wtPr = ctx.prData.get(wtKey);
   const wtPanes = ctx.panes.get(sessionName);
@@ -253,8 +270,13 @@ function renderWorktreeRow(
       isSelected={idx === ctx.selectedIndex}
       isChildSelected={wtChildSelected}
       isHovered={idx === ctx.hoveredItemIndex}
-      pendingStatus={pending?.type}
-      isExpanded={ctx.expandedWorktreeKeys?.has(wtKey) ?? false}
+      isExpanded={isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys: ctx.expandedWorktreeKeys,
+        lifecycle: ctx.lifecycle,
+        project: repo.project,
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+      })}
       hasExpandableData={!!hasExpandableData}
       maxWidth={ctx.maxWidth}
     />

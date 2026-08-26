@@ -5,15 +5,23 @@ import {
   WorkspaceService,
   type WorkspaceUpResult,
 } from "../../src/services/workspace-service";
+import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import type { SessionActionDeps } from "../../src/tui/hooks/useSessionActions";
 import {
   createExecuteClose,
   createExecuteDown,
+  createHandleCloseSelectedWorktree,
   createHandleDownSelectedWorktree,
   createHandleSpaceSwitch,
   createHandleStartResult,
   createSwitchClientAway,
 } from "../../src/tui/hooks/useSessionActions";
+import {
+  type LifecycleEntry,
+  type LifecycleState,
+  lifecycleKey,
+} from "../../src/tui/lifecycle";
+import { buildTreeItems, buildTreeRows } from "../../src/tui/tree-helpers";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -43,6 +51,7 @@ function makeDeps(
     sessions: [],
     selectedIndex: 0,
     mode: Mode.Navigate,
+    lifecycle: new Map(),
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
     setPendingActions: vi.fn((fn) => {
@@ -1050,5 +1059,143 @@ describe("createHandleDownSelectedWorktree", () => {
 
     handleDown();
     expect(returnModeRef.current).toEqual(Mode.Expanded(worktreeKey));
+  });
+});
+
+describe("a Workspace under an active lifecycle", () => {
+  const repoPath = "/repo";
+  const branch = "main";
+
+  function repos(): RepoInfo[] {
+    return [
+      {
+        id: "r1",
+        project: "proj",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            branch,
+            path: "/repo/main",
+            isMainWorktree: true,
+            changedFiles: 3,
+            sync: { ahead: 1, behind: 0 },
+          },
+        ],
+      },
+    ];
+  }
+
+  function lifecycleFor(): LifecycleState {
+    const entry: LifecycleEntry = {
+      operation: "open",
+      repoPath,
+      project: "proj",
+      branch,
+      phase: { _tag: "CreatingWorktree" },
+    };
+    return new Map([[lifecycleKey(repoPath, branch), entry]]);
+  }
+
+  // AC-9
+  test("is presented expanded with details hidden, stays selectable, and refuses actions", () => {
+    const lifecycle = lifecycleFor();
+    const repoList = repos();
+    const worktreeKey = pendingKey("proj", branch);
+
+    // --- Presentation: expanded, but stats/PR/pane detail rows suppressed.
+    const items = buildTreeItems({
+      repos: repoList,
+      expandedWorktreeKeys: new Set([worktreeKey]),
+      lifecycle,
+      prData: new Map([
+        [
+          worktreeKey,
+          {
+            number: 7,
+            title: "Add thing",
+            state: "OPEN" as const,
+            headRefName: branch,
+            rollupState: null,
+          },
+        ],
+      ]),
+      panes: new Map([
+        [
+          "main",
+          [
+            {
+              paneId: "%1",
+              paneIndex: 0,
+              command: "vim",
+              window: "0",
+              zoomed: false,
+              active: true,
+            },
+          ],
+        ],
+      ]),
+      jumpToPane: () => undefined,
+    });
+    expect(items.some((item) => item.type === "detail")).toBe(false);
+
+    const rows = buildTreeRows({
+      items,
+      repos: repoList,
+      expandedRepos: new Set(["r1"]),
+      expandedWorktreeKeys: new Set([worktreeKey]),
+      lifecycle,
+      maxWidth: 80,
+    });
+    expect(rows.some((row) => row.kind === "worktree-stats")).toBe(false);
+    expect(
+      rows.filter((row) => row.kind === "lifecycle-progress"),
+    ).toHaveLength(1);
+    // The parent branch row itself stays selectable / arrow-key reachable.
+    const worktreeItemIndex = items.findIndex(
+      (item) => item.type === "worktree",
+    );
+    expect(worktreeItemIndex).toBeGreaterThan(-1);
+    expect(
+      rows.some(
+        (row) => row.kind === "worktree" && row.itemIndex === worktreeItemIndex,
+      ),
+    ).toBe(true);
+
+    // --- Actions targeting it are refused, through the timed error display.
+    const treeItems: TreeItem[] = [
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+    const deps = makeDeps({
+      treeItems,
+      filteredRepos: repoList,
+      selectedIndex: 0,
+      sessions: [{ name: "main", attached: false }],
+      lifecycle,
+      switchSession: vi.fn().mockResolvedValue(true),
+    });
+
+    createHandleSpaceSwitch(deps)();
+    createHandleDownSelectedWorktree(deps)();
+    createHandleCloseSelectedWorktree(deps)();
+
+    expect(deps.switchSession).not.toHaveBeenCalled();
+    expect(deps.setMode).not.toHaveBeenCalled();
+    expect(deps.showActionError).toHaveBeenCalledTimes(3);
+    for (const call of (deps.showActionError as Mock).mock.calls) {
+      expect(String(call[0])).toContain(branch);
+    }
+
+    // Without a lifecycle the same actions go through, so the guard is the
+    // only thing refusing them.
+    const free = makeDeps({
+      treeItems,
+      filteredRepos: repoList,
+      selectedIndex: 0,
+      sessions: [{ name: "main", attached: false }],
+      switchSession: vi.fn().mockResolvedValue(true),
+    });
+    createHandleSpaceSwitch(free)();
+    expect(free.switchSession).toHaveBeenCalled();
   });
 });

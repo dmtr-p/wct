@@ -17,13 +17,22 @@ export interface SetupService {
     commands: ReadonlyArray<SetupCommand>,
     workingDir: string,
     env: WctEnv,
+    /**
+     * Optional per-command-start hook, invoked with the command's configured
+     * NAME (never its shell text) immediately before it runs, so callers learn
+     * setup progress in execution order. Typed `Effect.Effect<void>` — it can
+     * neither fail nor require services — so a progress reporter can never
+     * fail setup; the only supplier is `emitReporter` in `workspace-service`,
+     * which already swallows reporter failures.
+     */
+    onCommandStart?: (name: string) => Effect.Effect<void>,
   ) => Effect.Effect<SetupResult[], WctError, BunServices.BunServices>;
 }
 
 export const SetupService = Context.Service<SetupService>("wct/SetupService");
 
 export const liveSetupService: SetupService = SetupService.of({
-  runSetupCommands: (commands, workingDir, env) =>
+  runSetupCommands: (commands, workingDir, env, onCommandStart) =>
     Effect.gen(function* () {
       const results: SetupResult[] = [];
       const totalSteps = commands.length;
@@ -35,6 +44,7 @@ export const liveSetupService: SetupService = SetupService.of({
       for (let i = 0; i < commands.length; i++) {
         // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
         const cmd = commands[i]!;
+        if (onCommandStart) yield* onCommandStart(cmd.name);
         yield* logger.step(i + 1, totalSteps, cmd.name);
 
         const step = execShell(cmd.command, {

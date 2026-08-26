@@ -58,7 +58,27 @@ export type WorkspaceWarning =
       error: WorkspaceError;
     };
 
+/**
+ * A *semantic* lifecycle phase: what work is starting, never how it is
+ * rendered and never the shell command behind it. Presentation layers own the
+ * wording (the TUI maps these to its Lifecycle Progress Row labels), so a
+ * phase can be added here without touching CLI output.
+ */
+export type WorkspacePhase =
+  | { _tag: "Preparing" }
+  | { _tag: "CreatingWorktree" }
+  | { _tag: "CopyingFiles" }
+  | { _tag: "RunningSetup"; name: string }
+  | { _tag: "CreatingTmuxSession" }
+  | { _tag: "KillingTmuxSession" }
+  | { _tag: "RemovingWorktree" };
+
 export type WorkspaceReporterEvent =
+  | {
+      operation: WorkspaceOperation;
+      _tag: "PhaseStarted";
+      phase: WorkspacePhase;
+    }
   | {
       operation: WorkspaceOperation;
       _tag: "TargetResolved";
@@ -251,6 +271,19 @@ function emitReporter(
   );
 }
 
+/**
+ * Emit a semantic phase start. Shares `emitReporter`'s failure isolation, so a
+ * reporter that fails — or throws before returning an Effect — can never fail
+ * the lifecycle effect or change its result.
+ */
+function emitPhase(
+  reporter: WorkspaceReporter | undefined,
+  operation: WorkspaceOperation,
+  phase: WorkspacePhase,
+): Effect.Effect<void> {
+  return emitReporter(reporter, { operation, _tag: "PhaseStarted", phase });
+}
+
 function captureAttempt<A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<WorkspaceAttempt<A>, never, R> {
@@ -421,6 +454,7 @@ function openImpl(
 > {
   return Effect.gen(function* () {
     const reporter = options.reporter;
+    yield* emitPhase(reporter, "open", { _tag: "Preparing" });
     const resolvedOptions = yield* resolveOpenIntent(options);
     const { branch, existing, base, cwd, profile } = resolvedOptions;
 
@@ -504,6 +538,7 @@ function openImpl(
     );
     const workingDir = env.WCT_WORK_DIR;
 
+    yield* emitPhase(reporter, "open", { _tag: "CreatingWorktree" });
     yield* emitReporter(reporter, {
       operation: "open",
       _tag: "AttemptStarted",
@@ -530,6 +565,7 @@ function openImpl(
     });
 
     if (resolved.copy && resolved.copy.length > 0) {
+      yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });
       yield* emitReporter(reporter, {
         operation: "open",
         _tag: "AttemptStarted",
@@ -581,7 +617,13 @@ function openImpl(
       resolved.setup && resolved.setup.length > 0
         ? yield* captureAttempt(
             SetupService.use((service) =>
-              service.runSetupCommands(resolved.setup ?? [], workingDir, env),
+              service.runSetupCommands(
+                resolved.setup ?? [],
+                workingDir,
+                env,
+                (name) =>
+                  emitPhase(reporter, "open", { _tag: "RunningSetup", name }),
+              ),
             ),
           )
         : skippedAttempt<SetupResult[]>("setup_not_configured");
@@ -595,6 +637,7 @@ function openImpl(
     }
 
     if (resolved.tmux) {
+      yield* emitPhase(reporter, "open", { _tag: "CreatingTmuxSession" });
       yield* emitReporter(reporter, {
         operation: "open",
         _tag: "AttemptStarted",
@@ -729,6 +772,7 @@ function upImpl(
   return Effect.gen(function* () {
     const { profile, reporter } = options;
 
+    yield* emitPhase(reporter, "up", { _tag: "Preparing" });
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "up",
@@ -792,6 +836,7 @@ function upImpl(
     const workingDir = env.WCT_WORK_DIR;
 
     if (resolved.tmux) {
+      yield* emitPhase(reporter, "up", { _tag: "CreatingTmuxSession" });
       yield* emitReporter(reporter, {
         operation: "up",
         _tag: "AttemptStarted",
@@ -852,6 +897,7 @@ function downImpl(
 > {
   return Effect.gen(function* () {
     const { reporter } = options;
+    yield* emitPhase(reporter, "down", { _tag: "Preparing" });
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "down",
@@ -892,6 +938,7 @@ function downImpl(
       };
     }
 
+    yield* emitPhase(reporter, "down", { _tag: "KillingTmuxSession" });
     yield* TmuxService.use((service) => service.killSession(sessionName));
     yield* emitReporter(reporter, {
       operation: "down",
@@ -926,6 +973,7 @@ function closeImpl(
 > {
   return Effect.gen(function* () {
     const { cwd, force = false, reporter } = options;
+    yield* emitPhase(reporter, "close", { _tag: "Preparing" });
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "close",
@@ -946,6 +994,10 @@ function closeImpl(
     const existed = yield* TmuxService.use((service) =>
       service.sessionExists(sessionName),
     );
+
+    if (existed) {
+      yield* emitPhase(reporter, "close", { _tag: "KillingTmuxSession" });
+    }
 
     const kill: WorkspaceAttempt<null> = existed
       ? yield* TmuxService.use((service) =>
@@ -973,6 +1025,7 @@ function closeImpl(
       });
     }
 
+    yield* emitPhase(reporter, "close", { _tag: "RemovingWorktree" });
     yield* emitReporter(reporter, {
       operation: "close",
       _tag: "AttemptStarted",

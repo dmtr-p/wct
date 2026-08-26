@@ -9,6 +9,12 @@ import {
   WorkspaceService,
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
+import {
+  isLifecycleActive,
+  type LifecycleState,
+  lifecycleBusyMessage,
+  lifecycleEntryFor,
+} from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
   resolveSessionHandoff,
@@ -25,6 +31,8 @@ export interface SessionActionDeps {
   sessions: TmuxSessionInfo[];
   selectedIndex: number;
   mode: Mode;
+  /** Active lifecycle operations, keyed by Workspace Identity. */
+  lifecycle: LifecycleState;
 
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
@@ -38,13 +46,38 @@ export interface SessionActionDeps {
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
 
-  refreshAll: () => Promise<void>;
+  /**
+   * Resolves the registry snapshot the refresh observed, or `null` when it
+   * failed (previous repos kept).
+   */
+  refreshAll: () => Promise<RepoInfo[] | null>;
   restoreConfirmationViewport: () => void;
 
   confirmDownReturnModeRef: MutableRefObject<Mode>;
   confirmDownReturnSelectedIndexRef: MutableRefObject<number>;
   confirmCloseReturnModeRef: MutableRefObject<Mode>;
   confirmCloseReturnSelectedIndexRef: MutableRefObject<number>;
+}
+
+/**
+ * A Workspace under an active lifecycle is INERT TO ACTIONS but still
+ * selectable and arrow-key reachable: only its actions are refused, and the
+ * refusal is reported through the existing timed error display. The single
+ * shared guard, so every action entry point rejects on the same condition.
+ */
+function rejectIfLifecycleActive(
+  deps: SessionActionDeps,
+  repoPath: string,
+  branch: string,
+): boolean {
+  if (!isLifecycleActive(deps.lifecycle, repoPath, branch)) return false;
+  deps.showActionError(
+    lifecycleBusyMessage(
+      branch,
+      lifecycleEntryFor(deps.lifecycle, repoPath, branch)?.phase,
+    ),
+  );
+  return true;
 }
 
 export function createNavigateTree(deps: SessionActionDeps) {
@@ -160,6 +193,7 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     if (!repo) return;
     const wt = repo.worktrees[resolvedItem.worktreeIndex];
     if (!wt) return;
+    if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = deps.sessions.some((s) => s.name === sessionName);
     if (hasSession) {
@@ -274,6 +308,8 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
 
+    if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
+
     const sessionName = formatSessionName(basename(wt.path));
     const worktreeKey = pendingKey(repo.project, wt.branch);
     deps.confirmCloseReturnSelectedIndexRef.current = deps.selectedIndex;
@@ -383,6 +419,8 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     const repo = deps.filteredRepos[item.repoIndex];
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
+
+    if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = deps.sessions.some((s) => s.name === sessionName);

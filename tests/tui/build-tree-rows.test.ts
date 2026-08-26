@@ -1,17 +1,41 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import {
+  type LifecycleEntry,
+  type LifecyclePhase,
+  type LifecycleState,
+  lifecycleKey,
+  lifecyclePhaseLabel,
+} from "../../src/tui/lifecycle";
 import { wrapPrLabel } from "../../src/tui/pr-layout";
 import {
   buildTreeItems,
   buildTreeRows,
   clampScrollOffset,
   confirmationRowRange,
+  firstRowForItem,
   insertConfirmationRows,
   resolveConfirmationAnchorItemIndex,
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
-import { Mode, type PendingAction, pendingKey } from "../../src/tui/types";
+import { Mode, pendingKey } from "../../src/tui/types";
+
+function openLifecycle(
+  repoPath: string,
+  project: string,
+  branch: string,
+  phase: LifecyclePhase = { _tag: "Preparing" },
+): LifecycleState {
+  const entry: LifecycleEntry = {
+    operation: "open",
+    repoPath,
+    project,
+    branch,
+    phase,
+  };
+  return new Map([[lifecycleKey(repoPath, branch), entry]]);
+}
 
 function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
   return {
@@ -57,7 +81,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions: new Map(),
     });
 
     // items: [repo, worktree]; sync is clean so no stats row even if expanded.
@@ -94,7 +117,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions: new Map(),
     });
 
     // items: [repo(0), worktree(1)]
@@ -136,7 +158,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions: new Map(),
     });
 
     expect(rows.map((r) => r.kind)).toEqual(["repo", "worktree"]);
@@ -155,7 +176,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions: new Map(),
     });
 
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
@@ -179,13 +199,12 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions: new Map(),
     });
 
     expect(rows.map((r) => r.kind)).toEqual(["repo"]);
   });
 
-  test("phantom opening rows for a populated repo follow its worktree block", () => {
+  test("pending-workspace rows for a populated repo follow its worktree block", () => {
     const repos = [
       repo({
         id: "repo-1",
@@ -202,12 +221,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const pendingActions = new Map<string, PendingAction>([
-      [
-        pendingKey("alpha", "feature/new"),
-        { type: "opening", branch: "feature/new", project: "alpha" },
-      ],
-    ]);
+    const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set<string>(),
@@ -218,19 +232,20 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions,
+      lifecycle,
     });
 
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
         { itemIndex: 0, kind: "repo" },
         { itemIndex: 1, kind: "worktree" },
-        { itemIndex: null, kind: "phantom" },
+        { itemIndex: null, kind: "pending-workspace" },
+        { itemIndex: null, kind: "lifecycle-progress" },
       ],
     );
   });
 
-  test("phantom rows still follow the last worktree when it is expanded with trailing detail rows", () => {
+  test("pending-workspace rows still follow the last worktree when it is expanded with trailing detail rows", () => {
     const branch = "feature/pr";
     const repos = [
       repo({
@@ -268,12 +283,7 @@ describe("buildTreeRows", () => {
         },
       ],
     ]);
-    const pendingActions = new Map<string, PendingAction>([
-      [
-        pendingKey("alpha", "feature/new"),
-        { type: "opening", branch: "feature/new", project: "alpha" },
-      ],
-    ]);
+    const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
@@ -286,11 +296,11 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions,
+      lifecycle,
     });
 
     // items: [repo(0), wt main(1), wt feature/pr(2), pr-detail(3)]. The
-    // phantom must come AFTER the expanded last worktree's detail rows — a
+    // the pending workspace must come AFTER the expanded last worktree's detail rows — a
     // next-item-only "last worktree" check would drop it entirely.
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
@@ -298,12 +308,13 @@ describe("buildTreeRows", () => {
         { itemIndex: 1, kind: "worktree" },
         { itemIndex: 2, kind: "worktree" },
         { itemIndex: 3, kind: "detail" },
-        { itemIndex: null, kind: "phantom" },
+        { itemIndex: null, kind: "pending-workspace" },
+        { itemIndex: null, kind: "lifecycle-progress" },
       ],
     );
   });
 
-  test("phantom rows follow the LAST worktree when an earlier worktree is expanded with detail rows", () => {
+  test("pending-workspace rows follow the LAST worktree when an earlier worktree is expanded with detail rows", () => {
     const branch = "feature/pr";
     const repos = [
       repo({
@@ -341,12 +352,7 @@ describe("buildTreeRows", () => {
         },
       ],
     ]);
-    const pendingActions = new Map<string, PendingAction>([
-      [
-        pendingKey("alpha", "feature/new"),
-        { type: "opening", branch: "feature/new", project: "alpha" },
-      ],
-    ]);
+    const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
@@ -359,24 +365,25 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions,
+      lifecycle,
     });
 
     // items: [repo(0), wt feature/pr(1), pr-detail(2), wt main(3)]. Detail
-    // rows in the MIDDLE of the repo block must not trigger phantom emission;
-    // the phantom still trails the final worktree.
+    // rows in the MIDDLE of the repo block must not trigger pending emission;
+    // the pending workspace still trails the final worktree.
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
         { itemIndex: 0, kind: "repo" },
         { itemIndex: 1, kind: "worktree" },
         { itemIndex: 2, kind: "detail" },
         { itemIndex: 3, kind: "worktree" },
-        { itemIndex: null, kind: "phantom" },
+        { itemIndex: null, kind: "pending-workspace" },
+        { itemIndex: null, kind: "lifecycle-progress" },
       ],
     );
   });
 
-  test("phantom rows for an empty expanded repo are appended at the bottom of the whole tree", () => {
+  test("pending-workspace rows for an empty expanded repo are appended at the bottom of the whole tree", () => {
     const repos = [
       repo({
         id: "repo-1",
@@ -394,12 +401,7 @@ describe("buildTreeRows", () => {
       repo({ id: "repo-2", project: "empty", worktrees: [] }),
     ];
     const expandedRepos = new Set(["repo-1", "repo-2"]);
-    const pendingActions = new Map<string, PendingAction>([
-      [
-        pendingKey("empty", "feature/seed"),
-        { type: "opening", branch: "feature/seed", project: "empty" },
-      ],
-    ]);
+    const lifecycle = openLifecycle("/tmp/repo-2", "empty", "feature/seed");
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set<string>(),
@@ -410,18 +412,19 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set<string>(),
-      pendingActions,
+      lifecycle,
     });
 
     // items: [repo-1(0), worktree(1), repo-2(2)]
-    // The empty-repo phantom is NOT placed under repo-2; it is appended last.
+    // The empty repo's pending rows are NOT placed under repo-2; appended last.
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
         { itemIndex: 0, kind: "repo" },
         { itemIndex: 1, kind: "worktree" },
         { itemIndex: 2, kind: "repo" },
         { itemIndex: null, kind: "repo-empty" },
-        { itemIndex: null, kind: "phantom" },
+        { itemIndex: null, kind: "pending-workspace" },
+        { itemIndex: null, kind: "lifecycle-progress" },
       ],
     );
   });
@@ -469,7 +472,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions: new Map(),
     });
 
     // items: [repo(0), worktree(1), pr-detail(2)]; clean sync → no stats row.
@@ -532,7 +534,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions: new Map(),
       maxWidth: 40,
     });
 
@@ -610,7 +611,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions: new Map(),
       maxWidth: 80,
     });
 
@@ -662,7 +662,6 @@ describe("buildTreeRows", () => {
       repos,
       expandedRepos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
-      pendingActions: new Map(),
       maxWidth: 40,
     });
 
@@ -745,7 +744,6 @@ describe("anchored confirmation rows", () => {
     const baseRows = buildTreeRows({
       items,
       repos,
-      pendingActions: new Map(),
     });
     const mode = Mode.ConfirmClose(
       "alpha-x",
@@ -774,5 +772,152 @@ describe("anchored confirmation rows", () => {
 
   test("scrolls the entire modal into a viewport when it opens below it", () => {
     expect(scrollRangeToKeepVisible({ start: 12, end: 16 }, 0, 8)).toBe(9);
+  });
+});
+
+describe("lifecycle rows", () => {
+  const repoPath = "/tmp/repo-1";
+
+  function repoWithWorktree(branch: string): RepoInfo[] {
+    return [
+      repo({
+        id: "repo-1",
+        project: "alpha",
+        repoPath,
+        worktrees: [
+          {
+            branch,
+            path: "/tmp/alpha-x",
+            isMainWorktree: false,
+            changedFiles: 4,
+            sync: { ahead: 2, behind: 0 },
+          },
+        ],
+      }),
+    ];
+  }
+
+  function rowsFor(repos: RepoInfo[], lifecycle: LifecycleState) {
+    const items = buildTreeItems({
+      repos,
+      expandedWorktreeKeys: new Set<string>(),
+      lifecycle,
+      prData: new Map(),
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    return {
+      items,
+      rows: buildTreeRows({
+        items,
+        repos,
+        expandedRepos: new Set(["repo-1"]),
+        expandedWorktreeKeys: new Set<string>(),
+        lifecycle,
+        maxWidth: 80,
+      }),
+    };
+  }
+
+  // AC-8
+  test("each phase replaces the single progress row with its canonical label", () => {
+    const branch = "feature/x";
+    const repos = repoWithWorktree(branch);
+    const phases: LifecyclePhase[] = [
+      { _tag: "CreatingWorktree" },
+      { _tag: "CopyingFiles" },
+      { _tag: "RunningSetup", name: "install" },
+      { _tag: "CreatingTmuxSession" },
+    ];
+
+    const seen: string[] = [];
+    for (const phase of phases) {
+      const { rows } = rowsFor(
+        repos,
+        openLifecycle(repoPath, "alpha", branch, phase),
+      );
+      const progressRows = rows.filter(
+        (row) => row.kind === "lifecycle-progress",
+      );
+      // At most (and here exactly) ONE progress row per Workspace.
+      expect(progressRows).toHaveLength(1);
+      const progressRow = progressRows[0];
+      if (progressRow?.kind !== "lifecycle-progress") {
+        throw new Error("expected a lifecycle-progress row");
+      }
+      expect(progressRow.branch).toBe(branch);
+      expect(progressRow.phase).toEqual(phase);
+      seen.push(lifecyclePhaseLabel(progressRow.phase));
+    }
+
+    expect(seen).toEqual([
+      "Creating worktree…",
+      "Copying files…",
+      "Setup: install…",
+      "Creating tmux session…",
+    ]);
+
+    // Skipped optional work produces no row: a lifecycle sitting on
+    // `CreatingWorktree` shows only that, never a copy or tmux row.
+    const { rows } = rowsFor(
+      repos,
+      openLifecycle(repoPath, "alpha", branch, { _tag: "CreatingWorktree" }),
+    );
+    const labels = rows.flatMap((row) =>
+      row.kind === "lifecycle-progress" ? [lifecyclePhaseLabel(row.phase)] : [],
+    );
+    expect(labels).toEqual(["Creating worktree…"]);
+    // And no lifecycle at all means no lifecycle rows anywhere.
+    const clean = rowsFor(repos, new Map());
+    expect(
+      clean.rows.some(
+        (row) =>
+          row.kind === "lifecycle-progress" || row.kind === "pending-workspace",
+      ),
+    ).toBe(false);
+  });
+
+  // AC-11
+  test("neither the progress row nor the Pending Workspace is keyboard- or mouse-reachable", () => {
+    const branch = "feature/x";
+    const pendingBranch = "feature/new";
+    const repos = repoWithWorktree(branch);
+    const lifecycle = new Map<string, LifecycleEntry>([
+      ...openLifecycle(repoPath, "alpha", branch, {
+        _tag: "CopyingFiles",
+      }).entries(),
+      ...openLifecycle(repoPath, "alpha", pendingBranch, {
+        _tag: "Preparing",
+      }).entries(),
+    ]);
+    const { items, rows } = rowsFor(repos, lifecycle);
+
+    const lifecycleRows = rows.filter(
+      (row) =>
+        row.kind === "lifecycle-progress" || row.kind === "pending-workspace",
+    );
+    expect(lifecycleRows).toHaveLength(3);
+    // Inert to the pointer: `resolveMouseAction`/`resolveHoverItemIndex` both
+    // refuse a row whose itemIndex is null.
+    for (const row of lifecycleRows) {
+      expect(row.itemIndex).toBeNull();
+    }
+    // Unreachable by keyboard: navigation walks `items`, and the Pending
+    // Workspace has no logical item at all.
+    expect(
+      items.some(
+        (item) =>
+          item.type === "worktree" &&
+          repos[item.repoIndex]?.worktrees[item.worktreeIndex]?.branch ===
+            pendingBranch,
+      ),
+    ).toBe(false);
+    // Every logical item still maps to a row, so no item became unreachable.
+    for (let idx = 0; idx < items.length; idx++) {
+      const rowIndex = firstRowForItem(rows, idx);
+      expect(rowIndex).not.toBeNull();
+      expect(rows[rowIndex as number]?.kind).not.toBe("lifecycle-progress");
+      expect(rows[rowIndex as number]?.kind).not.toBe("pending-workspace");
+    }
   });
 });

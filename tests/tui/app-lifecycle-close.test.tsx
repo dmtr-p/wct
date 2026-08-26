@@ -27,6 +27,7 @@ import { isWorktreeEffectivelyExpanded } from "../../src/tui/tree-helpers";
 import { Mode, pendingKey } from "../../src/tui/types";
 import {
   emitWorkspacePhase,
+  githubFixtures,
   lastWorkspaceCall,
   makeWorktree,
   registryItems,
@@ -42,6 +43,7 @@ import {
 const ENTER = "\r";
 const ESCAPE = "\x1b";
 const ARROW_DOWN = "\x1b[B";
+const ARROW_RIGHT = "\x1b[C";
 
 const REPO_PATH = "/repo";
 const BRANCH = "feat";
@@ -195,6 +197,61 @@ describe("TUI close lifecycle", () => {
       vi.unstubAllEnvs();
       rmSync(homeDir, { recursive: true, force: true });
       rmSync(repoPath, { recursive: true, force: true });
+    });
+
+    // AC-18, at the App level: the helper is unit-tested, but only a rendered
+    // App proves the wiring — `prevSelectionParentIdRef` and the `lifecycle`
+    // the fallback is scoped to are both passed by App.tsx, and dropping either
+    // argument leaves the cursor on whatever row inherited the index.
+    test("moves the cursor to the branch row when a lifecycle suppresses the selected detail row", async () => {
+      // A branch AFTER feature/x, so the index the vanished detail row leaves
+      // behind is a DIFFERENT Workspace: the plain clamp would land there.
+      worktreeFixtures.byRepoPath.set(repoPath, [
+        makeWorktree(repoPath, "main"),
+        makeWorktree(repoPath, "feature/x"),
+        makeWorktree(repoPath, "feature/y"),
+      ]);
+      githubFixtures.prsByRepoPath.set(repoPath, [
+        {
+          number: 42,
+          title: "Add x",
+          state: "OPEN",
+          headRefName: "feature/x",
+          rollupState: null,
+        },
+      ]);
+
+      const { App } = await import("../../src/tui/App");
+      const app = await renderApp(<App />);
+      await tick(6);
+
+      // repo row → main → feature/x, then fetch PRs and expand it so the
+      // Workspace really has a detail row to select.
+      await sendKeys(app.stdin, ARROW_DOWN);
+      await sendKeys(app.stdin, ARROW_DOWN);
+      expect(selectedLine(app.lines())).toContain("feature/x");
+      await sendKeys(app.stdin, "r");
+      await tick(6);
+      await sendKeys(app.stdin, ARROW_RIGHT);
+      await tick(4);
+      await sendKeys(app.stdin, ARROW_DOWN);
+      await tick(2);
+      expect(selectedLine(app.lines())).toContain("#42");
+
+      // The close claims the Workspace, which suppresses its detail rows.
+      await sendKeys(app.stdin, "c");
+      await sendKeys(app.stdin, ENTER);
+      await tick(8);
+
+      const frame = app.lines();
+      expect(frame.join("\n")).toContain("Preparing Workspace…");
+      expect(frame.join("\n")).not.toContain("#42");
+      // The cursor followed the Workspace instead of staying at the index
+      // feature/y inherited.
+      expect(selectedLine(frame)).toContain("feature/x");
+      expect(selectedLine(frame)).not.toContain("feature/y");
+
+      app.unmount();
     });
 
     test("shows Preparing, then Killing tmux session only when a kill runs, then Removing worktree before removal", async () => {

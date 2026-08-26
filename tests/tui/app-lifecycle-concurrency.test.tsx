@@ -14,6 +14,7 @@ import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 import {
   beginLifecycle,
   createLifecycleClaims,
+  type LifecycleController,
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
@@ -208,6 +209,105 @@ describe("lifecycle identity", () => {
       showActionError,
     });
     expect(later).not.toBeNull();
+  });
+});
+
+describe("lifecycle teardown is scoped to its own operation", () => {
+  // AC-27, AC-28: every flow tears down TWICE — once inline, once from a
+  // `finally` — with real awaits (the tmux hand-off) in between, during which
+  // the identity is free and the user may legitimately start a second
+  // operation on the same Workspace. The trailing teardown must not touch it.
+  test("a trailing teardown neither deletes nor unlocks a successor's operation", () => {
+    const tracker = trackLifecycle();
+    const claims = createLifecycleClaims();
+    const showActionError = vi.fn();
+    const begin = (entry: LifecycleEntry) =>
+      beginLifecycle({
+        claims,
+        setLifecycle: tracker.setLifecycle,
+        entry,
+        showActionError,
+      });
+
+    const first = begin(entryFor("/repos/one", "alpha", "feature/x", "up"));
+    first?.end();
+    expect(tracker.state.size).toBe(0);
+
+    // The window: the identity is free, so a second operation claims it.
+    const second = begin(entryFor("/repos/one", "alpha", "feature/x", "down"));
+    expect(second).not.toBeNull();
+    second?.setPhase({ _tag: "KillingTmuxSession" });
+
+    // The finished operation's trailing teardown and any late reporter event
+    // are no-ops: the successor keeps its row, its phase and its claim.
+    first?.end();
+    first?.setPhase({ _tag: "CopyingFiles" });
+    expect(tracker.state.size).toBe(1);
+    expect(tracker.phaseOf("/repos/one", "feature/x")).toEqual({
+      _tag: "KillingTmuxSession",
+    });
+    expect(claims.active("/repos/one", "feature/x")?.operation).toBe("down");
+    // …and the identity is still LOCKED, so a third operation is refused.
+    expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).toBeNull();
+  });
+
+  test("the shared run shape's finally cannot clobber an operation started during the hand-off", async () => {
+    const tracker = trackLifecycle();
+    const claims = createLifecycleClaims();
+    const showActionError = vi.fn();
+    const successor: { controller: LifecycleController | null } = {
+      controller: null,
+    };
+
+    await runLifecycleOperation<string>({
+      claims,
+      setLifecycle: tracker.setLifecycle,
+      refreshAll: () => Promise.resolve([]),
+      showActionError,
+      entry: entryFor("/repos/one", "alpha", "feature/x", "up"),
+      run: () => Promise.resolve("done"),
+      // `afterCleanup` runs after the inline teardown — the real window, since
+      // the tmux hand-off it stands for awaits several subprocess calls.
+      afterCleanup: () => {
+        successor.controller = beginLifecycle({
+          claims,
+          setLifecycle: tracker.setLifecycle,
+          entry: entryFor("/repos/one", "alpha", "feature/x", "close"),
+          showActionError,
+        });
+        successor.controller?.setPhase({ _tag: "RemovingWorktree" });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    expect(successor.controller).not.toBeNull();
+    expect(tracker.state.size).toBe(1);
+    expect(tracker.phaseOf("/repos/one", "feature/x")).toEqual({
+      _tag: "RemovingWorktree",
+    });
+    expect(claims.active("/repos/one", "feature/x")?.operation).toBe("close");
+  });
+
+  test("reports a throwing hand-off instead of losing every collected message", async () => {
+    const tracker = trackLifecycle();
+    const claims = createLifecycleClaims();
+    const showActionError = vi.fn();
+
+    await runLifecycleOperation<string>({
+      claims,
+      setLifecycle: tracker.setLifecycle,
+      refreshAll: () => Promise.resolve([]),
+      showActionError,
+      entry: entryFor("/repos/one", "alpha", "feature/x", "up"),
+      run: () => Promise.resolve("done"),
+      resultWarnings: () => ["Optional setup failed: install"],
+      afterCleanup: () => Promise.reject(new Error("switch-client exploded")),
+    });
+
+    expect(tracker.state.size).toBe(0);
+    const reported = showActionError.mock.calls[0]?.[0] as string;
+    expect(reported).toContain("Optional setup failed: install");
+    expect(reported).toContain("switch-client exploded");
   });
 });
 

@@ -92,31 +92,49 @@ export interface LifecycleClaims {
   claim: (entry: LifecycleEntry) => boolean;
   /** Update a held claim in place; a no-op once the identity is released. */
   record: (entry: LifecycleEntry) => void;
-  /** Release the identity. Idempotent, so a repeated teardown is harmless. */
+  /**
+   * Release the identity, but ONLY when `entry` is the very object the claim
+   * was taken with. Idempotent, so a repeated teardown is harmless, and scoped
+   * to the operation, so a finished operation's trailing teardown can never
+   * unlock a SUCCESSOR that claimed the same identity in the meantime.
+   */
   release: (entry: LifecycleEntry) => void;
   /** The entry currently holding this identity, if any. */
   active: (mainRepoPath: string, branch: string) => LifecycleEntry | undefined;
 }
 
 export function createLifecycleClaims(): LifecycleClaims {
-  const held = new Map<string, LifecycleEntry>();
+  // Each identity holds BOTH the entry object its claim was taken with
+  // (`owner`, a stable identity token) and the phase-advanced `current` one, so
+  // a release can be scoped to the operation that actually claimed it. A
+  // key-scoped release would be wrong: every flow tears down twice — once
+  // inline, once from a `finally` — with real awaits in between, so the
+  // trailing teardown of a finished operation would otherwise unlock a
+  // successor that had claimed the identity during that window (AC-28).
+  const held = new Map<
+    string,
+    { owner: LifecycleEntry; current: LifecycleEntry }
+  >();
   return {
     claim: (entry) => {
       const key = lifecycleKey(entry.repoPath, entry.branch);
       if (held.has(key)) return false;
-      held.set(key, entry);
+      held.set(key, { owner: entry, current: entry });
       return true;
     },
     record: (entry) => {
       const key = lifecycleKey(entry.repoPath, entry.branch);
-      if (!held.has(key)) return;
-      held.set(key, entry);
+      const holder = held.get(key);
+      if (!holder) return;
+      held.set(key, { owner: holder.owner, current: entry });
     },
     release: (entry) => {
-      held.delete(lifecycleKey(entry.repoPath, entry.branch));
+      const key = lifecycleKey(entry.repoPath, entry.branch);
+      if (held.get(key)?.owner !== entry) return;
+      held.delete(key);
     },
     active: (mainRepoPath, branch) =>
-      held.get(lifecycleKey(mainRepoPath, branch)),
+      held.get(lifecycleKey(mainRepoPath, branch))?.current,
   };
 }
 
@@ -136,6 +154,33 @@ export function lifecycleBusyMessage(
 ): string {
   const suffix = phase ? ` (${lifecyclePhaseLabel(phase)})` : "";
   return `'${branch}' is busy${suffix}`;
+}
+
+export interface RejectIfLifecycleActiveOptions {
+  lifecycle: LifecycleState;
+  /** Main repository path — one half of the Workspace Identity. */
+  mainRepoPath: string;
+  branch: string;
+  showActionError: (message: string) => void;
+}
+
+/**
+ * The SINGLE action guard, shared by every entry point that targets an
+ * existing Workspace (space/up modal/down/close): a Workspace under an active
+ * lifecycle is INERT TO ACTIONS but still selectable and arrow-key reachable,
+ * so only its actions are refused and the refusal is reported through the
+ * existing timed error display. Returns true when the caller must stop.
+ */
+export function rejectIfLifecycleActive({
+  lifecycle,
+  mainRepoPath,
+  branch,
+  showActionError,
+}: RejectIfLifecycleActiveOptions): boolean {
+  const entry = lifecycleEntryFor(lifecycle, mainRepoPath, branch);
+  if (!entry) return false;
+  showActionError(lifecycleBusyMessage(branch, entry.phase));
+  return true;
 }
 
 /**
@@ -200,10 +245,11 @@ export function lifecycleProgressContent(
  * The three operations every lifecycle-driving handler needs: advance the
  * phase, drive it from a `WorkspaceReporter`, and tear the presentation down.
  *
- * `setPhase`/`end` are no-ops once the entry is gone, so a late reporter event
- * (or a second teardown from a `finally`) can never resurrect a progress row
- * for a finished operation, and neither can they touch another identity's
- * entry.
+ * Every method is scoped to the ONE operation the controller was created for
+ * and is a no-op once that operation has ended, so a late reporter event (or a
+ * second teardown from a `finally`) can never resurrect a progress row for a
+ * finished operation, and neither can it touch another operation's entry —
+ * including a successor that has since claimed the SAME identity.
  */
 export interface LifecycleController {
   setPhase: (phase: LifecyclePhase) => void;
@@ -257,7 +303,16 @@ export function beginLifecycle(
     return new Map(previous).set(key, entry);
   });
 
+  // THIS operation's teardown latch. Every flow tears down twice — once
+  // inline, once from a `finally` — and the awaits in between (the tmux
+  // hand-off) leave the identity free, so a new operation may legitimately
+  // claim it before the trailing teardown runs. The latch makes every later
+  // call a no-op for this controller, so a finished operation can neither
+  // delete a successor's lifecycle entry nor write a phase into its row.
+  let ended = false;
+
   const setPhase = (phase: LifecyclePhase) => {
+    if (ended) return;
     // The ledger is the synchronous truth about whether this operation still
     // owns the identity, so a late reporter event after teardown is a no-op
     // here — before it can queue a state write that would resurrect the row.
@@ -274,6 +329,8 @@ export function beginLifecycle(
   };
 
   const end = () => {
+    if (ended) return;
+    ended = true;
     claims.release(entry);
     setLifecycle((previous) => {
       if (!previous.has(key)) return previous;
@@ -389,7 +446,16 @@ export async function runLifecycleOperation<T>(
     lifecycle.end();
 
     if (result !== undefined && options.afterCleanup) {
-      append((await options.afterCleanup(result)) ?? "");
+      // The hand-off runs outside the lifecycle presentation, so a throw here
+      // must be REPORTED with everything else already collected rather than
+      // escaping this closure — nothing awaits the promise this function
+      // returns, so an escaping throw would surface as an unhandled rejection
+      // and silently drop the messages above.
+      try {
+        append((await options.afterCleanup(result)) ?? "");
+      } catch (error) {
+        append(toWctError(error).message);
+      }
     }
 
     if (messages.length > 0) options.showActionError(messages.join("\n"));

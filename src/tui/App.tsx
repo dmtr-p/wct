@@ -466,6 +466,9 @@ export function App() {
       treeItems,
       prevSelectionId: prevId,
       prevSelectionParentId: prevParentId,
+      // The parent-branch fallback is scoped to detail rows a LIFECYCLE
+      // suppressed (AC-18); every other disappearance keeps the old clamp.
+      lifecycle,
       selectedIndex,
       repos: filteredRepos,
       skipIdentityRecovery: selectionChanged,
@@ -484,6 +487,7 @@ export function App() {
     selectedIndex,
     filteredRepos,
     searchQuery,
+    lifecycle,
     rows,
     viewportRows,
     selectionChanged,
@@ -540,9 +544,13 @@ export function App() {
     // The one-time lifecycle reveal owns the viewport for the commit it fires
     // in: that same commit also reshapes the rows and may move the selection
     // off a suppressed detail row (AC-18), either of which would otherwise
-    // re-anchor the offset straight back and undo the reveal (AC-29). The flag
-    // is cleared unconditionally by a trailing effect, so it can never swallow
-    // a later re-anchor.
+    // re-anchor the offset straight back and undo the reveal (AC-29). BOTH
+    // branches are gated deliberately, not just the passive one: the AC-18
+    // recovery arrives as a `setSelectedIndex` and is therefore
+    // indistinguishable from a keyboard move here, so exempting
+    // `selectionChanged` would let exactly the case this guard exists for
+    // undo the reveal. The flag is cleared unconditionally by a trailing
+    // effect, so it can never swallow a later re-anchor.
     if (lifecycleRevealPendingRef.current) return;
     // All three refs are read BEFORE the trailing effects below rewrite them,
     // so they are last commit's values. A passive re-anchor requires the row

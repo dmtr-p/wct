@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { type LifecycleState, lifecycleKey } from "../../src/tui/lifecycle";
 import { resolveSessionHandoff } from "../../src/tui/session-utils";
 import {
   adjustIndexForDetailCollapse,
@@ -49,6 +50,26 @@ function fakeRepo(id: string, branches: string[]): RepoInfo {
     })),
     profileNames: [],
   };
+}
+
+/** A lifecycle state holding exactly one Workspace Identity. */
+function lifecycleFor(
+  repoPath: string,
+  branch: string,
+  project = "repo-a",
+): LifecycleState {
+  return new Map([
+    [
+      lifecycleKey(repoPath, branch),
+      {
+        operation: "up" as const,
+        repoPath,
+        project,
+        branch,
+        phase: { _tag: "Preparing" as const },
+      },
+    ],
+  ]);
 }
 
 describe("resolveTreeReturnMode", () => {
@@ -397,10 +418,61 @@ describe("resolveRecoveredSelectionIndex", () => {
         treeItems: withoutDetails,
         prevSelectionId: "detail:repo-a/feat-new/pr",
         prevSelectionParentId: "wt:repo-a/feat-new",
+        lifecycle: lifecycleFor("/tmp/repo-a", "feat-new"),
         selectedIndex: 3,
         repos,
       }),
     ).toBe(2);
+  });
+
+  test("clamps, not snaps to the parent, when no lifecycle suppressed the detail row", () => {
+    const repos: RepoInfo[] = [
+      fakeRepo("repo-a", ["main", "feat-new"]),
+      fakeRepo("repo-b", ["main"]),
+    ];
+    const withDetails: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      worktree(0, 1),
+      detail(0, 1, "pr"),
+      repo(1),
+      worktree(1, 0),
+    ];
+    const withoutDetails: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      worktree(0, 1),
+      repo(1),
+      worktree(1, 0),
+    ];
+
+    // An ORDINARY disappearance — a PR that closed, a killed pane — keeps the
+    // long-standing clamp behaviour: index 3 still exists, so selection
+    // recovery leaves it alone rather than snapping up to the branch row.
+    expect(
+      resolveRecoveredSelectionIndex({
+        prevTree: withDetails,
+        treeItems: withoutDetails,
+        prevSelectionId: "detail:repo-a/feat-new/pr",
+        prevSelectionParentId: "wt:repo-a/feat-new",
+        selectedIndex: 3,
+        repos,
+      }),
+    ).toBeNull();
+
+    // A lifecycle on a DIFFERENT Workspace does not license the fallback
+    // either — the parent of the vanished row is what has to be busy.
+    expect(
+      resolveRecoveredSelectionIndex({
+        prevTree: withDetails,
+        treeItems: withoutDetails,
+        prevSelectionId: "detail:repo-a/feat-new/pr",
+        prevSelectionParentId: "wt:repo-a/feat-new",
+        lifecycle: lifecycleFor("/tmp/repo-a", "main"),
+        selectedIndex: 3,
+        repos,
+      }),
+    ).toBeNull();
   });
 });
 

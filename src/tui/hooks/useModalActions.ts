@@ -17,6 +17,7 @@ import {
   type LifecycleClaims,
   type LifecycleState,
   lifecycleValidationWarning,
+  rejectIfLifecycleActive,
 } from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
@@ -272,31 +273,39 @@ export function createHandleOpen(deps: ModalActionDeps) {
         // after the progress row is gone: switching detaches the terminal this
         // TUI is drawn in, and a switch failure must surface as a plain action
         // error rather than resurrecting a progress row.
-        if (result && !opts.noAttach && workspaceOpenStartedTmux(result)) {
-          const liveClient = await deps.discoverClient();
-          if (liveClient.type === "single") {
-            const switched = await deps.switchSession(
-              result.sessionName,
-              liveClient.client,
-            );
-            if (!switched) {
+        //
+        // Wrapped in its own catch: nothing awaits this closure, so a throw
+        // here would both surface as an unhandled rejection and discard every
+        // message collected above instead of reporting them.
+        try {
+          if (result && !opts.noAttach && workspaceOpenStartedTmux(result)) {
+            const liveClient = await deps.discoverClient();
+            if (liveClient.type === "single") {
+              const switched = await deps.switchSession(
+                result.sessionName,
+                liveClient.client,
+              );
+              if (!switched) {
+                appendWarning(
+                  `Started session '${result.sessionName}', but failed to switch client`,
+                );
+              }
+            } else if (liveClient.type === "none") {
               appendWarning(
-                `Started session '${result.sessionName}', but failed to switch client`,
+                "No tmux client found — start tmux in the other pane",
+              );
+            } else if (liveClient.type === "error") {
+              appendWarning(
+                `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
+              );
+            } else if (liveClient.type === "multiple") {
+              appendWarning(
+                "Cannot switch tmux client after open because multiple tmux clients are attached",
               );
             }
-          } else if (liveClient.type === "none") {
-            appendWarning(
-              "No tmux client found — start tmux in the other pane",
-            );
-          } else if (liveClient.type === "error") {
-            appendWarning(
-              `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
-            );
-          } else if (liveClient.type === "multiple") {
-            appendWarning(
-              "Cannot switch tmux client after open because multiple tmux clients are attached",
-            );
           }
+        } catch (error) {
+          appendWarning(toWctError(error).message);
         }
 
         if (warningMessage) {
@@ -323,6 +332,20 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
     const repo = deps.filteredRepos[item.repoIndex];
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
+
+    // Refused through the SAME shared guard as space/down/close, so a busy
+    // Workspace says so immediately instead of opening an option sheet the
+    // submit would only refuse afterwards (AC-9, AC-21).
+    if (
+      rejectIfLifecycleActive({
+        lifecycle: deps.lifecycle,
+        mainRepoPath: repo.repoPath,
+        branch: wt.branch,
+        showActionError: deps.showActionError,
+      })
+    ) {
+      return;
+    }
 
     const worktreeKey = pendingKey(repo.project, wt.branch);
     deps.upModalReturnSelectedIndexRef.current = deps.selectedIndex;

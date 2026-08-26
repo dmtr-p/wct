@@ -15,6 +15,7 @@ import {
   type LifecyclePhase,
   type LifecycleState,
   lifecycleKey,
+  lifecyclePhaseLabel,
 } from "../../src/tui/lifecycle";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
@@ -666,6 +667,41 @@ describe("createPrepareUpModal", () => {
 
     prepare();
     expect(deps.setMode).not.toHaveBeenCalled();
+  });
+
+  // AC-9, AC-21
+  test("refuses to open the option sheet for a Workspace under an active lifecycle", () => {
+    const items: TreeItem[] = [
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+    const deps = makeDeps({
+      treeItems: items,
+      filteredRepos: snapshotWithFeat(),
+      selectedIndex: 0,
+      lifecycle: new Map([
+        [
+          lifecycleKey("/repo", "feat"),
+          {
+            operation: "up" as const,
+            repoPath: "/repo",
+            project: "proj",
+            branch: "feat",
+            phase: { _tag: "RunningSetup" as const, name: "install" },
+          },
+        ],
+      ]),
+    });
+
+    createPrepareUpModal(deps)();
+
+    // Refused at the SAME point as space/down/close, so the user is told the
+    // Workspace is busy instead of filling in a sheet that would be refused.
+    expect(deps.setMode).not.toHaveBeenCalled();
+    const message = vi.mocked(deps.showActionError).mock.calls[0]?.[0];
+    expect(message).toContain("feat");
+    expect(message).toContain(
+      lifecyclePhaseLabel({ _tag: "RunningSetup", name: "install" }),
+    );
   });
 
   test("saves Expanded mode in return ref when in Expanded mode", () => {

@@ -5,6 +5,7 @@ import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
 import type { RepoInfo } from "./hooks/useRegistry";
 import {
+  isLifecycleActive,
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
@@ -216,6 +217,13 @@ interface ResolveRecoveredSelectionIndexOptions {
    * fallback when that detail row itself is gone from the tree.
    */
   prevSelectionParentId?: string | null;
+  /**
+   * Active lifecycle operations. Required for the `prevSelectionParentId`
+   * fallback: it is scoped to detail rows a LIFECYCLE suppressed, so an
+   * ordinary disappearance (a killed pane, a PR that closed) still clamps to
+   * the adjacent row instead of snapping up to the parent branch.
+   */
+  lifecycle?: LifecycleState;
   selectedIndex: number;
   repos: RepoInfo[];
   skipIdentityRecovery?: boolean;
@@ -834,6 +842,7 @@ export function resolveRecoveredSelectionIndex({
   treeItems,
   prevSelectionId,
   prevSelectionParentId = null,
+  lifecycle = NO_LIFECYCLE,
   selectedIndex,
   repos,
   skipIdentityRecovery = false,
@@ -855,20 +864,33 @@ export function resolveRecoveredSelectionIndex({
   }
 
   // The selected item is gone. When it was a detail row of a Workspace that is
-  // still in the tree — the case a starting lifecycle creates, since it
-  // suppresses that Workspace's PR and pane detail rows — snap to that
-  // Workspace's branch row. Deterministic, and it keeps the cursor on the
-  // Workspace the user was looking at instead of on whatever row inherited its
-  // index (AC-18).
+  // still in the tree AND under an active lifecycle — the case a starting
+  // lifecycle creates, since it suppresses that Workspace's PR and pane detail
+  // rows — snap to that Workspace's branch row. Deterministic, and it keeps the
+  // cursor on the Workspace the user was looking at instead of on whatever row
+  // inherited its index (AC-18). The lifecycle condition is what keeps this out
+  // of ORDINARY selection recovery: a pane that was killed or a PR that closed
+  // still falls through to the clamp below, so the cursor lands on the adjacent
+  // sibling row as it always has.
   if (prevSelectionParentId) {
     for (let i = 0; i < treeItems.length; i++) {
       const candidate = treeItems[i];
       if (
-        candidate?.type === "worktree" &&
-        treeItemId(candidate, repos) === prevSelectionParentId
+        candidate?.type !== "worktree" ||
+        treeItemId(candidate, repos) !== prevSelectionParentId
+      ) {
+        continue;
+      }
+      const repo = repos[candidate.repoIndex];
+      const branch = repo?.worktrees[candidate.worktreeIndex]?.branch;
+      if (
+        repo &&
+        branch &&
+        isLifecycleActive(lifecycle, repo.repoPath, branch)
       ) {
         return i;
       }
+      break;
     }
   }
 

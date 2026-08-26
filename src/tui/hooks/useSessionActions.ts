@@ -12,11 +12,9 @@ import {
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
 import {
-  isLifecycleActive,
   type LifecycleClaims,
   type LifecycleState,
-  lifecycleBusyMessage,
-  lifecycleEntryFor,
+  rejectIfLifecycleActive as refuseWhenLifecycleActive,
   runLifecycleOperation,
 } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
@@ -76,25 +74,18 @@ export interface SessionActionDeps {
   confirmCloseReturnSelectedIndexRef: MutableRefObject<number>;
 }
 
-/**
- * A Workspace under an active lifecycle is INERT TO ACTIONS but still
- * selectable and arrow-key reachable: only its actions are refused, and the
- * refusal is reported through the existing timed error display. The single
- * shared guard, so every action entry point rejects on the same condition.
- */
+/** This hook's binding of the ONE shared guard (see `lifecycle.ts`). */
 function rejectIfLifecycleActive(
   deps: SessionActionDeps,
   repoPath: string,
   branch: string,
 ): boolean {
-  if (!isLifecycleActive(deps.lifecycle, repoPath, branch)) return false;
-  deps.showActionError(
-    lifecycleBusyMessage(
-      branch,
-      lifecycleEntryFor(deps.lifecycle, repoPath, branch)?.phase,
-    ),
-  );
-  return true;
+  return refuseWhenLifecycleActive({
+    lifecycle: deps.lifecycle,
+    mainRepoPath: repoPath,
+    branch,
+    showActionError: deps.showActionError,
+  });
 }
 
 export function createNavigateTree(deps: SessionActionDeps) {

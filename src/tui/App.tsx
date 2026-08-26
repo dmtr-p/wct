@@ -111,10 +111,10 @@ export function App() {
   // path + branch) — never by the project display name, so two repos sharing a
   // display name cannot clobber each other's progress.
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
-  // TRANSITIONAL: `open`/`close` still record a coarse pending action for
-  // their own bookkeeping. Nothing renders it any more — progress is shown by
-  // the lifecycle rows — and slices 04–05 replace these writes with lifecycle
-  // entries, at which point this state and its two hook deps disappear.
+  // TRANSITIONAL: `open` still records a coarse pending action for its own
+  // bookkeeping (`close` no longer does — its progress and its teardown are
+  // owned by the lifecycle entry). Nothing renders it any more, so this state
+  // and its one remaining hook dep disappear with the last write.
   const [, setPendingActions] = useState<Map<string, PendingAction>>(new Map());
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
@@ -596,7 +596,6 @@ export function App() {
     setSelectedIndex,
     setMode,
     setLifecycle,
-    setPendingActions,
     showActionError,
     clearActionError,
     switchSession,

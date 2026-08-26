@@ -6,6 +6,7 @@ import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName } from "../../services/tmux";
 import {
+  type WorkspaceCloseResult,
   type WorkspaceDownResult,
   WorkspaceService,
   type WorkspaceUpResult,
@@ -23,7 +24,7 @@ import {
   resolveStartActionMessage,
 } from "../session-utils";
 import { isInertTreeItem, resolveSelectedWorktreeIndex } from "../tree-helpers";
-import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
+import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
@@ -39,7 +40,6 @@ export interface SessionActionDeps {
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
-  setPendingActions: Dispatch<SetStateAction<Map<string, PendingAction>>>;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -356,6 +356,13 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
   };
 }
 
+/**
+ * The ONE `close` path. Session teardown and filesystem teardown are distinct
+ * phases (`Killing tmux session…`, `Removing worktree…`), and EVERY outcome —
+ * removed, refused by git, or fatally failed — goes through the same
+ * `Validating Workspace…` step before the Workspace is removed from the tree or
+ * unlocked, so a closed Workspace never disappears optimistically.
+ */
 export function createExecuteClose(deps: SessionActionDeps) {
   const switchClientAway = createSwitchClientAway(deps);
 
@@ -382,26 +389,35 @@ export function createExecuteClose(deps: SessionActionDeps) {
     deps.setSelectedIndex(deps.confirmCloseReturnSelectedIndexRef.current);
     deps.setMode(deps.confirmCloseReturnModeRef.current);
 
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(worktreeKey, {
-        type: "closing",
-        branch,
+    await runLifecycleOperation<WorkspaceCloseResult>({
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "close",
+        repoPath,
         project,
-      }),
-    );
-
-    try {
-      const closeResult = await tuiRuntime.runPromise(
-        WorkspaceService.use((service) =>
-          service.close(
-            force
-              ? { path: worktreePath, cwd: repoPath, force }
-              : { path: worktreePath, cwd: repoPath },
+        branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: (reporter) =>
+        tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.close(
+              force
+                ? { path: worktreePath, cwd: repoPath, force, reporter }
+                : { path: worktreePath, cwd: repoPath, reporter },
+            ),
           ),
         ),
-      );
-
-      if (closeResult.status === "blocked_by_changes") {
+      // A close git refused is not an outcome to report — it is a question to
+      // ask. Asking it from `afterCleanup` means the current lifecycle
+      // presentation is COMPLETELY over first (validation finished, progress
+      // row gone, expansion back to the user's own preference), so the
+      // confirmation is anchored against a stable tree and the forced retry
+      // starts a fresh lifecycle rather than inheriting a stale phase or lock.
+      afterCleanup: async (result) => {
+        if (result.status !== "blocked_by_changes") return undefined;
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,
@@ -412,21 +428,9 @@ export function createExecuteClose(deps: SessionActionDeps) {
             project,
           ),
         );
-        await deps.refreshAll();
-        return;
-      }
-
-      await deps.refreshAll();
-    } catch (error) {
-      deps.showActionError(toWctError(error).message);
-      await deps.refreshAll();
-    } finally {
-      deps.setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(worktreeKey);
-        return next;
-      });
-    }
+        return undefined;
+      },
+    });
   };
 }
 

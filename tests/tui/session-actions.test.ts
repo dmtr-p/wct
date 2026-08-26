@@ -65,9 +65,6 @@ function makeDeps(
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
     setLifecycle: vi.fn(),
-    setPendingActions: vi.fn((fn) => {
-      if (typeof fn === "function") fn(new Map());
-    }),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
@@ -381,7 +378,6 @@ describe("createHandleSpaceSwitch", () => {
     expect(deps.clearActionError).toHaveBeenCalled();
     // Progress is a lifecycle entry now, not a coarse pending suffix.
     expect(setLifecycle).toHaveBeenCalled();
-    expect(deps.setPendingActions).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(WorkspaceService.use).toHaveBeenCalled();
       expect(workspaceUp).toHaveBeenCalledWith({
@@ -524,25 +520,19 @@ describe("createExecuteClose", () => {
       expect.stringContaining("could not be moved away"),
     );
     expect(workspaceClose).not.toHaveBeenCalled();
-    expect(deps.setPendingActions).not.toHaveBeenCalled();
+    // No lifecycle presentation is started for a close that never ran.
+    expect(deps.setLifecycle).not.toHaveBeenCalled();
   });
 
-  test("uses WorkspaceService.close, refreshes, and clears pending after success", async () => {
+  test("uses WorkspaceService.close, refreshes, and tears the lifecycle down after success", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue(
       makeWorkspaceCloseResult(),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -559,14 +549,13 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
-    expect(deps.setPendingActions).toHaveBeenCalled();
+    expect(deps.setLifecycle).toHaveBeenCalled();
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.restoreConfirmationViewport).toHaveBeenCalledOnce();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
   test("passes selected repoPath as WorkspaceService.close cwd for multi-repo TUI close", async () => {
@@ -594,6 +583,7 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/registered/repo",
+      reporter: expect.anything(),
     });
   });
 
@@ -641,10 +631,11 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
   });
 
-  test("blocked close enters force-confirm mode, refreshes, and clears pending", async () => {
+  test("blocked close enters force-confirm mode and refreshes", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue(
       makeWorkspaceCloseResult({
@@ -660,16 +651,9 @@ describe("createExecuteClose", () => {
       }),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -685,6 +669,7 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.ConfirmCloseForce(
@@ -701,8 +686,6 @@ describe("createExecuteClose", () => {
       vi.mocked(deps.restoreConfirmationViewport).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
   test("force close calls WorkspaceService.close with force", async () => {
@@ -731,26 +714,20 @@ describe("createExecuteClose", () => {
       path: "/tmp/wt",
       cwd: "/repo",
       force: true,
+      reporter: expect.anything(),
     });
     expect(deps.refreshAll).toHaveBeenCalled();
   });
 
-  test("surfaces WorkspaceService.close tmux kill failure and clears pending", async () => {
+  test("surfaces WorkspaceService.close tmux kill failure", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockRejectedValue(
       commandError("tmux_error", "kill failed"),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -767,10 +744,10 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
     expect(deps.showActionError).toHaveBeenCalledWith("kill failed");
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
   });
 });
 
@@ -791,7 +768,7 @@ describe("createExecuteDown", () => {
     expect(deps.showActionError).toHaveBeenCalledWith(
       expect.stringContaining("could not be moved away"),
     );
-    expect(deps.setPendingActions).not.toHaveBeenCalled();
+    expect(deps.setLifecycle).not.toHaveBeenCalled();
   });
 
   test("uses WorkspaceService.down and refreshes after kill success", async () => {
@@ -806,16 +783,9 @@ describe("createExecuteDown", () => {
       warnings: [],
     });
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeDown = createExecuteDown(deps);
 
@@ -834,7 +804,7 @@ describe("createExecuteDown", () => {
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.showActionError).not.toHaveBeenCalled();
     // No coarse `stopping…` suffix any more — the progress row tells the story.
-    expect(setPendingActions).not.toHaveBeenCalled();
+    expect(deps.setLifecycle).toHaveBeenCalled();
   });
 
   test("treats absent-session down as informational success", async () => {
@@ -849,16 +819,9 @@ describe("createExecuteDown", () => {
       warnings: [],
     });
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeDown = createExecuteDown(deps);
 
@@ -866,7 +829,6 @@ describe("createExecuteDown", () => {
 
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
   });
 
   test("reaches WorkspaceService.down for absent target session even with ambiguous clients", async () => {
@@ -903,16 +865,9 @@ describe("createExecuteDown", () => {
       commandError("tmux_error", "kill failed"),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeDown = createExecuteDown(deps);
 
@@ -920,7 +875,6 @@ describe("createExecuteDown", () => {
 
     expect(deps.showActionError).toHaveBeenCalledWith("kill failed");
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
   });
 });
 

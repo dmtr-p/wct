@@ -1048,7 +1048,6 @@ describe("a Workspace under an active lifecycle", () => {
     return new Map([[lifecycleKey(repoPath, branch), entry]]);
   }
 
-  // AC-9
   test("is presented expanded with details hidden, stays selectable, and refuses actions", () => {
     const lifecycle = lifecycleFor();
     const repoList = repos();
@@ -1254,7 +1253,6 @@ describe("up and down lifecycle progress", () => {
     };
   }
 
-  // AC-19
   test("up shows Preparing, and Creating tmux session only when attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
@@ -1311,7 +1309,6 @@ describe("up and down lifecycle progress", () => {
     expect(skipped.labels()).not.toContain("Creating tmux session…");
   });
 
-  // AC-20
   test("down shows Preparing, and Killing tmux session only when a kill is attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
@@ -1382,7 +1379,6 @@ describe("up and down lifecycle progress", () => {
     expect(absent.labels()).not.toContain("Killing tmux session…");
   });
 
-  // AC-21
   test("a running up/down is inert, presented expanded without details, and validates on success and failure", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
@@ -1478,7 +1474,6 @@ describe("up and down lifecycle progress", () => {
     expect(failedDown.labels()).toContain("Validating Workspace…");
   });
 
-  // AC-22
   test("finishing up/down removes progress, restores prior expansion, and defers errors and the tmux switch", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 

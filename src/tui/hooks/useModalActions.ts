@@ -91,9 +91,9 @@ export interface ModalActionDeps {
 
   /**
    * Records a Workspace Identity as freshly discovered by an `open`, which
-   * PRESENTS it as expanded (AC-12, AC-16) without ever writing the stored
-   * `expandedWorktreeKeys` preference (AC-33) — the same presentation-only
-   * mechanism an active lifecycle already uses.
+   * PRESENTS it as expanded without ever writing the stored
+   * `expandedWorktreeKeys` preference — the same presentation-only mechanism
+   * an active lifecycle already uses.
    */
   markWorkspaceDiscovered: (worktreeKey: string) => void;
 
@@ -157,9 +157,9 @@ export function createHandleOpen(deps: ModalActionDeps) {
 
     // `open` goes through the SAME shared lifecycle shape as up/down/close —
     // present → run with the reporter → validate → tear down → hand off →
-    // report — so the AC-17 ordering contract has exactly one implementation.
-    // The Workspace does not exist yet, so its entry IS its representation in
-    // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
+    // report — so the ordering contract has exactly one implementation. The
+    // Workspace does not exist yet, so its entry IS its representation in the
+    // tree: a Pending Workspace row plus a `Preparing Workspace…` progress
     // row, both inert, both visible before git knows about the worktree.
     void runLifecycleOperation<WorkspaceOpenResult>({
       claims: deps.lifecycleClaims,
@@ -189,10 +189,10 @@ export function createHandleOpen(deps: ModalActionDeps) {
         ),
       resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
       // A Workspace validation DID find on disk is left expanded once the
-      // presentation comes down (AC-12, AC-16). The override is
-      // presentation-only, so the stored expansion preference is still never
-      // written by lifecycle code (AC-33); an identity validation found nothing
-      // for (AC-15) records nothing and simply disappears.
+      // presentation comes down. The override is presentation-only, so the
+      // stored expansion preference is still never written by lifecycle code;
+      // an identity that validation found nothing for records nothing and
+      // simply disappears.
       onValidated: (snapshot) => {
         const discovered = discoveredWorkspaceKey(
           snapshot,
@@ -260,7 +260,7 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
 
     // Refused through the SAME shared guard as space/down/close, so a busy
     // Workspace says so immediately instead of opening an option sheet the
-    // submit would only refuse afterwards (AC-9, AC-21).
+    // submit would only refuse afterwards.
     if (
       rejectIfLifecycleActive({
         lifecycle: deps.lifecycle,
@@ -297,7 +297,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
 
     // Identity comes off the mode, never off the display key: `project` is
     // free-form and may itself contain a slash, so splitting `worktreeKey`
-    // would claim a bogus lifecycleKey and lose the operation (AC-19/27/28).
+    // would claim a bogus lifecycleKey and lose the operation.
     const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
     deps.setSelectedIndex(deps.upModalReturnSelectedIndexRef.current);

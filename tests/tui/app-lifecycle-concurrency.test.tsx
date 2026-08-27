@@ -67,7 +67,6 @@ function entryFor(
 }
 
 describe("lifecycle identity", () => {
-  // AC-27
   test("keys lifecycle state by (main repository path, branch) alone", () => {
     const tracker = trackLifecycle();
     const claims = createLifecycleClaims();
@@ -141,7 +140,6 @@ describe("lifecycle identity", () => {
     expect(begin(entryFor("/repos/one", "alpha", "feature/y"))).toBeNull();
   });
 
-  // AC-28
   test("refuses a second operation for one identity before it can overwrite it", async () => {
     const tracker = trackLifecycle();
     const claims = createLifecycleClaims();
@@ -213,7 +211,7 @@ describe("lifecycle identity", () => {
 });
 
 describe("lifecycle teardown is scoped to its own operation", () => {
-  // AC-27, AC-28: every flow tears down TWICE — once inline, once from a
+  // Every flow tears down TWICE — once inline, once from a
   // `finally` — with real awaits (the tmux hand-off) in between, during which
   // the identity is free and the user may legitimately start a second
   // operation on the same Workspace. The trailing teardown must not touch it.
@@ -350,7 +348,6 @@ describe("TUI lifecycle viewport reveal", () => {
     rmSync(repoPath, { recursive: true, force: true });
   });
 
-  // AC-29
   test("reveals an off-screen lifecycle once and leaves a visible one alone", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 14);
@@ -432,7 +429,7 @@ describe("TUI lifecycle viewport reveal", () => {
     ).toBeNull();
   });
 
-  // AC-29 — the search-filtered clause, driven through the REAL filter rather
+  // The search-filtered clause, driven through the REAL filter rather
   // than a hand-built `resolveLifecycleReveal` call: rows are built from
   // `filteredRepos`, so a query that excludes the repository must leave the
   // in-flight lifecycle with no rows at all, and the viewport untouched.
@@ -474,7 +471,6 @@ describe("TUI lifecycle viewport reveal", () => {
     }
   });
 
-  // AC-30
   test("never touches the offset again after the one reveal", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 14);

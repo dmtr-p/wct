@@ -1,8 +1,9 @@
-// Lifecycle tests for `close`. AC-23 drives the REAL App through Ink's input
-// pipeline (`c` → confirm → enter) and asserts on rendered frames; AC-24..26
-// drive `createExecuteClose` directly, because the phase ORDER around
-// validation, teardown and the force hand-off is what those criteria are about
-// and a rendered frame cannot observe a transition that React coalesces.
+// Lifecycle tests for `close`. The "rendered progress rows" tests drive the
+// REAL App through Ink's input pipeline (`c` → confirm → enter) and assert on
+// rendered frames; the rest drive `createExecuteClose` directly, because the
+// phase ORDER around validation, teardown and the force hand-off is what
+// those tests are about, and a rendered frame cannot observe a transition
+// that React coalesces.
 //
 // Both halves share `./app-harness`: its deferred `WorkspaceService.close` lets
 // a close be observed mid-flight, and its `vi.mock` registrations must run
@@ -174,7 +175,6 @@ describe("TUI close lifecycle", () => {
     resetHarnessFixtures();
   });
 
-  // AC-23
   describe("rendered progress rows", () => {
     let homeDir: string;
     let repoPath: string;
@@ -199,7 +199,7 @@ describe("TUI close lifecycle", () => {
       rmSync(repoPath, { recursive: true, force: true });
     });
 
-    // AC-18, at the App level: the helper is unit-tested, but only a rendered
+    // At the App level: the helper is unit-tested, but only a rendered
     // App proves the wiring — `prevSelectionParentIdRef` and the `lifecycle`
     // the fallback is scoped to are both passed by App.tsx, and dropping either
     // argument leaves the cursor on whatever row inherited the index.
@@ -341,7 +341,6 @@ describe("TUI close lifecycle", () => {
       second.unmount();
     });
 
-    // AC-33
     test("presents forced expansion across a mid-operation poll and writes no stored preference", async () => {
       const { App } = await import("../../src/tui/App");
       const app = await renderApp(<App />);
@@ -387,7 +386,6 @@ describe("TUI close lifecycle", () => {
     });
   });
 
-  // AC-24
   test("validates after success, failure and a blocked removal, and only then drops the Workspace", async () => {
     // --- Success: validation runs while the lifecycle is STILL present, so
     // nothing removes the Workspace from the tree ahead of the refresh.
@@ -439,7 +437,6 @@ describe("TUI close lifecycle", () => {
     expect(blocked.labels().at(-1)).toBeNull();
   });
 
-  // AC-25
   test("an unsuccessful close removes progress, restores expansion, and reports afterwards", async () => {
     const tracker = trackLifecycle();
     const deps = makeDeps({ setLifecycle: tracker.setLifecycle });
@@ -486,7 +483,6 @@ describe("TUI close lifecycle", () => {
     expect(errorOrder).toBeGreaterThan(refreshOrder);
   });
 
-  // AC-26
   test("a blocked close hands over to the force confirmation with no lifecycle left behind", async () => {
     const tracker = trackLifecycle();
     let entriesAtConfirm = -1;
@@ -561,7 +557,6 @@ describe("TUI close lifecycle", () => {
     expect(executeClose).not.toHaveBeenCalled();
   });
 
-  // AC-26
   test("does not present the force confirmation over whatever the user moved on to", async () => {
     const tracker = trackLifecycle();
     const modeRef = { current: Mode.Navigate };

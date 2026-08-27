@@ -106,10 +106,10 @@ export function App() {
     new Set(),
   );
   // Workspace Identities a just-finished `open` discovered on disk. A
-  // PRESENTATION-ONLY expansion override (AC-12, AC-16): the freshly opened
-  // Workspace is left expanded when its lifecycle row comes down, without its
-  // key ever entering the stored preference above (AC-33). Dropped as soon as
-  // the user collapses the row, and pruned by the stored preference's own rule.
+  // PRESENTATION-ONLY expansion override: the freshly opened Workspace is left
+  // expanded when its lifecycle row comes down, without its key ever entering
+  // the stored preference above. Dropped as soon as the user collapses the
+  // row, and pruned by the stored preference's own rule.
   const [discoveredWorktreeKeys, setDiscoveredWorktreeKeys] = useState<
     Set<string>
   >(new Set());
@@ -384,7 +384,7 @@ export function App() {
   // The parent branch row of a selected DETAIL row, tracked alongside the
   // selection identity so recovery has a deterministic destination when the
   // detail row itself disappears — which is exactly what starting a lifecycle
-  // on that Workspace does (AC-18).
+  // on that Workspace does.
   const prevSelectionParentIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
 
@@ -468,7 +468,7 @@ export function App() {
       prevSelectionId: prevId,
       prevSelectionParentId: prevParentId,
       // The parent-branch fallback is scoped to detail rows a LIFECYCLE
-      // suppressed (AC-18); every other disappearance keeps the old clamp.
+      // suppressed; every other disappearance keeps the old clamp.
       lifecycle,
       selectedIndex,
       repos: filteredRepos,
@@ -499,13 +499,12 @@ export function App() {
   // (never a re-centre) so the progress row's own visual row index is on
   // screen, then remember the identity as revealed. An already-visible
   // operation resolves to the offset it already has and moves nothing, and a
-  // lifecycle whose repository the search filters out has no row to reveal
-  // (AC-29).
+  // lifecycle whose repository the search filters out has no row to reveal.
   //
   // Declared BEFORE the keep-visible effect so its suppression flag is already
   // set when that effect runs in the same commit; everything after the reveal
   // — later phases, validation, teardown, pending-to-discovered reconciliation
-  // — finds the key revealed and leaves the offset alone (AC-30).
+  // — finds the key revealed and leaves the offset alone.
   useEffect(() => {
     const revealed = revealedLifecyclesRef.current;
     for (const key of revealed) {
@@ -544,14 +543,14 @@ export function App() {
   useEffect(() => {
     // The one-time lifecycle reveal owns the viewport for the commit it fires
     // in: that same commit also reshapes the rows and may move the selection
-    // off a suppressed detail row (AC-18), either of which would otherwise
-    // re-anchor the offset straight back and undo the reveal (AC-29). BOTH
-    // branches are gated deliberately, not just the passive one: the AC-18
-    // recovery arrives as a `setSelectedIndex` and is therefore
-    // indistinguishable from a keyboard move here, so exempting
-    // `selectionChanged` would let exactly the case this guard exists for
-    // undo the reveal. The flag is cleared unconditionally by a trailing
-    // effect, so it can never swallow a later re-anchor.
+    // off a suppressed detail row, either of which would otherwise re-anchor
+    // the offset straight back and undo the reveal. BOTH branches are gated
+    // deliberately, not just the passive one: the parent-branch recovery
+    // arrives as a `setSelectedIndex` and is therefore indistinguishable from
+    // a keyboard move here, so exempting `selectionChanged` would let exactly
+    // the case this guard exists for undo the reveal. The flag is cleared
+    // unconditionally by a trailing effect, so it can never swallow a later
+    // re-anchor.
     if (lifecycleRevealPendingRef.current) return;
     // All three refs are read BEFORE the trailing effects below rewrite them,
     // so they are last commit's values. A passive re-anchor requires the row
@@ -960,7 +959,7 @@ export function App() {
 
         // Same refusal as `canCollapse`: a double-click on a Workspace under
         // an active lifecycle must not write the stored expansion preference,
-        // which would leave it expanded after the operation ends (AC-9).
+        // which would leave it expanded after the operation ends.
         if (
           target.type === "worktree" &&
           isWorktreeLifecycleActive(target, filteredRepos, lifecycle)

@@ -7,7 +7,7 @@
 // keys (`pendingKey`), `Mode.Expanded` and `treeItemId`. Two registered repos
 // can share a display name, so a display-name key would let one repo's `open`
 // blank out another repo's progress row; the identity key keeps same-named
-// branches in different repositories independent (AC-27).
+// branches in different repositories independent.
 //
 // This module owns the key space, the canonical row labels, the width-aware
 // truncation, the synchronous claim ledger that keeps one identity's operation
@@ -78,14 +78,14 @@ export function lifecycleEntryFor(
  * second would go on to call the service and then `end()` — tearing down the
  * first operation's entry. The ledger is a plain map mutated the instant an
  * identity is claimed, so a second operation for the same identity is refused
- * BEFORE any active lifecycle state can be overwritten (AC-28).
+ * BEFORE any active lifecycle state can be overwritten.
  *
  * It is written ONLY through the controller `beginLifecycle` returns (claim on
  * begin, phase on `setPhase`, release on `end`), so it cannot drift from the
  * `LifecycleState` the tree renders. Every entry is addressed by
  * `lifecycleKey` — the (main repository path, branch) pair — so claiming,
  * refusing or releasing one identity never reads or writes another's, no
- * matter how the project display names or registry ids line up (AC-27).
+ * matter how the project display names or registry ids line up.
  */
 export interface LifecycleClaims {
   /** Take the identity for `entry`; false when it is already claimed. */
@@ -110,7 +110,7 @@ export function createLifecycleClaims(): LifecycleClaims {
   // key-scoped release would be wrong: every flow tears down twice — once
   // inline, once from a `finally` — with real awaits in between, so the
   // trailing teardown of a finished operation would otherwise unlock a
-  // successor that had claimed the identity during that window (AC-28).
+  // successor that had claimed the identity during that window.
   const held = new Map<
     string,
     { owner: LifecycleEntry; current: LifecycleEntry }
@@ -275,7 +275,7 @@ export interface BeginLifecycleOptions {
  * ledger first, and a caller that finds it already claimed gets `null` — the
  * refusal is reported through the existing timed action-error display and no
  * lifecycle state, phase or claim belonging to the running operation is
- * touched (AC-28). Returning `null` (rather than an inert controller) is what
+ * touched. Returning `null` (rather than an inert controller) is what
  * keeps the refused caller from going on to run the service and then tearing
  * down the operation that legitimately owns the identity.
  */
@@ -428,13 +428,13 @@ export async function runLifecycleOperation<T>(
   // Refused: another operation already owns this Workspace Identity, the
   // refusal has been reported, and NOTHING else may happen — running the
   // service here would race the owner and the `finally` below would tear its
-  // presentation down (AC-28).
+  // presentation down.
   if (!lifecycle) return;
 
   // One ordered buffer, but severity is recorded rather than implied: a fatal
   // failure and a non-fatal warning both surface through the same timed error
-  // display (AC-17 only fixes WHEN they appear), and a reader of this buffer
-  // should not have to infer which is which from the variable name.
+  // display, and a reader of this buffer should not have to infer which is
+  // which from the variable name.
   const messages: LifecycleMessage[] = [];
   const appendError = (message: string) => {
     if (message) messages.push({ severity: "error", text: message });
@@ -467,9 +467,9 @@ export async function runLifecycleOperation<T>(
       } else {
         // Reconcile against the snapshot THIS closure observed — never a
         // render-time capture and never a shared ref, which a concurrently
-        // finishing operation would have overwritten while this one awaited
-        // (AC-32). Runs BEFORE `end`, so the reconciliation and the teardown
-        // land in the same React commit.
+        // finishing operation would have overwritten while this one awaited.
+        // Runs BEFORE `end`, so the reconciliation and the teardown land in
+        // the same React commit.
         options.onValidated?.(snapshot);
       }
     } catch (error) {

@@ -50,7 +50,6 @@ describe("TUI open lifecycle", () => {
     rmSync(repoPath, { recursive: true, force: true });
   });
 
-  // AC-7
   test("shows an inert Pending Workspace reading 'Preparing Workspace…' before the worktree exists", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
@@ -93,7 +92,6 @@ describe("TUI open lifecycle", () => {
     app.unmount();
   });
 
-  // AC-15
   test("removes the Pending Workspace when validation finds no managed worktree", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
@@ -121,7 +119,6 @@ describe("TUI open lifecycle", () => {
     app.unmount();
   });
 
-  // AC-16
   test("replaces the Pending Workspace with the discovered Workspace when a later phase failed", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
@@ -162,7 +159,6 @@ describe("TUI open lifecycle", () => {
     app.unmount();
   });
 
-  // AC-12
   test("leaves the discovered Workspace expanded after a successful open", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);

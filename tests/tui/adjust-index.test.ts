@@ -359,7 +359,6 @@ describe("resolveRecoveredSelectionIndex", () => {
     ).toBeNull();
   });
 
-  // AC-18
   test("keeps a Workspace selection across a pending→discovered reshape and snaps a vanished detail row to its parent branch row", () => {
     const repos: RepoInfo[] = [
       fakeRepo("repo-a", ["main", "feat-new"]),

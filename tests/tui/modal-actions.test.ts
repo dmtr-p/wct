@@ -256,8 +256,8 @@ describe("createPrepareOpenModal", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
     expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    // The Workspace validation found on disk is left EXPANDED (AC-12), through
-    // the presentation-only override rather than the stored preference (AC-33).
+    // The Workspace validation found on disk is left EXPANDED, through the
+    // presentation-only override rather than the stored preference.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       pendingKey("proj", "feat"),
     );
@@ -331,8 +331,8 @@ describe("createPrepareOpenModal", () => {
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    // A fatal open still validates before its error is shown (AC-14), and a
-    // validation that found no worktree records no expansion override (AC-15).
+    // A fatal open still validates before its error is shown, and a
+    // validation that found no worktree records no expansion override.
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.markWorkspaceDiscovered).not.toHaveBeenCalled();
     expect(setTimeoutSpy).not.toHaveBeenCalled();
@@ -676,7 +676,6 @@ describe("createPrepareUpModal", () => {
     expect(deps.setMode).not.toHaveBeenCalled();
   });
 
-  // AC-9, AC-21
   test("refuses to open the option sheet for a Workspace under an active lifecycle", () => {
     const items: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
@@ -785,9 +784,9 @@ describe("createHandleUpSubmit", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
   });
 
-  // AC-19, AC-27, AC-28 — a project name containing a slash used to be split
-  // apart as if it were "<project>/<branch>", producing a bogus Workspace
-  // Identity that no progress row or lifecycle guard could ever match.
+  // A project name containing a slash used to be split apart as if it were
+  // "<project>/<branch>", producing a bogus Workspace Identity that no
+  // progress row or lifecycle guard could ever match.
   test("keeps identity intact when the project name contains a slash", () => {
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
@@ -900,7 +899,6 @@ describe("createHandleAddProject", () => {
 });
 
 describe("open lifecycle reconciliation", () => {
-  // AC-12
   test("validates and refreshes before the lifecycle presentation is removed", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
@@ -946,21 +944,20 @@ describe("open lifecycle reconciliation", () => {
     expect(entryAtRefresh).toEqual([true]);
     expect(tracker.phases).toContainEqual({ _tag: "Validating" });
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
-    // The discovered Workspace is LEFT EXPANDED (AC-12) — and by the
+    // The discovered Workspace is LEFT EXPANDED — and by the
     // presentation-only override, not the stored preference, which these deps
-    // cannot even reach (AC-33).
+    // cannot even reach.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       pendingKey("proj", "feat"),
     );
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
   });
 
-  // AC-15, AC-16
   test("records the expansion override only for an identity validation found on disk", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
     // --- The worktree WAS created, a later phase then failed fatally: the
-    // discovered Workspace stays in the tree, expanded (AC-16).
+    // discovered Workspace stays in the tree, expanded.
     (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
       new Error("setup command failed"),
     );
@@ -987,7 +984,7 @@ describe("open lifecycle reconciliation", () => {
     );
 
     // --- Another repository's worktree of the same NAME is not this identity:
-    // matching is on the main repository path (AC-27).
+    // matching is on the main repository path.
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
     const otherRepo = snapshotWithFeat().map((repo) => ({
       ...repo,
@@ -1032,7 +1029,6 @@ describe("open lifecycle reconciliation", () => {
     expect(blind.markWorkspaceDiscovered).not.toHaveBeenCalled();
   });
 
-  // AC-14
   test("validates and refreshes after a FAILED open before any lifecycle UI is removed", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
@@ -1078,7 +1074,6 @@ describe("open lifecycle reconciliation", () => {
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
   });
 
-  // AC-17
   test("defers warnings until validation has completed and progress is gone", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
@@ -1138,7 +1133,6 @@ describe("open lifecycle reconciliation", () => {
     ]);
   });
 
-  // AC-32
   test("each concurrent open consumes its OWN validation snapshot and clears only its own identity", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     // One shared lifecycle state, exactly as React's single `setLifecycle`
@@ -1226,7 +1220,6 @@ describe("open lifecycle reconciliation", () => {
     expect(errorsB).toEqual([]);
   });
 
-  // AC-13
   test("switches the tmux client only after validation and lifecycle removal", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());

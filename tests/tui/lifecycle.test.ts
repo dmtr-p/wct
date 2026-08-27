@@ -66,7 +66,6 @@ describe("lifecyclePhaseLabel", () => {
 });
 
 describe("LifecycleProgressRow", () => {
-  // AC-10
   test("renders a static child connector in yellow, truncated, with no spinner", () => {
     const longName = "install-every-single-dependency-in-the-whole-monorepo";
     const element = React.createElement(LifecycleProgressRow, {
@@ -113,7 +112,7 @@ describe("LifecycleProgressRow", () => {
 });
 
 describe("forced expansion is presentation-only", () => {
-  // AC-33. This is the row-model half of the criterion: the ORCHESTRATION half
+  // This is the row-model half of the behavior: the ORCHESTRATION half
   // — that no lifecycle writes the preference, across a registry poll landing
   // mid-operation — is asserted against the real App in
   // tests/tui/app-lifecycle-close.test.tsx.

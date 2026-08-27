@@ -173,8 +173,8 @@ describe("loadRepoInfo", () => {
 /**
  * `refresh` RESOLVES the snapshot it observed (or `null`), because every
  * lifecycle's validation reconciles against that value rather than against its
- * own stale render-time `repos` capture (AC-32). Both arms are asserted here:
- * the contract is the reason the TUI can reconcile at all.
+ * own stale render-time `repos` capture. Both arms are asserted here: the
+ * contract is the reason the TUI can reconcile at all.
  */
 describe("useRegistry refresh", () => {
   // The hook inspects the registry's repo_path on disk, so the fixture repo has

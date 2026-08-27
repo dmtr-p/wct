@@ -25,7 +25,7 @@ const NO_LIFECYCLE: LifecycleState = new Map();
 /**
  * Effective expansion is the OR of the STORED preference and an active
  * lifecycle: a Workspace under a lifecycle is *presented* as expanded without
- * its key ever being written into `expandedWorktreeKeys` (AC-33). Writing the
+ * its key ever being written into `expandedWorktreeKeys`. Writing the
  * key would be pruned right back out by `reconcileExpandedWorktreeKeys` on the
  * next `repos` change — the 5s poll included — and would also leak a
  * transient operation into a durable user preference.
@@ -53,8 +53,7 @@ export function isWorktreeEffectivelyExpanded({
  * The expansion affordances (collapse key, pointer double-click) are refused
  * for such a Workspace: `isWorktreeEffectivelyExpanded` already paints it `▼`
  * via the presentation-only override, so a toggle could not visibly take
- * effect, and the stored-preference write would outlive the operation (AC-9,
- * AC-33).
+ * effect, and the stored-preference write would outlive the operation.
  */
 export function isWorktreeLifecycleActive(
   item: TreeItem,
@@ -699,7 +698,7 @@ export function scrollToKeepVisible(
  *
  * Rows carry a repo INDEX, so the identity is matched by resolving that index
  * back to its main repository path: two repositories sharing a project display
- * name therefore cannot borrow each other's progress row (AC-27).
+ * name therefore cannot borrow each other's progress row.
  */
 export function lifecycleProgressRowIndex(
   rows: TreeRow[],
@@ -732,14 +731,14 @@ export interface LifecycleReveal {
  * the row model wins; the offset is nudged minimally with
  * `scrollRangeToKeepVisible` (never re-centred) so that row's own visual index
  * is inside the window, and an already-visible operation resolves to the
- * offset it was given — no movement at all (AC-29). An operation with no rows
+ * offset it was given — no movement at all. An operation with no rows
  * (its repository filtered out by the search) is left unrevealed and moves
  * nothing, so it still gets its one reveal if the filter later clears.
  *
  * Pure and one-shot BY DESIGN: everything that happens after the reveal —
  * later phase events, the validating transition, teardown, pending-to-
  * discovered reconciliation — finds the key already in `revealed` and cannot
- * touch the offset again (AC-30).
+ * touch the offset again.
  */
 export function resolveLifecycleReveal({
   rows,
@@ -889,7 +888,7 @@ export function resolveRecoveredSelectionIndex({
   // lifecycle creates, since it suppresses that Workspace's PR and pane detail
   // rows — snap to that Workspace's branch row. Deterministic, and it keeps the
   // cursor on the Workspace the user was looking at instead of on whatever row
-  // inherited its index (AC-18). The lifecycle condition is what keeps this out
+  // inherited its index. The lifecycle condition is what keeps this out
   // of ORDINARY selection recovery: a pane that was killed or a PR that closed
   // still falls through to the clamp below, so the cursor lands on the adjacent
   // sibling row as it always has.

@@ -2,17 +2,17 @@
 //
 // A Workspace under a lifecycle is *presented* as expanded by
 // `isWorktreeEffectivelyExpanded`, but the stored `expandedWorktreeKeys`
-// preference is never written by lifecycle code (AC-33). That split used to
+// preference is never written by lifecycle code. That split used to
 // leak into the pointer: `resolveTreeDoubleClickAction` and `canCollapse` were
 // fed `presentedWorktreeKeys`, which deliberately excludes the lifecycle
 // override — so a Workspace painted `▼` still resolved a double-click to
 // `expand-worktree` and wrote the key into the durable preference, leaving it
 // expanded after the operation ended.
 //
-// The pointer toggle is now refused while a lifecycle owns the Workspace,
-// consistent with AC-9's "actions targeting it are rejected". Keyboard
-// collapse is deliberately NOT refused: that is the user overruling the
-// presentation override on purpose, which `collapseWorktree` already documents.
+// The pointer toggle is now refused while a lifecycle owns the Workspace, so
+// actions targeting it are rejected. Keyboard collapse is deliberately NOT
+// refused: that is the user overruling the presentation override on purpose,
+// which `collapseWorktree` already documents.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,7 +73,6 @@ describe("lifecycle expansion affordances", () => {
     });
   }
 
-  // AC-9, AC-33
   test("a double-click during a lifecycle does not write the stored expansion", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);

@@ -824,7 +824,6 @@ describe("lifecycle rows", () => {
     };
   }
 
-  // AC-8
   test("each phase replaces the single progress row with its canonical label", () => {
     const branch = "feature/x";
     const repos = repoWithWorktree(branch);
@@ -882,7 +881,6 @@ describe("lifecycle rows", () => {
     ).toBe(false);
   });
 
-  // AC-11
   test("neither the progress row nor the Pending Workspace is keyboard- or mouse-reachable", () => {
     const branch = "feature/x";
     const pendingBranch = "feature/new";
@@ -926,7 +924,6 @@ describe("lifecycle rows", () => {
     }
   });
 
-  // AC-31
   test("progress rows are counted by the shared row model and stay inert to the pointer", () => {
     const branch = "feature/x";
     const repos = repoWithWorktree(branch);

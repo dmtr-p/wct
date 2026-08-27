@@ -6,17 +6,6 @@ import {
   selectedRowFill,
 } from "./tree-row";
 
-/**
- * A Workspace's identity line: expansion marker, session dot, branch name.
- *
- * It deliberately carries NO lifecycle status. Progress used to be painted
- * onto this row as an inline `opening…`/`closing…` suffix, which conflated
- * identity with status, jittered the branch's truncation budget as the suffix
- * changed, and could say nothing more specific than "something is happening".
- * Status now lives on a separate `LifecycleProgressRow` beneath this row; the
- * only thing a lifecycle changes here is that the Workspace is presented as
- * expanded (see `isWorktreeEffectivelyExpanded`).
- */
 interface Props {
   branch: string;
   hasSession: boolean;

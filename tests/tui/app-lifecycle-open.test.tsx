@@ -1,6 +1,5 @@
-// App-level lifecycle test for `open`: drives the REAL open modal through Ink's
-// input pipeline and asserts on rendered frames, using the harness's deferred
-// WorkspaceService so the operation can be observed mid-flight.
+// App-level lifecycle tests for `open`, driving the real open modal through
+// Ink's input pipeline.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,11 +20,13 @@ import {
 const ENTER = "\r";
 const CTRL_ENTER = "\x1b[13;5u";
 
+// "o" opens the mode selector, Enter picks New Branch (whose branch field has
+// initial focus), then the branch name and submit.
 async function openBranchFromModal(stdin: NodeJS.ReadStream, branch: string) {
-  await sendKeys(stdin, "o"); // Navigate → OpenModal (mode selector)
-  await sendKeys(stdin, ENTER); // selector → New Branch form
-  await sendKeys(stdin, branch); // the branch field has initial focus
-  await sendKeys(stdin, CTRL_ENTER); // submit
+  await sendKeys(stdin, "o");
+  await sendKeys(stdin, ENTER);
+  await sendKeys(stdin, branch);
+  await sendKeys(stdin, CTRL_ENTER);
 }
 
 describe("TUI open lifecycle", () => {
@@ -63,13 +64,11 @@ describe("TUI open lifecycle", () => {
 
     const frame = app.lines();
     const text = frame.join("\n");
-    // The Pending Workspace and its progress row are both visible even though
-    // git knows nothing about the branch yet.
     expect(worktreeFixtures.byRepoPath.get(repoPath)).toHaveLength(1);
     expect(text).toContain("feature/new");
     expect(text).toContain("Preparing Workspace…");
 
-    // Placement: directly beneath the repository's last worktree row block.
+    // Placed directly beneath the repository's last worktree row block.
     const repoRow = frame.findIndex((line) => line.includes("alpha"));
     const mainRow = frame.findIndex((line) => line.includes("main"));
     const pendingRow = frame.findIndex((line) => line.includes("feature/new"));
@@ -80,7 +79,6 @@ describe("TUI open lifecycle", () => {
     expect(mainRow).toBeLessThan(pendingRow);
     expect(progressRow).toBe(pendingRow + 1);
 
-    // The service really was called, with a reporter that drives the row.
     const call = lastWorkspaceCall("open");
     expect(call.options.branch).toBe("feature/new");
     expect(call.options.cwd).toBe(repoPath);
@@ -101,8 +99,8 @@ describe("TUI open lifecycle", () => {
     await tick(6);
     expect(app.lines().join("\n")).toContain("Preparing Workspace…");
 
-    // The open fails before git creates anything, so the refresh that
-    // validation runs finds the repository exactly as it was.
+    // Fails before git creates anything, so validation's refresh finds the
+    // repository exactly as it was.
     const call = lastWorkspaceCall("open");
     call.reject(new Error("worktree add failed"));
     await tick(12);
@@ -111,8 +109,6 @@ describe("TUI open lifecycle", () => {
     expect(text).not.toContain("feature/new");
     expect(text).not.toContain("Preparing Workspace…");
     expect(text).not.toContain("Validating Workspace…");
-    // The fatal error arrives through the ordinary timed action-error display,
-    // only after validation — never as a lifecycle row.
     expect(text).toContain("worktree add failed");
     expect(text).toContain("main");
 
@@ -132,7 +128,7 @@ describe("TUI open lifecycle", () => {
     await tick(3);
     expect(app.lines().join("\n")).toContain("Creating worktree…");
 
-    // The worktree WAS created; a later phase then failed fatally.
+    // The worktree was created; a later phase then failed fatally.
     worktreeFixtures.byRepoPath.set(repoPath, [
       makeWorktree(repoPath, "main"),
       makeWorktree(repoPath, "feature/new"),
@@ -141,19 +137,16 @@ describe("TUI open lifecycle", () => {
     await tick(12);
 
     const text = app.lines().join("\n");
-    // The Workspace that really exists on disk stays in the tree, with no
-    // stale phase text left behind, and the failure is reported afterwards.
     expect(text).toContain("feature/new");
     expect(text).not.toContain("Creating worktree…");
     expect(text).not.toContain("Validating Workspace…");
     expect(text).toContain("setup command failed");
 
-    // It is the DISCOVERED Workspace, not the inert Pending Workspace: the
-    // cursor can now reach it (repo row → main → feature/new).
+    // The discovered Workspace, not the inert Pending Workspace: the cursor
+    // can reach it.
     await sendKeys(app.stdin, "\x1b[B");
     await sendKeys(app.stdin, "\x1b[B");
     expect(selectedLine(app.lines())).toContain("feature/new");
-    // And it stays EXPANDED, exactly as the lifecycle row left it.
     expect(selectedLine(app.lines())).toContain("▼");
 
     app.unmount();
@@ -164,7 +157,7 @@ describe("TUI open lifecycle", () => {
     const app = await renderApp(<App />);
     await tick(6);
 
-    // `main` is collapsed, so expansion is not simply on for every row.
+    // `main` is collapsed, so expansion isn't simply on for every row.
     expect(app.lines().find((line) => line.includes("main"))).not.toContain(
       "▼",
     );
@@ -173,7 +166,6 @@ describe("TUI open lifecycle", () => {
     await tick(6);
     expect(app.lines().join("\n")).toContain("Preparing Workspace…");
 
-    // git has the worktree by the time validation re-reads the repository.
     const call = lastWorkspaceCall("open");
     worktreeFixtures.byRepoPath.set(repoPath, [
       makeWorktree(repoPath, "main"),
@@ -198,8 +190,6 @@ describe("TUI open lifecycle", () => {
     });
     await tick(14);
 
-    // No lifecycle row is left, and the Workspace validation discovered is
-    // LEFT EXPANDED — while `main`, which no operation touched, is not.
     const frame = app.lines();
     const text = frame.join("\n");
     expect(text).not.toContain("Preparing Workspace…");

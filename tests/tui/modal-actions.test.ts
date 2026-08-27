@@ -19,11 +19,8 @@ import {
 } from "../../src/tui/lifecycle";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
-/**
- * A live `setLifecycle` stand-in: applies the functional updates exactly as
- * React would, so a test can read the phase the tree WOULD be rendering at any
- * point in the async flow.
- */
+// Applies functional updates like React would, so a test can read the phase
+// the tree would be rendering at any point in the async flow.
 function trackLifecycle() {
   const tracker = {
     state: new Map() as LifecycleState,
@@ -256,8 +253,7 @@ describe("createPrepareOpenModal", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
     expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    // The Workspace validation found on disk is left EXPANDED, through the
-    // presentation-only override rather than the stored preference.
+    // A presentation-only override, not the stored preference.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       pendingKey("proj", "feat"),
     );
@@ -331,8 +327,6 @@ describe("createPrepareOpenModal", () => {
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    // A fatal open still validates before its error is shown, and a
-    // validation that found no worktree records no expansion override.
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.markWorkspaceDiscovered).not.toHaveBeenCalled();
     expect(setTimeoutSpy).not.toHaveBeenCalled();
@@ -700,8 +694,6 @@ describe("createPrepareUpModal", () => {
 
     createPrepareUpModal(deps)();
 
-    // Refused at the SAME point as space/down/close, so the user is told the
-    // Workspace is busy instead of filling in a sheet that would be refused.
     expect(deps.setMode).not.toHaveBeenCalled();
     const message = vi.mocked(deps.showActionError).mock.calls[0]?.[0];
     expect(message).toContain("feat");
@@ -771,8 +763,6 @@ describe("createHandleUpSubmit", () => {
     expect(deps.clearActionError).toHaveBeenCalled();
     expect(deps.setSelectedIndex).toHaveBeenCalledWith(3);
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    // The modal is only an option sheet: the identity the lifecycle is keyed
-    // by comes from the mode, and nothing is recorded here.
     expect(startWorkspace).toHaveBeenCalledWith({
       worktreePath: "/repo/feat",
       repoPath: "/repo",
@@ -784,9 +774,6 @@ describe("createHandleUpSubmit", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
   });
 
-  // A project name containing a slash used to be split apart as if it were
-  // "<project>/<branch>", producing a bogus Workspace Identity that no
-  // progress row or lifecycle guard could ever match.
   test("keeps identity intact when the project name contains a slash", () => {
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
@@ -930,7 +917,6 @@ describe("open lifecycle reconciliation", () => {
       noAttach: true,
     });
 
-    // The Pending Workspace exists immediately, before anything is awaited.
     expect(tracker.entry()?.phase).toEqual({ _tag: "Preparing" });
 
     await vi.waitFor(() => {
@@ -938,15 +924,11 @@ describe("open lifecycle reconciliation", () => {
       expect(tracker.state.size).toBe(0);
     });
 
-    // Validation ran WHILE the lifecycle row still existed, showing
-    // `Validating Workspace…`, and only then was the presentation removed.
     expect(phaseAtRefresh).toEqual([{ _tag: "Validating" }]);
     expect(entryAtRefresh).toEqual([true]);
     expect(tracker.phases).toContainEqual({ _tag: "Validating" });
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
-    // The discovered Workspace is LEFT EXPANDED — and by the
-    // presentation-only override, not the stored preference, which these deps
-    // cannot even reach.
+    // A presentation-only override; setExpandedWorktreeKeys is out of reach here.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       pendingKey("proj", "feat"),
     );
@@ -956,8 +938,7 @@ describe("open lifecycle reconciliation", () => {
   test("records the expansion override only for an identity validation found on disk", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // --- The worktree WAS created, a later phase then failed fatally: the
-    // discovered Workspace stays in the tree, expanded.
+    // Worktree created, a later phase then failed fatally.
     (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
       new Error("setup command failed"),
     );
@@ -983,8 +964,7 @@ describe("open lifecycle reconciliation", () => {
       pendingKey("proj", "feat"),
     );
 
-    // --- Another repository's worktree of the same NAME is not this identity:
-    // matching is on the main repository path.
+    // A same-named worktree in another repository: identity matches on repo path.
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
     const otherRepo = snapshotWithFeat().map((repo) => ({
       ...repo,
@@ -1008,7 +988,7 @@ describe("open lifecycle reconciliation", () => {
     });
     expect(elsewhere.markWorkspaceDiscovered).not.toHaveBeenCalled();
 
-    // --- A validation that could observe nothing at all records nothing.
+    // A validation that observed nothing at all.
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
     const blind = makeDeps({
       openModalRepoProject: "proj",
@@ -1066,9 +1046,6 @@ describe("open lifecycle reconciliation", () => {
       expect(deps.showActionError).toHaveBeenCalledWith("worktree add failed");
     });
 
-    // The failure branch validates too: the row read `Validating Workspace…`
-    // and the entry was still there while registry/worktree/tmux state was
-    // re-read — only afterwards was the presentation removed.
     expect(atRefresh).toEqual([{ phase: { _tag: "Validating" }, entries: 1 }]);
     expect(tracker.state.size).toBe(0);
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
@@ -1124,9 +1101,6 @@ describe("open lifecycle reconciliation", () => {
       expect(showActionError).toHaveBeenCalled();
     });
 
-    // Nothing was reported while progress was on screen: validation ran with
-    // zero errors shown, and both warnings arrived afterwards, in one timed
-    // action-error, with no lifecycle entry left.
     expect(order).toEqual([
       "refresh(errors=0)",
       "error(lifecycle=0):Setup failed: bootstrap: exit 1\nFailed to create tmux session: no server",
@@ -1135,8 +1109,7 @@ describe("open lifecycle reconciliation", () => {
 
   test("each concurrent open consumes its OWN validation snapshot and clears only its own identity", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
-    // One shared lifecycle state, exactly as React's single `setLifecycle`
-    // would be shared by two in-flight handlers.
+    // Shared state, as React's single `setLifecycle` would be shared by two in-flight handlers.
     let shared: LifecycleState = new Map();
     const setLifecycle = (
       update: LifecycleState | ((prev: LifecycleState) => LifecycleState),
@@ -1188,8 +1161,6 @@ describe("open lifecycle reconciliation", () => {
     createHandleOpen(depsA)(submit);
     createHandleOpen(depsB)(submit);
 
-    // Same branch name, two repositories: two independent identities, both
-    // waiting on their own validation.
     await vi.waitFor(() => {
       expect(shared.get(lifecycleKey("/repo-a", "feat"))?.phase).toEqual({
         _tag: "Validating",
@@ -1199,8 +1170,6 @@ describe("open lifecycle reconciliation", () => {
       });
     });
 
-    // A's own validation observed nothing (a failed refresh): A warns and A
-    // alone comes down — B's entry and phase are untouched.
     validationA.resolve(null);
     await vi.waitFor(() => {
       expect(errorsA).toEqual([
@@ -1212,7 +1181,6 @@ describe("open lifecycle reconciliation", () => {
       _tag: "Validating",
     });
 
-    // B's own validation observed a snapshot, so B reports nothing at all.
     validationB.resolve([]);
     await vi.waitFor(() => {
       expect(shared.size).toBe(0);
@@ -1265,7 +1233,6 @@ describe("open lifecycle reconciliation", () => {
       "discover(lifecycle=0)",
       "switch(lifecycle=0)",
     ]);
-    // A failed switch reports an error and does NOT recreate a progress row.
     expect(deps.showActionError).toHaveBeenCalledWith(
       "Started session 'feat', but failed to switch client",
     );

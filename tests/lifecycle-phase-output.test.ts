@@ -1,10 +1,5 @@
-// The semantic `PhaseStarted` events exist for the TUI's Lifecycle Progress
-// Row. This suite pins the other half of that contract: adding them changed
-// NOTHING about what the CLI prints. Rather than golden-matching human output
-// (which would just re-encode the same strings twice), each command is run
-// twice against the same stubbed WorkspaceService — once emitting only the
-// pre-existing reporter events, once emitting those PLUS every phase event —
-// and the two transcripts must be identical.
+// Runs each command twice against a stubbed WorkspaceService, with and
+// without PhaseStarted events interleaved, and diffs the transcripts.
 
 import { Effect } from "effect";
 import { describe, expect, test, vi } from "vitest";
@@ -29,8 +24,7 @@ import {
 } from "../src/services/worktree-service";
 import { withTestServices } from "./helpers/services";
 
-// `closeCommand` resolves its branch argument through the real WorktreeService;
-// stub just that lookup so the suite never touches a real repository.
+// `closeCommand` resolves its branch through the real WorktreeService; stub just that lookup.
 const worktree: WorktreeService = {
   ...liveWorktreeService,
   findWorktreeByBranch: (branch) =>
@@ -145,10 +139,8 @@ const ALL_PHASES: WorkspacePhase[] = [
   { _tag: "RemovingWorktree" },
 ];
 
-/**
- * The pre-existing events, with every phase event woven in around them — so a
- * human reporter that reacted to a phase in ANY position would be caught.
- */
+// Interleaves a phase event before each legacy event, so a listener reacting
+// to phase order anywhere in the stream would be caught.
 function eventsWithPhases(): WorkspaceReporterEvent[] {
   const phaseEvents: WorkspaceReporterEvent[] = ALL_PHASES.map((phase) => ({
     operation: "open" as const,
@@ -273,9 +265,7 @@ describe("semantic phases and CLI output", () => {
     );
 
     expect(humanWith).toEqual(humanWithout);
-    // Sanity: the transcript is not vacuously empty.
     expect(humanWithout.length).toBeGreaterThan(0);
-    // And no canonical progress-row label ever leaks into CLI output.
     for (const line of humanWith) {
       expect(line).not.toContain("Preparing Workspace");
       expect(line).not.toContain("Validating Workspace");
@@ -289,8 +279,7 @@ describe("semantic phases and CLI output", () => {
       expect(line).not.toContain("PhaseStarted");
     }
 
-    // `up`, `down` and `close` never pass a reporter at all, so no phase can
-    // reach their output paths in the first place.
+    // `up`, `down`, and `close` never pass a reporter.
     const nonOpen = withPhasesOptions.slice(1);
     expect(nonOpen.length).toBeGreaterThan(0);
     for (const options of nonOpen) {

@@ -1,11 +1,5 @@
-// Identity concurrency and the one-time viewport reveal.
-//
-// The identity rules are proven directly against `src/tui/lifecycle.ts` — the
-// single `beginLifecycle` entry point every verb shares — because that is where
-// the coordination rule lives. The viewport rules are proven against the REAL
-// App through Ink's input pipeline, because the reveal is a property of
-// App.tsx's independent scroll-offset model and only a rendered frame can show
-// that later phases, validation and teardown leave it alone.
+// Lifecycle identity concurrency (proven against `beginLifecycle`) and the
+// one-time viewport reveal (proven against the real App).
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -79,8 +73,7 @@ describe("lifecycle identity", () => {
         showActionError,
       });
 
-    // Two repositories deliberately share the project DISPLAY NAME "alpha"
-    // and would share a registry-id-free display key; only their main
+    // Both repos share the project display name "alpha"; only their main
     // repository paths differ.
     const one = begin(entryFor("/repos/one", "alpha", "feature/x"));
     const two = begin(entryFor("/repos/two", "alpha", "feature/x", "up"));
@@ -90,8 +83,6 @@ describe("lifecycle identity", () => {
     expect(sibling).not.toBeNull();
     expect(tracker.state.size).toBe(3);
 
-    // Fully independent phases: same branch in two repositories, and two
-    // branches in one repository.
     one?.setPhase({ _tag: "CreatingWorktree" });
     two?.setPhase({ _tag: "CreatingTmuxSession" });
     sibling?.setPhase({ _tag: "KillingTmuxSession" });
@@ -105,8 +96,8 @@ describe("lifecycle identity", () => {
       _tag: "KillingTmuxSession",
     });
 
-    // Neither the project display name nor any registry id participates in the
-    // key space anywhere.
+    // Neither the project display name nor any registry id participates in
+    // the key space.
     expect([...tracker.state.keys()]).toEqual([
       lifecycleKey("/repos/one", "feature/x"),
       lifecycleKey("/repos/two", "feature/x"),
@@ -116,15 +107,12 @@ describe("lifecycle identity", () => {
       expect(key).not.toContain("alpha");
     }
 
-    // A REJECTION for one identity leaves every other identity's state and
-    // claim untouched.
     expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).toBeNull();
     expect(tracker.state.size).toBe(3);
     expect(tracker.phaseOf("/repos/two", "feature/x")).toEqual({
       _tag: "CreatingTmuxSession",
     });
 
-    // …and so does a COMPLETION: ending one neither clears nor unlocks another.
     one?.end();
     expect(tracker.state.size).toBe(2);
     expect(tracker.phaseOf("/repos/one", "feature/x")).toBeUndefined();
@@ -135,7 +123,6 @@ describe("lifecycle identity", () => {
       _tag: "KillingTmuxSession",
     });
     expect(begin(entryFor("/repos/two", "alpha", "feature/x"))).toBeNull();
-    // The freed identity can be claimed again; its neighbours cannot.
     expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).not.toBeNull();
     expect(begin(entryFor("/repos/one", "alpha", "feature/y"))).toBeNull();
   });
@@ -154,8 +141,6 @@ describe("lifecycle identity", () => {
     active?.setPhase({ _tag: "RunningSetup", name: "install" });
     expect(showActionError).not.toHaveBeenCalled();
 
-    // A second start for the SAME (main repository path, branch) pair — even a
-    // different verb — is refused, and the running operation's phase survives.
     const refused = beginLifecycle({
       claims,
       setLifecycle: tracker.setLifecycle,
@@ -168,8 +153,6 @@ describe("lifecycle identity", () => {
       _tag: "RunningSetup",
       name: "install",
     });
-    // Reported through the existing timed action-error display, naming the
-    // Workspace and the phase it is actually in.
     expect(showActionError).toHaveBeenCalledTimes(1);
     const message = showActionError.mock.calls[0]?.[0] as string;
     expect(message).toContain("feature/x");
@@ -177,8 +160,7 @@ describe("lifecycle identity", () => {
       lifecyclePhaseLabel({ _tag: "RunningSetup", name: "install" }),
     );
 
-    // The shared run shape refuses at the same point: the service is never
-    // called, and the refused run does not tear the owner's entry down.
+    // The same refusal applies through `runLifecycleOperation`.
     const run = vi.fn();
     await runLifecycleOperation({
       claims,
@@ -196,8 +178,6 @@ describe("lifecycle identity", () => {
       name: "install",
     });
 
-    // Once the owner finishes, the identity is free again — the refusal locked
-    // nothing permanently.
     active?.end();
     expect(tracker.state.size).toBe(0);
     const later = beginLifecycle({
@@ -211,10 +191,9 @@ describe("lifecycle identity", () => {
 });
 
 describe("lifecycle teardown is scoped to its own operation", () => {
-  // Every flow tears down TWICE — once inline, once from a
-  // `finally` — with real awaits (the tmux hand-off) in between, during which
-  // the identity is free and the user may legitimately start a second
-  // operation on the same Workspace. The trailing teardown must not touch it.
+  // Every flow tears down twice — once inline, once from a `finally` — with
+  // real awaits in between, during which a second operation may legitimately
+  // claim the same identity; the trailing teardown must not touch it.
   test("a trailing teardown neither deletes nor unlocks a successor's operation", () => {
     const tracker = trackLifecycle();
     const claims = createLifecycleClaims();
@@ -231,13 +210,10 @@ describe("lifecycle teardown is scoped to its own operation", () => {
     first?.end();
     expect(tracker.state.size).toBe(0);
 
-    // The window: the identity is free, so a second operation claims it.
     const second = begin(entryFor("/repos/one", "alpha", "feature/x", "down"));
     expect(second).not.toBeNull();
     second?.setPhase({ _tag: "KillingTmuxSession" });
 
-    // The finished operation's trailing teardown and any late reporter event
-    // are no-ops: the successor keeps its row, its phase and its claim.
     first?.end();
     first?.setPhase({ _tag: "CopyingFiles" });
     expect(tracker.state.size).toBe(1);
@@ -245,7 +221,6 @@ describe("lifecycle teardown is scoped to its own operation", () => {
       _tag: "KillingTmuxSession",
     });
     expect(claims.active("/repos/one", "feature/x")?.operation).toBe("down");
-    // …and the identity is still LOCKED, so a third operation is refused.
     expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).toBeNull();
   });
 
@@ -264,8 +239,8 @@ describe("lifecycle teardown is scoped to its own operation", () => {
       showActionError,
       entry: entryFor("/repos/one", "alpha", "feature/x", "up"),
       run: () => Promise.resolve("done"),
-      // `afterCleanup` runs after the inline teardown — the real window, since
-      // the tmux hand-off it stands for awaits several subprocess calls.
+      // `afterCleanup` runs after the inline teardown, standing in for the
+      // real tmux hand-off's several awaited subprocess calls.
       afterCleanup: () => {
         successor.controller = beginLifecycle({
           claims,
@@ -353,8 +328,8 @@ describe("TUI lifecycle viewport reveal", () => {
     const app = await renderApp(<App />, 14);
     await tick(8);
 
-    // The tree is taller than the window: the repo row is on screen and the
-    // last worktrees — where the Pending Workspace will be placed — are not.
+    // Taller than the window: the repo row is on screen, the last worktrees
+    // (where the Pending Workspace is placed) are not.
     const before = app.lines();
     expect(firstTreeLine(before)).toContain("alpha");
     expect(before.join("\n")).not.toContain("feature/19");
@@ -364,12 +339,11 @@ describe("TUI lifecycle viewport reveal", () => {
 
     const revealed = app.lines();
     const text = revealed.join("\n");
-    // The reveal happened: the progress row is on screen…
     expect(text).toContain("Preparing Workspace…");
     expect(text).toContain("feature/new");
-    // …by a MINIMAL downward nudge, never a re-centre: the progress row is the
-    // bottom-most tree row of the window, and the offset moved just far enough
-    // (the repo row scrolled off the top).
+    // A minimal downward nudge, never a re-centre: the progress row is the
+    // bottom-most tree row of the window, moved just far enough that the
+    // repo row scrolled off the top.
     const progressRow = revealed.findIndex((line) =>
       line.includes("Preparing Workspace…"),
     );
@@ -381,28 +355,24 @@ describe("TUI lifecycle viewport reveal", () => {
 
     app.unmount();
 
-    // An ALREADY-VISIBLE operation must not move the viewport at all — not
-    // even to centre itself. The window is scrolled off the top of the tree,
-    // the selected Workspace is inside it, and an `up` on that Workspace
-    // renders its progress row where the window already is.
+    // A lifecycle that starts already visible must not move the viewport at
+    // all, not even to centre itself.
     const app2 = await renderApp(<App />, 14);
     await tick(8);
-    await sendKeys(app2.stdin, sgrWheel(1).repeat(4)); // wheel down
-    await sendKeys(app2.stdin, DOWN); // select `main`
+    await sendKeys(app2.stdin, sgrWheel(1).repeat(4));
+    await sendKeys(app2.stdin, DOWN);
     await tick(4);
     const beforeUp = app2.lines();
     const topBeforeUp = firstTreeLine(beforeUp);
     expect(topBeforeUp).toContain("main");
     expect(topBeforeUp).not.toContain("alpha");
 
-    await sendKeys(app2.stdin, "u"); // Navigate → UpModal
-    await sendKeys(app2.stdin, CTRL_ENTER); // submit
+    await sendKeys(app2.stdin, "u");
+    await sendKeys(app2.stdin, CTRL_ENTER);
     await tick(8);
 
     const duringUp = app2.lines();
     expect(duringUp.join("\n")).toContain("Preparing Workspace…");
-    // Same top row, so the same offset — only the row's own expansion marker
-    // changed, because a Workspace under a lifecycle is presented as expanded.
     expect(firstTreeLine(duringUp)).toContain("main");
     expect(firstTreeLine(duringUp)).not.toContain("alpha");
     expect(visibleFeatureIndices(duringUp)[0]).toBe(
@@ -411,7 +381,6 @@ describe("TUI lifecycle viewport reveal", () => {
 
     app2.unmount();
 
-    // The contract itself, at the unit: no rows -> nothing to reveal.
     expect(
       resolveLifecycleReveal({
         rows: [],
@@ -429,38 +398,30 @@ describe("TUI lifecycle viewport reveal", () => {
     ).toBeNull();
   });
 
-  // The search-filtered clause, driven through the REAL filter rather
-  // than a hand-built `resolveLifecycleReveal` call: rows are built from
-  // `filteredRepos`, so a query that excludes the repository must leave the
-  // in-flight lifecycle with no rows at all, and the viewport untouched.
+  // Driven through the real search filter rather than a hand-built
+  // `resolveLifecycleReveal` call, since rows are built from `filteredRepos`.
   test("a lifecycle whose repository the active search excludes renders nothing and moves nothing", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 14);
     try {
       await tick(8);
 
-      // Start an open and let it reveal, so there IS a progress row and an
-      // offset the filter could disturb.
       await openBranchFromModal(app.stdin, "feature/new");
       await tick(8);
       expect(app.lines().join("\n")).toContain("Preparing Workspace…");
 
-      // Filter the repository out for real: "alpha" is the only project and
-      // no branch matches, so `filteredRepos` is empty.
+      // "alpha" is the only project and no branch matches, so `filteredRepos`
+      // ends up empty.
       await sendKeys(app.stdin, "/");
       await sendKeys(app.stdin, "zzz-no-such-repo");
       await tick(6);
 
       const filtered = app.lines();
       const filteredText = filtered.join("\n");
-      // No lifecycle rows survive the filter — neither the progress row nor
-      // the Pending Workspace it hangs under.
       expect(filteredText).not.toContain("Preparing Workspace…");
       expect(filteredText).not.toContain("feature/new");
       expect(visibleFeatureIndices(filtered)).toEqual([]);
 
-      // A further phase event on the filtered-out lifecycle paints nothing and
-      // moves nothing: the frame is byte-identical.
       emitWorkspacePhase(lastWorkspaceCall("open"), {
         _tag: "CreatingWorktree",
       });
@@ -481,30 +442,25 @@ describe("TUI lifecycle viewport reveal", () => {
     const afterReveal = visibleFeatureIndices(app.lines());
     expect(app.lines().join("\n")).toContain("Preparing Workspace…");
 
-    // A later phase event repaints the row and moves nothing.
     const call = lastWorkspaceCall("open");
     emitWorkspacePhase(call, { _tag: "CreatingWorktree" });
     await tick(4);
     expect(app.lines().join("\n")).toContain("Creating worktree…");
     expect(visibleFeatureIndices(app.lines())).toEqual(afterReveal);
 
-    // The user scrolls away with the wheel; the lifecycle is still running.
     await sendKeys(app.stdin, sgrWheel(-1).repeat(4));
     await tick(4);
     const afterWheel = visibleFeatureIndices(app.lines());
     const topAfterWheel = firstTreeLine(app.lines());
     expect(afterWheel).not.toEqual(afterReveal);
 
-    // Neither a further phase nor the validating transition may drag the
-    // viewport back to the operation.
     emitWorkspacePhase(call, { _tag: "RunningSetup", name: "install" });
     await tick(4);
     expect(visibleFeatureIndices(app.lines())).toEqual(afterWheel);
     expect(firstTreeLine(app.lines())).toBe(topAfterWheel);
 
-    // The open succeeds: validation discovers the worktree, the Pending
-    // Workspace becomes the discovered Workspace and the lifecycle UI comes
-    // down — all without undoing the user's scroll.
+    // Validation discovers the worktree and the lifecycle UI comes down,
+    // all without undoing the user's scroll.
     worktreeFixtures.byRepoPath.set(repoPath, [
       ...(worktreeFixtures.byRepoPath.get(repoPath) ?? []),
       makeWorktree(repoPath, "feature/new"),

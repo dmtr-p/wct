@@ -77,19 +77,15 @@ describe("LifecycleProgressRow", () => {
       maxWidth: 40,
     });
 
-    // Yellow, truncate-not-wrap: the row must stay exactly one terminal row.
     expect(hasElementProp(rendered, "color", "yellow")).toBe(true);
     expect(hasElementProp(rendered, "wrap", "truncate")).toBe(true);
-    // No animation of any kind: no spinner frame, no timer.
     const text = elementText(rendered);
     expect(text.startsWith(LIFECYCLE_ROW_PREFIX)).toBe(true);
     const body = text.slice(LIFECYCLE_ROW_PREFIX.length);
     for (const spinnerFrame of ["⠋", "⠙", "⠹", "⠸", "◐", "◓", "◑", "▪"]) {
       expect(body).not.toContain(spinnerFrame);
     }
-    // No elapsed timer: nothing time-derived can appear, so no digits.
     expect(/[0-9]/.test(body)).toBe(false);
-    // Content is a pure function of the phase — two renders are identical.
     expect(
       elementText(
         LifecycleProgressRow({
@@ -98,12 +94,10 @@ describe("LifecycleProgressRow", () => {
         }),
       ),
     ).toBe(text);
-    // Truncated to the terminal width, and the raw name never fully shown.
     expect(displayWidth(text)).toBeLessThanOrEqual(40);
     expect(text).toContain("Setup: ");
     expect(text).not.toContain(longName);
     expect(text).toContain("…");
-    // The pure content helper and the component agree.
     expect(text).toBe(
       lifecycleProgressContent({ _tag: "RunningSetup", name: longName }, 40),
     );
@@ -112,10 +106,8 @@ describe("LifecycleProgressRow", () => {
 });
 
 describe("forced expansion is presentation-only", () => {
-  // This is the row-model half of the behavior: the ORCHESTRATION half
-  // — that no lifecycle writes the preference, across a registry poll landing
-  // mid-operation — is asserted against the real App in
-  // tests/tui/app-lifecycle-close.test.tsx.
+  // The row-model half; the orchestration half (a registry poll mid-operation
+  // can't disturb it) is in app-lifecycle-close.test.tsx.
   test("lifecycle expansion never touches the stored expandedWorktreeKeys", () => {
     const repoPath = "/repos/alpha";
     const branch = "feature/x";
@@ -141,7 +133,6 @@ describe("forced expansion is presentation-only", () => {
       _tag: "CreatingWorktree",
     });
 
-    // Presented as expanded purely from the lifecycle entry…
     expect(
       isWorktreeEffectivelyExpanded({
         expandedWorktreeKeys: stored,
@@ -151,7 +142,6 @@ describe("forced expansion is presentation-only", () => {
         branch,
       }),
     ).toBe(true);
-    // …and not once the lifecycle is gone.
     expect(
       isWorktreeEffectivelyExpanded({
         expandedWorktreeKeys: stored,
@@ -178,9 +168,8 @@ describe("forced expansion is presentation-only", () => {
       maxWidth: 80,
     });
 
-    // The stored preference is untouched — same reference, still empty. This is
-    // what keeps `reconcileExpandedWorktreeKeys` (which prunes on EVERY repos
-    // change, the 5s poll included) from fighting the lifecycle.
+    // `reconcileExpandedWorktreeKeys` prunes on every repos change (the 5s
+    // poll included), so the stored preference must stay untouched here.
     expect(stored.size).toBe(0);
     expect(stored.has(pendingKey("alpha", branch))).toBe(false);
     expect(reconcileExpandedWorktreeKeys(stored, repos)).toBe(stored);

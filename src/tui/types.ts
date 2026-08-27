@@ -1,6 +1,3 @@
-// src/tui/types.ts
-
-/** TUI interaction modes */
 export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
@@ -11,9 +8,8 @@ export type Mode =
       type: "UpModal";
       worktreePath: string;
       worktreeKey: string;
-      /** Main repository path — one half of the Workspace Identity. */
       repoPath: string;
-      /** Branch — the other half. Never derived from worktreeKey. */
+      /** Never derive branch from worktreeKey — project display names can collide across repos. */
       branch: string;
       project: string;
       profileNames: string[];
@@ -31,7 +27,6 @@ export type Mode =
       branch: string;
       worktreePath: string;
       worktreeKey: string;
-      /** Main repository path — one half of the Workspace Identity. */
       repoPath: string;
       project: string;
     }
@@ -191,7 +186,7 @@ export interface PRInfo {
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
 
-/** Format a Workspace Identity display key: `<project>/<branch>`. */
+/** Display key for a project+branch pair. */
 export function pendingKey(project: string, branch: string): string {
   return `${project}/${branch}`;
 }

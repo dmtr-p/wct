@@ -136,13 +136,9 @@ export function useRegistry() {
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  /**
-   * Resolves the repos it just loaded, or `null` when the load was aborted or
-   * failed (the previous repos stay on screen in that case). Callers that
-   * reconcile against fresh registry state — the TUI's lifecycle validation —
-   * need the snapshot THIS refresh observed; the `repos` value they captured
-   * before awaiting is a render-time capture and is stale by definition.
-   */
+  // Resolves the snapshot it just loaded (or null if aborted/failed), so a
+  // caller can reconcile against fresh state instead of a stale `repos`
+  // closure captured before the await.
   const refresh = useCallback(
     async (signal?: AbortSignal): Promise<RepoInfo[] | null> => {
       const opts = signal ? { signal } : undefined;

@@ -159,9 +159,7 @@ function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
     case "pending-workspace": {
       const repo = ctx.repos[row.repoIndex];
       if (!repo) return null;
-      // Rendered as an ordinary (never selected, never hovered) branch row:
-      // the row says WHICH Workspace, the progress row beneath says what is
-      // happening to it.
+      // Identity only — the lifecycle-progress row beneath shows status.
       return (
         <WorktreeItem
           key={`pending-${repo.id}-${row.branch}`}

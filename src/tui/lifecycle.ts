@@ -1,22 +1,8 @@
-// src/tui/lifecycle.ts
-//
-// The TUI's Workspace-lifecycle presentation model.
-//
-// A lifecycle entry is keyed by **Workspace Identity** — the main repository
-// path plus the branch — NOT by the project display name used for expansion
-// keys (`pendingKey`), `Mode.Expanded` and `treeItemId`. Two registered repos
-// can share a display name, so a display-name key would let one repo's `open`
-// blank out another repo's progress row; the identity key keeps same-named
-// branches in different repositories independent.
-//
-// This module owns the key space, the canonical row labels, the width-aware
-// truncation, the synchronous claim ledger that keeps one identity's operation
-// from clobbering another's (`LifecycleClaims`) AND the one shared run shape
-// every lifecycle-driving handler uses (`beginLifecycle` /
-// `runLifecycleOperation`). Rendering lives in
-// `components/LifecycleProgressRow` and row placement in
-// `tree-helpers.buildTreeRows`, so both consume ONE label mapping and no raw
-// setup command text can ever reach the screen.
+// A lifecycle entry is keyed by Workspace Identity — main repository path +
+// branch — not the project display name used for expansion keys
+// (`pendingKey`, `Mode.Expanded`, `treeItemId`). Two registered repos can
+// share a display name, so a display-name key would let one repo's `open`
+// blank out another repo's progress row.
 
 import { Effect } from "effect";
 import type { Dispatch, SetStateAction } from "react";
@@ -30,20 +16,18 @@ import type { RepoInfo } from "./hooks/useRegistry";
 import { truncateBranch } from "./utils/truncate";
 
 /**
- * A service phase (`WorkspacePhase`) plus the TUI-owned reconciliation phase.
- * `Validating` has no service event behind it: the TUI enters it once the
- * lifecycle effect settles and stays there while it refreshes registry,
- * worktree and tmux state.
+ * A service phase plus the TUI-owned `Validating` phase, which has no service
+ * event behind it — the TUI enters it once the lifecycle effect settles.
  */
 export type LifecyclePhase = WorkspacePhase | { _tag: "Validating" };
 
 export interface LifecycleEntry {
   operation: WorkspaceOperation;
-  /** Main repository path — one half of the Workspace Identity. */
+  /** Half of the Workspace Identity. */
   repoPath: string;
-  /** Project display name; used only for row placement and messages. */
+  /** Display name only — not part of the Workspace Identity. */
   project: string;
-  /** Branch — the other half of the Workspace Identity. */
+  /** The other half of the Workspace Identity. */
   branch: string;
   phase: LifecyclePhase;
 }
@@ -51,12 +35,10 @@ export interface LifecycleEntry {
 /** Active lifecycle operations, keyed by `lifecycleKey`. */
 export type LifecycleState = ReadonlyMap<string, LifecycleEntry>;
 
-// NUL cannot appear in a filesystem path or a git ref, so the two halves of
-// the identity can never be confused with each other (a `#` or `/` separator
-// could be, since both are legal in paths and in branch names).
+// NUL cannot appear in a filesystem path or a git ref, unlike `#` or `/`, so
+// the two halves of the identity can never be confused with each other.
 const KEY_SEPARATOR = "\u0000";
 
-/** The Workspace Identity key: main repository path + branch. */
 export function lifecycleKey(mainRepoPath: string, branch: string): string {
   return `${mainRepoPath}${KEY_SEPARATOR}${branch}`;
 }
@@ -70,47 +52,28 @@ export function lifecycleEntryFor(
 }
 
 /**
- * The SYNCHRONOUS claim ledger for Workspace Identities.
- *
- * React state cannot arbitrate the claim on its own: a `setLifecycle` updater
- * does not run until the next render, so two starts dispatched inside ONE tick
- * would both read the identity as free from the render-time snapshot, and the
- * second would go on to call the service and then `end()` — tearing down the
- * first operation's entry. The ledger is a plain map mutated the instant an
- * identity is claimed, so a second operation for the same identity is refused
- * BEFORE any active lifecycle state can be overwritten.
- *
- * It is written ONLY through the controller `beginLifecycle` returns (claim on
- * begin, phase on `setPhase`, release on `end`), so it cannot drift from the
- * `LifecycleState` the tree renders. Every entry is addressed by
- * `lifecycleKey` — the (main repository path, branch) pair — so claiming,
- * refusing or releasing one identity never reads or writes another's, no
- * matter how the project display names or registry ids line up.
+ * Synchronous claim ledger for Workspace Identities. A `setLifecycle` updater
+ * doesn't apply until next render, so two starts dispatched in the same tick
+ * would both read the identity as free; this ledger is mutated the instant a
+ * claim is taken, so the second start is refused before either can overwrite
+ * the other's state.
  */
 export interface LifecycleClaims {
-  /** Take the identity for `entry`; false when it is already claimed. */
   claim: (entry: LifecycleEntry) => boolean;
-  /** Update a held claim in place; a no-op once the identity is released. */
   record: (entry: LifecycleEntry) => void;
   /**
-   * Release the identity, but ONLY when `entry` is the very object the claim
-   * was taken with. Idempotent, so a repeated teardown is harmless, and scoped
-   * to the operation, so a finished operation's trailing teardown can never
-   * unlock a SUCCESSOR that claimed the same identity in the meantime.
+   * Release the identity, but only when `entry` is the exact object the claim
+   * was taken with — so a finished operation's trailing teardown can never
+   * unlock a successor that claimed the same identity in the meantime.
    */
   release: (entry: LifecycleEntry) => void;
-  /** The entry currently holding this identity, if any. */
   active: (mainRepoPath: string, branch: string) => LifecycleEntry | undefined;
 }
 
 export function createLifecycleClaims(): LifecycleClaims {
-  // Each identity holds BOTH the entry object its claim was taken with
-  // (`owner`, a stable identity token) and the phase-advanced `current` one, so
-  // a release can be scoped to the operation that actually claimed it. A
-  // key-scoped release would be wrong: every flow tears down twice — once
-  // inline, once from a `finally` — with real awaits in between, so the
-  // trailing teardown of a finished operation would otherwise unlock a
-  // successor that had claimed the identity during that window.
+  // `owner` is the object identity the claim was taken with, so `release` can
+  // scope to the operation that actually claimed it; `current` tracks phase
+  // updates independently.
   const held = new Map<
     string,
     { owner: LifecycleEntry; current: LifecycleEntry }
@@ -138,7 +101,6 @@ export function createLifecycleClaims(): LifecycleClaims {
   };
 }
 
-/** True while a lifecycle operation owns this Workspace Identity. */
 export function isLifecycleActive(
   lifecycle: LifecycleState,
   mainRepoPath: string,
@@ -147,7 +109,6 @@ export function isLifecycleActive(
   return lifecycle.has(lifecycleKey(mainRepoPath, branch));
 }
 
-/** The message shown when an action targets a Workspace under a lifecycle. */
 export function lifecycleBusyMessage(
   branch: string,
   phase?: LifecyclePhase,
@@ -158,18 +119,15 @@ export function lifecycleBusyMessage(
 
 export interface RejectIfLifecycleActiveOptions {
   lifecycle: LifecycleState;
-  /** Main repository path — one half of the Workspace Identity. */
   mainRepoPath: string;
   branch: string;
   showActionError: (message: string) => void;
 }
 
 /**
- * The SINGLE action guard, shared by every entry point that targets an
- * existing Workspace (space/up modal/down/close): a Workspace under an active
- * lifecycle is INERT TO ACTIONS but still selectable and arrow-key reachable,
- * so only its actions are refused and the refusal is reported through the
- * existing timed error display. Returns true when the caller must stop.
+ * Shared action guard: a Workspace under an active lifecycle stays selectable
+ * and arrow-key reachable, but its actions are refused. Returns true when the
+ * caller must stop.
  */
 export function rejectIfLifecycleActive({
   lifecycle,
@@ -183,10 +141,7 @@ export function rejectIfLifecycleActive({
   return true;
 }
 
-/**
- * The ONE canonical label mapping. Every phase renders exactly one row, so
- * adding a phase means adding a label here — never at a call site.
- */
+/** Canonical label mapping — add new phases here, not at call sites. */
 export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   switch (phase._tag) {
     case "Preparing":
@@ -208,13 +163,7 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   }
 }
 
-/**
- * The warning shown when a lifecycle's OWN validation refresh failed (its
- * `refreshAll` resolved no snapshot). A failed validation is not a failed
- * operation: the previous tree stays on screen, the lifecycle presentation
- * still comes down, and the user is told through the ordinary timed
- * action-error display that what they are looking at may be stale.
- */
+/** A failed validation is not treated as a failed operation — the previous tree stays on screen. */
 export function lifecycleValidationWarning(
   operation: WorkspaceOperation,
 ): string {
@@ -225,11 +174,10 @@ export function lifecycleValidationWarning(
 export const LIFECYCLE_ROW_PREFIX = "     └ ";
 
 /**
- * The exact single-line content of a Lifecycle Progress Row. Tree rows are
- * budgeted as EXACTLY one terminal row by `buildTreeRows`, so a long
- * `Setup: <name>…` label must be truncated rather than soft-wrapped — a
- * wrapped row would desync windowing and mouse hit-testing for every row
- * below it.
+ * Single-line content for a Lifecycle Progress Row. Tree rows are budgeted as
+ * exactly one terminal row, so a long label is truncated rather than
+ * soft-wrapped — a wrapped row would desync windowing and mouse hit-testing
+ * for every row below it.
  */
 export function lifecycleProgressContent(
   phase: LifecyclePhase,
@@ -242,14 +190,10 @@ export function lifecycleProgressContent(
 }
 
 /**
- * The three operations every lifecycle-driving handler needs: advance the
- * phase, drive it from a `WorkspaceReporter`, and tear the presentation down.
- *
- * Every method is scoped to the ONE operation the controller was created for
- * and is a no-op once that operation has ended, so a late reporter event (or a
- * second teardown from a `finally`) can never resurrect a progress row for a
- * finished operation, and neither can it touch another operation's entry —
- * including a successor that has since claimed the SAME identity.
+ * Advance the phase, drive it from a `WorkspaceReporter`, and tear the
+ * presentation down. Every method is a no-op once this operation has ended,
+ * so a late reporter event can't resurrect this row or touch a successor's
+ * entry for the same identity.
  */
 export interface LifecycleController {
   setPhase: (phase: LifecyclePhase) => void;
@@ -258,26 +202,18 @@ export interface LifecycleController {
 }
 
 export interface BeginLifecycleOptions {
-  /** The synchronous claim ledger arbitrating Workspace Identities. */
   claims: LifecycleClaims;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
-  /** The Workspace Identity and starting phase of this operation. */
   entry: LifecycleEntry;
-  /** Reports a refusal through the existing timed action-error display. */
   showActionError: (message: string) => void;
 }
 
 /**
- * Begin a lifecycle for ONE Workspace Identity, or refuse it.
- *
- * This is the SINGLE entry point every verb shares, and therefore the single
- * place the coordination rule is enforced: the identity is claimed from the
- * ledger first, and a caller that finds it already claimed gets `null` — the
- * refusal is reported through the existing timed action-error display and no
- * lifecycle state, phase or claim belonging to the running operation is
- * touched. Returning `null` (rather than an inert controller) is what
- * keeps the refused caller from going on to run the service and then tearing
- * down the operation that legitimately owns the identity.
+ * Begin a lifecycle for one Workspace Identity, or refuse it if already
+ * claimed, reporting the refusal and leaving the owning operation untouched.
+ * Returns `null` rather than an inert controller, so a refused caller can't
+ * go on to run the service and tear down the operation that owns the
+ * identity.
  */
 export function beginLifecycle(
   options: BeginLifecycleOptions,
@@ -296,26 +232,22 @@ export function beginLifecycle(
   }
 
   setLifecycle((previous) => {
-    // The ledger has already refused a double claim, so an entry sitting here
-    // could only mean the two had drifted: keep the active one rather than
-    // overwrite it.
+    // The ledger already refused a double claim, so an existing entry here
+    // means the two have drifted — keep it rather than overwrite.
     if (previous.has(key)) return previous;
     return new Map(previous).set(key, entry);
   });
 
-  // THIS operation's teardown latch. Every flow tears down twice — once
-  // inline, once from a `finally` — and the awaits in between (the tmux
-  // hand-off) leave the identity free, so a new operation may legitimately
-  // claim it before the trailing teardown runs. The latch makes every later
-  // call a no-op for this controller, so a finished operation can neither
-  // delete a successor's lifecycle entry nor write a phase into its row.
+  // Teardown latch: every flow tears down twice (inline, then in `finally`),
+  // with awaits in between during which a new operation may claim the freed
+  // identity, so once this fires, later calls must no-op rather than touch a
+  // successor's entry.
   let ended = false;
 
   const setPhase = (phase: LifecyclePhase) => {
     if (ended) return;
-    // The ledger is the synchronous truth about whether this operation still
-    // owns the identity, so a late reporter event after teardown is a no-op
-    // here — before it can queue a state write that would resurrect the row.
+    // The ledger is the synchronous source of truth for ownership, so a late
+    // reporter event after teardown is a no-op here.
     const current = claims.active(entry.repoPath, entry.branch);
     if (!current) return;
     claims.record({ ...current, phase });
@@ -344,9 +276,8 @@ export function beginLifecycle(
     setPhase,
     end,
     reporter: {
-      // Effect.sync, never a failing effect: the service also isolates
-      // reporter failures, but a progress reporter has no business being able
-      // to fail a lifecycle operation in the first place.
+      // Effect.sync — a progress reporter must never be able to fail the
+      // lifecycle operation it's reporting on.
       event: (event) =>
         Effect.sync(() => {
           if (event._tag !== "PhaseStarted") return;
@@ -356,63 +287,47 @@ export function beginLifecycle(
   };
 }
 
-/**
- * A collected outcome message. `severity` is carried so the buffer does not
- * conflate a fatal failure with a warning; both render identically today, and
- * changing that is a UX decision, not a bookkeeping one.
- */
 interface LifecycleMessage {
   severity: "error" | "warning";
   text: string;
 }
 
 export interface LifecycleRunOptions<T> {
-  /** The synchronous claim ledger arbitrating Workspace Identities. */
   claims: LifecycleClaims;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   /**
-   * Resolves the snapshot THIS validation observed, or `null` when the refresh
-   * could not observe anything (previous tree kept). The `null` arm is
-   * load-bearing — it is what makes the run warn instead of silently trusting a
-   * stale tree — so the type states it rather than leaving it to convention.
+   * Snapshot this validation observed, or `null` when the refresh couldn't
+   * observe anything (previous tree kept) — the run then warns instead of
+   * silently trusting stale state.
    */
   refreshAll: () => Promise<readonly RepoInfo[] | null>;
   showActionError: (message: string) => void;
-  /** The Workspace Identity and starting phase of this operation. */
   entry: LifecycleEntry;
-  /** The service call. The reporter it is handed drives the progress row. */
   run: (reporter: WorkspaceReporter) => Promise<T>;
-  /** Outcome messages a settled result carries; reported after validation. */
   resultWarnings?: (result: T) => readonly string[];
   /**
-   * Reconciliation that needs the snapshot THIS validation observed, run
-   * before the presentation comes down and only when the refresh observed
-   * something. `open` uses it to mark a Workspace validation found on disk as
-   * discovered; it is never called on the `null` (warned) arm.
+   * Reconciliation using the observed snapshot, run before the presentation
+   * comes down; never called on the `null` (warned) arm. `open` uses it to
+   * mark a Workspace found on disk as discovered.
    */
   onValidated?: (snapshot: readonly RepoInfo[]) => void;
   /**
-   * Work that must wait for BOTH validation and lifecycle teardown — the
-   * automatic tmux hand-off, which detaches the terminal this TUI is drawn in
-   * and whose failure must never resurrect a progress row.
+   * Work that must wait for both validation and teardown — e.g. the tmux
+   * hand-off that detaches this TUI's terminal. Its failure must never
+   * resurrect a progress row.
    */
   afterCleanup?: (result: T) => Promise<string | undefined>;
 }
 
 /**
- * The ONE shared lifecycle shape: present → run with the reporter → validate →
- * tear down → hand off → report.
+ * Shared lifecycle shape: present → run with the reporter → validate → tear
+ * down → hand off → report. Validation runs on both the success and failure
+ * branch, since a failed operation may still have changed worktree or tmux
+ * state that the tree needs to reflect before the error is shown.
  *
- * Every outcome (a fatal failure, a partial result with warnings, a clean run)
- * is COLLECTED and reported only once validation has finished, and validation
- * runs on BOTH the success and the failure branch — a failed operation may
- * still have changed worktree or tmux state, so the tree has to be told the
- * truth about what exists before the error is shown.
- *
- * Expansion is deliberately absent from this flow: forced expansion during a
- * lifecycle is presentation-only (`isWorktreeEffectivelyExpanded`), so the
- * user's stored `expandedWorktreeKeys` preference is restored simply by the
- * entry going away — nothing to save and nothing to write back.
+ * Expansion is intentionally not handled here: a lifecycle's forced
+ * expansion is presentation-only, so removing the entry restores the user's
+ * stored preference with nothing to reconcile.
  */
 export async function runLifecycleOperation<T>(
   options: LifecycleRunOptions<T>,
@@ -425,16 +340,11 @@ export async function runLifecycleOperation<T>(
     entry,
     showActionError: options.showActionError,
   });
-  // Refused: another operation already owns this Workspace Identity, the
-  // refusal has been reported, and NOTHING else may happen — running the
-  // service here would race the owner and the `finally` below would tear its
-  // presentation down.
+  // Refused: another operation owns this identity and the refusal is already
+  // reported. Returning here avoids racing that operation and having the
+  // `finally` below tear down its presentation.
   if (!lifecycle) return;
 
-  // One ordered buffer, but severity is recorded rather than implied: a fatal
-  // failure and a non-fatal warning both surface through the same timed error
-  // display, and a reader of this buffer should not have to infer which is
-  // which from the variable name.
   const messages: LifecycleMessage[] = [];
   const appendError = (message: string) => {
     if (message) messages.push({ severity: "error", text: message });
@@ -455,21 +365,17 @@ export async function runLifecycleOperation<T>(
       for (const warning of options.resultWarnings(result)) append(warning);
     }
 
-    // The row says `Validating Workspace…` while registry, worktree and tmux
-    // state is re-read, and ONLY once that settles does the presentation come
-    // down. The null check lives INSIDE the try so a throwing refresh is
-    // reported once, by its own message, rather than twice.
+    // The null check stays inside the try, so a throwing refresh is reported
+    // once by its own message rather than twice.
     lifecycle.setPhase({ _tag: "Validating" });
     try {
       const snapshot = await options.refreshAll();
       if (snapshot === null) {
         append(lifecycleValidationWarning(operation));
       } else {
-        // Reconcile against the snapshot THIS closure observed — never a
-        // render-time capture and never a shared ref, which a concurrently
-        // finishing operation would have overwritten while this one awaited.
-        // Runs BEFORE `end`, so the reconciliation and the teardown land in
-        // the same React commit.
+        // Runs before `end`, in the same React commit, using the snapshot
+        // this closure observed — a shared ref could be overwritten by a
+        // concurrently finishing operation while this one awaited.
         options.onValidated?.(snapshot);
       }
     } catch (error) {
@@ -478,11 +384,9 @@ export async function runLifecycleOperation<T>(
     lifecycle.end();
 
     if (result !== undefined && options.afterCleanup) {
-      // The hand-off runs outside the lifecycle presentation, so a throw here
-      // must be REPORTED with everything else already collected rather than
-      // escaping this closure — nothing awaits the promise this function
-      // returns, so an escaping throw would surface as an unhandled rejection
-      // and silently drop the messages above.
+      // Nothing awaits this function's returned promise, so a throw here must
+      // be caught and reported — otherwise it surfaces as a silent unhandled
+      // rejection, dropping the messages collected above.
       try {
         append((await options.afterCleanup(result)) ?? "");
       } catch (error) {

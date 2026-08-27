@@ -379,7 +379,6 @@ describe("createHandleSpaceSwitch", () => {
     handleSpace();
 
     expect(deps.clearActionError).toHaveBeenCalled();
-    // Progress is a lifecycle entry now, not a coarse pending suffix.
     expect(setLifecycle).toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(WorkspaceService.use).toHaveBeenCalled();
@@ -523,7 +522,6 @@ describe("createExecuteClose", () => {
       expect.stringContaining("could not be moved away"),
     );
     expect(workspaceClose).not.toHaveBeenCalled();
-    // No lifecycle presentation is started for a close that never ran.
     expect(deps.setLifecycle).not.toHaveBeenCalled();
   });
 
@@ -806,7 +804,6 @@ describe("createExecuteDown", () => {
       vi.mocked(deps.restoreConfirmationViewport).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.showActionError).not.toHaveBeenCalled();
-    // No coarse `stopping…` suffix any more — the progress row tells the story.
     expect(deps.setLifecycle).toHaveBeenCalled();
   });
 
@@ -1053,7 +1050,7 @@ describe("a Workspace under an active lifecycle", () => {
     const repoList = repos();
     const worktreeKey = pendingKey("proj", branch);
 
-    // --- Presentation: expanded, but stats/PR/pane detail rows suppressed.
+    // Presentation: expanded, but stats/PR/pane detail rows suppressed.
     const items = buildTreeItems({
       repos: repoList,
       expandedWorktreeKeys: new Set([worktreeKey]),
@@ -1101,7 +1098,6 @@ describe("a Workspace under an active lifecycle", () => {
     expect(
       rows.filter((row) => row.kind === "lifecycle-progress"),
     ).toHaveLength(1);
-    // The parent branch row itself stays selectable / arrow-key reachable.
     const worktreeItemIndex = items.findIndex(
       (item) => item.type === "worktree",
     );
@@ -1112,7 +1108,6 @@ describe("a Workspace under an active lifecycle", () => {
       ),
     ).toBe(true);
 
-    // --- Actions targeting it are refused, through the timed error display.
     const treeItems: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
     ];
@@ -1136,8 +1131,7 @@ describe("a Workspace under an active lifecycle", () => {
       expect(String(call[0])).toContain(branch);
     }
 
-    // Without a lifecycle the same actions go through, so the guard is the
-    // only thing refusing them.
+    // Control: without a lifecycle, the same actions go through.
     const free = makeDeps({
       treeItems,
       filteredRepos: repoList,
@@ -1150,14 +1144,8 @@ describe("a Workspace under an active lifecycle", () => {
   });
 });
 
-/**
- * Start/stop lifecycle presentation. `createStartWorkspace` is the ONE `up`
- * path behind both the space-bar start and the up modal, so driving it here
- * covers both entry points; `createExecuteDown` is the `down` path.
- *
- * Each case drives the reporter the handler passes to the service, so the
- * assertions are on the phases the tree WOULD render, in order.
- */
+// `createStartWorkspace` is the single `up` path behind both the space-bar
+// start and the up modal, so driving it here covers both entry points.
 describe("up and down lifecycle progress", () => {
   const repoPath = "/repo";
   const branch = "feat";
@@ -1177,8 +1165,7 @@ describe("up and down lifecycle progress", () => {
       ) => {
         const next =
           typeof update === "function" ? update(tracker.state) : update;
-        // React bails out when an updater returns the identical state, so a
-        // second teardown from a `finally` is not a render — and not a row.
+        // React bails out on an updater returning the identical state.
         if (next === tracker.state) return tracker.state;
         tracker.state = next;
         tracker.phases.push(tracker.entry()?.phase ?? null);
@@ -1194,11 +1181,7 @@ describe("up and down lifecycle progress", () => {
     return tracker;
   }
 
-  /**
-   * Stands in for the service: emits exactly the phases a real run with this
-   * configuration would emit, through the reporter the handler passed in, then
-   * settles.
-   */
+  // Emits the given phases through the reporter the handler passed in, then settles.
   function serviceEmitting(
     serviceMock: typeof workspaceUp,
     operation: "up" | "down",
@@ -1256,7 +1239,7 @@ describe("up and down lifecycle progress", () => {
   test("up shows Preparing, and Creating tmux session only when attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // --- tmux configured: the creation phase is emitted and rendered.
+    // tmux configured: the creation phase is emitted and rendered.
     const configured = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(
@@ -1289,7 +1272,7 @@ describe("up and down lifecycle progress", () => {
       null,
     ]);
 
-    // --- tmux not configured: no creation is attempted, so no row for it.
+    // tmux not configured: no creation attempted, so no row for it.
     const skipped = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(workspaceUp, "up", [], () =>
@@ -1312,7 +1295,7 @@ describe("up and down lifecycle progress", () => {
   test("down shows Preparing, and Killing tmux session only when a kill is attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // --- a session exists: the kill phase is emitted and rendered.
+    // A session exists: the kill phase is emitted and rendered.
     const killed = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(
@@ -1347,7 +1330,7 @@ describe("up and down lifecycle progress", () => {
       null,
     ]);
 
-    // --- no session: nothing is killed, so no row for it.
+    // No session: nothing is killed, so no row for it.
     const absent = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(workspaceDown, "down", [], () =>
@@ -1382,7 +1365,7 @@ describe("up and down lifecycle progress", () => {
   test("a running up/down is inert, presented expanded without details, and validates on success and failure", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // --- Presentation: expanded, but stats/PR/pane detail rows suppressed.
+    // Presentation: expanded, but stats/PR/pane detail rows suppressed.
     const repoList = repos();
     const lifecycle: LifecycleState = new Map([
       [
@@ -1444,7 +1427,7 @@ describe("up and down lifecycle progress", () => {
       rows.filter((row) => row.kind === "lifecycle-progress"),
     ).toHaveLength(1);
 
-    // --- Actions targeting it are refused through the timed error display.
+    // Actions targeting it are refused.
     const inertDeps = makeDeps({
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: repoList,
@@ -1458,7 +1441,6 @@ describe("up and down lifecycle progress", () => {
     expect(inertDeps.setMode).not.toHaveBeenCalled();
     expect(workspaceUp).not.toHaveBeenCalled();
 
-    // --- Both outcomes settle into `Validating Workspace…`.
     const failedUp = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockRejectedValue(new Error("tmux boom"));
     await createStartWorkspace(
@@ -1481,7 +1463,7 @@ describe("up and down lifecycle progress", () => {
     let lifecycleSizeAtSwitch = -1;
     const switchSession = vi.fn(async () => {
       lifecycleSizeAtSwitch = tracker.state.size;
-      return false; // a failed switch must still report as a plain error
+      return false;
     });
     const deps = makeDeps({
       setLifecycle: tracker.setLifecycle,
@@ -1515,13 +1497,10 @@ describe("up and down lifecycle progress", () => {
 
     await createStartWorkspace(deps)(target({ autoSwitch: true }));
 
-    // The progress row is gone.
     expect(tracker.state.size).toBe(0);
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
 
-    // Expansion is a presentation override, never a stored write: with the
-    // entry gone, effective expansion is exactly the user's own preference
-    // again — and nothing in these deps can even write that preference.
+    // With the entry gone, effective expansion reverts to the stored preference.
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
     for (const stored of [new Set<string>(), new Set([worktreeKey])]) {
       expect(
@@ -1535,7 +1514,6 @@ describe("up and down lifecycle progress", () => {
       ).toBe(stored.has(worktreeKey));
     }
 
-    // Validation ran before the switch, and the switch only after teardown.
     const refreshOrder = vi.mocked(deps.refreshAll).mock
       .invocationCallOrder[0] as number;
     const switchOrder = switchSession.mock.invocationCallOrder[0] as number;
@@ -1543,13 +1521,12 @@ describe("up and down lifecycle progress", () => {
       .invocationCallOrder[0] as number;
     expect(refreshOrder).toBeLessThan(switchOrder);
     expect(lifecycleSizeAtSwitch).toBe(0);
-    // The outcome is reported last of all — after validation and the handoff.
     expect(errorOrder).toBeGreaterThan(switchOrder);
     expect(deps.showActionError).toHaveBeenCalledWith(
       expect.stringContaining("failed to switch client"),
     );
 
-    // --- down: same teardown, and no outcome noise on a clean stop.
+    // Same teardown for down, and no outcome noise on a clean stop.
     const downTracker = trackLifecycle();
     const downDeps = makeDeps({ setLifecycle: downTracker.setLifecycle });
     (tuiRuntime.runPromise as Mock).mockImplementation(

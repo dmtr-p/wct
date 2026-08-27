@@ -1,18 +1,5 @@
-// App-level regression tests for the expansion AFFORDANCES during a lifecycle.
-//
-// A Workspace under a lifecycle is *presented* as expanded by
-// `isWorktreeEffectivelyExpanded`, but the stored `expandedWorktreeKeys`
-// preference is never written by lifecycle code. That split used to
-// leak into the pointer: `resolveTreeDoubleClickAction` and `canCollapse` were
-// fed `presentedWorktreeKeys`, which deliberately excludes the lifecycle
-// override — so a Workspace painted `▼` still resolved a double-click to
-// `expand-worktree` and wrote the key into the durable preference, leaving it
-// expanded after the operation ended.
-//
-// The pointer toggle is now refused while a lifecycle owns the Workspace, so
-// actions targeting it are rejected. Keyboard collapse is deliberately NOT
-// refused: that is the user overruling the presentation override on purpose,
-// which `collapseWorktree` already documents.
+// App-level tests for expansion affordances (pointer double-click, keyboard
+// collapse) while a Workspace is under a lifecycle.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,33 +65,25 @@ describe("lifecycle expansion affordances", () => {
     const app = await renderApp(<App />);
     try {
       await tick(12);
-      // Select `feature/a`. It is collapsed and has no PR/pane detail, so it
-      // carries no expansion marker at all (`WorktreeItem` paints `▶` only for
-      // a row with expandable data).
+      // A collapsed row with no PR/pane detail carries no expansion marker at
+      // all (`WorktreeItem` paints `▶` only for a row with expandable data).
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, DOWN);
       expect(selectedLine(app.lines())).toContain("feature/a");
       expect(selectedLine(app.lines())).not.toContain("▼");
 
-      // Start `up`; the harness leaves the call pending, so the lifecycle owns
-      // this Workspace and the row flips to the presented-expanded `▼`.
       await sendKeys(app.stdin, "u");
       await sendKeys(app.stdin, CTRL_ENTER);
       await tick(8);
       expect(app.lines().join("\n")).toContain("Preparing Workspace…");
       expect(selectedLine(app.lines())).toContain("▼");
 
-      // Double-click the row (two presses on the same visual row). Before the
-      // fix this resolved to `expand-worktree` and wrote the key.
       const row = sgrRowFor(2);
       await sendKeys(app.stdin, sgrPress(3, row));
       await sendKeys(app.stdin, sgrPress(3, row));
       await tick(4);
-      // Still `▼` — but from the lifecycle override, not from a stored key.
       expect(selectedLine(app.lines())).toContain("▼");
 
-      // Settle the operation. The proof is here: with nothing written to the
-      // stored preference, teardown alone returns the row to unexpanded.
       resolveUp();
       await tick(14);
       expect(app.lines().join("\n")).not.toContain("Preparing Workspace…");

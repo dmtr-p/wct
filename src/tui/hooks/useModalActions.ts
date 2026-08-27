@@ -41,12 +41,8 @@ function formatWorkspaceWarning(warning: WorkspaceWarning): string {
   }
 }
 
-/**
- * The Workspace Identity key an `open` validation actually found on disk, or
- * `undefined` when no managed worktree for this identity exists. Matched on the
- * main repository PATH whenever the modal knew it — two repositories can share
- * a project display name — and on the display name only as a fallback.
- */
+// Matches on repo path first, since two repos can share a display name;
+// falls back to the display name only when no path is known.
 function discoveredWorkspaceKey(
   snapshot: readonly RepoInfo[],
   repoPath: string,
@@ -74,11 +70,8 @@ export interface ModalActionDeps {
   openModalRepoPath: string;
   /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle: LifecycleState;
-  /**
-   * The synchronous claim ledger arbitrating Workspace Identities, shared with
-   * `useSessionActions` so an `open` and an `up`/`down`/`close` cannot both
-   * claim one Workspace.
-   */
+  // Shared with `useSessionActions` so an `open` and an `up`/`down`/`close`
+  // can't both claim the same Workspace.
   lifecycleClaims: LifecycleClaims;
 
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
@@ -89,25 +82,17 @@ export interface ModalActionDeps {
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
 
-  /**
-   * Records a Workspace Identity as freshly discovered by an `open`, which
-   * PRESENTS it as expanded without ever writing the stored
-   * `expandedWorktreeKeys` preference — the same presentation-only mechanism
-   * an active lifecycle already uses.
-   */
+  // Presents a freshly-opened Workspace as expanded without writing the
+  // stored `expandedWorktreeKeys` preference.
   markWorkspaceDiscovered: (worktreeKey: string) => void;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
   switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
-  /** The shared `up` lifecycle, owned by `useSessionActions`. */
   startWorkspace: (target: StartWorkspaceTarget) => Promise<void>;
-  /**
-   * Resolves the registry snapshot the refresh observed, or `null` when it
-   * failed (previous repos kept). Lifecycle reconciliation must read THAT
-   * snapshot, never the render-time `filteredRepos` capture.
-   */
+  // Lifecycle reconciliation must read the snapshot this resolves to, never
+  // the render-time `filteredRepos` capture.
   refreshAll: () => Promise<RepoInfo[] | null>;
 
   upModalReturnModeRef: MutableRefObject<Mode>;
@@ -155,12 +140,8 @@ export function createHandleOpen(deps: ModalActionDeps) {
     const project = deps.openModalRepoProject || "unknown";
     const repoPath = deps.openModalRepoPath;
 
-    // `open` goes through the SAME shared lifecycle shape as up/down/close —
-    // present → run with the reporter → validate → tear down → hand off →
-    // report — so the ordering contract has exactly one implementation. The
-    // Workspace does not exist yet, so its entry IS its representation in the
-    // tree: a Pending Workspace row plus a `Preparing Workspace…` progress
-    // row, both inert, both visible before git knows about the worktree.
+    // The Workspace doesn't exist yet, so this lifecycle entry is its only
+    // representation in the tree until validation confirms it on disk.
     void runLifecycleOperation<WorkspaceOpenResult>({
       claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
@@ -188,11 +169,8 @@ export function createHandleOpen(deps: ModalActionDeps) {
           ),
         ),
       resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
-      // A Workspace validation DID find on disk is left expanded once the
-      // presentation comes down. The override is presentation-only, so the
-      // stored expansion preference is still never written by lifecycle code;
-      // an identity that validation found nothing for records nothing and
-      // simply disappears.
+      // Only a Workspace validation actually found gets left expanded; this
+      // never writes the stored expansion preference.
       onValidated: (snapshot) => {
         const discovered = discoveredWorkspaceKey(
           snapshot,
@@ -207,16 +185,9 @@ export function createHandleOpen(deps: ModalActionDeps) {
   };
 }
 
-/**
- * The automatic tmux client switch after a successful `open`, run by the shared
- * lifecycle AFTER validation and teardown: switching detaches the terminal this
- * TUI is drawn in, and a failure here must surface as a plain action error
- * rather than resurrecting a progress row.
- *
- * Distinct from `up`'s `createSessionHandoff`: `open` gates on `noAttach` and
- * reports the degenerate client cases (none / multiple / query failure) that a
- * start does not.
- */
+// Runs after validation and teardown: switching tmux clients detaches the
+// terminal this TUI is drawn in, so a failure here must surface as a plain
+// action error rather than resurrecting a progress row.
 async function openSessionHandoff(
   deps: ModalActionDeps,
   opts: OpenModalResult,
@@ -258,9 +229,8 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
 
-    // Refused through the SAME shared guard as space/down/close, so a busy
-    // Workspace says so immediately instead of opening an option sheet the
-    // submit would only refuse afterwards.
+    // Same guard as space/down/close: refuse before opening the option
+    // sheet, not after submit.
     if (
       rejectIfLifecycleActive({
         lifecycle: deps.lifecycle,
@@ -303,9 +273,6 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
     deps.setSelectedIndex(deps.upModalReturnSelectedIndexRef.current);
     deps.setMode(deps.upModalReturnModeRef.current);
 
-    // The modal is only an option sheet: the start itself goes through the ONE
-    // shared `up` lifecycle, so the space-bar start and this one show the same
-    // phase-by-phase progress and validate identically.
     void deps.startWorkspace({
       worktreePath,
       repoPath,

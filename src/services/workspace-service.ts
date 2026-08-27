@@ -58,12 +58,6 @@ export type WorkspaceWarning =
       error: WorkspaceError;
     };
 
-/**
- * A *semantic* lifecycle phase: what work is starting, never how it is
- * rendered and never the shell command behind it. Presentation layers own the
- * wording (the TUI maps these to its Lifecycle Progress Row labels), so a
- * phase can be added here without touching CLI output.
- */
 export type WorkspacePhase =
   | { _tag: "Preparing" }
   | { _tag: "CreatingWorktree" }
@@ -271,11 +265,6 @@ function emitReporter(
   );
 }
 
-/**
- * Emit a semantic phase start. Shares `emitReporter`'s failure isolation, so a
- * reporter that fails — or throws before returning an Effect — can never fail
- * the lifecycle effect or change its result.
- */
 function emitPhase(
   reporter: WorkspaceReporter | undefined,
   operation: WorkspaceOperation,

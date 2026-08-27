@@ -304,9 +304,7 @@ describe("buildTreeRows", () => {
       lifecycle,
     });
 
-    // items: [repo(0), wt main(1), wt feature/pr(2), pr-detail(3)]. The
-    // the pending workspace must come AFTER the expanded last worktree's detail rows — a
-    // next-item-only "last worktree" check would drop it entirely.
+    // A next-item-only "last worktree" check would drop the pending workspace here.
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
         { itemIndex: 0, kind: "repo" },
@@ -373,9 +371,7 @@ describe("buildTreeRows", () => {
       lifecycle,
     });
 
-    // items: [repo(0), wt feature/pr(1), pr-detail(2), wt main(3)]. Detail
-    // rows in the MIDDLE of the repo block must not trigger pending emission;
-    // the pending workspace still trails the final worktree.
+    // Detail rows mid-block must not trigger pending emission; it still trails the final worktree.
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
         { itemIndex: 0, kind: "repo" },
@@ -420,8 +416,7 @@ describe("buildTreeRows", () => {
       lifecycle,
     });
 
-    // items: [repo-1(0), worktree(1), repo-2(2)]
-    // The empty repo's pending rows are NOT placed under repo-2; appended last.
+    // The empty repo's pending rows aren't placed under repo-2; appended last.
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
       [
         { itemIndex: 0, kind: "repo" },
@@ -843,7 +838,6 @@ describe("lifecycle rows", () => {
       const progressRows = rows.filter(
         (row) => row.kind === "lifecycle-progress",
       );
-      // At most (and here exactly) ONE progress row per Workspace.
       expect(progressRows).toHaveLength(1);
       const progressRow = progressRows[0];
       if (progressRow?.kind !== "lifecycle-progress") {
@@ -861,8 +855,6 @@ describe("lifecycle rows", () => {
       "Creating tmux session…",
     ]);
 
-    // Skipped optional work produces no row: a lifecycle sitting on
-    // `CreatingWorktree` shows only that, never a copy or tmux row.
     const { rows } = rowsFor(
       repos,
       openLifecycle(repoPath, "alpha", branch, { _tag: "CreatingWorktree" }),
@@ -871,7 +863,6 @@ describe("lifecycle rows", () => {
       row.kind === "lifecycle-progress" ? [lifecyclePhaseLabel(row.phase)] : [],
     );
     expect(labels).toEqual(["Creating worktree…"]);
-    // And no lifecycle at all means no lifecycle rows anywhere.
     const clean = rowsFor(repos, new Map());
     expect(
       clean.rows.some(
@@ -900,13 +891,11 @@ describe("lifecycle rows", () => {
         row.kind === "lifecycle-progress" || row.kind === "pending-workspace",
     );
     expect(lifecycleRows).toHaveLength(3);
-    // Inert to the pointer: `resolveMouseAction`/`resolveHoverItemIndex` both
-    // refuse a row whose itemIndex is null.
+    // resolveMouseAction/resolveHoverItemIndex both refuse a row with a null itemIndex.
     for (const row of lifecycleRows) {
       expect(row.itemIndex).toBeNull();
     }
-    // Unreachable by keyboard: navigation walks `items`, and the Pending
-    // Workspace has no logical item at all.
+    // Navigation walks `items`, which has no entry for the pending workspace.
     expect(
       items.some(
         (item) =>
@@ -915,7 +904,6 @@ describe("lifecycle rows", () => {
             pendingBranch,
       ),
     ).toBe(false);
-    // Every logical item still maps to a row, so no item became unreachable.
     for (let idx = 0; idx < items.length; idx++) {
       const rowIndex = firstRowForItem(rows, idx);
       expect(rowIndex).not.toBeNull();
@@ -941,9 +929,7 @@ describe("lifecycle rows", () => {
       openLifecycle(repoPath, "alpha", branch, { _tag: "CopyingFiles" }),
     );
 
-    // WINDOWING: the progress row is a real visual row, so it takes one row of
-    // the window and pushes every row below it down by exactly one. Both
-    // models describe the same logical items.
+    // The progress row is a real visual row: same logical items, one extra row.
     expect(active.items).toEqual(clean.items);
     expect(active.rows).toHaveLength(clean.rows.length + 1);
     const progressRowIndex = active.rows.findIndex(
@@ -960,9 +946,7 @@ describe("lifecycle rows", () => {
       (firstRowForItem(clean.rows, siblingItemIndex) as number) + 1,
     );
 
-    // HIT-TESTING: the very same rows drive the pointer, and the progress row
-    // refuses both a click and a hover while the row below it — one visual row
-    // further down because of it — is hit normally.
+    // The same rows drive the pointer: the progress row refuses click and hover.
     const ctx = {
       mode: Mode.Navigate,
       rows: active.rows,

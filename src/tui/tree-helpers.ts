@@ -1,5 +1,3 @@
-// src/tui/tree-helpers.ts
-
 import { basename } from "node:path";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
@@ -23,12 +21,9 @@ import {
 const NO_LIFECYCLE: LifecycleState = new Map();
 
 /**
- * Effective expansion is the OR of the STORED preference and an active
- * lifecycle: a Workspace under a lifecycle is *presented* as expanded without
- * its key ever being written into `expandedWorktreeKeys`. Writing the
- * key would be pruned right back out by `reconcileExpandedWorktreeKeys` on the
- * next `repos` change — the 5s poll included — and would also leak a
- * transient operation into a durable user preference.
+ * A Workspace under a lifecycle is presented as expanded without its key ever
+ * being written into `expandedWorktreeKeys` — that would leak a transient
+ * operation into a durable user preference.
  */
 export function isWorktreeEffectivelyExpanded({
   expandedWorktreeKeys,
@@ -48,12 +43,9 @@ export function isWorktreeEffectivelyExpanded({
 }
 
 /**
- * True when a `worktree` tree item's Workspace is under an active lifecycle.
- *
- * The expansion affordances (collapse key, pointer double-click) are refused
- * for such a Workspace: `isWorktreeEffectivelyExpanded` already paints it `▼`
- * via the presentation-only override, so a toggle could not visibly take
- * effect, and the stored-preference write would outlive the operation.
+ * True when a `worktree` tree item's Workspace is under an active lifecycle —
+ * its expansion affordances (collapse key, double-click) are refused, since
+ * `isWorktreeEffectivelyExpanded` already forces it expanded.
  */
 export function isWorktreeLifecycleActive(
   item: TreeItem,
@@ -70,7 +62,6 @@ export function isWorktreeLifecycleActive(
 interface BuildTreeOptions {
   repos: RepoInfo[];
   expandedWorktreeKeys?: Set<string>;
-  /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
@@ -83,32 +74,18 @@ interface BuildTreeRowsOptions {
   /** Repos are always expanded in production; retained for test fixtures. */
   expandedRepos?: Set<string>;
   expandedWorktreeKeys?: Set<string>;
-  /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle?: LifecycleState;
-  /**
-   * Terminal width in columns, used to count how many terminal lines a PR
-   * detail label wraps onto. Defaults to `Infinity` (no wrapping) so callers
-   * and tests that don't model wrapping keep a 1:1 row-per-detail mapping.
-   */
+  /** Defaults to `Infinity` so callers that don't model wrapping keep a 1:1 row-per-detail mapping. */
   maxWidth?: number;
 }
 
 /**
- * A single *visual terminal row*. Logical tree items are not 1:1 with terminal
- * rows: an expanded worktree with stats emits a second row, an expanded repo
- * with zero worktrees emits a `(no worktrees)` row, and the lifecycle rows
- * (`pending-workspace`, `lifecycle-progress`) are not present in `items` at
- * all.
- *
- * `itemIndex` maps each visual row back to its logical item index in `items`
- * (or `null` for secondary rows that are not independently selectable — every
- * lifecycle row is `null`, so neither keyboard navigation nor mouse
- * hit-testing can ever land on one).
- * A wrapped PR's continuation rows carry the PR's own `itemIndex` so a click on
- * any wrapped line still selects the PR.
- * `kind` carries enough information for `TreeView` to render the row directly,
- * so the row model is the single source of truth for both windowing and the
- * render itself.
+ * A single visual terminal row. Logical tree items are not 1:1 with terminal
+ * rows — a stats row, a `(no worktrees)` row, and the lifecycle rows all have
+ * no entry in `items`, so their `itemIndex` is `null` and neither keyboard
+ * navigation nor mouse hit-testing can land on them. A wrapped PR's
+ * continuation rows carry the PR's own `itemIndex` so a click on any wrapped
+ * line still selects the PR.
  */
 export type TreeRow =
   | { itemIndex: number; kind: "repo" }
@@ -127,11 +104,7 @@ export type TreeRow =
       pieceIndex: number;
       prLine: string;
     }
-  /**
-   * A Workspace that an `open` has begun but git does not yet expose as a
-   * worktree. Replaces the old `phantom` row kind, keeping its placement rule
-   * verbatim.
-   */
+  /** A Workspace that an `open` has begun but git does not yet expose as a worktree. */
   | {
       itemIndex: null;
       kind: "pending-workspace";
@@ -231,17 +204,12 @@ interface ResolveRecoveredSelectionIndexOptions {
   prevTree: TreeItem[];
   treeItems: TreeItem[];
   prevSelectionId: string | null;
-  /**
-   * Identity of the PARENT branch row of the previously selected item, when it
-   * was a detail row (see `treeItemParentId`). Used as the deterministic
-   * fallback when that detail row itself is gone from the tree.
-   */
+  /** Parent branch identity of the previously selected detail row (see `treeItemParentId`). */
   prevSelectionParentId?: string | null;
   /**
-   * Active lifecycle operations. Required for the `prevSelectionParentId`
-   * fallback: it is scoped to detail rows a LIFECYCLE suppressed, so an
-   * ordinary disappearance (a killed pane, a PR that closed) still clamps to
-   * the adjacent row instead of snapping up to the parent branch.
+   * Required for the `prevSelectionParentId` fallback, which only applies
+   * when that parent is under an active lifecycle — an ordinary disappearance
+   * (a killed pane, a closed PR) still clamps to the adjacent row instead.
    */
   lifecycle?: LifecycleState;
   selectedIndex: number;
@@ -372,9 +340,7 @@ export function buildTreeItems({
       const wt = repo.worktrees[wi];
       if (!wt) continue;
       const wtKey = pendingKey(repo.project, wt.branch);
-      // A Workspace under an active lifecycle is PRESENTED as expanded (the
-      // ▼ indicator, no stats row) but its PR and pane detail items are
-      // suppressed: the progress row is the only thing beneath it, so a phase
+      // Suppress PR/pane detail items under an active lifecycle, so a phase
       // change can never reshuffle detail rows under the user's cursor.
       if (lifecycleEntryFor(lifecycle, repo.repoPath, wt.branch)) continue;
       const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
@@ -382,7 +348,6 @@ export function buildTreeItems({
 
       const sessionName = formatSessionName(basename(wt.path));
 
-      // PR data for this worktree
       const pr = prData.get(wtKey);
       if (pr) {
         items.push({
@@ -399,7 +364,6 @@ export function buildTreeItems({
         });
       }
 
-      // Panes for this worktree
       const sessionPanes = panes.get(sessionName);
       if (sessionPanes && sessionPanes.length > 0) {
         items.push({
@@ -434,13 +398,10 @@ export function buildTreeItems({
 }
 
 /**
- * Pending Workspaces, grouped by REPO INDEX. These are `open` lifecycles whose
- * branch is not (yet) a worktree in `repos`, matched on the main repository
- * path rather than the project display name so two repos sharing a display
- * name cannot borrow each other's pending rows.
- *
- * A lifecycle whose repository is not in `repos` at all — filtered out by the
- * active search, or not yet loaded — contributes no rows anywhere.
+ * Pending Workspaces, grouped by repo index. These are `open` lifecycles
+ * whose branch is not (yet) a worktree in `repos`, matched on the main
+ * repository path rather than the project display name so two repos sharing
+ * a display name cannot borrow each other's pending rows.
  */
 function pendingWorkspacesByRepoIndex(
   repos: RepoInfo[],
@@ -465,22 +426,11 @@ function pendingWorkspacesByRepoIndex(
 }
 
 /**
- * Build the visual-row model — one entry per *terminal row* — from the logical
- * `items` list. This is the shared primitive that drives both windowing (slice
- * by scroll offset) and, in a later slice, hit-testing (click row → item).
- *
- * The row order replicates `TreeView`'s render exactly:
- * - a repo row, optionally followed by a `(no worktrees)` row when expanded
- *   with zero worktrees;
- * - a worktree row, optionally followed by a stats row when expanded with
- *   sync/changed-file stats;
- * - detail rows;
- * - Pending Workspace rows (each immediately followed by its own Lifecycle
- *   Progress Row) for a *populated* repo are emitted after that repo's last
- *   worktree row block;
- * - Pending Workspace rows for *empty* expanded repos are appended at the very
- *   bottom of the whole tree (preserving the long-standing `TreeView`
- *   placement quirk verbatim).
+ * Build the visual-row model — one entry per terminal row — from the logical
+ * `items` list. Row order must replicate `TreeView`'s render exactly: repo,
+ * optional no-worktrees row, worktree, optional stats row, detail rows, then
+ * each repo's Pending Workspace rows after its last row-emitting item (or at
+ * the very bottom of the tree for empty expanded repos).
  */
 export function buildTreeRows({
   items,
@@ -509,9 +459,6 @@ export function buildTreeRows({
     });
   };
 
-  // Pending Workspace rows for a populated repo follow the repo's LAST
-  // row-emitting item — the final worktree row block including any trailing
-  // detail rows — so an expanded last worktree cannot swallow them.
   const emitPendingIfRepoBlockEnds = (idx: number, repoIndex: number) => {
     const nextItem = items[idx + 1];
     const isLastItemForRepo =
@@ -544,14 +491,9 @@ export function buildTreeRows({
     }
 
     if (item.type === "detail") {
-      // A PR label is shown in full and may wrap onto extra terminal lines.
-      // Emit one continuation row per wrapped line (all carrying the PR's own
-      // itemIndex) so the row model stays 1:1 with terminal rows and clicks on
-      // wrapped text still hit the PR. Each row carries its own wrapped line
-      // text (`prLine`), so the render consumes exactly the lines this model
-      // counted — the count and the rendered text cannot diverge, and
-      // DetailRow never re-wraps. pane/pane-header labels are truncated to a
-      // single line, so only PR rows can wrap.
+      // Each wrapped PR line becomes its own row carrying the wrapped text
+      // (`prLine`), so the render consumes exactly the lines counted here and
+      // DetailRow never re-wraps. pane/pane-header labels never wrap.
       if (item.detailKind === "pr") {
         const lines = wrapPrLabel(
           item.label,
@@ -574,7 +516,6 @@ export function buildTreeRows({
       continue;
     }
 
-    // worktree
     const worktreeIndex = item.worktreeIndex;
     const wt = repo.worktrees[worktreeIndex];
     if (!wt) continue;
@@ -588,9 +529,7 @@ export function buildTreeRows({
       wt.branch,
     );
     if (lifecycleEntry) {
-      // Exactly ONE progress row per Workspace, and it takes the stats row's
-      // place: the Workspace's identity line stays put while its status is
-      // told on the row beneath it.
+      // Takes the stats row's place — one progress row per Workspace.
       rows.push({
         itemIndex: null,
         kind: "lifecycle-progress",
@@ -612,15 +551,11 @@ export function buildTreeRows({
       }
     }
 
-    // Pending Workspace rows follow the repo's last worktree-row block. When
-    // detail rows trail this worktree, the detail branch above emits them
-    // after the last detail row instead.
     emitPendingIfRepoBlockEnds(idx, item.repoIndex);
   }
 
-  // Pending Workspace rows for expanded repos with no worktrees are appended at
-  // the very bottom of the whole tree (a long-standing placement quirk, kept
-  // verbatim so this change is presentation-neutral for that case).
+  // Expanded repos with no worktrees get their Pending Workspace rows at the
+  // very bottom of the whole tree.
   for (let ri = 0; ri < repos.length; ri++) {
     const repo = repos[ri];
     if (!repo) continue;
@@ -636,10 +571,6 @@ export function buildTreeRows({
   return rows;
 }
 
-/**
- * Find the index of the first visual row that maps to the given logical
- * `itemIndex`, or `null` if no row maps to it.
- */
 export function firstRowForItem(
   rows: TreeRow[],
   itemIndex: number,
@@ -652,10 +583,6 @@ export function firstRowForItem(
   return null;
 }
 
-/**
- * Clamp a scroll offset to the valid range `[0, max(0, rowsLength -
- * viewportRows)]`. When the tree fits the viewport the offset is forced to 0.
- */
 export function clampScrollOffset(
   offset: number,
   rowsLength: number,
@@ -667,15 +594,7 @@ export function clampScrollOffset(
   return offset;
 }
 
-/**
- * Minimally nudge the scroll offset so the visual row at `rowIndex` stays
- * within the window `[offset, offset + viewportRows - 1]`:
- * - if it is above the window, set the offset to that row;
- * - if it is below the window, set `offset = rowIndex - viewportRows + 1`;
- * - otherwise leave the offset unchanged.
- *
- * Nudge only — never re-center.
- */
+/** Nudge only — never re-center. */
 export function scrollToKeepVisible(
   rowIndex: number,
   offset: number,
@@ -692,13 +611,10 @@ export function scrollToKeepVisible(
 }
 
 /**
- * The visual row index of ONE Workspace Identity's Lifecycle Progress Row, or
- * `null` when it has no row at all — its repository filtered out by the active
- * search, or not loaded yet.
- *
- * Rows carry a repo INDEX, so the identity is matched by resolving that index
- * back to its main repository path: two repositories sharing a project display
- * name therefore cannot borrow each other's progress row.
+ * Rows carry a repo index rather than a path, so the identity is matched by
+ * resolving that index back to its main repository path — two repositories
+ * sharing a project display name therefore cannot borrow each other's
+ * progress row.
  */
 export function lifecycleProgressRowIndex(
   rows: TreeRow[],
@@ -725,20 +641,11 @@ export interface LifecycleReveal {
 }
 
 /**
- * Decide whether a newly active lifecycle operation needs the viewport moved.
- *
- * The FIRST active operation not yet revealed and whose progress row exists in
- * the row model wins; the offset is nudged minimally with
- * `scrollRangeToKeepVisible` (never re-centred) so that row's own visual index
- * is inside the window, and an already-visible operation resolves to the
- * offset it was given — no movement at all. An operation with no rows
- * (its repository filtered out by the search) is left unrevealed and moves
- * nothing, so it still gets its one reveal if the filter later clears.
- *
- * Pure and one-shot BY DESIGN: everything that happens after the reveal —
- * later phase events, the validating transition, teardown, pending-to-
- * discovered reconciliation — finds the key already in `revealed` and cannot
- * touch the offset again.
+ * The first active operation not yet revealed and whose progress row exists
+ * wins; an operation with no row yet (filtered out by the search) is left
+ * unrevealed so it still gets its one reveal once the filter clears. One-shot
+ * by construction: once a key is in `revealed`, later phase events, teardown,
+ * and reconciliation all find it there and never touch the offset again.
  */
 export function resolveLifecycleReveal({
   rows,
@@ -781,20 +688,15 @@ export function resolveLifecycleReveal({
 }
 
 /**
- * Pane headers are inert separators the cursor can never land on. The SINGLE
- * predicate shared by keyboard navigation (`createNavigateTree` skips inert
- * items) and mouse hit-testing (`resolveMouseAction` refuses to select them),
- * so a click can never select a row that follow-up keys treat inconsistently.
- * Add any future inert row kind here, never at the call sites.
+ * Shared by keyboard navigation and mouse hit-testing, so a click can never
+ * select a row that follow-up keys treat inconsistently. Add any future inert
+ * row kind here, never at the call sites.
  */
 export function isInertTreeItem(item: TreeItem | undefined): boolean {
   return item?.type === "detail" && item.detailKind === "pane-header";
 }
 
-/**
- * Compute a stable identity string for a tree item using repo id and branch,
- * so selection can be recovered after background refreshes that shift indices.
- */
+/** Stable identity string so selection can be recovered after a refresh shifts indices. */
 export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   const repo = repos[item.repoIndex];
   if (!repo) return null;
@@ -809,14 +711,10 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
 }
 
 /**
- * The identity of a detail row's PARENT branch row (`null` for anything else).
- * Reuses `treeItemId` for the worktree form so the two identity spaces cannot
- * drift apart.
- *
- * Selection recovery needs this because a Workspace's PR and pane detail items
- * are suppressed for the duration of a lifecycle: the selected detail row
- * simply ceases to exist, and the cursor must land on its Workspace rather
- * than wherever the index shift left it.
+ * A detail row's parent branch identity (`null` for anything else). Selection
+ * recovery needs this because a lifecycle suppresses a Workspace's detail
+ * rows, so the selected row can vanish and the cursor must land on its
+ * Workspace instead of wherever the index shift left it.
  */
 export function treeItemParentId(
   item: TreeItem,
@@ -833,13 +731,6 @@ export function treeItemParentId(
   );
 }
 
-/**
- * Compute the adjusted selectedIndex after all detail rows are removed from the
- * tree (e.g. when exiting Expanded mode or switching expanded worktree).
- *
- * - If the cursor is on a detail row, snap to its parent worktree.
- * - Otherwise subtract the number of detail rows before the cursor.
- */
 export function adjustIndexForDetailCollapse(
   items: TreeItem[],
   selectedIndex: number,
@@ -883,15 +774,6 @@ export function resolveRecoveredSelectionIndex({
     }
   }
 
-  // The selected item is gone. When it was a detail row of a Workspace that is
-  // still in the tree AND under an active lifecycle — the case a starting
-  // lifecycle creates, since it suppresses that Workspace's PR and pane detail
-  // rows — snap to that Workspace's branch row. Deterministic, and it keeps the
-  // cursor on the Workspace the user was looking at instead of on whatever row
-  // inherited its index. The lifecycle condition is what keeps this out
-  // of ORDINARY selection recovery: a pane that was killed or a PR that closed
-  // still falls through to the clamp below, so the cursor lands on the adjacent
-  // sibling row as it always has.
   if (prevSelectionParentId) {
     for (let i = 0; i < treeItems.length; i++) {
       const candidate = treeItems[i];

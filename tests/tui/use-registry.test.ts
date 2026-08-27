@@ -6,12 +6,8 @@ import React, { type FC } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Worktree } from "../../src/services/worktree-service";
 
-// The two halves of this file need different setups: `loadRepoInfo` is pure and
-// takes its collaborators as arguments, while `useRegistry` reaches for the
-// registry/worktree services through `tuiRuntime`. Mocking the services (each
-// `XService.use(selector)` resolved synchronously against a controllable fake,
-// with `runPromise` as a transparent pass-through — the established pattern in
-// this suite) is inert for the pure half.
+// `useRegistry` reaches services through `tuiRuntime`, so `XService.use(selector)`
+// is mocked to resolve synchronously against a controllable fake.
 const registryFixtures = vi.hoisted(() => ({
   listRepos: vi.fn(),
 }));
@@ -170,15 +166,8 @@ describe("loadRepoInfo", () => {
   });
 });
 
-/**
- * `refresh` RESOLVES the snapshot it observed (or `null`), because every
- * lifecycle's validation reconciles against that value rather than against its
- * own stale render-time `repos` capture. Both arms are asserted here: the
- * contract is the reason the TUI can reconcile at all.
- */
 describe("useRegistry refresh", () => {
-  // The hook inspects the registry's repo_path on disk, so the fixture repo has
-  // to really exist for a load to produce worktrees.
+  // The hook inspects repo_path on disk, so the fixture repo must really exist.
   let repoPath: string;
   let homeDir: string;
 
@@ -215,8 +204,6 @@ describe("useRegistry refresh", () => {
       project: "alpha",
       worktrees: [expect.objectContaining({ branch: "feature/x" })],
     });
-    // The state the tree renders and the snapshot the caller reconciles against
-    // are the SAME value.
     expect(hook.value.repos).toEqual(snapshot);
     expect(hook.value.loading).toBe(false);
     hook.unmount();
@@ -234,7 +221,6 @@ describe("useRegistry refresh", () => {
     const loaded = await hook.value.refresh();
     expect(loaded).toHaveLength(1);
 
-    // The next load throws — the same swallow an aborted load takes.
     registryFixtures.listRepos.mockRejectedValue(new Error("registry gone"));
     const failed = await hook.value.refresh();
 

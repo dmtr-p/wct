@@ -1,26 +1,14 @@
-// Shared mocking strategy + Ink render harness for the suites that render the
-// REAL exported `App` from `src/tui/App.tsx` through Ink's actual input
-// pipeline (tests/tui/app-mouse-wiring.test.tsx and
-// tests/tui/app-review-fixes.test.tsx). Centralising the service mocks here
-// keeps the mocked service shapes in sync between those suites.
+// Shared mocking strategy + Ink render harness for suites that render the
+// real exported `App` through Ink's actual input pipeline.
 //
-// Mocking strategy mirrors the established pattern in this test suite
-// (tests/tui/use-tmux.test.ts, tests/tui/session-actions.test.ts,
-// tests/tui/modal-actions.test.ts): mock each `XService.use(selector)` to
-// call `selector` synchronously against a controllable fake service object
-// (so it returns a plain Promise, not a real Effect), and mock
-// `tuiRuntime.runPromise`/`runSync` as a transparent pass-through. Since the
-// `.use()` mocks already resolve the "effect" argument to a real Promise or
-// plain value before it reaches `runPromise`, the pass-through is enough —
-// the one caller that does NOT go through a `.use()` seam (`loadConfig` in
-// config discovery is wrapped in a try/catch with a safe fallback in the
-// real code, so passing it through unresolved is harmless.
+// Each `XService.use(selector)` mock calls `selector` synchronously against a
+// fake service object (returning a plain value/Promise, not a real Effect),
+// so `tuiRuntime.runPromise`/`runSync` can be transparent pass-throughs.
 //
-// The `vi.mock` calls below execute when a test file imports this module —
-// BEFORE that file's `await import("../../src/tui/App")` — so every mock is
-// registered before any mocked service module is first loaded. The fixture
-// objects are wrapped in `vi.hoisted` so the factories may reference them
-// regardless of whether Vitest's hoisting transform rewrites this file.
+// The `vi.mock` calls below run when a test file imports this module, before
+// that file's dynamic `import("../../src/tui/App")`, so every mock is
+// registered before any mocked service module first loads. Fixtures are
+// wrapped in `vi.hoisted` for the same reason.
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { Effect } from "effect";
@@ -35,9 +23,6 @@ import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 
 const runtimeMock = vi.hoisted(() => ({
   runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
-  // The `.use()` mocks below already resolve the "effect" argument to a
-  // plain value before it reaches here, so this is a transparent pass-through
-  // (like runPromise), not a stub that discards its argument.
   runSync: vi.fn((effect: unknown) => effect),
 }));
 
@@ -57,8 +42,8 @@ vi.mock("../../src/tui/hooks/useRefresh", () => ({
 }));
 
 // Ink disables ANSI colors for this PassThrough-based harness, so the selected
-// background cannot be observed in serialized frames. Replace one fill space
-// with a width-neutral private-use marker in this test worker only.
+// background can't be observed in serialized frames. Replace one fill space
+// with a width-neutral private-use marker instead.
 vi.mock("../../src/tui/components/tree-row", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/tui/components/tree-row")
@@ -136,14 +121,10 @@ vi.mock("../../src/services/tmux", async () => {
   };
 });
 
-// --- GitHubService + PrCacheService: no PRs by default. useGitHub never
-// fetches on a fresh App mount for the current repo (its mount effect reads
-// `repos`, which is always `[]` on the very first render — before
-// useRegistry's async listRepos() resolves — and its callback identity never
-// changes, so it doesn't re-run once repos populate). The one REAL,
-// keyboard-reachable path that calls GitHubService.listPrs is pressing "r" in
-// Navigate mode (src/tui/input/navigate.ts calls ctx.refreshRepo), so a test
-// that needs a PR row drives that key rather than relying on mount timing.
+// --- GitHubService + PrCacheService: no PRs by default. useGitHub's mount
+// effect never re-fetches once `repos` populates (its callback identity is
+// stable), so a test that needs a PR row drives "r" (Navigate mode's
+// refreshRepo) rather than relying on mount timing.
 const githubFixtures = vi.hoisted(() => ({
   prsByRepoPath: new Map<
     string,
@@ -167,11 +148,9 @@ vi.mock("../../src/services/github-service", () => ({
   },
 }));
 
-// --- WorkspaceService: every lifecycle call is DEFERRED. `open`/`up`/`down`/
-// `close` each return a promise the test resolves or rejects by hand, and the
-// call records the options it was given — including the `reporter` the TUI
-// passed — so a test can drive one phase at a time and assert on the frame
-// rendered between phases. Without the deferral, a lifecycle would settle
+// --- WorkspaceService: every lifecycle call is deferred (the test resolves
+// or rejects it by hand), and each call records the options it was given
+// including the `reporter`. Without the deferral, a lifecycle would settle
 // inside the same microtask that started it and no intermediate progress row
 // would ever be observable.
 interface WorkspaceCallShape {
@@ -199,10 +178,7 @@ const workspaceHarness = vi.hoisted(() => {
         resolve = res;
         reject = rej;
       });
-      // Nothing awaits a rejected deferred until the test rejects it, and the
-      // TUI always attaches its own catch — but an unhandled rejection would
-      // still be reported if a test never settles the call, so keep a no-op
-      // handler on the stored promise.
+      // Suppress unhandled-rejection reporting for a call a test never settles.
       promise.catch(() => undefined);
       calls.push({ operation, options, resolve, reject, promise });
       return promise;
@@ -374,13 +350,13 @@ export async function renderApp(
 
   // Ordered event log shared by stdout writes and raw-mode flips, so tests
   // can assert real orderings (e.g. MOUSE_DISABLE before setRawMode(false)).
-  // stdout.write is patched (not the 'data' event) because write is
+  // write is patched rather than the 'data' event because write is
   // synchronous with the caller while 'data' emission may be deferred.
   const events: Array<
     { kind: "write"; data: string } | { kind: "rawmode"; mode: boolean }
   > = [];
-  // Forward EVERY argument: Ink resolves waitUntilExit via an empty write's
-  // completion callback, so dropping the callback would hang the exit path.
+  // Forward every argument: Ink resolves waitUntilExit via an empty write's
+  // completion callback, so dropping it would hang the exit path.
   const originalWrite = stdout.write.bind(stdout) as (
     ...args: unknown[]
   ) => boolean;
@@ -450,8 +426,8 @@ export function sgrWheel(dir: 1 | -1): string {
   return `\x1b[<${cb};1;1M`;
 }
 
-// HEADER_OFFSET (== App.tsx's TOP_CHROME_ROWS) is imported from the
-// production module so the mapping stays aligned if the chrome layout changes.
+// Re-exported from the production module so it stays aligned with App.tsx's
+// chrome layout.
 export { HEADER_OFFSET };
 
 export function sgrRowFor(viewportRow: number): number {

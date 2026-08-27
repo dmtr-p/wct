@@ -1123,7 +1123,7 @@ describe("WorkspaceService reporter", () => {
   });
 });
 
-test("liveWorkspaceService exposes public lifecycle operations for this slice", () => {
+test("liveWorkspaceService exposes public lifecycle operations", () => {
   expect(typeof liveWorkspaceService.open).toBe("function");
   expect(typeof liveWorkspaceService.up).toBe("function");
   expect(typeof liveWorkspaceService.down).toBe("function");
@@ -1214,14 +1214,12 @@ setup:
       { _tag: "RunningSetup", name: "build" },
       { _tag: "CreatingTmuxSession" },
     ]);
-    // Preparing is the very first reporter event of any kind.
     expect(events[0]).toEqual({
       operation: "open",
       _tag: "PhaseStarted",
       phase: { _tag: "Preparing" },
     });
 
-    // Skipped optional work emits no phase: no copy entries, no setup, no tmux.
     await Bun.write(
       join(repoDir, ".wct.yaml"),
       `version: 1
@@ -1360,7 +1358,6 @@ project_name: "myapp"
       expect(killPhaseIndex).toBeGreaterThan(-1);
       expect(killCallIndex).toBeGreaterThan(killPhaseIndex);
 
-      // No session → no kill phase, but still a preparing phase.
       const absentTrace: string[] = [];
       await runOperation(operation, false, absentTrace);
       expect(absentTrace[0]).toBe("phase:Preparing");
@@ -1439,12 +1436,11 @@ setup:
 
     const baseline = await runOpen(undefined, "reporter-baseline");
 
-    // Fails INSIDE the returned Effect, including on the per-setup-command
-    // phase (which the setup boundary is given as a never-failing hook).
+    // Fails inside the returned Effect.
     const failing = await runOpen({
       event: (() => Effect.fail("reporter failed")) as never,
     });
-    // Throws BEFORE returning an Effect at all.
+    // Throws before returning an Effect at all.
     const throwing = await runOpen(
       {
         event: (() => {

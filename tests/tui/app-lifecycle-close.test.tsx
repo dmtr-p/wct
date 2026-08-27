@@ -1,13 +1,6 @@
-// Lifecycle tests for `close`. The "rendered progress rows" tests drive the
-// REAL App through Ink's input pipeline (`c` → confirm → enter) and assert on
-// rendered frames; the rest drive `createExecuteClose` directly, because the
-// phase ORDER around validation, teardown and the force hand-off is what
-// those tests are about, and a rendered frame cannot observe a transition
-// that React coalesces.
-//
-// Both halves share `./app-harness`: its deferred `WorkspaceService.close` lets
-// a close be observed mid-flight, and its `vi.mock` registrations must run
-// before the modules under test are loaded — hence the dynamic imports.
+// Lifecycle tests for `close`: "rendered progress rows" drive the real App
+// through Ink's input pipeline; the rest drive `createExecuteClose` directly
+// since a rendered frame can't observe a transition React coalesces.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,8 +55,8 @@ function trackLifecycle() {
     ) => {
       const next =
         typeof update === "function" ? update(tracker.state) : update;
-      // React bails out when an updater returns the identical state, so a
-      // second teardown from a `finally` is not a render — and not a row.
+      // React bails out on an identical state, so a repeat teardown records
+      // no phase.
       if (next === tracker.state) return tracker.state;
       tracker.state = next;
       tracker.phases.push(tracker.entry()?.phase ?? null);
@@ -199,13 +192,9 @@ describe("TUI close lifecycle", () => {
       rmSync(repoPath, { recursive: true, force: true });
     });
 
-    // At the App level: the helper is unit-tested, but only a rendered
-    // App proves the wiring — `prevSelectionParentIdRef` and the `lifecycle`
-    // the fallback is scoped to are both passed by App.tsx, and dropping either
-    // argument leaves the cursor on whatever row inherited the index.
     test("moves the cursor to the branch row when a lifecycle suppresses the selected detail row", async () => {
-      // A branch AFTER feature/x, so the index the vanished detail row leaves
-      // behind is a DIFFERENT Workspace: the plain clamp would land there.
+      // A branch after feature/x, so the index the vanished detail row leaves
+      // behind belongs to a different Workspace: a plain clamp would land there.
       worktreeFixtures.byRepoPath.set(repoPath, [
         makeWorktree(repoPath, "main"),
         makeWorktree(repoPath, "feature/x"),
@@ -225,8 +214,6 @@ describe("TUI close lifecycle", () => {
       const app = await renderApp(<App />);
       await tick(6);
 
-      // repo row → main → feature/x, then fetch PRs and expand it so the
-      // Workspace really has a detail row to select.
       await sendKeys(app.stdin, ARROW_DOWN);
       await sendKeys(app.stdin, ARROW_DOWN);
       expect(selectedLine(app.lines())).toContain("feature/x");
@@ -238,7 +225,6 @@ describe("TUI close lifecycle", () => {
       await tick(2);
       expect(selectedLine(app.lines())).toContain("#42");
 
-      // The close claims the Workspace, which suppresses its detail rows.
       await sendKeys(app.stdin, "c");
       await sendKeys(app.stdin, ENTER);
       await tick(8);
@@ -246,8 +232,6 @@ describe("TUI close lifecycle", () => {
       const frame = app.lines();
       expect(frame.join("\n")).toContain("Preparing Workspace…");
       expect(frame.join("\n")).not.toContain("#42");
-      // The cursor followed the Workspace instead of staying at the index
-      // feature/y inherited.
       expect(selectedLine(frame)).toContain("feature/x");
       expect(selectedLine(frame)).not.toContain("feature/y");
 
@@ -259,7 +243,6 @@ describe("TUI close lifecycle", () => {
       const app = await renderApp(<App />);
       await tick(6);
 
-      // repo row → main → feature/x
       await sendKeys(app.stdin, ARROW_DOWN);
       await sendKeys(app.stdin, ARROW_DOWN);
       expect(selectedLine(app.lines())).toContain("feature/x");
@@ -269,28 +252,22 @@ describe("TUI close lifecycle", () => {
       await sendKeys(app.stdin, ENTER);
       await tick(8);
 
-      // The close is in flight and the Workspace says what it is doing.
       expect(app.lines().join("\n")).toContain("Preparing Workspace…");
       const call = lastWorkspaceCall("close");
       expect(call.options.path).toBe(join(repoPath, "feature-x"));
       expect(call.options.cwd).toBe(repoPath);
 
-      // Session teardown is its own phase.
       emitWorkspacePhase(call, { _tag: "KillingTmuxSession" });
       await tick(3);
       expect(app.lines().join("\n")).toContain("Killing tmux session…");
 
-      // Filesystem teardown is a DIFFERENT phase, and it is on screen while
-      // the service call is still in flight — i.e. before removal completes.
       emitWorkspacePhase(call, { _tag: "RemovingWorktree" });
       await tick(3);
       const midFlight = app.lines().join("\n");
       expect(midFlight).toContain("Removing worktree…");
-      // At most one progress row per Workspace: the kill row is replaced.
       expect(midFlight).not.toContain("Killing tmux session…");
       expect(midFlight).toContain("feature/x");
 
-      // The removal lands; the tree is refreshed by validation.
       worktreeFixtures.byRepoPath.set(repoPath, [
         makeWorktree(repoPath, "main"),
       ]);
@@ -318,8 +295,7 @@ describe("TUI close lifecycle", () => {
       expect(after).not.toContain("Validating Workspace…");
       app.unmount();
 
-      // --- No session to kill: nothing emits the kill phase, so no such row
-      // is ever painted for the whole operation.
+      // No session to kill: no kill row is ever painted.
       worktreeFixtures.byRepoPath.set(repoPath, [
         makeWorktree(repoPath, "main"),
         makeWorktree(repoPath, "feature/x"),
@@ -349,8 +325,6 @@ describe("TUI close lifecycle", () => {
       const workspaceLine = () =>
         app.lines().find((line) => line.includes("feature/x")) ?? "";
 
-      // repo row → main → feature/x. The user has expanded nothing, so no
-      // Workspace is presented as expanded.
       await sendKeys(app.stdin, ARROW_DOWN);
       await sendKeys(app.stdin, ARROW_DOWN);
       expect(selectedLine(app.lines())).toContain("feature/x");
@@ -363,20 +337,15 @@ describe("TUI close lifecycle", () => {
       emitWorkspacePhase(call, { _tag: "RemovingWorktree" });
       await tick(3);
       expect(app.lines().join("\n")).toContain("Removing worktree…");
-      // Mid-lifecycle the Workspace IS presented as expanded…
       expect(workspaceLine()).toContain("▼");
 
-      // …and a registry poll landing mid-operation — which reconciles (prunes)
-      // the stored preference on every `repos` change — cannot disturb it,
-      // precisely because the expansion was never stored.
+      // A registry poll mid-operation prunes the stored preference on every
+      // `repos` change, but can't disturb this since nothing was ever stored.
       await triggerRefresh();
       await tick(6);
       expect(workspaceLine()).toContain("▼");
       expect(app.lines().join("\n")).toContain("Removing worktree…");
 
-      // The close is refused, so the Workspace survives validation — and with
-      // the lifecycle entry gone it is back to the user's own preference:
-      // collapsed. Nothing was written, so there is nothing to restore.
       call.reject(new Error("worktree busy"));
       await tick(14);
       expect(workspaceLine()).toContain("feature/x");
@@ -387,8 +356,8 @@ describe("TUI close lifecycle", () => {
   });
 
   test("validates after success, failure and a blocked removal, and only then drops the Workspace", async () => {
-    // --- Success: validation runs while the lifecycle is STILL present, so
-    // nothing removes the Workspace from the tree ahead of the refresh.
+    // refreshAll's callback runs while the lifecycle entry is still present,
+    // so it can capture phase/size mid-validation, before teardown.
     const removed = trackLifecycle();
     let phaseAtRefresh: string | null = null;
     let entriesAtRefresh = -1;
@@ -416,7 +385,6 @@ describe("TUI close lifecycle", () => {
     expect(entriesAtRefresh).toBe(1);
     expect(removed.state.size).toBe(0);
 
-    // --- Failure.
     const failed = trackLifecycle();
     const failure = await startClose(
       makeDeps({ setLifecycle: failed.setLifecycle }),
@@ -426,7 +394,6 @@ describe("TUI close lifecycle", () => {
     expect(failed.labels()).toContain("Validating Workspace…");
     expect(failed.labels().at(-1)).toBeNull();
 
-    // --- Blocked by changes.
     const blocked = trackLifecycle();
     const blockedRun = await startClose(
       makeDeps({ setLifecycle: blocked.setLifecycle }),
@@ -442,21 +409,18 @@ describe("TUI close lifecycle", () => {
     const deps = makeDeps({ setLifecycle: tracker.setLifecycle });
     const run = await startClose(deps);
     expect(tracker.state.size).toBe(1);
-    // The lifecycle state the tree WOULD be rendering mid-flight, captured
-    // before teardown so the before/after comparison below has two real sides.
+    // Snapshot the mid-flight lifecycle state before teardown clears it.
     const midFlight: LifecycleState = new Map(tracker.state);
 
     run.call.reject(new Error("worktree has untracked files"));
     await run.settled;
 
-    // Progress is gone.
     expect(tracker.state.size).toBe(0);
     expect(tracker.labels().at(-1)).toBeNull();
 
-    // Expansion was a presentation override, never a stored write: mid-flight
-    // the Workspace was presented as expanded no matter what the user's own
-    // preference said, and with the entry gone the preference alone decides —
-    // while nothing in these deps could ever write that preference.
+    // Expansion is a presentation override, never a stored write: mid-flight
+    // it's expanded regardless of the stored preference; once the entry is
+    // gone, the preference alone decides.
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
     for (const stored of [new Set<string>(), new Set([WORKTREE_KEY])]) {
       const forThisPreference = (lifecycle: LifecycleState) =>
@@ -471,8 +435,6 @@ describe("TUI close lifecycle", () => {
       expect(forThisPreference(tracker.state)).toBe(stored.has(WORKTREE_KEY));
     }
 
-    // The outcome is reported through the existing timed error display, and
-    // only after validation.
     expect(deps.showActionError).toHaveBeenCalledWith(
       "worktree has untracked files",
     );
@@ -498,8 +460,6 @@ describe("TUI close lifecycle", () => {
     run.call.resolve(blockedResult());
     await run.settled;
 
-    // The confirmation is anchored against a finished lifecycle: validation
-    // ran, the progress row is gone, and no lock is left on the identity.
     expect(setMode).toHaveBeenCalledWith(
       Mode.ConfirmCloseForce(
         "feat",
@@ -517,7 +477,7 @@ describe("TUI close lifecycle", () => {
     const confirmOrder = setMode.mock.invocationCallOrder.at(-1) as number;
     expect(confirmOrder).toBeGreaterThan(refreshOrder);
 
-    // --- Confirming force starts a DISTINCT new lifecycle presentation.
+    // Confirming force starts a distinct new lifecycle presentation.
     const forced = trackLifecycle();
     const forcedDeps = makeDeps({ setLifecycle: forced.setLifecycle });
     const forcedRun = await startClose(forcedDeps, true);
@@ -528,7 +488,7 @@ describe("TUI close lifecycle", () => {
     await forcedRun.settled;
     expect(forced.state.size).toBe(0);
 
-    // --- Cancelling leaves no lifecycle state, no lock and no stale phase.
+    // Cancelling leaves no lifecycle state, no lock and no stale phase.
     const { handleConfirmCloseInput } = await import(
       "../../src/tui/input/confirm-close"
     );
@@ -567,7 +527,7 @@ describe("TUI close lifecycle", () => {
       setLifecycle: tracker.setLifecycle,
       setMode,
       modeRef,
-      // Validation is slow, and the user starts a search while it runs.
+      // Simulates the user starting a search while slow validation runs.
       refreshAll: vi.fn(async () => {
         modeRef.current = Mode.Search;
         return [];
@@ -578,8 +538,6 @@ describe("TUI close lifecycle", () => {
     run.call.resolve(blockedResult());
     await run.settled;
 
-    // The question is not asked — the search is left alone — but the refusal is
-    // still reported, so it is never silent.
     expect(setMode).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "ConfirmCloseForce" }),
     );

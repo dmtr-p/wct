@@ -18,12 +18,9 @@ export interface SetupService {
     workingDir: string,
     env: WctEnv,
     /**
-     * Optional per-command-start hook, invoked with the command's configured
-     * NAME (never its shell text) immediately before it runs, so callers learn
-     * setup progress in execution order. Typed `Effect.Effect<void>` — it can
-     * neither fail nor require services — so a progress reporter can never
-     * fail setup; the only supplier is `emitReporter` in `workspace-service`,
-     * which already swallows reporter failures.
+     * Called with the command's configured NAME (never its shell text)
+     * before the command runs. Typed `Effect.Effect<void>` so it can never
+     * fail setup.
      */
     onCommandStart?: (name: string) => Effect.Effect<void>,
   ) => Effect.Effect<SetupResult[], WctError, BunServices.BunServices>;

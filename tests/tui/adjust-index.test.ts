@@ -110,11 +110,8 @@ describe("adjustIndexForDetailCollapse", () => {
   });
 
   test("cursor after details subtracts detail count", () => {
-    // branch-2 at index 5, 3 details before → 5 - 3 = 2
     expect(adjustIndexForDetailCollapse(items, 5)).toBe(2);
-    // Repo B at index 6, 3 details before → 6 - 3 = 3
     expect(adjustIndexForDetailCollapse(items, 6)).toBe(3);
-    // branch-3 at index 7, 3 details before → 7 - 3 = 4
     expect(adjustIndexForDetailCollapse(items, 7)).toBe(4);
   });
 
@@ -213,14 +210,12 @@ describe("treeItemId", () => {
   });
 
   test("identity is independent of positional index in tree", () => {
-    // Same worktree at different tree positions should produce the same id
     const item = worktree(0, 1);
     expect(treeItemId(item, repos)).toBe(treeItemId(item, repos));
   });
 });
 
 describe("identity-based recovery scenarios", () => {
-  // Simulate background refresh removing a worktree before the selected one
   test("selected item shifts when earlier worktree is removed", () => {
     const reposBefore: RepoInfo[] = [
       fakeRepo("repo-a", ["main", "feat-1", "feat-2"]),
@@ -240,7 +235,6 @@ describe("identity-based recovery scenarios", () => {
     const selectedId = treeItemId(selectedItem, reposBefore);
     expect(selectedId).toBe("wt:repo-a/feat-2");
 
-    // After refresh: feat-1 removed, feat-2 is now at worktreeIndex 1
     const reposAfter: RepoInfo[] = [fakeRepo("repo-a", ["main", "feat-2"])];
     const itemsAfter: TreeItem[] = [
       repo(0),
@@ -248,7 +242,6 @@ describe("identity-based recovery scenarios", () => {
       worktree(0, 1), // feat-2  ← now at index 2
     ];
 
-    // Old selectedIndex (3) is out of bounds — find by identity
     const recovered = itemsAfter.findIndex(
       (item) => treeItemId(item, reposAfter) === selectedId,
     );
@@ -260,7 +253,6 @@ describe("identity-based recovery scenarios", () => {
     const selectedId = treeItemId(worktree(0, 1), reposBefore);
     expect(selectedId).toBe("wt:repo-a/feat-1");
 
-    // After refresh: feat-1 deleted entirely
     const reposAfter: RepoInfo[] = [fakeRepo("repo-a", ["main"])];
     const itemsAfter: TreeItem[] = [repo(0), worktree(0, 0)];
 
@@ -310,7 +302,6 @@ describe("identity-based recovery scenarios", () => {
       pane2, // index 3  ← selected
     ];
 
-    // User selected pane2 (%2)
     const selectedItem = itemsBefore[3];
     if (!selectedItem) {
       throw new Error("expected selected pane item");
@@ -318,7 +309,6 @@ describe("identity-based recovery scenarios", () => {
     const selectedId = treeItemId(selectedItem, repos);
     expect(selectedId).toBe("detail:repo-a/main/pane/%2");
 
-    // After refresh: panes reordered (pane2 now comes first)
     const itemsAfter: TreeItem[] = [
       repo(0),
       worktree(0, 0),
@@ -329,7 +319,6 @@ describe("identity-based recovery scenarios", () => {
     const recovered = itemsAfter.findIndex(
       (item) => treeItemId(item, repos) === selectedId,
     );
-    // Should find pane2 at its new position, not pane1
     expect(recovered).toBe(2);
   });
 });
@@ -365,9 +354,6 @@ describe("resolveRecoveredSelectionIndex", () => {
       fakeRepo("repo-b", ["main"]),
     ];
 
-    // A Pending Workspace became a discovered Workspace: repo-a gained a
-    // worktree row, shifting every later item index. The selected item is
-    // recovered by identity, so the cursor stays on the SAME logical item.
     const beforeDiscovery: TreeItem[] = [
       repo(0),
       worktree(0, 0),
@@ -391,9 +377,6 @@ describe("resolveRecoveredSelectionIndex", () => {
       }),
     ).toBe(4);
 
-    // A lifecycle starting on repo-a/feat-new suppresses its PR and pane
-    // detail rows. The selected detail row is gone, so selection moves
-    // deterministically to that Workspace's own branch row.
     const withDetails: TreeItem[] = [
       repo(0),
       worktree(0, 0),
@@ -402,8 +385,8 @@ describe("resolveRecoveredSelectionIndex", () => {
       repo(1),
       worktree(1, 0),
     ];
-    // Without the parent fallback the tree is still long enough for index 3 to
-    // exist, so the cursor would silently sit on repo-b's header instead.
+    // Without the parent fallback, index 3 still exists in this tree, so the
+    // cursor would silently land on repo-b's header instead.
     const withoutDetails: TreeItem[] = [
       repo(0),
       worktree(0, 0),
@@ -445,9 +428,8 @@ describe("resolveRecoveredSelectionIndex", () => {
       worktree(1, 0),
     ];
 
-    // An ORDINARY disappearance — a PR that closed, a killed pane — keeps the
-    // long-standing clamp behaviour: index 3 still exists, so selection
-    // recovery leaves it alone rather than snapping up to the branch row.
+    // An ordinary disappearance (a PR that closed, a killed pane) keeps the
+    // plain clamp behaviour instead of snapping up to the branch row.
     expect(
       resolveRecoveredSelectionIndex({
         prevTree: withDetails,
@@ -459,7 +441,7 @@ describe("resolveRecoveredSelectionIndex", () => {
       }),
     ).toBeNull();
 
-    // A lifecycle on a DIFFERENT Workspace does not license the fallback
+    // A lifecycle on a different Workspace doesn't license the fallback
     // either — the parent of the vanished row is what has to be busy.
     expect(
       resolveRecoveredSelectionIndex({

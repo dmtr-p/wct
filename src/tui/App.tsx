@@ -100,16 +100,14 @@ export function App() {
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   // The live `mode`, for async continuations that must not act on a stale
-  // render-time capture (see `SessionActionDeps.modeRef`).
+  // render-time capture.
   const modeRef = useRef<Mode>(mode);
   const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
     new Set(),
   );
-  // Workspace Identities a just-finished `open` discovered on disk. A
-  // PRESENTATION-ONLY expansion override: the freshly opened Workspace is left
-  // expanded when its lifecycle row comes down, without its key ever entering
-  // the stored preference above. Dropped as soon as the user collapses the
-  // row, and pruned by the stored preference's own rule.
+  // Workspace Identities a just-finished `open` discovered on disk: a
+  // presentation-only expansion override, never written to the stored
+  // preference below, dropped once the user collapses the row.
   const [discoveredWorktreeKeys, setDiscoveredWorktreeKeys] = useState<
     Set<string>
   >(new Set());
@@ -121,21 +119,19 @@ export function App() {
     row: number;
   } | null>(null);
   const { actionError, showActionError, clearActionError } = useActionError();
-  // Active Workspace lifecycles, keyed by Workspace Identity (main repository
-  // path + branch) — never by the project display name, so two repos sharing a
-  // display name cannot clobber each other's progress.
+  // Keyed by Workspace Identity (main repository path + branch), never by
+  // the project display name, so two repos sharing a display name can't
+  // clobber each other's progress.
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
-  // The synchronous claim ledger behind `beginLifecycle`. Created once per App
-  // and shared by every verb, because it is what decides — in the same tick,
-  // before any state is written — whether an identity is already in flight.
+  // Created once per App and shared by every verb: it decides, synchronously
+  // and before any state is written, whether an identity is already in flight.
   const lifecycleClaimsRef = useRef(createLifecycleClaims());
   const lifecycleClaims = lifecycleClaimsRef.current;
-  // Workspace Identities whose one-time viewport reveal has already happened.
-  // Pruned when their operation ends, so a later operation on the same
-  // identity is revealed again.
+  // Workspace Identities whose one-time viewport reveal already happened.
+  // Pruned when their operation ends, so a later operation is revealed again.
   const revealedLifecyclesRef = useRef<Set<string>>(new Set());
-  // Set for exactly ONE commit by the reveal effect, cleared by a trailing
-  // effect below: the reveal owns the viewport for that commit.
+  // Set for exactly one commit by the reveal effect, cleared by a trailing
+  // effect below.
   const lifecycleRevealPendingRef = useRef(false);
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
@@ -189,9 +185,9 @@ export function App() {
     );
   }, [repos]);
 
-  // What the tree PRESENTS as expanded: the stored preference plus the
-  // presentation-only overrides. Only `expandWorktree`/`collapseWorktree` write
-  // the stored set, so no lifecycle can leak into a durable user preference.
+  // What the tree presents as expanded: the stored preference plus the
+  // presentation-only overrides. Only `expandWorktree`/`collapseWorktree`
+  // write the stored set, so a lifecycle can't leak into it.
   const presentedWorktreeKeys = useMemo(() => {
     if (discoveredWorktreeKeys.size === 0) return expandedWorktreeKeys;
     const next = new Set(expandedWorktreeKeys);
@@ -381,10 +377,9 @@ export function App() {
   // exactly once per commit.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
-  // The parent branch row of a selected DETAIL row, tracked alongside the
-  // selection identity so recovery has a deterministic destination when the
-  // detail row itself disappears — which is exactly what starting a lifecycle
-  // on that Workspace does.
+  // The parent branch row of a selected detail row, tracked alongside the
+  // selection identity so recovery has a destination when the detail row
+  // itself disappears — which starting a lifecycle on that Workspace does.
   const prevSelectionParentIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
 
@@ -402,7 +397,7 @@ export function App() {
   // touching selectedIndex: the viewport shrinking (an action/repo error line
   // appearing, the terminal resized shorter) or rows above the selection
   // reflowing (a PR title wrapping differently after a width change, a check
-  // rollup arriving, phantom rows appearing). The clamp in the recovery
+  // rollup arriving). The clamp in the recovery
   // effect below can only ever DECREASE the offset, so without this signal a
   // selection sitting on a visible row could silently leave the window with
   // no path back until the next navigation key. Tracked as "was the selection
@@ -467,7 +462,7 @@ export function App() {
       treeItems,
       prevSelectionId: prevId,
       prevSelectionParentId: prevParentId,
-      // The parent-branch fallback is scoped to detail rows a LIFECYCLE
+      // The parent-branch fallback is scoped to detail rows a lifecycle
       // suppressed; every other disappearance keeps the old clamp.
       lifecycle,
       selectedIndex,
@@ -494,17 +489,11 @@ export function App() {
     selectionChanged,
   ]);
 
-  // The ONE-TIME viewport reveal for a lifecycle operation whose rows lie
-  // outside the visible window: nudge the independent scroll offset minimally
-  // (never a re-centre) so the progress row's own visual row index is on
-  // screen, then remember the identity as revealed. An already-visible
-  // operation resolves to the offset it already has and moves nothing, and a
-  // lifecycle whose repository the search filters out has no row to reveal.
-  //
-  // Declared BEFORE the keep-visible effect so its suppression flag is already
-  // set when that effect runs in the same commit; everything after the reveal
-  // — later phases, validation, teardown, pending-to-discovered reconciliation
-  // — finds the key revealed and leaves the offset alone.
+  // One-time viewport reveal: when a lifecycle operation's row lies outside
+  // the visible window, nudge the scroll offset minimally so it's on screen,
+  // then remember the identity as revealed. Declared before the keep-visible
+  // effect so its suppression flag is already set when that effect runs in
+  // the same commit.
   useEffect(() => {
     const revealed = revealedLifecyclesRef.current;
     for (const key of revealed) {
@@ -539,18 +528,13 @@ export function App() {
   // calls setRepos, even when content is unchanged) cannot re-fire this and
   // snap a wheel-scrolled viewport back to the selection. NOT keyed on
   // scrollOffset, and uses a functional update, so it never fights a future
-  // wheel scroll (slice 02).
+  // wheel scroll.
   useEffect(() => {
-    // The one-time lifecycle reveal owns the viewport for the commit it fires
-    // in: that same commit also reshapes the rows and may move the selection
-    // off a suppressed detail row, either of which would otherwise re-anchor
-    // the offset straight back and undo the reveal. BOTH branches are gated
-    // deliberately, not just the passive one: the parent-branch recovery
-    // arrives as a `setSelectedIndex` and is therefore indistinguishable from
-    // a keyboard move here, so exempting `selectionChanged` would let exactly
-    // the case this guard exists for undo the reveal. The flag is cleared
-    // unconditionally by a trailing effect, so it can never swallow a later
-    // re-anchor.
+    // The one-time lifecycle reveal owns the viewport for the commit it
+    // fires in — that same commit can also move the selection off a
+    // suppressed detail row via `setSelectedIndex`, which is otherwise
+    // indistinguishable from a deliberate keyboard move and would re-anchor
+    // the offset right back, undoing the reveal.
     if (lifecycleRevealPendingRef.current) return;
     // All three refs are read BEFORE the trailing effects below rewrite them,
     // so they are last commit's values. A passive re-anchor requires the row
@@ -624,10 +608,9 @@ export function App() {
     lifecycleRevealPendingRef.current = false;
   });
 
-  // Resolves the registry snapshot THIS refresh observed (or `null` when the
-  // registry load failed and the previous repos were kept), so a lifecycle can
-  // reconcile against what it just validated instead of a stale render-time
-  // `repos` capture.
+  // Resolves the registry snapshot this refresh observed (or `null` when it
+  // failed and the previous repos were kept), so a lifecycle can reconcile
+  // against what it just validated instead of a stale `repos` capture.
   const refreshAll = useCallback(async (): Promise<RepoInfo[] | null> => {
     const [refreshedRepos] = await Promise.all([
       refreshRegistry(),
@@ -641,8 +624,7 @@ export function App() {
     setScrollOffset(confirmReturnScrollOffsetRef.current);
   }, []);
 
-  // The poll/watch path only needs the side effect, never the snapshot
-  // `refreshAll` now resolves.
+  // The poll/watch path only needs the side effect, not the resolved snapshot.
   const pollRefresh = useCallback(async (): Promise<void> => {
     await refreshAll();
   }, [refreshAll]);
@@ -664,8 +646,8 @@ export function App() {
       next.delete(worktreeKey);
       return next;
     });
-    // A collapse is the user overruling the presentation override too,
-    // otherwise a freshly opened Workspace could never be collapsed.
+    // A collapse overrules the presentation override too, otherwise a
+    // freshly opened Workspace could never be collapsed.
     setDiscoveredWorktreeKeys((previous) => {
       if (!previous.has(worktreeKey)) return previous;
       const next = new Set(previous);
@@ -958,8 +940,7 @@ export function App() {
         if (!detection.isDoubleClick) return;
 
         // Same refusal as `canCollapse`: a double-click on a Workspace under
-        // an active lifecycle must not write the stored expansion preference,
-        // which would leave it expanded after the operation ends.
+        // an active lifecycle must not write the stored expansion preference.
         if (
           target.type === "worktree" &&
           isWorktreeLifecycleActive(target, filteredRepos, lifecycle)

@@ -158,7 +158,7 @@ export function resolveTreeDoubleClickAction(
  * True for ANY SGR mouse escape sequence — press, release, motion/drag, and
  * extra-button events alike — regardless of whether `parseSgrMouse` resolves
  * it to a recognised `MouseEvent`. Used by the `useInput` dispatcher guard to
- * swallow every mouse sequence (ADR 0002 / PRD §6.6): a click emits BOTH a
+ * swallow every mouse sequence (ADR 0002): a click emits BOTH a
  * press and a release sequence, and `parseSgrMouse` intentionally returns
  * `null` for the release half (and extra-button events); motion is surfaced
  * for hover hit-testing. Non-actionable is not the same as "not a
@@ -247,9 +247,8 @@ export type MouseAction =
  * `resolveMouseAction` (press) and `resolveHoverItemIndex` (move) so the two
  * can never disagree about which row a given terminal row hits. Returns
  * `null` for chrome, lifecycle rows (Pending Workspace / Lifecycle Progress),
- * and inert rows (pane headers) — the same
- * predicate keyboard navigation uses, so a pointer can't select/hover a row
- * arrow keys refuse.
+ * and inert rows (pane headers) — the same predicate keyboard navigation
+ * uses, so a pointer can't select/hover a row arrow keys refuse.
  */
 function hitTestTreeRow(
   row: number,

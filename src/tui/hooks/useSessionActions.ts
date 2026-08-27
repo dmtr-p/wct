@@ -35,21 +35,14 @@ export interface SessionActionDeps {
   mode: Mode;
   /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle: LifecycleState;
-  /**
-   * The synchronous claim ledger arbitrating Workspace Identities. Shared with
-   * every other lifecycle-driving hook, because it is what makes a second
-   * operation for one identity impossible rather than merely unlikely.
-   */
+  // Shared across every lifecycle-driving hook, so a second operation for
+  // the same identity is impossible, not just unlikely.
   lifecycleClaims: LifecycleClaims;
 
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
-  /**
-   * The LIVE mode, readable from async continuations. `mode` above is a
-   * render-time capture and is stale by the time a lifecycle settles, so an
-   * operation that wants to present something on completion has to ask this
-   * whether the user is still where the operation left them.
-   */
+  // The live mode, readable from async continuations: `mode` above is a
+  // render-time capture, stale by the time a lifecycle settles.
   modeRef: MutableRefObject<Mode>;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
 
@@ -61,10 +54,8 @@ export interface SessionActionDeps {
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
 
-  /**
-   * Resolves the registry snapshot the refresh observed, or `null` when it
-   * failed (previous repos kept).
-   */
+  // Resolves the registry snapshot the refresh observed, or `null` when it
+  // failed (previous repos kept).
   refreshAll: () => Promise<RepoInfo[] | null>;
   restoreConfirmationViewport: () => void;
 
@@ -74,7 +65,6 @@ export interface SessionActionDeps {
   confirmCloseReturnSelectedIndexRef: MutableRefObject<number>;
 }
 
-/** This hook's binding of the ONE shared guard (see `lifecycle.ts`). */
 function rejectIfLifecycleActive(
   deps: SessionActionDeps,
   repoPath: string,
@@ -140,7 +130,6 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
   };
 }
 
-/** What one `up` needs to know: the Workspace Identity plus the run options. */
 export interface StartWorkspaceTarget {
   worktreePath: string;
   /** Main repository path — one half of the Workspace Identity. */
@@ -151,13 +140,10 @@ export interface StartWorkspaceTarget {
   autoSwitch: boolean;
 }
 
-/**
- * The automatic tmux hand-off after a start. Runs LAST — after validation and
- * after the lifecycle presentation is gone — because switching detaches the
- * terminal this TUI is drawn in, and a failed switch must surface as a plain
- * action error rather than resurrecting a progress row. Returns the message to
- * report, or `undefined` when there is nothing to say.
- */
+// Runs last, after validation and after the lifecycle presentation is gone:
+// switching tmux clients detaches the terminal this TUI is drawn in, so a
+// failed switch must surface as a plain action error, not a resurrected
+// progress row.
 export function createSessionHandoff(deps: SessionActionDeps) {
   return async (
     result: WorkspaceUpResult,
@@ -182,12 +168,7 @@ export function createSessionHandoff(deps: SessionActionDeps) {
   };
 }
 
-/**
- * The ONE `up` path, shared by the space-bar start and the up modal: begin a
- * lifecycle for the Workspace Identity, run the service with the reporter that
- * drives the progress row so only phases actually attempted are shown, then
- * validate, tear down and hand off.
- */
+// Shared by the space-bar start and the up modal.
 export function createStartWorkspace(deps: SessionActionDeps) {
   const sessionHandoff = createSessionHandoff(deps);
 
@@ -363,13 +344,9 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
   };
 }
 
-/**
- * The ONE `close` path. Session teardown and filesystem teardown are distinct
- * phases (`Killing tmux session…`, `Removing worktree…`), and EVERY outcome —
- * removed, refused by git, or fatally failed — goes through the same
- * `Validating Workspace…` step before the Workspace is removed from the tree or
- * unlocked, so a closed Workspace never disappears optimistically.
- */
+// Every outcome — removed, refused by git, or fatally failed — goes through
+// the same validation step before the Workspace leaves the tree or unlocks,
+// so a closed Workspace never disappears optimistically.
 export function createExecuteClose(deps: SessionActionDeps) {
   const switchClientAway = createSwitchClientAway(deps);
 
@@ -419,19 +396,15 @@ export function createExecuteClose(deps: SessionActionDeps) {
             ),
           ),
         ),
-      // A close git refused is not an outcome to report — it is a question to
-      // ask. Asking it from `afterCleanup` means the current lifecycle
-      // presentation is COMPLETELY over first (validation finished, progress
-      // row gone, expansion back to the user's own preference), so the
-      // confirmation is anchored against a stable tree and the forced retry
-      // starts a fresh lifecycle rather than inheriting a stale phase or lock.
+      // Asked from `afterCleanup`, after the lifecycle presentation is fully
+      // over, so the confirmation is anchored on a stable tree and a forced
+      // retry starts a fresh lifecycle instead of inheriting a stale lock.
       afterCleanup: async (result) => {
         if (result.status !== "blocked_by_changes") return undefined;
-        // Validation takes as long as a registry refresh takes, and the user is
-        // free to move on while it runs — into search, a modal, another
-        // confirmation. The question is only ASKED if the tree is still in the
-        // mode this close restored; otherwise it is merely reported, so the
-        // refusal is never silent and never discards what the user is typing.
+        // The user may navigate away while validation runs. Only prompt if
+        // the tree is still in the mode this close restored; otherwise just
+        // report, so the refusal is never silent but also never clobbers
+        // what the user is doing elsewhere.
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }

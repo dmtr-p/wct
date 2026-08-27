@@ -414,8 +414,7 @@ describe("TUI lifecycle viewport reveal", () => {
 
     app2.unmount();
 
-    // A lifecycle whose repository the active search filters out has no rows
-    // at all, so there is nothing to reveal and nothing to move.
+    // The contract itself, at the unit: no rows -> nothing to reveal.
     expect(
       resolveLifecycleReveal({
         rows: [],
@@ -431,6 +430,48 @@ describe("TUI lifecycle viewport reveal", () => {
         viewportRows: 10,
       }),
     ).toBeNull();
+  });
+
+  // AC-29 — the search-filtered clause, driven through the REAL filter rather
+  // than a hand-built `resolveLifecycleReveal` call: rows are built from
+  // `filteredRepos`, so a query that excludes the repository must leave the
+  // in-flight lifecycle with no rows at all, and the viewport untouched.
+  test("a lifecycle whose repository the active search excludes renders nothing and moves nothing", async () => {
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />, 14);
+    try {
+      await tick(8);
+
+      // Start an open and let it reveal, so there IS a progress row and an
+      // offset the filter could disturb.
+      await openBranchFromModal(app.stdin, "feature/new");
+      await tick(8);
+      expect(app.lines().join("\n")).toContain("Preparing Workspace…");
+
+      // Filter the repository out for real: "alpha" is the only project and
+      // no branch matches, so `filteredRepos` is empty.
+      await sendKeys(app.stdin, "/");
+      await sendKeys(app.stdin, "zzz-no-such-repo");
+      await tick(6);
+
+      const filtered = app.lines();
+      const filteredText = filtered.join("\n");
+      // No lifecycle rows survive the filter — neither the progress row nor
+      // the Pending Workspace it hangs under.
+      expect(filteredText).not.toContain("Preparing Workspace…");
+      expect(filteredText).not.toContain("feature/new");
+      expect(visibleFeatureIndices(filtered)).toEqual([]);
+
+      // A further phase event on the filtered-out lifecycle paints nothing and
+      // moves nothing: the frame is byte-identical.
+      emitWorkspacePhase(lastWorkspaceCall("open"), {
+        _tag: "CreatingWorktree",
+      });
+      await tick(4);
+      expect(app.lines()).toEqual(filtered);
+    } finally {
+      app.unmount();
+    }
   });
 
   // AC-30

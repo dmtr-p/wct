@@ -758,14 +758,9 @@ describe("createHandleUpSubmit", () => {
     const returnIndexRef = { current: 3 };
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal(
-        "/repo/feat",
-        "proj/feat",
-        "/repo",
-        "feat",
-        "proj",
-        ["dev"],
-      ),
+      mode: Mode.UpModal("/repo/feat", "proj/feat", "/repo", "feat", "proj", [
+        "dev",
+      ]),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
       startWorkspace,

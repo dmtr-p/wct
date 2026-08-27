@@ -47,6 +47,27 @@ export function isWorktreeEffectivelyExpanded({
   return lifecycleEntryFor(lifecycle, repoPath, branch) !== undefined;
 }
 
+/**
+ * True when a `worktree` tree item's Workspace is under an active lifecycle.
+ *
+ * The expansion affordances (collapse key, pointer double-click) are refused
+ * for such a Workspace: `isWorktreeEffectivelyExpanded` already paints it `▼`
+ * via the presentation-only override, so a toggle could not visibly take
+ * effect, and the stored-preference write would outlive the operation (AC-9,
+ * AC-33).
+ */
+export function isWorktreeLifecycleActive(
+  item: TreeItem,
+  repos: RepoInfo[],
+  lifecycle: LifecycleState,
+): boolean {
+  if (item.type !== "worktree") return false;
+  const repo = repos[item.repoIndex];
+  const worktree = repo?.worktrees[item.worktreeIndex];
+  if (!repo || !worktree) return false;
+  return isLifecycleActive(lifecycle, repo.repoPath, worktree.branch);
+}
+
 interface BuildTreeOptions {
   repos: RepoInfo[];
   expandedWorktreeKeys?: Set<string>;

@@ -356,6 +356,16 @@ export function beginLifecycle(
   };
 }
 
+/**
+ * A collected outcome message. `severity` is carried so the buffer does not
+ * conflate a fatal failure with a warning; both render identically today, and
+ * changing that is a UX decision, not a bookkeeping one.
+ */
+interface LifecycleMessage {
+  severity: "error" | "warning";
+  text: string;
+}
+
 export interface LifecycleRunOptions<T> {
   /** The synchronous claim ledger arbitrating Workspace Identities. */
   claims: LifecycleClaims;
@@ -374,6 +384,13 @@ export interface LifecycleRunOptions<T> {
   run: (reporter: WorkspaceReporter) => Promise<T>;
   /** Outcome messages a settled result carries; reported after validation. */
   resultWarnings?: (result: T) => readonly string[];
+  /**
+   * Reconciliation that needs the snapshot THIS validation observed, run
+   * before the presentation comes down and only when the refresh observed
+   * something. `open` uses it to mark a Workspace validation found on disk as
+   * discovered; it is never called on the `null` (warned) arm.
+   */
+  onValidated?: (snapshot: readonly RepoInfo[]) => void;
   /**
    * Work that must wait for BOTH validation and lifecycle teardown — the
    * automatic tmux hand-off, which detaches the terminal this TUI is drawn in
@@ -414,9 +431,16 @@ export async function runLifecycleOperation<T>(
   // presentation down (AC-28).
   if (!lifecycle) return;
 
-  const messages: string[] = [];
+  // One ordered buffer, but severity is recorded rather than implied: a fatal
+  // failure and a non-fatal warning both surface through the same timed error
+  // display (AC-17 only fixes WHEN they appear), and a reader of this buffer
+  // should not have to infer which is which from the variable name.
+  const messages: LifecycleMessage[] = [];
+  const appendError = (message: string) => {
+    if (message) messages.push({ severity: "error", text: message });
+  };
   const append = (message: string) => {
-    if (message) messages.push(message);
+    if (message) messages.push({ severity: "warning", text: message });
   };
 
   try {
@@ -424,7 +448,7 @@ export async function runLifecycleOperation<T>(
     try {
       result = await options.run(lifecycle.reporter);
     } catch (error) {
-      append(toWctError(error).message);
+      appendError(toWctError(error).message);
     }
 
     if (result !== undefined && options.resultWarnings) {
@@ -437,8 +461,16 @@ export async function runLifecycleOperation<T>(
     // reported once, by its own message, rather than twice.
     lifecycle.setPhase({ _tag: "Validating" });
     try {
-      if ((await options.refreshAll()) === null) {
+      const snapshot = await options.refreshAll();
+      if (snapshot === null) {
         append(lifecycleValidationWarning(operation));
+      } else {
+        // Reconcile against the snapshot THIS closure observed — never a
+        // render-time capture and never a shared ref, which a concurrently
+        // finishing operation would have overwritten while this one awaited
+        // (AC-32). Runs BEFORE `end`, so the reconciliation and the teardown
+        // land in the same React commit.
+        options.onValidated?.(snapshot);
       }
     } catch (error) {
       append(`Refresh failed after ${operation}: ${toWctError(error).message}`);
@@ -458,7 +490,9 @@ export async function runLifecycleOperation<T>(
       }
     }
 
-    if (messages.length > 0) options.showActionError(messages.join("\n"));
+    if (messages.length > 0) {
+      options.showActionError(messages.map((entry) => entry.text).join("\n"));
+    }
   } finally {
     lifecycle.end();
   }

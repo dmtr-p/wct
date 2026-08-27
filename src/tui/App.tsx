@@ -47,6 +47,7 @@ import {
   findOwningWorktreeIndex,
   firstRowForItem,
   insertConfirmationRows,
+  isWorktreeLifecycleActive,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
   resolveLifecycleReveal,
@@ -957,6 +958,15 @@ export function App() {
         lastMouseClickRef.current = detection.history;
         if (!detection.isDoubleClick) return;
 
+        // Same refusal as `canCollapse`: a double-click on a Workspace under
+        // an active lifecycle must not write the stored expansion preference,
+        // which would leave it expanded after the operation ends (AC-9).
+        if (
+          target.type === "worktree" &&
+          isWorktreeLifecycleActive(target, filteredRepos, lifecycle)
+        ) {
+          return;
+        }
         const doubleClickAction = resolveTreeDoubleClickAction(
           target,
           filteredRepos,

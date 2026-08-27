@@ -13,11 +13,10 @@ import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
 import {
-  beginLifecycle,
   type LifecycleClaims,
   type LifecycleState,
-  lifecycleValidationWarning,
   rejectIfLifecycleActive,
+  runLifecycleOperation,
 } from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
@@ -156,15 +155,16 @@ export function createHandleOpen(deps: ModalActionDeps) {
     const project = deps.openModalRepoProject || "unknown";
     const repoPath = deps.openModalRepoPath;
 
-    // The Workspace does not exist yet, so this entry IS its representation in
+    // `open` goes through the SAME shared lifecycle shape as up/down/close —
+    // present → run with the reporter → validate → tear down → hand off →
+    // report — so the AC-17 ordering contract has exactly one implementation.
+    // The Workspace does not exist yet, so its entry IS its representation in
     // the tree: a Pending Workspace row plus a `Preparing Workspace…` progress
     // row, both inert, both visible before git knows about the worktree.
-    //
-    // The claim comes FIRST, before any other bookkeeping: a refused open must
-    // leave the running operation's state exactly as it found it (AC-28).
-    const lifecycle = beginLifecycle({
+    void runLifecycleOperation<WorkspaceOpenResult>({
       claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
       entry: {
         operation: "open",
@@ -173,149 +173,74 @@ export function createHandleOpen(deps: ModalActionDeps) {
         branch: opts.branch,
         phase: { _tag: "Preparing" },
       },
+      run: (reporter) =>
+        tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch: requestedBranch,
+              base: opts.base,
+              cwd: deps.openModalRepoPath || undefined,
+              pr: opts.pr,
+              profile: opts.profile,
+              existing: opts.existing,
+              reporter,
+            }),
+          ),
+        ),
+      resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
+      // A Workspace validation DID find on disk is left expanded once the
+      // presentation comes down (AC-12, AC-16). The override is
+      // presentation-only, so the stored expansion preference is still never
+      // written by lifecycle code (AC-33); an identity validation found nothing
+      // for (AC-15) records nothing and simply disappears.
+      onValidated: (snapshot) => {
+        const discovered = discoveredWorkspaceKey(
+          snapshot,
+          repoPath,
+          project,
+          opts.branch,
+        );
+        if (discovered) deps.markWorkspaceDiscovered(discovered);
+      },
+      afterCleanup: (result) => openSessionHandoff(deps, opts, result),
     });
-    // Refused: this Workspace Identity is already in flight. The refusal has
-    // been reported through the timed error display, and this handler must
-    // stop here — running `open` anyway would race the active operation and
-    // its teardown would take down the active operation's presentation.
-    if (!lifecycle) return;
-
-    void (async () => {
-      // Every outcome — a fatal failure, a partial build with warnings, a
-      // clean open — is COLLECTED here and reported only once validation has
-      // finished (AC-17). Nothing about an outcome is ever painted as a
-      // lifecycle row.
-      let warningMessage: string | undefined;
-
-      const appendWarning = (message: string) => {
-        warningMessage = warningMessage
-          ? `${warningMessage}\n${message}`
-          : message;
-      };
-
-      try {
-        let result: WorkspaceOpenResult | undefined;
-        try {
-          result = await tuiRuntime.runPromise(
-            WorkspaceService.use((service) =>
-              service.open({
-                branch: requestedBranch,
-                base: opts.base,
-                cwd: deps.openModalRepoPath || undefined,
-                pr: opts.pr,
-                profile: opts.profile,
-                existing: opts.existing,
-                reporter: lifecycle.reporter,
-              }),
-            ),
-          );
-        } catch (error) {
-          // A fatal open does NOT skip validation: git may already have created
-          // the worktree before the failing phase, so the tree still has to be
-          // told the truth about what exists on disk before this error is shown
-          // (AC-14).
-          appendWarning(toWctError(error).message);
-        }
-
-        if (result && result.warnings.length > 0) {
-          appendWarning(result.warnings.map(formatWorkspaceWarning).join("\n"));
-        }
-
-        // Reconciliation, in this order and no other and on BOTH branches: the
-        // row says `Validating Workspace…` while registry/worktree/tmux state
-        // is re-read, and ONLY once that settles is the lifecycle presentation
-        // taken down. Removing it earlier would blink the Pending Workspace out
-        // of the tree before the real worktree appeared in `repos`.
-        lifecycle.setPhase({ _tag: "Validating" });
-        // Reconcile against the snapshot THIS closure's own validation
-        // observed — never the render-time `filteredRepos` capture and never a
-        // shared ref, which a concurrently finishing operation would have
-        // overwritten while this one awaited (AC-32). A `null` snapshot means
-        // validation could not observe anything: the previous tree stays on
-        // screen, the user is warned, and the lifecycle UI still comes down.
-        // The null check lives INSIDE the try so a throwing refresh is
-        // reported once, by its own message, rather than twice.
-        try {
-          const snapshot = await deps.refreshAll();
-          if (snapshot === null) {
-            appendWarning(lifecycleValidationWarning("open"));
-          } else {
-            // A Workspace validation DID find on disk is left expanded once the
-            // lifecycle presentation comes down (AC-12, AC-16). The override is
-            // presentation-only, so the stored expansion preference is still
-            // never written by lifecycle code (AC-33); an identity validation
-            // found nothing for (AC-15) records nothing and simply disappears.
-            const discovered = discoveredWorkspaceKey(
-              snapshot,
-              repoPath,
-              project,
-              opts.branch,
-            );
-            if (discovered) deps.markWorkspaceDiscovered(discovered);
-          }
-        } catch (error) {
-          appendWarning(
-            `Refresh failed after open: ${toWctError(error).message}`,
-          );
-        }
-        // Ending THIS identity's entry is the whole reconciliation. The row
-        // model derives a Pending Workspace from (an `open` entry ∧ its branch
-        // absent from `repos`), and `refreshAll` has already committed the
-        // snapshot above, so in the SAME React commit: an identity that
-        // validation found no managed worktree for loses its Pending Workspace
-        // entirely (AC-15), while one whose worktree WAS created — a later copy,
-        // setup or tmux phase having failed — is rendered from `repos` as the
-        // discovered Workspace and simply stays there (AC-16). `end` is keyed,
-        // so another identity's concurrent lifecycle is untouched.
-        lifecycle.end();
-
-        // The automatic tmux client switch happens last, after validation and
-        // after the progress row is gone: switching detaches the terminal this
-        // TUI is drawn in, and a switch failure must surface as a plain action
-        // error rather than resurrecting a progress row.
-        //
-        // Wrapped in its own catch: nothing awaits this closure, so a throw
-        // here would both surface as an unhandled rejection and discard every
-        // message collected above instead of reporting them.
-        try {
-          if (result && !opts.noAttach && workspaceOpenStartedTmux(result)) {
-            const liveClient = await deps.discoverClient();
-            if (liveClient.type === "single") {
-              const switched = await deps.switchSession(
-                result.sessionName,
-                liveClient.client,
-              );
-              if (!switched) {
-                appendWarning(
-                  `Started session '${result.sessionName}', but failed to switch client`,
-                );
-              }
-            } else if (liveClient.type === "none") {
-              appendWarning(
-                "No tmux client found — start tmux in the other pane",
-              );
-            } else if (liveClient.type === "error") {
-              appendWarning(
-                `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
-              );
-            } else if (liveClient.type === "multiple") {
-              appendWarning(
-                "Cannot switch tmux client after open because multiple tmux clients are attached",
-              );
-            }
-          }
-        } catch (error) {
-          appendWarning(toWctError(error).message);
-        }
-
-        if (warningMessage) {
-          deps.showActionError(warningMessage);
-        }
-      } finally {
-        lifecycle.end();
-      }
-    })();
   };
+}
+
+/**
+ * The automatic tmux client switch after a successful `open`, run by the shared
+ * lifecycle AFTER validation and teardown: switching detaches the terminal this
+ * TUI is drawn in, and a failure here must surface as a plain action error
+ * rather than resurrecting a progress row.
+ *
+ * Distinct from `up`'s `createSessionHandoff`: `open` gates on `noAttach` and
+ * reports the degenerate client cases (none / multiple / query failure) that a
+ * start does not.
+ */
+async function openSessionHandoff(
+  deps: ModalActionDeps,
+  opts: OpenModalResult,
+  result: WorkspaceOpenResult,
+): Promise<string | undefined> {
+  if (opts.noAttach || !workspaceOpenStartedTmux(result)) return undefined;
+
+  const liveClient = await deps.discoverClient();
+  if (liveClient.type === "single") {
+    const switched = await deps.switchSession(
+      result.sessionName,
+      liveClient.client,
+    );
+    return switched
+      ? undefined
+      : `Started session '${result.sessionName}', but failed to switch client`;
+  }
+  if (liveClient.type === "none") {
+    return "No tmux client found — start tmux in the other pane";
+  }
+  if (liveClient.type === "error") {
+    return `Opened session '${result.sessionName}' but failed to query tmux clients to switch`;
+  }
+  return "Cannot switch tmux client after open because multiple tmux clients are attached";
 }
 
 export function createPrepareUpModal(deps: ModalActionDeps) {

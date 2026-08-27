@@ -354,7 +354,14 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
     deps.setMode(
-      Mode.UpModal(wt.path, worktreeKey, repo.repoPath, repo.profileNames),
+      Mode.UpModal(
+        wt.path,
+        worktreeKey,
+        repo.repoPath,
+        wt.branch,
+        repo.project,
+        repo.profileNames,
+      ),
     );
   };
 }
@@ -363,13 +370,13 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
   return (result: UpModalResult) => {
     if (deps.mode.type !== "UpModal") return;
 
-    const { worktreePath, worktreeKey, repoPath } = deps.mode;
+    // Identity comes off the mode, never off the display key: `project` is
+    // free-form and may itself contain a slash, so splitting `worktreeKey`
+    // would claim a bogus lifecycleKey and lose the operation (AC-19/27/28).
+    const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
     deps.setSelectedIndex(deps.upModalReturnSelectedIndexRef.current);
     deps.setMode(deps.upModalReturnModeRef.current);
-
-    const branch = worktreeKey.split("/").slice(1).join("/");
-    const project = worktreeKey.split("/")[0] ?? "unknown";
 
     // The modal is only an option sheet: the start itself goes through the ONE
     // shared `up` lifecycle, so the space-bar start and this one show the same

@@ -653,7 +653,14 @@ describe("createPrepareUpModal", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.UpModal("/repo/feat", pendingKey("proj", "feat"), "/repo", ["dev"]),
+      Mode.UpModal(
+        "/repo/feat",
+        pendingKey("proj", "feat"),
+        "/repo",
+        "feat",
+        "proj",
+        ["dev"],
+      ),
     );
   });
 
@@ -751,7 +758,14 @@ describe("createHandleUpSubmit", () => {
     const returnIndexRef = { current: 3 };
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", "/repo", ["dev"]),
+      mode: Mode.UpModal(
+        "/repo/feat",
+        "proj/feat",
+        "/repo",
+        "feat",
+        "proj",
+        ["dev"],
+      ),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
       startWorkspace,
@@ -774,6 +788,36 @@ describe("createHandleUpSubmit", () => {
       autoSwitch: true,
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
+  });
+
+  // AC-19, AC-27, AC-28 — a project name containing a slash used to be split
+  // apart as if it were "<project>/<branch>", producing a bogus Workspace
+  // Identity that no progress row or lifecycle guard could ever match.
+  test("keeps identity intact when the project name contains a slash", () => {
+    const startWorkspace = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({
+      mode: Mode.UpModal(
+        "/repo/my-feature",
+        pendingKey("myorg/webapp", "my-feature"),
+        "/repo",
+        "my-feature",
+        "myorg/webapp",
+        ["dev"],
+      ),
+      upModalReturnModeRef: { current: Mode.Navigate },
+      upModalReturnSelectedIndexRef: { current: 0 },
+      startWorkspace,
+    });
+
+    createHandleUpSubmit(deps)({ profile: undefined, autoSwitch: false });
+
+    expect(startWorkspace).toHaveBeenCalledWith({
+      worktreePath: "/repo/my-feature",
+      repoPath: "/repo",
+      project: "myorg/webapp",
+      branch: "my-feature",
+      autoSwitch: false,
+    });
   });
 
   test("no-op when mode is not UpModal", () => {

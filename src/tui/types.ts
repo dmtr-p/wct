@@ -13,6 +13,9 @@ export type Mode =
       worktreeKey: string;
       /** Main repository path — one half of the Workspace Identity. */
       repoPath: string;
+      /** Branch — the other half. Never derived from worktreeKey. */
+      branch: string;
+      project: string;
       profileNames: string[];
     }
   | { type: "Expanded"; worktreeKey: string }
@@ -62,12 +65,16 @@ export const Mode = {
     worktreePath: string,
     worktreeKey: string,
     repoPath: string,
+    branch: string,
+    project: string,
     profileNames: string[],
   ): Mode => ({
     type: "UpModal",
     worktreePath,
     worktreeKey,
     repoPath,
+    branch,
+    project,
     profileNames,
   }),
   Expanded: (worktreeKey: string): Mode => ({

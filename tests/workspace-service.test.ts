@@ -1133,19 +1133,15 @@ test("liveWorkspaceService exposes public lifecycle operations", () => {
 describe("WorkspaceService semantic phases", () => {
   let repoDir: string;
   let worktreeRoot: string;
-  let logSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     repoDir = await mkdtemp(join(tmpdir(), "wct-workspace-phase-repo-"));
     worktreeRoot = join(repoDir, "..", "worktrees");
     await mkdir(worktreeRoot, { recursive: true });
     await writeConfig(repoDir);
-    // liveSetupService logs a step line per command; keep test output clean.
-    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
   afterEach(async () => {
-    logSpy.mockRestore();
     await rm(repoDir, { recursive: true, force: true });
     await rm(worktreeRoot, { recursive: true, force: true });
   });
@@ -1184,9 +1180,11 @@ describe("WorkspaceService semantic phases", () => {
       repoDir,
       `copy:
   - .wct.yaml
+  - "**/*.missing"
 setup:
   - name: install
-    command: "true"
+    command: "false"
+    optional: true
   - name: build
     command: "true"
 `,
@@ -1219,6 +1217,80 @@ setup:
       _tag: "PhaseStarted",
       phase: { _tag: "Preparing" },
     });
+    type SetupProgressEvent =
+      | Extract<
+          WorkspaceReporterEvent,
+          { _tag: "CopyEntrySkipped" | "SetupCommandStarted" }
+        >
+      | {
+          operation: "open";
+          _tag: "SetupCommandCompleted";
+          result: Pick<SetupResult, "name" | "_tag">;
+        };
+    const setupProgressEvents = events
+      .filter(
+        (
+          event,
+        ): event is Extract<
+          WorkspaceReporterEvent,
+          {
+            _tag:
+              | "CopyEntrySkipped"
+              | "SetupCommandStarted"
+              | "SetupCommandCompleted";
+          }
+        > =>
+          event._tag === "CopyEntrySkipped" ||
+          event._tag === "SetupCommandStarted" ||
+          event._tag === "SetupCommandCompleted",
+      )
+      .map<SetupProgressEvent>((event) =>
+        event._tag === "SetupCommandCompleted"
+          ? {
+              ...event,
+              result: { name: event.result.name, _tag: event.result._tag },
+            }
+          : event,
+      );
+
+    expect(setupProgressEvents).toEqual([
+      {
+        operation: "open",
+        _tag: "CopyEntrySkipped",
+        entry: "**/*.missing",
+        reason: "glob_no_matches",
+      },
+      {
+        operation: "open",
+        _tag: "SetupCommandStarted",
+        name: "install",
+        current: 1,
+        total: 2,
+      },
+      {
+        operation: "open",
+        _tag: "SetupCommandCompleted",
+        result: {
+          name: "install",
+          _tag: "OptionalFailed",
+        },
+      },
+      {
+        operation: "open",
+        _tag: "SetupCommandStarted",
+        name: "build",
+        current: 2,
+        total: 2,
+      },
+      {
+        operation: "open",
+        _tag: "SetupCommandCompleted",
+        result: {
+          name: "build",
+          _tag: "Succeeded",
+        },
+      },
+    ]);
 
     await Bun.write(
       join(repoDir, ".wct.yaml"),

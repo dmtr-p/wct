@@ -1,11 +1,15 @@
 import { dirname, join } from "node:path";
 import { Effect, FileSystem } from "effect";
-import * as logger from "../utils/logger";
 
 export interface CopyResult {
   file: string;
   success: boolean;
   error?: string;
+}
+
+export interface CopyEntrySkipped {
+  entry: string;
+  reason: "directory_not_found_or_empty" | "glob_no_matches";
 }
 
 export type CopyEntryType = "file" | "directory" | "glob";
@@ -87,6 +91,7 @@ export function copyEntries(
   entries: ReadonlyArray<string>,
   sourceDir: string,
   targetDir: string,
+  onEntrySkipped?: (notice: CopyEntrySkipped) => Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
     const allFiles: string[] = [];
@@ -96,9 +101,16 @@ export function copyEntries(
       if (expanded.length === 0) {
         const entryType = detectEntryType(entry);
         if (entryType === "directory") {
-          yield* logger.warn(`Directory not found or empty: ${entry}`);
+          if (onEntrySkipped) {
+            yield* onEntrySkipped({
+              entry,
+              reason: "directory_not_found_or_empty",
+            });
+          }
         } else if (entryType === "glob") {
-          yield* logger.warn(`No files matched pattern: ${entry}`);
+          if (onEntrySkipped) {
+            yield* onEntrySkipped({ entry, reason: "glob_no_matches" });
+          }
         }
       }
       allFiles.push(...expanded);
@@ -127,7 +139,6 @@ function copyFiles(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           if (!(yield* fs.exists(sourcePath))) {
-            yield* logger.warn(`File not found: ${file}`);
             return { file, success: false as const, error: "File not found" };
           }
 
@@ -141,9 +152,11 @@ function copyFiles(
         }),
         (err) => {
           const message = err instanceof Error ? err.message : String(err);
-          return logger
-            .warn(`Failed to copy ${file}: ${message}`)
-            .pipe(Effect.as({ file, success: false as const, error: message }));
+          return Effect.succeed({
+            file,
+            success: false as const,
+            error: message,
+          });
         },
       );
 

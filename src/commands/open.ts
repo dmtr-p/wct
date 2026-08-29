@@ -138,6 +138,30 @@ function createOpenHumanReporter(
         return Effect.void;
       }
 
+      if (event._tag === "CopyEntrySkipped") {
+        return event.reason === "directory_not_found_or_empty"
+          ? logger.warn(`Directory not found or empty: ${event.entry}`)
+          : logger.warn(`No files matched pattern: ${event.entry}`);
+      }
+
+      if (event._tag === "SetupCommandStarted") {
+        return logger.step(event.current, event.total, event.name);
+      }
+
+      if (event._tag === "SetupCommandCompleted") {
+        if (event.result._tag === "OptionalFailed") {
+          return logger.warn(
+            `${event.result.name} failed (optional): ${event.result.error ?? "Unknown error"}`,
+          );
+        }
+        if (event.result._tag === "Failed") {
+          return logger.error(
+            `${event.result.name} failed: ${event.result.error ?? "Unknown error"}`,
+          );
+        }
+        return Effect.void;
+      }
+
       if (event._tag !== "AttemptStarted") return Effect.void;
 
       switch (event.attempt) {

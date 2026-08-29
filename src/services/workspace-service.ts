@@ -97,6 +97,24 @@ export type WorkspaceReporterEvent =
       ok: boolean;
     }
   | {
+      operation: "open";
+      _tag: "CopyEntrySkipped";
+      entry: string;
+      reason: "directory_not_found_or_empty" | "glob_no_matches";
+    }
+  | {
+      operation: "open";
+      _tag: "SetupCommandStarted";
+      name: string;
+      current: number;
+      total: number;
+    }
+  | {
+      operation: "open";
+      _tag: "SetupCommandCompleted";
+      result: SetupResult;
+    }
+  | {
       operation: WorkspaceOperation;
       _tag: "SessionAbsent";
       sessionName: string;
@@ -564,7 +582,18 @@ function openImpl(
     const copy =
       resolved.copy && resolved.copy.length > 0
         ? yield* Effect.mapError(
-            copyEntries(resolved.copy, mainRepoPath, worktreePath),
+            copyEntries(
+              resolved.copy,
+              mainRepoPath,
+              worktreePath,
+              ({ entry, reason }) =>
+                emitReporter(reporter, {
+                  operation: "open",
+                  _tag: "CopyEntrySkipped",
+                  entry,
+                  reason,
+                }),
+            ),
             (error) =>
               commandError("worktree_error", "Failed to copy files", error),
           ).pipe(
@@ -610,8 +639,30 @@ function openImpl(
                 resolved.setup ?? [],
                 workingDir,
                 env,
-                (name) =>
-                  emitPhase(reporter, "open", { _tag: "RunningSetup", name }),
+                reporter
+                  ? {
+                      commandStarted: (name, current, total) =>
+                        Effect.all([
+                          emitPhase(reporter, "open", {
+                            _tag: "RunningSetup",
+                            name,
+                          }),
+                          emitReporter(reporter, {
+                            operation: "open",
+                            _tag: "SetupCommandStarted",
+                            name,
+                            current,
+                            total,
+                          }),
+                        ]).pipe(Effect.asVoid),
+                      commandCompleted: (result) =>
+                        emitReporter(reporter, {
+                          operation: "open",
+                          _tag: "SetupCommandCompleted",
+                          result,
+                        }),
+                    }
+                  : undefined,
               ),
             ),
           )

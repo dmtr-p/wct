@@ -103,7 +103,18 @@ vi.mock("../../src/services/worktree-service", async () => {
   };
 });
 
-// --- TmuxService: no client, no sessions — App renders without tmux. ---
+// --- TmuxService: no client/sessions by default, with opt-in handoff tracing. ---
+const tmuxFixtures = vi.hoisted(() => ({
+  clients: [] as Array<{ tty: string; session: string }>,
+  sessions: null as Array<{
+    name: string;
+    attached: boolean;
+    windows: number;
+  }> | null,
+  switchCalls: [] as Array<{ clientTty: string; target: string }>,
+  onSwitch: null as ((clientTty: string, target: string) => void) | null,
+}));
+
 vi.mock("../../src/services/tmux", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/services/tmux")
@@ -113,9 +124,15 @@ vi.mock("../../src/services/tmux", async () => {
     TmuxService: {
       use: (selector: (svc: unknown) => unknown) =>
         selector({
-          listClients: () => Promise.resolve([]),
-          listSessions: () => Promise.resolve(null),
+          listClients: () => Promise.resolve(tmuxFixtures.clients),
+          listSessions: () => Promise.resolve(tmuxFixtures.sessions),
           listPanes: () => Promise.resolve([]),
+          switchClientToPane: (clientTty: string, target: string) => {
+            tmuxFixtures.switchCalls.push({ clientTty, target });
+            tmuxFixtures.onSwitch?.(clientTty, target);
+            return Promise.resolve();
+          },
+          detachClient: () => Promise.resolve(),
         }),
     },
   };
@@ -218,7 +235,13 @@ vi.mock("../../src/services/pr-cache-service", () => ({
   },
 }));
 
-export { githubFixtures, registryItems, runtimeMock, worktreeFixtures };
+export {
+  githubFixtures,
+  registryItems,
+  runtimeMock,
+  tmuxFixtures,
+  worktreeFixtures,
+};
 
 /** Lifecycle calls the App has made, oldest first. */
 export function workspaceCalls(
@@ -270,6 +293,10 @@ export function resetHarnessFixtures(): void {
   registryItems.items = [];
   worktreeFixtures.byRepoPath.clear();
   githubFixtures.prsByRepoPath.clear();
+  tmuxFixtures.clients = [];
+  tmuxFixtures.sessions = null;
+  tmuxFixtures.switchCalls.length = 0;
+  tmuxFixtures.onSwitch = null;
   workspaceHarness.calls.length = 0;
   runtimeMock.runPromise.mockClear();
   runtimeMock.runSync.mockClear();

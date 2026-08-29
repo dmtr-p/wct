@@ -120,6 +120,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     setMode: vi.fn(),
     setSelectedIndex: vi.fn(),
     markWorkspaceDiscovered: vi.fn(),
+    waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     setOpenModalBase: vi.fn(),
     setOpenModalProfiles: vi.fn(),
     setOpenModalRepoProject: vi.fn(),
@@ -255,7 +256,7 @@ describe("createPrepareOpenModal", () => {
     expect(deps.showActionError).not.toHaveBeenCalled();
     // A presentation-only override, not the stored preference.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
-      pendingKey("proj", "feat"),
+      lifecycleKey("/repo", "feat"),
     );
   });
 
@@ -930,7 +931,7 @@ describe("open lifecycle reconciliation", () => {
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
     // A presentation-only override; setExpandedWorktreeKeys is out of reach here.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
-      pendingKey("proj", "feat"),
+      lifecycleKey("/repo", "feat"),
     );
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
   });
@@ -961,7 +962,7 @@ describe("open lifecycle reconciliation", () => {
       );
     });
     expect(partial.markWorkspaceDiscovered).toHaveBeenCalledWith(
-      pendingKey("proj", "feat"),
+      lifecycleKey("/repo", "feat"),
     );
 
     // A same-named worktree in another repository: identity matches on repo path.
@@ -987,6 +988,26 @@ describe("open lifecycle reconciliation", () => {
       expect(elsewhere.refreshAll).toHaveBeenCalled();
     });
     expect(elsewhere.markWorkspaceDiscovered).not.toHaveBeenCalled();
+
+    // A matching display name is never a substitute for main-repository path.
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const unidentified = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "",
+      refreshAll: vi.fn().mockResolvedValue(snapshotWithFeat()),
+    });
+    createHandleOpen(unidentified)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(unidentified.refreshAll).toHaveBeenCalled();
+    });
+    expect(unidentified.markWorkspaceDiscovered).not.toHaveBeenCalled();
 
     // A validation that observed nothing at all.
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());

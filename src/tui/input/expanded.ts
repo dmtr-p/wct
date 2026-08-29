@@ -1,5 +1,6 @@
 import type { Key } from "ink";
 import type { TmuxSessionInfo } from "../hooks/useTmux";
+import { isLifecycleActive } from "../lifecycle";
 import {
   findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
@@ -14,7 +15,11 @@ export interface ExpandedContext extends NavigateContext {
   zoomPane: (paneId: string) => Promise<boolean>;
   killPane: (paneId: string) => Promise<boolean>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
-  collapseWorktree: (worktreeKey: string) => void;
+  collapseWorktree: (
+    worktreeKey: string,
+    repoPath: string,
+    branch: string,
+  ) => void;
 }
 
 export function handleExpandedInput(
@@ -33,9 +38,15 @@ export function handleExpandedInput(
     const repo = ctx.filteredRepos[item.repoIndex];
     const worktree = repo?.worktrees[item.worktreeIndex];
     if (!repo || !worktree) return;
+    if (isLifecycleActive(ctx.lifecycle, repo.repoPath, worktree.branch))
+      return;
 
     ctx.setSelectedIndex(worktreeIndex);
-    ctx.collapseWorktree(pendingKey(repo.project, worktree.branch));
+    ctx.collapseWorktree(
+      pendingKey(repo.project, worktree.branch),
+      repo.repoPath,
+      worktree.branch,
+    );
     return;
   }
 
@@ -57,6 +68,14 @@ export function handleExpandedInput(
     });
 
     if (action.type === "expand-worktree") {
+      const item = ctx.treeItems[action.nextSelectedIndex];
+      if (item?.type !== "worktree") return;
+      const repo = ctx.filteredRepos[item.repoIndex];
+      const worktree = repo?.worktrees[item.worktreeIndex];
+      if (!repo || !worktree) return;
+      if (isLifecycleActive(ctx.lifecycle, repo.repoPath, worktree.branch)) {
+        return;
+      }
       ctx.setSelectedIndex(action.nextSelectedIndex);
       ctx.expandWorktree(action.worktreeKey);
     }

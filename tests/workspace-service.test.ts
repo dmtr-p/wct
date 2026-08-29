@@ -566,6 +566,7 @@ describe("WorkspaceService open", () => {
 
   test("treats path conflicts and copy failures as fatal", async () => {
     await writeConfig(repoDir, `copy:\n  - missing.env\n`);
+    const copyEvents: WorkspaceReporterEvent[] = [];
 
     await expect(
       runBunPromise(
@@ -591,12 +592,49 @@ describe("WorkspaceService open", () => {
       runBunPromise(
         withTestServices(
           WorkspaceService.use((service) =>
-            service.open({ branch: "copy-fails", cwd: repoDir }),
+            service.open({
+              branch: "copy-fails",
+              cwd: repoDir,
+              reporter: {
+                event: (event) =>
+                  Effect.sync(() => {
+                    copyEvents.push(event);
+                  }),
+              },
+            }),
           ),
           { worktree: makeWorktreeService() },
         ),
       ),
     ).rejects.toThrow("Failed to copy files");
+
+    expect(copyEvents).toContainEqual({
+      operation: "open",
+      _tag: "CopyEntryFailed",
+      file: "missing.env",
+      reason: "source_not_found",
+      error: "File not found",
+    });
+
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch: "copy-fails-reporter",
+              cwd: repoDir,
+              reporter: {
+                event: (event) =>
+                  event._tag === "CopyEntryFailed"
+                    ? Effect.fail("reporter failed")
+                    : Effect.void,
+              },
+            }),
+          ),
+          { worktree: makeWorktreeService() },
+        ),
+      ),
+    ).rejects.toThrow("Failed to copy files: missing.env: File not found");
   });
 
   test("types optional setup failures as optional warnings", async () => {

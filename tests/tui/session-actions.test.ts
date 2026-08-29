@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { SetStateAction } from "react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
 import {
@@ -503,9 +504,14 @@ describe("createExecuteClose", () => {
   });
 
   test("active-client safety failure prevents WorkspaceService.close", async () => {
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "multiple" }),
       refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -522,7 +528,58 @@ describe("createExecuteClose", () => {
       expect.stringContaining("could not be moved away"),
     );
     expect(workspaceClose).not.toHaveBeenCalled();
-    expect(deps.setLifecycle).not.toHaveBeenCalled();
+    expect(setLifecycle).toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.refreshAll).toHaveBeenCalledOnce();
+  });
+
+  test("claims the Workspace while client handoff is pending and refuses a duplicate close", async () => {
+    let resolveDiscovery!: (value: { type: "multiple" }) => void;
+    const discovery = new Promise<{ type: "multiple" }>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockReturnValue(discovery),
+      refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
+    });
+    const executeClose = createExecuteClose(deps);
+
+    const first = executeClose(
+      "target-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+
+    expect(lifecycle.has(lifecycleKey("/repo", "feat"))).toBe(true);
+    await executeClose(
+      "target-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      expect.stringContaining("'feat' is busy"),
+    );
+    expect(deps.discoverClient).toHaveBeenCalledOnce();
+
+    resolveDiscovery({ type: "multiple" });
+    await first;
+
+    expect(workspaceClose).not.toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
   });
 
   test("uses WorkspaceService.close, refreshes, and tears the lifecycle down after success", async () => {
@@ -757,10 +814,15 @@ describe("createExecuteDown", () => {
     vi.clearAllMocks();
   });
 
-  test("calls switchClientAway first and aborts on failure", async () => {
+  test("claims, validates, and releases the Workspace when client handoff fails", async () => {
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "multiple" }),
       refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
     });
     const executeDown = createExecuteDown(deps);
 
@@ -769,7 +831,49 @@ describe("createExecuteDown", () => {
     expect(deps.showActionError).toHaveBeenCalledWith(
       expect.stringContaining("could not be moved away"),
     );
-    expect(deps.setLifecycle).not.toHaveBeenCalled();
+    expect(workspaceDown).not.toHaveBeenCalled();
+    expect(setLifecycle).toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.refreshAll).toHaveBeenCalledOnce();
+  });
+
+  test("claims the Workspace while client handoff is pending and refuses a duplicate down", async () => {
+    let resolveDiscovery!: (value: { type: "multiple" }) => void;
+    const discovery = new Promise<{ type: "multiple" }>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockReturnValue(discovery),
+      refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
+    });
+    const executeDown = createExecuteDown(deps);
+
+    const first = executeDown(
+      "target-session",
+      "feat",
+      "/tmp/wt",
+      "/repo",
+      "proj",
+    );
+
+    expect(lifecycle.has(lifecycleKey("/repo", "feat"))).toBe(true);
+    await executeDown("target-session", "feat", "/tmp/wt", "/repo", "proj");
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      expect.stringContaining("'feat' is busy"),
+    );
+    expect(deps.discoverClient).toHaveBeenCalledOnce();
+
+    resolveDiscovery({ type: "multiple" });
+    await first;
+
+    expect(workspaceDown).not.toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
   });
 
   test("uses WorkspaceService.down and refreshes after kill success", async () => {

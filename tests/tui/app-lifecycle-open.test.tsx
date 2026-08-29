@@ -14,6 +14,7 @@ import {
   selectedLine,
   sendKeys,
   tick,
+  tmuxFixtures,
   worktreeFixtures,
 } from "./app-harness";
 
@@ -196,6 +197,64 @@ describe("TUI open lifecycle", () => {
     expect(text).not.toContain("Validating Workspace…");
     expect(frame.find((line) => line.includes("feature/new"))).toContain("▼");
     expect(frame.find((line) => line.includes("main"))).not.toContain("▼");
+
+    app.unmount();
+  });
+
+  test("cleans up rendered progress before automatically switching the tmux client", async () => {
+    tmuxFixtures.clients = [{ tty: "/dev/pts/1", session: "outside" }];
+    tmuxFixtures.sessions = [{ name: "outside", attached: true, windows: 1 }];
+
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />);
+    await tick(6);
+
+    let frameAtSwitch = "";
+    tmuxFixtures.onSwitch = () => {
+      frameAtSwitch = app.lines().join("\n");
+    };
+
+    await openBranchFromModal(app.stdin, "feature/new");
+    await tick(6);
+    expect(app.lines().join("\n")).toContain("Preparing Workspace…");
+
+    const call = lastWorkspaceCall("open");
+    worktreeFixtures.byRepoPath.set(repoPath, [
+      makeWorktree(repoPath, "main"),
+      makeWorktree(repoPath, "feature/new"),
+    ]);
+    call.resolve({
+      operation: "open",
+      worktreePath: join(repoPath, "feature-new"),
+      mainRepoPath: repoPath,
+      branch: "feature/new",
+      sessionName: "feature-new",
+      projectName: "alpha",
+      created: true,
+      env: {},
+      warnings: [],
+      attempts: {
+        worktree: { attempted: true, ok: true, value: {} },
+        copy: { attempted: false, reason: "not_configured" },
+        setup: { attempted: false, reason: "not_configured" },
+        tmux: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", sessionName: "feature-new" },
+        },
+      },
+    });
+    await tick(16);
+
+    expect(tmuxFixtures.switchCalls).toEqual([
+      { clientTty: "/dev/pts/1", target: "=feature-new" },
+    ]);
+    expect(frameAtSwitch).toContain("feature/new");
+    expect(frameAtSwitch).not.toContain("Preparing Workspace…");
+    expect(frameAtSwitch).not.toContain("Validating Workspace…");
+    expect(app.lines().find((line) => line.includes("feature/new"))).toContain(
+      "▼",
+    );
 
     app.unmount();
   });

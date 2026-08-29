@@ -16,6 +16,7 @@ import {
   resolveTreeDoubleClickAction,
   splitMouseSequences,
 } from "../../src/tui/input/mouse";
+import { lifecycleKey } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -272,6 +273,21 @@ describe("double-click actions", () => {
     ).toEqual({
       type: "collapse-worktree",
       worktreeKey: key,
+      repoPath: "/tmp/alpha",
+      branch: "feature/a",
+    });
+    expect(
+      resolveTreeDoubleClickAction(
+        worktree,
+        [repo],
+        new Set(),
+        new Set([lifecycleKey("/tmp/alpha", "feature/a")]),
+      ),
+    ).toEqual({
+      type: "collapse-worktree",
+      worktreeKey: key,
+      repoPath: "/tmp/alpha",
+      branch: "feature/a",
     });
 
     const action = () => undefined;

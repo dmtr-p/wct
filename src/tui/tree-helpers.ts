@@ -8,6 +8,7 @@ import {
   type LifecyclePhase,
   type LifecycleState,
   lifecycleEntryFor,
+  lifecycleKey,
 } from "./lifecycle";
 import { wrapPrLabel } from "./pr-layout";
 import {
@@ -27,18 +28,21 @@ const NO_LIFECYCLE: LifecycleState = new Map();
  */
 export function isWorktreeEffectivelyExpanded({
   expandedWorktreeKeys,
+  discoveredWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   project,
   repoPath,
   branch,
 }: {
   expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   project: string;
   repoPath: string;
   branch: string;
 }): boolean {
   if (expandedWorktreeKeys?.has(pendingKey(project, branch))) return true;
+  if (discoveredWorkspaceKeys?.has(lifecycleKey(repoPath, branch))) return true;
   return lifecycleEntryFor(lifecycle, repoPath, branch) !== undefined;
 }
 
@@ -62,6 +66,7 @@ export function isWorktreeLifecycleActive(
 interface BuildTreeOptions {
   repos: RepoInfo[];
   expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
@@ -74,6 +79,7 @@ interface BuildTreeRowsOptions {
   /** Repos are always expanded in production; retained for test fixtures. */
   expandedRepos?: Set<string>;
   expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   /** Defaults to `Infinity` so callers that don't model wrapping keep a 1:1 row-per-detail mapping. */
   maxWidth?: number;
@@ -318,9 +324,48 @@ export function reconcileExpandedWorktreeKeys(
   return next.size === previous.size ? previous : next;
 }
 
+export function reconcileDiscoveredWorkspaceKeys(
+  previous: Set<string>,
+  repos: RepoInfo[],
+): Set<string> {
+  const available = new Set(
+    repos.flatMap((repo) =>
+      repo.worktrees.map((worktree) =>
+        lifecycleKey(repo.repoPath, worktree.branch),
+      ),
+    ),
+  );
+  const uncertainRepoPrefixes = repos
+    .filter((repo) => repo.error !== undefined)
+    .map((repo) => lifecycleKey(repo.repoPath, ""));
+  const next = new Set(
+    [...previous].filter(
+      (key) =>
+        available.has(key) ||
+        uncertainRepoPrefixes.some((prefix) => key.startsWith(prefix)),
+    ),
+  );
+  return next.size === previous.size ? previous : next;
+}
+
+export function workspaceIdentityKeysForDisplayKey(
+  repos: RepoInfo[],
+  worktreeKey: string,
+): Set<string> {
+  const identities = new Set<string>();
+  for (const repo of repos) {
+    for (const worktree of repo.worktrees) {
+      if (pendingKey(repo.project, worktree.branch) !== worktreeKey) continue;
+      identities.add(lifecycleKey(repo.repoPath, worktree.branch));
+    }
+  }
+  return identities;
+}
+
 export function buildTreeItems({
   repos,
   expandedWorktreeKeys,
+  discoveredWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   prData,
   panes,
@@ -343,7 +388,14 @@ export function buildTreeItems({
       // Suppress PR/pane detail items under an active lifecycle, so a phase
       // change can never reshuffle detail rows under the user's cursor.
       if (lifecycleEntryFor(lifecycle, repo.repoPath, wt.branch)) continue;
-      const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
+      const isExpanded = isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
+        project: repo.project,
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+      });
       if (!isExpanded) continue;
 
       const sessionName = formatSessionName(basename(wt.path));
@@ -437,6 +489,7 @@ export function buildTreeRows({
   repos,
   expandedRepos = new Set(repos.map((repo) => repo.id)),
   expandedWorktreeKeys,
+  discoveredWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   maxWidth = Number.POSITIVE_INFINITY,
 }: BuildTreeRowsOptions): TreeRow[] {
@@ -522,7 +575,6 @@ export function buildTreeRows({
 
     rows.push({ itemIndex: idx, kind: "worktree" });
 
-    const wtKey = pendingKey(repo.project, wt.branch);
     const lifecycleEntry = lifecycleEntryFor(
       lifecycle,
       repo.repoPath,
@@ -538,7 +590,14 @@ export function buildTreeRows({
         phase: lifecycleEntry.phase,
       });
     } else {
-      const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
+      const isExpanded = isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
+        project: repo.project,
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+      });
       const sync = formatSync(wt.sync);
       const hasStats = (sync !== "" && sync !== "✓") || wt.changedFiles > 0;
       if (isExpanded && hasStats) {

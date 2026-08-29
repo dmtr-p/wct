@@ -38,7 +38,11 @@ import {
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import type { LifecycleState } from "./lifecycle";
-import { createLifecycleClaims } from "./lifecycle";
+import {
+  createLifecycleClaims,
+  isLifecycleActive,
+  lifecycleKey,
+} from "./lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -47,7 +51,9 @@ import {
   findOwningWorktreeIndex,
   firstRowForItem,
   insertConfirmationRows,
+  isWorktreeEffectivelyExpanded,
   isWorktreeLifecycleActive,
+  reconcileDiscoveredWorkspaceKeys,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
   resolveLifecycleReveal,
@@ -58,8 +64,9 @@ import {
   scrollToKeepVisible,
   treeItemId,
   treeItemParentId,
+  workspaceIdentityKeysForDisplayKey,
 } from "./tree-helpers";
-import { Mode, type PRInfo, pendingKey } from "./types";
+import { Mode, type PRInfo } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -105,10 +112,10 @@ export function App() {
   const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
     new Set(),
   );
-  // Workspace Identities a just-finished `open` discovered on disk: a
-  // presentation-only expansion override, never written to the stored
-  // preference below, dropped once the user collapses the row.
-  const [discoveredWorktreeKeys, setDiscoveredWorktreeKeys] = useState<
+  // Identity-scoped presentation overrides. A successful `open` adds its
+  // discovered Workspace; collapsing a shared display key can also migrate
+  // the other matching Workspaces here so only the selected identity closes.
+  const [discoveredWorkspaceKeys, setDiscoveredWorkspaceKeys] = useState<
     Set<string>
   >(new Set());
   const [searchQuery, setSearchQuery] = useState("");
@@ -123,6 +130,29 @@ export function App() {
   // the project display name, so two repos sharing a display name can't
   // clobber each other's progress.
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
+  // External handoffs such as `tmux switch-client` can detach the terminal
+  // immediately. They need a commit barrier, not merely a queued state
+  // update, so the last frame the user sees cannot retain a progress row.
+  const lifecycleRef = useRef(lifecycle);
+  lifecycleRef.current = lifecycle;
+  const lifecycleCleanupWaitersRef = useRef<Map<string, Set<() => void>>>(
+    new Map(),
+  );
+  const waitForLifecyclePresentationCleanup = useCallback(
+    (repoPath: string, branch: string): Promise<void> => {
+      const key = lifecycleKey(repoPath, branch);
+      if (!lifecycleRef.current.has(key)) return Promise.resolve();
+      return new Promise((resolve) => {
+        const waiters = lifecycleCleanupWaitersRef.current.get(key);
+        if (waiters) {
+          waiters.add(resolve);
+        } else {
+          lifecycleCleanupWaitersRef.current.set(key, new Set([resolve]));
+        }
+      });
+    },
+    [],
+  );
   // Created once per App and shared by every verb: it decides, synchronously
   // and before any state is written, whether an identity is already in flight.
   const lifecycleClaimsRef = useRef(createLifecycleClaims());
@@ -177,23 +207,21 @@ export function App() {
   }, [mode]);
 
   useEffect(() => {
+    for (const [key, waiters] of lifecycleCleanupWaitersRef.current) {
+      if (lifecycle.has(key)) continue;
+      lifecycleCleanupWaitersRef.current.delete(key);
+      for (const resolve of waiters) resolve();
+    }
+  }, [lifecycle]);
+
+  useEffect(() => {
     setExpandedWorktreeKeys((previous) =>
       reconcileExpandedWorktreeKeys(previous, repos),
     );
-    setDiscoveredWorktreeKeys((previous) =>
-      reconcileExpandedWorktreeKeys(previous, repos),
+    setDiscoveredWorkspaceKeys((previous) =>
+      reconcileDiscoveredWorkspaceKeys(previous, repos),
     );
   }, [repos]);
-
-  // What the tree presents as expanded: the stored preference plus the
-  // presentation-only overrides. Only `expandWorktree`/`collapseWorktree`
-  // write the stored set, so a lifecycle can't leak into it.
-  const presentedWorktreeKeys = useMemo(() => {
-    if (discoveredWorktreeKeys.size === 0) return expandedWorktreeKeys;
-    const next = new Set(expandedWorktreeKeys);
-    for (const key of discoveredWorktreeKeys) next.add(key);
-    return next;
-  }, [expandedWorktreeKeys, discoveredWorktreeKeys]);
 
   useEffect(() => {
     if (
@@ -214,7 +242,8 @@ export function App() {
     () =>
       buildTreeItems({
         repos: filteredRepos,
-        expandedWorktreeKeys: presentedWorktreeKeys,
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
         lifecycle,
         prData,
         panes,
@@ -222,7 +251,8 @@ export function App() {
       }),
     [
       filteredRepos,
-      presentedWorktreeKeys,
+      expandedWorktreeKeys,
+      discoveredWorkspaceKeys,
       lifecycle,
       prData,
       panes,
@@ -255,9 +285,19 @@ export function App() {
   const canCollapse = Boolean(
     selectedWorktreeRepo &&
       selectedWorktreeData &&
-      presentedWorktreeKeys.has(
-        pendingKey(selectedWorktreeRepo.project, selectedWorktreeData.branch),
-      ),
+      !isLifecycleActive(
+        lifecycle,
+        selectedWorktreeRepo.repoPath,
+        selectedWorktreeData.branch,
+      ) &&
+      isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
+        project: selectedWorktreeRepo.project,
+        repoPath: selectedWorktreeRepo.repoPath,
+        branch: selectedWorktreeData.branch,
+      }),
   );
 
   const repoError = statusBarProps.selectedProject
@@ -271,11 +311,19 @@ export function App() {
       buildTreeRows({
         items: treeItems,
         repos: filteredRepos,
-        expandedWorktreeKeys: presentedWorktreeKeys,
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
         lifecycle,
         maxWidth: termCols,
       }),
-    [treeItems, filteredRepos, presentedWorktreeKeys, lifecycle, termCols],
+    [
+      treeItems,
+      filteredRepos,
+      expandedWorktreeKeys,
+      discoveredWorkspaceKeys,
+      lifecycle,
+      termCols,
+    ],
   );
 
   const confirmationMode = isConfirmMode(mode) ? mode : null;
@@ -640,30 +688,46 @@ export function App() {
     setMode(Mode.Expanded(worktreeKey));
   }, []);
 
-  const collapseWorktree = useCallback((worktreeKey: string) => {
-    setExpandedWorktreeKeys((previous) => {
-      const next = new Set(previous);
-      next.delete(worktreeKey);
-      return next;
-    });
-    // A collapse overrules the presentation override too, otherwise a
-    // freshly opened Workspace could never be collapsed.
-    setDiscoveredWorktreeKeys((previous) => {
-      if (!previous.has(worktreeKey)) return previous;
-      const next = new Set(previous);
-      next.delete(worktreeKey);
-      return next;
-    });
-  }, []);
+  const collapseWorktree = useCallback(
+    (worktreeKey: string, repoPath: string, branch: string) => {
+      const workspaceIdentityKey = lifecycleKey(repoPath, branch);
+      const preservedWorkspaceKeys = expandedWorktreeKeys.has(worktreeKey)
+        ? workspaceIdentityKeysForDisplayKey(repos, worktreeKey)
+        : new Set<string>();
+      preservedWorkspaceKeys.delete(workspaceIdentityKey);
 
-  const markWorkspaceDiscovered = useCallback((worktreeKey: string) => {
-    setDiscoveredWorktreeKeys((previous) => {
-      if (previous.has(worktreeKey)) return previous;
-      const next = new Set(previous);
-      next.add(worktreeKey);
-      return next;
-    });
-  }, []);
+      setExpandedWorktreeKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(worktreeKey);
+        return next;
+      });
+      setDiscoveredWorkspaceKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(workspaceIdentityKey);
+        for (const preserved of preservedWorkspaceKeys) next.add(preserved);
+        if (
+          next.size === previous.size &&
+          [...next].every((key) => previous.has(key))
+        ) {
+          return previous;
+        }
+        return next;
+      });
+    },
+    [expandedWorktreeKeys, repos],
+  );
+
+  const markWorkspaceDiscovered = useCallback(
+    (workspaceIdentityKey: string) => {
+      setDiscoveredWorkspaceKeys((previous) => {
+        if (previous.has(workspaceIdentityKey)) return previous;
+        const next = new Set(previous);
+        next.add(workspaceIdentityKey);
+        return next;
+      });
+    },
+    [],
+  );
 
   const openModalPRList = useMemo(() => {
     const prs: PRInfo[] = [];
@@ -725,6 +789,7 @@ export function App() {
     setOpenModalRepoProject,
     setOpenModalRepoPath,
     markWorkspaceDiscovered,
+    waitForLifecyclePresentationCleanup,
     showActionError,
     clearActionError,
     switchSession,
@@ -751,6 +816,7 @@ export function App() {
     filteredRepos,
     selectedIndex,
     tmuxClient,
+    lifecycle,
     setMode: setTreeInputMode,
     setSearchQuery,
     expandWorktree,
@@ -950,14 +1016,19 @@ export function App() {
         const doubleClickAction = resolveTreeDoubleClickAction(
           target,
           filteredRepos,
-          presentedWorktreeKeys,
+          expandedWorktreeKeys,
+          discoveredWorkspaceKeys,
         );
         switch (doubleClickAction.type) {
           case "expand-worktree":
             expandWorktree(doubleClickAction.worktreeKey);
             return;
           case "collapse-worktree":
-            collapseWorktree(doubleClickAction.worktreeKey);
+            collapseWorktree(
+              doubleClickAction.worktreeKey,
+              doubleClickAction.repoPath,
+              doubleClickAction.branch,
+            );
             return;
           case "activate-detail":
             doubleClickAction.action();
@@ -1096,7 +1167,8 @@ export function App() {
             lifecycle={lifecycle}
             prData={prData}
             panes={panes}
-            expandedWorktreeKeys={presentedWorktreeKeys}
+            expandedWorktreeKeys={expandedWorktreeKeys}
+            discoveredWorkspaceKeys={discoveredWorkspaceKeys}
             maxWidth={termCols}
             refreshingProjects={refreshingProjects}
             errors={githubErrors}

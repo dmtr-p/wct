@@ -271,18 +271,11 @@ export function createExecuteDown(deps: SessionActionDeps) {
     project: string,
   ) => {
     deps.clearActionError();
-
-    const canProceed = await switchClientAway(sessionName);
-    if (!canProceed) {
-      deps.showActionError(
-        "Cannot safely stop the tmux session because the active client could not be moved away",
-      );
-      return;
-    }
-
-    deps.restoreConfirmationViewport();
-    deps.setSelectedIndex(deps.confirmDownReturnSelectedIndexRef.current);
-    deps.setMode(deps.confirmDownReturnModeRef.current);
+    const returnSelectedIndex =
+      resolveSelectedWorktreeIndex(
+        deps.treeItems,
+        deps.confirmDownReturnSelectedIndexRef.current,
+      ) ?? deps.confirmDownReturnSelectedIndexRef.current;
 
     await runLifecycleOperation<WorkspaceDownResult>({
       claims: deps.lifecycleClaims,
@@ -296,12 +289,24 @@ export function createExecuteDown(deps: SessionActionDeps) {
         branch,
         phase: { _tag: "Preparing" },
       },
-      run: (reporter) =>
-        tuiRuntime.runPromise(
+      run: async (reporter) => {
+        const canProceed = await switchClientAway(sessionName);
+        if (!canProceed) {
+          throw new Error(
+            "Cannot safely stop the tmux session because the active client could not be moved away",
+          );
+        }
+
+        deps.restoreConfirmationViewport();
+        deps.setSelectedIndex(returnSelectedIndex);
+        deps.setMode(deps.confirmDownReturnModeRef.current);
+
+        return tuiRuntime.runPromise(
           WorkspaceService.use((service) =>
             service.down({ path: worktreePath, reporter }),
           ),
-        ),
+        );
+      },
     });
   };
 }
@@ -360,19 +365,12 @@ export function createExecuteClose(deps: SessionActionDeps) {
     force: boolean,
   ) => {
     deps.clearActionError();
-
-    const canProceed = await switchClientAway(sessionName);
-    if (!canProceed) {
-      deps.showActionError(
-        "Cannot safely close the worktree because the active tmux client could not be moved away",
-      );
-      return;
-    }
-
-    deps.restoreConfirmationViewport();
-    deps.setSelectedIndex(deps.confirmCloseReturnSelectedIndexRef.current);
     const restoredMode = deps.confirmCloseReturnModeRef.current;
-    deps.setMode(restoredMode);
+    const returnSelectedIndex =
+      resolveSelectedWorktreeIndex(
+        deps.treeItems,
+        deps.confirmCloseReturnSelectedIndexRef.current,
+      ) ?? deps.confirmCloseReturnSelectedIndexRef.current;
 
     await runLifecycleOperation<WorkspaceCloseResult>({
       claims: deps.lifecycleClaims,
@@ -386,8 +384,19 @@ export function createExecuteClose(deps: SessionActionDeps) {
         branch,
         phase: { _tag: "Preparing" },
       },
-      run: (reporter) =>
-        tuiRuntime.runPromise(
+      run: async (reporter) => {
+        const canProceed = await switchClientAway(sessionName);
+        if (!canProceed) {
+          throw new Error(
+            "Cannot safely close the worktree because the active tmux client could not be moved away",
+          );
+        }
+
+        deps.restoreConfirmationViewport();
+        deps.setSelectedIndex(returnSelectedIndex);
+        deps.setMode(restoredMode);
+
+        return tuiRuntime.runPromise(
           WorkspaceService.use((service) =>
             service.close(
               force
@@ -395,7 +404,8 @@ export function createExecuteClose(deps: SessionActionDeps) {
                 : { path: worktreePath, cwd: repoPath, reporter },
             ),
           ),
-        ),
+        );
+      },
       // Asked from `afterCleanup`, after the lifecycle presentation is fully
       // over, so the confirmation is anchored on a stable tree and a forced
       // retry starts a fresh lifecycle instead of inheriting a stale lock.

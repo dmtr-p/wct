@@ -723,6 +723,113 @@ project_name: "myapp"
     }
   });
 
+  test("openCommand JSON leaves fatal copy output to the root JSON error envelope", async () => {
+    await Bun.write(
+      join(fixture.repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+copy:
+  - "missing.env"
+`,
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(
+            openCommand({
+              branch: "json-copy-failure",
+              existing: false,
+              noAttach: true,
+              cwd: fixture.repoDir,
+            }),
+            {
+              json: true,
+              worktree: {
+                ...liveWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+                branchExists: () => Effect.succeed(false),
+                createWorktree: (path) =>
+                  Effect.promise(async () => {
+                    await mkdir(path, { recursive: true });
+                    return { _tag: "Created" as const, path };
+                  }),
+              },
+            },
+          ),
+        ),
+      ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+`,
+      );
+    }
+  });
+
+  test("openCommand human output preserves the legacy fatal copy warning", async () => {
+    await Bun.write(
+      join(fixture.repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+copy:
+  - "missing.env"
+`,
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(
+            openCommand({
+              branch: "human-copy-failure",
+              existing: false,
+              noAttach: true,
+              cwd: fixture.repoDir,
+            }),
+            {
+              worktree: {
+                ...liveWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+                branchExists: () => Effect.succeed(false),
+                createWorktree: (path) =>
+                  Effect.promise(async () => {
+                    await mkdir(path, { recursive: true });
+                    return { _tag: "Created" as const, path };
+                  }),
+              },
+            },
+          ),
+        ),
+      ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+      expect(
+        logSpy.mock.calls.some((args) =>
+          String(args[0]).includes("File not found: missing.env"),
+        ),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+`,
+      );
+    }
+  });
+
   test("openCommand passes a human reporter without project registration", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const registerCalls: string[] = [];
@@ -788,6 +895,26 @@ project_name: "myapp"
                     yield* Effect.catch(
                       reporter.event({
                         operation: "open",
+                        _tag: "CopyEntryFailed",
+                        file: ".env",
+                        reason: "source_not_found",
+                        error: "File not found",
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "CopyEntryFailed",
+                        file: ".settings/config.json",
+                        reason: "copy_failed",
+                        error: "permission denied",
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
                         _tag: "SetupCommandStarted",
                         name: "Install dependencies",
                         current: 1,
@@ -833,6 +960,16 @@ project_name: "myapp"
       expect(
         loggedLines.some((line) =>
           line.includes("Directory not found or empty: .settings/"),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) => line.includes("File not found: .env")),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) =>
+          line.includes(
+            "Failed to copy .settings/config.json: permission denied",
+          ),
         ),
       ).toBe(true);
       expect(

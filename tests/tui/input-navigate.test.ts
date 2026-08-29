@@ -5,6 +5,7 @@ import {
   handleNavigateInput,
   type NavigateContext,
 } from "../../src/tui/input/navigate";
+import { lifecycleKey } from "../../src/tui/lifecycle";
 import { Mode, type TreeItem } from "../../src/tui/types";
 
 const noKey: Key = {
@@ -36,6 +37,7 @@ function makeCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     filteredRepos: [],
     selectedIndex: 0,
     tmuxClient: { tty: "/dev/pts/1", session: "test" },
+    lifecycle: new Map(),
     setMode: vi.fn(),
     setSearchQuery: vi.fn(),
     expandWorktree: vi.fn(),
@@ -146,6 +148,7 @@ describe("handleNavigateInput", () => {
       {
         id: "repo1",
         project: "myproj",
+        repoPath: "/repos/myproj",
         worktrees: [{ branch: "feat", path: "/tmp/feat" }],
       },
     ] as unknown as RepoInfo[];
@@ -159,6 +162,42 @@ describe("handleNavigateInput", () => {
     });
     handleNavigateInput(ctx, "", { ...noKey, rightArrow: true });
     expect(ctx.expandWorktree).toHaveBeenCalledWith("myproj/feat");
+  });
+
+  test("right arrow leaves an active Workspace's expansion preference unchanged", () => {
+    const repos = [
+      {
+        id: "repo1",
+        project: "myproj",
+        repoPath: "/repos/myproj",
+        worktrees: [{ branch: "feat", path: "/tmp/feat" }],
+      },
+    ] as unknown as RepoInfo[];
+    const items: TreeItem[] = [
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+    const ctx = makeCtx({
+      treeItems: items,
+      filteredRepos: repos,
+      selectedIndex: 0,
+      lifecycle: new Map([
+        [
+          lifecycleKey("/repos/myproj", "feat"),
+          {
+            operation: "up",
+            repoPath: "/repos/myproj",
+            project: "myproj",
+            branch: "feat",
+            phase: { _tag: "Preparing" },
+          },
+        ],
+      ]),
+    });
+
+    handleNavigateInput(ctx, "", { ...noKey, rightArrow: true });
+
+    expect(ctx.expandWorktree).not.toHaveBeenCalled();
+    expect(ctx.setMode).not.toHaveBeenCalled();
   });
 
   test("c fires handleCloseSelectedWorktree when selected item is worktree type", () => {

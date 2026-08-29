@@ -1,4 +1,5 @@
 import type { RepoInfo } from "../hooks/useRegistry";
+import { lifecycleKey } from "../lifecycle";
 import { isInertTreeItem, type TreeRow } from "../tree-helpers";
 import { type Mode, pendingKey, type TreeItem } from "../types";
 
@@ -127,21 +128,33 @@ export function detectDoubleClick(
 export type TreeDoubleClickAction =
   | { type: "noop" }
   | { type: "expand-worktree"; worktreeKey: string }
-  | { type: "collapse-worktree"; worktreeKey: string }
+  | {
+      type: "collapse-worktree";
+      worktreeKey: string;
+      repoPath: string;
+      branch: string;
+    }
   | { type: "activate-detail"; action: () => void };
 
 export function resolveTreeDoubleClickAction(
   item: TreeItem,
   repos: RepoInfo[],
   expandedWorktreeKeys: Set<string>,
+  discoveredWorkspaceKeys: Set<string> = new Set(),
 ): TreeDoubleClickAction {
   if (item.type === "worktree") {
     const repo = repos[item.repoIndex];
     const worktree = repo?.worktrees[item.worktreeIndex];
     if (!repo || !worktree) return { type: "noop" };
     const worktreeKey = pendingKey(repo.project, worktree.branch);
-    return expandedWorktreeKeys.has(worktreeKey)
-      ? { type: "collapse-worktree", worktreeKey }
+    return expandedWorktreeKeys.has(worktreeKey) ||
+      discoveredWorkspaceKeys.has(lifecycleKey(repo.repoPath, worktree.branch))
+      ? {
+          type: "collapse-worktree",
+          worktreeKey,
+          repoPath: repo.repoPath,
+          branch: worktree.branch,
+        }
       : { type: "expand-worktree", worktreeKey };
   }
   if (

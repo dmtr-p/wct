@@ -35,7 +35,7 @@ export function truncateBranch(text: string, available: number): string {
  * overflows the fixed-height layout, and desyncs mouse hit-testing.
  */
 export function toSingleLine(text: string): string {
-  return text.replace(/[ \t]*\r?\n[\s]*/g, " ").trim();
+  return text.replace(/[ \t]*(?:\r\n|[\r\n])[\s]*/g, " ").trim();
 }
 
 export function truncateWithPrefix(

@@ -104,6 +104,13 @@ export type WorkspaceReporterEvent =
     }
   | {
       operation: "open";
+      _tag: "CopyEntryFailed";
+      file: string;
+      reason: "source_not_found" | "copy_failed";
+      error: string;
+    }
+  | {
+      operation: "open";
       _tag: "SetupCommandStarted";
       name: string;
       current: number;
@@ -582,18 +589,23 @@ function openImpl(
     const copy =
       resolved.copy && resolved.copy.length > 0
         ? yield* Effect.mapError(
-            copyEntries(
-              resolved.copy,
-              mainRepoPath,
-              worktreePath,
-              ({ entry, reason }) =>
+            copyEntries(resolved.copy, mainRepoPath, worktreePath, {
+              entrySkipped: ({ entry, reason }) =>
                 emitReporter(reporter, {
                   operation: "open",
                   _tag: "CopyEntrySkipped",
                   entry,
                   reason,
                 }),
-            ),
+              entryFailed: ({ file, reason, error }) =>
+                emitReporter(reporter, {
+                  operation: "open",
+                  _tag: "CopyEntryFailed",
+                  file,
+                  reason,
+                  error,
+                }),
+            }),
             (error) =>
               commandError("worktree_error", "Failed to copy files", error),
           ).pipe(

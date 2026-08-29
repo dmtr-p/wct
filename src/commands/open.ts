@@ -144,6 +144,12 @@ function createOpenHumanReporter(
           : logger.warn(`No files matched pattern: ${event.entry}`);
       }
 
+      if (event._tag === "CopyEntryFailed") {
+        return event.reason === "source_not_found"
+          ? logger.warn(`File not found: ${event.file}`)
+          : logger.warn(`Failed to copy ${event.file}: ${event.error}`);
+      }
+
       if (event._tag === "SetupCommandStarted") {
         return logger.step(event.current, event.total, event.name);
       }

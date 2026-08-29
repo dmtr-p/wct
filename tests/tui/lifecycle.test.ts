@@ -15,7 +15,9 @@ import {
   buildTreeItems,
   buildTreeRows,
   isWorktreeEffectivelyExpanded,
+  reconcileDiscoveredWorkspaceKeys,
   reconcileExpandedWorktreeKeys,
+  workspaceIdentityKeysForDisplayKey,
 } from "../../src/tui/tree-helpers";
 import { pendingKey } from "../../src/tui/types";
 import { displayWidth } from "../../src/tui/utils/display-width";
@@ -62,6 +64,36 @@ describe("lifecyclePhaseLabel", () => {
     expect(lifecyclePhaseLabel({ _tag: "Validating" })).toBe(
       "Validating Workspace…",
     );
+  });
+
+  test.each([
+    ["install\nbuild", "Setup: install build…"],
+    ["install\r\n    build", "Setup: install build…"],
+    ["install\r    build", "Setup: install build…"],
+    ["  install\n\tbuild  ", "Setup: install build…"],
+  ])("normalizes setup name %j onto one physical row", (name, expected) => {
+    const label = lifecyclePhaseLabel({ _tag: "RunningSetup", name });
+
+    expect(label).toBe(expected);
+    expect(label).not.toMatch(/[\r\n]/);
+  });
+
+  test("normalizes before display-width truncation at both fitting and narrow widths", () => {
+    const phase = {
+      _tag: "RunningSetup" as const,
+      name: "install\r\n    dependencies",
+    };
+    const label = "Setup: install dependencies…";
+    const fittingWidth = LIFECYCLE_ROW_PREFIX.length + displayWidth(label);
+
+    expect(lifecycleProgressContent(phase, fittingWidth)).toBe(
+      `${LIFECYCLE_ROW_PREFIX}${label}`,
+    );
+    for (const width of [1, LIFECYCLE_ROW_PREFIX.length, 12]) {
+      const content = lifecycleProgressContent(phase, width);
+      expect(content).not.toMatch(/[\r\n]/);
+      expect(displayWidth(content)).toBeLessThanOrEqual(width);
+    }
   });
 });
 
@@ -174,5 +206,125 @@ describe("forced expansion is presentation-only", () => {
     expect(stored.has(pendingKey("alpha", branch))).toBe(false);
     expect(reconcileExpandedWorktreeKeys(stored, repos)).toBe(stored);
     expect(reconcileExpandedWorktreeKeys(stored, [])).toBe(stored);
+  });
+});
+
+describe("discovered Workspace expansion", () => {
+  test("keys the override by Workspace Identity when display keys collide", () => {
+    const branch = "feat";
+    const repos: RepoInfo[] = [
+      {
+        id: "repo-a",
+        repoPath: "/repos/a",
+        project: "same-name",
+        worktrees: [
+          {
+            branch,
+            path: "/repos/a-feat",
+            isMainWorktree: false,
+            changedFiles: 1,
+            sync: null,
+          },
+        ],
+        profileNames: [],
+      },
+      {
+        id: "repo-b",
+        repoPath: "/repos/b",
+        project: "same-name",
+        worktrees: [
+          {
+            branch,
+            path: "/repos/b-feat",
+            isMainWorktree: false,
+            changedFiles: 1,
+            sync: null,
+          },
+        ],
+        profileNames: [],
+      },
+    ];
+    const storedPresentationKeys = new Set<string>();
+    const discoveredWorkspaceKeys = new Set([lifecycleKey("/repos/a", branch)]);
+
+    expect(
+      isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys: storedPresentationKeys,
+        discoveredWorkspaceKeys,
+        project: "same-name",
+        repoPath: "/repos/a",
+        branch,
+      }),
+    ).toBe(true);
+    expect(
+      isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys: storedPresentationKeys,
+        discoveredWorkspaceKeys,
+        project: "same-name",
+        repoPath: "/repos/b",
+        branch,
+      }),
+    ).toBe(false);
+
+    const items = buildTreeItems({
+      repos,
+      expandedWorktreeKeys: storedPresentationKeys,
+      discoveredWorkspaceKeys,
+      prData: new Map(),
+      panes: new Map(),
+      jumpToPane: () => undefined,
+    });
+    const rows = buildTreeRows({
+      items,
+      repos,
+      expandedWorktreeKeys: storedPresentationKeys,
+      discoveredWorkspaceKeys,
+      maxWidth: 80,
+    });
+
+    expect(
+      rows.flatMap((row) =>
+        row.kind === "worktree-stats" ? [row.repoIndex] : [],
+      ),
+    ).toEqual([0]);
+    expect(
+      reconcileDiscoveredWorkspaceKeys(discoveredWorkspaceKeys, repos),
+    ).toBe(discoveredWorkspaceKeys);
+    expect(
+      reconcileDiscoveredWorkspaceKeys(discoveredWorkspaceKeys, repos.slice(1)),
+    ).toEqual(new Set());
+
+    const displayKey = pendingKey("same-name", branch);
+    const storedWithCollision = new Set([displayKey]);
+    const overridesAfterCollapsingA = new Set(discoveredWorkspaceKeys);
+    const identitiesToPreserve = workspaceIdentityKeysForDisplayKey(
+      repos,
+      displayKey,
+    );
+    identitiesToPreserve.delete(lifecycleKey("/repos/a", branch));
+    overridesAfterCollapsingA.delete(lifecycleKey("/repos/a", branch));
+    for (const identity of identitiesToPreserve) {
+      overridesAfterCollapsingA.add(identity);
+    }
+    storedWithCollision.delete(displayKey);
+
+    expect(
+      isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys: storedWithCollision,
+        discoveredWorkspaceKeys: overridesAfterCollapsingA,
+        project: "same-name",
+        repoPath: "/repos/a",
+        branch,
+      }),
+    ).toBe(false);
+    expect(
+      isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys: storedWithCollision,
+        discoveredWorkspaceKeys: overridesAfterCollapsingA,
+        project: "same-name",
+        repoPath: "/repos/b",
+        branch,
+      }),
+    ).toBe(true);
   });
 });

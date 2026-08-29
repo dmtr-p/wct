@@ -13,7 +13,7 @@ import type {
   WorkspaceReporter,
 } from "../services/workspace-service";
 import type { RepoInfo } from "./hooks/useRegistry";
-import { truncateBranch } from "./utils/truncate";
+import { toSingleLine, truncateBranch } from "./utils/truncate";
 
 /**
  * A service phase plus the TUI-owned `Validating` phase, which has no service
@@ -151,7 +151,7 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
     case "CopyingFiles":
       return "Copying files…";
     case "RunningSetup":
-      return `Setup: ${phase.name}…`;
+      return `Setup: ${toSingleLine(phase.name)}…`;
     case "CreatingTmuxSession":
       return "Creating tmux session…";
     case "KillingTmuxSession":

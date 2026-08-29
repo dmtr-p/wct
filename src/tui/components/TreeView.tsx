@@ -39,6 +39,7 @@ interface Props {
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
@@ -78,6 +79,7 @@ export function TreeView({
   prData,
   panes,
   expandedWorktreeKeys,
+  discoveredWorkspaceKeys,
   maxWidth,
   refreshingProjects,
   errors,
@@ -109,6 +111,7 @@ export function TreeView({
       selectedItem,
       hoveredItemIndex,
       expandedWorktreeKeys,
+      discoveredWorkspaceKeys,
       lifecycle,
       sessionMap,
       prData,
@@ -131,6 +134,7 @@ interface RenderRowContext {
   selectedItem: TreeItem | undefined;
   hoveredItemIndex: number | null;
   expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
   lifecycle: LifecycleState;
   sessionMap: Map<string, { name: string; attached: boolean }>;
   prData: Map<string, PRInfo>;
@@ -270,6 +274,7 @@ function renderWorktreeRow(
       isHovered={idx === ctx.hoveredItemIndex}
       isExpanded={isWorktreeEffectivelyExpanded({
         expandedWorktreeKeys: ctx.expandedWorktreeKeys,
+        discoveredWorkspaceKeys: ctx.discoveredWorkspaceKeys,
         lifecycle: ctx.lifecycle,
         project: repo.project,
         repoPath: repo.repoPath,

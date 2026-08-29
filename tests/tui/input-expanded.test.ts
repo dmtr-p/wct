@@ -5,6 +5,7 @@ import {
   handleExpandedInput,
 } from "../../src/tui/input/expanded";
 import type { NavigateContext } from "../../src/tui/input/navigate";
+import { lifecycleKey } from "../../src/tui/lifecycle";
 import {
   findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
@@ -47,6 +48,7 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     filteredRepos: [],
     selectedIndex: 0,
     tmuxClient: { tty: "/dev/pts/1", session: "test" },
+    lifecycle: new Map(),
     setMode: vi.fn(),
     setSearchQuery: vi.fn(),
     expandWorktree: vi.fn(),
@@ -113,7 +115,52 @@ describe("handleExpandedInput", () => {
       ctx.selectedIndex,
     );
     expect(ctx.setSelectedIndex).toHaveBeenCalledWith(0);
-    expect(ctx.collapseWorktree).toHaveBeenCalledWith("proj/feat");
+    expect(ctx.collapseWorktree).toHaveBeenCalledWith(
+      "proj/feat",
+      "/tmp/repo",
+      "feat",
+    );
+  });
+
+  test("left arrow leaves an active Workspace's expansion state unchanged", () => {
+    vi.mocked(findOwningWorktreeIndex).mockReturnValue(0);
+    const ctx = makeExpCtx({
+      treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
+      filteredRepos: [
+        {
+          id: "repo",
+          project: "proj",
+          repoPath: "/tmp/repo",
+          worktrees: [
+            {
+              branch: "feat",
+              path: "/tmp/repo/feat",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+          profileNames: [],
+        },
+      ],
+      lifecycle: new Map([
+        [
+          lifecycleKey("/tmp/repo", "feat"),
+          {
+            operation: "down",
+            repoPath: "/tmp/repo",
+            project: "proj",
+            branch: "feat",
+            phase: { _tag: "Preparing" },
+          },
+        ],
+      ]),
+    });
+
+    handleExpandedInput(ctx, "", { ...noKey, leftArrow: true });
+
+    expect(ctx.setSelectedIndex).not.toHaveBeenCalled();
+    expect(ctx.collapseWorktree).not.toHaveBeenCalled();
   });
 
   test("escape does not collapse worktrees", () => {
@@ -139,12 +186,76 @@ describe("handleExpandedInput", () => {
     vi.mocked(resolveExpandedRightArrowAction).mockReturnValue({
       type: "expand-worktree",
       worktreeKey: "proj/feat",
-      nextSelectedIndex: 3,
+      nextSelectedIndex: 0,
     });
-    const ctx = makeExpCtx();
+    const ctx = makeExpCtx({
+      treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
+      filteredRepos: [
+        {
+          id: "repo",
+          project: "proj",
+          repoPath: "/tmp/repo",
+          worktrees: [
+            {
+              branch: "feat",
+              path: "/tmp/repo/feat",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+          profileNames: [],
+        },
+      ],
+    });
     handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
-    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(3);
+    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(0);
     expect(ctx.expandWorktree).toHaveBeenCalledWith("proj/feat");
+  });
+
+  test("right arrow leaves an active Workspace's expansion state unchanged", () => {
+    vi.mocked(resolveExpandedRightArrowAction).mockReturnValue({
+      type: "expand-worktree",
+      worktreeKey: "proj/feat",
+      nextSelectedIndex: 0,
+    });
+    const ctx = makeExpCtx({
+      treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
+      filteredRepos: [
+        {
+          id: "repo",
+          project: "proj",
+          repoPath: "/tmp/repo",
+          worktrees: [
+            {
+              branch: "feat",
+              path: "/tmp/repo/feat",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+          profileNames: [],
+        },
+      ],
+      lifecycle: new Map([
+        [
+          lifecycleKey("/tmp/repo", "feat"),
+          {
+            operation: "close",
+            repoPath: "/tmp/repo",
+            project: "proj",
+            branch: "feat",
+            phase: { _tag: "Validating" },
+          },
+        ],
+      ]),
+    });
+
+    handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
+
+    expect(ctx.setSelectedIndex).not.toHaveBeenCalled();
+    expect(ctx.expandWorktree).not.toHaveBeenCalled();
   });
 
   test("space with tmuxClient calls handleSpaceSwitch", () => {

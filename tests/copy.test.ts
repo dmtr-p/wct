@@ -290,6 +290,56 @@ describe("copyEntries", () => {
     expect(results[0]?.error).toBe("File not found");
   });
 
+  test("reports source, directory-creation, and target-write failures with semantic reasons", async () => {
+    const failures: Array<{
+      file: string;
+      reason: "source_not_found" | "copy_failed";
+      error: string;
+    }> = [];
+    const reporter = {
+      entryFailed: (failure: (typeof failures)[number]) =>
+        Effect.sync(() => {
+          failures.push(failure);
+        }),
+    };
+
+    await runEffect(
+      copyEntries(["missing.txt"], sourceDir, targetDir, reporter),
+    );
+
+    await mkdir(join(sourceDir, "nested"), { recursive: true });
+    await Bun.write(join(sourceDir, "nested/file.txt"), "content");
+    const blockedTarget = join(targetDir, "blocked");
+    await Bun.write(blockedTarget, "not a directory");
+    await runEffect(
+      copyEntries(["nested/file.txt"], sourceDir, blockedTarget, reporter),
+    );
+
+    await Bun.write(join(sourceDir, "target-is-directory"), "content");
+    await mkdir(join(targetDir, "target-is-directory"), { recursive: true });
+    await runEffect(
+      copyEntries(["target-is-directory"], sourceDir, targetDir, reporter),
+    );
+
+    expect(failures).toEqual([
+      {
+        file: "missing.txt",
+        reason: "source_not_found",
+        error: "File not found",
+      },
+      {
+        file: "nested/file.txt",
+        reason: "copy_failed",
+        error: expect.any(String),
+      },
+      {
+        file: "target-is-directory",
+        reason: "copy_failed",
+        error: expect.any(String),
+      },
+    ]);
+  });
+
   test("handles missing directory gracefully", async () => {
     const results = await runEffect(
       copyEntries(["missing/"], sourceDir, targetDir),

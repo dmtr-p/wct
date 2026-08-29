@@ -15,6 +15,7 @@ import type { UpModalResult } from "../components/UpModal";
 import {
   type LifecycleClaims,
   type LifecycleState,
+  lifecycleKey,
   rejectIfLifecycleActive,
   runLifecycleOperation,
 } from "../lifecycle";
@@ -41,22 +42,17 @@ function formatWorkspaceWarning(warning: WorkspaceWarning): string {
   }
 }
 
-// Matches on repo path first, since two repos can share a display name;
-// falls back to the display name only when no path is known.
-function discoveredWorkspaceKey(
+function discoveredWorkspaceIdentityKey(
   snapshot: readonly RepoInfo[],
   repoPath: string,
-  project: string,
   branch: string,
 ): string | undefined {
+  if (!repoPath) return undefined;
   for (const repo of snapshot) {
-    const isSameRepo = repoPath
-      ? repo.repoPath === repoPath
-      : repo.project === project;
-    if (!isSameRepo) continue;
+    if (repo.repoPath !== repoPath) continue;
     const hasWorktree = repo.worktrees.some((wt) => wt.branch === branch);
     if (!hasWorktree) continue;
-    return pendingKey(repo.project, branch);
+    return lifecycleKey(repo.repoPath, branch);
   }
   return undefined;
 }
@@ -84,7 +80,12 @@ export interface ModalActionDeps {
 
   // Presents a freshly-opened Workspace as expanded without writing the
   // stored `expandedWorktreeKeys` preference.
-  markWorkspaceDiscovered: (worktreeKey: string) => void;
+  markWorkspaceDiscovered: (workspaceIdentityKey: string) => void;
+  /** Resolves only after Ink commits removal of this Workspace's progress row. */
+  waitForLifecyclePresentationCleanup: (
+    repoPath: string,
+    branch: string,
+  ) => Promise<void>;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -172,10 +173,9 @@ export function createHandleOpen(deps: ModalActionDeps) {
       // Only a Workspace validation actually found gets left expanded; this
       // never writes the stored expansion preference.
       onValidated: (snapshot) => {
-        const discovered = discoveredWorkspaceKey(
+        const discovered = discoveredWorkspaceIdentityKey(
           snapshot,
           repoPath,
-          project,
           opts.branch,
         );
         if (discovered) deps.markWorkspaceDiscovered(discovered);
@@ -194,6 +194,11 @@ async function openSessionHandoff(
   result: WorkspaceOpenResult,
 ): Promise<string | undefined> {
   if (opts.noAttach || !workspaceOpenStartedTmux(result)) return undefined;
+
+  await deps.waitForLifecyclePresentationCleanup(
+    deps.openModalRepoPath,
+    opts.branch,
+  );
 
   const liveClient = await deps.discoverClient();
   if (liveClient.type === "single") {

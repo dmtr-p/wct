@@ -1,7 +1,14 @@
 // src/tui/App.tsx
 
 import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { confirmModalRowCount, isConfirmMode } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
@@ -134,7 +141,6 @@ export function App() {
   // immediately. They need a commit barrier, not merely a queued state
   // update, so the last frame the user sees cannot retain a progress row.
   const lifecycleRef = useRef(lifecycle);
-  lifecycleRef.current = lifecycle;
   const lifecycleCleanupWaitersRef = useRef<Map<string, Set<() => void>>>(
     new Map(),
   );
@@ -205,6 +211,10 @@ export function App() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+
+  useLayoutEffect(() => {
+    lifecycleRef.current = lifecycle;
+  }, [lifecycle]);
 
   useEffect(() => {
     for (const [key, waiters] of lifecycleCleanupWaitersRef.current) {

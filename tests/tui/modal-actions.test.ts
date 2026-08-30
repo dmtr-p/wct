@@ -648,14 +648,14 @@ describe("createPrepareUpModal", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.UpModal(
-        "/repo/feat",
-        pendingKey("proj", "feat"),
-        "/repo",
-        "feat",
-        "proj",
-        ["dev"],
-      ),
+      Mode.UpModal({
+        worktreePath: "/repo/feat",
+        worktreeKey: pendingKey("proj", "feat"),
+        repoPath: "/repo",
+        branch: "feat",
+        project: "proj",
+        profileNames: ["dev"],
+      }),
     );
   });
 
@@ -750,9 +750,14 @@ describe("createHandleUpSubmit", () => {
     const returnIndexRef = { current: 3 };
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", "/repo", "feat", "proj", [
-        "dev",
-      ]),
+      mode: Mode.UpModal({
+        worktreePath: "/repo/feat",
+        worktreeKey: "proj/feat",
+        repoPath: "/repo",
+        branch: "feat",
+        project: "proj",
+        profileNames: ["dev"],
+      }),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
       startWorkspace,
@@ -778,14 +783,14 @@ describe("createHandleUpSubmit", () => {
   test("keeps identity intact when the project name contains a slash", () => {
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal(
-        "/repo/my-feature",
-        pendingKey("myorg/webapp", "my-feature"),
-        "/repo",
-        "my-feature",
-        "myorg/webapp",
-        ["dev"],
-      ),
+      mode: Mode.UpModal({
+        worktreePath: "/repo/my-feature",
+        worktreeKey: pendingKey("myorg/webapp", "my-feature"),
+        repoPath: "/repo",
+        branch: "my-feature",
+        project: "myorg/webapp",
+        profileNames: ["dev"],
+      }),
       upModalReturnModeRef: { current: Mode.Navigate },
       upModalReturnSelectedIndexRef: { current: 0 },
       startWorkspace,

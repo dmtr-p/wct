@@ -21,6 +21,7 @@ import {
   emitWorkspacePhase,
   lastWorkspaceCall,
   makeWorktree,
+  openBranchFromModal,
   renderApp,
   resetHarnessFixtures,
   sendKeys,
@@ -30,7 +31,6 @@ import {
   worktreeFixtures,
 } from "./app-harness";
 
-const ENTER = "\r";
 const CTRL_ENTER = "\x1b[13;5u";
 const DOWN = "\x1b[B";
 
@@ -295,13 +295,6 @@ function visibleFeatureIndices(lines: string[]): number[] {
 /** The first tree row of the frame, i.e. the row the scroll offset points at. */
 function firstTreeLine(lines: string[]): string {
   return (lines[HEADER_OFFSET] ?? "").trim();
-}
-
-async function openBranchFromModal(stdin: NodeJS.ReadStream, branch: string) {
-  await sendKeys(stdin, "o");
-  await sendKeys(stdin, ENTER);
-  await sendKeys(stdin, branch);
-  await sendKeys(stdin, CTRL_ENTER);
 }
 
 describe("TUI lifecycle viewport reveal", () => {

@@ -254,14 +254,14 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
     deps.setMode(
-      Mode.UpModal(
-        wt.path,
+      Mode.UpModal({
+        worktreePath: wt.path,
         worktreeKey,
-        repo.repoPath,
-        wt.branch,
-        repo.project,
-        repo.profileNames,
-      ),
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+        project: repo.project,
+        profileNames: repo.profileNames,
+      }),
     );
   };
 }

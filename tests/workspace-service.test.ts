@@ -1169,19 +1169,21 @@ test("liveWorkspaceService exposes public lifecycle operations", () => {
 });
 
 describe("WorkspaceService semantic phases", () => {
+  let parentDir: string;
   let repoDir: string;
   let worktreeRoot: string;
 
   beforeEach(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-workspace-phase-repo-"));
-    worktreeRoot = join(repoDir, "..", "worktrees");
+    parentDir = await mkdtemp(join(tmpdir(), "wct-workspace-phase-"));
+    repoDir = join(parentDir, "repo");
+    worktreeRoot = join(parentDir, "worktrees");
+    await mkdir(repoDir, { recursive: true });
     await mkdir(worktreeRoot, { recursive: true });
     await writeConfig(repoDir);
   });
 
   afterEach(async () => {
-    await rm(repoDir, { recursive: true, force: true });
-    await rm(worktreeRoot, { recursive: true, force: true });
+    await rm(parentDir, { recursive: true, force: true });
   });
 
   function recordingReporter(events: WorkspaceReporterEvent[]) {

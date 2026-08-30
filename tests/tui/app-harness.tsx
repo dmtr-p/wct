@@ -179,13 +179,7 @@ interface WorkspaceCallShape {
 }
 
 const workspaceHarness = vi.hoisted(() => {
-  const calls: Array<{
-    operation: "open" | "up" | "down" | "close";
-    options: Record<string, unknown>;
-    resolve: (result: unknown) => void;
-    reject: (error: unknown) => void;
-    promise: Promise<unknown>;
-  }> = [];
+  const calls: WorkspaceCallShape[] = [];
   const defer =
     (operation: "open" | "up" | "down" | "close") =>
     (options: Record<string, unknown> = {}) => {
@@ -247,7 +241,7 @@ export {
 export function workspaceCalls(
   operation?: WorkspaceCallShape["operation"],
 ): WorkspaceCallShape[] {
-  const calls = workspaceHarness.calls as WorkspaceCallShape[];
+  const calls = workspaceHarness.calls;
   return operation
     ? calls.filter((call) => call.operation === operation)
     : calls;
@@ -437,6 +431,18 @@ export async function sendKeys(
 ): Promise<void> {
   stdin.write(sequence);
   await tick(ticks);
+}
+
+// "o" opens the mode selector, Enter picks New Branch (whose branch field has
+// initial focus), then the branch name and submit.
+export async function openBranchFromModal(
+  stdin: NodeJS.ReadStream,
+  branch: string,
+): Promise<void> {
+  await sendKeys(stdin, "o");
+  await sendKeys(stdin, "\r");
+  await sendKeys(stdin, branch);
+  await sendKeys(stdin, "\x1b[13;5u");
 }
 
 export function sgrPress(col: number, row: number): string {

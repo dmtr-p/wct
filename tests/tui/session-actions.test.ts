@@ -263,6 +263,38 @@ describe("createSessionHandoff", () => {
     );
   });
 
+  test.each([
+    ["none", "No tmux client found — start tmux in the other pane"],
+    [
+      "error",
+      "Started session 'wt-feat' but failed to query tmux clients to switch",
+    ],
+    [
+      "multiple",
+      "Cannot switch tmux client after start because multiple tmux clients are attached",
+    ],
+  ] as const)(
+    "explains why a %s client discovery cannot switch",
+    async (type, message) => {
+      const deps = makeDeps({
+        discoverClient: vi.fn().mockResolvedValue({ type }),
+      });
+      const handoff = createSessionHandoff(deps);
+      const result = makeStartResult({
+        attempts: {
+          tmux: {
+            attempted: true,
+            ok: true,
+            value: { _tag: "Created", sessionName: "wt-feat" },
+          },
+        },
+      });
+
+      await expect(handoff(result, true)).resolves.toBe(message);
+      expect(deps.switchSession).not.toHaveBeenCalled();
+    },
+  );
+
   test("does not switch when autoSwitch is false", async () => {
     const deps = makeDeps();
     const handoff = createSessionHandoff(deps);
@@ -1065,14 +1097,14 @@ describe("createHandleDownSelectedWorktree", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.ConfirmDown(
-        "feat",
-        "feat",
-        "/repo/feat",
-        "proj/feat",
-        "/repo",
-        "proj",
-      ),
+      Mode.ConfirmDown({
+        sessionName: "feat",
+        branch: "feat",
+        worktreePath: "/repo/feat",
+        worktreeKey: "proj/feat",
+        repoPath: "/repo",
+        project: "proj",
+      }),
     );
   });
 

@@ -56,14 +56,14 @@ export const Mode = {
   Shortcuts: { type: "Shortcuts" } as Mode,
   OpenModal: { type: "OpenModal" } as Mode,
   AddProjectModal: { type: "AddProjectModal" } as Mode,
-  UpModal: (
-    worktreePath: string,
-    worktreeKey: string,
-    repoPath: string,
-    branch: string,
-    project: string,
-    profileNames: string[],
-  ): Mode => ({
+  UpModal: ({
+    worktreePath,
+    worktreeKey,
+    repoPath,
+    branch,
+    project,
+    profileNames,
+  }: Omit<Extract<Mode, { type: "UpModal" }>, "type">): Mode => ({
     type: "UpModal",
     worktreePath,
     worktreeKey,
@@ -82,14 +82,14 @@ export const Mode = {
     label,
     worktreeKey,
   }),
-  ConfirmDown: (
-    sessionName: string,
-    branch: string,
-    worktreePath: string,
-    worktreeKey: string,
-    repoPath: string,
-    project: string,
-  ): Mode => ({
+  ConfirmDown: ({
+    sessionName,
+    branch,
+    worktreePath,
+    worktreeKey,
+    repoPath,
+    project,
+  }: Omit<Extract<Mode, { type: "ConfirmDown" }>, "type">): Mode => ({
     type: "ConfirmDown",
     sessionName,
     branch,

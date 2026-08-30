@@ -19,14 +19,14 @@ describe("Mode", () => {
 
   test("constructs ConfirmDown mode", () => {
     expect(
-      Mode.ConfirmDown(
-        "myapp-feature",
-        "feature",
-        "/tmp/myapp-feature",
-        "proj/feature",
-        "/tmp/myapp",
-        "proj",
-      ),
+      Mode.ConfirmDown({
+        sessionName: "myapp-feature",
+        branch: "feature",
+        worktreePath: "/tmp/myapp-feature",
+        worktreeKey: "proj/feature",
+        repoPath: "/tmp/myapp",
+        project: "proj",
+      }),
     ).toEqual({
       type: "ConfirmDown",
       sessionName: "myapp-feature",

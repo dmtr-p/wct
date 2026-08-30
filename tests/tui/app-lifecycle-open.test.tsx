@@ -8,6 +8,7 @@ import {
   emitWorkspacePhase,
   lastWorkspaceCall,
   makeWorktree,
+  openBranchFromModal,
   registryItems,
   renderApp,
   resetHarnessFixtures,
@@ -17,18 +18,6 @@ import {
   tmuxFixtures,
   worktreeFixtures,
 } from "./app-harness";
-
-const ENTER = "\r";
-const CTRL_ENTER = "\x1b[13;5u";
-
-// "o" opens the mode selector, Enter picks New Branch (whose branch field has
-// initial focus), then the branch name and submit.
-async function openBranchFromModal(stdin: NodeJS.ReadStream, branch: string) {
-  await sendKeys(stdin, "o");
-  await sendKeys(stdin, ENTER);
-  await sendKeys(stdin, branch);
-  await sendKeys(stdin, CTRL_ENTER);
-}
 
 describe("TUI open lifecycle", () => {
   let homeDir: string;

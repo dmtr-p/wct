@@ -155,16 +155,23 @@ export function createSessionHandoff(deps: SessionActionDeps) {
     }
 
     const liveClient = await deps.discoverClient();
-    if (liveClient.type !== "single") return undefined;
-
-    const switched = await deps.switchSession(
-      result.sessionName,
-      liveClient.client,
-    );
-    await deps.refreshSessions();
-    return switched
-      ? undefined
-      : `Started session '${result.sessionName}', but failed to switch client`;
+    if (liveClient.type === "single") {
+      const switched = await deps.switchSession(
+        result.sessionName,
+        liveClient.client,
+      );
+      await deps.refreshSessions();
+      return switched
+        ? undefined
+        : `Started session '${result.sessionName}', but failed to switch client`;
+    }
+    if (liveClient.type === "none") {
+      return "No tmux client found — start tmux in the other pane";
+    }
+    if (liveClient.type === "error") {
+      return `Started session '${result.sessionName}' but failed to query tmux clients to switch`;
+    }
+    return "Cannot switch tmux client after start because multiple tmux clients are attached";
   };
 }
 
@@ -462,14 +469,14 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
     deps.setMode(
-      Mode.ConfirmDown(
+      Mode.ConfirmDown({
         sessionName,
-        wt.branch,
-        wt.path,
+        branch: wt.branch,
+        worktreePath: wt.path,
         worktreeKey,
-        repo.repoPath,
-        repo.project,
-      ),
+        repoPath: repo.repoPath,
+        project: repo.project,
+      }),
     );
   };
 }

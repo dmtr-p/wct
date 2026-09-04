@@ -96,8 +96,10 @@ describe("createPrepareDeleteProject", () => {
   });
 
   test("uses the unfiltered project to guard every workspace lifecycle", () => {
+    const mainWorktree = repo.worktrees[0];
+    if (!mainWorktree) throw new Error("missing main worktree fixture");
     const deps = makeDeps({
-      filteredRepos: [{ ...repo, worktrees: [repo.worktrees[0]!] }],
+      filteredRepos: [{ ...repo, worktrees: [mainWorktree] }],
       lifecycle: new Map([
         [
           lifecycleKey(repo.repoPath, "feature"),

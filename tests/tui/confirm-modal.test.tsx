@@ -95,12 +95,7 @@ describe("ConfirmModal", () => {
   test("explains that deleting a project preserves worktrees", async () => {
     const rendered = await renderWithInput(
       <ConfirmModal
-        mode={
-          Mode.ConfirmDeleteProject(
-            "/tmp/myapp",
-            "myapp",
-          ) as ConfirmMode
-        }
+        mode={Mode.ConfirmDeleteProject("/tmp/myapp", "myapp") as ConfirmMode}
         width={60}
         onConfirm={() => {}}
         onCancel={() => {}}

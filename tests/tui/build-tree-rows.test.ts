@@ -772,7 +772,9 @@ describe("anchored confirmation rows", () => {
 
   test("anchors project deletion immediately below its project row", () => {
     const baseRows = buildTreeRows({ items, repos });
-    const mode = Mode.ConfirmDeleteProject(repos[0]!.repoPath, "alpha");
+    const targetRepo = repos[0];
+    if (!targetRepo) throw new Error("missing repository fixture");
+    const mode = Mode.ConfirmDeleteProject(targetRepo.repoPath, "alpha");
     const anchor = resolveConfirmationAnchorItemIndex(mode, items, repos);
 
     expect(anchor).toBe(0);

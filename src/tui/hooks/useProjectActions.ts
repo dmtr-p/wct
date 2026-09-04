@@ -5,10 +5,7 @@ import { PrCacheService } from "../../services/pr-cache-service";
 import { RegistryService } from "../../services/registry-service";
 import { formatSessionName } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
-import {
-  lifecycleBusyMessage,
-  type LifecycleState,
-} from "../lifecycle";
+import { type LifecycleState, lifecycleBusyMessage } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import { Mode, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
@@ -37,7 +34,9 @@ export interface ProjectActionDeps {
 
 function restoreProjectUi(deps: ProjectActionDeps) {
   deps.restoreConfirmationViewport();
-  deps.setSelectedIndex(deps.confirmDeleteProjectReturnSelectedIndexRef.current);
+  deps.setSelectedIndex(
+    deps.confirmDeleteProjectReturnSelectedIndexRef.current,
+  );
   deps.setMode(deps.confirmDeleteProjectReturnModeRef.current);
 }
 

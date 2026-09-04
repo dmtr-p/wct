@@ -28,9 +28,7 @@ describe("TUI project deletion", () => {
     repoPath = mkdtempSync(join(tmpdir(), "wct-app-delete-repo-"));
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
-    worktreeFixtures.byRepoPath.set(repoPath, [
-      makeWorktree(repoPath, "main"),
-    ]);
+    worktreeFixtures.byRepoPath.set(repoPath, [makeWorktree(repoPath, "main")]);
     registryItems.items = [
       { id: "repo-1", repo_path: repoPath, project: "alpha" },
     ];

@@ -221,7 +221,8 @@ vi.mock("../../src/services/workspace-service", async () => {
     typeof import("../../src/services/workspace-service")
   >("../../src/services/workspace-service");
   const { Effect } = await vi.importActual<typeof import("effect")>("effect");
-  const wrap = (operation: WorkspaceCallShape["operation"]) =>
+  const wrap =
+    (operation: WorkspaceCallShape["operation"]) =>
     (options: Record<string, unknown>) =>
       Effect.tryPromise({
         try: () => workspaceHarness.service[operation](options),

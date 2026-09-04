@@ -102,7 +102,7 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
 
 export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
   return (sessionNames: readonly string[]) =>
-    tuiRuntime.runPromise(
+    Effect.runPromise(
       Effect.gen(function* () {
         const [client, latestSessions] = yield* Effect.all(
           [
@@ -142,8 +142,7 @@ export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
 
         return client.type === "single"
           ? yield* Effect.tryPromise({
-              try: () =>
-                deps.switchSession(handoff.sessionName, client.client),
+              try: () => deps.switchSession(handoff.sessionName, client.client),
               catch: toWctError,
             })
           : false;

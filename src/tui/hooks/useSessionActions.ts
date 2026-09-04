@@ -19,7 +19,7 @@ import {
 } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
-  resolveSessionHandoff,
+  resolveSessionsHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
 import { isInertTreeItem, resolveSelectedWorktreeIndex } from "../tree-helpers";
@@ -95,15 +95,20 @@ export function createNavigateTree(deps: SessionActionDeps) {
 }
 
 export function createSwitchClientAway(deps: SessionActionDeps) {
-  return async (sessionName: string) => {
+  const switchAwayFromSessions = createSwitchClientAwayFromSessions(deps);
+  return (sessionName: string) => switchAwayFromSessions([sessionName]);
+}
+
+export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
+  return async (sessionNames: readonly string[]) => {
     try {
       const [client, latestSessions] = await Promise.all([
         deps.discoverClient(),
         deps.refreshSessions(),
       ]);
-      const handoff = resolveSessionHandoff({
+      const handoff = resolveSessionsHandoff({
         client,
-        targetSession: sessionName,
+        targetSessions: sessionNames,
         sessions: latestSessions,
       });
 
@@ -485,6 +490,7 @@ export function useSessionActions(deps: SessionActionDeps) {
   return {
     navigateTree: createNavigateTree(deps),
     switchClientAwayFromSession: createSwitchClientAway(deps),
+    switchClientAwayFromSessions: createSwitchClientAwayFromSessions(deps),
     startWorkspace: createStartWorkspace(deps),
     handleSpaceSwitch: createHandleSpaceSwitch(deps),
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),

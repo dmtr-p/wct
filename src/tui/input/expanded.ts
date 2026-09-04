@@ -108,6 +108,11 @@ export function handleExpandedInput(
     return;
   }
 
+  if (key.delete || key.backspace) {
+    ctx.prepareDeleteProject();
+    return;
+  }
+
   if (input === "c") {
     ctx.handleCloseSelectedWorktree();
     return;

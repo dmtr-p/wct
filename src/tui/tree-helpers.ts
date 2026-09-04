@@ -235,6 +235,14 @@ export function resolveConfirmationAnchorItemIndex(
   items: TreeItem[],
   repos: RepoInfo[],
 ): number | null {
+  if (mode.type === "ConfirmDeleteProject") {
+    const repoIndex = items.findIndex((item) => {
+      if (item.type !== "repo") return false;
+      return repos[item.repoIndex]?.repoPath === mode.repoPath;
+    });
+    return repoIndex === -1 ? null : repoIndex;
+  }
+
   if (mode.type === "ConfirmKill") {
     const paneIndex = items.findIndex((item) => {
       if (item.type !== "detail" || item.detailKind !== "pane") return false;

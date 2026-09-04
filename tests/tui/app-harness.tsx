@@ -30,10 +30,21 @@ const refreshHarness = vi.hoisted(() => ({
   callback: null as (() => void | Promise<void>) | null,
 }));
 
-vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: runtimeMock,
-  runTuiSilentPromise: (effect: unknown) => runtimeMock.runPromise(effect),
-}));
+vi.mock("../../src/tui/runtime", async () => {
+  const { Effect } = await vi.importActual<typeof import("effect")>("effect");
+  const runPromise = async (effect: unknown) => {
+    const result = await runtimeMock.runPromise(effect);
+    return Effect.isEffect(result)
+      ? Effect.runPromise(
+          result as import("effect").Effect.Effect<unknown, unknown>,
+        )
+      : result;
+  };
+  return {
+    tuiRuntime: { runPromise },
+    runTuiSilentPromise: runPromise,
+  };
+});
 
 vi.mock("../../src/tui/hooks/useRefresh", () => ({
   useRefresh: (callback: () => void | Promise<void>) => {
@@ -209,11 +220,24 @@ vi.mock("../../src/services/workspace-service", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/services/workspace-service")
   >("../../src/services/workspace-service");
+  const { Effect } = await vi.importActual<typeof import("effect")>("effect");
+  const wrap =
+    (operation: WorkspaceCallShape["operation"]) =>
+    (options: Record<string, unknown>) =>
+      Effect.tryPromise({
+        try: () => workspaceHarness.service[operation](options),
+        catch: (error) => error,
+      });
   return {
     ...actual,
     WorkspaceService: {
       use: (selector: (svc: unknown) => unknown) =>
-        selector(workspaceHarness.service),
+        selector({
+          open: wrap("open"),
+          up: wrap("up"),
+          down: wrap("down"),
+          close: wrap("close"),
+        }),
     },
   };
 });

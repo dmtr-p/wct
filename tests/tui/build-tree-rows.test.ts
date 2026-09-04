@@ -770,6 +770,26 @@ describe("anchored confirmation rows", () => {
     expect(confirmationRowRange(rows)).toEqual({ start: 2, end: 6 });
   });
 
+  test("anchors project deletion immediately below its project row", () => {
+    const baseRows = buildTreeRows({ items, repos });
+    const targetRepo = repos[0];
+    if (!targetRepo) throw new Error("missing repository fixture");
+    const mode = Mode.ConfirmDeleteProject(targetRepo.repoPath, "alpha");
+    const anchor = resolveConfirmationAnchorItemIndex(mode, items, repos);
+
+    expect(anchor).toBe(0);
+    const rows = insertConfirmationRows(baseRows, anchor ?? -1, 5);
+    expect(rows.map((row) => row.kind)).toEqual([
+      "repo",
+      "confirmation",
+      "confirmation",
+      "confirmation",
+      "confirmation",
+      "confirmation",
+      "worktree",
+    ]);
+  });
+
   test("scrolls the entire modal into a viewport when it opens below it", () => {
     expect(scrollRangeToKeepVisible({ start: 12, end: 16 }, 0, 8)).toBe(9);
   });

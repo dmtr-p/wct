@@ -21,6 +21,7 @@ import { useGitHub } from "./hooks/useGitHub";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
+import { useProjectActions } from "./hooks/useProjectActions";
 import { useRefresh } from "./hooks/useRefresh";
 import type { RepoInfo } from "./hooks/useRegistry";
 import { useRegistry } from "./hooks/useRegistry";
@@ -173,6 +174,8 @@ export function App() {
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmCloseReturnSelectedIndexRef = useRef<number>(0);
+  const confirmDeleteProjectReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const confirmDeleteProjectReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnSelectedIndexRef = useRef<number>(0);
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -640,6 +643,10 @@ export function App() {
         setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
         setMode(confirmCloseReturnModeRef.current);
         return;
+      case "ConfirmDeleteProject":
+        setSelectedIndex(confirmDeleteProjectReturnSelectedIndexRef.current);
+        setMode(confirmDeleteProjectReturnModeRef.current);
+        return;
     }
   }, [confirmationMode, confirmationAnchorItemIndex, mode]);
 
@@ -811,6 +818,24 @@ export function App() {
     modalReturnModeRef,
   });
 
+  const projectActions = useProjectActions({
+    treeItems,
+    filteredRepos,
+    repos,
+    selectedIndex,
+    mode,
+    lifecycle,
+    setSelectedIndex,
+    setMode,
+    showActionError,
+    clearActionError,
+    refreshAll,
+    restoreConfirmationViewport,
+    switchClientAwayFromSessions: sessionActions.switchClientAwayFromSessions,
+    confirmDeleteProjectReturnModeRef,
+    confirmDeleteProjectReturnSelectedIndexRef,
+  });
+
   const setTreeInputMode = useCallback(
     (nextMode: Mode) => {
       if (nextMode.type === "Search") {
@@ -837,6 +862,7 @@ export function App() {
     handleSpaceSwitch: sessionActions.handleSpaceSwitch,
     handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
     handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
+    prepareDeleteProject: projectActions.prepareDeleteProject,
     refreshRepo: (project: string) => void refreshGitHub(project),
   };
 
@@ -871,6 +897,11 @@ export function App() {
   }
 
   function cancelConfirm() {
+    // A confirmed destructive action keeps ownership of the modal until its
+    // async work settles. Leaving now would make the action look cancelled
+    // while it continues in the background, and its completion could later
+    // overwrite whatever mode or selection the user moved to.
+    if (confirmPendingRef.current) return;
     setScrollOffset(confirmReturnScrollOffsetRef.current);
     switch (mode.type) {
       case "ConfirmKill":
@@ -886,6 +917,10 @@ export function App() {
       case "ConfirmCloseForce":
         setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
         setMode(confirmCloseReturnModeRef.current);
+        return;
+      case "ConfirmDeleteProject":
+        setSelectedIndex(confirmDeleteProjectReturnSelectedIndexRef.current);
+        setMode(confirmDeleteProjectReturnModeRef.current);
         return;
     }
   }
@@ -951,6 +986,16 @@ export function App() {
             mode.project,
             mode.type === "ConfirmCloseForce",
           )
+          .finally(() => {
+            confirmPendingRef.current = false;
+          });
+        return;
+      }
+      case "ConfirmDeleteProject": {
+        if (confirmPendingRef.current) return;
+        confirmPendingRef.current = true;
+        void projectActions
+          .executeDeleteProject(mode.repoPath, mode.project)
           .finally(() => {
             confirmPendingRef.current = false;
           });
@@ -1086,7 +1131,8 @@ export function App() {
         mode.type !== "ConfirmKill" &&
         mode.type !== "ConfirmDown" &&
         mode.type !== "ConfirmClose" &&
-        mode.type !== "ConfirmCloseForce"
+        mode.type !== "ConfirmCloseForce" &&
+        mode.type !== "ConfirmDeleteProject"
       ) {
         // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
         // mode before React unmount, so the unmount-cleanup disable is too late.
@@ -1122,6 +1168,7 @@ export function App() {
         case "ConfirmDown":
         case "ConfirmClose":
         case "ConfirmCloseForce":
+        case "ConfirmDeleteProject":
           return handleConfirmInput(key);
       }
     },

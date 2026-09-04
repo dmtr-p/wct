@@ -47,6 +47,7 @@ function makeCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleSpaceSwitch: vi.fn(),
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
+    prepareDeleteProject: vi.fn(),
     prepareAddProjectModal: vi.fn(),
     refreshRepo: vi.fn(),
     ...overrides,
@@ -101,6 +102,18 @@ describe("handleNavigateInput", () => {
     const ctx = makeCtx();
     handleNavigateInput(ctx, "u", noKey);
     expect(ctx.prepareUpModal).toHaveBeenCalled();
+  });
+
+  test("delete calls prepareDeleteProject", () => {
+    const ctx = makeCtx();
+    handleNavigateInput(ctx, "", { ...noKey, delete: true });
+    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
+  });
+
+  test("mac backspace calls prepareDeleteProject", () => {
+    const ctx = makeCtx();
+    handleNavigateInput(ctx, "", { ...noKey, backspace: true });
+    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
   });
 
   test("up arrow calls navigateTree(-1)", () => {

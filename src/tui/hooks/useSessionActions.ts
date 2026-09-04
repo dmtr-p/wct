@@ -1,6 +1,7 @@
 // src/tui/hooks/useSessionActions.ts
 
 import { basename } from "node:path";
+import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
@@ -19,7 +20,7 @@ import {
 } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
-  resolveSessionHandoff,
+  resolveSessionsHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
 import { isInertTreeItem, resolveSelectedWorktreeIndex } from "../tree-helpers";
@@ -95,39 +96,58 @@ export function createNavigateTree(deps: SessionActionDeps) {
 }
 
 export function createSwitchClientAway(deps: SessionActionDeps) {
-  return async (sessionName: string) => {
-    try {
-      const [client, latestSessions] = await Promise.all([
-        deps.discoverClient(),
-        deps.refreshSessions(),
-      ]);
-      const handoff = resolveSessionHandoff({
-        client,
-        targetSession: sessionName,
-        sessions: latestSessions,
-      });
+  const switchAwayFromSessions = createSwitchClientAwayFromSessions(deps);
+  return (sessionName: string) => switchAwayFromSessions([sessionName]);
+}
 
-      if (handoff.type === "not-needed") {
-        return true;
-      }
+export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
+  return (sessionNames: readonly string[]) =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const [client, latestSessions] = yield* Effect.all(
+          [
+            Effect.tryPromise({
+              try: () => deps.discoverClient(),
+              catch: toWctError,
+            }),
+            Effect.tryPromise({
+              try: () => deps.refreshSessions(),
+              catch: toWctError,
+            }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        const handoff = resolveSessionsHandoff({
+          client,
+          targetSessions: sessionNames,
+          sessions: latestSessions,
+        });
 
-      if (handoff.type === "blocked") {
-        return false;
-      }
+        if (handoff.type === "not-needed") {
+          return true;
+        }
 
-      if (handoff.type === "detach") {
+        if (handoff.type === "blocked") {
+          return false;
+        }
+
+        if (handoff.type === "detach") {
+          return client.type === "single"
+            ? yield* Effect.tryPromise({
+                try: () => deps.detachClient(client.client),
+                catch: toWctError,
+              })
+            : false;
+        }
+
         return client.type === "single"
-          ? await deps.detachClient(client.client)
+          ? yield* Effect.tryPromise({
+              try: () => deps.switchSession(handoff.sessionName, client.client),
+              catch: toWctError,
+            })
           : false;
-      }
-
-      return client.type === "single"
-        ? await deps.switchSession(handoff.sessionName, client.client)
-        : false;
-    } catch {
-      return false;
-    }
-  };
+      }).pipe(Effect.catch(() => Effect.succeed(false))),
+    );
 }
 
 export interface StartWorkspaceTarget {
@@ -485,6 +505,7 @@ export function useSessionActions(deps: SessionActionDeps) {
   return {
     navigateTree: createNavigateTree(deps),
     switchClientAwayFromSession: createSwitchClientAway(deps),
+    switchClientAwayFromSessions: createSwitchClientAwayFromSessions(deps),
     startWorkspace: createStartWorkspace(deps),
     handleSpaceSwitch: createHandleSpaceSwitch(deps),
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),

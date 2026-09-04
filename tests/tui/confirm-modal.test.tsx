@@ -37,12 +37,14 @@ describe("ConfirmModal", () => {
     const rendered = await renderWithInput(
       <ConfirmModal
         mode={
-          Mode.ConfirmDown(
-            "myapp-feature",
-            "feature",
-            "/tmp/myapp-feature",
-            "proj/feature",
-          ) as ConfirmMode
+          Mode.ConfirmDown({
+            sessionName: "myapp-feature",
+            branch: "feature",
+            worktreePath: "/tmp/myapp-feature",
+            worktreeKey: "proj/feature",
+            repoPath: "/tmp/myapp",
+            project: "proj",
+          }) as ConfirmMode
         }
         width={60}
         onConfirm={onConfirm}
@@ -66,12 +68,14 @@ describe("ConfirmModal", () => {
     const rendered = await renderWithInput(
       <ConfirmModal
         mode={
-          Mode.ConfirmDown(
-            "myapp-feature",
-            `feature/with-a-very-long-name-${"x".repeat(80)}`,
-            "/tmp/myapp-feature",
-            "proj/feature",
-          ) as ConfirmMode
+          Mode.ConfirmDown({
+            sessionName: "myapp-feature",
+            branch: `feature/with-a-very-long-name-${"x".repeat(80)}`,
+            worktreePath: "/tmp/myapp-feature",
+            worktreeKey: "proj/feature",
+            repoPath: "/tmp/myapp",
+            project: "proj",
+          }) as ConfirmMode
         }
         width={40}
         onConfirm={() => {}}

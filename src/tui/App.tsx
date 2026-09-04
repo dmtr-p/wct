@@ -1,7 +1,14 @@
 // src/tui/App.tsx
 
 import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
 import { confirmModalRowCount, isConfirmMode } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
@@ -15,6 +22,7 @@ import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
 import { useRefresh } from "./hooks/useRefresh";
+import type { RepoInfo } from "./hooks/useRegistry";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useTmux } from "./hooks/useTmux";
@@ -36,6 +44,12 @@ import {
 } from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
+import type { LifecycleState } from "./lifecycle";
+import {
+  createLifecycleClaims,
+  isLifecycleActive,
+  lifecycleKey,
+} from "./lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -44,16 +58,22 @@ import {
   findOwningWorktreeIndex,
   firstRowForItem,
   insertConfirmationRows,
+  isWorktreeEffectivelyExpanded,
+  isWorktreeLifecycleActive,
+  reconcileDiscoveredWorkspaceKeys,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
+  resolveLifecycleReveal,
   resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
   resolveTreeReturnMode,
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
   treeItemId,
+  treeItemParentId,
+  workspaceIdentityKeysForDisplayKey,
 } from "./tree-helpers";
-import { Mode, type PendingAction, type PRInfo, pendingKey } from "./types";
+import { Mode, type PRInfo } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -93,9 +113,18 @@ export function App() {
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
+  // The live `mode`, for async continuations that must not act on a stale
+  // render-time capture.
+  const modeRef = useRef<Mode>(mode);
   const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
     new Set(),
   );
+  // Identity-scoped presentation overrides. A successful `open` adds its
+  // discovered Workspace; collapsing a shared display key can also migrate
+  // the other matching Workspaces here so only the selected identity closes.
+  const [discoveredWorkspaceKeys, setDiscoveredWorkspaceKeys] = useState<
+    Set<string>
+  >(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddProjectButtonHovered, setIsAddProjectButtonHovered] =
     useState(false);
@@ -104,9 +133,42 @@ export function App() {
     row: number;
   } | null>(null);
   const { actionError, showActionError, clearActionError } = useActionError();
-  const [pendingActions, setPendingActions] = useState<
-    Map<string, PendingAction>
-  >(new Map());
+  // Keyed by Workspace Identity (main repository path + branch), never by
+  // the project display name, so two repos sharing a display name can't
+  // clobber each other's progress.
+  const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
+  // External handoffs such as `tmux switch-client` can detach the terminal
+  // immediately. They need a commit barrier, not merely a queued state
+  // update, so the last frame the user sees cannot retain a progress row.
+  const lifecycleRef = useRef(lifecycle);
+  const lifecycleCleanupWaitersRef = useRef<Map<string, Set<() => void>>>(
+    new Map(),
+  );
+  const waitForLifecyclePresentationCleanup = useCallback(
+    (repoPath: string, branch: string): Promise<void> => {
+      const key = lifecycleKey(repoPath, branch);
+      if (!lifecycleRef.current.has(key)) return Promise.resolve();
+      return new Promise((resolve) => {
+        const waiters = lifecycleCleanupWaitersRef.current.get(key);
+        if (waiters) {
+          waiters.add(resolve);
+        } else {
+          lifecycleCleanupWaitersRef.current.set(key, new Set([resolve]));
+        }
+      });
+    },
+    [],
+  );
+  // Created once per App and shared by every verb: it decides, synchronously
+  // and before any state is written, whether an identity is already in flight.
+  const lifecycleClaimsRef = useRef(createLifecycleClaims());
+  const lifecycleClaims = lifecycleClaimsRef.current;
+  // Workspace Identities whose one-time viewport reveal already happened.
+  // Pruned when their operation ends, so a later operation is revealed again.
+  const revealedLifecyclesRef = useRef<Set<string>>(new Set());
+  // Set for exactly one commit by the reveal effect, cleared by a trailing
+  // effect below.
+  const lifecycleRevealPendingRef = useRef(false);
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmDownReturnSelectedIndexRef = useRef<number>(0);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -147,8 +209,27 @@ export function App() {
   }, [repos, searchQuery]);
 
   useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useLayoutEffect(() => {
+    lifecycleRef.current = lifecycle;
+  }, [lifecycle]);
+
+  useEffect(() => {
+    for (const [key, waiters] of lifecycleCleanupWaitersRef.current) {
+      if (lifecycle.has(key)) continue;
+      lifecycleCleanupWaitersRef.current.delete(key);
+      for (const resolve of waiters) resolve();
+    }
+  }, [lifecycle]);
+
+  useEffect(() => {
     setExpandedWorktreeKeys((previous) =>
       reconcileExpandedWorktreeKeys(previous, repos),
+    );
+    setDiscoveredWorkspaceKeys((previous) =>
+      reconcileDiscoveredWorkspaceKeys(previous, repos),
     );
   }, [repos]);
 
@@ -172,11 +253,21 @@ export function App() {
       buildTreeItems({
         repos: filteredRepos,
         expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
         prData,
         panes,
         jumpToPane,
       }),
-    [filteredRepos, expandedWorktreeKeys, prData, panes, jumpToPane],
+    [
+      filteredRepos,
+      expandedWorktreeKeys,
+      discoveredWorkspaceKeys,
+      lifecycle,
+      prData,
+      panes,
+      jumpToPane,
+    ],
   );
 
   const statusBarProps = resolveStatusBarProps({
@@ -204,9 +295,19 @@ export function App() {
   const canCollapse = Boolean(
     selectedWorktreeRepo &&
       selectedWorktreeData &&
-      expandedWorktreeKeys.has(
-        pendingKey(selectedWorktreeRepo.project, selectedWorktreeData.branch),
-      ),
+      !isLifecycleActive(
+        lifecycle,
+        selectedWorktreeRepo.repoPath,
+        selectedWorktreeData.branch,
+      ) &&
+      isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
+        project: selectedWorktreeRepo.project,
+        repoPath: selectedWorktreeRepo.repoPath,
+        branch: selectedWorktreeData.branch,
+      }),
   );
 
   const repoError = statusBarProps.selectedProject
@@ -221,10 +322,18 @@ export function App() {
         items: treeItems,
         repos: filteredRepos,
         expandedWorktreeKeys,
-        pendingActions,
+        discoveredWorkspaceKeys,
+        lifecycle,
         maxWidth: termCols,
       }),
-    [treeItems, filteredRepos, expandedWorktreeKeys, pendingActions, termCols],
+    [
+      treeItems,
+      filteredRepos,
+      expandedWorktreeKeys,
+      discoveredWorkspaceKeys,
+      lifecycle,
+      termCols,
+    ],
   );
 
   const confirmationMode = isConfirmMode(mode) ? mode : null;
@@ -326,6 +435,10 @@ export function App() {
   // exactly once per commit.
   const prevTreeRef = useRef(treeItems);
   const prevSelectionIdRef = useRef<string | null>(null);
+  // The parent branch row of a selected detail row, tracked alongside the
+  // selection identity so recovery has a destination when the detail row
+  // itself disappears — which starting a lifecycle on that Workspace does.
+  const prevSelectionParentIdRef = useRef<string | null>(null);
   const prevSearchQueryRef = useRef(searchQuery);
 
   // selectionChanged distinguishes a deliberate selection change (e.g. a
@@ -342,7 +455,7 @@ export function App() {
   // touching selectedIndex: the viewport shrinking (an action/repo error line
   // appearing, the terminal resized shorter) or rows above the selection
   // reflowing (a PR title wrapping differently after a width change, a check
-  // rollup arriving, phantom rows appearing). The clamp in the recovery
+  // rollup arriving). The clamp in the recovery
   // effect below can only ever DECREASE the offset, so without this signal a
   // selection sitting on a visible row could silently leave the window with
   // no path back until the next navigation key. Tracked as "was the selection
@@ -366,6 +479,7 @@ export function App() {
   useEffect(() => {
     const prevTree = prevTreeRef.current;
     const prevId = prevSelectionIdRef.current;
+    const prevParentId = prevSelectionParentIdRef.current;
     const prevSearchQuery = prevSearchQueryRef.current;
     const searchQueryChanged = prevSearchQuery !== searchQuery;
 
@@ -376,6 +490,7 @@ export function App() {
     if (searchQueryChanged) {
       // Search transitions intentionally reset the cursor to the first match.
       prevSelectionIdRef.current = null;
+      prevSelectionParentIdRef.current = null;
       // Reset the scroll explicitly: when the cursor was already at index 0
       // (e.g. after a wheel scroll), setSelectedIndex(0) is a no-op, so
       // `selectionChanged` stays false and the keep-visible effect below never
@@ -393,6 +508,9 @@ export function App() {
 
     const item = treeItems[selectedIndex];
     prevSelectionIdRef.current = item ? treeItemId(item, filteredRepos) : null;
+    prevSelectionParentIdRef.current = item
+      ? treeItemParentId(item, filteredRepos)
+      : null;
 
     // Skip identity recovery for a deliberate selection change (e.g. a mouse
     // click that also collapsed Expanded) — otherwise it sees the new
@@ -401,6 +519,10 @@ export function App() {
       prevTree,
       treeItems,
       prevSelectionId: prevId,
+      prevSelectionParentId: prevParentId,
+      // The parent-branch fallback is scoped to detail rows a lifecycle
+      // suppressed; every other disappearance keeps the old clamp.
+      lifecycle,
       selectedIndex,
       repos: filteredRepos,
       skipIdentityRecovery: selectionChanged,
@@ -419,10 +541,38 @@ export function App() {
     selectedIndex,
     filteredRepos,
     searchQuery,
+    lifecycle,
     rows,
     viewportRows,
     selectionChanged,
   ]);
+
+  // One-time viewport reveal: when a lifecycle operation's row lies outside
+  // the visible window, nudge the scroll offset minimally so it's on screen,
+  // then remember the identity as revealed. Declared before the keep-visible
+  // effect so its suppression flag is already set when that effect runs in
+  // the same commit.
+  useEffect(() => {
+    const revealed = revealedLifecyclesRef.current;
+    for (const key of revealed) {
+      if (!lifecycle.has(key)) revealed.delete(key);
+    }
+
+    const reveal = resolveLifecycleReveal({
+      rows,
+      repos: filteredRepos,
+      lifecycle,
+      revealed,
+      scrollOffset: effectiveScrollOffset,
+      viewportRows,
+    });
+    if (!reveal) return;
+
+    revealed.add(reveal.key);
+    if (reveal.scrollOffset === effectiveScrollOffset) return;
+    lifecycleRevealPendingRef.current = true;
+    setScrollOffset(reveal.scrollOffset);
+  }, [lifecycle, rows, filteredRepos, effectiveScrollOffset, viewportRows]);
 
   // Keyboard ↑/↓ (and mouse clicks) are viewport-aware: after a DELIBERATE
   // selection change, nudge the scroll offset minimally to keep the selection
@@ -436,8 +586,14 @@ export function App() {
   // calls setRepos, even when content is unchanged) cannot re-fire this and
   // snap a wheel-scrolled viewport back to the selection. NOT keyed on
   // scrollOffset, and uses a functional update, so it never fights a future
-  // wheel scroll (slice 02).
+  // wheel scroll.
   useEffect(() => {
+    // The one-time lifecycle reveal owns the viewport for the commit it
+    // fires in — that same commit can also move the selection off a
+    // suppressed detail row via `setSelectedIndex`, which is otherwise
+    // indistinguishable from a deliberate keyboard move and would re-anchor
+    // the offset right back, undoing the reveal.
+    if (lifecycleRevealPendingRef.current) return;
     // All three refs are read BEFORE the trailing effects below rewrite them,
     // so they are last commit's values. A passive re-anchor requires the row
     // or viewport to have ACTUALLY changed — a run where neither did (the
@@ -505,16 +661,33 @@ export function App() {
   useEffect(() => {
     prevSelectionWasVisibleRef.current = selectionVisible;
   });
+  // The reveal's claim on the viewport lasts exactly one commit.
+  useEffect(() => {
+    lifecycleRevealPendingRef.current = false;
+  });
 
-  const refreshAll = useCallback(async () => {
-    await Promise.all([refreshRegistry(), refreshSessions(), discoverClient()]);
+  // Resolves the registry snapshot this refresh observed (or `null` when it
+  // failed and the previous repos were kept), so a lifecycle can reconcile
+  // against what it just validated instead of a stale `repos` capture.
+  const refreshAll = useCallback(async (): Promise<RepoInfo[] | null> => {
+    const [refreshedRepos] = await Promise.all([
+      refreshRegistry(),
+      refreshSessions(),
+      discoverClient(),
+    ]);
+    return refreshedRepos;
   }, [refreshRegistry, refreshSessions, discoverClient]);
 
   const restoreConfirmationViewport = useCallback(() => {
     setScrollOffset(confirmReturnScrollOffsetRef.current);
   }, []);
 
-  useRefresh(refreshAll);
+  // The poll/watch path only needs the side effect, not the resolved snapshot.
+  const pollRefresh = useCallback(async (): Promise<void> => {
+    await refreshAll();
+  }, [refreshAll]);
+
+  useRefresh(pollRefresh);
 
   const expandWorktree = useCallback((worktreeKey: string) => {
     setExpandedWorktreeKeys((previous) => {
@@ -525,13 +698,46 @@ export function App() {
     setMode(Mode.Expanded(worktreeKey));
   }, []);
 
-  const collapseWorktree = useCallback((worktreeKey: string) => {
-    setExpandedWorktreeKeys((previous) => {
-      const next = new Set(previous);
-      next.delete(worktreeKey);
-      return next;
-    });
-  }, []);
+  const collapseWorktree = useCallback(
+    (worktreeKey: string, repoPath: string, branch: string) => {
+      const workspaceIdentityKey = lifecycleKey(repoPath, branch);
+      const preservedWorkspaceKeys = expandedWorktreeKeys.has(worktreeKey)
+        ? workspaceIdentityKeysForDisplayKey(repos, worktreeKey)
+        : new Set<string>();
+      preservedWorkspaceKeys.delete(workspaceIdentityKey);
+
+      setExpandedWorktreeKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(worktreeKey);
+        return next;
+      });
+      setDiscoveredWorkspaceKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(workspaceIdentityKey);
+        for (const preserved of preservedWorkspaceKeys) next.add(preserved);
+        if (
+          next.size === previous.size &&
+          [...next].every((key) => previous.has(key))
+        ) {
+          return previous;
+        }
+        return next;
+      });
+    },
+    [expandedWorktreeKeys, repos],
+  );
+
+  const markWorkspaceDiscovered = useCallback(
+    (workspaceIdentityKey: string) => {
+      setDiscoveredWorkspaceKeys((previous) => {
+        if (previous.has(workspaceIdentityKey)) return previous;
+        const next = new Set(previous);
+        next.add(workspaceIdentityKey);
+        return next;
+      });
+    },
+    [],
+  );
 
   const openModalPRList = useMemo(() => {
     const prs: PRInfo[] = [];
@@ -556,9 +762,12 @@ export function App() {
     sessions,
     selectedIndex,
     mode,
+    lifecycle,
+    lifecycleClaims,
     setSelectedIndex,
     setMode,
-    setPendingActions,
+    modeRef,
+    setLifecycle,
     showActionError,
     clearActionError,
     switchSession,
@@ -580,18 +789,22 @@ export function App() {
     mode,
     openModalRepoProject,
     openModalRepoPath,
+    lifecycle,
+    lifecycleClaims,
+    setLifecycle,
     setMode,
     setSelectedIndex,
-    setPendingActions,
     setOpenModalBase,
     setOpenModalProfiles,
     setOpenModalRepoProject,
     setOpenModalRepoPath,
+    markWorkspaceDiscovered,
+    waitForLifecyclePresentationCleanup,
     showActionError,
     clearActionError,
     switchSession,
     discoverClient,
-    handleStartResult: sessionActions.handleStartResult,
+    startWorkspace: sessionActions.startWorkspace,
     refreshAll,
     upModalReturnModeRef,
     upModalReturnSelectedIndexRef,
@@ -613,6 +826,7 @@ export function App() {
     filteredRepos,
     selectedIndex,
     tmuxClient,
+    lifecycle,
     setMode: setTreeInputMode,
     setSearchQuery,
     expandWorktree,
@@ -715,7 +929,8 @@ export function App() {
             mode.sessionName,
             mode.branch,
             mode.worktreePath,
-            mode.worktreeKey,
+            mode.repoPath,
+            mode.project,
           )
           .finally(() => {
             confirmPendingRef.current = false;
@@ -800,17 +1015,30 @@ export function App() {
         lastMouseClickRef.current = detection.history;
         if (!detection.isDoubleClick) return;
 
+        // Same refusal as `canCollapse`: a double-click on a Workspace under
+        // an active lifecycle must not write the stored expansion preference.
+        if (
+          target.type === "worktree" &&
+          isWorktreeLifecycleActive(target, filteredRepos, lifecycle)
+        ) {
+          return;
+        }
         const doubleClickAction = resolveTreeDoubleClickAction(
           target,
           filteredRepos,
           expandedWorktreeKeys,
+          discoveredWorkspaceKeys,
         );
         switch (doubleClickAction.type) {
           case "expand-worktree":
             expandWorktree(doubleClickAction.worktreeKey);
             return;
           case "collapse-worktree":
-            collapseWorktree(doubleClickAction.worktreeKey);
+            collapseWorktree(
+              doubleClickAction.worktreeKey,
+              doubleClickAction.repoPath,
+              doubleClickAction.branch,
+            );
             return;
           case "activate-detail":
             doubleClickAction.action();
@@ -946,10 +1174,11 @@ export function App() {
             items={treeItems}
             rows={rows}
             hoveredItemIndex={hoveredItemIndex}
-            pendingActions={pendingActions}
+            lifecycle={lifecycle}
             prData={prData}
             panes={panes}
             expandedWorktreeKeys={expandedWorktreeKeys}
+            discoveredWorkspaceKeys={discoveredWorkspaceKeys}
             maxWidth={termCols}
             refreshingProjects={refreshingProjects}
             errors={githubErrors}

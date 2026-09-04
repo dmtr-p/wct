@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { $ } from "bun";
@@ -646,6 +646,190 @@ describe("open workflow", () => {
     }
   });
 
+  test("openCommand JSON remains one document when real setup and copy work report progress", async () => {
+    await Bun.write(
+      join(fixture.repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+copy:
+  - "**/*.missing"
+setup:
+  - name: First
+    command: "true"
+  - name: Second
+    command: "false"
+    optional: true
+`,
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await runBunPromise(
+        withTestServices(
+          openCommand({
+            branch: "json-real-lifecycle",
+            existing: false,
+            noAttach: true,
+            cwd: fixture.repoDir,
+          }),
+          {
+            json: true,
+            worktree: {
+              ...liveWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+              branchExists: () => Effect.succeed(false),
+              createWorktree: (path) =>
+                Effect.promise(async () => {
+                  await mkdir(path, { recursive: true });
+                  return { _tag: "Created" as const, path };
+                }),
+            },
+          },
+        ),
+      );
+
+      const transcript = logSpy.mock.calls
+        .map((args) => args.map(String).join(" "))
+        .join("\n");
+      const output = JSON.parse(transcript);
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(output).toMatchObject({
+        ok: true,
+        data: {
+          workspace: {
+            branch: "json-real-lifecycle",
+            warnings: [
+              {
+                _tag: "SetupFailed",
+                name: "Second",
+                optional: true,
+              },
+            ],
+          },
+        },
+      });
+    } finally {
+      logSpy.mockRestore();
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+`,
+      );
+    }
+  });
+
+  test("openCommand JSON leaves fatal copy output to the root JSON error envelope", async () => {
+    await Bun.write(
+      join(fixture.repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+copy:
+  - "missing.env"
+`,
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(
+            openCommand({
+              branch: "json-copy-failure",
+              existing: false,
+              noAttach: true,
+              cwd: fixture.repoDir,
+            }),
+            {
+              json: true,
+              worktree: {
+                ...liveWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+                branchExists: () => Effect.succeed(false),
+                createWorktree: (path) =>
+                  Effect.promise(async () => {
+                    await mkdir(path, { recursive: true });
+                    return { _tag: "Created" as const, path };
+                  }),
+              },
+            },
+          ),
+        ),
+      ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+`,
+      );
+    }
+  });
+
+  test("openCommand human output preserves the legacy fatal copy warning", async () => {
+    await Bun.write(
+      join(fixture.repoDir, ".wct.yaml"),
+      `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+copy:
+  - "missing.env"
+`,
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await expect(
+        runBunPromise(
+          withTestServices(
+            openCommand({
+              branch: "human-copy-failure",
+              existing: false,
+              noAttach: true,
+              cwd: fixture.repoDir,
+            }),
+            {
+              worktree: {
+                ...liveWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(fixture.repoDir),
+                branchExists: () => Effect.succeed(false),
+                createWorktree: (path) =>
+                  Effect.promise(async () => {
+                    await mkdir(path, { recursive: true });
+                    return { _tag: "Created" as const, path };
+                  }),
+              },
+            },
+          ),
+        ),
+      ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+      expect(
+        logSpy.mock.calls.some((args) =>
+          String(args[0]).includes("File not found: missing.env"),
+        ),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+      await Bun.write(
+        join(fixture.repoDir, ".wct.yaml"),
+        `version: 1
+worktree_dir: "worktrees"
+project_name: "myapp"
+`,
+      );
+    }
+  });
+
   test("openCommand passes a human reporter without project registration", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const registerCalls: string[] = [];
@@ -699,6 +883,57 @@ describe("open workflow", () => {
                       }),
                       () => Effect.void,
                     );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "CopyEntrySkipped",
+                        entry: ".settings/",
+                        reason: "directory_not_found_or_empty",
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "CopyEntryFailed",
+                        file: ".env",
+                        reason: "source_not_found",
+                        error: "File not found",
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "CopyEntryFailed",
+                        file: ".settings/config.json",
+                        reason: "copy_failed",
+                        error: "permission denied",
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "SetupCommandStarted",
+                        name: "Install dependencies",
+                        current: 1,
+                        total: 2,
+                      }),
+                      () => Effect.void,
+                    );
+                    yield* Effect.catch(
+                      reporter.event({
+                        operation: "open",
+                        _tag: "SetupCommandCompleted",
+                        result: {
+                          name: "Install dependencies",
+                          _tag: "OptionalFailed",
+                          error: "offline",
+                        },
+                      }),
+                      () => Effect.void,
+                    );
                   }
                   return workspaceResult;
                 }),
@@ -722,6 +957,32 @@ describe("open workflow", () => {
       expect(loggedLines.some((line) => line.includes("Copying files"))).toBe(
         true,
       );
+      expect(
+        loggedLines.some((line) =>
+          line.includes("Directory not found or empty: .settings/"),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) => line.includes("File not found: .env")),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) =>
+          line.includes(
+            "Failed to copy .settings/config.json: permission denied",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some(
+          (line) =>
+            line.includes("[1/2]") && line.includes("Install dependencies"),
+        ),
+      ).toBe(true);
+      expect(
+        loggedLines.some((line) =>
+          line.includes("Install dependencies failed (optional): offline"),
+        ),
+      ).toBe(true);
       expect(
         loggedLines.some((line) => line.includes("Registered project")),
       ).toBe(false);

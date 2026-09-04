@@ -1,6 +1,3 @@
-// src/tui/types.ts
-
-/** TUI interaction modes */
 export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
@@ -11,6 +8,10 @@ export type Mode =
       type: "UpModal";
       worktreePath: string;
       worktreeKey: string;
+      repoPath: string;
+      /** Never derive branch from worktreeKey — project display names can collide across repos. */
+      branch: string;
+      project: string;
       profileNames: string[];
     }
   | { type: "Expanded"; worktreeKey: string }
@@ -26,6 +27,8 @@ export type Mode =
       branch: string;
       worktreePath: string;
       worktreeKey: string;
+      repoPath: string;
+      project: string;
     }
   | {
       type: "ConfirmClose";
@@ -53,14 +56,20 @@ export const Mode = {
   Shortcuts: { type: "Shortcuts" } as Mode,
   OpenModal: { type: "OpenModal" } as Mode,
   AddProjectModal: { type: "AddProjectModal" } as Mode,
-  UpModal: (
-    worktreePath: string,
-    worktreeKey: string,
-    profileNames: string[],
-  ): Mode => ({
+  UpModal: ({
+    worktreePath,
+    worktreeKey,
+    repoPath,
+    branch,
+    project,
+    profileNames,
+  }: Omit<Extract<Mode, { type: "UpModal" }>, "type">): Mode => ({
     type: "UpModal",
     worktreePath,
     worktreeKey,
+    repoPath,
+    branch,
+    project,
     profileNames,
   }),
   Expanded: (worktreeKey: string): Mode => ({
@@ -73,17 +82,21 @@ export const Mode = {
     label,
     worktreeKey,
   }),
-  ConfirmDown: (
-    sessionName: string,
-    branch: string,
-    worktreePath: string,
-    worktreeKey: string,
-  ): Mode => ({
+  ConfirmDown: ({
+    sessionName,
+    branch,
+    worktreePath,
+    worktreeKey,
+    repoPath,
+    project,
+  }: Omit<Extract<Mode, { type: "ConfirmDown" }>, "type">): Mode => ({
     type: "ConfirmDown",
     sessionName,
     branch,
     worktreePath,
     worktreeKey,
+    repoPath,
+    project,
   }),
   ConfirmClose: (
     sessionName: string,
@@ -162,13 +175,6 @@ type DetailItem<
       meta: TMeta;
     };
 
-/** Pending action for optimistic UI */
-export interface PendingAction {
-  type: "opening" | "closing" | "starting" | "stopping";
-  branch: string;
-  project: string;
-}
-
 /** GitHub PR info from `gh` CLI */
 export interface PRInfo {
   number: number;
@@ -180,7 +186,7 @@ export interface PRInfo {
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
 
-/** Format a pending action key */
+/** Display key for a project+branch pair. */
 export function pendingKey(project: string, branch: string): string {
   return `${project}/${branch}`;
 }

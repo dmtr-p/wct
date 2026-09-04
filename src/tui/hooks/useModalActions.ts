@@ -7,19 +7,26 @@ import type { TmuxClient } from "../../services/tmux";
 import {
   type WorkspaceOpenResult,
   WorkspaceService,
-  type WorkspaceUpResult,
   type WorkspaceWarning,
 } from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
 import type { UpModalResult } from "../components/UpModal";
+import {
+  type LifecycleClaims,
+  type LifecycleState,
+  lifecycleKey,
+  rejectIfLifecycleActive,
+  runLifecycleOperation,
+} from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
   resolveSelectedWorktreeIndex,
   resolveTreeReturnMode,
 } from "../tree-helpers";
-import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
+import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
+import type { StartWorkspaceTarget } from "./useSessionActions";
 import type { TmuxClientDiscovery } from "./useTmux";
 
 function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
@@ -35,6 +42,21 @@ function formatWorkspaceWarning(warning: WorkspaceWarning): string {
   }
 }
 
+function discoveredWorkspaceIdentityKey(
+  snapshot: readonly RepoInfo[],
+  repoPath: string,
+  branch: string,
+): string | undefined {
+  if (!repoPath) return undefined;
+  for (const repo of snapshot) {
+    if (repo.repoPath !== repoPath) continue;
+    const hasWorktree = repo.worktrees.some((wt) => wt.branch === branch);
+    if (!hasWorktree) continue;
+    return lifecycleKey(repo.repoPath, branch);
+  }
+  return undefined;
+}
+
 export interface ModalActionDeps {
   treeItems: TreeItem[];
   filteredRepos: RepoInfo[];
@@ -42,24 +64,37 @@ export interface ModalActionDeps {
   mode: Mode;
   openModalRepoProject: string;
   openModalRepoPath: string;
+  /** Active lifecycle operations, keyed by Workspace Identity. */
+  lifecycle: LifecycleState;
+  // Shared with `useSessionActions` so an `open` and an `up`/`down`/`close`
+  // can't both claim the same Workspace.
+  lifecycleClaims: LifecycleClaims;
 
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   setMode: (m: Mode) => void;
   setSelectedIndex: Dispatch<SetStateAction<number>>;
-  setPendingActions: Dispatch<SetStateAction<Map<string, PendingAction>>>;
   setOpenModalBase: (v: string | undefined) => void;
   setOpenModalProfiles: (v: string[]) => void;
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
 
+  // Presents a freshly-opened Workspace as expanded without writing the
+  // stored `expandedWorktreeKeys` preference.
+  markWorkspaceDiscovered: (workspaceIdentityKey: string) => void;
+  /** Resolves only after Ink commits removal of this Workspace's progress row. */
+  waitForLifecyclePresentationCleanup: (
+    repoPath: string,
+    branch: string,
+  ) => Promise<void>;
+
   showActionError: (msg: string) => void;
   clearActionError: () => void;
   switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
-  handleStartResult: (
-    result: WorkspaceUpResult,
-    autoSwitch: boolean,
-  ) => Promise<void>;
-  refreshAll: () => Promise<void>;
+  startWorkspace: (target: StartWorkspaceTarget) => Promise<void>;
+  // Lifecycle reconciliation must read the snapshot this resolves to, never
+  // the render-time `filteredRepos` capture.
+  refreshAll: () => Promise<RepoInfo[] | null>;
 
   upModalReturnModeRef: MutableRefObject<Mode>;
   upModalReturnSelectedIndexRef: MutableRefObject<number>;
@@ -104,99 +139,84 @@ export function createHandleOpen(deps: ModalActionDeps) {
     deps.setMode(deps.modalReturnModeRef.current);
     const requestedBranch = opts.pr ? undefined : opts.branch;
     const project = deps.openModalRepoProject || "unknown";
-    const key = pendingKey(project, opts.branch);
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(key, {
-        type: "opening",
-        branch: opts.branch,
+    const repoPath = deps.openModalRepoPath;
+
+    // The Workspace doesn't exist yet, so this lifecycle entry is its only
+    // representation in the tree until validation confirms it on disk.
+    void runLifecycleOperation<WorkspaceOpenResult>({
+      claims: deps.lifecycleClaims,
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "open",
+        repoPath,
         project,
-      }),
-    );
-
-    const clearPending = () => {
-      deps.setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
-    };
-
-    void (async () => {
-      let warningMessage: string | undefined;
-
-      const appendWarning = (message: string) => {
-        warningMessage = warningMessage
-          ? `${warningMessage}\n${message}`
-          : message;
-      };
-
-      try {
-        try {
-          const result = await tuiRuntime.runPromise(
-            WorkspaceService.use((service) =>
-              service.open({
-                branch: requestedBranch,
-                base: opts.base,
-                cwd: deps.openModalRepoPath || undefined,
-                pr: opts.pr,
-                profile: opts.profile,
-                existing: opts.existing,
-              }),
-            ),
-          );
-          if (result.warnings.length > 0) {
-            appendWarning(
-              result.warnings.map(formatWorkspaceWarning).join("\n"),
-            );
-          }
-
-          if (!opts.noAttach && workspaceOpenStartedTmux(result)) {
-            const liveClient = await deps.discoverClient();
-            if (liveClient.type === "single") {
-              const switched = await deps.switchSession(
-                result.sessionName,
-                liveClient.client,
-              );
-              if (!switched) {
-                appendWarning(
-                  `Started session '${result.sessionName}', but failed to switch client`,
-                );
-              }
-            } else if (liveClient.type === "none") {
-              appendWarning(
-                "No tmux client found — start tmux in the other pane",
-              );
-            } else if (liveClient.type === "error") {
-              appendWarning(
-                `Opened session '${result.sessionName}' but failed to query tmux clients to switch`,
-              );
-            } else if (liveClient.type === "multiple") {
-              appendWarning(
-                "Cannot switch tmux client after open because multiple tmux clients are attached",
-              );
-            }
-          }
-        } catch (error) {
-          deps.showActionError(toWctError(error).message);
-          return;
-        }
-
-        try {
-          await deps.refreshAll();
-        } catch (error) {
-          appendWarning(
-            `Refresh failed after open: ${toWctError(error).message}`,
-          );
-        }
-
-        if (warningMessage) {
-          deps.showActionError(warningMessage);
-        }
-      } finally {
-        clearPending();
-      }
-    })();
+        branch: opts.branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: (reporter) =>
+        tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch: requestedBranch,
+              base: opts.base,
+              cwd: deps.openModalRepoPath || undefined,
+              pr: opts.pr,
+              profile: opts.profile,
+              existing: opts.existing,
+              reporter,
+            }),
+          ),
+        ),
+      resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
+      // Only a Workspace validation actually found gets left expanded; this
+      // never writes the stored expansion preference.
+      onValidated: (snapshot) => {
+        const discovered = discoveredWorkspaceIdentityKey(
+          snapshot,
+          repoPath,
+          opts.branch,
+        );
+        if (discovered) deps.markWorkspaceDiscovered(discovered);
+      },
+      afterCleanup: (result) => openSessionHandoff(deps, opts, result),
+    });
   };
+}
+
+// Runs after validation and teardown: switching tmux clients detaches the
+// terminal this TUI is drawn in, so a failure here must surface as a plain
+// action error rather than resurrecting a progress row.
+async function openSessionHandoff(
+  deps: ModalActionDeps,
+  opts: OpenModalResult,
+  result: WorkspaceOpenResult,
+): Promise<string | undefined> {
+  if (opts.noAttach || !workspaceOpenStartedTmux(result)) return undefined;
+
+  await deps.waitForLifecyclePresentationCleanup(
+    deps.openModalRepoPath,
+    opts.branch,
+  );
+
+  const liveClient = await deps.discoverClient();
+  if (liveClient.type === "single") {
+    const switched = await deps.switchSession(
+      result.sessionName,
+      liveClient.client,
+    );
+    return switched
+      ? undefined
+      : `Started session '${result.sessionName}', but failed to switch client`;
+  }
+  if (liveClient.type === "none") {
+    return "No tmux client found — start tmux in the other pane";
+  }
+  if (liveClient.type === "error") {
+    return `Opened session '${result.sessionName}' but failed to query tmux clients to switch`;
+  }
+  return "Cannot switch tmux client after open because multiple tmux clients are attached";
 }
 
 export function createPrepareUpModal(deps: ModalActionDeps) {
@@ -214,13 +234,35 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
 
+    // Same guard as space/down/close: refuse before opening the option
+    // sheet, not after submit.
+    if (
+      rejectIfLifecycleActive({
+        lifecycle: deps.lifecycle,
+        mainRepoPath: repo.repoPath,
+        branch: wt.branch,
+        showActionError: deps.showActionError,
+      })
+    ) {
+      return;
+    }
+
     const worktreeKey = pendingKey(repo.project, wt.branch);
     deps.upModalReturnSelectedIndexRef.current = deps.selectedIndex;
     deps.upModalReturnModeRef.current =
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
-    deps.setMode(Mode.UpModal(wt.path, worktreeKey, repo.profileNames));
+    deps.setMode(
+      Mode.UpModal({
+        worktreePath: wt.path,
+        worktreeKey,
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+        project: repo.project,
+        profileNames: repo.profileNames,
+      }),
+    );
   };
 }
 
@@ -228,43 +270,22 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
   return (result: UpModalResult) => {
     if (deps.mode.type !== "UpModal") return;
 
-    const { worktreePath, worktreeKey } = deps.mode;
+    // Identity comes off the mode, never off the display key: `project` is
+    // free-form and may itself contain a slash, so splitting `worktreeKey`
+    // would claim a bogus lifecycleKey and lose the operation.
+    const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
     deps.setSelectedIndex(deps.upModalReturnSelectedIndexRef.current);
     deps.setMode(deps.upModalReturnModeRef.current);
 
-    const branch = worktreeKey.split("/").slice(1).join("/");
-    const project = worktreeKey.split("/")[0] ?? "unknown";
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(worktreeKey, {
-        type: "starting",
-        branch,
-        project,
-      }),
-    );
-
-    void (async () => {
-      try {
-        const upResult = await tuiRuntime.runPromise(
-          WorkspaceService.use((service) =>
-            service.up({
-              path: worktreePath,
-              profile: result.profile,
-            }),
-          ),
-        );
-        await deps.handleStartResult(upResult, result.autoSwitch);
-      } catch (error) {
-        deps.showActionError(toWctError(error).message);
-        await deps.refreshAll();
-      } finally {
-        deps.setPendingActions((prev) => {
-          const next = new Map(prev);
-          next.delete(worktreeKey);
-          return next;
-        });
-      }
-    })();
+    void deps.startWorkspace({
+      worktreePath,
+      repoPath,
+      project,
+      branch,
+      ...(result.profile ? { profile: result.profile } : {}),
+      autoSwitch: result.autoSwitch,
+    });
   };
 }
 

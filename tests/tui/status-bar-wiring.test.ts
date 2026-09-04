@@ -100,12 +100,14 @@ describe("resolveStatusBarProps", () => {
   });
 
   test("passes ConfirmDown mode through unchanged", () => {
-    const confirmDown = Mode.ConfirmDown(
-      "myapp-feature",
-      "feature",
-      "/tmp/myapp-feature",
-      "proj/feature",
-    );
+    const confirmDown = Mode.ConfirmDown({
+      sessionName: "myapp-feature",
+      branch: "feature",
+      worktreePath: "/tmp/myapp-feature",
+      worktreeKey: "proj/feature",
+      repoPath: "/tmp/myapp",
+      project: "proj",
+    });
 
     expect(
       resolveStatusBarProps({

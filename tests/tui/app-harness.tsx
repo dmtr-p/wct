@@ -1,38 +1,28 @@
-// Shared mocking strategy + Ink render harness for the suites that render the
-// REAL exported `App` from `src/tui/App.tsx` through Ink's actual input
-// pipeline (tests/tui/app-mouse-wiring.test.tsx and
-// tests/tui/app-review-fixes.test.tsx). Centralising the service mocks here
-// keeps the mocked service shapes in sync between those suites.
+// Shared mocking strategy + Ink render harness for suites that render the
+// real exported `App` through Ink's actual input pipeline.
 //
-// Mocking strategy mirrors the established pattern in this test suite
-// (tests/tui/use-tmux.test.ts, tests/tui/session-actions.test.ts,
-// tests/tui/modal-actions.test.ts): mock each `XService.use(selector)` to
-// call `selector` synchronously against a controllable fake service object
-// (so it returns a plain Promise, not a real Effect), and mock
-// `tuiRuntime.runPromise`/`runSync` as a transparent pass-through. Since the
-// `.use()` mocks already resolve the "effect" argument to a real Promise or
-// plain value before it reaches `runPromise`, the pass-through is enough —
-// the one caller that does NOT go through a `.use()` seam (`loadConfig` in
-// config discovery is wrapped in a try/catch with a safe fallback in the
-// real code, so passing it through unresolved is harmless.
+// Each `XService.use(selector)` mock calls `selector` synchronously against a
+// fake service object (returning a plain value/Promise, not a real Effect),
+// so `tuiRuntime.runPromise`/`runSync` can be transparent pass-throughs.
 //
-// The `vi.mock` calls below execute when a test file imports this module —
-// BEFORE that file's `await import("../../src/tui/App")` — so every mock is
-// registered before any mocked service module is first loaded. The fixture
-// objects are wrapped in `vi.hoisted` so the factories may reference them
-// regardless of whether Vitest's hoisting transform rewrites this file.
+// The `vi.mock` calls below run when a test file imports this module, before
+// that file's dynamic `import("../../src/tui/App")`, so every mock is
+// registered before any mocked service module first loads. Fixtures are
+// wrapped in `vi.hoisted` for the same reason.
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { Effect } from "effect";
 import type React from "react";
 import { vi } from "vitest";
+import type {
+  WorkspacePhase,
+  WorkspaceReporter,
+} from "../../src/services/workspace-service";
 import type { Worktree } from "../../src/services/worktree-service";
 import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 
 const runtimeMock = vi.hoisted(() => ({
   runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
-  // The `.use()` mocks below already resolve the "effect" argument to a
-  // plain value before it reaches here, so this is a transparent pass-through
-  // (like runPromise), not a stub that discards its argument.
   runSync: vi.fn((effect: unknown) => effect),
 }));
 
@@ -52,8 +42,8 @@ vi.mock("../../src/tui/hooks/useRefresh", () => ({
 }));
 
 // Ink disables ANSI colors for this PassThrough-based harness, so the selected
-// background cannot be observed in serialized frames. Replace one fill space
-// with a width-neutral private-use marker in this test worker only.
+// background can't be observed in serialized frames. Replace one fill space
+// with a width-neutral private-use marker instead.
 vi.mock("../../src/tui/components/tree-row", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/tui/components/tree-row")
@@ -113,7 +103,18 @@ vi.mock("../../src/services/worktree-service", async () => {
   };
 });
 
-// --- TmuxService: no client, no sessions — App renders without tmux. ---
+// --- TmuxService: no client/sessions by default, with opt-in handoff tracing. ---
+const tmuxFixtures = vi.hoisted(() => ({
+  clients: [] as Array<{ tty: string; session: string }>,
+  sessions: null as Array<{
+    name: string;
+    attached: boolean;
+    windows: number;
+  }> | null,
+  switchCalls: [] as Array<{ clientTty: string; target: string }>,
+  onSwitch: null as ((clientTty: string, target: string) => void) | null,
+}));
+
 vi.mock("../../src/services/tmux", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/services/tmux")
@@ -123,22 +124,24 @@ vi.mock("../../src/services/tmux", async () => {
     TmuxService: {
       use: (selector: (svc: unknown) => unknown) =>
         selector({
-          listClients: () => Promise.resolve([]),
-          listSessions: () => Promise.resolve(null),
+          listClients: () => Promise.resolve(tmuxFixtures.clients),
+          listSessions: () => Promise.resolve(tmuxFixtures.sessions),
           listPanes: () => Promise.resolve([]),
+          switchClientToPane: (clientTty: string, target: string) => {
+            tmuxFixtures.switchCalls.push({ clientTty, target });
+            tmuxFixtures.onSwitch?.(clientTty, target);
+            return Promise.resolve();
+          },
+          detachClient: () => Promise.resolve(),
         }),
     },
   };
 });
 
-// --- GitHubService + PrCacheService: no PRs by default. useGitHub never
-// fetches on a fresh App mount for the current repo (its mount effect reads
-// `repos`, which is always `[]` on the very first render — before
-// useRegistry's async listRepos() resolves — and its callback identity never
-// changes, so it doesn't re-run once repos populate). The one REAL,
-// keyboard-reachable path that calls GitHubService.listPrs is pressing "r" in
-// Navigate mode (src/tui/input/navigate.ts calls ctx.refreshRepo), so a test
-// that needs a PR row drives that key rather than relying on mount timing.
+// --- GitHubService + PrCacheService: no PRs by default. useGitHub's mount
+// effect never re-fetches once `repos` populates (its callback identity is
+// stable), so a test that needs a PR row drives "r" (Navigate mode's
+// refreshRepo) rather than relying on mount timing.
 const githubFixtures = vi.hoisted(() => ({
   prsByRepoPath: new Map<
     string,
@@ -162,6 +165,59 @@ vi.mock("../../src/services/github-service", () => ({
   },
 }));
 
+// --- WorkspaceService: every lifecycle call is deferred (the test resolves
+// or rejects it by hand), and each call records the options it was given
+// including the `reporter`. Without the deferral, a lifecycle would settle
+// inside the same microtask that started it and no intermediate progress row
+// would ever be observable.
+interface WorkspaceCallShape {
+  operation: "open" | "up" | "down" | "close";
+  options: Record<string, unknown>;
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+  promise: Promise<unknown>;
+}
+
+const workspaceHarness = vi.hoisted(() => {
+  const calls: WorkspaceCallShape[] = [];
+  const defer =
+    (operation: "open" | "up" | "down" | "close") =>
+    (options: Record<string, unknown> = {}) => {
+      let resolve: (result: unknown) => void = () => undefined;
+      let reject: (error: unknown) => void = () => undefined;
+      const promise = new Promise<unknown>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      // Suppress unhandled-rejection reporting for a call a test never settles.
+      promise.catch(() => undefined);
+      calls.push({ operation, options, resolve, reject, promise });
+      return promise;
+    };
+  return {
+    calls,
+    service: {
+      open: defer("open"),
+      up: defer("up"),
+      down: defer("down"),
+      close: defer("close"),
+    },
+  };
+});
+
+vi.mock("../../src/services/workspace-service", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/services/workspace-service")
+  >("../../src/services/workspace-service");
+  return {
+    ...actual,
+    WorkspaceService: {
+      use: (selector: (svc: unknown) => unknown) =>
+        selector(workspaceHarness.service),
+    },
+  };
+});
+
 vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: {
     use: (selector: (svc: unknown) => unknown) =>
@@ -173,13 +229,69 @@ vi.mock("../../src/services/pr-cache-service", () => ({
   },
 }));
 
-export { githubFixtures, registryItems, runtimeMock, worktreeFixtures };
+export {
+  githubFixtures,
+  registryItems,
+  runtimeMock,
+  tmuxFixtures,
+  worktreeFixtures,
+};
+
+/** Lifecycle calls the App has made, oldest first. */
+export function workspaceCalls(
+  operation?: WorkspaceCallShape["operation"],
+): WorkspaceCallShape[] {
+  const calls = workspaceHarness.calls;
+  return operation
+    ? calls.filter((call) => call.operation === operation)
+    : calls;
+}
+
+export function lastWorkspaceCall(
+  operation?: WorkspaceCallShape["operation"],
+): WorkspaceCallShape {
+  const calls = workspaceCalls(operation);
+  const call = calls[calls.length - 1];
+  if (!call) {
+    throw new Error(
+      `no ${operation ?? "workspace"} call recorded by the harness`,
+    );
+  }
+  return call;
+}
+
+/**
+ * Deliver ONE semantic phase event to the reporter the App handed the service,
+ * exactly as the real service would. The reporter returns an Effect, so it is
+ * run here rather than merely constructed.
+ */
+export function emitWorkspacePhase(
+  call: WorkspaceCallShape,
+  phase: WorkspacePhase,
+): void {
+  const reporter = call.options.reporter as WorkspaceReporter | undefined;
+  if (!reporter) {
+    throw new Error(`${call.operation} was called without a reporter`);
+  }
+  Effect.runSync(
+    reporter.event({
+      operation: call.operation,
+      _tag: "PhaseStarted",
+      phase,
+    }) as Effect.Effect<void>,
+  );
+}
 
 /** Reset every controllable fixture and runtime spy; call from `beforeEach`. */
 export function resetHarnessFixtures(): void {
   registryItems.items = [];
   worktreeFixtures.byRepoPath.clear();
   githubFixtures.prsByRepoPath.clear();
+  tmuxFixtures.clients = [];
+  tmuxFixtures.sessions = null;
+  tmuxFixtures.switchCalls.length = 0;
+  tmuxFixtures.onSwitch = null;
+  workspaceHarness.calls.length = 0;
   runtimeMock.runPromise.mockClear();
   runtimeMock.runSync.mockClear();
   refreshHarness.callback = null;
@@ -259,13 +371,13 @@ export async function renderApp(
 
   // Ordered event log shared by stdout writes and raw-mode flips, so tests
   // can assert real orderings (e.g. MOUSE_DISABLE before setRawMode(false)).
-  // stdout.write is patched (not the 'data' event) because write is
+  // write is patched rather than the 'data' event because write is
   // synchronous with the caller while 'data' emission may be deferred.
   const events: Array<
     { kind: "write"; data: string } | { kind: "rawmode"; mode: boolean }
   > = [];
-  // Forward EVERY argument: Ink resolves waitUntilExit via an empty write's
-  // completion callback, so dropping the callback would hang the exit path.
+  // Forward every argument: Ink resolves waitUntilExit via an empty write's
+  // completion callback, so dropping it would hang the exit path.
   const originalWrite = stdout.write.bind(stdout) as (
     ...args: unknown[]
   ) => boolean;
@@ -321,6 +433,18 @@ export async function sendKeys(
   await tick(ticks);
 }
 
+// "o" opens the mode selector, Enter picks New Branch (whose branch field has
+// initial focus), then the branch name and submit.
+export async function openBranchFromModal(
+  stdin: NodeJS.ReadStream,
+  branch: string,
+): Promise<void> {
+  await sendKeys(stdin, "o");
+  await sendKeys(stdin, "\r");
+  await sendKeys(stdin, branch);
+  await sendKeys(stdin, "\x1b[13;5u");
+}
+
 export function sgrPress(col: number, row: number): string {
   return `\x1b[<0;${col};${row}M`;
 }
@@ -335,8 +459,8 @@ export function sgrWheel(dir: 1 | -1): string {
   return `\x1b[<${cb};1;1M`;
 }
 
-// HEADER_OFFSET (== App.tsx's TOP_CHROME_ROWS) is imported from the
-// production module so the mapping stays aligned if the chrome layout changes.
+// Re-exported from the production module so it stays aligned with App.tsx's
+// chrome layout.
 export { HEADER_OFFSET };
 
 export function sgrRowFor(viewportRow: number): number {

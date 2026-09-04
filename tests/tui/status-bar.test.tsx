@@ -92,12 +92,14 @@ describe("StatusBar", () => {
 
   test("does not duplicate the anchored down confirmation", async () => {
     const rendered = await renderStatusBar({
-      mode: Mode.ConfirmDown(
-        "myapp-feature",
-        "feature",
-        "/tmp/myapp-feature",
-        "proj/feature",
-      ),
+      mode: Mode.ConfirmDown({
+        sessionName: "myapp-feature",
+        branch: "feature",
+        worktreePath: "/tmp/myapp-feature",
+        worktreeKey: "proj/feature",
+        repoPath: "/tmp/myapp",
+        project: "proj",
+      }),
     });
 
     expect(rendered.lastFrame()).toBe("");

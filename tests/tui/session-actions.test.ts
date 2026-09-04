@@ -1,19 +1,39 @@
+import { Effect } from "effect";
+import type { SetStateAction } from "react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
 import {
   type WorkspaceCloseResult,
+  type WorkspacePhase,
+  type WorkspaceReporter,
   WorkspaceService,
   type WorkspaceUpResult,
 } from "../../src/services/workspace-service";
+import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import type { SessionActionDeps } from "../../src/tui/hooks/useSessionActions";
 import {
   createExecuteClose,
   createExecuteDown,
+  createHandleCloseSelectedWorktree,
   createHandleDownSelectedWorktree,
   createHandleSpaceSwitch,
-  createHandleStartResult,
+  createSessionHandoff,
+  createStartWorkspace,
   createSwitchClientAway,
 } from "../../src/tui/hooks/useSessionActions";
+import {
+  createLifecycleClaims,
+  type LifecycleEntry,
+  type LifecyclePhase,
+  type LifecycleState,
+  lifecycleKey,
+  lifecyclePhaseLabel,
+} from "../../src/tui/lifecycle";
+import {
+  buildTreeItems,
+  buildTreeRows,
+  isWorktreeEffectivelyExpanded,
+} from "../../src/tui/tree-helpers";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -43,11 +63,12 @@ function makeDeps(
     sessions: [],
     selectedIndex: 0,
     mode: Mode.Navigate,
+    lifecycle: new Map(),
+    lifecycleClaims: createLifecycleClaims(),
     setSelectedIndex: vi.fn(),
     setMode: vi.fn(),
-    setPendingActions: vi.fn((fn) => {
-      if (typeof fn === "function") fn(new Map());
-    }),
+    modeRef: { current: Mode.Navigate },
+    setLifecycle: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
@@ -188,7 +209,7 @@ describe("createSwitchClientAway", () => {
   });
 });
 
-describe("createHandleStartResult", () => {
+describe("createSessionHandoff", () => {
   test("auto-switches when tmux succeeded and single client", async () => {
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({
@@ -197,7 +218,7 @@ describe("createHandleStartResult", () => {
       }),
       switchSession: vi.fn().mockResolvedValue(true),
     });
-    const handleStart = createHandleStartResult(deps);
+    const handoff = createSessionHandoff(deps);
 
     const result = makeStartResult({
       attempts: {
@@ -209,7 +230,7 @@ describe("createHandleStartResult", () => {
       },
     });
 
-    await handleStart(result, true);
+    await expect(handoff(result, true)).resolves.toBeUndefined();
     expect(deps.switchSession).toHaveBeenCalledWith("wt-feat", {
       tty: "/dev/pts/0",
       session: "other",
@@ -217,7 +238,7 @@ describe("createHandleStartResult", () => {
     expect(deps.refreshSessions).toHaveBeenCalled();
   });
 
-  test("shows error when switch fails", async () => {
+  test("reports a failed switch as a message instead of throwing", async () => {
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({
         type: "single",
@@ -225,7 +246,7 @@ describe("createHandleStartResult", () => {
       }),
       switchSession: vi.fn().mockResolvedValue(false),
     });
-    const handleStart = createHandleStartResult(deps);
+    const handoff = createSessionHandoff(deps);
 
     const result = makeStartResult({
       attempts: {
@@ -237,15 +258,46 @@ describe("createHandleStartResult", () => {
       },
     });
 
-    await handleStart(result, true);
-    expect(deps.showActionError).toHaveBeenCalledWith(
-      expect.stringContaining("failed to switch"),
+    await expect(handoff(result, true)).resolves.toEqual(
+      expect.stringContaining("failed to switch client"),
     );
   });
 
+  test.each([
+    ["none", "No tmux client found — start tmux in the other pane"],
+    [
+      "error",
+      "Started session 'wt-feat' but failed to query tmux clients to switch",
+    ],
+    [
+      "multiple",
+      "Cannot switch tmux client after start because multiple tmux clients are attached",
+    ],
+  ] as const)(
+    "explains why a %s client discovery cannot switch",
+    async (type, message) => {
+      const deps = makeDeps({
+        discoverClient: vi.fn().mockResolvedValue({ type }),
+      });
+      const handoff = createSessionHandoff(deps);
+      const result = makeStartResult({
+        attempts: {
+          tmux: {
+            attempted: true,
+            ok: true,
+            value: { _tag: "Created", sessionName: "wt-feat" },
+          },
+        },
+      });
+
+      await expect(handoff(result, true)).resolves.toBe(message);
+      expect(deps.switchSession).not.toHaveBeenCalled();
+    },
+  );
+
   test("does not switch when autoSwitch is false", async () => {
     const deps = makeDeps();
-    const handleStart = createHandleStartResult(deps);
+    const handoff = createSessionHandoff(deps);
 
     const result = makeStartResult({
       attempts: {
@@ -257,28 +309,8 @@ describe("createHandleStartResult", () => {
       },
     });
 
-    await handleStart(result, false);
+    await expect(handoff(result, false)).resolves.toBeUndefined();
     expect(deps.switchSession).not.toHaveBeenCalled();
-    expect(deps.refreshAll).toHaveBeenCalled();
-  });
-
-  test("calls refreshAll and shows action message when present", async () => {
-    const deps = makeDeps();
-    const handleStart = createHandleStartResult(deps);
-
-    const result = makeStartResult({
-      attempts: {
-        tmux: {
-          attempted: true,
-          ok: false,
-          error: commandError("unexpected_error", "tmux failed"),
-        },
-      },
-    });
-
-    await handleStart(result, false);
-    expect(deps.refreshAll).toHaveBeenCalled();
-    expect(deps.showActionError).toHaveBeenCalledWith("tmux failed");
   });
 });
 
@@ -341,7 +373,7 @@ describe("createHandleSpaceSwitch", () => {
     expect(deps.switchSession).toHaveBeenCalledWith("main");
   });
 
-  test("starts new session when none exists and sets pending action", async () => {
+  test("starts new session through the shared up lifecycle when none exists", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
     const upResult = makeWorkspaceUpResult();
@@ -367,35 +399,32 @@ describe("createHandleSpaceSwitch", () => {
         ],
       },
     ];
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
+    const setLifecycle = vi.fn();
     const deps = makeDeps({
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
       sessions: [],
-      setPendingActions,
+      setLifecycle,
     });
     const handleSpace = createHandleSpaceSwitch(deps);
 
     handleSpace();
 
     expect(deps.clearActionError).toHaveBeenCalled();
-    expect(setPendingActions).toHaveBeenCalled();
+    expect(setLifecycle).toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(WorkspaceService.use).toHaveBeenCalled();
-      expect(workspaceUp).toHaveBeenCalledWith({ path: "/repo/feat" });
+      expect(workspaceUp).toHaveBeenCalledWith({
+        path: "/repo/feat",
+        reporter: expect.anything(),
+      });
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith(
         "mock-workspace-effect",
       );
     });
     await vi.waitFor(() => {
-      expect(pendingActions.size).toBe(0);
-      expect(setPendingActions).toHaveBeenCalledTimes(2);
+      expect(deps.refreshAll).toHaveBeenCalled();
     });
   });
 
@@ -481,18 +510,11 @@ describe("createHandleSpaceSwitch", () => {
         ],
       },
     ];
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
       sessions: [],
-      setPendingActions,
     });
     const handleSpace = createHandleSpaceSwitch(deps);
 
@@ -503,8 +525,7 @@ describe("createHandleSpaceSwitch", () => {
       expect(deps.showActionError).toHaveBeenCalled();
     });
     await vi.waitFor(() => {
-      expect(pendingActions.size).toBe(0);
-      expect(setPendingActions).toHaveBeenCalledTimes(2);
+      expect(deps.refreshAll).toHaveBeenCalled();
     });
   });
 });
@@ -515,9 +536,14 @@ describe("createExecuteClose", () => {
   });
 
   test("active-client safety failure prevents WorkspaceService.close", async () => {
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "multiple" }),
       refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -534,25 +560,69 @@ describe("createExecuteClose", () => {
       expect.stringContaining("could not be moved away"),
     );
     expect(workspaceClose).not.toHaveBeenCalled();
-    expect(deps.setPendingActions).not.toHaveBeenCalled();
+    expect(setLifecycle).toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.refreshAll).toHaveBeenCalledOnce();
   });
 
-  test("uses WorkspaceService.close, refreshes, and clears pending after success", async () => {
+  test("claims the Workspace while client handoff is pending and refuses a duplicate close", async () => {
+    let resolveDiscovery!: (value: { type: "multiple" }) => void;
+    const discovery = new Promise<{ type: "multiple" }>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockReturnValue(discovery),
+      refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
+    });
+    const executeClose = createExecuteClose(deps);
+
+    const first = executeClose(
+      "target-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+
+    expect(lifecycle.has(lifecycleKey("/repo", "feat"))).toBe(true);
+    await executeClose(
+      "target-session",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      expect.stringContaining("'feat' is busy"),
+    );
+    expect(deps.discoverClient).toHaveBeenCalledOnce();
+
+    resolveDiscovery({ type: "multiple" });
+    await first;
+
+    expect(workspaceClose).not.toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
+  });
+
+  test("uses WorkspaceService.close, refreshes, and tears the lifecycle down after success", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue(
       makeWorkspaceCloseResult(),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -569,14 +639,13 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
-    expect(deps.setPendingActions).toHaveBeenCalled();
+    expect(deps.setLifecycle).toHaveBeenCalled();
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.restoreConfirmationViewport).toHaveBeenCalledOnce();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
   test("passes selected repoPath as WorkspaceService.close cwd for multi-repo TUI close", async () => {
@@ -604,6 +673,7 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/registered/repo",
+      reporter: expect.anything(),
     });
   });
 
@@ -651,10 +721,11 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
   });
 
-  test("blocked close enters force-confirm mode, refreshes, and clears pending", async () => {
+  test("blocked close enters force-confirm mode and refreshes", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue(
       makeWorkspaceCloseResult({
@@ -670,16 +741,9 @@ describe("createExecuteClose", () => {
       }),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -695,6 +759,7 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.ConfirmCloseForce(
@@ -711,8 +776,6 @@ describe("createExecuteClose", () => {
       vi.mocked(deps.restoreConfirmationViewport).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
   test("force close calls WorkspaceService.close with force", async () => {
@@ -741,26 +804,20 @@ describe("createExecuteClose", () => {
       path: "/tmp/wt",
       cwd: "/repo",
       force: true,
+      reporter: expect.anything(),
     });
     expect(deps.refreshAll).toHaveBeenCalled();
   });
 
-  test("surfaces WorkspaceService.close tmux kill failure and clears pending", async () => {
+  test("surfaces WorkspaceService.close tmux kill failure", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockRejectedValue(
       commandError("tmux_error", "kill failed"),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeClose = createExecuteClose(deps);
 
@@ -777,10 +834,10 @@ describe("createExecuteClose", () => {
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
+      reporter: expect.anything(),
     });
     expect(deps.showActionError).toHaveBeenCalledWith("kill failed");
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
   });
 });
 
@@ -789,22 +846,69 @@ describe("createExecuteDown", () => {
     vi.clearAllMocks();
   });
 
-  test("calls switchClientAway first and aborts on failure", async () => {
+  test("claims, validates, and releases the Workspace when client handoff fails", async () => {
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "multiple" }),
       refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
     });
     const executeDown = createExecuteDown(deps);
 
-    await executeDown("target-session", "feat", "/tmp/wt", "proj/feat");
+    await executeDown("target-session", "feat", "/tmp/wt", "/repo", "proj");
 
     expect(deps.showActionError).toHaveBeenCalledWith(
       expect.stringContaining("could not be moved away"),
     );
-    expect(deps.setPendingActions).not.toHaveBeenCalled();
+    expect(workspaceDown).not.toHaveBeenCalled();
+    expect(setLifecycle).toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.refreshAll).toHaveBeenCalledOnce();
   });
 
-  test("uses WorkspaceService.down, refreshes, and clears pending after kill success", async () => {
+  test("claims the Workspace while client handoff is pending and refuses a duplicate down", async () => {
+    let resolveDiscovery!: (value: { type: "multiple" }) => void;
+    const discovery = new Promise<{ type: "multiple" }>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    let lifecycle: LifecycleState = new Map();
+    const setLifecycle = vi.fn((update: SetStateAction<LifecycleState>) => {
+      lifecycle = typeof update === "function" ? update(lifecycle) : update;
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockReturnValue(discovery),
+      refreshSessions: vi.fn().mockResolvedValue([{ name: "target-session" }]),
+      setLifecycle,
+    });
+    const executeDown = createExecuteDown(deps);
+
+    const first = executeDown(
+      "target-session",
+      "feat",
+      "/tmp/wt",
+      "/repo",
+      "proj",
+    );
+
+    expect(lifecycle.has(lifecycleKey("/repo", "feat"))).toBe(true);
+    await executeDown("target-session", "feat", "/tmp/wt", "/repo", "proj");
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      expect.stringContaining("'feat' is busy"),
+    );
+    expect(deps.discoverClient).toHaveBeenCalledOnce();
+
+    resolveDiscovery({ type: "multiple" });
+    await first;
+
+    expect(workspaceDown).not.toHaveBeenCalled();
+    expect(lifecycle.size).toBe(0);
+    expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
+  });
+
+  test("uses WorkspaceService.down and refreshes after kill success", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue({
       operation: "down",
@@ -816,23 +920,19 @@ describe("createExecuteDown", () => {
       warnings: [],
     });
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeDown = createExecuteDown(deps);
 
-    await executeDown("wt", "feat", "/tmp/wt", "proj/feat");
+    await executeDown("wt", "feat", "/tmp/wt", "/repo", "proj");
 
     expect(WorkspaceService.use).toHaveBeenCalled();
-    expect(workspaceDown).toHaveBeenCalledWith({ path: "/tmp/wt" });
+    expect(workspaceDown).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      reporter: expect.anything(),
+    });
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.restoreConfirmationViewport).toHaveBeenCalledOnce();
@@ -840,11 +940,10 @@ describe("createExecuteDown", () => {
       vi.mocked(deps.restoreConfirmationViewport).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
+    expect(deps.setLifecycle).toHaveBeenCalled();
   });
 
-  test("treats absent-session down as informational success and clears pending", async () => {
+  test("treats absent-session down as informational success", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue({
       operation: "down",
@@ -856,24 +955,16 @@ describe("createExecuteDown", () => {
       warnings: [],
     });
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeDown = createExecuteDown(deps);
 
-    await executeDown("wt", "feat", "/tmp/wt", "proj/feat");
+    await executeDown("wt", "feat", "/tmp/wt", "/repo", "proj");
 
     expect(deps.refreshAll).toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
   });
 
   test("reaches WorkspaceService.down for absent target session even with ambiguous clients", async () => {
@@ -894,9 +985,12 @@ describe("createExecuteDown", () => {
     });
     const executeDown = createExecuteDown(deps);
 
-    await executeDown("wt", "feat", "/tmp/wt", "proj/feat");
+    await executeDown("wt", "feat", "/tmp/wt", "/repo", "proj");
 
-    expect(workspaceDown).toHaveBeenCalledWith({ path: "/tmp/wt" });
+    expect(workspaceDown).toHaveBeenCalledWith({
+      path: "/tmp/wt",
+      reporter: expect.anything(),
+    });
     expect(deps.showActionError).not.toHaveBeenCalled();
     expect(deps.refreshAll).toHaveBeenCalled();
   });
@@ -907,24 +1001,16 @@ describe("createExecuteDown", () => {
       commandError("tmux_error", "kill failed"),
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const deps = makeDeps({
       discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
       refreshSessions: vi.fn().mockResolvedValue([]),
-      setPendingActions,
     });
     const executeDown = createExecuteDown(deps);
 
-    await executeDown("wt", "feat", "/tmp/wt", "proj/feat");
+    await executeDown("wt", "feat", "/tmp/wt", "/repo", "proj");
 
     expect(deps.showActionError).toHaveBeenCalledWith("kill failed");
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
   });
 });
 
@@ -1011,7 +1097,14 @@ describe("createHandleDownSelectedWorktree", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.ConfirmDown("feat", "feat", "/repo/feat", "proj/feat"),
+      Mode.ConfirmDown({
+        sessionName: "feat",
+        branch: "feat",
+        worktreePath: "/repo/feat",
+        worktreeKey: "proj/feat",
+        repoPath: "/repo",
+        project: "proj",
+      }),
     );
   });
 
@@ -1050,5 +1143,556 @@ describe("createHandleDownSelectedWorktree", () => {
 
     handleDown();
     expect(returnModeRef.current).toEqual(Mode.Expanded(worktreeKey));
+  });
+});
+
+describe("a Workspace under an active lifecycle", () => {
+  const repoPath = "/repo";
+  const branch = "main";
+
+  function repos(): RepoInfo[] {
+    return [
+      {
+        id: "r1",
+        project: "proj",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            branch,
+            path: "/repo/main",
+            isMainWorktree: true,
+            changedFiles: 3,
+            sync: { ahead: 1, behind: 0 },
+          },
+        ],
+      },
+    ];
+  }
+
+  function lifecycleFor(): LifecycleState {
+    const entry: LifecycleEntry = {
+      operation: "open",
+      repoPath,
+      project: "proj",
+      branch,
+      phase: { _tag: "CreatingWorktree" },
+    };
+    return new Map([[lifecycleKey(repoPath, branch), entry]]);
+  }
+
+  test("is presented expanded with details hidden, stays selectable, and refuses actions", () => {
+    const lifecycle = lifecycleFor();
+    const repoList = repos();
+    const worktreeKey = pendingKey("proj", branch);
+
+    // Presentation: expanded, but stats/PR/pane detail rows suppressed.
+    const items = buildTreeItems({
+      repos: repoList,
+      expandedWorktreeKeys: new Set([worktreeKey]),
+      lifecycle,
+      prData: new Map([
+        [
+          worktreeKey,
+          {
+            number: 7,
+            title: "Add thing",
+            state: "OPEN" as const,
+            headRefName: branch,
+            rollupState: null,
+          },
+        ],
+      ]),
+      panes: new Map([
+        [
+          "main",
+          [
+            {
+              paneId: "%1",
+              paneIndex: 0,
+              command: "vim",
+              window: "0",
+              zoomed: false,
+              active: true,
+            },
+          ],
+        ],
+      ]),
+      jumpToPane: () => undefined,
+    });
+    expect(items.some((item) => item.type === "detail")).toBe(false);
+
+    const rows = buildTreeRows({
+      items,
+      repos: repoList,
+      expandedRepos: new Set(["r1"]),
+      expandedWorktreeKeys: new Set([worktreeKey]),
+      lifecycle,
+      maxWidth: 80,
+    });
+    expect(rows.some((row) => row.kind === "worktree-stats")).toBe(false);
+    expect(
+      rows.filter((row) => row.kind === "lifecycle-progress"),
+    ).toHaveLength(1);
+    const worktreeItemIndex = items.findIndex(
+      (item) => item.type === "worktree",
+    );
+    expect(worktreeItemIndex).toBeGreaterThan(-1);
+    expect(
+      rows.some(
+        (row) => row.kind === "worktree" && row.itemIndex === worktreeItemIndex,
+      ),
+    ).toBe(true);
+
+    const treeItems: TreeItem[] = [
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+    const deps = makeDeps({
+      treeItems,
+      filteredRepos: repoList,
+      selectedIndex: 0,
+      sessions: [{ name: "main", attached: false }],
+      lifecycle,
+      switchSession: vi.fn().mockResolvedValue(true),
+    });
+
+    createHandleSpaceSwitch(deps)();
+    createHandleDownSelectedWorktree(deps)();
+    createHandleCloseSelectedWorktree(deps)();
+
+    expect(deps.switchSession).not.toHaveBeenCalled();
+    expect(deps.setMode).not.toHaveBeenCalled();
+    expect(deps.showActionError).toHaveBeenCalledTimes(3);
+    for (const call of (deps.showActionError as Mock).mock.calls) {
+      expect(String(call[0])).toContain(branch);
+    }
+
+    // Control: without a lifecycle, the same actions go through.
+    const free = makeDeps({
+      treeItems,
+      filteredRepos: repoList,
+      selectedIndex: 0,
+      sessions: [{ name: "main", attached: false }],
+      switchSession: vi.fn().mockResolvedValue(true),
+    });
+    createHandleSpaceSwitch(free)();
+    expect(free.switchSession).toHaveBeenCalled();
+  });
+});
+
+// `createStartWorkspace` is the single `up` path behind both the space-bar
+// start and the up modal, so driving it here covers both entry points.
+describe("up and down lifecycle progress", () => {
+  const repoPath = "/repo";
+  const branch = "feat";
+  const worktreeKey = pendingKey("proj", branch);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** A live `setLifecycle` stand-in: applies updates exactly as React would. */
+  function trackLifecycle() {
+    const tracker = {
+      state: new Map() as LifecycleState,
+      phases: [] as Array<LifecyclePhase | null>,
+      setLifecycle: (
+        update: LifecycleState | ((prev: LifecycleState) => LifecycleState),
+      ) => {
+        const next =
+          typeof update === "function" ? update(tracker.state) : update;
+        // React bails out on an updater returning the identical state.
+        if (next === tracker.state) return tracker.state;
+        tracker.state = next;
+        tracker.phases.push(tracker.entry()?.phase ?? null);
+        return tracker.state;
+      },
+      entry: (): LifecycleEntry | undefined =>
+        tracker.state.get(lifecycleKey(repoPath, branch)),
+      labels: () =>
+        tracker.phases.map((phase) =>
+          phase ? lifecyclePhaseLabel(phase) : null,
+        ),
+    };
+    return tracker;
+  }
+
+  // Emits the given phases through the reporter the handler passed in, then settles.
+  function serviceEmitting(
+    serviceMock: typeof workspaceUp,
+    operation: "up" | "down",
+    phases: WorkspacePhase[],
+    settle: () => Promise<unknown>,
+  ) {
+    return async () => {
+      const options = (serviceMock as unknown as Mock).mock.calls.at(-1)?.[0] as
+        | { reporter?: WorkspaceReporter }
+        | undefined;
+      const reporter = options?.reporter;
+      if (!reporter) {
+        throw new Error("service was called without a progress reporter");
+      }
+      for (const phase of phases) {
+        await Effect.runPromise(
+          reporter.event({ operation, _tag: "PhaseStarted", phase }),
+        );
+      }
+      return settle();
+    };
+  }
+
+  function repos(): RepoInfo[] {
+    return [
+      {
+        id: "r1",
+        project: "proj",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            branch,
+            path: "/repo/feat",
+            isMainWorktree: false,
+            changedFiles: 3,
+            sync: { ahead: 1, behind: 0 },
+          },
+        ],
+      },
+    ];
+  }
+
+  function target(overrides: Record<string, unknown> = {}) {
+    return {
+      worktreePath: "/repo/feat",
+      repoPath,
+      project: "proj",
+      branch,
+      autoSwitch: false,
+      ...overrides,
+    };
+  }
+
+  test("up shows Preparing, and Creating tmux session only when attempted", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+
+    // tmux configured: the creation phase is emitted and rendered.
+    const configured = trackLifecycle();
+    (tuiRuntime.runPromise as Mock).mockImplementation(
+      serviceEmitting(
+        workspaceUp,
+        "up",
+        [{ _tag: "CreatingTmuxSession" }],
+        () =>
+          Promise.resolve(
+            makeWorkspaceUpResult({
+              attempts: {
+                tmux: {
+                  attempted: true,
+                  ok: true,
+                  value: { _tag: "Created", sessionName: "wt-feat" },
+                },
+              },
+            }),
+          ),
+      ),
+    );
+
+    await createStartWorkspace(
+      makeDeps({ setLifecycle: configured.setLifecycle }),
+    )(target());
+
+    expect(configured.labels()).toEqual([
+      "Preparing Workspace…",
+      "Creating tmux session…",
+      "Validating Workspace…",
+      null,
+    ]);
+
+    // tmux not configured: no creation attempted, so no row for it.
+    const skipped = trackLifecycle();
+    (tuiRuntime.runPromise as Mock).mockImplementation(
+      serviceEmitting(workspaceUp, "up", [], () =>
+        Promise.resolve(makeWorkspaceUpResult()),
+      ),
+    );
+
+    await createStartWorkspace(
+      makeDeps({ setLifecycle: skipped.setLifecycle }),
+    )(target());
+
+    expect(skipped.labels()).toEqual([
+      "Preparing Workspace…",
+      "Validating Workspace…",
+      null,
+    ]);
+    expect(skipped.labels()).not.toContain("Creating tmux session…");
+  });
+
+  test("down shows Preparing, and Killing tmux session only when a kill is attempted", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+
+    // A session exists: the kill phase is emitted and rendered.
+    const killed = trackLifecycle();
+    (tuiRuntime.runPromise as Mock).mockImplementation(
+      serviceEmitting(
+        workspaceDown,
+        "down",
+        [{ _tag: "KillingTmuxSession" }],
+        () =>
+          Promise.resolve({
+            operation: "down",
+            worktreePath: "/repo/feat",
+            sessionName: "wt-feat",
+            existed: true,
+            status: "killed",
+            attempts: { kill: { attempted: true, ok: true, value: null } },
+            warnings: [],
+          }),
+      ),
+    );
+
+    await createExecuteDown(makeDeps({ setLifecycle: killed.setLifecycle }))(
+      "wt-feat",
+      branch,
+      "/repo/feat",
+      repoPath,
+      "proj",
+    );
+
+    expect(killed.labels()).toEqual([
+      "Preparing Workspace…",
+      "Killing tmux session…",
+      "Validating Workspace…",
+      null,
+    ]);
+
+    // No session: nothing is killed, so no row for it.
+    const absent = trackLifecycle();
+    (tuiRuntime.runPromise as Mock).mockImplementation(
+      serviceEmitting(workspaceDown, "down", [], () =>
+        Promise.resolve({
+          operation: "down",
+          worktreePath: "/repo/feat",
+          sessionName: "wt-feat",
+          existed: false,
+          status: "absent",
+          attempts: { kill: { attempted: false, reason: "session_absent" } },
+          warnings: [],
+        }),
+      ),
+    );
+
+    await createExecuteDown(makeDeps({ setLifecycle: absent.setLifecycle }))(
+      "wt-feat",
+      branch,
+      "/repo/feat",
+      repoPath,
+      "proj",
+    );
+
+    expect(absent.labels()).toEqual([
+      "Preparing Workspace…",
+      "Validating Workspace…",
+      null,
+    ]);
+    expect(absent.labels()).not.toContain("Killing tmux session…");
+  });
+
+  test("a running up/down is inert, presented expanded without details, and validates on success and failure", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+
+    // Presentation: expanded, but stats/PR/pane detail rows suppressed.
+    const repoList = repos();
+    const lifecycle: LifecycleState = new Map([
+      [
+        lifecycleKey(repoPath, branch),
+        {
+          operation: "up",
+          repoPath,
+          project: "proj",
+          branch,
+          phase: { _tag: "CreatingTmuxSession" },
+        } satisfies LifecycleEntry,
+      ],
+    ]);
+    const items = buildTreeItems({
+      repos: repoList,
+      expandedWorktreeKeys: new Set([worktreeKey]),
+      lifecycle,
+      prData: new Map([
+        [
+          worktreeKey,
+          {
+            number: 7,
+            title: "Add thing",
+            state: "OPEN" as const,
+            headRefName: branch,
+            rollupState: null,
+          },
+        ],
+      ]),
+      panes: new Map([
+        [
+          "feat",
+          [
+            {
+              paneId: "%1",
+              paneIndex: 0,
+              command: "vim",
+              window: "0",
+              zoomed: false,
+              active: true,
+            },
+          ],
+        ],
+      ]),
+      jumpToPane: () => undefined,
+    });
+    expect(items.some((item) => item.type === "detail")).toBe(false);
+
+    const rows = buildTreeRows({
+      items,
+      repos: repoList,
+      expandedRepos: new Set(["r1"]),
+      expandedWorktreeKeys: new Set([worktreeKey]),
+      lifecycle,
+      maxWidth: 80,
+    });
+    expect(rows.some((row) => row.kind === "worktree-stats")).toBe(false);
+    expect(
+      rows.filter((row) => row.kind === "lifecycle-progress"),
+    ).toHaveLength(1);
+
+    // Actions targeting it are refused.
+    const inertDeps = makeDeps({
+      treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
+      filteredRepos: repoList,
+      selectedIndex: 0,
+      sessions: [{ name: "feat", attached: false }],
+      lifecycle,
+    });
+    createHandleSpaceSwitch(inertDeps)();
+    createHandleDownSelectedWorktree(inertDeps)();
+    expect(inertDeps.showActionError).toHaveBeenCalledTimes(2);
+    expect(inertDeps.setMode).not.toHaveBeenCalled();
+    expect(workspaceUp).not.toHaveBeenCalled();
+
+    const failedUp = trackLifecycle();
+    (tuiRuntime.runPromise as Mock).mockRejectedValue(new Error("tmux boom"));
+    await createStartWorkspace(
+      makeDeps({ setLifecycle: failedUp.setLifecycle }),
+    )(target());
+    expect(failedUp.labels()).toContain("Validating Workspace…");
+
+    const failedDown = trackLifecycle();
+    (tuiRuntime.runPromise as Mock).mockRejectedValue(new Error("kill boom"));
+    await createExecuteDown(
+      makeDeps({ setLifecycle: failedDown.setLifecycle }),
+    )("wt-feat", branch, "/repo/feat", repoPath, "proj");
+    expect(failedDown.labels()).toContain("Validating Workspace…");
+  });
+
+  test("finishing up/down removes progress, restores prior expansion, and defers errors and the tmux switch", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+
+    const tracker = trackLifecycle();
+    let lifecycleSizeAtSwitch = -1;
+    const switchSession = vi.fn(async () => {
+      lifecycleSizeAtSwitch = tracker.state.size;
+      return false;
+    });
+    const deps = makeDeps({
+      setLifecycle: tracker.setLifecycle,
+      discoverClient: vi.fn().mockResolvedValue({
+        type: "single",
+        client: { tty: "/dev/pts/0", session: "other" },
+      }),
+      switchSession,
+    });
+
+    (tuiRuntime.runPromise as Mock).mockImplementation(
+      serviceEmitting(
+        workspaceUp,
+        "up",
+        [{ _tag: "CreatingTmuxSession" }],
+        () =>
+          Promise.resolve(
+            makeWorkspaceUpResult({
+              sessionName: "wt-feat",
+              attempts: {
+                tmux: {
+                  attempted: true,
+                  ok: true,
+                  value: { _tag: "Created", sessionName: "wt-feat" },
+                },
+              },
+            }),
+          ),
+      ),
+    );
+
+    await createStartWorkspace(deps)(target({ autoSwitch: true }));
+
+    expect(tracker.state.size).toBe(0);
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
+
+    // With the entry gone, effective expansion reverts to the stored preference.
+    expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
+    for (const stored of [new Set<string>(), new Set([worktreeKey])]) {
+      expect(
+        isWorktreeEffectivelyExpanded({
+          expandedWorktreeKeys: stored,
+          lifecycle: tracker.state,
+          project: "proj",
+          repoPath,
+          branch,
+        }),
+      ).toBe(stored.has(worktreeKey));
+    }
+
+    const refreshOrder = vi.mocked(deps.refreshAll).mock
+      .invocationCallOrder[0] as number;
+    const switchOrder = switchSession.mock.invocationCallOrder[0] as number;
+    const errorOrder = vi.mocked(deps.showActionError).mock
+      .invocationCallOrder[0] as number;
+    expect(refreshOrder).toBeLessThan(switchOrder);
+    expect(lifecycleSizeAtSwitch).toBe(0);
+    expect(errorOrder).toBeGreaterThan(switchOrder);
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      expect.stringContaining("failed to switch client"),
+    );
+
+    // Same teardown for down, and no outcome noise on a clean stop.
+    const downTracker = trackLifecycle();
+    const downDeps = makeDeps({ setLifecycle: downTracker.setLifecycle });
+    (tuiRuntime.runPromise as Mock).mockImplementation(
+      serviceEmitting(
+        workspaceDown,
+        "down",
+        [{ _tag: "KillingTmuxSession" }],
+        () =>
+          Promise.resolve({
+            operation: "down",
+            worktreePath: "/repo/feat",
+            sessionName: "wt-feat",
+            existed: true,
+            status: "killed",
+            attempts: { kill: { attempted: true, ok: true, value: null } },
+            warnings: [],
+          }),
+      ),
+    );
+
+    await createExecuteDown(downDeps)(
+      "wt-feat",
+      branch,
+      "/repo/feat",
+      repoPath,
+      "proj",
+    );
+
+    expect(downTracker.state.size).toBe(0);
+    expect(downDeps.refreshAll).toHaveBeenCalled();
+    expect(downDeps.showActionError).not.toHaveBeenCalled();
   });
 });

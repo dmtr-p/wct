@@ -6,16 +6,24 @@ import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName } from "../../services/tmux";
 import {
+  type WorkspaceCloseResult,
+  type WorkspaceDownResult,
   WorkspaceService,
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
+import {
+  type LifecycleClaims,
+  type LifecycleState,
+  rejectIfLifecycleActive as refuseWhenLifecycleActive,
+  runLifecycleOperation,
+} from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
   resolveSessionHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
 import { isInertTreeItem, resolveSelectedWorktreeIndex } from "../tree-helpers";
-import { Mode, type PendingAction, pendingKey, type TreeItem } from "../types";
+import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
@@ -25,10 +33,18 @@ export interface SessionActionDeps {
   sessions: TmuxSessionInfo[];
   selectedIndex: number;
   mode: Mode;
+  /** Active lifecycle operations, keyed by Workspace Identity. */
+  lifecycle: LifecycleState;
+  // Shared across every lifecycle-driving hook, so a second operation for
+  // the same identity is impossible, not just unlikely.
+  lifecycleClaims: LifecycleClaims;
 
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setMode: (m: Mode) => void;
-  setPendingActions: Dispatch<SetStateAction<Map<string, PendingAction>>>;
+  // The live mode, readable from async continuations: `mode` above is a
+  // render-time capture, stale by the time a lifecycle settles.
+  modeRef: MutableRefObject<Mode>;
+  setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
@@ -38,13 +54,28 @@ export interface SessionActionDeps {
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
 
-  refreshAll: () => Promise<void>;
+  // Resolves the registry snapshot the refresh observed, or `null` when it
+  // failed (previous repos kept).
+  refreshAll: () => Promise<RepoInfo[] | null>;
   restoreConfirmationViewport: () => void;
 
   confirmDownReturnModeRef: MutableRefObject<Mode>;
   confirmDownReturnSelectedIndexRef: MutableRefObject<number>;
   confirmCloseReturnModeRef: MutableRefObject<Mode>;
   confirmCloseReturnSelectedIndexRef: MutableRefObject<number>;
+}
+
+function rejectIfLifecycleActive(
+  deps: SessionActionDeps,
+  repoPath: string,
+  branch: string,
+): boolean {
+  return refuseWhenLifecycleActive({
+    lifecycle: deps.lifecycle,
+    mainRepoPath: repoPath,
+    branch,
+    showActionError: deps.showActionError,
+  });
 }
 
 export function createNavigateTree(deps: SessionActionDeps) {
@@ -99,44 +130,88 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
   };
 }
 
-export function createHandleStartResult(deps: SessionActionDeps) {
-  return async (result: WorkspaceUpResult, autoSwitch: boolean) => {
-    const actionMessage = resolveStartActionMessage(result);
+export interface StartWorkspaceTarget {
+  worktreePath: string;
+  /** Main repository path — one half of the Workspace Identity. */
+  repoPath: string;
+  project: string;
+  branch: string;
+  profile?: string;
+  autoSwitch: boolean;
+}
 
-    if (
-      result.attempts.tmux.attempted &&
-      result.attempts.tmux.ok &&
-      autoSwitch
-    ) {
-      const liveClient = await deps.discoverClient();
-      if (liveClient.type === "single") {
-        const switched = await deps.switchSession(
-          result.sessionName,
-          liveClient.client,
-        );
-        await deps.refreshSessions();
-
-        if (!switched) {
-          deps.showActionError(
-            `Started session '${result.sessionName}', but failed to switch client`,
-          );
-        } else if (actionMessage) {
-          deps.showActionError(actionMessage);
-        }
-        return;
-      }
+// Runs last, after validation and after the lifecycle presentation is gone:
+// switching tmux clients detaches the terminal this TUI is drawn in, so a
+// failed switch must surface as a plain action error, not a resurrected
+// progress row.
+export function createSessionHandoff(deps: SessionActionDeps) {
+  return async (
+    result: WorkspaceUpResult,
+    autoSwitch: boolean,
+  ): Promise<string | undefined> => {
+    if (!autoSwitch) return undefined;
+    if (!(result.attempts.tmux.attempted && result.attempts.tmux.ok)) {
+      return undefined;
     }
 
-    await deps.refreshAll();
-
-    if (actionMessage) {
-      deps.showActionError(actionMessage);
+    const liveClient = await deps.discoverClient();
+    if (liveClient.type === "single") {
+      const switched = await deps.switchSession(
+        result.sessionName,
+        liveClient.client,
+      );
+      await deps.refreshSessions();
+      return switched
+        ? undefined
+        : `Started session '${result.sessionName}', but failed to switch client`;
     }
+    if (liveClient.type === "none") {
+      return "No tmux client found — start tmux in the other pane";
+    }
+    if (liveClient.type === "error") {
+      return `Started session '${result.sessionName}' but failed to query tmux clients to switch`;
+    }
+    return "Cannot switch tmux client after start because multiple tmux clients are attached";
   };
 }
 
+// Shared by the space-bar start and the up modal.
+export function createStartWorkspace(deps: SessionActionDeps) {
+  const sessionHandoff = createSessionHandoff(deps);
+
+  return (target: StartWorkspaceTarget): Promise<void> =>
+    runLifecycleOperation<WorkspaceUpResult>({
+      claims: deps.lifecycleClaims,
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "up",
+        repoPath: target.repoPath,
+        project: target.project,
+        branch: target.branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: (reporter) =>
+        tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.up({
+              path: target.worktreePath,
+              ...(target.profile ? { profile: target.profile } : {}),
+              reporter,
+            }),
+          ),
+        ),
+      resultWarnings: (result) => {
+        const message = resolveStartActionMessage(result);
+        return message ? [message] : [];
+      },
+      afterCleanup: (result) => sessionHandoff(result, target.autoSwitch),
+    });
+}
+
 export function createHandleSpaceSwitch(deps: SessionActionDeps) {
-  const handleStartResult = createHandleStartResult(deps);
+  const startWorkspace = createStartWorkspace(deps);
 
   return () => {
     const item = deps.treeItems[deps.selectedIndex];
@@ -160,6 +235,7 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     if (!repo) return;
     const wt = repo.worktrees[resolvedItem.worktreeIndex];
     if (!wt) return;
+    if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = deps.sessions.some((s) => s.name === sessionName);
     if (hasSession) {
@@ -179,32 +255,14 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
           );
         });
     } else {
-      const pendingActionKey = pendingKey(repo.project, wt.branch);
       deps.clearActionError();
-      deps.setPendingActions((prev) =>
-        new Map(prev).set(pendingActionKey, {
-          type: "starting",
-          branch: wt.branch,
-          project: repo.project,
-        }),
-      );
-      void (async () => {
-        try {
-          const upResult = await tuiRuntime.runPromise(
-            WorkspaceService.use((service) => service.up({ path: wt.path })),
-          );
-          await handleStartResult(upResult, true);
-        } catch (error) {
-          deps.showActionError(toWctError(error).message);
-          await deps.refreshAll();
-        } finally {
-          deps.setPendingActions((prev) => {
-            const next = new Map(prev);
-            next.delete(pendingActionKey);
-            return next;
-          });
-        }
-      })();
+      void startWorkspace({
+        worktreePath: wt.path,
+        repoPath: repo.repoPath,
+        project: repo.project,
+        branch: wt.branch,
+        autoSwitch: true,
+      });
     }
   };
 }
@@ -216,46 +274,47 @@ export function createExecuteDown(deps: SessionActionDeps) {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    worktreeKey: string,
+    repoPath: string,
+    project: string,
   ) => {
     deps.clearActionError();
+    const returnSelectedIndex =
+      resolveSelectedWorktreeIndex(
+        deps.treeItems,
+        deps.confirmDownReturnSelectedIndexRef.current,
+      ) ?? deps.confirmDownReturnSelectedIndexRef.current;
 
-    const canProceed = await switchClientAway(sessionName);
-    if (!canProceed) {
-      deps.showActionError(
-        "Cannot safely stop the tmux session because the active client could not be moved away",
-      );
-      return;
-    }
-
-    deps.restoreConfirmationViewport();
-    deps.setSelectedIndex(deps.confirmDownReturnSelectedIndexRef.current);
-    deps.setMode(deps.confirmDownReturnModeRef.current);
-
-    const project = worktreeKey.split("/")[0] ?? "unknown";
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(worktreeKey, {
-        type: "stopping",
-        branch,
+    await runLifecycleOperation<WorkspaceDownResult>({
+      claims: deps.lifecycleClaims,
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "down",
+        repoPath,
         project,
-      }),
-    );
+        branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: async (reporter) => {
+        const canProceed = await switchClientAway(sessionName);
+        if (!canProceed) {
+          throw new Error(
+            "Cannot safely stop the tmux session because the active client could not be moved away",
+          );
+        }
 
-    try {
-      await tuiRuntime.runPromise(
-        WorkspaceService.use((service) => service.down({ path: worktreePath })),
-      );
-      await deps.refreshAll();
-    } catch (error) {
-      deps.showActionError(toWctError(error).message);
-      await deps.refreshAll();
-    } finally {
-      deps.setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(worktreeKey);
-        return next;
-      });
-    }
+        deps.restoreConfirmationViewport();
+        deps.setSelectedIndex(returnSelectedIndex);
+        deps.setMode(deps.confirmDownReturnModeRef.current);
+
+        return tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.down({ path: worktreePath, reporter }),
+          ),
+        );
+      },
+    });
   };
 }
 
@@ -273,6 +332,8 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
     const repo = deps.filteredRepos[item.repoIndex];
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
+
+    if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
     const worktreeKey = pendingKey(repo.project, wt.branch);
@@ -295,6 +356,9 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
   };
 }
 
+// Every outcome — removed, refused by git, or fatally failed — goes through
+// the same validation step before the Workspace leaves the tree or unlocks,
+// so a closed Workspace never disappears optimistically.
 export function createExecuteClose(deps: SessionActionDeps) {
   const switchClientAway = createSwitchClientAway(deps);
 
@@ -308,39 +372,59 @@ export function createExecuteClose(deps: SessionActionDeps) {
     force: boolean,
   ) => {
     deps.clearActionError();
+    const restoredMode = deps.confirmCloseReturnModeRef.current;
+    const returnSelectedIndex =
+      resolveSelectedWorktreeIndex(
+        deps.treeItems,
+        deps.confirmCloseReturnSelectedIndexRef.current,
+      ) ?? deps.confirmCloseReturnSelectedIndexRef.current;
 
-    const canProceed = await switchClientAway(sessionName);
-    if (!canProceed) {
-      deps.showActionError(
-        "Cannot safely close the worktree because the active tmux client could not be moved away",
-      );
-      return;
-    }
-
-    deps.restoreConfirmationViewport();
-    deps.setSelectedIndex(deps.confirmCloseReturnSelectedIndexRef.current);
-    deps.setMode(deps.confirmCloseReturnModeRef.current);
-
-    deps.setPendingActions((prev) =>
-      new Map(prev).set(worktreeKey, {
-        type: "closing",
-        branch,
+    await runLifecycleOperation<WorkspaceCloseResult>({
+      claims: deps.lifecycleClaims,
+      setLifecycle: deps.setLifecycle,
+      refreshAll: deps.refreshAll,
+      showActionError: deps.showActionError,
+      entry: {
+        operation: "close",
+        repoPath,
         project,
-      }),
-    );
+        branch,
+        phase: { _tag: "Preparing" },
+      },
+      run: async (reporter) => {
+        const canProceed = await switchClientAway(sessionName);
+        if (!canProceed) {
+          throw new Error(
+            "Cannot safely close the worktree because the active tmux client could not be moved away",
+          );
+        }
 
-    try {
-      const closeResult = await tuiRuntime.runPromise(
-        WorkspaceService.use((service) =>
-          service.close(
-            force
-              ? { path: worktreePath, cwd: repoPath, force }
-              : { path: worktreePath, cwd: repoPath },
+        deps.restoreConfirmationViewport();
+        deps.setSelectedIndex(returnSelectedIndex);
+        deps.setMode(restoredMode);
+
+        return tuiRuntime.runPromise(
+          WorkspaceService.use((service) =>
+            service.close(
+              force
+                ? { path: worktreePath, cwd: repoPath, force, reporter }
+                : { path: worktreePath, cwd: repoPath, reporter },
+            ),
           ),
-        ),
-      );
-
-      if (closeResult.status === "blocked_by_changes") {
+        );
+      },
+      // Asked from `afterCleanup`, after the lifecycle presentation is fully
+      // over, so the confirmation is anchored on a stable tree and a forced
+      // retry starts a fresh lifecycle instead of inheriting a stale lock.
+      afterCleanup: async (result) => {
+        if (result.status !== "blocked_by_changes") return undefined;
+        // The user may navigate away while validation runs. Only prompt if
+        // the tree is still in the mode this close restored; otherwise just
+        // report, so the refusal is never silent but also never clobbers
+        // what the user is doing elsewhere.
+        if (deps.modeRef.current !== restoredMode) {
+          return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
+        }
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,
@@ -351,21 +435,9 @@ export function createExecuteClose(deps: SessionActionDeps) {
             project,
           ),
         );
-        await deps.refreshAll();
-        return;
-      }
-
-      await deps.refreshAll();
-    } catch (error) {
-      deps.showActionError(toWctError(error).message);
-      await deps.refreshAll();
-    } finally {
-      deps.setPendingActions((prev) => {
-        const next = new Map(prev);
-        next.delete(worktreeKey);
-        return next;
-      });
-    }
+        return undefined;
+      },
+    });
   };
 }
 
@@ -384,6 +456,8 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
 
+    if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
+
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = deps.sessions.some((s) => s.name === sessionName);
     if (!hasSession) return;
@@ -395,7 +469,14 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
         ? Mode.Expanded(worktreeKey)
         : Mode.Navigate;
     deps.setMode(
-      Mode.ConfirmDown(sessionName, wt.branch, wt.path, worktreeKey),
+      Mode.ConfirmDown({
+        sessionName,
+        branch: wt.branch,
+        worktreePath: wt.path,
+        worktreeKey,
+        repoPath: repo.repoPath,
+        project: repo.project,
+      }),
     );
   };
 }
@@ -404,7 +485,7 @@ export function useSessionActions(deps: SessionActionDeps) {
   return {
     navigateTree: createNavigateTree(deps),
     switchClientAwayFromSession: createSwitchClientAway(deps),
-    handleStartResult: createHandleStartResult(deps),
+    startWorkspace: createStartWorkspace(deps),
     handleSpaceSwitch: createHandleSpaceSwitch(deps),
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),
     executeClose: createExecuteClose(deps),

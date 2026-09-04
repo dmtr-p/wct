@@ -1,22 +1,73 @@
-// src/tui/tree-helpers.ts
-
 import { basename } from "node:path";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
 import type { RepoInfo } from "./hooks/useRegistry";
+import {
+  isLifecycleActive,
+  type LifecycleEntry,
+  type LifecyclePhase,
+  type LifecycleState,
+  lifecycleEntryFor,
+  lifecycleKey,
+} from "./lifecycle";
 import { wrapPrLabel } from "./pr-layout";
 import {
   Mode,
   type PaneInfo,
-  type PendingAction,
   type PRInfo,
   pendingKey,
   type TreeItem,
 } from "./types";
 
+const NO_LIFECYCLE: LifecycleState = new Map();
+
+/**
+ * A Workspace under a lifecycle is presented as expanded without its key ever
+ * being written into `expandedWorktreeKeys` — that would leak a transient
+ * operation into a durable user preference.
+ */
+export function isWorktreeEffectivelyExpanded({
+  expandedWorktreeKeys,
+  discoveredWorkspaceKeys,
+  lifecycle = NO_LIFECYCLE,
+  project,
+  repoPath,
+  branch,
+}: {
+  expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
+  lifecycle?: LifecycleState;
+  project: string;
+  repoPath: string;
+  branch: string;
+}): boolean {
+  if (expandedWorktreeKeys?.has(pendingKey(project, branch))) return true;
+  if (discoveredWorkspaceKeys?.has(lifecycleKey(repoPath, branch))) return true;
+  return lifecycleEntryFor(lifecycle, repoPath, branch) !== undefined;
+}
+
+/**
+ * True when a `worktree` tree item's Workspace is under an active lifecycle —
+ * its expansion affordances (collapse key, double-click) are refused, since
+ * `isWorktreeEffectivelyExpanded` already forces it expanded.
+ */
+export function isWorktreeLifecycleActive(
+  item: TreeItem,
+  repos: RepoInfo[],
+  lifecycle: LifecycleState,
+): boolean {
+  if (item.type !== "worktree") return false;
+  const repo = repos[item.repoIndex];
+  const worktree = repo?.worktrees[item.worktreeIndex];
+  if (!repo || !worktree) return false;
+  return isLifecycleActive(lifecycle, repo.repoPath, worktree.branch);
+}
+
 interface BuildTreeOptions {
   repos: RepoInfo[];
   expandedWorktreeKeys?: Set<string>;
+  discoveredWorkspaceKeys?: Set<string>;
+  lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
@@ -28,28 +79,19 @@ interface BuildTreeRowsOptions {
   /** Repos are always expanded in production; retained for test fixtures. */
   expandedRepos?: Set<string>;
   expandedWorktreeKeys?: Set<string>;
-  pendingActions: Map<string, PendingAction>;
-  /**
-   * Terminal width in columns, used to count how many terminal lines a PR
-   * detail label wraps onto. Defaults to `Infinity` (no wrapping) so callers
-   * and tests that don't model wrapping keep a 1:1 row-per-detail mapping.
-   */
+  discoveredWorkspaceKeys?: Set<string>;
+  lifecycle?: LifecycleState;
+  /** Defaults to `Infinity` so callers that don't model wrapping keep a 1:1 row-per-detail mapping. */
   maxWidth?: number;
 }
 
 /**
- * A single *visual terminal row*. Logical tree items are not 1:1 with terminal
- * rows: an expanded worktree with stats emits a second row, an expanded repo
- * with zero worktrees emits a `(no worktrees)` row, and phantom "opening…" rows
- * are not present in `items` at all.
- *
- * `itemIndex` maps each visual row back to its logical item index in `items`
- * (or `null` for secondary/phantom rows that are not independently selectable).
- * A wrapped PR's continuation rows carry the PR's own `itemIndex` so a click on
- * any wrapped line still selects the PR.
- * `kind` carries enough information for `TreeView` to render the row directly,
- * so the row model is the single source of truth for both windowing and the
- * render itself.
+ * A single visual terminal row. Logical tree items are not 1:1 with terminal
+ * rows — a stats row, a `(no worktrees)` row, and the lifecycle rows all have
+ * no entry in `items`, so their `itemIndex` is `null` and neither keyboard
+ * navigation nor mouse hit-testing can land on them. A wrapped PR's
+ * continuation rows carry the PR's own `itemIndex` so a click on any wrapped
+ * line still selects the PR.
  */
 export type TreeRow =
   | { itemIndex: number; kind: "repo" }
@@ -68,7 +110,21 @@ export type TreeRow =
       pieceIndex: number;
       prLine: string;
     }
-  | { itemIndex: null; kind: "phantom"; repoIndex: number; branch: string }
+  /** A Workspace that an `open` has begun but git does not yet expose as a worktree. */
+  | {
+      itemIndex: null;
+      kind: "pending-workspace";
+      repoIndex: number;
+      branch: string;
+    }
+  /** The single progress row for one Workspace under an active lifecycle. */
+  | {
+      itemIndex: null;
+      kind: "lifecycle-progress";
+      repoIndex: number;
+      branch: string;
+      phase: LifecyclePhase;
+    }
   | { itemIndex: null; kind: "confirmation"; partIndex: number };
 
 export function insertConfirmationRows(
@@ -154,6 +210,14 @@ interface ResolveRecoveredSelectionIndexOptions {
   prevTree: TreeItem[];
   treeItems: TreeItem[];
   prevSelectionId: string | null;
+  /** Parent branch identity of the previously selected detail row (see `treeItemParentId`). */
+  prevSelectionParentId?: string | null;
+  /**
+   * Required for the `prevSelectionParentId` fallback, which only applies
+   * when that parent is under an active lifecycle — an ordinary disappearance
+   * (a killed pane, a closed PR) still clamps to the adjacent row instead.
+   */
+  lifecycle?: LifecycleState;
   selectedIndex: number;
   repos: RepoInfo[];
   skipIdentityRecovery?: boolean;
@@ -260,9 +324,49 @@ export function reconcileExpandedWorktreeKeys(
   return next.size === previous.size ? previous : next;
 }
 
+export function reconcileDiscoveredWorkspaceKeys(
+  previous: Set<string>,
+  repos: RepoInfo[],
+): Set<string> {
+  const available = new Set(
+    repos.flatMap((repo) =>
+      repo.worktrees.map((worktree) =>
+        lifecycleKey(repo.repoPath, worktree.branch),
+      ),
+    ),
+  );
+  const uncertainRepoPrefixes = repos
+    .filter((repo) => repo.error !== undefined)
+    .map((repo) => lifecycleKey(repo.repoPath, ""));
+  const next = new Set(
+    [...previous].filter(
+      (key) =>
+        available.has(key) ||
+        uncertainRepoPrefixes.some((prefix) => key.startsWith(prefix)),
+    ),
+  );
+  return next.size === previous.size ? previous : next;
+}
+
+export function workspaceIdentityKeysForDisplayKey(
+  repos: RepoInfo[],
+  worktreeKey: string,
+): Set<string> {
+  const identities = new Set<string>();
+  for (const repo of repos) {
+    for (const worktree of repo.worktrees) {
+      if (pendingKey(repo.project, worktree.branch) !== worktreeKey) continue;
+      identities.add(lifecycleKey(repo.repoPath, worktree.branch));
+    }
+  }
+  return identities;
+}
+
 export function buildTreeItems({
   repos,
   expandedWorktreeKeys,
+  discoveredWorkspaceKeys,
+  lifecycle = NO_LIFECYCLE,
   prData,
   panes,
   jumpToPane,
@@ -281,12 +385,21 @@ export function buildTreeItems({
       const wt = repo.worktrees[wi];
       if (!wt) continue;
       const wtKey = pendingKey(repo.project, wt.branch);
-      const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
+      // Suppress PR/pane detail items under an active lifecycle, so a phase
+      // change can never reshuffle detail rows under the user's cursor.
+      if (lifecycleEntryFor(lifecycle, repo.repoPath, wt.branch)) continue;
+      const isExpanded = isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
+        project: repo.project,
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+      });
       if (!isExpanded) continue;
 
       const sessionName = formatSessionName(basename(wt.path));
 
-      // PR data for this worktree
       const pr = prData.get(wtKey);
       if (pr) {
         items.push({
@@ -303,7 +416,6 @@ export function buildTreeItems({
         });
       }
 
-      // Panes for this worktree
       const sessionPanes = panes.get(sessionName);
       if (sessionPanes && sessionPanes.length > 0) {
         items.push({
@@ -338,79 +450,77 @@ export function buildTreeItems({
 }
 
 /**
- * Phantom "opening…" rows, grouped by project. These are pending `open` actions
- * for branches that do not yet exist as worktrees in `repos`. Mirrors the
- * computation `TreeView` performs so the row model matches the render exactly.
+ * Pending Workspaces, grouped by repo index. These are `open` lifecycles
+ * whose branch is not (yet) a worktree in `repos`, matched on the main
+ * repository path rather than the project display name so two repos sharing
+ * a display name cannot borrow each other's pending rows.
  */
-function phantomsByProject(
+function pendingWorkspacesByRepoIndex(
   repos: RepoInfo[],
-  pendingActions: Map<string, PendingAction>,
-): Map<string, PendingAction[]> {
-  const keys = new Set<string>();
-  for (const repo of repos) {
-    for (const wt of repo.worktrees) {
-      keys.add(pendingKey(repo.project, wt.branch));
+  lifecycle: LifecycleState,
+): Map<number, LifecycleEntry[]> {
+  const pending = new Map<number, LifecycleEntry[]>();
+  if (lifecycle.size === 0) return pending;
+  for (let ri = 0; ri < repos.length; ri++) {
+    const repo = repos[ri];
+    if (!repo) continue;
+    const branches = new Set(repo.worktrees.map((wt) => wt.branch));
+    for (const entry of lifecycle.values()) {
+      if (entry.operation !== "open") continue;
+      if (entry.repoPath !== repo.repoPath) continue;
+      if (branches.has(entry.branch)) continue;
+      const existing = pending.get(ri) ?? [];
+      existing.push(entry);
+      pending.set(ri, existing);
     }
   }
-  const phantoms = new Map<string, PendingAction[]>();
-  for (const [key, action] of pendingActions) {
-    if (action.type === "opening" && !keys.has(key)) {
-      const existing = phantoms.get(action.project) ?? [];
-      existing.push(action);
-      phantoms.set(action.project, existing);
-    }
-  }
-  return phantoms;
+  return pending;
 }
 
 /**
- * Build the visual-row model — one entry per *terminal row* — from the logical
- * `items` list. This is the shared primitive that drives both windowing (slice
- * by scroll offset) and, in a later slice, hit-testing (click row → item).
- *
- * The row order replicates `TreeView`'s render exactly:
- * - a repo row, optionally followed by a `(no worktrees)` row when expanded
- *   with zero worktrees;
- * - a worktree row, optionally followed by a stats row when expanded with
- *   sync/changed-file stats;
- * - detail rows;
- * - phantom "opening…" rows for a *populated* repo are emitted after that
- *   repo's last worktree row block;
- * - phantom rows for *empty* expanded repos are appended at the very bottom of
- *   the whole tree (matching the rendering quirk in `TreeView`).
+ * Build the visual-row model — one entry per terminal row — from the logical
+ * `items` list. Row order must replicate `TreeView`'s render exactly: repo,
+ * optional no-worktrees row, worktree, optional stats row, detail rows, then
+ * each repo's Pending Workspace rows after its last row-emitting item (or at
+ * the very bottom of the tree for empty expanded repos).
  */
 export function buildTreeRows({
   items,
   repos,
   expandedRepos = new Set(repos.map((repo) => repo.id)),
   expandedWorktreeKeys,
-  pendingActions,
+  discoveredWorkspaceKeys,
+  lifecycle = NO_LIFECYCLE,
   maxWidth = Number.POSITIVE_INFINITY,
 }: BuildTreeRowsOptions): TreeRow[] {
   const rows: TreeRow[] = [];
-  const phantoms = phantomsByProject(repos, pendingActions);
+  const pendingWorkspaces = pendingWorkspacesByRepoIndex(repos, lifecycle);
 
-  // Phantom "opening…" rows for a populated repo follow the repo's LAST
-  // row-emitting item — the final worktree row block including any trailing
-  // detail rows — so an expanded last worktree cannot swallow them.
-  const emitPhantomsIfRepoBlockEnds = (
-    idx: number,
-    repoIndex: number,
-    project: string,
-  ) => {
+  const pushPendingWorkspace = (repoIndex: number, entry: LifecycleEntry) => {
+    rows.push({
+      itemIndex: null,
+      kind: "pending-workspace",
+      repoIndex,
+      branch: entry.branch,
+    });
+    rows.push({
+      itemIndex: null,
+      kind: "lifecycle-progress",
+      repoIndex,
+      branch: entry.branch,
+      phase: entry.phase,
+    });
+  };
+
+  const emitPendingIfRepoBlockEnds = (idx: number, repoIndex: number) => {
     const nextItem = items[idx + 1];
     const isLastItemForRepo =
       !nextItem || nextItem.type === "repo" || nextItem.repoIndex !== repoIndex;
     if (!isLastItemForRepo) return;
-    const projectPhantoms = phantoms.get(project);
-    if (!projectPhantoms) return;
-    for (const phantom of projectPhantoms) {
-      rows.push({
-        itemIndex: null,
-        kind: "phantom",
-        repoIndex,
-        branch: phantom.branch,
-      });
+    const repoPending = pendingWorkspaces.get(repoIndex);
+    if (!repoPending) return;
+    for (const entry of repoPending) {
+      pushPendingWorkspace(repoIndex, entry);
     }
   };
 
@@ -434,14 +544,9 @@ export function buildTreeRows({
     }
 
     if (item.type === "detail") {
-      // A PR label is shown in full and may wrap onto extra terminal lines.
-      // Emit one continuation row per wrapped line (all carrying the PR's own
-      // itemIndex) so the row model stays 1:1 with terminal rows and clicks on
-      // wrapped text still hit the PR. Each row carries its own wrapped line
-      // text (`prLine`), so the render consumes exactly the lines this model
-      // counted — the count and the rendered text cannot diverge, and
-      // DetailRow never re-wraps. pane/pane-header labels are truncated to a
-      // single line, so only PR rows can wrap.
+      // Each wrapped PR line becomes its own row carrying the wrapped text
+      // (`prLine`), so the render consumes exactly the lines counted here and
+      // DetailRow never re-wraps. pane/pane-header labels never wrap.
       if (item.detailKind === "pr") {
         const lines = wrapPrLabel(
           item.label,
@@ -460,69 +565,71 @@ export function buildTreeRows({
       } else {
         rows.push({ itemIndex: idx, kind: "detail" });
       }
-      emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
+      emitPendingIfRepoBlockEnds(idx, item.repoIndex);
       continue;
     }
 
-    // worktree
     const worktreeIndex = item.worktreeIndex;
     const wt = repo.worktrees[worktreeIndex];
     if (!wt) continue;
 
     rows.push({ itemIndex: idx, kind: "worktree" });
 
-    const wtKey = pendingKey(repo.project, wt.branch);
-    const isExpanded = expandedWorktreeKeys?.has(wtKey) ?? false;
-    const pending = pendingActions.get(wtKey);
-    // opening/closing/stopping worktrees render as a single line (no stats
-    // row); `starting` falls through to the normal render and can show stats.
-    const isPending =
-      pending?.type === "opening" ||
-      pending?.type === "closing" ||
-      pending?.type === "stopping";
-    const sync = formatSync(wt.sync);
-    const hasStats = (sync !== "" && sync !== "✓") || wt.changedFiles > 0;
-    if (isExpanded && hasStats && !isPending) {
+    const lifecycleEntry = lifecycleEntryFor(
+      lifecycle,
+      repo.repoPath,
+      wt.branch,
+    );
+    if (lifecycleEntry) {
+      // Takes the stats row's place — one progress row per Workspace.
       rows.push({
         itemIndex: null,
-        kind: "worktree-stats",
+        kind: "lifecycle-progress",
         repoIndex: item.repoIndex,
-        worktreeIndex,
+        branch: wt.branch,
+        phase: lifecycleEntry.phase,
       });
+    } else {
+      const isExpanded = isWorktreeEffectivelyExpanded({
+        expandedWorktreeKeys,
+        discoveredWorkspaceKeys,
+        lifecycle,
+        project: repo.project,
+        repoPath: repo.repoPath,
+        branch: wt.branch,
+      });
+      const sync = formatSync(wt.sync);
+      const hasStats = (sync !== "" && sync !== "✓") || wt.changedFiles > 0;
+      if (isExpanded && hasStats) {
+        rows.push({
+          itemIndex: null,
+          kind: "worktree-stats",
+          repoIndex: item.repoIndex,
+          worktreeIndex,
+        });
+      }
     }
 
-    // Phantom "opening…" rows follow the repo's last worktree-row block. When
-    // detail rows trail this worktree, the detail branch above emits them
-    // after the last detail row instead.
-    emitPhantomsIfRepoBlockEnds(idx, item.repoIndex, repo.project);
+    emitPendingIfRepoBlockEnds(idx, item.repoIndex);
   }
 
-  // Phantom rows for expanded repos with no worktrees are appended at the very
-  // bottom of the whole tree (a rendering quirk in `TreeView`).
+  // Expanded repos with no worktrees get their Pending Workspace rows at the
+  // very bottom of the whole tree.
   for (let ri = 0; ri < repos.length; ri++) {
     const repo = repos[ri];
     if (!repo) continue;
     if (!expandedRepos.has(repo.id)) continue;
     if (repo.worktrees.length > 0) continue;
-    const projectPhantoms = phantoms.get(repo.project);
-    if (!projectPhantoms) continue;
-    for (const phantom of projectPhantoms) {
-      rows.push({
-        itemIndex: null,
-        kind: "phantom",
-        repoIndex: ri,
-        branch: phantom.branch,
-      });
+    const repoPending = pendingWorkspaces.get(ri);
+    if (!repoPending) continue;
+    for (const entry of repoPending) {
+      pushPendingWorkspace(ri, entry);
     }
   }
 
   return rows;
 }
 
-/**
- * Find the index of the first visual row that maps to the given logical
- * `itemIndex`, or `null` if no row maps to it.
- */
 export function firstRowForItem(
   rows: TreeRow[],
   itemIndex: number,
@@ -535,10 +642,6 @@ export function firstRowForItem(
   return null;
 }
 
-/**
- * Clamp a scroll offset to the valid range `[0, max(0, rowsLength -
- * viewportRows)]`. When the tree fits the viewport the offset is forced to 0.
- */
 export function clampScrollOffset(
   offset: number,
   rowsLength: number,
@@ -550,15 +653,7 @@ export function clampScrollOffset(
   return offset;
 }
 
-/**
- * Minimally nudge the scroll offset so the visual row at `rowIndex` stays
- * within the window `[offset, offset + viewportRows - 1]`:
- * - if it is above the window, set the offset to that row;
- * - if it is below the window, set `offset = rowIndex - viewportRows + 1`;
- * - otherwise leave the offset unchanged.
- *
- * Nudge only — never re-center.
- */
+/** Nudge only — never re-center. */
 export function scrollToKeepVisible(
   rowIndex: number,
   offset: number,
@@ -575,20 +670,92 @@ export function scrollToKeepVisible(
 }
 
 /**
- * Pane headers are inert separators the cursor can never land on. The SINGLE
- * predicate shared by keyboard navigation (`createNavigateTree` skips inert
- * items) and mouse hit-testing (`resolveMouseAction` refuses to select them),
- * so a click can never select a row that follow-up keys treat inconsistently.
- * Add any future inert row kind here, never at the call sites.
+ * Rows carry a repo index rather than a path, so the identity is matched by
+ * resolving that index back to its main repository path — two repositories
+ * sharing a project display name therefore cannot borrow each other's
+ * progress row.
+ */
+export function lifecycleProgressRowIndex(
+  rows: TreeRow[],
+  repos: RepoInfo[],
+  mainRepoPath: string,
+  branch: string,
+): number | null {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row?.kind !== "lifecycle-progress") continue;
+    if (row.branch !== branch) continue;
+    if (repos[row.repoIndex]?.repoPath !== mainRepoPath) continue;
+    return i;
+  }
+  return null;
+}
+
+/** The one-time viewport reveal for a newly active lifecycle operation. */
+export interface LifecycleReveal {
+  /** The `lifecycleKey` to mark revealed, so this happens exactly once. */
+  key: string;
+  /** The offset that makes the progress row visible — minimally adjusted. */
+  scrollOffset: number;
+}
+
+/**
+ * The first active operation not yet revealed and whose progress row exists
+ * wins; an operation with no row yet (filtered out by the search) is left
+ * unrevealed so it still gets its one reveal once the filter clears. One-shot
+ * by construction: once a key is in `revealed`, later phase events, teardown,
+ * and reconciliation all find it there and never touch the offset again.
+ */
+export function resolveLifecycleReveal({
+  rows,
+  repos,
+  lifecycle,
+  revealed,
+  scrollOffset,
+  viewportRows,
+}: {
+  rows: TreeRow[];
+  repos: RepoInfo[];
+  lifecycle: LifecycleState;
+  revealed: ReadonlySet<string>;
+  scrollOffset: number;
+  viewportRows: number;
+}): LifecycleReveal | null {
+  for (const [key, entry] of lifecycle) {
+    if (revealed.has(key)) continue;
+    const rowIndex = lifecycleProgressRowIndex(
+      rows,
+      repos,
+      entry.repoPath,
+      entry.branch,
+    );
+    if (rowIndex === null) continue;
+    return {
+      key,
+      scrollOffset: clampScrollOffset(
+        scrollRangeToKeepVisible(
+          { start: rowIndex, end: rowIndex },
+          scrollOffset,
+          viewportRows,
+        ),
+        rows.length,
+        viewportRows,
+      ),
+    };
+  }
+  return null;
+}
+
+/**
+ * Shared by keyboard navigation and mouse hit-testing, so a click can never
+ * select a row that follow-up keys treat inconsistently. Add any future inert
+ * row kind here, never at the call sites.
  */
 export function isInertTreeItem(item: TreeItem | undefined): boolean {
   return item?.type === "detail" && item.detailKind === "pane-header";
 }
 
-/**
- * Compute a stable identity string for a tree item using repo id and branch,
- * so selection can be recovered after background refreshes that shift indices.
- */
+/** Stable identity string so selection can be recovered after a refresh shifts indices. */
 export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   const repo = repos[item.repoIndex];
   if (!repo) return null;
@@ -603,12 +770,26 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
 }
 
 /**
- * Compute the adjusted selectedIndex after all detail rows are removed from the
- * tree (e.g. when exiting Expanded mode or switching expanded worktree).
- *
- * - If the cursor is on a detail row, snap to its parent worktree.
- * - Otherwise subtract the number of detail rows before the cursor.
+ * A detail row's parent branch identity (`null` for anything else). Selection
+ * recovery needs this because a lifecycle suppresses a Workspace's detail
+ * rows, so the selected row can vanish and the cursor must land on its
+ * Workspace instead of wherever the index shift left it.
  */
+export function treeItemParentId(
+  item: TreeItem,
+  repos: RepoInfo[],
+): string | null {
+  if (item.type !== "detail") return null;
+  return treeItemId(
+    {
+      type: "worktree",
+      repoIndex: item.repoIndex,
+      worktreeIndex: item.worktreeIndex,
+    },
+    repos,
+  );
+}
+
 export function adjustIndexForDetailCollapse(
   items: TreeItem[],
   selectedIndex: number,
@@ -630,6 +811,8 @@ export function resolveRecoveredSelectionIndex({
   prevTree,
   treeItems,
   prevSelectionId,
+  prevSelectionParentId = null,
+  lifecycle = NO_LIFECYCLE,
   selectedIndex,
   repos,
   skipIdentityRecovery = false,
@@ -647,6 +830,28 @@ export function resolveRecoveredSelectionIndex({
     const candidate = treeItems[i];
     if (candidate && treeItemId(candidate, repos) === prevSelectionId) {
       return i;
+    }
+  }
+
+  if (prevSelectionParentId) {
+    for (let i = 0; i < treeItems.length; i++) {
+      const candidate = treeItems[i];
+      if (
+        candidate?.type !== "worktree" ||
+        treeItemId(candidate, repos) !== prevSelectionParentId
+      ) {
+        continue;
+      }
+      const repo = repos[candidate.repoIndex];
+      const branch = repo?.worktrees[candidate.worktreeIndex]?.branch;
+      if (
+        repo &&
+        branch &&
+        isLifecycleActive(lifecycle, repo.repoPath, branch)
+      ) {
+        return i;
+      }
+      break;
     }
   }
 

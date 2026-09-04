@@ -3,7 +3,6 @@ import { Context, Effect } from "effect";
 import type { SetupCommand } from "../config/schema";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
-import * as logger from "../utils/logger";
 import { execShell, getProcessErrorMessage } from "./process";
 
 export interface SetupResult {
@@ -12,18 +11,28 @@ export interface SetupResult {
   error?: string;
 }
 
+export interface SetupReporter {
+  commandStarted: (
+    name: string,
+    current: number,
+    total: number,
+  ) => Effect.Effect<void>;
+  commandCompleted: (result: SetupResult) => Effect.Effect<void>;
+}
+
 export interface SetupService {
   runSetupCommands: (
     commands: ReadonlyArray<SetupCommand>,
     workingDir: string,
     env: WctEnv,
+    reporter?: SetupReporter,
   ) => Effect.Effect<SetupResult[], WctError, BunServices.BunServices>;
 }
 
 export const SetupService = Context.Service<SetupService>("wct/SetupService");
 
 export const liveSetupService: SetupService = SetupService.of({
-  runSetupCommands: (commands, workingDir, env) =>
+  runSetupCommands: (commands, workingDir, env, reporter) =>
     Effect.gen(function* () {
       const results: SetupResult[] = [];
       const totalSteps = commands.length;
@@ -35,7 +44,9 @@ export const liveSetupService: SetupService = SetupService.of({
       for (let i = 0; i < commands.length; i++) {
         // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
         const cmd = commands[i]!;
-        yield* logger.step(i + 1, totalSteps, cmd.name);
+        if (reporter) {
+          yield* reporter.commandStarted(cmd.name, i + 1, totalSteps);
+        }
 
         const step = execShell(cmd.command, {
           cwd: workingDir,
@@ -51,25 +62,23 @@ export const liveSetupService: SetupService = SetupService.of({
           const message = getProcessErrorMessage(error);
 
           if (cmd.optional) {
-            return logger
-              .warn(`${cmd.name} failed (optional): ${message}`)
-              .pipe(
-                Effect.as<SetupResult>({
-                  name: cmd.name,
-                  _tag: "OptionalFailed",
-                  error: message,
-                }),
-              );
+            return Effect.succeed<SetupResult>({
+              name: cmd.name,
+              _tag: "OptionalFailed",
+              error: message,
+            });
           }
 
-          return logger.error(`${cmd.name} failed: ${message}`).pipe(
-            Effect.as<SetupResult>({
-              name: cmd.name,
-              _tag: "Failed",
-              error: message,
-            }),
-          );
+          return Effect.succeed<SetupResult>({
+            name: cmd.name,
+            _tag: "Failed",
+            error: message,
+          });
         });
+
+        if (reporter) {
+          yield* reporter.commandCompleted(result);
+        }
 
         results.push(result);
       }

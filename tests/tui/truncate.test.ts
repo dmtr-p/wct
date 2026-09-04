@@ -111,4 +111,8 @@ describe("toSingleLine", () => {
     );
     expect(toSingleLine("a\n\n\nb")).toBe("a b");
   });
+
+  test("collapses standalone carriage returns", () => {
+    expect(toSingleLine("first\r    second")).toBe("first second");
+  });
 });

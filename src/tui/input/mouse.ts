@@ -1,4 +1,5 @@
 import type { RepoInfo } from "../hooks/useRegistry";
+import { lifecycleKey } from "../lifecycle";
 import { isInertTreeItem, type TreeRow } from "../tree-helpers";
 import { type Mode, pendingKey, type TreeItem } from "../types";
 
@@ -127,21 +128,33 @@ export function detectDoubleClick(
 export type TreeDoubleClickAction =
   | { type: "noop" }
   | { type: "expand-worktree"; worktreeKey: string }
-  | { type: "collapse-worktree"; worktreeKey: string }
+  | {
+      type: "collapse-worktree";
+      worktreeKey: string;
+      repoPath: string;
+      branch: string;
+    }
   | { type: "activate-detail"; action: () => void };
 
 export function resolveTreeDoubleClickAction(
   item: TreeItem,
   repos: RepoInfo[],
   expandedWorktreeKeys: Set<string>,
+  discoveredWorkspaceKeys: Set<string> = new Set(),
 ): TreeDoubleClickAction {
   if (item.type === "worktree") {
     const repo = repos[item.repoIndex];
     const worktree = repo?.worktrees[item.worktreeIndex];
     if (!repo || !worktree) return { type: "noop" };
     const worktreeKey = pendingKey(repo.project, worktree.branch);
-    return expandedWorktreeKeys.has(worktreeKey)
-      ? { type: "collapse-worktree", worktreeKey }
+    return expandedWorktreeKeys.has(worktreeKey) ||
+      discoveredWorkspaceKeys.has(lifecycleKey(repo.repoPath, worktree.branch))
+      ? {
+          type: "collapse-worktree",
+          worktreeKey,
+          repoPath: repo.repoPath,
+          branch: worktree.branch,
+        }
       : { type: "expand-worktree", worktreeKey };
   }
   if (
@@ -158,7 +171,7 @@ export function resolveTreeDoubleClickAction(
  * True for ANY SGR mouse escape sequence — press, release, motion/drag, and
  * extra-button events alike — regardless of whether `parseSgrMouse` resolves
  * it to a recognised `MouseEvent`. Used by the `useInput` dispatcher guard to
- * swallow every mouse sequence (ADR 0002 / PRD §6.6): a click emits BOTH a
+ * swallow every mouse sequence (ADR 0002): a click emits BOTH a
  * press and a release sequence, and `parseSgrMouse` intentionally returns
  * `null` for the release half (and extra-button events); motion is surfaced
  * for hover hit-testing. Non-actionable is not the same as "not a
@@ -246,9 +259,9 @@ export type MouseAction =
  * Map a 1-based SGR row to a clickable/hoverable tree item, shared by
  * `resolveMouseAction` (press) and `resolveHoverItemIndex` (move) so the two
  * can never disagree about which row a given terminal row hits. Returns
- * `null` for chrome, phantom rows, and inert rows (pane headers) — the same
- * predicate keyboard navigation uses, so a pointer can't select/hover a row
- * arrow keys refuse.
+ * `null` for chrome, lifecycle rows (Pending Workspace / Lifecycle Progress),
+ * and inert rows (pane headers) — the same predicate keyboard navigation
+ * uses, so a pointer can't select/hover a row arrow keys refuse.
  */
 function hitTestTreeRow(
   row: number,
@@ -265,7 +278,7 @@ function hitTestTreeRow(
   const treeRow = ctx.rows[rowIndex];
   const itemIndex = treeRow?.itemIndex;
   if (itemIndex == null) {
-    return null; // phantom row / padding
+    return null; // lifecycle row / padding
   }
   if (isInertTreeItem(ctx.treeItems[itemIndex])) {
     return null;
@@ -282,7 +295,7 @@ function hitTestTreeRow(
  * - Wheel → scroll only; the selection is untouched and may scroll out of view.
  * - Left-click → hit-test the row under the cursor and select it. Activation
  *   is resolved separately after double-click detection. Non-left buttons and
- *   clicks on chrome/phantom rows or inert pane headers are `none`.
+ *   clicks on chrome, lifecycle rows or inert pane headers are `none`.
  */
 export function resolveMouseAction(
   event: MouseEvent,
@@ -315,7 +328,7 @@ export function resolveMouseAction(
 /**
  * The tree-item index currently under the pointer, for hover styling. `null`
  * for anything that isn't a `move` event over a selectable row (chrome,
- * phantom rows, inert pane headers, or a mode that doesn't act on mouse).
+ * lifecycle rows, inert pane headers, or a mode that doesn't act on mouse).
  */
 export function resolveHoverItemIndex(
   event: MouseEvent,

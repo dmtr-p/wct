@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import { WorkspaceService } from "../../src/services/workspace-service";
 import type { ModalActionDeps } from "../../src/tui/hooks/useModalActions";
 import {
   createHandleAddProject,
@@ -10,10 +9,37 @@ import {
   createPrepareUpModal,
 } from "../../src/tui/hooks/useModalActions";
 import type { TmuxClientDiscovery } from "../../src/tui/hooks/useTmux";
+import {
+  createLifecycleClaims,
+  type LifecycleEntry,
+  type LifecyclePhase,
+  type LifecycleState,
+  lifecycleKey,
+  lifecyclePhaseLabel,
+} from "../../src/tui/lifecycle";
 import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
 
+// Applies functional updates like React would, so a test can read the phase
+// the tree would be rendering at any point in the async flow.
+function trackLifecycle() {
+  const tracker = {
+    state: new Map() as LifecycleState,
+    phases: [] as Array<LifecyclePhase | null>,
+    setLifecycle: (
+      update: LifecycleState | ((prev: LifecycleState) => LifecycleState),
+    ) => {
+      tracker.state =
+        typeof update === "function" ? update(tracker.state) : update;
+      tracker.phases.push(tracker.entry()?.phase ?? null);
+      return tracker.state;
+    },
+    entry: (): LifecycleEntry | undefined =>
+      tracker.state.get(lifecycleKey("/repo", "feat")),
+  };
+  return tracker;
+}
+
 const workspaceOpen = vi.hoisted(() => vi.fn(() => "mock-open-effect"));
-const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const registerProjectMock = vi.hoisted(() =>
   vi.fn(() => "register-project-effect"),
 );
@@ -27,7 +53,7 @@ vi.mock("../../src/tui/runtime", () => ({
 
 vi.mock("../../src/services/workspace-service", () => ({
   WorkspaceService: {
-    use: vi.fn((f) => f({ open: workspaceOpen, up: workspaceUp })),
+    use: vi.fn((f) => f({ open: workspaceOpen })),
   },
 }));
 
@@ -56,6 +82,30 @@ function makeOpenResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The registry snapshot a validation observes when `/repo` really does have a
+ * `feat` worktree — i.e. what `refreshAll` resolves after a successful open.
+ */
+function snapshotWithFeat(): ModalActionDeps["filteredRepos"] {
+  return [
+    {
+      id: "r1",
+      project: "proj",
+      repoPath: "/repo",
+      profileNames: [],
+      worktrees: [
+        {
+          branch: "feat",
+          path: "/repo/feat",
+          isMainWorktree: false,
+          changedFiles: 0,
+          sync: null,
+        },
+      ],
+    },
+  ];
+}
+
 function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
   return {
     treeItems: [],
@@ -64,11 +114,13 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     mode: Mode.Navigate,
     openModalRepoProject: "",
     openModalRepoPath: "",
+    lifecycle: new Map(),
+    lifecycleClaims: createLifecycleClaims(),
+    setLifecycle: vi.fn(),
     setMode: vi.fn(),
     setSelectedIndex: vi.fn(),
-    setPendingActions: vi.fn((fn) => {
-      if (typeof fn === "function") fn(new Map());
-    }),
+    markWorkspaceDiscovered: vi.fn(),
+    waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     setOpenModalBase: vi.fn(),
     setOpenModalProfiles: vi.fn(),
     setOpenModalRepoProject: vi.fn(),
@@ -77,8 +129,8 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
     discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
-    handleStartResult: vi.fn().mockResolvedValue(undefined),
-    refreshAll: vi.fn().mockResolvedValue(undefined),
+    startWorkspace: vi.fn().mockResolvedValue(undefined),
+    refreshAll: vi.fn().mockResolvedValue([]),
     upModalReturnModeRef: { current: Mode.Navigate },
     modalReturnModeRef: { current: Mode.Navigate },
     upModalReturnSelectedIndexRef: { current: 0 },
@@ -161,24 +213,17 @@ describe("createPrepareOpenModal", () => {
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev"]);
   });
 
-  test("opens a branch through WorkspaceService, refreshes, and clears pending without registering", async () => {
+  test("opens a branch through WorkspaceService, refreshes, and leaves the discovered Workspace expanded without registering", async () => {
     const { tuiRuntime, runTuiSilentPromise } = await import(
       "../../src/tui/runtime"
     );
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const openResult = makeOpenResult();
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(openResult);
-    const refreshAll = vi.fn().mockResolvedValue(undefined);
+    const refreshAll = vi.fn().mockResolvedValue(snapshotWithFeat());
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      setPendingActions,
       refreshAll,
     });
 
@@ -192,7 +237,6 @@ describe("createPrepareOpenModal", () => {
     });
 
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    expect(pendingActions.has(pendingKey("proj", "feat"))).toBe(true);
 
     await vi.waitFor(() => {
       expect(workspaceOpen).toHaveBeenCalledWith({
@@ -202,6 +246,7 @@ describe("createPrepareOpenModal", () => {
         pr: "",
         profile: "dev",
         existing: false,
+        reporter: expect.any(Object),
       });
       expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-open-effect");
       expect(refreshAll).toHaveBeenCalled();
@@ -209,8 +254,10 @@ describe("createPrepareOpenModal", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
     expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
+    // A presentation-only override, not the stored preference.
+    expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
+      lifecycleKey("/repo", "feat"),
+    );
   });
 
   test("passes PR opens through WorkspaceService without branch pre-resolution", async () => {
@@ -222,7 +269,7 @@ describe("createPrepareOpenModal", () => {
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
 
     createHandleOpen(deps)({
@@ -241,20 +288,15 @@ describe("createPrepareOpenModal", () => {
         pr: "123",
         profile: undefined,
         existing: false,
+        reporter: expect.any(Object),
       });
       expect(deps.refreshAll).toHaveBeenCalled();
     });
   });
 
-  test("does not register or refresh after fatal WorkspaceService failure and clears pending", async () => {
+  test("validates after a fatal WorkspaceService failure, does not register, and records no discovered Workspace", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
       new Error("open failed"),
@@ -262,7 +304,6 @@ describe("createPrepareOpenModal", () => {
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      setPendingActions,
     });
 
     createHandleOpen(deps)({
@@ -282,13 +323,13 @@ describe("createPrepareOpenModal", () => {
         pr: "",
         profile: "",
         existing: false,
+        reporter: expect.any(Object),
       });
       expect(deps.showActionError).toHaveBeenCalledWith("open failed");
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    expect(deps.refreshAll).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
+    expect(deps.refreshAll).toHaveBeenCalled();
+    expect(deps.markWorkspaceDiscovered).not.toHaveBeenCalled();
     expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 
@@ -311,7 +352,7 @@ describe("createPrepareOpenModal", () => {
     const deps = makeDeps({
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -376,7 +417,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoPath: "/repo",
       discoverClient,
       switchSession,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -410,7 +451,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -442,7 +483,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -474,7 +515,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -506,7 +547,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoPath: "/repo",
       discoverClient,
       switchSession,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handleOpen = createHandleOpen(deps);
 
@@ -547,7 +588,7 @@ describe("createPrepareOpenModal", () => {
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       discoverClient,
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
 
     createHandleOpen(deps)({
@@ -607,7 +648,14 @@ describe("createPrepareUpModal", () => {
     expect(returnIndexRef.current).toBe(0);
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.UpModal("/repo/feat", pendingKey("proj", "feat"), ["dev"]),
+      Mode.UpModal({
+        worktreePath: "/repo/feat",
+        worktreeKey: pendingKey("proj", "feat"),
+        repoPath: "/repo",
+        branch: "feat",
+        project: "proj",
+        profileNames: ["dev"],
+      }),
     );
   });
 
@@ -621,6 +669,38 @@ describe("createPrepareUpModal", () => {
 
     prepare();
     expect(deps.setMode).not.toHaveBeenCalled();
+  });
+
+  test("refuses to open the option sheet for a Workspace under an active lifecycle", () => {
+    const items: TreeItem[] = [
+      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+    ];
+    const deps = makeDeps({
+      treeItems: items,
+      filteredRepos: snapshotWithFeat(),
+      selectedIndex: 0,
+      lifecycle: new Map([
+        [
+          lifecycleKey("/repo", "feat"),
+          {
+            operation: "up" as const,
+            repoPath: "/repo",
+            project: "proj",
+            branch: "feat",
+            phase: { _tag: "RunningSetup" as const, name: "install" },
+          },
+        ],
+      ]),
+    });
+
+    createPrepareUpModal(deps)();
+
+    expect(deps.setMode).not.toHaveBeenCalled();
+    const message = vi.mocked(deps.showActionError).mock.calls[0]?.[0];
+    expect(message).toContain("feat");
+    expect(message).toContain(
+      lifecyclePhaseLabel({ _tag: "RunningSetup", name: "install" }),
+    );
   });
 
   test("saves Expanded mode in return ref when in Expanded mode", () => {
@@ -665,38 +745,22 @@ describe("createHandleUpSubmit", () => {
     vi.clearAllMocks();
   });
 
-  test("restores return mode and index, then delegates to handleStartResult", async () => {
-    const { tuiRuntime } = await import("../../src/tui/runtime");
-    const upResult = {
-      operation: "up" as const,
-      worktreePath: "/repo/feat",
-      mainRepoPath: "/repo",
-      branch: "feat",
-      sessionName: "feat",
-      projectName: "proj",
-      env: {},
-      warnings: [],
-      attempts: {
-        tmux: { attempted: false, reason: "tmux_not_configured" },
-      },
-    };
-    (tuiRuntime.runPromise as Mock).mockResolvedValue(upResult);
-
+  test("restores return mode and index, then delegates to the shared up lifecycle", async () => {
     const returnModeRef = { current: Mode.Navigate };
     const returnIndexRef = { current: 3 };
-    const handleStartResult = vi.fn().mockResolvedValue(undefined);
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
+    const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", ["dev"]),
+      mode: Mode.UpModal({
+        worktreePath: "/repo/feat",
+        worktreeKey: "proj/feat",
+        repoPath: "/repo",
+        branch: "feat",
+        project: "proj",
+        profileNames: ["dev"],
+      }),
       upModalReturnModeRef: returnModeRef,
       upModalReturnSelectedIndexRef: returnIndexRef,
-      handleStartResult,
-      setPendingActions,
+      startWorkspace,
     });
     const handleUp = createHandleUpSubmit(deps);
 
@@ -705,55 +769,42 @@ describe("createHandleUpSubmit", () => {
     expect(deps.clearActionError).toHaveBeenCalled();
     expect(deps.setSelectedIndex).toHaveBeenCalledWith(3);
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
-    expect(deps.setPendingActions).toHaveBeenCalled();
-
-    // Wait for the async operation
-    await vi.waitFor(() => {
-      expect(WorkspaceService.use).toHaveBeenCalled();
-      expect(workspaceUp).toHaveBeenCalledWith({
-        path: "/repo/feat",
-        profile: "dev",
-      });
-      expect(tuiRuntime.runPromise).toHaveBeenCalledWith(
-        "mock-workspace-effect",
-      );
-      expect(handleStartResult).toHaveBeenCalledWith(upResult, true);
+    expect(startWorkspace).toHaveBeenCalledWith({
+      worktreePath: "/repo/feat",
+      repoPath: "/repo",
+      project: "proj",
+      branch: "feat",
+      profile: "dev",
+      autoSwitch: true,
     });
     expect(registerProjectMock).not.toHaveBeenCalled();
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
-  test("shows error and refreshes on failure", async () => {
-    const { tuiRuntime } = await import("../../src/tui/runtime");
-    (tuiRuntime.runPromise as Mock).mockRejectedValue(
-      new Error("session fail"),
-    );
-
-    let pendingActions = new Map<string, unknown>();
-    const setPendingActions = vi.fn((update) => {
-      pendingActions =
-        typeof update === "function" ? update(pendingActions) : update;
-      return pendingActions;
-    });
+  test("keeps identity intact when the project name contains a slash", () => {
+    const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
-      mode: Mode.UpModal("/repo/feat", "proj/feat", []),
+      mode: Mode.UpModal({
+        worktreePath: "/repo/my-feature",
+        worktreeKey: pendingKey("myorg/webapp", "my-feature"),
+        repoPath: "/repo",
+        branch: "my-feature",
+        project: "myorg/webapp",
+        profileNames: ["dev"],
+      }),
       upModalReturnModeRef: { current: Mode.Navigate },
       upModalReturnSelectedIndexRef: { current: 0 },
-      setPendingActions,
+      startWorkspace,
     });
-    const handleUp = createHandleUpSubmit(deps);
 
-    handleUp({ profile: undefined, autoSwitch: false });
+    createHandleUpSubmit(deps)({ profile: undefined, autoSwitch: false });
 
-    await vi.waitFor(() => {
-      expect(deps.showActionError).toHaveBeenCalled();
+    expect(startWorkspace).toHaveBeenCalledWith({
+      worktreePath: "/repo/my-feature",
+      repoPath: "/repo",
+      project: "myorg/webapp",
+      branch: "my-feature",
+      autoSwitch: false,
     });
-    await vi.waitFor(() => {
-      expect(deps.refreshAll).toHaveBeenCalled();
-    });
-    expect(pendingActions.size).toBe(0);
-    expect(setPendingActions).toHaveBeenCalledTimes(2);
   });
 
   test("no-op when mode is not UpModal", () => {
@@ -803,7 +854,7 @@ describe("createHandleAddProject", () => {
     });
 
     const deps = makeDeps({
-      refreshAll: vi.fn().mockResolvedValue(undefined),
+      refreshAll: vi.fn().mockResolvedValue([]),
     });
     const handle = createHandleAddProject(deps);
 
@@ -837,5 +888,381 @@ describe("createHandleAddProject", () => {
     await vi.waitFor(() => {
       expect(deps.showActionError).toHaveBeenCalledWith("already registered");
     });
+  });
+});
+
+describe("open lifecycle reconciliation", () => {
+  test("validates and refreshes before the lifecycle presentation is removed", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
+      makeOpenResult({ attempts: { ...makeOpenResult().attempts } }),
+    );
+    const tracker = trackLifecycle();
+    const phaseAtRefresh: Array<LifecyclePhase | undefined> = [];
+    const entryAtRefresh: Array<boolean> = [];
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      phaseAtRefresh.push(tracker.entry()?.phase);
+      entryAtRefresh.push(tracker.state.size > 0);
+      return snapshotWithFeat();
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      refreshAll,
+      // Keep the tmux switch out of this test's way.
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" } as const),
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+
+    expect(tracker.entry()?.phase).toEqual({ _tag: "Preparing" });
+
+    await vi.waitFor(() => {
+      expect(refreshAll).toHaveBeenCalled();
+      expect(tracker.state.size).toBe(0);
+    });
+
+    expect(phaseAtRefresh).toEqual([{ _tag: "Validating" }]);
+    expect(entryAtRefresh).toEqual([true]);
+    expect(tracker.phases).toContainEqual({ _tag: "Validating" });
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
+    // A presentation-only override; setExpandedWorktreeKeys is out of reach here.
+    expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
+      lifecycleKey("/repo", "feat"),
+    );
+    expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
+  });
+
+  test("records the expansion override only for an identity validation found on disk", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+
+    // Worktree created, a later phase then failed fatally.
+    (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
+      new Error("setup command failed"),
+    );
+    const partial = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(snapshotWithFeat()),
+    });
+    createHandleOpen(partial)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(partial.showActionError).toHaveBeenCalledWith(
+        "setup command failed",
+      );
+    });
+    expect(partial.markWorkspaceDiscovered).toHaveBeenCalledWith(
+      lifecycleKey("/repo", "feat"),
+    );
+
+    // A same-named worktree in another repository: identity matches on repo path.
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const otherRepo = snapshotWithFeat().map((repo) => ({
+      ...repo,
+      repoPath: "/other-repo",
+    }));
+    const elsewhere = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(otherRepo),
+    });
+    createHandleOpen(elsewhere)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(elsewhere.refreshAll).toHaveBeenCalled();
+    });
+    expect(elsewhere.markWorkspaceDiscovered).not.toHaveBeenCalled();
+
+    // A matching display name is never a substitute for main-repository path.
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const unidentified = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "",
+      refreshAll: vi.fn().mockResolvedValue(snapshotWithFeat()),
+    });
+    createHandleOpen(unidentified)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(unidentified.refreshAll).toHaveBeenCalled();
+    });
+    expect(unidentified.markWorkspaceDiscovered).not.toHaveBeenCalled();
+
+    // A validation that observed nothing at all.
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const blind = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      refreshAll: vi.fn().mockResolvedValue(null),
+    });
+    createHandleOpen(blind)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+    await vi.waitFor(() => {
+      expect(blind.showActionError).toHaveBeenCalled();
+    });
+    expect(blind.markWorkspaceDiscovered).not.toHaveBeenCalled();
+  });
+
+  test("validates and refreshes after a FAILED open before any lifecycle UI is removed", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockRejectedValueOnce(
+      new Error("worktree add failed"),
+    );
+    const tracker = trackLifecycle();
+    const atRefresh: Array<{
+      phase: LifecyclePhase | undefined;
+      entries: number;
+    }> = [];
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      atRefresh.push({
+        phase: tracker.entry()?.phase,
+        entries: tracker.state.size,
+      });
+      return [];
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      refreshAll,
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.showActionError).toHaveBeenCalledWith("worktree add failed");
+    });
+
+    expect(atRefresh).toEqual([{ phase: { _tag: "Validating" }, entries: 1 }]);
+    expect(tracker.state.size).toBe(0);
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
+  });
+
+  test("defers warnings until validation has completed and progress is gone", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(
+      makeOpenResult({
+        warnings: [
+          {
+            _tag: "SetupFailed",
+            operation: "open",
+            name: "bootstrap",
+            optional: false,
+            error: { code: "setup_failed", message: "exit 1" },
+          },
+          {
+            _tag: "TmuxStartFailed",
+            operation: "open",
+            error: { code: "tmux_failed", message: "no server" },
+          },
+        ],
+      }),
+    );
+    const tracker = trackLifecycle();
+    const order: string[] = [];
+    const showActionError = vi.fn((message: string) => {
+      order.push(`error(lifecycle=${tracker.state.size}):${message}`);
+    });
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      order.push(`refresh(errors=${showActionError.mock.calls.length})`);
+      return [];
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      showActionError,
+      refreshAll,
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(showActionError).toHaveBeenCalled();
+    });
+
+    expect(order).toEqual([
+      "refresh(errors=0)",
+      "error(lifecycle=0):Setup failed: bootstrap: exit 1\nFailed to create tmux session: no server",
+    ]);
+  });
+
+  test("each concurrent open consumes its OWN validation snapshot and clears only its own identity", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    // Shared state, as React's single `setLifecycle` would be shared by two in-flight handlers.
+    let shared: LifecycleState = new Map();
+    const setLifecycle = (
+      update: LifecycleState | ((prev: LifecycleState) => LifecycleState),
+    ) => {
+      shared = typeof update === "function" ? update(shared) : update;
+    };
+    const defer = () => {
+      let resolve: (value: unknown[] | null) => void = () => undefined;
+      const promise = new Promise<unknown[] | null>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    };
+    const validationA = defer();
+    const validationB = defer();
+    (tuiRuntime.runPromise as Mock)
+      .mockResolvedValueOnce(makeOpenResult({ mainRepoPath: "/repo-a" }))
+      .mockResolvedValueOnce(makeOpenResult({ mainRepoPath: "/repo-b" }));
+
+    const errorsA: string[] = [];
+    const errorsB: string[] = [];
+    const depsA = makeDeps({
+      openModalRepoProject: "a",
+      openModalRepoPath: "/repo-a",
+      setLifecycle,
+      showActionError: (message: string) => errorsA.push(message),
+      refreshAll: vi.fn(
+        () => validationA.promise,
+      ) as unknown as ModalActionDeps["refreshAll"],
+    });
+    const depsB = makeDeps({
+      openModalRepoProject: "b",
+      openModalRepoPath: "/repo-b",
+      setLifecycle,
+      showActionError: (message: string) => errorsB.push(message),
+      refreshAll: vi.fn(
+        () => validationB.promise,
+      ) as unknown as ModalActionDeps["refreshAll"],
+    });
+
+    const submit = {
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: true,
+    };
+    createHandleOpen(depsA)(submit);
+    createHandleOpen(depsB)(submit);
+
+    await vi.waitFor(() => {
+      expect(shared.get(lifecycleKey("/repo-a", "feat"))?.phase).toEqual({
+        _tag: "Validating",
+      });
+      expect(shared.get(lifecycleKey("/repo-b", "feat"))?.phase).toEqual({
+        _tag: "Validating",
+      });
+    });
+
+    validationA.resolve(null);
+    await vi.waitFor(() => {
+      expect(errorsA).toEqual([
+        "Validation after open failed — showing the last known Workspace state",
+      ]);
+    });
+    expect(shared.has(lifecycleKey("/repo-a", "feat"))).toBe(false);
+    expect(shared.get(lifecycleKey("/repo-b", "feat"))?.phase).toEqual({
+      _tag: "Validating",
+    });
+
+    validationB.resolve([]);
+    await vi.waitFor(() => {
+      expect(shared.size).toBe(0);
+    });
+    expect(errorsB).toEqual([]);
+  });
+
+  test("switches the tmux client only after validation and lifecycle removal", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(makeOpenResult());
+    const tracker = trackLifecycle();
+    const order: string[] = [];
+    const refreshAll = vi.fn().mockImplementation(async () => {
+      order.push("refresh");
+      return [];
+    });
+    const discoverClient = vi.fn().mockImplementation(async () => {
+      order.push(`discover(lifecycle=${tracker.state.size})`);
+      return { type: "single", client: null } as unknown as TmuxClientDiscovery;
+    });
+    const switchSession = vi.fn().mockImplementation(async () => {
+      order.push(`switch(lifecycle=${tracker.state.size})`);
+      return false;
+    });
+    const deps = makeDeps({
+      openModalRepoProject: "proj",
+      openModalRepoPath: "/repo",
+      setLifecycle: tracker.setLifecycle,
+      refreshAll,
+      discoverClient,
+      switchSession,
+    });
+
+    createHandleOpen(deps)({
+      branch: "feat",
+      base: "",
+      pr: "",
+      profile: "",
+      existing: false,
+      noAttach: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(switchSession).toHaveBeenCalled();
+      expect(deps.showActionError).toHaveBeenCalled();
+    });
+
+    expect(order).toEqual([
+      "refresh",
+      "discover(lifecycle=0)",
+      "switch(lifecycle=0)",
+    ]);
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      "Started session 'feat', but failed to switch client",
+    );
+    expect(tracker.state.size).toBe(0);
+    expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
   });
 });

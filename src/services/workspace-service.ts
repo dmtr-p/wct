@@ -58,7 +58,21 @@ export type WorkspaceWarning =
       error: WorkspaceError;
     };
 
+export type WorkspacePhase =
+  | { _tag: "Preparing" }
+  | { _tag: "CreatingWorktree" }
+  | { _tag: "CopyingFiles" }
+  | { _tag: "RunningSetup"; name: string }
+  | { _tag: "CreatingTmuxSession" }
+  | { _tag: "KillingTmuxSession" }
+  | { _tag: "RemovingWorktree" };
+
 export type WorkspaceReporterEvent =
+  | {
+      operation: WorkspaceOperation;
+      _tag: "PhaseStarted";
+      phase: WorkspacePhase;
+    }
   | {
       operation: WorkspaceOperation;
       _tag: "TargetResolved";
@@ -81,6 +95,31 @@ export type WorkspaceReporterEvent =
       _tag: "AttemptCompleted";
       attempt: "worktree" | "copy" | "setup" | "tmux";
       ok: boolean;
+    }
+  | {
+      operation: "open";
+      _tag: "CopyEntrySkipped";
+      entry: string;
+      reason: "directory_not_found_or_empty" | "glob_no_matches";
+    }
+  | {
+      operation: "open";
+      _tag: "CopyEntryFailed";
+      file: string;
+      reason: "source_not_found" | "copy_failed";
+      error: string;
+    }
+  | {
+      operation: "open";
+      _tag: "SetupCommandStarted";
+      name: string;
+      current: number;
+      total: number;
+    }
+  | {
+      operation: "open";
+      _tag: "SetupCommandCompleted";
+      result: SetupResult;
     }
   | {
       operation: WorkspaceOperation;
@@ -249,6 +288,14 @@ function emitReporter(
     Effect.flatten,
     Effect.catchCause(() => Effect.void),
   );
+}
+
+function emitPhase(
+  reporter: WorkspaceReporter | undefined,
+  operation: WorkspaceOperation,
+  phase: WorkspacePhase,
+): Effect.Effect<void> {
+  return emitReporter(reporter, { operation, _tag: "PhaseStarted", phase });
 }
 
 function captureAttempt<A, E, R>(
@@ -421,6 +468,7 @@ function openImpl(
 > {
   return Effect.gen(function* () {
     const reporter = options.reporter;
+    yield* emitPhase(reporter, "open", { _tag: "Preparing" });
     const resolvedOptions = yield* resolveOpenIntent(options);
     const { branch, existing, base, cwd, profile } = resolvedOptions;
 
@@ -504,6 +552,7 @@ function openImpl(
     );
     const workingDir = env.WCT_WORK_DIR;
 
+    yield* emitPhase(reporter, "open", { _tag: "CreatingWorktree" });
     yield* emitReporter(reporter, {
       operation: "open",
       _tag: "AttemptStarted",
@@ -530,6 +579,7 @@ function openImpl(
     });
 
     if (resolved.copy && resolved.copy.length > 0) {
+      yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });
       yield* emitReporter(reporter, {
         operation: "open",
         _tag: "AttemptStarted",
@@ -539,7 +589,23 @@ function openImpl(
     const copy =
       resolved.copy && resolved.copy.length > 0
         ? yield* Effect.mapError(
-            copyEntries(resolved.copy, mainRepoPath, worktreePath),
+            copyEntries(resolved.copy, mainRepoPath, worktreePath, {
+              entrySkipped: ({ entry, reason }) =>
+                emitReporter(reporter, {
+                  operation: "open",
+                  _tag: "CopyEntrySkipped",
+                  entry,
+                  reason,
+                }),
+              entryFailed: ({ file, reason, error }) =>
+                emitReporter(reporter, {
+                  operation: "open",
+                  _tag: "CopyEntryFailed",
+                  file,
+                  reason,
+                  error,
+                }),
+            }),
             (error) =>
               commandError("worktree_error", "Failed to copy files", error),
           ).pipe(
@@ -581,7 +647,35 @@ function openImpl(
       resolved.setup && resolved.setup.length > 0
         ? yield* captureAttempt(
             SetupService.use((service) =>
-              service.runSetupCommands(resolved.setup ?? [], workingDir, env),
+              service.runSetupCommands(
+                resolved.setup ?? [],
+                workingDir,
+                env,
+                reporter
+                  ? {
+                      commandStarted: (name, current, total) =>
+                        Effect.all([
+                          emitPhase(reporter, "open", {
+                            _tag: "RunningSetup",
+                            name,
+                          }),
+                          emitReporter(reporter, {
+                            operation: "open",
+                            _tag: "SetupCommandStarted",
+                            name,
+                            current,
+                            total,
+                          }),
+                        ]).pipe(Effect.asVoid),
+                      commandCompleted: (result) =>
+                        emitReporter(reporter, {
+                          operation: "open",
+                          _tag: "SetupCommandCompleted",
+                          result,
+                        }),
+                    }
+                  : undefined,
+              ),
             ),
           )
         : skippedAttempt<SetupResult[]>("setup_not_configured");
@@ -595,6 +689,7 @@ function openImpl(
     }
 
     if (resolved.tmux) {
+      yield* emitPhase(reporter, "open", { _tag: "CreatingTmuxSession" });
       yield* emitReporter(reporter, {
         operation: "open",
         _tag: "AttemptStarted",
@@ -729,6 +824,7 @@ function upImpl(
   return Effect.gen(function* () {
     const { profile, reporter } = options;
 
+    yield* emitPhase(reporter, "up", { _tag: "Preparing" });
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "up",
@@ -792,6 +888,7 @@ function upImpl(
     const workingDir = env.WCT_WORK_DIR;
 
     if (resolved.tmux) {
+      yield* emitPhase(reporter, "up", { _tag: "CreatingTmuxSession" });
       yield* emitReporter(reporter, {
         operation: "up",
         _tag: "AttemptStarted",
@@ -852,6 +949,7 @@ function downImpl(
 > {
   return Effect.gen(function* () {
     const { reporter } = options;
+    yield* emitPhase(reporter, "down", { _tag: "Preparing" });
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "down",
@@ -892,6 +990,7 @@ function downImpl(
       };
     }
 
+    yield* emitPhase(reporter, "down", { _tag: "KillingTmuxSession" });
     yield* TmuxService.use((service) => service.killSession(sessionName));
     yield* emitReporter(reporter, {
       operation: "down",
@@ -926,6 +1025,7 @@ function closeImpl(
 > {
   return Effect.gen(function* () {
     const { cwd, force = false, reporter } = options;
+    yield* emitPhase(reporter, "close", { _tag: "Preparing" });
     const worktreePath = yield* resolveTargetImpl(options);
     yield* emitReporter(reporter, {
       operation: "close",
@@ -946,6 +1046,10 @@ function closeImpl(
     const existed = yield* TmuxService.use((service) =>
       service.sessionExists(sessionName),
     );
+
+    if (existed) {
+      yield* emitPhase(reporter, "close", { _tag: "KillingTmuxSession" });
+    }
 
     const kill: WorkspaceAttempt<null> = existed
       ? yield* TmuxService.use((service) =>
@@ -973,6 +1077,7 @@ function closeImpl(
       });
     }
 
+    yield* emitPhase(reporter, "close", { _tag: "RemovingWorktree" });
     yield* emitReporter(reporter, {
       operation: "close",
       _tag: "AttemptStarted",

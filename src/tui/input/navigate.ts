@@ -1,6 +1,7 @@
 import type { Key } from "ink";
 import type { TmuxClient } from "../../services/tmux";
 import type { RepoInfo } from "../hooks/useRegistry";
+import { isLifecycleActive, type LifecycleState } from "../lifecycle";
 import { Mode, pendingKey, type TreeItem } from "../types";
 
 export interface NavigateContext {
@@ -8,6 +9,7 @@ export interface NavigateContext {
   filteredRepos: RepoInfo[];
   selectedIndex: number;
   tmuxClient: TmuxClient | null;
+  lifecycle: LifecycleState;
 
   setMode: (m: Mode) => void;
   setSearchQuery: (q: string) => void;
@@ -87,6 +89,15 @@ export function handleNavigateInput(
 
   if (key.rightArrow) {
     if (currentItem.type === "worktree" && currentWorktree) {
+      if (
+        isLifecycleActive(
+          ctx.lifecycle,
+          currentRepo.repoPath,
+          currentWorktree.branch,
+        )
+      ) {
+        return;
+      }
       ctx.expandWorktree(
         pendingKey(currentRepo.project, currentWorktree.branch),
       );

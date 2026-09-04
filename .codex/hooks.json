@@ -7,7 +7,7 @@
             "type": "command",
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/stop.sh\"",
             "timeout": 120,
-            "statusMessage": "Running Biome check --write and tests..."
+            "statusMessage": "Running Biome check --write, typecheck, and tests..."
           }
         ]
       }

@@ -7,10 +7,11 @@ cat >/dev/null
 trim_lines=100
 tmp_dir="${TMPDIR:-/tmp}"
 biome_log=$(mktemp "${tmp_dir%/}/codex-stop-biome.XXXXXX")
+typecheck_log=$(mktemp "${tmp_dir%/}/codex-stop-typecheck.XXXXXX")
 test_log=$(mktemp "${tmp_dir%/}/codex-stop-test.XXXXXX")
 
 cleanup() {
-  rm -f "${biome_log}" "${test_log}"
+  rm -f "${biome_log}" "${typecheck_log}" "${test_log}"
 }
 
 emit_continue() {
@@ -63,6 +64,14 @@ if ! bunx biome check --write --error-on-warnings . >"${biome_log}" 2>&1; then
   emit_block_with_log \
     "Biome checks failed. Fix the reported issues, then rerun the relevant verification." \
     "${biome_log}"
+  exit 0
+fi
+
+if ! bun run typecheck >"${typecheck_log}" 2>&1; then
+  cat "${typecheck_log}" >&2
+  emit_block_with_log \
+    "Typecheck failed. Fix the reported TypeScript errors, then rerun the relevant verification." \
+    "${typecheck_log}"
   exit 0
 fi
 

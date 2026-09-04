@@ -1,0 +1,16 @@
+[install]
+# Age-gate: delay package installation by 3 days
+minimumReleaseAge = 259200
+
+# Block all lifecycle/postinstall scripts globally
+ignoreScripts = true
+
+# Enforce strict isolated dependency resolution (prevents phantom deps)
+linker = "isolated"
+
+# Prevent dynamic runtime auto-installation
+auto = "disable"
+
+# Fail builds if bun.lock changes unexpectedly
+frozenLockfile = true
+

@@ -40,11 +40,20 @@ const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceClose = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 
-vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: {
-    runPromise: vi.fn().mockResolvedValue(undefined),
-  },
-}));
+vi.mock("../../src/tui/runtime", async () => {
+  const { Effect } = await vi.importActual<typeof import("effect")>("effect");
+  return {
+    tuiRuntime: {
+      runPromise: vi.fn((effect: unknown) =>
+        Effect.isEffect(effect)
+          ? Effect.runPromise(
+              effect as import("effect").Effect.Effect<unknown, unknown>,
+            )
+          : Promise.resolve(effect),
+      ),
+    },
+  };
+});
 
 vi.mock("../../src/services/workspace-service", () => ({
   WorkspaceService: {

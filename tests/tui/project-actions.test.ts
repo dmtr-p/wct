@@ -1,4 +1,6 @@
+import { Effect } from "effect";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { commandError } from "../../src/errors";
 import type { ProjectActionDeps } from "../../src/tui/hooks/useProjectActions";
 import {
   createExecuteDeleteProject,
@@ -6,26 +8,25 @@ import {
 } from "../../src/tui/hooks/useProjectActions";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { lifecycleKey } from "../../src/tui/lifecycle";
-import { tuiRuntime } from "../../src/tui/runtime";
 import { Mode } from "../../src/tui/types";
 
-vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: { runPromise: vi.fn() },
-}));
+vi.mock("../../src/tui/runtime", async () => {
+  const { Effect } = await vi.importActual<typeof import("effect")>("effect");
+  return {
+    tuiRuntime: {
+      runPromise: vi.fn((effect: unknown) =>
+        Effect.runPromise(
+          effect as import("effect").Effect.Effect<unknown, unknown>,
+        ),
+      ),
+    },
+  };
+});
 
 const { down, unregister, invalidate } = vi.hoisted(() => ({
-  down: vi.fn((options: { path: string }) => ({
-    operation: "down",
-    path: options.path,
-  })),
-  unregister: vi.fn((repoPath: string) => ({
-    operation: "unregister",
-    repoPath,
-  })),
-  invalidate: vi.fn((project: string) => ({
-    operation: "invalidate",
-    project,
-  })),
+  down: vi.fn(),
+  unregister: vi.fn(),
+  invalidate: vi.fn(),
 }));
 
 vi.mock("../../src/services/workspace-service", () => ({
@@ -126,8 +127,14 @@ describe("createPrepareDeleteProject", () => {
 describe("createExecuteDeleteProject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(tuiRuntime.runPromise).mockImplementation(
-      (effect) => Promise.resolve(effect) as never,
+    down.mockImplementation((options: { path: string }) =>
+      Effect.succeed({ operation: "down", path: options.path }),
+    );
+    unregister.mockImplementation((repoPath: string) =>
+      Effect.succeed({ operation: "unregister", repoPath }),
+    );
+    invalidate.mockImplementation((project: string) =>
+      Effect.succeed({ operation: "invalidate", project }),
     );
   });
 
@@ -149,17 +156,11 @@ describe("createExecuteDeleteProject", () => {
   });
 
   test("keeps the project registered when any down fails", async () => {
-    vi.mocked(tuiRuntime.runPromise).mockImplementation((effect) => {
-      if (
-        typeof effect === "object" &&
-        effect !== null &&
-        "path" in effect &&
-        effect.path === "/worktrees/project-feature"
-      ) {
-        return Promise.reject(new Error("tmux failed")) as never;
-      }
-      return Promise.resolve(effect) as never;
-    });
+    down.mockImplementation((options: { path: string }) =>
+      options.path === "/worktrees/project-feature"
+        ? Effect.fail(commandError("tmux_error", "tmux failed"))
+        : Effect.succeed({ operation: "down", path: options.path }),
+    );
     const deps = makeDeps();
 
     await createExecuteDeleteProject(deps)(repo.repoPath, repo.project);
@@ -182,6 +183,19 @@ describe("createExecuteDeleteProject", () => {
     expect(unregister).not.toHaveBeenCalled();
     expect(deps.showActionError).toHaveBeenCalledWith(
       "Cannot safely delete the project because the active tmux client could not be moved away",
+    );
+  });
+
+  test("reports a failed validation refresh after unregistering", async () => {
+    const deps = makeDeps({
+      refreshAll: vi.fn().mockResolvedValue(null),
+    });
+
+    await createExecuteDeleteProject(deps)(repo.repoPath, repo.project);
+
+    expect(unregister).toHaveBeenCalledWith(repo.repoPath);
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      "Project was deleted, but validation refresh failed — showing the last known project state",
     );
   });
 });

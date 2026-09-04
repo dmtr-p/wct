@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { Effect } from "effect";
 import type { MutableRefObject } from "react";
 import { toWctError } from "../../errors";
 import { PrCacheService } from "../../services/pr-cache-service";
@@ -66,15 +67,22 @@ export function createPrepareDeleteProject(deps: ProjectActionDeps) {
 }
 
 export function createExecuteDeleteProject(deps: ProjectActionDeps) {
-  return async (repoPath: string, project: string) => {
+  return (repoPath: string, project: string) => {
     deps.clearActionError();
 
-    try {
+    const refresh = Effect.tryPromise({
+      try: () => deps.refreshAll(),
+      catch: toWctError,
+    });
+
+    const program = Effect.gen(function* () {
       const repo = deps.repos.find(
         (candidate) => candidate.repoPath === repoPath,
       );
       if (!repo) {
-        throw new Error(`Project '${project}' is no longer registered`);
+        return yield* Effect.fail(
+          toWctError(new Error(`Project '${project}' is no longer registered`)),
+        );
       }
 
       const sessionNames = [
@@ -84,48 +92,75 @@ export function createExecuteDeleteProject(deps: ProjectActionDeps) {
           ),
         ),
       ];
-      const canProceed = await deps.switchClientAwayFromSessions(sessionNames);
+      const canProceed = yield* Effect.tryPromise({
+        try: () => deps.switchClientAwayFromSessions(sessionNames),
+        catch: toWctError,
+      });
       if (!canProceed) {
-        throw new Error(
-          "Cannot safely delete the project because the active tmux client could not be moved away",
-        );
-      }
-
-      const results = await Promise.allSettled(
-        repo.worktrees.map((worktree) =>
-          tuiRuntime.runPromise(
-            WorkspaceService.use((service) =>
-              service.down({ path: worktree.path }),
+        return yield* Effect.fail(
+          toWctError(
+            new Error(
+              "Cannot safely delete the project because the active tmux client could not be moved away",
             ),
           ),
-        ),
-      );
-      const failures = results.flatMap((result, index) => {
-        if (result.status === "fulfilled") return [];
-        const branch = repo.worktrees[index]?.branch ?? "unknown worktree";
-        return [`${branch}: ${toWctError(result.reason).message}`];
-      });
-      if (failures.length > 0) {
-        throw new Error(
-          `Failed to stop all sessions for '${project}': ${failures.join("; ")}`,
         );
       }
 
-      await tuiRuntime.runPromise(
-        RegistryService.use((service) => service.unregister(repoPath)),
+      const [failures] = yield* Effect.partition(
+        repo.worktrees,
+        (worktree) =>
+          WorkspaceService.use((service) =>
+            service.down({ path: worktree.path }),
+          ).pipe(
+            Effect.mapError((error) => ({
+              branch: worktree.branch,
+              error: toWctError(error),
+            })),
+          ),
+        { concurrency: "unbounded" },
       );
-      await tuiRuntime
-        .runPromise(
-          PrCacheService.use((service) => service.invalidate(project)),
-        )
-        .catch(() => undefined);
-      await deps.refreshAll();
-      restoreProjectUi(deps);
-    } catch (error) {
-      await deps.refreshAll().catch(() => null);
-      restoreProjectUi(deps);
-      deps.showActionError(toWctError(error).message);
-    }
+      if (failures.length > 0) {
+        return yield* Effect.fail(
+          toWctError(
+            new Error(
+              `Failed to stop all sessions for '${project}': ${failures
+                .map(({ branch, error }) => `${branch}: ${error.message}`)
+                .join("; ")}`,
+            ),
+          ),
+        );
+      }
+
+      yield* RegistryService.use((service) => service.unregister(repoPath));
+      yield* Effect.ignore(
+        PrCacheService.use((service) => service.invalidate(project)),
+      );
+
+      const refreshedRepos = yield* refresh;
+      if (refreshedRepos === null) {
+        return yield* Effect.fail(
+          toWctError(
+            new Error(
+              "Project was deleted, but validation refresh failed — showing the last known project state",
+            ),
+          ),
+        );
+      }
+
+      yield* Effect.sync(() => restoreProjectUi(deps));
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          yield* Effect.ignore(refresh);
+          yield* Effect.sync(() => {
+            restoreProjectUi(deps);
+            deps.showActionError(toWctError(error).message);
+          });
+        }),
+      ),
+    );
+
+    return tuiRuntime.runPromise(program);
   };
 }
 

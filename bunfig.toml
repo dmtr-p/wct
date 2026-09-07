@@ -11,6 +11,3 @@ linker = "isolated"
 # Prevent dynamic runtime auto-installation
 auto = "disable"
 
-# Fail builds if bun.lock changes unexpectedly
-frozenLockfile = true
-

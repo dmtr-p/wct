@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import { useStdout } from "ink";
 import { useEffect, useRef } from "react";
 
@@ -89,11 +90,12 @@ export function useMouse(): { disableMouse: () => void } {
     // the disable bytes while Ink restores the terminal. The "exit" event is
     // NOT signal-counted by signal-exit, so process.once("exit") is safe.
     const restore = () => controller.disable();
-    process.once("exit", restore);
+    const processEvents: EventEmitter = process;
+    processEvents.once("exit", restore);
 
     return () => {
       controller.disable();
-      process.removeListener("exit", restore);
+      processEvents.removeListener("exit", restore);
     };
   }, []);
 

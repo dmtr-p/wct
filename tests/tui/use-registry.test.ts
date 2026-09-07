@@ -98,6 +98,33 @@ function worktreeOf(repoPath: string, branch: string): Worktree {
 }
 
 describe("loadRepoInfo", () => {
+  test("keeps missing worktrees selectable without querying their status", async () => {
+    const missing = worktreeOf("/repo", "missing");
+    const getChangedFileCount = vi.fn(async () => 2);
+    const getAheadBehind = vi.fn(async () => ({ ahead: 1, behind: 0 }));
+    const result = await loadRepoInfo(
+      { id: "1", repo_path: "/repo", project: "demo" },
+      {
+        pathExists: (path) => path !== missing.path,
+        getProfileNames: () => [],
+        listWorktrees: async () => [worktreeOf("/repo", "main"), missing],
+        getDefaultBranch: async () => "origin/main",
+        getChangedFileCount,
+        getAheadBehind,
+      },
+    );
+
+    expect(result.worktrees[1]).toEqual({
+      branch: "missing",
+      path: missing.path,
+      isMainWorktree: false,
+      changedFiles: 0,
+      sync: null,
+    });
+    expect(getChangedFileCount.mock.calls).toEqual([["/repo/main"]]);
+    expect(getAheadBehind.mock.calls).toEqual([["/repo/main", "origin/main"]]);
+  });
+
   test("returns a repo-level error instead of throwing when inspection fails", async () => {
     const repo = {
       id: "1",

@@ -55,7 +55,10 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
   });
 
   function worktree(branch: string) {
-    return makeWorktree(repoPath, branch);
+    const fixture = makeWorktree(repoPath, branch);
+    // These cases assume healthy worktrees with no unknown-status row.
+    mkdirSync(fixture.path, { recursive: true });
+    return fixture;
   }
 
   test("keyboard input breaks a pending double-click pair", async () => {

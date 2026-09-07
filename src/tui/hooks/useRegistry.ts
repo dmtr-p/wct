@@ -107,9 +107,12 @@ export async function loadRepoInfo(
     worktreeList
       .filter((wt) => !wt.isBare)
       .map(async (wt, index) => {
+        const exists = deps.pathExists(wt.path);
         const [changedFiles, sync] = await Promise.all([
-          deps.getChangedFileCount(wt.path).catch(() => 0),
-          defaultBranch
+          exists
+            ? deps.getChangedFileCount(wt.path).catch(() => 0)
+            : Promise.resolve(0),
+          exists && defaultBranch
             ? deps.getAheadBehind(wt.path, defaultBranch).catch(() => null)
             : Promise.resolve(null),
         ]);

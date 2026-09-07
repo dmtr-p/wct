@@ -92,6 +92,26 @@ describe("ConfirmModal", () => {
     }
   });
 
+  test("explains that deleting a project preserves worktrees", async () => {
+    const rendered = await renderWithInput(
+      <ConfirmModal
+        mode={Mode.ConfirmDeleteProject("/tmp/myapp", "myapp") as ConfirmMode}
+        width={60}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    try {
+      expect(rendered.output()).toContain("╭ Delete Project");
+      expect(rendered.output()).toContain("Its sessions will be stopped");
+      expect(rendered.output()).toContain("worktrees will be kept");
+      expect(rendered.output()).toContain("enter:delete  esc:cancel");
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("keeps row accounting exact when narrow actions cannot fit side by side", async () => {
     const mode = Mode.ConfirmCloseForce(
       "myapp-feature",

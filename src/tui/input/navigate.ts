@@ -21,6 +21,7 @@ export interface NavigateContext {
   handleSpaceSwitch: () => void;
   handleDownSelectedWorktree: () => void;
   handleCloseSelectedWorktree: () => void;
+  prepareDeleteProject: () => void;
   prepareAddProjectModal: () => void;
   refreshRepo: (project: string) => void;
 }
@@ -58,6 +59,11 @@ export function handleNavigateInput(
 
   if (input === "a") {
     ctx.prepareAddProjectModal();
+    return;
+  }
+
+  if (key.delete || key.backspace) {
+    ctx.prepareDeleteProject();
     return;
   }
 

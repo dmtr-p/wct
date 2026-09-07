@@ -7,6 +7,12 @@ interface ResolveSessionSwitchTargetOptions {
   sessions: Array<{ name: string }>;
 }
 
+interface ResolveSessionsSwitchTargetOptions {
+  client: TmuxClientDiscovery;
+  targetSessions: readonly string[];
+  sessions: Array<{ name: string }>;
+}
+
 type SessionHandoff =
   | { type: "not-needed" }
   | { type: "blocked" }
@@ -18,9 +24,20 @@ export function resolveSessionHandoff({
   targetSession,
   sessions,
 }: ResolveSessionSwitchTargetOptions): SessionHandoff {
-  const targetExists = sessions.some(
-    (session) => session.name === targetSession,
-  );
+  return resolveSessionsHandoff({
+    client,
+    targetSessions: [targetSession],
+    sessions,
+  });
+}
+
+export function resolveSessionsHandoff({
+  client,
+  targetSessions,
+  sessions,
+}: ResolveSessionsSwitchTargetOptions): SessionHandoff {
+  const targets = new Set(targetSessions);
+  const targetExists = sessions.some((session) => targets.has(session.name));
   if (!targetExists) {
     return { type: "not-needed" };
   }
@@ -29,12 +46,12 @@ export function resolveSessionHandoff({
     return { type: "blocked" };
   }
 
-  if (client.type !== "single" || client.client.session !== targetSession) {
+  if (client.type !== "single" || !targets.has(client.client.session)) {
     return { type: "not-needed" };
   }
 
   const fallbackSession = sessions.find(
-    (session) => session.name !== targetSession,
+    (session) => !targets.has(session.name),
   )?.name;
 
   if (!fallbackSession) {

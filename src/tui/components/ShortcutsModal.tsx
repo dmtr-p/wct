@@ -16,6 +16,7 @@ const SHORTCUTS = [
   ["d", "stop session"],
   ["c", "close worktree"],
   ["a", "add project"],
+  ["⌫ / delete", "delete selected project"],
   ["/", "search"],
   ["r", "refresh pull requests"],
   ["z", "zoom selected pane"],

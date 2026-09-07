@@ -58,6 +58,7 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleSpaceSwitch: vi.fn(),
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
+    prepareDeleteProject: vi.fn(),
     prepareAddProjectModal: vi.fn(),
     refreshRepo: vi.fn(),
     ...overrides,
@@ -180,6 +181,18 @@ describe("handleExpandedInput", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "", { ...noKey, downArrow: true });
     expect(ctx.navigateTree).toHaveBeenCalledWith(1);
+  });
+
+  test("delete calls prepareDeleteProject", () => {
+    const ctx = makeExpCtx();
+    handleExpandedInput(ctx, "", { ...noKey, delete: true });
+    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
+  });
+
+  test("mac backspace calls prepareDeleteProject", () => {
+    const ctx = makeExpCtx();
+    handleExpandedInput(ctx, "", { ...noKey, backspace: true });
+    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
   });
 
   test("right arrow handles expand-worktree action", () => {

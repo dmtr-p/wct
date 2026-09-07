@@ -48,6 +48,11 @@ export type Mode =
       worktreeKey: string;
       repoPath: string;
       project: string;
+    }
+  | {
+      type: "ConfirmDeleteProject";
+      repoPath: string;
+      project: string;
     };
 
 export const Mode = {
@@ -129,6 +134,11 @@ export const Mode = {
     branch,
     worktreePath,
     worktreeKey,
+    repoPath,
+    project,
+  }),
+  ConfirmDeleteProject: (repoPath: string, project: string): Mode => ({
+    type: "ConfirmDeleteProject",
     repoPath,
     project,
   }),

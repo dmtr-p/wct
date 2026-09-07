@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { WorkspaceUpResult } from "../../src/services/workspace-service";
-import { resolveStartActionMessage } from "../../src/tui/session-utils";
+import {
+  resolveSessionsHandoff,
+  resolveStartActionMessage,
+} from "../../src/tui/session-utils";
 
 function workspaceUpResult(
   overrides: Partial<WorkspaceUpResult> = {},
@@ -43,5 +46,37 @@ describe("resolveStartActionMessage", () => {
     });
 
     expect(resolveStartActionMessage(result)).toBe("tmux failed");
+  });
+});
+
+describe("resolveSessionsHandoff", () => {
+  test("switches an attached client to a session outside the target set", () => {
+    expect(
+      resolveSessionsHandoff({
+        client: {
+          type: "single",
+          client: { tty: "/dev/pts/1", session: "project-main" },
+        },
+        targetSessions: ["project-main", "project-feature"],
+        sessions: [
+          { name: "project-main" },
+          { name: "project-feature" },
+          { name: "other-project" },
+        ],
+      }),
+    ).toEqual({ type: "switch", sessionName: "other-project" });
+  });
+
+  test("detaches when every available session belongs to the project", () => {
+    expect(
+      resolveSessionsHandoff({
+        client: {
+          type: "single",
+          client: { tty: "/dev/pts/1", session: "project-main" },
+        },
+        targetSessions: ["project-main", "project-feature"],
+        sessions: [{ name: "project-main" }, { name: "project-feature" }],
+      }),
+    ).toEqual({ type: "detach" });
   });
 });

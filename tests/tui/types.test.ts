@@ -37,4 +37,12 @@ describe("Mode", () => {
       project: "proj",
     });
   });
+
+  test("constructs ConfirmDeleteProject mode", () => {
+    expect(Mode.ConfirmDeleteProject("/tmp/myapp", "myapp")).toEqual({
+      type: "ConfirmDeleteProject",
+      repoPath: "/tmp/myapp",
+      project: "myapp",
+    });
+  });
 });

@@ -188,6 +188,11 @@ describe("StatusBar", () => {
         mode: Mode.ConfirmKill("%1", "1:0 vim", "proj/branch"),
         repoError: "boom",
       },
+      {
+        name: "ConfirmDeleteProject",
+        mode: Mode.ConfirmDeleteProject("/tmp/proj", "proj"),
+        repoError: "boom",
+      },
     ];
 
     for (const { name, mode, repoError } of cases) {

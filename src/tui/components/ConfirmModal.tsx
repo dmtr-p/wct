@@ -8,7 +8,12 @@ import { MouseClickable } from "./MouseClickable";
 export type ConfirmMode = Extract<
   Mode,
   {
-    type: "ConfirmKill" | "ConfirmDown" | "ConfirmClose" | "ConfirmCloseForce";
+    type:
+      | "ConfirmKill"
+      | "ConfirmDown"
+      | "ConfirmClose"
+      | "ConfirmCloseForce"
+      | "ConfirmDeleteProject";
   }
 >;
 
@@ -17,7 +22,8 @@ export function isConfirmMode(mode: Mode): mode is ConfirmMode {
     mode.type === "ConfirmKill" ||
     mode.type === "ConfirmDown" ||
     mode.type === "ConfirmClose" ||
-    mode.type === "ConfirmCloseForce"
+    mode.type === "ConfirmCloseForce" ||
+    mode.type === "ConfirmDeleteProject"
   );
 }
 
@@ -57,6 +63,12 @@ export function copyFor(mode: ConfirmMode): {
         title: "Force Close Worktree",
         question: `${mode.branch} has uncommitted changes`,
         confirmLabel: "enter:force close",
+      };
+    case "ConfirmDeleteProject":
+      return {
+        title: "Delete Project",
+        question: `Delete project ${mode.project}? Its sessions will be stopped; worktrees will be kept.`,
+        confirmLabel: "enter:delete",
       };
   }
 }

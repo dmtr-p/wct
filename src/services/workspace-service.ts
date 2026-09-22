@@ -1,6 +1,6 @@
 import { basename, resolve } from "node:path";
 import type { BunServices } from "@effect/platform-bun";
-import { Context, Effect } from "effect";
+import { Context, Effect, FileSystem } from "effect";
 import {
   loadConfig,
   resolveProfile,
@@ -799,7 +799,7 @@ function resolveTargetImpl(
         );
       }
 
-      return match.path;
+      return resolve(match.path);
     }
 
     return yield* Effect.try({
@@ -1033,9 +1033,34 @@ function closeImpl(
       worktreePath,
     });
 
-    const isRepo = yield* WorktreeService.use((service) =>
+    let isRepo = yield* WorktreeService.use((service) =>
       service.isGitRepo(worktreePath),
     );
+    if (!isRepo) {
+      const fs = yield* FileSystem.FileSystem;
+      const exists = yield* fs
+        .exists(worktreePath)
+        .pipe(
+          Effect.mapError((error) =>
+            commandError(
+              "worktree_error",
+              "Failed to inspect worktree path",
+              error,
+            ),
+          ),
+        );
+      if (!exists) {
+        // A deleted directory can still have a registered worktree. Git's
+        // targeted remove also cleans up that record, without pruning others.
+        const worktrees = yield* WorktreeService.use((service) =>
+          service.listWorktrees(cwd),
+        );
+        isRepo = worktrees.some(
+          (worktree) =>
+            !worktree.isBare && resolve(worktree.path) === worktreePath,
+        );
+      }
+    }
     if (!isRepo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),

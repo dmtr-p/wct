@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
+import { WorkspaceService } from "../src/services/workspace-service";
 import {
   formatChanges,
   formatSync,
@@ -16,6 +17,7 @@ import {
   parseWorktreeListOutput,
   WorktreeService,
 } from "../src/services/worktree-service";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return provideWctServices(
@@ -183,6 +185,54 @@ describe("createWorktree with base branch", () => {
     process.chdir(originalDir);
     await rm(repoDir, { recursive: true, force: true });
     await rm(worktreeDir, { recursive: true, force: true });
+  });
+
+  test("closes a missing worktree without removing other stale records", async () => {
+    const canonicalWorktreeDir = await realpath(worktreeDir);
+    const missingPath = join(canonicalWorktreeDir, "missing-close");
+    const otherPath = join(canonicalWorktreeDir, "other-missing-close");
+    for (const [path, branch] of [
+      [missingPath, "missing-close"],
+      [otherPath, "other-missing-close"],
+    ] as const) {
+      await $`git worktree add -b ${branch} ${path}`.quiet().cwd(repoDir);
+      await rm(path, { recursive: true });
+    }
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.close({ path: missingPath, cwd: repoDir }),
+        ),
+        { tmux: noopTmuxService },
+      ),
+    );
+
+    expect(result.status).toBe("removed");
+    const remaining = await runBunPromise(
+      withWorktreeService(
+        WorktreeService.use((service) => service.listWorktrees(repoDir)),
+      ),
+    );
+    expect(remaining.some((wt) => wt.path === missingPath)).toBe(false);
+    expect(remaining.some((wt) => wt.path === otherPath)).toBe(true);
+    await $`git worktree remove ${otherPath}`.quiet().cwd(repoDir);
+  });
+
+  test("rejects closing an unregistered missing path", async () => {
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.close({
+              path: join(worktreeDir, "never-registered"),
+              cwd: repoDir,
+            }),
+          ),
+          { tmux: noopTmuxService },
+        ),
+      ),
+    ).rejects.toThrow("Not a git repository");
   });
 
   test("creates worktree with base branch", async () => {

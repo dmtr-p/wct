@@ -1,6 +1,7 @@
 import { Box } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedInput } from "../hooks/useGuardedInput";
+import { useTextEditing } from "../hooks/useTextEditing";
 import { SubmitButton, ToggleRow } from "./form-controls";
 import { MouseClickable } from "./MouseClickable";
 import { filterItems, ScrollableList } from "./ScrollableList";
@@ -8,7 +9,6 @@ import {
   buildProfileItems,
   clampSelectedProfileIndex,
   getNextSelectedProfileIndex,
-  isFilterInputCharacter,
   resolveSelectedProfileValue,
 } from "./session-options";
 import { TitledBox } from "./TitledBox";
@@ -40,6 +40,11 @@ export function SessionOptionsSection({
 }: SessionOptionsSectionProps) {
   const [profileQuery, setProfileQuery] = useState("");
   const [selectedProfileIndex, setSelectedProfileIndex] = useState(0);
+  const filterEditing = useTextEditing(
+    profileQuery,
+    setProfileQuery,
+    focusedField === "profile",
+  );
 
   const profileItems = useMemo(
     () => buildProfileItems(profileNames),
@@ -86,13 +91,7 @@ export function SessionOptionsSection({
         );
         return;
       }
-      if (key.backspace) {
-        setProfileQuery((prev) => prev.slice(0, -1));
-        return;
-      }
-      if (isFilterInputCharacter(input, key)) {
-        setProfileQuery((prev) => prev + input);
-      }
+      filterEditing.handleInput(input, key);
     },
     { isActive: focusedField === "profile" },
   );
@@ -114,6 +113,7 @@ export function SessionOptionsSection({
             items={profileItems}
             selectedIndex={selectedProfileIndex}
             filterQuery={profileQuery}
+            filterCursor={filterEditing.cursor}
             isFocused={focusedField === "profile"}
             maxVisible={5}
             onSelect={(index) => {

@@ -178,6 +178,15 @@ profiles:
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
 
+Text fields support Left/Right, Home/End, Backspace/Delete, and insertion at the visible cursor. Right accepts a selected path completion when the cursor is already at the end. Ghostty's default Command+Left/Right and Command+Backspace bindings send Ctrl+A/E/U; in text fields these move to the start/end and delete from the cursor to the start. The same Ctrl shortcuts work because the terminal sends identical bytes. To send distinct Home/End sequences instead, you can use these optional Ghostty bindings:
+
+```text
+keybind = super+arrow_left=csi:H
+keybind = super+arrow_right=csi:F
+```
+
+These bindings can also be used through tmux when the terminal forwards the sequences.
+
 ### Mouse
 
 Mouse support is **on by default**:

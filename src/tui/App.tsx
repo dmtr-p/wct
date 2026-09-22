@@ -26,6 +26,7 @@ import { useRefresh } from "./hooks/useRefresh";
 import type { RepoInfo } from "./hooks/useRegistry";
 import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
+import { useTextEditing } from "./hooks/useTextEditing";
 import { useTmux } from "./hooks/useTmux";
 import { executeConfirmKill } from "./input/confirm-kill";
 import type { ExpandedContext } from "./input/expanded";
@@ -127,6 +128,11 @@ export function App() {
     Set<string>
   >(new Set());
   const [searchQuery, setSearchQuery] = useState("");
+  const searchEditing = useTextEditing(
+    searchQuery,
+    setSearchQuery,
+    mode.type === "Search",
+  );
   const [isAddProjectButtonHovered, setIsAddProjectButtonHovered] =
     useState(false);
   const [lastHoverPosition, setLastHoverPosition] = useState<{
@@ -880,19 +886,10 @@ export function App() {
     if (key.escape) {
       setMode(searchReturnModeRef.current);
       setSearchQuery("");
-    } else if (key.backspace) {
-      setSearchQuery((q) => q.slice(0, -1));
     } else if (key.return) {
       setMode(searchReturnModeRef.current);
-    } else if (input && !key.ctrl && !key.meta) {
-      // Ink's bracketed-paste fallback can deliver a multi-line string as ONE
-      // input event. StatusBar budgets the query as exactly one terminal row
-      // and wrap="truncate" cannot remove embedded newlines, so an
-      // un-collapsed paste would render extra chrome rows and desync mouse
-      // hit-testing. Collapse every CR/LF run (with surrounding indentation)
-      // to a single space — NOT toSingleLine(), whose trim would drop a
-      // legitimate lone-space keystroke.
-      setSearchQuery((q) => q + input.replace(/[ \t]*[\r\n]\s*/g, " "));
+    } else {
+      searchEditing.handleInput(input, key);
     }
   }
 
@@ -1301,6 +1298,7 @@ export function App() {
               <StatusBar
                 {...statusBarProps}
                 searchQuery={searchQuery}
+                searchCursor={searchEditing.cursor}
                 hasClient={tmuxClient !== null}
                 canCollapse={canCollapse}
                 repoError={repoError}

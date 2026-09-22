@@ -1,7 +1,9 @@
 import { Box, Text } from "ink";
 import { useEffect, useRef, useState } from "react";
-import { useBlink } from "../hooks/useBlink";
+import { useCursorBlink } from "../hooks/useCursorBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
+import { graphemes } from "../hooks/useTextEditing";
+import { EditableText } from "./EditableText";
 import { MouseClickable } from "./MouseClickable";
 
 export interface ListItem {
@@ -128,6 +130,7 @@ interface Props {
   items: ListItem[];
   selectedIndex: number;
   filterQuery: string;
+  filterCursor?: number;
   maxVisible?: number;
   isFocused: boolean;
   onSelect?: (index: number) => void;
@@ -138,19 +141,20 @@ export function ScrollableList({
   items,
   selectedIndex,
   filterQuery,
+  filterCursor = graphemes(filterQuery).length,
   maxVisible = 5,
   isFocused,
   onSelect,
   onDoubleSelect,
 }: Props) {
-  const cursorVisible = useBlink();
+  const cursorVisible = useCursorBlink(filterQuery, filterCursor, isFocused);
   const filtered = filterItems(items, filterQuery);
   const filterStateKey = JSON.stringify([
     filterQuery,
     filtered.map((item) => item.value),
   ]);
   const previousFilterStateKeyRef = useRef(filterStateKey);
-  const showFilter = isFocused && filterQuery.length > 0;
+  const showFilter = isFocused;
   const visibleCapacity = Math.max(0, maxVisible - (showFilter ? 1 : 0));
   const [scrollOffset, setScrollOffset] = useState(
     () =>
@@ -197,11 +201,16 @@ export function ScrollableList({
   return (
     <Box flexDirection="column">
       {showFilter && (
-        <Text dimColor>
-          {" "}
-          filter: {filterQuery}
-          {cursorVisible ? "▎" : " "}
-        </Text>
+        <Box>
+          <Text dimColor>{" filter: "}</Text>
+          <EditableText
+            value={filterQuery}
+            cursor={filterCursor}
+            isFocused={true}
+            cursorVisible={cursorVisible}
+            dimColor
+          />
+        </Box>
       )}
       {visible.map((item, i) => {
         const actualIndex = effectiveScrollOffset + i;

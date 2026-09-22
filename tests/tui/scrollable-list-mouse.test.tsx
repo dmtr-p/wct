@@ -44,7 +44,7 @@ function SameCountFilterList({
 }
 
 describe("ScrollableList mouse input", () => {
-  test("shows five options by default and overlays the thumb on the border", async () => {
+  test("shows the focused filter row and four options with the thumb on the border", async () => {
     const items = Array.from({ length: 6 }, (_, index) => ({
       label: `item ${index}`,
       value: String(index),
@@ -62,8 +62,9 @@ describe("ScrollableList mouse input", () => {
     );
 
     try {
-      expect(rendered.output()).toContain("item 4");
-      expect(rendered.output()).not.toContain("item 5");
+      expect(rendered.output()).toContain("filter: ");
+      expect(rendered.output()).toContain("item 3");
+      expect(rendered.output()).not.toContain("item 4");
       expect(rendered.output()).toMatch(/item 0 +█/);
     } finally {
       rendered.unmount();

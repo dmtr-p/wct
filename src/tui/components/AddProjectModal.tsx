@@ -2,9 +2,11 @@ import * as path from "node:path";
 import { Effect, FileSystem } from "effect";
 import { Box, Text } from "ink";
 import { useCallback, useEffect, useState } from "react";
-import { useBlink } from "../hooks/useBlink";
+import { useCursorBlink } from "../hooks/useCursorBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
+import { useTextEditing } from "../hooks/useTextEditing";
 import { runTuiSilentPromise } from "../runtime";
+import { EditableText } from "./EditableText";
 import { isSubmitShortcut, SubmitButton } from "./form-controls";
 import { Modal } from "./Modal";
 import { ModalShortcut } from "./ModalShortcut";
@@ -34,7 +36,6 @@ export function AddProjectModal({
   onSubmit,
   onCancel,
 }: AddProjectModalProps) {
-  const cursorVisible = useBlink();
   const [focusIndex, setFocusIndex] = useState(0);
   const [pathValue, setPathValue] = useState("~/");
   const [nameValue, setNameValue] = useState("");
@@ -42,6 +43,20 @@ export function AddProjectModal({
   const [nameAutoFilled, setNameAutoFilled] = useState(false);
 
   const currentField = FIELDS[focusIndex] ?? "path";
+  const nameFocused = currentField === "name";
+  const nameEditing = useTextEditing(
+    nameValue,
+    (next) => {
+      setNameValue(next);
+      setNameAutoFilled(false);
+    },
+    nameFocused,
+  );
+  const cursorVisible = useCursorBlink(
+    nameValue,
+    nameEditing.cursor,
+    nameFocused,
+  );
 
   // Reset state when modal visibility changes
   useEffect(() => {
@@ -139,29 +154,12 @@ export function AddProjectModal({
   // Name field input handling
   useGuardedInput(
     (input, key) => {
-      if (key.backspace) {
-        setNameValue((prev) => prev.slice(0, -1));
-        setNameAutoFilled(false);
-        return;
-      }
-      if (
-        input &&
-        !key.ctrl &&
-        !key.meta &&
-        !key.escape &&
-        !key.return &&
-        !key.tab
-      ) {
-        setNameValue((prev) => prev + input);
-        setNameAutoFilled(false);
-      }
+      nameEditing.handleInput(input, key);
     },
     { isActive: visible && currentField === "name" },
   );
 
   const innerWidth = width === undefined ? undefined : Math.max(width - 2, 0);
-  const nameFocused = currentField === "name";
-  const nameDisplay = nameValue || (!nameFocused || !cursorVisible ? " " : "");
 
   return (
     <Modal title="Add Project" visible={visible} width={width}>
@@ -191,10 +189,13 @@ export function AddProjectModal({
               isHovered={isHovered}
               width={innerWidth}
             >
-              <Text dimColor={!nameFocused}>
-                {nameDisplay}
-                {nameFocused ? (cursorVisible ? "▎" : " ") : ""}
-              </Text>
+              <EditableText
+                value={nameValue}
+                cursor={nameEditing.cursor}
+                isFocused={nameFocused}
+                cursorVisible={cursorVisible}
+                dimColor={!nameFocused}
+              />
             </TitledBox>
           )}
         </MouseClickable>

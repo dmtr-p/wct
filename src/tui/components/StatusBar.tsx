@@ -1,12 +1,16 @@
 // src/tui/components/StatusBar.tsx
 import { Box, Text, useWindowSize } from "ink";
 import type { ComponentProps } from "react";
+import { useCursorBlink } from "../hooks/useCursorBlink";
 import type { Mode } from "../types";
+import { graphemeWidths } from "../utils/display-width";
 import { toSingleLine } from "../utils/truncate";
+import { EditableText } from "./EditableText";
 
 interface Props {
   mode: Mode;
   searchQuery?: string;
+  searchCursor?: number;
   selectedPaneRow?: boolean;
   hasClient?: boolean;
   repoError?: string;
@@ -135,12 +139,18 @@ function ChromeLine(props: ComponentProps<typeof Text>) {
 export function StatusBar({
   mode,
   searchQuery,
+  searchCursor = 0,
   selectedPaneRow,
   hasClient,
   repoError,
   canCollapse,
 }: Props) {
   const { columns: cols } = useWindowSize();
+  const cursorVisible = useCursorBlink(
+    searchQuery ?? "",
+    searchCursor,
+    mode.type === "Search",
+  );
   const divider = "─".repeat(Math.max(1, cols));
 
   if (
@@ -154,10 +164,40 @@ export function StatusBar({
   }
 
   if (mode.type === "Search") {
+    const parts = graphemeWidths(searchQuery ?? "");
+    const cursor = Math.min(searchCursor, parts.length);
+    const available = Math.max(0, cols - 2); // slash and insertion marker
+    let start = cursor;
+    let used = 0;
+    while (
+      start > 0 &&
+      used + (parts[start - 1]?.[1] ?? 0) <= Math.floor(available / 2)
+    ) {
+      used += parts[--start]?.[1] ?? 0;
+    }
+    let end = cursor;
+    while (end < parts.length && used + (parts[end]?.[1] ?? 0) <= available) {
+      used += parts[end++]?.[1] ?? 0;
+    }
+    while (start > 0 && used + (parts[start - 1]?.[1] ?? 0) <= available) {
+      used += parts[--start]?.[1] ?? 0;
+    }
+    const visibleQuery = parts
+      .slice(start, end)
+      .map(([part]) => part)
+      .join("");
     return (
       <Box flexDirection="column">
         <ChromeLine dimColor>{divider}</ChromeLine>
-        <ChromeLine color="cyan">/{searchQuery}</ChromeLine>
+        <ChromeLine color="cyan">
+          {"/"}
+          <EditableText
+            value={visibleQuery}
+            cursor={cursor - start}
+            isFocused
+            cursorVisible={cursorVisible}
+          />
+        </ChromeLine>
         <ChromeLine dimColor>
           {getHints(mode, undefined, hasClient)[1]}
         </ChromeLine>

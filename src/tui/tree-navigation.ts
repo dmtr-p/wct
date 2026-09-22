@@ -286,24 +286,6 @@ function reconcile(
 ): TreeNavigationState {
   const queryChanged = state.searchQuery !== snapshot.searchQuery;
   let selectedIndex = queryChanged ? 0 : state.selectedIndex;
-  let scrollOffset = queryChanged
-    ? 0
-    : effectiveTreeScrollOffset(state, snapshot);
-  const confirmationPosition = snapshot.confirmationPosition ?? null;
-  const openingConfirmation =
-    confirmationPosition !== null &&
-    confirmationPosition !== state.confirmationPosition;
-  const savedPositions =
-    openingConfirmation && state.savedPositions[confirmationPosition]
-      ? {
-          ...state.savedPositions,
-          [confirmationPosition]: {
-            ...state.savedPositions[confirmationPosition],
-            scrollOffset,
-          },
-        }
-      : state.savedPositions;
-
   if (!queryChanged && !state.selectionPending && !state.restorePending) {
     const recovered = resolveRecoveredSelectionIndex({
       prevTree: state.previousItems ?? snapshot.items,
@@ -320,6 +302,27 @@ function reconcile(
     0,
     Math.min(selectedIndex, snapshot.items.length - 1),
   );
+  // The render that triggered recovery still budgets the footer for the old
+  // index. Use the recovered item's viewport for every scroll decision here.
+  const viewportRows =
+    snapshot.viewportRowsForSelection?.(selectedIndex) ?? snapshot.viewportRows;
+  let scrollOffset = queryChanged
+    ? 0
+    : clampScrollOffset(state.scrollOffset, snapshot.rows.length, viewportRows);
+  const confirmationPosition = snapshot.confirmationPosition ?? null;
+  const openingConfirmation =
+    confirmationPosition !== null &&
+    confirmationPosition !== state.confirmationPosition;
+  const savedPositions =
+    openingConfirmation && state.savedPositions[confirmationPosition]
+      ? {
+          ...state.savedPositions,
+          [confirmationPosition]: {
+            ...state.savedPositions[confirmationPosition],
+            scrollOffset,
+          },
+        }
+      : state.savedPositions;
 
   const revealedLifecycles = new Set(state.revealedLifecycles);
   for (const key of revealedLifecycles) {
@@ -331,7 +334,7 @@ function reconcile(
     lifecycle: snapshot.lifecycle,
     revealed: revealedLifecycles,
     scrollOffset,
-    viewportRows: snapshot.viewportRows,
+    viewportRows,
   });
   const revealChangedOffset =
     reveal !== null && reveal.scrollOffset !== scrollOffset;
@@ -342,8 +345,7 @@ function reconcile(
 
   const row = firstRowForItem(snapshot.rows, selectedIndex);
   const layoutMoved =
-    row !== state.previousRow ||
-    snapshot.viewportRows !== state.previousViewportRows;
+    row !== state.previousRow || viewportRows !== state.previousViewportRows;
   if (
     !queryChanged &&
     !revealChangedOffset &&
@@ -352,9 +354,9 @@ function reconcile(
     (state.selectionPending || (state.previousSelectionVisible && layoutMoved))
   ) {
     scrollOffset = clampScrollOffset(
-      scrollToKeepVisible(row, scrollOffset, snapshot.viewportRows),
+      scrollToKeepVisible(row, scrollOffset, viewportRows),
       snapshot.rows.length,
-      snapshot.viewportRows,
+      viewportRows,
     );
   }
 
@@ -364,16 +366,12 @@ function reconcile(
   const confirmationMoved =
     confirmationRange?.start !== state.confirmationRange?.start ||
     confirmationRange?.end !== state.confirmationRange?.end ||
-    snapshot.viewportRows !== state.previousViewportRows;
+    viewportRows !== state.previousViewportRows;
   if (confirmationRange && confirmationMoved && !state.restorePending) {
     scrollOffset = clampScrollOffset(
-      scrollRangeToKeepVisible(
-        confirmationRange,
-        scrollOffset,
-        snapshot.viewportRows,
-      ),
+      scrollRangeToKeepVisible(confirmationRange, scrollOffset, viewportRows),
       snapshot.rows.length,
-      snapshot.viewportRows,
+      viewportRows,
     );
   }
 
@@ -382,11 +380,7 @@ function reconcile(
   const previousSelectionParentId = item
     ? treeItemParentId(item, snapshot.repos)
     : null;
-  const previousSelectionVisible = visible(
-    row,
-    scrollOffset,
-    snapshot.viewportRows,
-  );
+  const previousSelectionVisible = visible(row, scrollOffset, viewportRows);
   if (
     selectedIndex === state.selectedIndex &&
     scrollOffset === state.scrollOffset &&
@@ -394,7 +388,7 @@ function reconcile(
     state.previousSelectionId === previousSelectionId &&
     state.previousSelectionParentId === previousSelectionParentId &&
     state.previousRow === row &&
-    state.previousViewportRows === snapshot.viewportRows &&
+    state.previousViewportRows === viewportRows &&
     state.previousSelectionVisible === previousSelectionVisible &&
     state.searchQuery === snapshot.searchQuery &&
     state.confirmationPosition === confirmationPosition &&
@@ -414,7 +408,7 @@ function reconcile(
     previousSelectionId,
     previousSelectionParentId,
     previousRow: row,
-    previousViewportRows: snapshot.viewportRows,
+    previousViewportRows: viewportRows,
     previousSelectionVisible,
     searchQuery: snapshot.searchQuery,
     confirmationRange,

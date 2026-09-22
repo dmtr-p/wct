@@ -107,6 +107,39 @@ describe("tree navigation sequences", () => {
     expect(state.scrollOffset).toBe(0);
   });
 
+  test("identity recovery uses the recovered repository's footer height", () => {
+    const initial = snapshot({
+      viewportRows: 2,
+      // Repo two has no error footer; repo one's error leaves two tree rows.
+      viewportRowsForSelection: (itemIndex) => (itemIndex === 3 ? 3 : 2),
+    });
+    let state = settled(initial);
+    state = step(state, initial, { type: "select", itemIndex: 3 });
+    const before = { ...initial, viewportRows: 3 };
+    state = step(state, before, { type: "reconcile" });
+    expect(state.scrollOffset).toBe(1);
+
+    const insertedItems: TreeItem[] = [
+      ...baseItems.slice(0, 3),
+      { type: "worktree", repoIndex: 0, worktreeIndex: 1 },
+      ...baseItems.slice(3),
+    ];
+    const after = snapshot({
+      items: insertedItems,
+      rows: rowsFor(insertedItems),
+      // The stale index now points into repo one, which has an error footer.
+      viewportRows: 2,
+      viewportRowsForSelection: (itemIndex) => (itemIndex === 4 ? 3 : 2),
+    });
+    state = step(state, after, { type: "reconcile" });
+    expect(state.selectedIndex).toBe(4);
+    expect(state.scrollOffset).toBe(2);
+
+    const committed = { ...after, viewportRows: 3 };
+    state = step(state, committed, { type: "reconcile" });
+    expect(state.scrollOffset).toBe(2);
+  });
+
   test("a visible lifecycle row does not suppress selection visibility after insertion", () => {
     const layout = snapshot({ viewportRows: 3 });
     let state = settled(layout);

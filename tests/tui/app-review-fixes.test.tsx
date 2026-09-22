@@ -328,8 +328,8 @@ describe("App.tsx review fixes (real App)", () => {
       await tick(5);
 
       // The query must be exactly "f": still matching feature/* rows, with
-      // the query line rendered as "/f" and no payload junk appended.
-      expect(rendered.lines().some((l) => l.trim() === "/f")).toBe(true);
+      // the query line rendered as "/f" with its insertion marker.
+      expect(rendered.lines().some((l) => /^\/f▎?$/.test(l.trim()))).toBe(true);
       expect(selectedLine(rendered.lines())).toBeDefined();
     } finally {
       rendered.unmount();
@@ -355,9 +355,9 @@ describe("App.tsx review fixes (real App)", () => {
       await sendKeys(rendered.stdin, "f");
       await tick(5);
 
-      // The "f" typed after the click must reach the query (rendered "/f"),
+      // The "f" typed after the click must reach the query,
       // and no payload characters may leak in.
-      expect(rendered.lines().some((l) => l.trim() === "/f")).toBe(true);
+      expect(rendered.lines().some((l) => /^\/f▎?$/.test(l.trim()))).toBe(true);
       expect(selectedLine(rendered.lines())).toBeDefined();
     } finally {
       rendered.unmount();
@@ -401,7 +401,7 @@ describe("App.tsx review fixes (real App)", () => {
       await sendKeys(rendered.stdin, "f");
       await tick(5);
 
-      expect(rendered.lines().some((l) => l.trim() === "/f")).toBe(true);
+      expect(rendered.lines().some((l) => /^\/f▎?$/.test(l.trim()))).toBe(true);
       expect(selectedLine(rendered.lines())).toBeDefined();
     } finally {
       rendered.unmount();
@@ -417,19 +417,45 @@ describe("App.tsx review fixes (real App)", () => {
       expect(rendered.output()).toContain("main");
 
       await sendKeys(rendered.stdin, "/"); // enter Search
-      // Ink's bracketed-paste fallback (no paste listener registered)
-      // delivers the pasted text as ONE input event, embedded newline
-      // included. statusBarRowCount(Search) budgets the query as exactly one
-      // row and wrap="truncate" cannot remove newlines — un-collapsed, the
-      // paste would render an extra chrome row and desync mouse hit-testing.
+      // Ink's paste channel delivers the text as one edit. Search remains
+      // one row even when the clipboard contains a newline.
       await sendKeys(rendered.stdin, "\x1b[200~feat\nure\x1b[201~");
       await tick(5);
 
       const lines = rendered.lines();
       // The newline is collapsed to a space on a single query row...
-      expect(lines.some((l) => l.trim() === "/feat ure")).toBe(true);
+      expect(lines.some((l) => /^\/feat ure▎?$/.test(l.trim()))).toBe(true);
       // ...and no second line carries the paste's tail.
       expect(lines.some((l) => l.trim() === "ure")).toBe(false);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("editing Search in the middle updates matches while cursor movement keeps selection", async () => {
+    setTallWorktrees(repoPath, 5);
+
+    const rendered = await renderApp(<App />, 20);
+    try {
+      await tick(20);
+      await sendKeys(rendered.stdin, "/");
+      await sendKeys(rendered.stdin, "ft");
+      expect(selectedLine(rendered.lines())).toBeUndefined();
+
+      await sendKeys(rendered.stdin, "\x1b[D");
+      await sendKeys(rendered.stdin, "ea");
+      expect(rendered.lines().some((line) => line.trim() === "/feat")).toBe(
+        true,
+      );
+      const selection = selectedLine(rendered.lines());
+      expect(selection).toBeDefined();
+
+      await sendKeys(rendered.stdin, "\x1b[D");
+      await sendKeys(rendered.stdin, "\x1b[C");
+      expect(rendered.lines().some((line) => line.trim() === "/feat")).toBe(
+        true,
+      );
+      expect(selectedLine(rendered.lines())).toBe(selection);
     } finally {
       rendered.unmount();
     }

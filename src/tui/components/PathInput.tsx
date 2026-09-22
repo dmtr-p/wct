@@ -1,9 +1,11 @@
 import { Effect, FileSystem } from "effect";
 import { Box, Text } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBlink } from "../hooks/useBlink";
+import { useCursorBlink } from "../hooks/useCursorBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
+import { useTextEditing } from "../hooks/useTextEditing";
 import { runTuiSilentPromise } from "../runtime";
+import { EditableText } from "./EditableText";
 import { MouseClickable } from "./MouseClickable";
 import {
   clampListScrollOffset,
@@ -71,7 +73,8 @@ export function PathInput({
   width,
   onFocus,
 }: PathInputProps) {
-  const cursorVisible = useBlink();
+  const editing = useTextEditing(value, onChange, isFocused);
+  const cursorVisible = useCursorBlink(value, editing.cursor, isFocused);
   const [completions, setCompletions] = useState<ListItem[]>([]);
   const [selectedCompletionIndex, setSelectedCompletionIndex] = useState(0);
   const [completionScrollOffset, setCompletionScrollOffset] = useState(0);
@@ -138,10 +141,12 @@ export function PathInput({
   const completePath = useCallback(
     (selected: ListItem | undefined) => {
       if (!selected) return;
-      onChange(completePathValue(value, selected.value));
+      const completed = completePathValue(value, selected.value);
+      if (completed !== value) onChange(completed);
+      editing.moveToEndOf(completed);
       setSelectedCompletionIndex(0);
     },
-    [onChange, value],
+    [onChange, value, editing],
   );
 
   // Clamp selection when filtered list shrinks
@@ -184,25 +189,20 @@ export function PathInput({
         setSelectedCompletionIndex((prev) => Math.max(prev - 1, 0));
         return;
       }
-      if (key.rightArrow && filtered.length > 0) {
+      if (
+        key.rightArrow &&
+        !key.ctrl &&
+        !key.shift &&
+        !key.super &&
+        !key.meta &&
+        !key.hyper &&
+        editing.atEnd &&
+        filtered.length > 0
+      ) {
         completePath(filtered[selectedCompletionIndex]);
         return;
       }
-      if (key.backspace) {
-        onChange(value.slice(0, -1));
-        return;
-      }
-      // Regular character input
-      if (
-        input &&
-        !key.ctrl &&
-        !key.meta &&
-        !key.escape &&
-        !key.return &&
-        !key.tab
-      ) {
-        onChange(value + input);
-      }
+      editing.handleInput(input, key);
     },
     {
       isActive: isFocused,
@@ -220,7 +220,6 @@ export function PathInput({
   );
 
   const title = isGitRepo ? "Path ✓" : "Path";
-  const displayValue = value || (!isFocused || !cursorVisible ? " " : "");
   const showCompletions = isFocused && filtered.length > 0;
   const visible = showCompletions
     ? filtered.slice(
@@ -243,10 +242,13 @@ export function PathInput({
           isHovered={isHovered}
           width={width}
         >
-          <Text dimColor={!isFocused}>
-            {displayValue}
-            {isFocused ? (cursorVisible ? "▎" : " ") : ""}
-          </Text>
+          <EditableText
+            value={value}
+            cursor={editing.cursor}
+            isFocused={isFocused}
+            cursorVisible={cursorVisible}
+            dimColor={!isFocused}
+          />
           {showCompletions &&
             visible.map((item, i) => {
               const actualIndex = effectiveCompletionScrollOffset + i;

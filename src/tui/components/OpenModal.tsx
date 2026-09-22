@@ -1,11 +1,13 @@
 import { Box, Text } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
-import { useBlink } from "../hooks/useBlink";
+import { useCursorBlink } from "../hooks/useCursorBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
+import { useTextEditing } from "../hooks/useTextEditing";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
+import { EditableText } from "./EditableText";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
 import { ModalShortcut } from "./ModalShortcut";
@@ -113,17 +115,12 @@ function BracketInput({
   onFocus: () => void;
   width?: number;
 }) {
-  const cursorVisible = useBlink();
-  const displayValue = value || (!isFocused || !cursorVisible ? " " : "");
+  const editing = useTextEditing(value, onChange, isFocused);
+  const cursorVisible = useCursorBlink(value, editing.cursor, isFocused);
 
   useGuardedInput(
     (input, key) => {
-      if (!isFocused) return;
-      if (key.backspace) {
-        onChange(value.slice(0, -1));
-      } else if (input && !key.ctrl && !key.meta && !key.return) {
-        onChange(value + input);
-      }
+      editing.handleInput(input, key);
     },
     { isActive: isFocused },
   );
@@ -137,10 +134,13 @@ function BracketInput({
           isHovered={isHovered}
           width={width}
         >
-          <Text dimColor={!isFocused}>
-            {displayValue}
-            {isFocused ? (cursorVisible ? "▎" : " ") : ""}
-          </Text>
+          <EditableText
+            value={value}
+            cursor={editing.cursor}
+            isFocused={isFocused}
+            cursorVisible={cursorVisible}
+            dimColor={!isFocused}
+          />
         </TitledBox>
       )}
     </MouseClickable>
@@ -305,6 +305,14 @@ export function FromPRForm({
 
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
+  const filterEditing = useTextEditing(
+    filterQuery,
+    (next) => {
+      setFilterQuery(next);
+      setSelectedPRIndex(0);
+    },
+    currentField === "prList",
+  );
 
   const prItems: ListItem[] = useMemo(
     () =>
@@ -405,16 +413,7 @@ export function FromPRForm({
           }
           return;
         }
-        if (key.backspace) {
-          setFilterQuery((q) => q.slice(0, -1));
-          setSelectedPRIndex(0);
-          return;
-        }
-        if (input && !key.ctrl && !key.meta) {
-          setFilterQuery((q) => q + input);
-          setSelectedPRIndex(0);
-          return;
-        }
+        filterEditing.handleInput(input, key);
       }
     },
     { isActive: true },
@@ -442,6 +441,7 @@ export function FromPRForm({
           items={displayItems}
           selectedIndex={selectedPRIndex}
           filterQuery={filterQuery}
+          filterCursor={filterEditing.cursor}
           maxVisible={5}
           isFocused={currentField === "prList"}
           onSelect={(index) => {
@@ -521,6 +521,14 @@ export function ExistingBranchForm({
   );
   const [focusIndex, setFocusIndex] = useState(0);
   const currentField = fields[focusIndex];
+  const filterEditing = useTextEditing(
+    filterQuery,
+    (next) => {
+      setFilterQuery(next);
+      setSelectedBranchIndex(0);
+    },
+    currentField === "branchList",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -596,16 +604,7 @@ export function ExistingBranchForm({
           );
           return;
         }
-        if (key.backspace) {
-          setFilterQuery((q) => q.slice(0, -1));
-          setSelectedBranchIndex(0);
-          return;
-        }
-        if (input && !key.ctrl && !key.meta && !key.return) {
-          setFilterQuery((q) => q + input);
-          setSelectedBranchIndex(0);
-          return;
-        }
+        filterEditing.handleInput(input, key);
       }
     },
     { isActive: true },
@@ -629,6 +628,7 @@ export function ExistingBranchForm({
           items={branchItems}
           selectedIndex={selectedBranchIndex}
           filterQuery={filterQuery}
+          filterCursor={filterEditing.cursor}
           maxVisible={5}
           isFocused={currentField === "branchList"}
           onSelect={(index) => {

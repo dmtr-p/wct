@@ -204,7 +204,7 @@ describe("OpenModal form variants", () => {
     );
 
     try {
-      const refreshClick = "\x1b[<0;5;5M";
+      const refreshClick = "\x1b[<0;5;6M";
       rendered.stdin.write(refreshClick);
       rendered.stdin.write(refreshClick);
       await new Promise((resolve) => setTimeout(resolve, 0));

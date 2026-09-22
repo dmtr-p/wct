@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
@@ -903,6 +903,55 @@ describe("WorkspaceService close", () => {
     expect(result.status).toBe("removed");
     expect(result.sessionName).toBe("myapp-feature");
     expect(calls).toEqual(["kill:myapp-feature", "remove:/tmp/myapp-feature"]);
+  });
+
+  test("resolves a relative branch path before closing a missing worktree", async () => {
+    const relativePath = "deleted-feature";
+    const absolutePath = resolve(relativePath);
+    const removeCalls: string[] = [];
+
+    const result = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.close({ branch: "feature", cwd: "/repos/myapp" }),
+        ),
+        {
+          worktree: {
+            ...liveWorktreeService,
+            findWorktreeByBranch: (branch) =>
+              Effect.succeed({
+                path: relativePath,
+                branch,
+                commit: "abc123",
+                isBare: false,
+              }),
+            isGitRepo: () => Effect.succeed(false),
+            listWorktrees: () =>
+              Effect.succeed([
+                {
+                  path: relativePath,
+                  branch: "feature",
+                  commit: "abc123",
+                  isBare: false,
+                },
+              ]),
+            removeWorktree: (path) =>
+              Effect.sync(() => {
+                removeCalls.push(path);
+                return { _tag: "Removed" as const, path };
+              }),
+          },
+          tmux: {
+            ...noopTmuxService,
+            sessionExists: () => Effect.succeed(false),
+          },
+        },
+      ),
+    );
+
+    expect(result.worktreePath).toBe(absolutePath);
+    expect(result.status).toBe("removed");
+    expect(removeCalls).toEqual([absolutePath]);
   });
 
   test("resolves explicit path targets", async () => {

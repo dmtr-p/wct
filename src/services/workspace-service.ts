@@ -799,7 +799,7 @@ function resolveTargetImpl(
         );
       }
 
-      return match.path;
+      return resolve(match.path);
     }
 
     return yield* Effect.try({

@@ -266,6 +266,32 @@ describe("Ctrl+Enter submit", () => {
   });
 
   describe("ExistingBranchForm", () => {
+    test("middle insertion in the branch filter updates results without losing selection on movement", async () => {
+      runPromiseMock.mockResolvedValueOnce(["feat-one", "feat-two"]);
+      const onSubmitMock = vi.fn();
+      const rendered = await renderExistingBranchForm(onSubmitMock);
+
+      try {
+        await vi.waitFor(() => {
+          expect(rendered.output()).toContain("feat-two");
+        });
+        await sendKeys(rendered.stdin, "fet");
+        await sendKeys(rendered.stdin, "\x1b[D");
+        await sendKeys(rendered.stdin, "a");
+        expect(rendered.lastFrame()).toContain("filter: feat");
+        await sendKeys(rendered.stdin, DOWN_ARROW);
+        await sendKeys(rendered.stdin, "\x1b[D");
+        await sendKeys(rendered.stdin, "\x1b[C");
+        await sendKeys(rendered.stdin, CTRL_ENTER);
+
+        expect(onSubmitMock).toHaveBeenCalledWith(
+          expect.objectContaining({ branch: "feat-two", existing: true }),
+        );
+      } finally {
+        rendered.unmount();
+      }
+    });
+
     test("Ctrl+Enter with a branch selected fires onSubmit with that branch's payload", async () => {
       runPromiseMock.mockResolvedValueOnce(["feature-x"]);
       const onSubmitMock = vi.fn();
@@ -310,6 +336,26 @@ describe("Ctrl+Enter submit", () => {
   });
 
   describe("UpModal", () => {
+    test("middle insertion in the profile filter selects the matching profile", async () => {
+      const onSubmitMock = vi.fn();
+      const rendered = await renderUpModal(onSubmitMock, ["alpha", "beta"]);
+
+      try {
+        await sendKeys(rendered.stdin, "alha");
+        await sendKeys(rendered.stdin, "\x1b[D");
+        await sendKeys(rendered.stdin, "\x1b[D");
+        await sendKeys(rendered.stdin, "p");
+        expect(rendered.lastFrame()).toContain("filter: alpha");
+        await sendKeys(rendered.stdin, CTRL_ENTER);
+
+        expect(onSubmitMock).toHaveBeenCalledWith(
+          expect.objectContaining({ profile: "alpha" }),
+        );
+      } finally {
+        rendered.unmount();
+      }
+    });
+
     test("Ctrl+Enter from a non-submit field fires onSubmit with the expected payload", async () => {
       const onSubmitMock = vi.fn();
       const rendered = await renderUpModal(onSubmitMock);
@@ -379,7 +425,10 @@ describe("Ctrl+Enter submit", () => {
           rendered.stdin,
           "\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f",
         );
-        await sendKeys(rendered.stdin, "my-proj");
+        await sendKeys(rendered.stdin, "my-prj");
+        await sendKeys(rendered.stdin, "\x1b[D");
+        await sendKeys(rendered.stdin, "o");
+        expect(rendered.lastFrame()).toContain("my-proj");
         await new Promise((r) => setTimeout(r, 0));
         await sendKeys(rendered.stdin, CTRL_ENTER);
 

@@ -432,6 +432,35 @@ describe("App.tsx review fixes (real App)", () => {
     }
   });
 
+  test("editing Search in the middle updates matches while cursor movement keeps selection", async () => {
+    setTallWorktrees(repoPath, 5);
+
+    const rendered = await renderApp(<App />, 20);
+    try {
+      await tick(20);
+      await sendKeys(rendered.stdin, "/");
+      await sendKeys(rendered.stdin, "ft");
+      expect(selectedLine(rendered.lines())).toBeUndefined();
+
+      await sendKeys(rendered.stdin, "\x1b[D");
+      await sendKeys(rendered.stdin, "ea");
+      expect(rendered.lines().some((line) => line.trim() === "/feat")).toBe(
+        true,
+      );
+      const selection = selectedLine(rendered.lines());
+      expect(selection).toBeDefined();
+
+      await sendKeys(rendered.stdin, "\x1b[D");
+      await sendKeys(rendered.stdin, "\x1b[C");
+      expect(rendered.lines().some((line) => line.trim() === "/feat")).toBe(
+        true,
+      );
+      expect(selectedLine(rendered.lines())).toBe(selection);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("horizontal wheel events (cb 66/67) do not scroll the viewport", async () => {
     setTallWorktrees(repoPath, 40);
 

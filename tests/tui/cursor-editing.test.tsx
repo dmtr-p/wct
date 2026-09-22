@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { useState } from "react";
 import { describe, expect, test, vi } from "vitest";
 
@@ -32,12 +35,21 @@ function renderBranch(onSubmit: (result: unknown) => void) {
   );
 }
 
-function PathFixture() {
-  const [value, setValue] = useState("~/test");
+function PathFixture({
+  initialValue = "~/test",
+  onChange,
+}: {
+  initialValue?: string;
+  onChange?: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initialValue);
   return (
     <PathInput
       value={value}
-      onChange={setValue}
+      onChange={(next) => {
+        setValue(next);
+        onChange?.(next);
+      }}
       isFocused
       isGitRepo={false}
       width={28}
@@ -46,6 +58,25 @@ function PathFixture() {
 }
 
 describe("cursor editing through Ink stdin", () => {
+  test("a character in the same stdin chunk as path completion extends the completed path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "wct-cursor-"));
+    mkdirSync(join(root, "completed"));
+    const onChange = vi.fn();
+    const view = await renderWithInput(
+      <PathFixture initialValue={`${root}/comp`} onChange={onChange} />,
+    );
+    try {
+      await vi.waitFor(() => {
+        expect(view.lastFrame()).toContain("completed/");
+      });
+      await sendKeys(view.stdin, `${RIGHT}x`);
+      expect(onChange).toHaveBeenLastCalledWith(`${root}/completed/x`);
+    } finally {
+      view.unmount();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("moving left within a path does not insert a blank column", async () => {
     const view = await renderWithInput(<PathFixture />);
     try {

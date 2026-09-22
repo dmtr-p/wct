@@ -37,6 +37,7 @@ export function useTextEditing(
   };
   const moveToEndOf = (nextValue: string) => {
     const end = graphemes(nextValue).length;
+    valueRef.current = nextValue;
     positionRef.current = end;
     setPosition(end);
   };

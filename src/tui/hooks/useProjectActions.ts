@@ -8,6 +8,7 @@ import { formatSessionName } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
 import { type LifecycleState, lifecycleBusyMessage } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
+import type { ReturnPosition } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
@@ -19,25 +20,21 @@ export interface ProjectActionDeps {
   mode: Mode;
   lifecycle: LifecycleState;
 
-  setSelectedIndex: (index: number) => void;
+  captureTreePosition: (position: ReturnPosition) => void;
+  restoreTreePosition: (position: ReturnPosition) => void;
   setMode: (mode: Mode) => void;
   showActionError: (message: string) => void;
   clearActionError: () => void;
   refreshAll: () => Promise<RepoInfo[] | null>;
-  restoreConfirmationViewport: () => void;
   switchClientAwayFromSessions: (
     sessionNames: readonly string[],
   ) => Promise<boolean>;
 
   confirmDeleteProjectReturnModeRef: MutableRefObject<Mode>;
-  confirmDeleteProjectReturnSelectedIndexRef: MutableRefObject<number>;
 }
 
 function restoreProjectUi(deps: ProjectActionDeps) {
-  deps.restoreConfirmationViewport();
-  deps.setSelectedIndex(
-    deps.confirmDeleteProjectReturnSelectedIndexRef.current,
-  );
+  deps.restoreTreePosition("delete-project");
   deps.setMode(deps.confirmDeleteProjectReturnModeRef.current);
 }
 
@@ -60,8 +57,7 @@ export function createPrepareDeleteProject(deps: ProjectActionDeps) {
 
     deps.clearActionError();
     deps.confirmDeleteProjectReturnModeRef.current = deps.mode;
-    deps.confirmDeleteProjectReturnSelectedIndexRef.current =
-      deps.selectedIndex;
+    deps.captureTreePosition("delete-project");
     deps.setMode(Mode.ConfirmDeleteProject(repo.repoPath, repo.project));
   };
 }

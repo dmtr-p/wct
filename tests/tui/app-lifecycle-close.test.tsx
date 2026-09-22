@@ -81,7 +81,8 @@ function makeDeps(overrides: Partial<SessionActionDeps> = {}) {
     mode: Mode.Navigate,
     lifecycle: new Map(),
     lifecycleClaims: createLifecycleClaims(),
-    setSelectedIndex: vi.fn(),
+    captureTreePosition: vi.fn(),
+    restoreTreePosition: vi.fn(),
     setMode: vi.fn(),
     modeRef: { current: Mode.Navigate },
     setLifecycle: vi.fn(),
@@ -92,11 +93,8 @@ function makeDeps(overrides: Partial<SessionActionDeps> = {}) {
     discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
     refreshSessions: vi.fn().mockResolvedValue([]),
     refreshAll: vi.fn().mockResolvedValue([]),
-    restoreConfirmationViewport: vi.fn(),
     confirmDownReturnModeRef: { current: Mode.Navigate },
-    confirmDownReturnSelectedIndexRef: { current: 0 },
     confirmCloseReturnModeRef: { current: Mode.Navigate },
-    confirmCloseReturnSelectedIndexRef: { current: 0 },
     ...overrides,
   } satisfies SessionActionDeps;
 }

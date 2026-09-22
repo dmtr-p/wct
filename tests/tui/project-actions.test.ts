@@ -72,15 +72,14 @@ function makeDeps(
     selectedIndex: 0,
     mode: Mode.Navigate,
     lifecycle: new Map(),
-    setSelectedIndex: vi.fn(),
+    captureTreePosition: vi.fn(),
+    restoreTreePosition: vi.fn(),
     setMode: vi.fn(),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     refreshAll: vi.fn().mockResolvedValue([]),
-    restoreConfirmationViewport: vi.fn(),
     switchClientAwayFromSessions: vi.fn().mockResolvedValue(true),
     confirmDeleteProjectReturnModeRef: { current: Mode.Navigate },
-    confirmDeleteProjectReturnSelectedIndexRef: { current: 0 },
     ...overrides,
   };
 }

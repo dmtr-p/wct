@@ -46,15 +46,19 @@ interface SavedPosition {
   owningWorktreeId: string | null;
 }
 
+interface PreviousLayout {
+  items: TreeItem[] | null;
+  selectionId: string | null;
+  selectionParentId: string | null;
+  row: number | null;
+  viewportRows: number;
+  selectionVisible: boolean;
+}
+
 export interface TreeNavigationState {
   selectedIndex: number;
   scrollOffset: number;
-  previousItems: TreeItem[] | null;
-  previousSelectionId: string | null;
-  previousSelectionParentId: string | null;
-  previousRow: number | null;
-  previousViewportRows: number;
-  previousSelectionVisible: boolean;
+  previousLayout: PreviousLayout;
   searchQuery: string;
   confirmationRange: { start: number; end: number } | null;
   confirmationPosition: ReturnPosition | null;
@@ -80,12 +84,14 @@ export function initialTreeNavigationState(): TreeNavigationState {
   return {
     selectedIndex: 0,
     scrollOffset: 0,
-    previousItems: null,
-    previousSelectionId: null,
-    previousSelectionParentId: null,
-    previousRow: null,
-    previousViewportRows: 0,
-    previousSelectionVisible: false,
+    previousLayout: {
+      items: null,
+      selectionId: null,
+      selectionParentId: null,
+      row: null,
+      viewportRows: 0,
+      selectionVisible: false,
+    },
     searchQuery: "",
     confirmationRange: null,
     confirmationPosition: null,
@@ -153,12 +159,14 @@ function select(
     ...state,
     selectedIndex: itemIndex,
     scrollOffset,
-    previousItems: snapshot.items,
-    previousSelectionId: identity.id,
-    previousSelectionParentId: identity.parentId,
-    previousRow: row,
-    previousViewportRows: snapshot.viewportRows,
-    previousSelectionVisible: visible(row, scrollOffset, viewportRows),
+    previousLayout: {
+      items: snapshot.items,
+      selectionId: identity.id,
+      selectionParentId: identity.parentId,
+      row,
+      viewportRows: snapshot.viewportRows,
+      selectionVisible: visible(row, scrollOffset, viewportRows),
+    },
     selectionPending: true,
     restorePending: false,
   };
@@ -204,12 +212,15 @@ export function transitionTreeNavigation(
         scrollOffset,
         selectionPending: false,
         restorePending: false,
-        previousViewportRows: viewportRows,
-        previousSelectionVisible: visible(
-          firstRowForItem(snapshot.rows, state.selectedIndex),
-          scrollOffset,
+        previousLayout: {
+          ...state.previousLayout,
           viewportRows,
-        ),
+          selectionVisible: visible(
+            firstRowForItem(snapshot.rows, state.selectedIndex),
+            scrollOffset,
+            viewportRows,
+          ),
+        },
       };
     }
     case "capture": {
@@ -271,9 +282,12 @@ export function transitionTreeNavigation(
         // Confirm can still be active here; its footer is shorter than the
         // destination's. Reconcile clamps its saved offset after mode changes.
         scrollOffset,
-        previousItems: snapshot.items,
-        previousSelectionId: selectedIdentity.id,
-        previousSelectionParentId: selectedIdentity.parentId,
+        previousLayout: {
+          ...state.previousLayout,
+          items: snapshot.items,
+          selectionId: selectedIdentity.id,
+          selectionParentId: selectedIdentity.parentId,
+        },
         selectionPending: false,
         restorePending: true,
       };
@@ -295,10 +309,10 @@ function reconcile(
   let selectedIndex = queryChanged ? 0 : state.selectedIndex;
   if (!queryChanged && !state.selectionPending) {
     const recovered = resolveRecoveredSelectionIndex({
-      prevTree: state.previousItems ?? snapshot.items,
+      prevTree: state.previousLayout.items ?? snapshot.items,
       treeItems: snapshot.items,
-      prevSelectionId: state.previousSelectionId,
-      prevSelectionParentId: state.previousSelectionParentId,
+      prevSelectionId: state.previousLayout.selectionId,
+      prevSelectionParentId: state.previousLayout.selectionParentId,
       lifecycle: snapshot.lifecycle,
       selectedIndex,
       repos: snapshot.repos,
@@ -352,13 +366,15 @@ function reconcile(
 
   const row = firstRowForItem(snapshot.rows, selectedIndex);
   const layoutMoved =
-    row !== state.previousRow || viewportRows !== state.previousViewportRows;
+    row !== state.previousLayout.row ||
+    viewportRows !== state.previousLayout.viewportRows;
   if (
     !queryChanged &&
     !revealChangedOffset &&
     !state.restorePending &&
     row !== null &&
-    (state.selectionPending || (state.previousSelectionVisible && layoutMoved))
+    (state.selectionPending ||
+      (state.previousLayout.selectionVisible && layoutMoved))
   ) {
     scrollOffset = clampScrollOffset(
       scrollToKeepVisible(row, scrollOffset, viewportRows),
@@ -373,7 +389,7 @@ function reconcile(
   const confirmationMoved =
     confirmationRange?.start !== state.confirmationRange?.start ||
     confirmationRange?.end !== state.confirmationRange?.end ||
-    viewportRows !== state.previousViewportRows;
+    viewportRows !== state.previousLayout.viewportRows;
   if (confirmationRange && confirmationMoved && !state.restorePending) {
     scrollOffset = clampScrollOffset(
       scrollRangeToKeepVisible(confirmationRange, scrollOffset, viewportRows),
@@ -383,18 +399,24 @@ function reconcile(
   }
 
   const selectedIdentity = selectionIdentity(snapshot, selectedIndex);
-  const previousSelectionId = selectedIdentity.id;
-  const previousSelectionParentId = selectedIdentity.parentId;
-  const previousSelectionVisible = visible(row, scrollOffset, viewportRows);
+  const previousLayout: PreviousLayout = {
+    items: snapshot.items,
+    selectionId: selectedIdentity.id,
+    selectionParentId: selectedIdentity.parentId,
+    row,
+    viewportRows,
+    selectionVisible: visible(row, scrollOffset, viewportRows),
+  };
   if (
     selectedIndex === state.selectedIndex &&
     scrollOffset === state.scrollOffset &&
-    state.previousItems === snapshot.items &&
-    state.previousSelectionId === previousSelectionId &&
-    state.previousSelectionParentId === previousSelectionParentId &&
-    state.previousRow === row &&
-    state.previousViewportRows === viewportRows &&
-    state.previousSelectionVisible === previousSelectionVisible &&
+    state.previousLayout.items === previousLayout.items &&
+    state.previousLayout.selectionId === previousLayout.selectionId &&
+    state.previousLayout.selectionParentId ===
+      previousLayout.selectionParentId &&
+    state.previousLayout.row === previousLayout.row &&
+    state.previousLayout.viewportRows === previousLayout.viewportRows &&
+    state.previousLayout.selectionVisible === previousLayout.selectionVisible &&
     state.searchQuery === snapshot.searchQuery &&
     state.confirmationPosition === confirmationPosition &&
     !confirmationMoved &&
@@ -409,12 +431,7 @@ function reconcile(
     ...state,
     selectedIndex,
     scrollOffset,
-    previousItems: snapshot.items,
-    previousSelectionId,
-    previousSelectionParentId,
-    previousRow: row,
-    previousViewportRows: viewportRows,
-    previousSelectionVisible,
+    previousLayout,
     searchQuery: snapshot.searchQuery,
     confirmationRange,
     confirmationPosition,

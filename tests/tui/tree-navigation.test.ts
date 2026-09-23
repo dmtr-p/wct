@@ -359,7 +359,7 @@ describe("tree navigation sequences", () => {
       },
     );
     expect(state.selectedIndex).toBe(5);
-    expect(state.previousSelectionId).toBe("wt:two/feature");
+    expect(state.previousLayout.selectionId).toBe("wt:two/feature");
   });
 
   test("keyboard skips inert detail rows", () => {
@@ -478,7 +478,7 @@ describe("tree navigation sequences", () => {
     state = step(state, before, { type: "capture", position: "up" });
     state = step(state, before, { type: "restore", position: "up" });
     expect(state.restorePending).toBe(true);
-    expect(state.previousSelectionParentId).toBe("wt:one/main");
+    expect(state.previousLayout.selectionParentId).toBe("wt:one/main");
 
     const phase = { _tag: "Preparing" } as const;
     const key = lifecycleKey("/one", "main");
@@ -511,7 +511,7 @@ describe("tree navigation sequences", () => {
     });
     state = step(state, duringUp, { type: "reconcile" });
     expect(state.selectedIndex).toBe(1);
-    expect(state.previousSelectionId).toBe("wt:one/main");
+    expect(state.previousLayout.selectionId).toBe("wt:one/main");
     expect(state.revealedLifecycles.has(key)).toBe(true);
     expect(step(state, duringUp, { type: "reconcile" })).toBe(state);
   });

@@ -305,6 +305,20 @@ describe("tree navigation sequences", () => {
     ).toBe(state);
   });
 
+  test("cursor-only search movement leaves selection and viewport unchanged", () => {
+    const layout = snapshot({ searchQuery: "feature" });
+    let state = settled(layout);
+    state = step(state, layout, { type: "select", itemIndex: 4 });
+    state = step(state, layout, { type: "wheel", delta: -1 });
+    state = step(state, layout, { type: "reconcile" });
+    const beforeCursorMove = state;
+
+    // The text editor moves its insertion cursor; navigation sees the same query.
+    state = step(state, layout, { type: "reconcile" });
+    expect(state).toBe(beforeCursorMove);
+    expect([state.selectedIndex, state.scrollOffset]).toEqual([4, 2]);
+  });
+
   test("reflow keeps a previously visible selection in view", () => {
     const layout = snapshot({ viewportRows: 3 });
     let state = settled(layout);
@@ -586,6 +600,48 @@ describe("tree navigation sequences", () => {
     state = step(state, layout, { type: "restore", position: "down" });
     expect(state.selectedIndex).toBe(4);
     expect(state.scrollOffset).toBe(3);
+  });
+
+  test("disappearing anchor restores the viewport using the destination footer", () => {
+    // Navigate reserves a repository-error row, while Confirm has no footer.
+    const navigate = snapshot({ viewportRows: 2 });
+    let state = settled(navigate);
+    state = step(state, navigate, { type: "select", itemIndex: 4 });
+    expect(state.scrollOffset).toBe(3);
+    state = step(state, navigate, { type: "capture", position: "down" });
+
+    const confirming = snapshot({
+      viewportRows: 3,
+      confirming: true,
+      rows: [
+        ...rowsFor(baseItems),
+        { kind: "confirmation", itemIndex: null, partIndex: 0 },
+      ],
+    });
+    state = step(state, confirming, { type: "reconcile" });
+
+    const remainingItems = baseItems.slice(0, 4);
+    const missingAnchor = snapshot({
+      items: remainingItems,
+      rows: rowsFor(remainingItems),
+      viewportRows: 3,
+      confirming: true,
+    });
+    state = step(state, missingAnchor, { type: "reconcile" });
+    state = step(state, missingAnchor, { type: "restore", position: "down" });
+    state = step(state, missingAnchor, { type: "reconcile" });
+    expect(state.scrollOffset).toBe(3);
+    expect(effectiveTreeScrollOffset(state, missingAnchor)).toBe(1);
+
+    const returned = snapshot({
+      items: remainingItems,
+      rows: rowsFor(remainingItems),
+      viewportRows: 2,
+    });
+    state = step(state, returned, { type: "reconcile" });
+    expect(state.selectedIndex).toBe(3);
+    expect(state.scrollOffset).toBe(2);
+    expect(effectiveTreeScrollOffset(state, returned)).toBe(2);
   });
 
   test("force confirmation refreshes return viewport without replacing its saved selection", () => {

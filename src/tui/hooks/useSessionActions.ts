@@ -24,7 +24,7 @@ import {
   resolveStartActionMessage,
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
-import type { ReturnPosition } from "../tree-navigation";
+import type { ReturnDestination, ReturnPosition } from "../tree-navigation";
 import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
@@ -47,7 +47,7 @@ export interface SessionActionDeps {
   ) => void;
   restoreTreePosition: (
     position: ReturnPosition,
-    destination?: "saved" | "owning-worktree" | number,
+    destination?: ReturnDestination,
   ) => void;
   setMode: (m: Mode) => void;
   // The live mode, readable from async continuations: `mode` above is a

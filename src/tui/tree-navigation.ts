@@ -36,6 +36,8 @@ export type ReturnPosition =
   | "kill"
   | "up";
 
+export type ReturnDestination = "saved" | "owning-worktree";
+
 interface SavedPosition {
   selectedIndex: number;
   scrollOffset: number;
@@ -71,7 +73,7 @@ export type TreeNavigationIntent =
   | {
       type: "restore";
       position: ReturnPosition;
-      destination?: "saved" | "owning-worktree" | number;
+      destination?: ReturnDestination;
     };
 
 export function initialTreeNavigationState(): TreeNavigationState {
@@ -235,35 +237,25 @@ export function transitionTreeNavigation(
       const saved = state.savedPositions[intent.position];
       if (!saved) return state;
       const destination = intent.destination ?? "saved";
-      const identity =
-        destination === "owning-worktree"
-          ? saved.owningWorktreeId
-          : destination === "saved"
-            ? saved.selectedId
-            : null;
-      const found =
-        identity === null
-          ? -1
-          : snapshot.items.findIndex(
-              (item) => treeItemId(item, snapshot.repos) === identity,
-            );
-      const selectedIndex =
-        found >= 0
-          ? found
-          : destination === "saved"
-            ? saved.selectedIndex
-            : destination === "owning-worktree"
-              ? (saved.owningWorktreeIndex ?? saved.selectedIndex)
-              : destination;
+      let identity = saved.selectedId;
+      let selectedIndex = saved.selectedIndex;
+      if (destination === "owning-worktree") {
+        identity = saved.owningWorktreeId;
+        selectedIndex = saved.owningWorktreeIndex ?? saved.selectedIndex;
+      }
+      if (identity !== null) {
+        const found = snapshot.items.findIndex(
+          (item) => treeItemId(item, snapshot.repos) === identity,
+        );
+        if (found >= 0) selectedIndex = found;
+      }
       const item = snapshot.items[selectedIndex];
       return {
         ...state,
         selectedIndex,
-        scrollOffset: clampScrollOffset(
-          saved.scrollOffset,
-          snapshot.rows.length,
-          snapshot.viewportRows,
-        ),
+        // The snapshot can still be in Confirm mode, whose footer is shorter
+        // than the destination mode's. Reconcile clamps after that mode lands.
+        scrollOffset: saved.scrollOffset,
         previousItems: snapshot.items,
         previousSelectionId: item ? treeItemId(item, snapshot.repos) : null,
         previousSelectionParentId: item
@@ -282,6 +274,10 @@ function reconcile(
   state: TreeNavigationState,
   snapshot: TreeNavigationSnapshot,
 ): TreeNavigationState {
+  // A restore and the mode change can commit separately. Keep the saved
+  // offset until the destination layout supplies its final viewport height.
+  if (state.restorePending && snapshot.confirming) return state;
+
   const queryChanged = state.searchQuery !== snapshot.searchQuery;
   let selectedIndex = queryChanged ? 0 : state.selectedIndex;
   if (!queryChanged && !state.selectionPending && !state.restorePending) {

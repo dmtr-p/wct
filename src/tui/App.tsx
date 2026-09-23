@@ -72,7 +72,11 @@ import {
   treeItemId,
   workspaceIdentityKeysForDisplayKey,
 } from "./tree-helpers";
-import type { ReturnPosition, TreeNavigationSnapshot } from "./tree-navigation";
+import type {
+  ReturnDestination,
+  ReturnPosition,
+  TreeNavigationSnapshot,
+} from "./tree-navigation";
 import { Mode, type PRInfo } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
@@ -132,10 +136,8 @@ export function App() {
     [navigation.dispatch],
   );
   const restoreTreePosition = useCallback(
-    (
-      position: ReturnPosition,
-      destination?: "saved" | "owning-worktree" | number,
-    ) => navigation.dispatch({ type: "restore", position, destination }),
+    (position: ReturnPosition, destination?: ReturnDestination) =>
+      navigation.dispatch({ type: "restore", position, destination }),
     [navigation.dispatch],
   );
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();

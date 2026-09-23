@@ -172,10 +172,18 @@ export function transitionTreeNavigation(
     case "select":
       return select(state, snapshot, intent.itemIndex);
     case "wheel": {
-      const scrollOffset = clampScrollOffset(
-        effectiveTreeScrollOffset(state, snapshot) + intent.delta,
+      const viewportRows =
+        snapshot.viewportRowsForSelection?.(state.selectedIndex) ??
+        snapshot.viewportRows;
+      const offset = clampScrollOffset(
+        state.scrollOffset,
         snapshot.rows.length,
-        snapshot.viewportRows,
+        viewportRows,
+      );
+      const scrollOffset = clampScrollOffset(
+        offset + intent.delta,
+        snapshot.rows.length,
+        viewportRows,
       );
       if (scrollOffset === state.scrollOffset && !state.selectionPending) {
         return state;
@@ -185,10 +193,11 @@ export function transitionTreeNavigation(
         scrollOffset,
         selectionPending: false,
         restorePending: false,
+        previousViewportRows: viewportRows,
         previousSelectionVisible: visible(
           firstRowForItem(snapshot.rows, state.selectedIndex),
           scrollOffset,
-          snapshot.viewportRows,
+          viewportRows,
         ),
       };
     }
@@ -203,32 +212,21 @@ export function transitionTreeNavigation(
         owningWorktreeIndex === null
           ? undefined
           : snapshot.items[owningWorktreeIndex];
+      const currentSelection = {
+        selectedIndex: state.selectedIndex,
+        owningWorktreeIndex,
+        selectedId: selected ? treeItemId(selected, snapshot.repos) : null,
+        owningWorktreeId: owner ? treeItemId(owner, snapshot.repos) : null,
+      };
+      const selection =
+        intent.preserveSelection && saved ? saved : currentSelection;
       return {
         ...state,
         savedPositions: {
           ...state.savedPositions,
           [intent.position]: {
-            selectedIndex:
-              intent.preserveSelection && saved
-                ? saved.selectedIndex
-                : state.selectedIndex,
+            ...selection,
             scrollOffset: effectiveTreeScrollOffset(state, snapshot),
-            owningWorktreeIndex:
-              intent.preserveSelection && saved
-                ? saved.owningWorktreeIndex
-                : owningWorktreeIndex,
-            selectedId:
-              intent.preserveSelection && saved
-                ? saved.selectedId
-                : selected
-                  ? treeItemId(selected, snapshot.repos)
-                  : null,
-            owningWorktreeId:
-              intent.preserveSelection && saved
-                ? saved.owningWorktreeId
-                : owner
-                  ? treeItemId(owner, snapshot.repos)
-                  : null,
           },
         },
       };

@@ -241,6 +241,46 @@ describe("tree navigation sequences", () => {
     expect(state.scrollOffset).toBe(3);
   });
 
+  test("a wheel after selection shrinks the footer viewport is not undone", () => {
+    const layout = snapshot({
+      viewportRows: 3,
+      viewportRowsForSelection: (itemIndex) => (itemIndex === 2 ? 2 : 3),
+    });
+    let state = settled(layout);
+    state = step(state, layout, { type: "select", itemIndex: 2 });
+    expect(state.scrollOffset).toBe(1);
+    state = step(state, layout, { type: "wheel", delta: -1 });
+    expect(state.scrollOffset).toBe(0);
+
+    const committed = snapshot({ viewportRows: 2 });
+    state = step(state, committed, { type: "reconcile" });
+    expect(state.selectedIndex).toBe(2);
+    expect(state.scrollOffset).toBe(0);
+    expect(step(state, committed, { type: "reconcile" })).toBe(state);
+  });
+
+  test("a queued wheel can scroll to the new bottom after the footer shrinks", () => {
+    const rows: TreeRow[] = [
+      ...rowsFor(baseItems),
+      { kind: "detail", itemIndex: 4 },
+    ];
+    const layout = snapshot({
+      rows,
+      viewportRows: 3,
+      viewportRowsForSelection: (itemIndex) => (itemIndex === 4 ? 2 : 3),
+    });
+    let state = settled(layout);
+    state = step(state, layout, { type: "select", itemIndex: 4 });
+    expect(state.scrollOffset).toBe(3);
+    state = step(state, layout, { type: "wheel", delta: 1 });
+    expect(state.scrollOffset).toBe(4);
+
+    state = step(state, snapshot({ rows, viewportRows: 2 }), {
+      type: "reconcile",
+    });
+    expect(state.scrollOffset).toBe(4);
+  });
+
   test("changed search resets cursor and offset; unchanged search does not", () => {
     const layout = snapshot();
     let state = settled(layout);

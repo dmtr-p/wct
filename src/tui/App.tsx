@@ -211,6 +211,30 @@ export function App() {
   const confirmKillAttemptRef = useRef(0);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
+  const returnFromConfirmation = useCallback(
+    (confirmMode: ConfirmMode) => {
+      restoreTreePosition(confirmationPosition(confirmMode));
+      switch (confirmMode.type) {
+        case "ConfirmKill":
+          confirmKillAttemptRef.current += 1;
+          confirmPendingRef.current = false;
+          setMode(Mode.Expanded(confirmMode.worktreeKey));
+          return;
+        case "ConfirmDown":
+          setMode(confirmDownReturnModeRef.current);
+          return;
+        case "ConfirmClose":
+        case "ConfirmCloseForce":
+          setMode(confirmCloseReturnModeRef.current);
+          return;
+        case "ConfirmDeleteProject":
+          setMode(confirmDeleteProjectReturnModeRef.current);
+          return;
+      }
+    },
+    [restoreTreePosition],
+  );
+
   const filteredRepos = useMemo(() => {
     if (!searchQuery) return repos;
     const q = searchQuery.toLowerCase();
@@ -465,30 +489,8 @@ export function App() {
 
   useEffect(() => {
     if (!confirmationMode || confirmationAnchorItemIndex !== null) return;
-    restoreTreePosition(confirmationPosition(confirmationMode));
-    switch (mode.type) {
-      case "ConfirmKill":
-        confirmKillAttemptRef.current += 1;
-        confirmPendingRef.current = false;
-        setMode(Mode.Expanded(mode.worktreeKey));
-        return;
-      case "ConfirmDown":
-        setMode(confirmDownReturnModeRef.current);
-        return;
-      case "ConfirmClose":
-      case "ConfirmCloseForce":
-        setMode(confirmCloseReturnModeRef.current);
-        return;
-      case "ConfirmDeleteProject":
-        setMode(confirmDeleteProjectReturnModeRef.current);
-        return;
-    }
-  }, [
-    confirmationMode,
-    confirmationAnchorItemIndex,
-    mode,
-    restoreTreePosition,
-  ]);
+    returnFromConfirmation(confirmationMode);
+  }, [confirmationMode, confirmationAnchorItemIndex, returnFromConfirmation]);
 
   // Resolves the registry snapshot this refresh observed (or `null` when it
   // failed and the previous repos were kept), so a lifecycle can reconcile
@@ -706,24 +708,7 @@ export function App() {
     // while it continues in the background, and its completion could later
     // overwrite whatever mode or selection the user moved to.
     if (confirmPendingRef.current) return;
-    restoreTreePosition(confirmationPosition(mode));
-    switch (mode.type) {
-      case "ConfirmKill":
-        confirmKillAttemptRef.current += 1;
-        confirmPendingRef.current = false;
-        setMode(Mode.Expanded(mode.worktreeKey));
-        return;
-      case "ConfirmDown":
-        setMode(confirmDownReturnModeRef.current);
-        return;
-      case "ConfirmClose":
-      case "ConfirmCloseForce":
-        setMode(confirmCloseReturnModeRef.current);
-        return;
-      case "ConfirmDeleteProject":
-        setMode(confirmDeleteProjectReturnModeRef.current);
-        return;
-    }
+    returnFromConfirmation(mode);
   }
 
   function submitConfirm() {

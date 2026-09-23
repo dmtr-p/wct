@@ -456,6 +456,66 @@ describe("tree navigation sequences", () => {
     );
   });
 
+  test("Up restoration still recovers a detail suppressed by its lifecycle", () => {
+    const detail: TreeItem = {
+      type: "detail",
+      repoIndex: 0,
+      worktreeIndex: 0,
+      detailKind: "pr",
+      label: "#42",
+      meta: { rollupState: null },
+    };
+    const beforeItems = [
+      ...baseItems.slice(0, 2),
+      detail,
+      ...baseItems.slice(2),
+    ];
+    const beforeRows = rowsFor(beforeItems);
+    beforeRows[2] = { kind: "detail", itemIndex: 2 };
+    const before = snapshot({ items: beforeItems, rows: beforeRows });
+    let state = settled(before);
+    state = step(state, before, { type: "select", itemIndex: 2 });
+    state = step(state, before, { type: "capture", position: "up" });
+    state = step(state, before, { type: "restore", position: "up" });
+    expect(state.restorePending).toBe(true);
+    expect(state.previousSelectionParentId).toBe("wt:one/main");
+
+    const phase = { _tag: "Preparing" } as const;
+    const key = lifecycleKey("/one", "main");
+    const lifecycle: LifecycleState = new Map([
+      [
+        key,
+        {
+          operation: "up",
+          repoPath: "/one",
+          project: "shared",
+          branch: "main",
+          phase,
+        },
+      ],
+    ]);
+    const duringUp = snapshot({
+      items: baseItems,
+      rows: [
+        ...rowsFor(baseItems).slice(0, 2),
+        {
+          kind: "lifecycle-progress",
+          itemIndex: null,
+          repoIndex: 0,
+          branch: "main",
+          phase,
+        },
+        ...rowsFor(baseItems).slice(2),
+      ],
+      lifecycle,
+    });
+    state = step(state, duringUp, { type: "reconcile" });
+    expect(state.selectedIndex).toBe(1);
+    expect(state.previousSelectionId).toBe("wt:one/main");
+    expect(state.revealedLifecycles.has(key)).toBe(true);
+    expect(step(state, duringUp, { type: "reconcile" })).toBe(state);
+  });
+
   test("lifecycle reveal wins over detail recovery and is one-shot", () => {
     const layout = snapshot();
     let state = settled(layout);

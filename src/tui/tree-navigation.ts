@@ -115,6 +115,17 @@ function visible(
   return row !== null && row >= offset && row < offset + viewportRows;
 }
 
+function selectionIdentity(
+  snapshot: TreeNavigationSnapshot,
+  itemIndex: number,
+) {
+  const item = snapshot.items[itemIndex];
+  return {
+    id: item ? treeItemId(item, snapshot.repos) : null,
+    parentId: item ? treeItemParentId(item, snapshot.repos) : null,
+  };
+}
+
 function select(
   state: TreeNavigationState,
   snapshot: TreeNavigationSnapshot,
@@ -137,16 +148,14 @@ function select(
           snapshot.rows.length,
           viewportRows,
         );
-  const item = snapshot.items[itemIndex];
+  const identity = selectionIdentity(snapshot, itemIndex);
   return {
     ...state,
     selectedIndex: itemIndex,
     scrollOffset,
     previousItems: snapshot.items,
-    previousSelectionId: item ? treeItemId(item, snapshot.repos) : null,
-    previousSelectionParentId: item
-      ? treeItemParentId(item, snapshot.repos)
-      : null,
+    previousSelectionId: identity.id,
+    previousSelectionParentId: identity.parentId,
     previousRow: row,
     previousViewportRows: snapshot.viewportRows,
     previousSelectionVisible: visible(row, scrollOffset, viewportRows),
@@ -209,7 +218,7 @@ export function transitionTreeNavigation(
         snapshot.items,
         state.selectedIndex,
       );
-      const selected = snapshot.items[state.selectedIndex];
+      const selected = selectionIdentity(snapshot, state.selectedIndex);
       const owner =
         owningWorktreeIndex === null
           ? undefined
@@ -217,7 +226,7 @@ export function transitionTreeNavigation(
       const currentSelection = {
         selectedIndex: state.selectedIndex,
         owningWorktreeIndex,
-        selectedId: selected ? treeItemId(selected, snapshot.repos) : null,
+        selectedId: selected.id,
         owningWorktreeId: owner ? treeItemId(owner, snapshot.repos) : null,
       };
       const selection =
@@ -249,7 +258,7 @@ export function transitionTreeNavigation(
         );
         if (found >= 0) selectedIndex = found;
       }
-      const item = snapshot.items[selectedIndex];
+      const selectedIdentity = selectionIdentity(snapshot, selectedIndex);
       return {
         ...state,
         selectedIndex,
@@ -257,10 +266,8 @@ export function transitionTreeNavigation(
         // than the destination mode's. Reconcile clamps after that mode lands.
         scrollOffset: saved.scrollOffset,
         previousItems: snapshot.items,
-        previousSelectionId: item ? treeItemId(item, snapshot.repos) : null,
-        previousSelectionParentId: item
-          ? treeItemParentId(item, snapshot.repos)
-          : null,
+        previousSelectionId: selectedIdentity.id,
+        previousSelectionParentId: selectedIdentity.parentId,
         selectionPending: false,
         restorePending: true,
       };
@@ -280,7 +287,7 @@ function reconcile(
 
   const queryChanged = state.searchQuery !== snapshot.searchQuery;
   let selectedIndex = queryChanged ? 0 : state.selectedIndex;
-  if (!queryChanged && !state.selectionPending && !state.restorePending) {
+  if (!queryChanged && !state.selectionPending) {
     const recovered = resolveRecoveredSelectionIndex({
       prevTree: state.previousItems ?? snapshot.items,
       treeItems: snapshot.items,
@@ -369,11 +376,9 @@ function reconcile(
     );
   }
 
-  const item = snapshot.items[selectedIndex];
-  const previousSelectionId = item ? treeItemId(item, snapshot.repos) : null;
-  const previousSelectionParentId = item
-    ? treeItemParentId(item, snapshot.repos)
-    : null;
+  const selectedIdentity = selectionIdentity(snapshot, selectedIndex);
+  const previousSelectionId = selectedIdentity.id;
+  const previousSelectionParentId = selectedIdentity.parentId;
   const previousSelectionVisible = visible(row, scrollOffset, viewportRows);
   if (
     selectedIndex === state.selectedIndex &&

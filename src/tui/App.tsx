@@ -10,7 +10,11 @@ import {
   useState,
 } from "react";
 import { AddProjectModal } from "./components/AddProjectModal";
-import { confirmModalRowCount, isConfirmMode } from "./components/ConfirmModal";
+import {
+  type ConfirmMode,
+  confirmModalRowCount,
+  isConfirmMode,
+} from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatusBar, statusBarRowCount } from "./components/StatusBar";
@@ -28,6 +32,7 @@ import { useRegistry } from "./hooks/useRegistry";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useTextEditing } from "./hooks/useTextEditing";
 import { useTmux } from "./hooks/useTmux";
+import { useTreeNavigation } from "./hooks/useTreeNavigation";
 import { executeConfirmKill } from "./input/confirm-kill";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
@@ -55,26 +60,23 @@ import {
 import {
   buildTreeItems,
   buildTreeRows,
-  clampScrollOffset,
-  confirmationRowRange,
   findOwningWorktreeIndex,
-  firstRowForItem,
   insertConfirmationRows,
   isWorktreeEffectivelyExpanded,
   isWorktreeLifecycleActive,
   reconcileDiscoveredWorkspaceKeys,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
-  resolveLifecycleReveal,
-  resolveRecoveredSelectionIndex,
   resolveStatusBarProps,
   resolveTreeReturnMode,
-  scrollRangeToKeepVisible,
-  scrollToKeepVisible,
   treeItemId,
-  treeItemParentId,
   workspaceIdentityKeysForDisplayKey,
 } from "./tree-helpers";
+import type {
+  ReturnDestination,
+  ReturnSlot,
+  TreeNavigationSnapshot,
+} from "./tree-navigation";
 import { Mode, type PRInfo } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
@@ -82,6 +84,11 @@ import { toSingleLine } from "./utils/truncate";
 // 2 rows the mouse hit-test skips, so it is sourced from a single constant to
 // keep windowing and hit-testing aligned.
 const TOP_CHROME_ROWS = HEADER_OFFSET;
+
+interface ConfirmationReturnContext {
+  slot: ReturnSlot;
+  returnMode: Mode;
+}
 
 export function App() {
   const { exit } = useApp();
@@ -108,8 +115,22 @@ export function App() {
     discoverClient,
   } = useTmux();
 
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const navigation = useTreeNavigation(() => navigationSnapshot);
+  const selectedIndex = navigation.selectedIndex;
+  const selectTreeItem = useCallback(
+    (itemIndex: number) => navigation.dispatch({ type: "select", itemIndex }),
+    [navigation.dispatch],
+  );
+  const captureTreeReturnPosition = useCallback(
+    (slot: ReturnSlot, preserveSelection?: boolean) =>
+      navigation.dispatch({ type: "capture", slot, preserveSelection }),
+    [navigation.dispatch],
+  );
+  const restoreTreeReturnPosition = useCallback(
+    (slot: ReturnSlot, destination?: ReturnDestination) =>
+      navigation.dispatch({ type: "restore", slot, destination }),
+    [navigation.dispatch],
+  );
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
@@ -170,34 +191,58 @@ export function App() {
   // and before any state is written, whether an identity is already in flight.
   const lifecycleClaimsRef = useRef(createLifecycleClaims());
   const lifecycleClaims = lifecycleClaimsRef.current;
-  // Workspace Identities whose one-time viewport reveal already happened.
-  // Pruned when their operation ends, so a later operation is revealed again.
-  const revealedLifecyclesRef = useRef<Set<string>>(new Set());
-  // Set for exactly one commit by the reveal effect, cleared by a trailing
-  // effect below.
-  const lifecycleRevealPendingRef = useRef(false);
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
-  const confirmDownReturnSelectedIndexRef = useRef<number>(0);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
-  const confirmCloseReturnSelectedIndexRef = useRef<number>(0);
   const confirmDeleteProjectReturnModeRef = useRef<Mode>(Mode.Navigate);
-  const confirmDeleteProjectReturnSelectedIndexRef = useRef<number>(0);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
-  const upModalReturnSelectedIndexRef = useRef<number>(0);
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
   const shortcutsReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmPendingRef = useRef(false);
   const confirmKillAttemptRef = useRef(0);
-  const confirmReturnScrollOffsetRef = useRef(0);
-  const wasConfirmingRef = useRef(false);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
-  // Reset selection when search query changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run on searchQuery change
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [searchQuery]);
+  const confirmationReturnContext = useCallback(
+    (confirmMode: ConfirmMode): ConfirmationReturnContext => {
+      switch (confirmMode.type) {
+        case "ConfirmKill":
+          return {
+            slot: "kill",
+            returnMode: Mode.Expanded(confirmMode.worktreeKey),
+          };
+        case "ConfirmDown":
+          return {
+            slot: "down",
+            returnMode: confirmDownReturnModeRef.current,
+          };
+        case "ConfirmClose":
+        case "ConfirmCloseForce":
+          return {
+            slot: "close",
+            returnMode: confirmCloseReturnModeRef.current,
+          };
+        case "ConfirmDeleteProject":
+          return {
+            slot: "delete-project",
+            returnMode: confirmDeleteProjectReturnModeRef.current,
+          };
+      }
+    },
+    [],
+  );
+
+  const returnFromConfirmation = useCallback(
+    (confirmMode: ConfirmMode) => {
+      const context = confirmationReturnContext(confirmMode);
+      restoreTreeReturnPosition(context.slot);
+      if (confirmMode.type === "ConfirmKill") {
+        confirmKillAttemptRef.current += 1;
+        confirmPendingRef.current = false;
+      }
+      setMode(context.returnMode);
+    },
+    [confirmationReturnContext, restoreTreeReturnPosition],
+  );
 
   const filteredRepos = useMemo(() => {
     if (!searchQuery) return repos;
@@ -366,7 +411,6 @@ export function App() {
     confirmationAnchorItemIndex,
     confirmationWidth,
   ]);
-  const confirmationRange = useMemo(() => confirmationRowRange(rows), [rows]);
 
   // Bottom chrome: optional tmux/action error line (mutually exclusive, so at
   // most one row) + the StatusBar's rows — counted by statusBarRowCount, the
@@ -386,20 +430,45 @@ export function App() {
   // absorbed by the tree box's overflowY="hidden" clipping (see the render
   // below), which keeps the modal fully on-screen without inflating the
   // viewport.
-  const bottomChromeRows =
-    statusBarRowCount(mode, Boolean(repoError)) +
-    (tmuxError || actionError ? 1 : 0);
+  const bottomChromeRowsForRepoError = (hasRepoError: boolean) =>
+    statusBarRowCount(mode, hasRepoError) + (tmuxError || actionError ? 1 : 0);
+  const bottomChromeRows = bottomChromeRowsForRepoError(Boolean(repoError));
 
   const viewportRows = Math.max(
     0,
     termRows - TOP_CHROME_ROWS - bottomChromeRows,
   );
 
-  const effectiveScrollOffset = clampScrollOffset(
-    scrollOffset,
-    rows.length,
+  const navigationSnapshot: TreeNavigationSnapshot = {
+    items: treeItems,
+    repos: filteredRepos,
+    rows,
     viewportRows,
-  );
+    viewportRowsForSelection: (itemIndex) => {
+      const targetStatus = resolveStatusBarProps({
+        mode,
+        items: treeItems,
+        selectedIndex: itemIndex,
+        repos: filteredRepos,
+      });
+      const hasRepoError = Boolean(
+        targetStatus.selectedProject &&
+          githubErrors.get(targetStatus.selectedProject),
+      );
+      return Math.max(
+        0,
+        termRows - TOP_CHROME_ROWS - bottomChromeRowsForRepoError(hasRepoError),
+      );
+    },
+    searchQuery,
+    lifecycle,
+    confirming: confirmationMode !== null,
+    confirmationSlot: confirmationMode
+      ? confirmationReturnContext(confirmationMode).slot
+      : null,
+  };
+  const effectiveScrollOffset =
+    navigation.effectiveScrollOffset(navigationSnapshot);
 
   // Derived from the last raw pointer position rather than stored directly,
   // so a mode change or tree reshape with no intervening mouse move can't
@@ -428,256 +497,9 @@ export function App() {
   ]);
 
   useEffect(() => {
-    const isConfirming = confirmationMode !== null;
-    if (isConfirming && !wasConfirmingRef.current) {
-      confirmReturnScrollOffsetRef.current = effectiveScrollOffset;
-    }
-    wasConfirmingRef.current = isConfirming;
-  }, [confirmationMode, effectiveScrollOffset]);
-
-  // Identity-based selection recovery: when the tree structure changes
-  // (background refresh, async worktree add/remove), find the previously-
-  // selected item by stable identity instead of blindly clamping by length.
-  //
-  // INVARIANT for prevSelectionIdRef: the recovery effect treats it as "the
-  // selected item's identity as of the last commit" and normally rewrites it
-  // exactly once per commit.
-  const prevTreeRef = useRef(treeItems);
-  const prevSelectionIdRef = useRef<string | null>(null);
-  // The parent branch row of a selected detail row, tracked alongside the
-  // selection identity so recovery has a destination when the detail row
-  // itself disappears — which starting a lifecycle on that Workspace does.
-  const prevSelectionParentIdRef = useRef<string | null>(null);
-  const prevSearchQueryRef = useRef(searchQuery);
-
-  // selectionChanged distinguishes a deliberate selection change (e.g. a
-  // mouse click) from a background refresh that only produced new object
-  // references with the same selectedIndex. It's a const computed once
-  // during render, from the ref's value as of the last commit — so every
-  // effect below that closes over it this render sees the same, consistent
-  // answer. The ref itself is written exactly once, in the trailing effect.
-  const prevSelectedIndexRef = useRef(selectedIndex);
-  const selectionChanged = selectedIndex !== prevSelectedIndexRef.current;
-
-  // prevSelectionWasVisibleRef mirrors selectionChanged for PASSIVE layout
-  // changes — ones that move the selection's visual row or the window without
-  // touching selectedIndex: the viewport shrinking (an action/repo error line
-  // appearing, the terminal resized shorter) or rows above the selection
-  // reflowing (a PR title wrapping differently after a width change, a check
-  // rollup arriving). The clamp in the recovery
-  // effect below can only ever DECREASE the offset, so without this signal a
-  // selection sitting on a visible row could silently leave the window with
-  // no path back until the next navigation key. Tracked as "was the selection
-  // visible last commit" rather than one signal per cause so every passive
-  // cause is covered, while a wheel-scrolled viewport whose selection was
-  // already off-screen stays put.
-  const selectionRowIndex = firstRowForItem(rows, selectedIndex);
-  const selectionVisible =
-    selectionRowIndex !== null &&
-    selectionRowIndex >= effectiveScrollOffset &&
-    selectionRowIndex < effectiveScrollOffset + viewportRows;
-  const prevSelectionWasVisibleRef = useRef(selectionVisible);
-  // Last commit's row/viewport values, so the keep-visible effect can tell a
-  // REAL passive layout change apart from merely having re-run: its deps also
-  // re-fire it on the falling edge of selectionChanged (true → false on the
-  // commit after a deliberate change), where re-anchoring would undo a wheel
-  // tick that just hid the still-"was visible" selection.
-  const prevSelectionRowIndexRef = useRef(selectionRowIndex);
-  const prevViewportRowsRef = useRef(viewportRows);
-
-  useEffect(() => {
-    const prevTree = prevTreeRef.current;
-    const prevId = prevSelectionIdRef.current;
-    const prevParentId = prevSelectionParentIdRef.current;
-    const prevSearchQuery = prevSearchQueryRef.current;
-    const searchQueryChanged = prevSearchQuery !== searchQuery;
-
-    // Snapshot current state for the next cycle before any mutations
-    prevTreeRef.current = treeItems;
-    prevSearchQueryRef.current = searchQuery;
-
-    if (searchQueryChanged) {
-      // Search transitions intentionally reset the cursor to the first match.
-      prevSelectionIdRef.current = null;
-      prevSelectionParentIdRef.current = null;
-      // Reset the scroll explicitly: when the cursor was already at index 0
-      // (e.g. after a wheel scroll), setSelectedIndex(0) is a no-op, so
-      // `selectionChanged` stays false and the keep-visible effect below never
-      // fires — leaving the first match scrolled off-screen without this.
-      setScrollOffset(0);
-      // Also suppress the keep-visible effect for THIS commit (this effect
-      // runs first, so the write is seen by its read below): the stale
-      // selectedIndex now indexes the FILTERED rows, so its visual row
-      // "moves" spuriously and a still-visible old selection would hijack
-      // the reset for one frame. The unconditional trailing write restores
-      // the real visibility at the end of the commit.
-      prevSelectionWasVisibleRef.current = false;
-      return;
-    }
-
-    const item = treeItems[selectedIndex];
-    prevSelectionIdRef.current = item ? treeItemId(item, filteredRepos) : null;
-    prevSelectionParentIdRef.current = item
-      ? treeItemParentId(item, filteredRepos)
-      : null;
-
-    // Skip identity recovery for a deliberate selection change (e.g. a mouse
-    // click that also collapsed Expanded) — otherwise it sees the new
-    // selection's identity mismatch the old one and "recovers" back to it.
-    const recoveredIndex = resolveRecoveredSelectionIndex({
-      prevTree,
-      treeItems,
-      prevSelectionId: prevId,
-      prevSelectionParentId: prevParentId,
-      // The parent-branch fallback is scoped to detail rows a lifecycle
-      // suppressed; every other disappearance keeps the old clamp.
-      lifecycle,
-      selectedIndex,
-      repos: filteredRepos,
-      skipIdentityRecovery: selectionChanged,
-    });
-    if (recoveredIndex !== null && recoveredIndex !== selectedIndex) {
-      setSelectedIndex(recoveredIndex);
-    }
-
-    // Keep the scroll offset valid after a background refresh so it can't
-    // desync from the selection (e.g. rows removed below the window).
-    setScrollOffset((prev) =>
-      clampScrollOffset(prev, rows.length, viewportRows),
-    );
-  }, [
-    treeItems,
-    selectedIndex,
-    filteredRepos,
-    searchQuery,
-    lifecycle,
-    rows,
-    viewportRows,
-    selectionChanged,
-  ]);
-
-  // One-time viewport reveal: when a lifecycle operation's row lies outside
-  // the visible window, nudge the scroll offset minimally so it's on screen,
-  // then remember the identity as revealed. Declared before the keep-visible
-  // effect so its suppression flag is already set when that effect runs in
-  // the same commit.
-  useEffect(() => {
-    const revealed = revealedLifecyclesRef.current;
-    for (const key of revealed) {
-      if (!lifecycle.has(key)) revealed.delete(key);
-    }
-
-    const reveal = resolveLifecycleReveal({
-      rows,
-      repos: filteredRepos,
-      lifecycle,
-      revealed,
-      scrollOffset: effectiveScrollOffset,
-      viewportRows,
-    });
-    if (!reveal) return;
-
-    revealed.add(reveal.key);
-    if (reveal.scrollOffset === effectiveScrollOffset) return;
-    lifecycleRevealPendingRef.current = true;
-    setScrollOffset(reveal.scrollOffset);
-  }, [lifecycle, rows, filteredRepos, effectiveScrollOffset, viewportRows]);
-
-  // Keyboard ↑/↓ (and mouse clicks) are viewport-aware: after a DELIBERATE
-  // selection change, nudge the scroll offset minimally to keep the selection
-  // on screen. A PASSIVE layout change (the row moved or the viewport
-  // resized) that hid a previously-visible selection re-anchors too (see
-  // prevSelectionWasVisibleRef above); since scrollToKeepVisible is a no-op
-  // while the selection is still visible, that gate is exactly "re-anchor
-  // only when the change hid it". Keyed on the selection's VISUAL row and the
-  // viewport height — values, not the `rows` reference — so a background
-  // refresh that only produces new object references (useRegistry always
-  // calls setRepos, even when content is unchanged) cannot re-fire this and
-  // snap a wheel-scrolled viewport back to the selection. NOT keyed on
-  // scrollOffset, and uses a functional update, so it never fights a future
-  // wheel scroll.
-  useEffect(() => {
-    // The one-time lifecycle reveal owns the viewport for the commit it
-    // fires in — that same commit can also move the selection off a
-    // suppressed detail row via `setSelectedIndex`, which is otherwise
-    // indistinguishable from a deliberate keyboard move and would re-anchor
-    // the offset right back, undoing the reveal.
-    if (lifecycleRevealPendingRef.current) return;
-    // All three refs are read BEFORE the trailing effects below rewrite them,
-    // so they are last commit's values. A passive re-anchor requires the row
-    // or viewport to have ACTUALLY changed — a run where neither did (the
-    // falling edge of selectionChanged, with only the wheel's scrollOffset
-    // different) must leave the viewport alone.
-    const rowMoved = selectionRowIndex !== prevSelectionRowIndexRef.current;
-    const viewportResized = viewportRows !== prevViewportRowsRef.current;
-    const passiveLayoutChange =
-      prevSelectionWasVisibleRef.current && (rowMoved || viewportResized);
-    if (!selectionChanged && !passiveLayoutChange) return;
-    if (selectionRowIndex === null) return;
-    setScrollOffset((prev) =>
-      scrollToKeepVisible(selectionRowIndex, prev, viewportRows),
-    );
-  }, [selectionRowIndex, viewportRows, selectionChanged]);
-
-  useEffect(() => {
-    if (!confirmationRange) return;
-    setScrollOffset((prev) =>
-      clampScrollOffset(
-        scrollRangeToKeepVisible(confirmationRange, prev, viewportRows),
-        rows.length,
-        viewportRows,
-      ),
-    );
-  }, [confirmationRange, rows.length, viewportRows]);
-
-  useEffect(() => {
     if (!confirmationMode || confirmationAnchorItemIndex !== null) return;
-
-    setScrollOffset(confirmReturnScrollOffsetRef.current);
-    switch (mode.type) {
-      case "ConfirmKill":
-        confirmKillAttemptRef.current += 1;
-        confirmPendingRef.current = false;
-        setMode(Mode.Expanded(mode.worktreeKey));
-        return;
-      case "ConfirmDown":
-        setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
-        setMode(confirmDownReturnModeRef.current);
-        return;
-      case "ConfirmClose":
-      case "ConfirmCloseForce":
-        setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
-        setMode(confirmCloseReturnModeRef.current);
-        return;
-      case "ConfirmDeleteProject":
-        setSelectedIndex(confirmDeleteProjectReturnSelectedIndexRef.current);
-        setMode(confirmDeleteProjectReturnModeRef.current);
-        return;
-    }
-  }, [confirmationMode, confirmationAnchorItemIndex, mode]);
-
-  // The trailing writes keeping the prev-* refs one commit behind for the
-  // selectionChanged computation and the keep-visible effect above. The
-  // visibility ref alone has a second writer (the searchQueryChanged branch
-  // suppressing one commit) and so must be unconditionally rewritten here —
-  // a keyed write would skip commits where visibility didn't change and
-  // leave that suppression stuck.
-  useEffect(() => {
-    prevSelectedIndexRef.current = selectedIndex;
-  }, [selectedIndex]);
-  useEffect(() => {
-    prevSelectionRowIndexRef.current = selectionRowIndex;
-  }, [selectionRowIndex]);
-  useEffect(() => {
-    prevViewportRowsRef.current = viewportRows;
-  }, [viewportRows]);
-  useEffect(() => {
-    prevSelectionWasVisibleRef.current = selectionVisible;
-  });
-  // The reveal's claim on the viewport lasts exactly one commit.
-  useEffect(() => {
-    lifecycleRevealPendingRef.current = false;
-  });
+    returnFromConfirmation(confirmationMode);
+  }, [confirmationMode, confirmationAnchorItemIndex, returnFromConfirmation]);
 
   // Resolves the registry snapshot this refresh observed (or `null` when it
   // failed and the previous repos were kept), so a lifecycle can reconcile
@@ -690,10 +512,6 @@ export function App() {
     ]);
     return refreshedRepos;
   }, [refreshRegistry, refreshSessions, discoverClient]);
-
-  const restoreConfirmationViewport = useCallback(() => {
-    setScrollOffset(confirmReturnScrollOffsetRef.current);
-  }, []);
 
   // The poll/watch path only needs the side effect, not the resolved snapshot.
   const pollRefresh = useCallback(async (): Promise<void> => {
@@ -777,7 +595,8 @@ export function App() {
     mode,
     lifecycle,
     lifecycleClaims,
-    setSelectedIndex,
+    captureTreeReturnPosition,
+    restoreTreeReturnPosition,
     setMode,
     modeRef,
     setLifecycle,
@@ -788,11 +607,8 @@ export function App() {
     discoverClient,
     refreshSessions,
     refreshAll,
-    restoreConfirmationViewport,
     confirmDownReturnModeRef,
-    confirmDownReturnSelectedIndexRef,
     confirmCloseReturnModeRef,
-    confirmCloseReturnSelectedIndexRef,
   });
 
   const modalActions = useModalActions({
@@ -806,7 +622,8 @@ export function App() {
     lifecycleClaims,
     setLifecycle,
     setMode,
-    setSelectedIndex,
+    captureTreeReturnPosition,
+    restoreTreeReturnPosition,
     setOpenModalBase,
     setOpenModalProfiles,
     setOpenModalRepoProject,
@@ -820,7 +637,6 @@ export function App() {
     startWorkspace: sessionActions.startWorkspace,
     refreshAll,
     upModalReturnModeRef,
-    upModalReturnSelectedIndexRef,
     modalReturnModeRef,
   });
 
@@ -831,15 +647,14 @@ export function App() {
     selectedIndex,
     mode,
     lifecycle,
-    setSelectedIndex,
+    captureTreeReturnPosition,
+    restoreTreeReturnPosition,
     setMode,
     showActionError,
     clearActionError,
     refreshAll,
-    restoreConfirmationViewport,
     switchClientAwayFromSessions: sessionActions.switchClientAwayFromSessions,
     confirmDeleteProjectReturnModeRef,
-    confirmDeleteProjectReturnSelectedIndexRef,
   });
 
   const setTreeInputMode = useCallback(
@@ -861,7 +676,8 @@ export function App() {
     setMode: setTreeInputMode,
     setSearchQuery,
     expandWorktree,
-    navigateTree: sessionActions.navigateTree,
+    navigateTree: (direction) =>
+      navigation.dispatch({ type: "move", direction }),
     prepareOpenModal: modalActions.prepareOpenModal,
     prepareUpModal: modalActions.prepareUpModal,
     prepareAddProjectModal: modalActions.prepareAddProjectModal,
@@ -875,7 +691,8 @@ export function App() {
   const expCtx: ExpandedContext = {
     ...navCtx,
     panes,
-    setSelectedIndex,
+    selectTreeItem,
+    captureTreeReturnPosition,
     zoomPane,
     killPane,
     refreshSessions,
@@ -894,32 +711,13 @@ export function App() {
   }
 
   function cancelConfirm() {
+    if (!isConfirmMode(mode)) return;
     // A confirmed destructive action keeps ownership of the modal until its
     // async work settles. Leaving now would make the action look cancelled
     // while it continues in the background, and its completion could later
     // overwrite whatever mode or selection the user moved to.
     if (confirmPendingRef.current) return;
-    setScrollOffset(confirmReturnScrollOffsetRef.current);
-    switch (mode.type) {
-      case "ConfirmKill":
-        confirmKillAttemptRef.current += 1;
-        confirmPendingRef.current = false;
-        setMode(Mode.Expanded(mode.worktreeKey));
-        return;
-      case "ConfirmDown":
-        setSelectedIndex(confirmDownReturnSelectedIndexRef.current);
-        setMode(confirmDownReturnModeRef.current);
-        return;
-      case "ConfirmClose":
-      case "ConfirmCloseForce":
-        setSelectedIndex(confirmCloseReturnSelectedIndexRef.current);
-        setMode(confirmCloseReturnModeRef.current);
-        return;
-      case "ConfirmDeleteProject":
-        setSelectedIndex(confirmDeleteProjectReturnSelectedIndexRef.current);
-        setMode(confirmDeleteProjectReturnModeRef.current);
-        return;
-    }
+    returnFromConfirmation(mode);
   }
 
   function submitConfirm() {
@@ -933,7 +731,6 @@ export function App() {
         confirmPendingRef.current = true;
         const attempt = ++confirmKillAttemptRef.current;
         const { paneId, worktreeKey } = mode;
-        const parentIndex = findOwningWorktreeIndex(treeItems, selectedIndex);
         clearActionError();
         void executeConfirmKill({
           paneId,
@@ -942,8 +739,7 @@ export function App() {
           isCurrent: () => confirmKillAttemptRef.current === attempt,
           showActionError,
           onSuccess: () => {
-            restoreConfirmationViewport();
-            if (parentIndex !== null) setSelectedIndex(parentIndex);
+            restoreTreeReturnPosition("kill", "owning-worktree");
             setMode(Mode.Expanded(worktreeKey));
           },
         }).finally(() => {
@@ -1037,13 +833,10 @@ export function App() {
         return;
       case "scroll":
         lastMouseClickRef.current = null;
-        // Wheel scrolls the viewport only; the selection is untouched.
-        setScrollOffset((prev) =>
-          clampScrollOffset(prev + action.delta, rows.length, viewportRows),
-        );
+        navigation.dispatch({ type: "wheel", delta: action.delta });
         return;
       case "select": {
-        setSelectedIndex(action.itemIndex);
+        selectTreeItem(action.itemIndex);
         const target = treeItems[action.itemIndex];
         if (!target) return;
         const itemId = treeItemId(target, filteredRepos);
@@ -1271,7 +1064,7 @@ export function App() {
             profileNames={mode.profileNames}
             onSubmit={modalActions.handleUpSubmit}
             onCancel={() => {
-              setSelectedIndex(upModalReturnSelectedIndexRef.current);
+              restoreTreeReturnPosition("up");
               setMode(upModalReturnModeRef.current);
             }}
           />

@@ -69,7 +69,8 @@ function makeExpCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
   return {
     ...makeNavCtx(),
     panes: new Map(),
-    setSelectedIndex: vi.fn(),
+    selectTreeItem: vi.fn(),
+    captureTreeReturnPosition: vi.fn(),
     zoomPane: vi.fn(() => Promise.resolve(true)),
     killPane: vi.fn(() => Promise.resolve(true)),
     refreshSessions: vi.fn(() => Promise.resolve([])),
@@ -115,7 +116,7 @@ describe("handleExpandedInput", () => {
       ctx.treeItems,
       ctx.selectedIndex,
     );
-    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(0);
+    expect(ctx.selectTreeItem).toHaveBeenCalledWith(0);
     expect(ctx.collapseWorktree).toHaveBeenCalledWith(
       "proj/feat",
       "/tmp/repo",
@@ -160,14 +161,14 @@ describe("handleExpandedInput", () => {
 
     handleExpandedInput(ctx, "", { ...noKey, leftArrow: true });
 
-    expect(ctx.setSelectedIndex).not.toHaveBeenCalled();
+    expect(ctx.selectTreeItem).not.toHaveBeenCalled();
     expect(ctx.collapseWorktree).not.toHaveBeenCalled();
   });
 
   test("escape does not collapse worktrees", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "", { ...noKey, escape: true });
-    expect(ctx.setSelectedIndex).not.toHaveBeenCalled();
+    expect(ctx.selectTreeItem).not.toHaveBeenCalled();
     expect(ctx.collapseWorktree).not.toHaveBeenCalled();
   });
 
@@ -222,7 +223,7 @@ describe("handleExpandedInput", () => {
       ],
     });
     handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
-    expect(ctx.setSelectedIndex).toHaveBeenCalledWith(0);
+    expect(ctx.selectTreeItem).toHaveBeenCalledWith(0);
     expect(ctx.expandWorktree).toHaveBeenCalledWith("proj/feat");
   });
 
@@ -267,7 +268,7 @@ describe("handleExpandedInput", () => {
 
     handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
 
-    expect(ctx.setSelectedIndex).not.toHaveBeenCalled();
+    expect(ctx.selectTreeItem).not.toHaveBeenCalled();
     expect(ctx.expandWorktree).not.toHaveBeenCalled();
   });
 
@@ -350,6 +351,7 @@ describe("handleExpandedInput", () => {
     });
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "x", noKey);
+    expect(ctx.captureTreeReturnPosition).toHaveBeenCalledWith("kill");
     expect(ctx.setMode).toHaveBeenCalledWith(
       Mode.ConfirmKill("%5", "vim", "proj/feat"),
     );
@@ -364,6 +366,7 @@ describe("handleExpandedInput", () => {
   test("x with tmuxClient:null is a no-op", () => {
     const ctx = makeExpCtx({ tmuxClient: null });
     handleExpandedInput(ctx, "x", noKey);
+    expect(ctx.captureTreeReturnPosition).not.toHaveBeenCalled();
     expect(ctx.setMode).not.toHaveBeenCalled();
   });
 });

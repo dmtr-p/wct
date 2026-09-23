@@ -23,7 +23,8 @@ import {
   resolveSessionsHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
-import { isInertTreeItem, resolveSelectedWorktreeIndex } from "../tree-helpers";
+import { resolveSelectedWorktreeIndex } from "../tree-helpers";
+import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
 import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
@@ -40,7 +41,14 @@ export interface SessionActionDeps {
   // the same identity is impossible, not just unlikely.
   lifecycleClaims: LifecycleClaims;
 
-  setSelectedIndex: Dispatch<SetStateAction<number>>;
+  captureTreeReturnPosition: (
+    slot: ReturnSlot,
+    preserveSelection?: boolean,
+  ) => void;
+  restoreTreeReturnPosition: (
+    slot: ReturnSlot,
+    destination?: ReturnDestination,
+  ) => void;
   setMode: (m: Mode) => void;
   // The live mode, readable from async continuations: `mode` above is a
   // render-time capture, stale by the time a lifecycle settles.
@@ -58,12 +66,8 @@ export interface SessionActionDeps {
   // Resolves the registry snapshot the refresh observed, or `null` when it
   // failed (previous repos kept).
   refreshAll: () => Promise<RepoInfo[] | null>;
-  restoreConfirmationViewport: () => void;
-
   confirmDownReturnModeRef: MutableRefObject<Mode>;
-  confirmDownReturnSelectedIndexRef: MutableRefObject<number>;
   confirmCloseReturnModeRef: MutableRefObject<Mode>;
-  confirmCloseReturnSelectedIndexRef: MutableRefObject<number>;
 }
 
 function rejectIfLifecycleActive(
@@ -77,22 +81,6 @@ function rejectIfLifecycleActive(
     branch,
     showActionError: deps.showActionError,
   });
-}
-
-export function createNavigateTree(deps: SessionActionDeps) {
-  return (direction: 1 | -1) => {
-    deps.setSelectedIndex((prev) => {
-      let next = prev + direction;
-      while (next >= 0 && next < deps.treeItems.length) {
-        if (isInertTreeItem(deps.treeItems[next])) {
-          next += direction;
-          continue;
-        }
-        return next;
-      }
-      return prev;
-    });
-  };
 }
 
 export function createSwitchClientAway(deps: SessionActionDeps) {
@@ -298,11 +286,6 @@ export function createExecuteDown(deps: SessionActionDeps) {
     project: string,
   ) => {
     deps.clearActionError();
-    const returnSelectedIndex =
-      resolveSelectedWorktreeIndex(
-        deps.treeItems,
-        deps.confirmDownReturnSelectedIndexRef.current,
-      ) ?? deps.confirmDownReturnSelectedIndexRef.current;
 
     await runLifecycleOperation<WorkspaceDownResult>({
       claims: deps.lifecycleClaims,
@@ -324,8 +307,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
           );
         }
 
-        deps.restoreConfirmationViewport();
-        deps.setSelectedIndex(returnSelectedIndex);
+        deps.restoreTreeReturnPosition("down", "owning-worktree");
         deps.setMode(deps.confirmDownReturnModeRef.current);
 
         return tuiRuntime.runPromise(
@@ -357,7 +339,7 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
 
     const sessionName = formatSessionName(basename(wt.path));
     const worktreeKey = pendingKey(repo.project, wt.branch);
-    deps.confirmCloseReturnSelectedIndexRef.current = deps.selectedIndex;
+    deps.captureTreeReturnPosition("close");
     deps.confirmCloseReturnModeRef.current =
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
@@ -393,11 +375,6 @@ export function createExecuteClose(deps: SessionActionDeps) {
   ) => {
     deps.clearActionError();
     const restoredMode = deps.confirmCloseReturnModeRef.current;
-    const returnSelectedIndex =
-      resolveSelectedWorktreeIndex(
-        deps.treeItems,
-        deps.confirmCloseReturnSelectedIndexRef.current,
-      ) ?? deps.confirmCloseReturnSelectedIndexRef.current;
 
     await runLifecycleOperation<WorkspaceCloseResult>({
       claims: deps.lifecycleClaims,
@@ -419,8 +396,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
           );
         }
 
-        deps.restoreConfirmationViewport();
-        deps.setSelectedIndex(returnSelectedIndex);
+        deps.restoreTreeReturnPosition("close", "owning-worktree");
         deps.setMode(restoredMode);
 
         return tuiRuntime.runPromise(
@@ -445,6 +421,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }
+        deps.captureTreeReturnPosition("close", true);
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,
@@ -483,7 +460,7 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     if (!hasSession) return;
 
     const worktreeKey = pendingKey(repo.project, wt.branch);
-    deps.confirmDownReturnSelectedIndexRef.current = deps.selectedIndex;
+    deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
@@ -503,7 +480,6 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
 
 export function useSessionActions(deps: SessionActionDeps) {
   return {
-    navigateTree: createNavigateTree(deps),
     switchClientAwayFromSession: createSwitchClientAway(deps),
     switchClientAwayFromSessions: createSwitchClientAwayFromSessions(deps),
     startWorkspace: createStartWorkspace(deps),

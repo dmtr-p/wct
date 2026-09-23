@@ -118,7 +118,8 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     lifecycleClaims: createLifecycleClaims(),
     setLifecycle: vi.fn(),
     setMode: vi.fn(),
-    setSelectedIndex: vi.fn(),
+    captureTreeReturnPosition: vi.fn(),
+    restoreTreeReturnPosition: vi.fn(),
     markWorkspaceDiscovered: vi.fn(),
     waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     setOpenModalBase: vi.fn(),
@@ -133,7 +134,6 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     refreshAll: vi.fn().mockResolvedValue([]),
     upModalReturnModeRef: { current: Mode.Navigate },
     modalReturnModeRef: { current: Mode.Navigate },
-    upModalReturnSelectedIndexRef: { current: 0 },
     ...overrides,
   };
 }
@@ -633,19 +633,17 @@ describe("createPrepareUpModal", () => {
       },
     ];
     const returnModeRef = { current: Mode.Navigate };
-    const returnIndexRef = { current: 0 };
     const deps = makeDeps({
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
       upModalReturnModeRef: returnModeRef,
-      upModalReturnSelectedIndexRef: returnIndexRef,
     });
     const prepare = createPrepareUpModal(deps);
 
     prepare();
 
-    expect(returnIndexRef.current).toBe(0);
+    expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("up");
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.UpModal({
@@ -747,7 +745,6 @@ describe("createHandleUpSubmit", () => {
 
   test("restores return mode and index, then delegates to the shared up lifecycle", async () => {
     const returnModeRef = { current: Mode.Navigate };
-    const returnIndexRef = { current: 3 };
     const startWorkspace = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
       mode: Mode.UpModal({
@@ -759,7 +756,6 @@ describe("createHandleUpSubmit", () => {
         profileNames: ["dev"],
       }),
       upModalReturnModeRef: returnModeRef,
-      upModalReturnSelectedIndexRef: returnIndexRef,
       startWorkspace,
     });
     const handleUp = createHandleUpSubmit(deps);
@@ -767,7 +763,7 @@ describe("createHandleUpSubmit", () => {
     handleUp({ profile: "dev", autoSwitch: true });
 
     expect(deps.clearActionError).toHaveBeenCalled();
-    expect(deps.setSelectedIndex).toHaveBeenCalledWith(3);
+    expect(deps.restoreTreeReturnPosition).toHaveBeenCalledWith("up");
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
     expect(startWorkspace).toHaveBeenCalledWith({
       worktreePath: "/repo/feat",
@@ -792,7 +788,6 @@ describe("createHandleUpSubmit", () => {
         profileNames: ["dev"],
       }),
       upModalReturnModeRef: { current: Mode.Navigate },
-      upModalReturnSelectedIndexRef: { current: 0 },
       startWorkspace,
     });
 

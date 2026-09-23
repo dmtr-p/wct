@@ -643,6 +643,28 @@ describe("tree navigation sequences", () => {
     expect(effectiveTreeScrollOffset(state, layout)).toBe(2);
   });
 
+  test("Up modal return keeps a viewport adjusted by terminal resize", () => {
+    const layout = snapshot();
+    let state = settled(layout);
+    state = step(state, layout, { type: "select", itemIndex: 1 });
+    state = step(state, layout, { type: "wheel", delta: 3 });
+    state = step(state, layout, { type: "capture", position: "up" });
+    expect(state.scrollOffset).toBe(3);
+
+    const taller = snapshot({ viewportRows: 3 });
+    state = step(state, taller, { type: "reconcile" });
+    expect(state.scrollOffset).toBe(2);
+    state = step(state, layout, { type: "reconcile" });
+    expect(state.scrollOffset).toBe(2);
+
+    // Cancel and submit both use the same Up restore intent.
+    state = step(state, layout, { type: "restore", position: "up" });
+    expect(state.selectedIndex).toBe(1);
+    expect(state.scrollOffset).toBe(2);
+    state = step(state, layout, { type: "reconcile" });
+    expect(state.scrollOffset).toBe(2);
+  });
+
   test("disappearing confirmation rows leave the saved return position available", () => {
     const layout = snapshot();
     let state = settled(layout);

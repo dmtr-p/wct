@@ -85,18 +85,9 @@ import { toSingleLine } from "./utils/truncate";
 // keep windowing and hit-testing aligned.
 const TOP_CHROME_ROWS = HEADER_OFFSET;
 
-function confirmationPosition(mode: ConfirmMode): ReturnPosition {
-  switch (mode.type) {
-    case "ConfirmKill":
-      return "kill";
-    case "ConfirmDown":
-      return "down";
-    case "ConfirmClose":
-    case "ConfirmCloseForce":
-      return "close";
-    case "ConfirmDeleteProject":
-      return "delete-project";
-  }
+interface ConfirmationReturnContext {
+  position: ReturnPosition;
+  returnMode: Mode;
 }
 
 export function App() {
@@ -211,28 +202,46 @@ export function App() {
   const confirmKillAttemptRef = useRef(0);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
-  const returnFromConfirmation = useCallback(
-    (confirmMode: ConfirmMode) => {
-      restoreTreePosition(confirmationPosition(confirmMode));
+  const confirmationReturnContext = useCallback(
+    (confirmMode: ConfirmMode): ConfirmationReturnContext => {
       switch (confirmMode.type) {
         case "ConfirmKill":
-          confirmKillAttemptRef.current += 1;
-          confirmPendingRef.current = false;
-          setMode(Mode.Expanded(confirmMode.worktreeKey));
-          return;
+          return {
+            position: "kill",
+            returnMode: Mode.Expanded(confirmMode.worktreeKey),
+          };
         case "ConfirmDown":
-          setMode(confirmDownReturnModeRef.current);
-          return;
+          return {
+            position: "down",
+            returnMode: confirmDownReturnModeRef.current,
+          };
         case "ConfirmClose":
         case "ConfirmCloseForce":
-          setMode(confirmCloseReturnModeRef.current);
-          return;
+          return {
+            position: "close",
+            returnMode: confirmCloseReturnModeRef.current,
+          };
         case "ConfirmDeleteProject":
-          setMode(confirmDeleteProjectReturnModeRef.current);
-          return;
+          return {
+            position: "delete-project",
+            returnMode: confirmDeleteProjectReturnModeRef.current,
+          };
       }
     },
-    [restoreTreePosition],
+    [],
+  );
+
+  const returnFromConfirmation = useCallback(
+    (confirmMode: ConfirmMode) => {
+      const context = confirmationReturnContext(confirmMode);
+      restoreTreePosition(context.position);
+      if (confirmMode.type === "ConfirmKill") {
+        confirmKillAttemptRef.current += 1;
+        confirmPendingRef.current = false;
+      }
+      setMode(context.returnMode);
+    },
+    [confirmationReturnContext, restoreTreePosition],
   );
 
   const filteredRepos = useMemo(() => {
@@ -455,7 +464,7 @@ export function App() {
     lifecycle,
     confirming: confirmationMode !== null,
     confirmationPosition: confirmationMode
-      ? confirmationPosition(confirmationMode)
+      ? confirmationReturnContext(confirmationMode).position
       : null,
   };
   const effectiveScrollOffset =

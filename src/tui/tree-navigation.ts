@@ -259,12 +259,18 @@ export function transitionTreeNavigation(
         if (found >= 0) selectedIndex = found;
       }
       const selectedIdentity = selectionIdentity(snapshot, selectedIndex);
+      // Up's form modal keeps the live viewport as refreshes and resizes
+      // reshape the tree. Confirmations restore their captured viewport.
+      const scrollOffset =
+        intent.position === "up"
+          ? effectiveTreeScrollOffset(state, snapshot)
+          : saved.scrollOffset;
       return {
         ...state,
         selectedIndex,
-        // The snapshot can still be in Confirm mode, whose footer is shorter
-        // than the destination mode's. Reconcile clamps after that mode lands.
-        scrollOffset: saved.scrollOffset,
+        // Confirm can still be active here; its footer is shorter than the
+        // destination's. Reconcile clamps its saved offset after mode changes.
+        scrollOffset,
         previousItems: snapshot.items,
         previousSelectionId: selectedIdentity.id,
         previousSelectionParentId: selectedIdentity.parentId,

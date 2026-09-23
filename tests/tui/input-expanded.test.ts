@@ -70,7 +70,7 @@ function makeExpCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
     ...makeNavCtx(),
     panes: new Map(),
     selectTreeItem: vi.fn(),
-    captureTreePosition: vi.fn(),
+    captureTreeReturnPosition: vi.fn(),
     zoomPane: vi.fn(() => Promise.resolve(true)),
     killPane: vi.fn(() => Promise.resolve(true)),
     refreshSessions: vi.fn(() => Promise.resolve([])),
@@ -351,7 +351,7 @@ describe("handleExpandedInput", () => {
     });
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "x", noKey);
-    expect(ctx.captureTreePosition).toHaveBeenCalledWith("kill");
+    expect(ctx.captureTreeReturnPosition).toHaveBeenCalledWith("kill");
     expect(ctx.setMode).toHaveBeenCalledWith(
       Mode.ConfirmKill("%5", "vim", "proj/feat"),
     );
@@ -366,7 +366,7 @@ describe("handleExpandedInput", () => {
   test("x with tmuxClient:null is a no-op", () => {
     const ctx = makeExpCtx({ tmuxClient: null });
     handleExpandedInput(ctx, "x", noKey);
-    expect(ctx.captureTreePosition).not.toHaveBeenCalled();
+    expect(ctx.captureTreeReturnPosition).not.toHaveBeenCalled();
     expect(ctx.setMode).not.toHaveBeenCalled();
   });
 });

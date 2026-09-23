@@ -118,8 +118,8 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
     lifecycleClaims: createLifecycleClaims(),
     setLifecycle: vi.fn(),
     setMode: vi.fn(),
-    captureTreePosition: vi.fn(),
-    restoreTreePosition: vi.fn(),
+    captureTreeReturnPosition: vi.fn(),
+    restoreTreeReturnPosition: vi.fn(),
     markWorkspaceDiscovered: vi.fn(),
     waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     setOpenModalBase: vi.fn(),
@@ -643,7 +643,7 @@ describe("createPrepareUpModal", () => {
 
     prepare();
 
-    expect(deps.captureTreePosition).toHaveBeenCalledWith("up");
+    expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("up");
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.UpModal({
@@ -763,7 +763,7 @@ describe("createHandleUpSubmit", () => {
     handleUp({ profile: "dev", autoSwitch: true });
 
     expect(deps.clearActionError).toHaveBeenCalled();
-    expect(deps.restoreTreePosition).toHaveBeenCalledWith("up");
+    expect(deps.restoreTreeReturnPosition).toHaveBeenCalledWith("up");
     expect(deps.setMode).toHaveBeenCalledWith(Mode.Navigate);
     expect(startWorkspace).toHaveBeenCalledWith({
       worktreePath: "/repo/feat",

@@ -26,15 +26,11 @@ export interface TreeNavigationSnapshot {
   searchQuery: string;
   lifecycle: LifecycleState;
   confirming: boolean;
-  confirmationPosition?: ReturnPosition | null;
+  confirmationSlot?: ReturnSlot | null;
 }
 
-export type ReturnPosition =
-  | "down"
-  | "close"
-  | "delete-project"
-  | "kill"
-  | "up";
+/** Action-keyed slot for a saved tree selection and viewport. */
+export type ReturnSlot = "down" | "close" | "delete-project" | "kill" | "up";
 
 export type ReturnDestination = "saved" | "owning-worktree";
 
@@ -61,8 +57,8 @@ export interface TreeNavigationState {
   previousLayout: PreviousLayout;
   searchQuery: string;
   confirmationRange: { start: number; end: number } | null;
-  confirmationPosition: ReturnPosition | null;
-  savedPositions: Partial<Record<ReturnPosition, SavedPosition>>;
+  confirmationSlot: ReturnSlot | null;
+  savedPositions: Partial<Record<ReturnSlot, SavedPosition>>;
   revealedLifecycles: ReadonlySet<string>;
   selectionPending: boolean;
   restorePending: boolean;
@@ -73,10 +69,10 @@ export type TreeNavigationIntent =
   | { type: "move"; direction: 1 | -1 }
   | { type: "select"; itemIndex: number }
   | { type: "wheel"; delta: number }
-  | { type: "capture"; position: ReturnPosition; preserveSelection?: boolean }
+  | { type: "capture"; slot: ReturnSlot; preserveSelection?: boolean }
   | {
       type: "restore";
-      position: ReturnPosition;
+      slot: ReturnSlot;
       destination?: ReturnDestination;
     };
 
@@ -94,7 +90,7 @@ export function initialTreeNavigationState(): TreeNavigationState {
     },
     searchQuery: "",
     confirmationRange: null,
-    confirmationPosition: null,
+    confirmationSlot: null,
     savedPositions: {},
     revealedLifecycles: new Set(),
     selectionPending: false,
@@ -224,7 +220,7 @@ export function transitionTreeNavigation(
       };
     }
     case "capture": {
-      const saved = state.savedPositions[intent.position];
+      const saved = state.savedPositions[intent.slot];
       const owningWorktreeIndex = resolveSelectedWorktreeIndex(
         snapshot.items,
         state.selectedIndex,
@@ -246,7 +242,7 @@ export function transitionTreeNavigation(
         ...state,
         savedPositions: {
           ...state.savedPositions,
-          [intent.position]: {
+          [intent.slot]: {
             ...selection,
             scrollOffset: effectiveTreeScrollOffset(state, snapshot),
           },
@@ -254,7 +250,7 @@ export function transitionTreeNavigation(
       };
     }
     case "restore": {
-      const saved = state.savedPositions[intent.position];
+      const saved = state.savedPositions[intent.slot];
       if (!saved) return state;
       const destination = intent.destination ?? "saved";
       let identity = saved.selectedId;
@@ -273,7 +269,7 @@ export function transitionTreeNavigation(
       // Up's form modal keeps the live viewport as refreshes and resizes
       // reshape the tree. Confirmations restore their captured viewport.
       const scrollOffset =
-        intent.position === "up"
+        intent.slot === "up"
           ? effectiveTreeScrollOffset(state, snapshot)
           : saved.scrollOffset;
       return {
@@ -307,7 +303,10 @@ function reconcile(
 
   const queryChanged = state.searchQuery !== snapshot.searchQuery;
   let selectedIndex = queryChanged ? 0 : state.selectedIndex;
-  if (!queryChanged && !state.selectionPending) {
+  if (!queryChanged) {
+    // A deliberate selection records its identity in previousLayout. If the
+    // tree changes before this reconciliation, recover that selected item by
+    // identity before using its new index for viewport decisions.
     const recovered = resolveRecoveredSelectionIndex({
       prevTree: state.previousLayout.items ?? snapshot.items,
       treeItems: snapshot.items,
@@ -330,16 +329,15 @@ function reconcile(
   let scrollOffset = queryChanged
     ? 0
     : clampScrollOffset(state.scrollOffset, snapshot.rows.length, viewportRows);
-  const confirmationPosition = snapshot.confirmationPosition ?? null;
+  const confirmationSlot = snapshot.confirmationSlot ?? null;
   const openingConfirmation =
-    confirmationPosition !== null &&
-    confirmationPosition !== state.confirmationPosition;
+    confirmationSlot !== null && confirmationSlot !== state.confirmationSlot;
   const savedPositions =
-    openingConfirmation && state.savedPositions[confirmationPosition]
+    openingConfirmation && state.savedPositions[confirmationSlot]
       ? {
           ...state.savedPositions,
-          [confirmationPosition]: {
-            ...state.savedPositions[confirmationPosition],
+          [confirmationSlot]: {
+            ...state.savedPositions[confirmationSlot],
             scrollOffset,
           },
         }
@@ -418,7 +416,7 @@ function reconcile(
     state.previousLayout.viewportRows === previousLayout.viewportRows &&
     state.previousLayout.selectionVisible === previousLayout.selectionVisible &&
     state.searchQuery === snapshot.searchQuery &&
-    state.confirmationPosition === confirmationPosition &&
+    state.confirmationSlot === confirmationSlot &&
     !confirmationMoved &&
     !reveal &&
     revealedLifecycles.size === state.revealedLifecycles.size &&
@@ -434,7 +432,7 @@ function reconcile(
     previousLayout,
     searchQuery: snapshot.searchQuery,
     confirmationRange,
-    confirmationPosition,
+    confirmationSlot,
     savedPositions,
     revealedLifecycles,
     selectionPending: false,

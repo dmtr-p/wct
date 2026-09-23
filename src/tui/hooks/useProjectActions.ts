@@ -8,7 +8,7 @@ import { formatSessionName } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
 import { type LifecycleState, lifecycleBusyMessage } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
-import type { ReturnPosition } from "../tree-navigation";
+import type { ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
@@ -20,8 +20,8 @@ export interface ProjectActionDeps {
   mode: Mode;
   lifecycle: LifecycleState;
 
-  captureTreePosition: (position: ReturnPosition) => void;
-  restoreTreePosition: (position: ReturnPosition) => void;
+  captureTreeReturnPosition: (slot: ReturnSlot) => void;
+  restoreTreeReturnPosition: (slot: ReturnSlot) => void;
   setMode: (mode: Mode) => void;
   showActionError: (message: string) => void;
   clearActionError: () => void;
@@ -34,7 +34,7 @@ export interface ProjectActionDeps {
 }
 
 function restoreProjectUi(deps: ProjectActionDeps) {
-  deps.restoreTreePosition("delete-project");
+  deps.restoreTreeReturnPosition("delete-project");
   deps.setMode(deps.confirmDeleteProjectReturnModeRef.current);
 }
 
@@ -57,7 +57,7 @@ export function createPrepareDeleteProject(deps: ProjectActionDeps) {
 
     deps.clearActionError();
     deps.confirmDeleteProjectReturnModeRef.current = deps.mode;
-    deps.captureTreePosition("delete-project");
+    deps.captureTreeReturnPosition("delete-project");
     deps.setMode(Mode.ConfirmDeleteProject(repo.repoPath, repo.project));
   };
 }

@@ -74,7 +74,7 @@ import {
 } from "./tree-helpers";
 import type {
   ReturnDestination,
-  ReturnPosition,
+  ReturnSlot,
   TreeNavigationSnapshot,
 } from "./tree-navigation";
 import { Mode, type PRInfo } from "./types";
@@ -86,7 +86,7 @@ import { toSingleLine } from "./utils/truncate";
 const TOP_CHROME_ROWS = HEADER_OFFSET;
 
 interface ConfirmationReturnContext {
-  position: ReturnPosition;
+  slot: ReturnSlot;
   returnMode: Mode;
 }
 
@@ -121,14 +121,14 @@ export function App() {
     (itemIndex: number) => navigation.dispatch({ type: "select", itemIndex }),
     [navigation.dispatch],
   );
-  const captureTreePosition = useCallback(
-    (position: ReturnPosition, preserveSelection?: boolean) =>
-      navigation.dispatch({ type: "capture", position, preserveSelection }),
+  const captureTreeReturnPosition = useCallback(
+    (slot: ReturnSlot, preserveSelection?: boolean) =>
+      navigation.dispatch({ type: "capture", slot, preserveSelection }),
     [navigation.dispatch],
   );
-  const restoreTreePosition = useCallback(
-    (position: ReturnPosition, destination?: ReturnDestination) =>
-      navigation.dispatch({ type: "restore", position, destination }),
+  const restoreTreeReturnPosition = useCallback(
+    (slot: ReturnSlot, destination?: ReturnDestination) =>
+      navigation.dispatch({ type: "restore", slot, destination }),
     [navigation.dispatch],
   );
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
@@ -207,23 +207,23 @@ export function App() {
       switch (confirmMode.type) {
         case "ConfirmKill":
           return {
-            position: "kill",
+            slot: "kill",
             returnMode: Mode.Expanded(confirmMode.worktreeKey),
           };
         case "ConfirmDown":
           return {
-            position: "down",
+            slot: "down",
             returnMode: confirmDownReturnModeRef.current,
           };
         case "ConfirmClose":
         case "ConfirmCloseForce":
           return {
-            position: "close",
+            slot: "close",
             returnMode: confirmCloseReturnModeRef.current,
           };
         case "ConfirmDeleteProject":
           return {
-            position: "delete-project",
+            slot: "delete-project",
             returnMode: confirmDeleteProjectReturnModeRef.current,
           };
       }
@@ -234,14 +234,14 @@ export function App() {
   const returnFromConfirmation = useCallback(
     (confirmMode: ConfirmMode) => {
       const context = confirmationReturnContext(confirmMode);
-      restoreTreePosition(context.position);
+      restoreTreeReturnPosition(context.slot);
       if (confirmMode.type === "ConfirmKill") {
         confirmKillAttemptRef.current += 1;
         confirmPendingRef.current = false;
       }
       setMode(context.returnMode);
     },
-    [confirmationReturnContext, restoreTreePosition],
+    [confirmationReturnContext, restoreTreeReturnPosition],
   );
 
   const filteredRepos = useMemo(() => {
@@ -463,8 +463,8 @@ export function App() {
     searchQuery,
     lifecycle,
     confirming: confirmationMode !== null,
-    confirmationPosition: confirmationMode
-      ? confirmationReturnContext(confirmationMode).position
+    confirmationSlot: confirmationMode
+      ? confirmationReturnContext(confirmationMode).slot
       : null,
   };
   const effectiveScrollOffset =
@@ -595,8 +595,8 @@ export function App() {
     mode,
     lifecycle,
     lifecycleClaims,
-    captureTreePosition,
-    restoreTreePosition,
+    captureTreeReturnPosition,
+    restoreTreeReturnPosition,
     setMode,
     modeRef,
     setLifecycle,
@@ -622,8 +622,8 @@ export function App() {
     lifecycleClaims,
     setLifecycle,
     setMode,
-    captureTreePosition,
-    restoreTreePosition,
+    captureTreeReturnPosition,
+    restoreTreeReturnPosition,
     setOpenModalBase,
     setOpenModalProfiles,
     setOpenModalRepoProject,
@@ -647,8 +647,8 @@ export function App() {
     selectedIndex,
     mode,
     lifecycle,
-    captureTreePosition,
-    restoreTreePosition,
+    captureTreeReturnPosition,
+    restoreTreeReturnPosition,
     setMode,
     showActionError,
     clearActionError,
@@ -692,7 +692,7 @@ export function App() {
     ...navCtx,
     panes,
     selectTreeItem,
-    captureTreePosition,
+    captureTreeReturnPosition,
     zoomPane,
     killPane,
     refreshSessions,
@@ -739,7 +739,7 @@ export function App() {
           isCurrent: () => confirmKillAttemptRef.current === attempt,
           showActionError,
           onSuccess: () => {
-            restoreTreePosition("kill", "owning-worktree");
+            restoreTreeReturnPosition("kill", "owning-worktree");
             setMode(Mode.Expanded(worktreeKey));
           },
         }).finally(() => {
@@ -1064,7 +1064,7 @@ export function App() {
             profileNames={mode.profileNames}
             onSubmit={modalActions.handleUpSubmit}
             onCancel={() => {
-              restoreTreePosition("up");
+              restoreTreeReturnPosition("up");
               setMode(upModalReturnModeRef.current);
             }}
           />

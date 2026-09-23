@@ -362,6 +362,21 @@ describe("tree navigation sequences", () => {
     expect(state.previousLayout.selectionId).toBe("wt:two/feature");
   });
 
+  test("selection identity survives an insertion before the first reconciliation", () => {
+    const layout = snapshot();
+    let state = settled(layout);
+    state = step(state, layout, { type: "select", itemIndex: 4 });
+
+    const inserted = [{ type: "repo", repoIndex: 0 } as TreeItem, ...baseItems];
+    const refreshed = snapshot({ items: inserted, rows: rowsFor(inserted) });
+    state = step(state, refreshed, { type: "reconcile" });
+
+    expect(state.selectedIndex).toBe(5);
+    expect(state.scrollOffset).toBe(4);
+    expect(state.previousLayout.selectionId).toBe("wt:two/feature");
+    expect(step(state, refreshed, { type: "reconcile" })).toBe(state);
+  });
+
   test("keyboard skips inert detail rows", () => {
     const items: TreeItem[] = [
       { type: "repo", repoIndex: 0 },
@@ -475,8 +490,8 @@ describe("tree navigation sequences", () => {
     const before = snapshot({ items: beforeItems, rows: beforeRows });
     let state = settled(before);
     state = step(state, before, { type: "select", itemIndex: 2 });
-    state = step(state, before, { type: "capture", position: "up" });
-    state = step(state, before, { type: "restore", position: "up" });
+    state = step(state, before, { type: "capture", slot: "up" });
+    state = step(state, before, { type: "restore", slot: "up" });
     expect(state.restorePending).toBe(true);
     expect(state.previousLayout.selectionParentId).toBe("wt:one/main");
 
@@ -621,7 +636,7 @@ describe("tree navigation sequences", () => {
     let state = settled(layout);
     state = step(state, layout, { type: "select", itemIndex: 4 });
     state = step(state, layout, { type: "wheel", delta: -1 });
-    state = step(state, layout, { type: "capture", position: "close" });
+    state = step(state, layout, { type: "capture", slot: "close" });
     const confirming = snapshot({
       confirming: true,
       rows: [
@@ -634,7 +649,7 @@ describe("tree navigation sequences", () => {
     expect(state.scrollOffset).toBe(5);
     state = step(state, confirming, {
       type: "restore",
-      position: "close",
+      slot: "close",
       destination: "owning-worktree",
     });
     expect(state.selectedIndex).toBe(4);
@@ -648,7 +663,7 @@ describe("tree navigation sequences", () => {
     let state = settled(layout);
     state = step(state, layout, { type: "select", itemIndex: 1 });
     state = step(state, layout, { type: "wheel", delta: 3 });
-    state = step(state, layout, { type: "capture", position: "up" });
+    state = step(state, layout, { type: "capture", slot: "up" });
     expect(state.scrollOffset).toBe(3);
 
     const taller = snapshot({ viewportRows: 3 });
@@ -658,7 +673,7 @@ describe("tree navigation sequences", () => {
     expect(state.scrollOffset).toBe(2);
 
     // Cancel and submit both use the same Up restore intent.
-    state = step(state, layout, { type: "restore", position: "up" });
+    state = step(state, layout, { type: "restore", slot: "up" });
     expect(state.selectedIndex).toBe(1);
     expect(state.scrollOffset).toBe(2);
     state = step(state, layout, { type: "reconcile" });
@@ -669,7 +684,7 @@ describe("tree navigation sequences", () => {
     const layout = snapshot();
     let state = settled(layout);
     state = step(state, layout, { type: "select", itemIndex: 4 });
-    state = step(state, layout, { type: "capture", position: "down" });
+    state = step(state, layout, { type: "capture", slot: "down" });
     const confirming = snapshot({
       confirming: true,
       rows: [
@@ -679,7 +694,7 @@ describe("tree navigation sequences", () => {
     });
     state = step(state, confirming, { type: "reconcile" });
     state = step(state, snapshot({ confirming: true }), { type: "reconcile" });
-    state = step(state, layout, { type: "restore", position: "down" });
+    state = step(state, layout, { type: "restore", slot: "down" });
     expect(state.selectedIndex).toBe(4);
     expect(state.scrollOffset).toBe(3);
   });
@@ -690,7 +705,7 @@ describe("tree navigation sequences", () => {
     let state = settled(navigate);
     state = step(state, navigate, { type: "select", itemIndex: 4 });
     expect(state.scrollOffset).toBe(3);
-    state = step(state, navigate, { type: "capture", position: "down" });
+    state = step(state, navigate, { type: "capture", slot: "down" });
 
     const confirming = snapshot({
       viewportRows: 3,
@@ -710,7 +725,7 @@ describe("tree navigation sequences", () => {
       confirming: true,
     });
     state = step(state, missingAnchor, { type: "reconcile" });
-    state = step(state, missingAnchor, { type: "restore", position: "down" });
+    state = step(state, missingAnchor, { type: "restore", slot: "down" });
     state = step(state, missingAnchor, { type: "reconcile" });
     expect(state.scrollOffset).toBe(3);
     expect(effectiveTreeScrollOffset(state, missingAnchor)).toBe(1);
@@ -730,15 +745,15 @@ describe("tree navigation sequences", () => {
     const layout = snapshot();
     let state = settled(layout);
     state = step(state, layout, { type: "select", itemIndex: 4 });
-    state = step(state, layout, { type: "capture", position: "close" });
+    state = step(state, layout, { type: "capture", slot: "close" });
     state = step(state, layout, { type: "select", itemIndex: 1 });
     state = step(state, layout, { type: "wheel", delta: 1 });
     state = step(state, layout, {
       type: "capture",
-      position: "close",
+      slot: "close",
       preserveSelection: true,
     });
-    state = step(state, layout, { type: "restore", position: "close" });
+    state = step(state, layout, { type: "restore", slot: "close" });
     expect(state.selectedIndex).toBe(4);
     expect(state.scrollOffset).toBe(2);
   });

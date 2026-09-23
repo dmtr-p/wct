@@ -12,7 +12,7 @@ import type { NavigateContext } from "./navigate";
 export interface ExpandedContext extends NavigateContext {
   panes: Map<string, PaneInfo[]>;
   selectTreeItem: (i: number) => void;
-  captureTreePosition: (position: "kill") => void;
+  captureTreeReturnPosition: (slot: "kill") => void;
   zoomPane: (paneId: string) => Promise<boolean>;
   killPane: (paneId: string) => Promise<boolean>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
@@ -151,7 +151,7 @@ export function handleExpandedInput(
     if (!selectedPane) {
       return;
     }
-    ctx.captureTreePosition("kill");
+    ctx.captureTreeReturnPosition("kill");
     ctx.setMode(
       Mode.ConfirmKill(
         selectedPane.pane.paneId,

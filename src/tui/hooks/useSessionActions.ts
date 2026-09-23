@@ -24,7 +24,7 @@ import {
   resolveStartActionMessage,
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
-import type { ReturnDestination, ReturnPosition } from "../tree-navigation";
+import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
 import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
@@ -41,12 +41,12 @@ export interface SessionActionDeps {
   // the same identity is impossible, not just unlikely.
   lifecycleClaims: LifecycleClaims;
 
-  captureTreePosition: (
-    position: ReturnPosition,
+  captureTreeReturnPosition: (
+    slot: ReturnSlot,
     preserveSelection?: boolean,
   ) => void;
-  restoreTreePosition: (
-    position: ReturnPosition,
+  restoreTreeReturnPosition: (
+    slot: ReturnSlot,
     destination?: ReturnDestination,
   ) => void;
   setMode: (m: Mode) => void;
@@ -307,7 +307,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
           );
         }
 
-        deps.restoreTreePosition("down", "owning-worktree");
+        deps.restoreTreeReturnPosition("down", "owning-worktree");
         deps.setMode(deps.confirmDownReturnModeRef.current);
 
         return tuiRuntime.runPromise(
@@ -339,7 +339,7 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
 
     const sessionName = formatSessionName(basename(wt.path));
     const worktreeKey = pendingKey(repo.project, wt.branch);
-    deps.captureTreePosition("close");
+    deps.captureTreeReturnPosition("close");
     deps.confirmCloseReturnModeRef.current =
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
@@ -396,7 +396,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
           );
         }
 
-        deps.restoreTreePosition("close", "owning-worktree");
+        deps.restoreTreeReturnPosition("close", "owning-worktree");
         deps.setMode(restoredMode);
 
         return tuiRuntime.runPromise(
@@ -421,7 +421,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }
-        deps.captureTreePosition("close", true);
+        deps.captureTreeReturnPosition("close", true);
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,
@@ -460,7 +460,7 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     if (!hasSession) return;
 
     const worktreeKey = pendingKey(repo.project, wt.branch);
-    deps.captureTreePosition("down");
+    deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)

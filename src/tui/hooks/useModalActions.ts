@@ -24,7 +24,7 @@ import {
   resolveSelectedWorktreeIndex,
   resolveTreeReturnMode,
 } from "../tree-helpers";
-import type { ReturnPosition } from "../tree-navigation";
+import type { ReturnSlot } from "../tree-navigation";
 import { Mode, pendingKey, type TreeItem } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { StartWorkspaceTarget } from "./useSessionActions";
@@ -73,8 +73,8 @@ export interface ModalActionDeps {
 
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   setMode: (m: Mode) => void;
-  captureTreePosition: (position: ReturnPosition) => void;
-  restoreTreePosition: (position: ReturnPosition) => void;
+  captureTreeReturnPosition: (slot: ReturnSlot) => void;
+  restoreTreeReturnPosition: (slot: ReturnSlot) => void;
   setOpenModalBase: (v: string | undefined) => void;
   setOpenModalProfiles: (v: string[]) => void;
   setOpenModalRepoProject: (v: string) => void;
@@ -249,7 +249,7 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
     }
 
     const worktreeKey = pendingKey(repo.project, wt.branch);
-    deps.captureTreePosition("up");
+    deps.captureTreeReturnPosition("up");
     deps.upModalReturnModeRef.current =
       deps.mode.type === "Expanded"
         ? Mode.Expanded(worktreeKey)
@@ -276,7 +276,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
     // would claim a bogus lifecycleKey and lose the operation.
     const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
-    deps.restoreTreePosition("up");
+    deps.restoreTreeReturnPosition("up");
     deps.setMode(deps.upModalReturnModeRef.current);
 
     void deps.startWorkspace({

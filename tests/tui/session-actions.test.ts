@@ -65,8 +65,8 @@ function makeDeps(
     mode: Mode.Navigate,
     lifecycle: new Map(),
     lifecycleClaims: createLifecycleClaims(),
-    captureTreePosition: vi.fn(),
-    restoreTreePosition: vi.fn(),
+    captureTreeReturnPosition: vi.fn(),
+    restoreTreeReturnPosition: vi.fn(),
     setMode: vi.fn(),
     modeRef: { current: Mode.Navigate },
     setLifecycle: vi.fn(),
@@ -642,7 +642,7 @@ describe("createExecuteClose", () => {
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
     expect(deps.setLifecycle).toHaveBeenCalled();
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(deps.restoreTreePosition).toHaveBeenCalledOnce();
+    expect(deps.restoreTreeReturnPosition).toHaveBeenCalledOnce();
     expect(deps.showActionError).not.toHaveBeenCalled();
   });
 
@@ -769,10 +769,10 @@ describe("createExecuteClose", () => {
         "proj",
       ),
     );
-    expect(deps.restoreTreePosition).toHaveBeenCalledOnce();
-    expect(deps.captureTreePosition).toHaveBeenCalledWith("close", true);
+    expect(deps.restoreTreeReturnPosition).toHaveBeenCalledOnce();
+    expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("close", true);
     expect(
-      vi.mocked(deps.restoreTreePosition).mock.invocationCallOrder[0],
+      vi.mocked(deps.restoreTreeReturnPosition).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.refreshAll).toHaveBeenCalled();
   });
@@ -934,9 +934,9 @@ describe("createExecuteDown", () => {
     });
     expect(tuiRuntime.runPromise).toHaveBeenCalledWith("mock-workspace-effect");
     expect(deps.refreshAll).toHaveBeenCalled();
-    expect(deps.restoreTreePosition).toHaveBeenCalledOnce();
+    expect(deps.restoreTreeReturnPosition).toHaveBeenCalledOnce();
     expect(
-      vi.mocked(deps.restoreTreePosition).mock.invocationCallOrder[0],
+      vi.mocked(deps.restoreTreeReturnPosition).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(deps.setMode).mock.invocationCallOrder[0] ?? 0);
     expect(deps.showActionError).not.toHaveBeenCalled();
     expect(deps.setLifecycle).toHaveBeenCalled();
@@ -1091,7 +1091,7 @@ describe("createHandleDownSelectedWorktree", () => {
     const handleDown = createHandleDownSelectedWorktree(deps);
 
     handleDown();
-    expect(deps.captureTreePosition).toHaveBeenCalledWith("down");
+    expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("down");
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.ConfirmDown({

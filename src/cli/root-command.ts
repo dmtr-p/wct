@@ -16,7 +16,7 @@ import { upCommand } from "../commands/up";
 import { Argument, Command, Flag } from "../effect/cli";
 import { JsonFlag } from "./json-flag";
 
-const branchArgument = Argument.string("branch").pipe(
+const branchArgument = Argument.String("branch").pipe(
   Argument.withDescription("Branch name"),
 );
 
@@ -25,7 +25,7 @@ const optionalBranchArgument = branchArgument.pipe(Argument.optional);
 const branchesArgument = branchArgument.pipe(Argument.variadic({ min: 1 }));
 
 function booleanFlag(name: string, description: string, alias?: string) {
-  let flag = Flag.boolean(name).pipe(
+  let flag = Flag.Boolean(name).pipe(
     Flag.withDescription(description),
     Flag.withDefault(false),
   );
@@ -43,7 +43,7 @@ function optionalStringFlag(
   alias?: string,
   metavar?: string,
 ) {
-  let flag = Flag.string(name).pipe(
+  let flag = Flag.String(name).pipe(
     Flag.withDescription(description),
     Flag.optional,
   );
@@ -205,7 +205,7 @@ const openCliCommand = Command.make(
 const projectsAddCliCommand = Command.make(
   "add",
   {
-    path: Argument.string("path").pipe(
+    path: Argument.String("path").pipe(
       Argument.withDescription("Path to repo"),
       Argument.optional,
     ),
@@ -221,7 +221,7 @@ const projectsAddCliCommand = Command.make(
 const projectsRemoveCliCommand = Command.make(
   "remove",
   {
-    path: Argument.string("path").pipe(
+    path: Argument.String("path").pipe(
       Argument.withDescription("Path to repo"),
       Argument.optional,
     ),

@@ -89,7 +89,9 @@ describe("useGitHub", () => {
             ? []
             : call === 3
               ? [raw]
-              : undefined,
+              : call === 4
+                ? []
+                : undefined,
       );
     }) as typeof tuiRuntime.runPromise);
     const harness = await renderHook([repo()]);

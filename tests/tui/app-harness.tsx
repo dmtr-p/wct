@@ -14,6 +14,7 @@ import { PassThrough } from "node:stream";
 import { Effect } from "effect";
 import type React from "react";
 import { vi } from "vitest";
+import type { PrFacts } from "../../src/services/pr-model";
 import type {
   WorkspacePhase,
   WorkspaceReporter,
@@ -170,10 +171,55 @@ vi.mock("../../src/services/github-service", () => ({
   GitHubService: {
     use: (selector: (svc: unknown) => unknown) =>
       selector({
-        listPrs: (repoPath: string) =>
-          Promise.resolve(githubFixtures.prsByRepoPath.get(repoPath) ?? []),
+        resolveBaseRepo: () => Promise.resolve("test/repo"),
+        listRawPrs: (repoPath: string, state: "all" | "open") =>
+          Promise.resolve(
+            (githubFixtures.prsByRepoPath.get(repoPath) ?? [])
+              .filter((pr) => state === "all" || pr.state === "OPEN")
+              .map((pr) => ({
+                ...pr,
+                id: `PR-${pr.number}`,
+                headRepositoryOwner: { login: "test" },
+                headRepository: { name: "repo" },
+                headRefOid: `oid-${pr.number}`,
+                baseRefName: "main",
+                isDraft: false,
+                statusCheckRollup:
+                  pr.rollupState === null
+                    ? []
+                    : [
+                        {
+                          name: "test",
+                          conclusion: pr.rollupState.toUpperCase(),
+                        },
+                      ],
+              })),
+          ),
       }),
   },
+}));
+
+vi.mock("../../src/services/pr-discovery", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/services/pr-discovery")
+  >("../../src/services/pr-discovery");
+  return {
+    ...actual,
+    resolvePushDestination: (_cwd: string, branch: string) =>
+      Effect.succeed({ repository: "test/repo", branch }),
+  };
+});
+
+vi.mock("../../src/services/pr-details", () => ({
+  fetchPrDetails: (_cwd: string, _repo: string, prs: PrFacts[]) =>
+    Effect.succeed(
+      prs.map((pr) => ({
+        ...pr,
+        checksComplete: true,
+        isMergeQueueEnabled: false,
+        isQueued: false,
+      })),
+    ),
 }));
 
 // --- WorkspaceService: every lifecycle call is deferred (the test resolves
@@ -246,9 +292,13 @@ vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: {
     use: (selector: (svc: unknown) => unknown) =>
       selector({
-        getCached: () => null,
-        setCached: () => Promise.resolve(),
-        setError: () => Promise.resolve(),
+        getWorkspace: () => null,
+        getOpenPrs: () => null,
+        getExplicit: () => Promise.resolve(null),
+        setWorkspace: () => Promise.resolve(),
+        setOpenPrs: () => Promise.resolve(),
+        pruneWorkspaces: () => Promise.resolve(),
+        setWorkspaceError: () => Promise.resolve(),
       }),
   },
 }));

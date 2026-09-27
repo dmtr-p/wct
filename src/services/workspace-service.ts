@@ -584,14 +584,19 @@ function openImpl(
 
     if (resolvedOptions.prNumber !== undefined) {
       const prNumber = resolvedOptions.prNumber;
-      const baseRepository = yield* GitHubService.use((service) =>
-        service.resolveBaseRepo(mainRepoPath),
-      );
-      yield* PrCacheService.use((service) =>
-        service.setExplicit(mainRepoPath, branch, {
-          baseRepository,
-          number: prNumber,
+      yield* Effect.catch(
+        Effect.gen(function* () {
+          const baseRepository = yield* GitHubService.use((service) =>
+            service.resolveBaseRepo(mainRepoPath),
+          );
+          yield* PrCacheService.use((service) =>
+            service.setExplicit(mainRepoPath, branch, {
+              baseRepository,
+              number: prNumber,
+            }),
+          );
         }),
+        () => Effect.void,
       );
     }
 

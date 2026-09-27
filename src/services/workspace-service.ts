@@ -350,11 +350,11 @@ function createWctEnv(
   };
 }
 
-function resolveOpenIntent(
-  options: WorkspaceOpenOptions,
-): Effect.Effect<
+function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
   Required<Pick<WorkspaceOpenOptions, "branch" | "existing">> &
-    Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter"> & { prNumber?: number },
+    Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter"> & {
+      prNumber?: number;
+    },
   WctError,
   GitHubServiceApi | WorktreeServiceApi | BunServices.BunServices
 > {
@@ -583,8 +583,16 @@ function openImpl(
     });
 
     if (resolvedOptions.prNumber !== undefined) {
-      const baseRepository = yield* GitHubService.use((service) => service.resolveBaseRepo(mainRepoPath));
-      yield* PrCacheService.use((service) => service.setExplicit(mainRepoPath, branch, { baseRepository, number: resolvedOptions.prNumber! }));
+      const prNumber = resolvedOptions.prNumber;
+      const baseRepository = yield* GitHubService.use((service) =>
+        service.resolveBaseRepo(mainRepoPath),
+      );
+      yield* PrCacheService.use((service) =>
+        service.setExplicit(mainRepoPath, branch, {
+          baseRepository,
+          number: prNumber,
+        }),
+      );
     }
 
     if (resolved.copy && resolved.copy.length > 0) {

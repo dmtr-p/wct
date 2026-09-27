@@ -147,7 +147,10 @@ export const Mode = {
 export type TreeItem =
   | { type: "repo"; repoIndex: number }
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
-  | DetailItem<"pr", { rollupState: "success" | "failure" | "pending" | "unknown" | null }>
+  | DetailItem<
+      "pr",
+      { rollupState: "success" | "failure" | "pending" | "unknown" | null }
+    >
   | DetailItem<"pane-header">
   | DetailItem<
       "pane",

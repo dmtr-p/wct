@@ -366,7 +366,13 @@ export function App() {
   );
 
   const repoError = statusBarProps.selectedProject
-    ? githubErrors.get(selectedWorktreeRepo?.repoPath ?? filteredRepos.find((repo) => repo.project === statusBarProps.selectedProject)?.repoPath ?? "")
+    ? githubErrors.get(
+        selectedWorktreeRepo?.repoPath ??
+          filteredRepos.find(
+            (repo) => repo.project === statusBarProps.selectedProject,
+          )?.repoPath ??
+          "",
+      )
     : undefined;
 
   // The shared visual-row model drives both windowing here and the row-by-row

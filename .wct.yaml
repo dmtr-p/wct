@@ -14,16 +14,10 @@ copy:
 
 # Commands to run after worktree creation
 setup:
-  - name: "Mise trust"
+  - name: "Mise setup"
     command: "mise trust mise.toml && mise install"
   - name: "Install dependencies"
     command: "bun install"
-
-# IDE command
-ide:
-  name: vscode
-  command: "code $WCT_WORKTREE_DIR --reuse-window"
-  fork_workspace: true
 
 # Tmux session configuration
 tmux:

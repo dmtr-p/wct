@@ -24,6 +24,15 @@ import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
+import {
+  fetchMergeSnapshot,
+  mergeEligibility,
+  MERGE_METHODS,
+  submitPrMerge,
+  type MergeMethod,
+  type MergeSnapshot,
+} from "../services/pr-merge-service";
+import { tuiRuntime } from "./runtime";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
@@ -151,9 +160,18 @@ export function App() {
     candidates: PrFacts[];
     explicit: boolean;
     kind: "pr" | "group" | "candidate";
-    screen: "actions" | "choose";
+    screen: "actions" | "choose" | "methods" | "confirm" | "submitting";
+    mergeCheck?: {
+      status: "refreshing" | "ready" | "error";
+      snapshot?: MergeSnapshot;
+      reason?: string;
+    };
+    method?: MergeMethod;
   } | null>(null);
   const prMenuReturnMode = useRef<Mode>(Mode.Navigate);
+  const prMenuRequest = useRef(0);
+  const mergePending = useRef(false);
+  const [prOutcome, setPrOutcome] = useState<string | null>(null);
   // The live `mode`, for async continuations that must not act on a stale
   // render-time capture.
   const modeRef = useRef<Mode>(mode);
@@ -466,7 +484,9 @@ export function App() {
   // below), which keeps the modal fully on-screen without inflating the
   // viewport.
   const bottomChromeRowsForRepoError = (hasRepoError: boolean) =>
-    statusBarRowCount(mode, hasRepoError) + (tmuxError || actionError ? 1 : 0);
+    statusBarRowCount(mode, hasRepoError) +
+    (tmuxError || actionError ? 1 : 0) +
+    (prOutcome ? 1 : 0);
   const bottomChromeRows = bottomChromeRowsForRepoError(Boolean(repoError));
 
   const viewportRows = Math.max(
@@ -763,6 +783,8 @@ export function App() {
           ? "group"
           : "pr";
     prMenuReturnMode.current = mode;
+    const request = ++prMenuRequest.current;
+    setPrOutcome(null);
     setPrMenu({
       repoPath: repo.repoPath,
       branch: wt.branch,
@@ -771,48 +793,199 @@ export function App() {
       explicit: association?.explicit === true,
       kind,
       screen: "actions",
+      mergeCheck: kind === "pr" && pr ? { status: "refreshing" } : undefined,
     });
     setMode(Mode.PrMenu);
+    if (kind === "pr" && pr) {
+      void tuiRuntime
+        .runPromise(
+          fetchMergeSnapshot(repo.repoPath, pr.baseRepository, pr.number),
+        )
+        .then((snapshot) => {
+          if (prMenuRequest.current !== request) return;
+          setPrMenu((previous) =>
+            previous
+              ? { ...previous, mergeCheck: { status: "ready", snapshot } }
+              : previous,
+          );
+        })
+        .catch((error) => {
+          if (prMenuRequest.current !== request) return;
+          setPrMenu((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  mergeCheck: {
+                    status: "error",
+                    reason:
+                      error instanceof Error ? error.message : String(error),
+                  },
+                }
+              : previous,
+          );
+        });
+    }
   }
 
-  const prMenuOptions: PrMenuOption[] = !prMenu
-    ? []
-    : prMenu.screen === "choose"
-      ? prMenu.candidates.map((candidate) => ({
-          id: `use:${candidate.number}`,
-          label: candidatePrLabel(candidate),
-        }))
-      : [
-          ...(prMenu.kind === "group" || prMenu.explicit
-            ? [
-                {
-                  id: "choose",
-                  label: prMenu.explicit ? "Change PR…" : "Choose PR…",
-                },
-              ]
-            : []),
-          ...(prMenu.kind === "candidate" && prMenu.pr
-            ? [
-                {
-                  id: "use",
-                  label: `Use #${prMenu.pr.number} for this Workspace`,
-                },
-              ]
-            : []),
-          ...(prMenu.pr ? [{ id: "open", label: "Open in GitHub" }] : []),
-          { id: "refresh", label: "Refresh" },
-          ...(prMenu.explicit
-            ? [{ id: "clear", label: "Clear association" }]
-            : []),
-        ];
+  const prMenuOptions: PrMenuOption[] = (() => {
+    if (!prMenu) return [];
+    if (prMenu.screen === "choose")
+      return prMenu.candidates.map((candidate) => ({
+        id: `use:${candidate.number}`,
+        label: candidatePrLabel(candidate),
+      }));
+    if (prMenu.screen === "submitting")
+      return [{ id: "submitting", label: "Submitting…", disabled: true }];
+    const snapshot = prMenu.mergeCheck?.snapshot;
+    if (prMenu.screen === "methods" && snapshot) {
+      const eligibility = mergeEligibility(snapshot);
+      return eligibility.route === "direct"
+        ? eligibility.methods.map((method) => ({
+            id: `method:${method}`,
+            label: `${MERGE_METHODS[method].label} — ${MERGE_METHODS[method].explanation}`,
+          }))
+        : [];
+    }
+    if (prMenu.screen === "confirm" && snapshot) {
+      const queue = snapshot.queueRequired === true;
+      return [
+        {
+          id: "summary",
+          label: `#${snapshot.pr.number} ${snapshot.pr.title}`,
+          disabled: true,
+        },
+        {
+          id: "target",
+          label: `${snapshot.pr.headRefName} → ${snapshot.pr.baseRefName ?? "unknown target"}`,
+          disabled: true,
+        },
+        {
+          id: "method",
+          label: queue
+            ? "Repository merge queue controls the method"
+            : `Method: ${prMenu.method ? MERGE_METHODS[prMenu.method].label : "none"}`,
+          disabled: true,
+        },
+        {
+          id: "confirm",
+          label: queue ? "Confirm: Add to merge queue" : "Confirm: Merge now",
+        },
+        { id: "cancel", label: "Cancel" },
+      ];
+    }
+    const base: PrMenuOption[] = [
+      ...(prMenu.kind === "group" || prMenu.explicit
+        ? [
+            {
+              id: "choose",
+              label: prMenu.explicit ? "Change PR…" : "Choose PR…",
+            },
+          ]
+        : []),
+      ...(prMenu.kind === "candidate" && prMenu.pr
+        ? [{ id: "use", label: `Use #${prMenu.pr.number} for this Workspace` }]
+        : []),
+      ...(prMenu.pr ? [{ id: "open", label: "Open in GitHub" }] : []),
+      { id: "refresh", label: "Refresh" },
+      ...(prMenu.explicit
+        ? [{ id: "clear", label: "Clear association" }]
+        : []),
+    ];
+    if (prMenu.kind === "pr" && prMenu.pr) {
+      if (prMenu.mergeCheck?.status === "refreshing")
+        base.push({ id: "refreshing", label: "refreshing…", disabled: true });
+      else if (prMenu.mergeCheck?.status === "error")
+        base.push({
+          id: "unavailable",
+          label: `Merge unavailable: ${prMenu.mergeCheck.reason ?? "refresh failed"}`,
+          disabled: true,
+        });
+      else if (snapshot) {
+        const eligibility = mergeEligibility(snapshot);
+        if (eligibility.route === "direct")
+          base.push({ id: "merge", label: "Merge…" });
+        else if (eligibility.route === "queue")
+          base.push({ id: "queue", label: "Add to merge queue…" });
+        else if (eligibility.route === "unavailable")
+          base.push({
+            id: "unavailable",
+            label: `Merge unavailable: ${eligibility.reason}`,
+            disabled: true,
+          });
+      }
+    }
+    return base;
+  })();
+
 
   function closePrMenu() {
+    if (mergePending.current) return;
+    prMenuRequest.current++;
     setPrMenu(null);
     setMode(prMenuReturnMode.current);
   }
 
   function choosePrMenuOption(id: string) {
     if (!prMenu) return;
+    const snapshot = prMenu.mergeCheck?.snapshot;
+    if (id === "cancel") {
+      closePrMenu();
+      return;
+    }
+    if (id === "merge" && snapshot) {
+      const eligibility = mergeEligibility(snapshot);
+      if (eligibility.route !== "direct") return;
+      if (eligibility.methods.length === 1) {
+        setPrMenu({
+          ...prMenu,
+          screen: "confirm",
+          method: eligibility.methods[0],
+        });
+      } else {
+        setPrMenu({ ...prMenu, screen: "methods" });
+      }
+      return;
+    }
+    if (
+      id === "queue" &&
+      snapshot &&
+      mergeEligibility(snapshot).route === "queue"
+    ) {
+      setPrMenu({ ...prMenu, screen: "confirm" });
+      return;
+    }
+    if (id.startsWith("method:") && snapshot) {
+      const method = id.slice(7) as MergeMethod;
+      const eligibility = mergeEligibility(snapshot);
+      if (
+        eligibility.route === "direct" &&
+        eligibility.methods.includes(method)
+      )
+        setPrMenu({ ...prMenu, screen: "confirm", method });
+      return;
+    }
+    if (id === "confirm" && snapshot) {
+      if (mergePending.current) return;
+      mergePending.current = true;
+      setPrMenu({ ...prMenu, screen: "submitting" });
+      void tuiRuntime
+        .runPromise(submitPrMerge(prMenu.repoPath, snapshot, prMenu.method))
+        .then((result) => {
+          mergePending.current = false;
+          setPrOutcome(`PR #${snapshot.pr.number} ${result}`);
+          closePrMenu();
+          void refreshGitHub(prMenu.repoPath);
+        })
+        .catch((error) => {
+          mergePending.current = false;
+          showActionError(
+            error instanceof Error ? error.message : String(error),
+          );
+          closePrMenu();
+          void refreshGitHub(prMenu.repoPath);
+        });
+      return;
+    }
     if (id === "choose") {
       setPrMenu({ ...prMenu, screen: "choose" });
       return;
@@ -1292,7 +1465,17 @@ export function App() {
         ) : mode.type === "PrMenu" && prMenu ? (
           <PrActionsModal
             key={prMenu.screen}
-            title={prMenu.screen === "choose" ? "Choose PR" : "PR actions"}
+            title={
+              prMenu.screen === "choose"
+                ? "Choose PR"
+                : prMenu.screen === "methods"
+                  ? "Merge method"
+                  : prMenu.screen === "confirm"
+                    ? prMenu.mergeCheck?.snapshot?.queueRequired
+                      ? "Confirm queue submission"
+                      : "Confirm merge"
+                    : "PR actions"
+            }
             options={prMenuOptions}
             width={Math.min(termCols, 70)}
             onChoose={choosePrMenuOption}
@@ -1340,6 +1523,11 @@ export function App() {
             {actionError ? (
               <Text color="red" wrap="truncate">
                 {toSingleLine(actionError)}
+              </Text>
+            ) : null}
+            {prOutcome ? (
+              <Text color="#40a02b" wrap="truncate">
+                {prOutcome}
               </Text>
             ) : null}
             {!confirmationMode ? (

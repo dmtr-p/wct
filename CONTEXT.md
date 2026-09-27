@@ -37,6 +37,24 @@ also identifies the Pending Workspace before its managed worktree exists.
 
 _Avoid_: Project and branch, registry ID and branch
 
+### PR Identity
+
+A PR Identity is the base GitHub repository (owner/name) and PR number. A
+branch name alone cannot identify a PR because branches can be reused and
+multiple head repositories can use the same branch name.
+
+### PR Association
+
+A PR Association links a Workspace Identity to a PR Identity. Automatic
+association uses the branch's verified push destination; an uncertain or
+ambiguous destination remains a set of candidates until the user chooses.
+
+### Explicit Association
+
+An Explicit Association is a user's PR choice for a Workspace, or the PR used
+when creating it with `wct open --pr`. It takes precedence over automatic
+association until changed or cleared, including when that PR closes or merges.
+
 ### Project Registry
 
 The Project Registry is the user's explicit list of repositories managed in the

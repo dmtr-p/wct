@@ -248,7 +248,7 @@ describe("computeRollup", () => {
     );
   });
 
-  test("returns success when mix includes SKIPPED, NEUTRAL, CANCELLED", () => {
+  test("returns unknown when mix includes CANCELLED", () => {
     expect(
       computeRollup([
         { state: "SUCCESS" },
@@ -256,7 +256,7 @@ describe("computeRollup", () => {
         { state: "NEUTRAL" },
         { state: "CANCELLED" },
       ]),
-    ).toBe("success");
+    ).toBe("unknown");
   });
 
   test("returns failure for any FAILURE entry", () => {
@@ -337,9 +337,9 @@ describe("computeRollup", () => {
     ).toBe("pending");
   });
 
-  test("unknown state strings do not throw and produce success when alone", () => {
+  test("unknown state strings do not throw or become success", () => {
     expect(() => computeRollup([{ state: "FUTURE_STATE_42" }])).not.toThrow();
-    expect(computeRollup([{ state: "FUTURE_STATE_42" }])).toBe("success");
+    expect(computeRollup([{ state: "FUTURE_STATE_42" }])).toBe("unknown");
   });
 
   test("unknown state does not override a known failure", () => {
@@ -348,8 +348,8 @@ describe("computeRollup", () => {
     ).toBe("failure");
   });
 
-  test("non-object entries are safely ignored", () => {
-    expect(computeRollup([null, undefined, "string", 42])).toBe("success");
+  test("non-object entries remain unknown", () => {
+    expect(computeRollup([null, undefined, "string", 42])).toBe("unknown");
   });
 });
 

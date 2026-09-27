@@ -14,6 +14,7 @@ import {
   type GitHubService as GitHubServiceApi,
   parsePrArg,
 } from "./github-service";
+import { PrCacheService, type PrCacheServiceApi } from "./pr-cache-service";
 import {
   type SetupResult,
   SetupService,
@@ -235,6 +236,7 @@ export interface WorkspaceService {
     | TmuxServiceApi
     | SetupServiceApi
     | GitHubServiceApi
+    | PrCacheServiceApi
     | BunServices.BunServices
   >;
   up: (
@@ -352,7 +354,7 @@ function resolveOpenIntent(
   options: WorkspaceOpenOptions,
 ): Effect.Effect<
   Required<Pick<WorkspaceOpenOptions, "branch" | "existing">> &
-    Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter">,
+    Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter"> & { prNumber?: number },
   WctError,
   GitHubServiceApi | WorktreeServiceApi | BunServices.BunServices
 > {
@@ -438,6 +440,7 @@ function resolveOpenIntent(
 
       return {
         branch: resolvedBranch,
+        prNumber,
         existing: localExists,
         base: localExists ? undefined : `${remote}/${resolvedBranch}`,
         cwd,
@@ -464,6 +467,7 @@ function openImpl(
   | TmuxServiceApi
   | SetupServiceApi
   | GitHubServiceApi
+  | PrCacheServiceApi
   | BunServices.BunServices
 > {
   return Effect.gen(function* () {
@@ -577,6 +581,11 @@ function openImpl(
       attempt: "worktree",
       ok: true,
     });
+
+    if (resolvedOptions.prNumber !== undefined) {
+      const baseRepository = yield* GitHubService.use((service) => service.resolveBaseRepo(mainRepoPath));
+      yield* PrCacheService.use((service) => service.setExplicit(mainRepoPath, branch, { baseRepository, number: resolvedOptions.prNumber! }));
+    }
 
     if (resolved.copy && resolved.copy.length > 0) {
       yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });

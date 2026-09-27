@@ -77,7 +77,7 @@ import type {
   ReturnSlot,
   TreeNavigationSnapshot,
 } from "./tree-navigation";
-import { Mode, type PRInfo } from "./types";
+import { Mode } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -97,6 +97,7 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
+    openPrs,
     errors: githubErrors,
     refresh: refreshGitHub,
     refreshingProjects,
@@ -365,7 +366,7 @@ export function App() {
   );
 
   const repoError = statusBarProps.selectedProject
-    ? githubErrors.get(statusBarProps.selectedProject)
+    ? githubErrors.get(selectedWorktreeRepo?.repoPath ?? filteredRepos.find((repo) => repo.project === statusBarProps.selectedProject)?.repoPath ?? "")
     : undefined;
 
   // The shared visual-row model drives both windowing here and the row-by-row
@@ -571,14 +572,8 @@ export function App() {
   );
 
   const openModalPRList = useMemo(() => {
-    const prs: PRInfo[] = [];
-    for (const [key, pr] of prData) {
-      if (key.startsWith(`${openModalRepoProject}/`)) {
-        prs.push(pr);
-      }
-    }
-    return prs;
-  }, [prData, openModalRepoProject]);
+    return openPrs.get(openModalRepoPath) ?? [];
+  }, [openPrs, openModalRepoPath]);
 
   const openModalOnRefresh = useCallback(
     (signal?: AbortSignal) => {
@@ -1052,7 +1047,7 @@ export function App() {
             repoProject={openModalRepoProject}
             repoPath={openModalRepoPath}
             prList={openModalPRList}
-            isRefreshing={refreshingProjects.has(openModalRepoProject)}
+            isRefreshing={refreshingProjects.has(openModalRepoPath)}
             onRefresh={openModalOnRefresh}
             onSubmit={modalActions.handleOpen}
             onCancel={() => setMode(modalReturnModeRef.current)}

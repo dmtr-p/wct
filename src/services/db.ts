@@ -55,6 +55,30 @@ export const MIGRATIONS: readonly string[] = [
     fetched_at INTEGER NOT NULL,
     last_error TEXT
   )`,
+  // v3 — Workspace Identity, never a display name, owns association state.
+  `CREATE TABLE IF NOT EXISTS workspace_pr_cache (
+    repo_path TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    last_error TEXT,
+    PRIMARY KEY (repo_path, branch)
+  )`,
+  // v4 — a user choice or wct open --pr survives refreshes and restarts.
+  `CREATE TABLE IF NOT EXISTS workspace_pr_association (
+    repo_path TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    base_repository TEXT NOT NULL,
+    pr_number INTEGER NOT NULL,
+    PRIMARY KEY (repo_path, branch)
+  )`,
+  // v5 — the Open modal has its own open-only source.
+  `CREATE TABLE IF NOT EXISTS open_pr_cache (
+    repo_path TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    last_error TEXT
+  )`,
 ];
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;

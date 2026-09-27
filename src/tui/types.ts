@@ -147,7 +147,7 @@ export const Mode = {
 export type TreeItem =
   | { type: "repo"; repoIndex: number }
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
-  | DetailItem<"pr", { rollupState: "success" | "failure" | "pending" | null }>
+  | DetailItem<"pr", { rollupState: "success" | "failure" | "pending" | "unknown" | null }>
   | DetailItem<"pane-header">
   | DetailItem<
       "pane",
@@ -191,7 +191,8 @@ export interface PRInfo {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   headRefName: string;
-  rollupState: "success" | "failure" | "pending" | null;
+  rollupState: "success" | "failure" | "pending" | "unknown" | null;
+  facts?: import("../services/pr-model").PrFacts;
 }
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";

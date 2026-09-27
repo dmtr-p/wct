@@ -1,7 +1,7 @@
 import { basename } from "node:path";
+import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
-import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import type { RepoInfo } from "./hooks/useRegistry";
 import {
   isLifecycleActive,

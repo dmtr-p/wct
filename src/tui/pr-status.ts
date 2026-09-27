@@ -149,7 +149,7 @@ export function compactPrText(
   width: number,
   expanded = false,
 ): string {
-  const prefix = `     ${expanded ? "▾" : "▸"} ${number > 0 ? "#" + number : "#?"}`;
+  const prefix = `     ${expanded ? "▾" : "▸"} ${number > 0 ? `#${number}` : "#?"}`;
   const stale = presentation.stale ? " · stale" : "";
   const icon =
     presentation.checks === "success"

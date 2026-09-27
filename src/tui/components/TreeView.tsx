@@ -1,9 +1,9 @@
 import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
+import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
-import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { type LifecycleState, lifecycleKey } from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
@@ -261,7 +261,11 @@ function renderWorktreeRow(
     ctx.prData.get(lifecycleKey(repo.repoPath, wt.branch)) ??
     ctx.prData.get(wtKey);
   const wtPanes = ctx.panes.get(sessionName);
-  const hasExpandableData = !!wtPr || !!ctx.associations?.get(lifecycleKey(repo.repoPath, wt.branch))?.candidates.length || (wtPanes && wtPanes.length > 0);
+  const hasExpandableData =
+    !!wtPr ||
+    !!ctx.associations?.get(lifecycleKey(repo.repoPath, wt.branch))?.candidates
+      .length ||
+    (wtPanes && wtPanes.length > 0);
 
   const wtChildSelected =
     idx !== ctx.selectedIndex &&

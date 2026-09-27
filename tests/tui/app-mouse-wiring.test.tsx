@@ -177,7 +177,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         // Rows while Expanded: repo-1(0), main(1), feature/a(2), PR-detail(3),
         // feature/b(4). Confirm the PR detail row actually rendered before
         // clicking, so this test is exercising the index-shift it claims to.
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
 
         const sgrRow = sgrRowFor(4);
         await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
@@ -227,7 +227,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "r"); // fetch PRs (Navigate-only key)
         await tick(15);
         await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/a
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
 
         // Items while Expanded: repo-1(0), main(1), feature/a(2),
         // PR-detail(3), feature/b(4), feature/c(5). Walk the cursor PAST the
@@ -590,7 +590,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "r"); // fetch PRs for repo "alpha"
         await tick(15);
         await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/0
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
 
         // Walk the cursor well past the first viewport so the keep-visible
         // effect pins it to the BOTTOM visible row (12 downs from feature/0
@@ -627,7 +627,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
           .lines()
           .find((l) => l.includes("reflow (OPEN)"));
         expect(contLine).toBeDefined();
-        expect(contLine).not.toContain("PR #7");
+        expect(contLine).not.toContain("#7");
       } finally {
         rendered.unmount();
       }
@@ -646,7 +646,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "r"); // fetch PRs for repo "alpha"
         await tick(15);
         await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/0
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
 
         // Park the cursor BELOW the PR detail row (feature/1, row 4) so the
         // wrap will move its visual row, then wheel the viewport away — the

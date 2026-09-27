@@ -5,7 +5,7 @@ bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
 ```
 
-**Do not run tests or linting manually.** Claude Code hooks handle this automatically:
+**Do not run tests or linting manually.** Harness hooks handle this automatically:
 - **PostToolUse**: `biome format --write` runs on every file edit
 - **Stop**: `biome lint --write` and `bun run test` run when the session stops, waking the agent on failure (exit code 2)
 

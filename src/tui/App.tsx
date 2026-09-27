@@ -9,6 +9,14 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  fetchMergeSnapshot,
+  MERGE_METHODS,
+  type MergeMethod,
+  type MergeSnapshot,
+  mergeEligibility,
+  submitPrMerge,
+} from "../services/pr-merge-service";
 import type { PrFacts } from "../services/pr-model";
 import { AddProjectModal } from "./components/AddProjectModal";
 import {
@@ -24,15 +32,6 @@ import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
-import {
-  fetchMergeSnapshot,
-  mergeEligibility,
-  MERGE_METHODS,
-  submitPrMerge,
-  type MergeMethod,
-  type MergeSnapshot,
-} from "../services/pr-merge-service";
-import { tuiRuntime } from "./runtime";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
@@ -69,6 +68,7 @@ import {
   lifecycleKey,
 } from "./lifecycle";
 import { candidatePrLabel } from "./pr-status";
+import { tuiRuntime } from "./runtime";
 import {
   buildTreeItems,
   buildTreeRows,

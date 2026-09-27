@@ -2,10 +2,10 @@ import { describe, expect, test } from "vitest";
 import {
   buildPrMutation,
   MERGE_METHODS,
+  type MergeSnapshot,
   mergeEligibility,
   mergeSnapshotFingerprint,
   validateSubmission,
-  type MergeSnapshot,
 } from "../../src/services/pr-merge-service";
 import type { PrFacts } from "../../src/services/pr-model";
 

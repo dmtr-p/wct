@@ -150,10 +150,9 @@ vi.mock("../../src/services/tmux", async () => {
   };
 });
 
-// --- GitHubService + PrCacheService: no PRs by default. useGitHub's mount
-// effect never re-fetches once `repos` populates (its callback identity is
-// stable), so a test that needs a PR row drives "r" (Navigate mode's
-// refreshRepo) rather than relying on mount timing.
+// --- GitHubService + PrCacheService: no PRs by default. Tests that need a
+// PR row can also drive "r" (Navigate mode's refreshRepo) to await the
+// same read path deterministically.
 const githubFixtures = vi.hoisted(() => ({
   prsByRepoPath: new Map<
     string,

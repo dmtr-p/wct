@@ -68,6 +68,12 @@ export function useGitHub(repos: RepoInfo[]) {
   );
   const reposRef = useRef(repos);
   reposRef.current = repos;
+  const repoSignature = JSON.stringify(
+    repos.map((repo) => [
+      repo.repoPath,
+      repo.worktrees.map((wt) => [wt.branch, wt.path]),
+    ]),
+  );
   const firstRefresh = useRef(true);
   const inFlight = useRef<Map<string, Promise<void>>>(new Map());
 
@@ -345,7 +351,12 @@ export function useGitHub(repos: RepoInfo[]) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(undefined, controller.signal);
+    if (repoSignature !== "[]") void refresh(undefined, controller.signal);
+    return () => controller.abort();
+  }, [repoSignature, refresh]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     const timer = setInterval(
       () => void refresh(undefined, controller.signal),
       GITHUB_POLL_INTERVAL,

@@ -15,6 +15,7 @@ import {
   type MergeMethod,
   type MergeSnapshot,
   mergeEligibility,
+  mergeSnapshotFingerprint,
   submitPrMerge,
 } from "../services/pr-merge-service";
 import type { PrFacts } from "../services/pr-model";
@@ -925,6 +926,71 @@ export function App() {
     setMode(prMenuReturnMode.current);
   }
 
+  function preparePrConfirmation(
+    menu: NonNullable<typeof prMenu>,
+    method?: MergeMethod,
+  ) {
+    const confirmed = menu.mergeCheck?.snapshot;
+    if (!confirmed) return;
+    const request = ++prMenuRequest.current;
+    setPrMenu({
+      ...menu,
+      screen: "actions",
+      mergeCheck: { status: "refreshing" },
+    });
+    void tuiRuntime
+      .runPromise(
+        fetchMergeSnapshot(
+          menu.repoPath,
+          confirmed.pr.baseRepository,
+          confirmed.pr.number,
+        ),
+      )
+      .then((fresh) => {
+        if (prMenuRequest.current !== request) return;
+        const expectedRoute = method ? "direct" : "queue";
+        const eligibility = mergeEligibility(fresh);
+        const changed =
+          mergeSnapshotFingerprint(fresh) !==
+            mergeSnapshotFingerprint(confirmed) ||
+          eligibility.route !== expectedRoute ||
+          (eligibility.route === "direct" &&
+            (!method || !eligibility.methods.includes(method)));
+        if (changed) {
+          showActionError(
+            "PR eligibility or routing changed; choose the action again",
+          );
+        }
+        setPrMenu((previous) =>
+          previous?.screen === "actions" &&
+          previous.mergeCheck?.status === "refreshing"
+            ? {
+                ...previous,
+                screen: changed ? "actions" : "confirm",
+                mergeCheck: { status: "ready", snapshot: fresh },
+                method,
+              }
+            : previous,
+        );
+      })
+      .catch((error) => {
+        if (prMenuRequest.current !== request) return;
+        setPrMenu((previous) =>
+          previous?.screen === "actions" &&
+          previous.mergeCheck?.status === "refreshing"
+            ? {
+                ...previous,
+                mergeCheck: {
+                  status: "error",
+                  reason:
+                    error instanceof Error ? error.message : String(error),
+                },
+              }
+            : previous,
+        );
+      });
+  }
+
   function choosePrMenuOption(id: string) {
     if (!prMenu) return;
     const snapshot = prMenu.mergeCheck?.snapshot;
@@ -936,11 +1002,7 @@ export function App() {
       const eligibility = mergeEligibility(snapshot);
       if (eligibility.route !== "direct") return;
       if (eligibility.methods.length === 1) {
-        setPrMenu({
-          ...prMenu,
-          screen: "confirm",
-          method: eligibility.methods[0],
-        });
+        preparePrConfirmation(prMenu, eligibility.methods[0]);
       } else {
         setPrMenu({ ...prMenu, screen: "methods" });
       }
@@ -951,7 +1013,7 @@ export function App() {
       snapshot &&
       mergeEligibility(snapshot).route === "queue"
     ) {
-      setPrMenu({ ...prMenu, screen: "confirm" });
+      preparePrConfirmation(prMenu);
       return;
     }
     if (id.startsWith("method:") && snapshot) {
@@ -961,7 +1023,7 @@ export function App() {
         eligibility.route === "direct" &&
         eligibility.methods.includes(method)
       )
-        setPrMenu({ ...prMenu, screen: "confirm", method });
+        preparePrConfirmation(prMenu, method);
       return;
     }
     if (id === "confirm" && snapshot) {

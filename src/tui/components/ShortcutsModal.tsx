@@ -10,6 +10,8 @@ interface Props {
 const SHORTCUTS = [
   ["↑ / ↓", "navigate"],
   ["← / →", "collapse / show details"],
+  ["enter", "open selected PR in GitHub"],
+  ["p", "PR actions"],
   ["space", "switch or activate"],
   ["o", "open worktree"],
   ["u", "start session"],

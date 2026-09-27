@@ -33,6 +33,8 @@ function getHints(
         join(
           "↑↓:navigate",
           "→:details",
+          "p:PR actions",
+          "enter:open PR",
           hasClient && "space:switch",
           "o:open",
           "a:add",
@@ -43,6 +45,7 @@ function getHints(
       return ["type to filter", "esc:cancel  enter:done"];
     case "Shortcuts":
     case "OpenModal":
+    case "PrMenu":
       return ["", ""];
     case "Expanded":
       if (selectedPaneRow) {
@@ -61,6 +64,8 @@ function getHints(
         join(
           "↑↓:navigate",
           canCollapse && "←:collapse",
+          "p:PR actions",
+          "enter:open PR",
           hasClient && "space:action",
           "o:open",
           "a:add",
@@ -114,6 +119,7 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
     // the normal tree footer so opening one does not disturb scroll position.
     case "Shortcuts":
     case "OpenModal":
+    case "PrMenu":
     case "UpModal":
     case "AddProjectModal":
       return hasRepoError ? 1 : 0;

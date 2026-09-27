@@ -47,3 +47,8 @@ export function wrapPrLabel(
 ): string[] {
   return wrapText(label, Math.max(1, maxWidth - prLabelStart(hasIcon)));
 }
+
+/** Only the expanded title item may wrap in the new PR tree. */
+export function wrapPrTitle(title: string, maxWidth: number): string[] {
+  return wrapText(title, Math.max(1, maxWidth - 9));
+}

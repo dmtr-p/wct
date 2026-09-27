@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
+import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import type { RepoInfo } from "./hooks/useRegistry";
 import {
   isLifecycleActive,
@@ -10,7 +11,8 @@ import {
   lifecycleEntryFor,
   lifecycleKey,
 } from "./lifecycle";
-import { wrapPrLabel } from "./pr-layout";
+import { wrapPrLabel, wrapPrTitle } from "./pr-layout";
+import { derivePrPresentation } from "./pr-status";
 import {
   Mode,
   type PaneInfo,
@@ -69,6 +71,8 @@ interface BuildTreeOptions {
   discoveredWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
+  associations?: Map<string, WorkspacePrEntry>;
+  expandedPrKeys?: Set<string>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
 }
@@ -376,6 +380,8 @@ export function buildTreeItems({
   discoveredWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   prData,
+  associations,
+  expandedPrKeys,
   panes,
   jumpToPane,
 }: BuildTreeOptions): TreeItem[] {
@@ -408,21 +414,90 @@ export function buildTreeItems({
 
       const sessionName = formatSessionName(basename(wt.path));
 
-      const pr =
-        prData.get(lifecycleKey(repo.repoPath, wt.branch)) ?? prData.get(wtKey);
+      const workspaceKey = lifecycleKey(repo.repoPath, wt.branch);
+      const association = associations?.get(workspaceKey);
+      const pr = prData.get(workspaceKey) ?? prData.get(wtKey);
       if (pr) {
+        const facts = pr.facts;
+        const prKey = facts
+          ? `${facts.baseRepository.toLowerCase()}#${facts.number}`
+          : undefined;
+        const presentation = facts ? derivePrPresentation(facts) : undefined;
+        const expanded = prKey ? (expandedPrKeys?.has(prKey) ?? false) : false;
+        const openUrl = facts?.url
+          ? () => Bun.spawn(["open", facts.url])
+          : () =>
+              Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
+                cwd: repo.repoPath,
+              });
         items.push({
           type: "detail",
           repoIndex: ri,
           worktreeIndex: wi,
           detailKind: "pr",
-          label: `PR #${pr.number}: ${pr.title} (${pr.state})`,
-          meta: { rollupState: pr.rollupState },
-          action: () =>
-            Bun.spawn(["gh", "pr", "view", "--web", String(pr.number)], {
-              cwd: repo.repoPath,
-            }),
+          label: facts
+            ? `#${pr.number} ${presentation?.primary ?? "unknown"}`
+            : `PR #${pr.number}: ${pr.title} (${pr.state})`,
+          meta: {
+            rollupState: pr.rollupState,
+            prKey,
+            presentation,
+            pr: facts,
+            expanded,
+          },
+          action: openUrl,
         });
+        if (facts && presentation && expanded && prKey) {
+          for (const detail of presentation.details) {
+            items.push({
+              type: "detail",
+              repoIndex: ri,
+              worktreeIndex: wi,
+              detailKind: detail.key === "title" ? "pr-title" : "pr-fact",
+              label: detail.text,
+              meta:
+                detail.key === "title"
+                  ? { prKey }
+                  : { prKey, factKey: detail.key },
+              action: openUrl,
+            } as TreeItem);
+          }
+          if (association?.newerOpenPr)
+            items.push({
+              type: "detail",
+              repoIndex: ri,
+              worktreeIndex: wi,
+              detailKind: "pr-fact",
+              label: `Newer open PR: #${association.newerOpenPr}`,
+              meta: { prKey, factKey: "newer" },
+              action: openUrl,
+            });
+        }
+      } else if (association?.candidates.length) {
+        const groupKey = `${workspaceKey}\0candidates`;
+        const expanded = expandedPrKeys?.has(groupKey) ?? false;
+        items.push({
+          type: "detail",
+          repoIndex: ri,
+          worktreeIndex: wi,
+          detailKind: "candidate-group",
+          label: `${association.candidates.length} candidate PR${association.candidates.length === 1 ? "" : "s"}`,
+          meta: { groupKey, expanded },
+        });
+        if (expanded)
+          for (const candidate of association.candidates) {
+            items.push({
+              type: "detail",
+              repoIndex: ri,
+              worktreeIndex: wi,
+              detailKind: "candidate",
+              label: `#${candidate.number}  ${candidate.title} · ${candidate.headRepository ?? "unknown head"} · ${candidate.state.toLowerCase()}`,
+              meta: { groupKey, pr: candidate },
+              action: candidate.url
+                ? () => Bun.spawn(["open", candidate.url])
+                : undefined,
+            });
+          }
       }
 
       const sessionPanes = panes.get(sessionName);
@@ -556,12 +631,14 @@ export function buildTreeRows({
       // Each wrapped PR line becomes its own row carrying the wrapped text
       // (`prLine`), so the render consumes exactly the lines counted here and
       // DetailRow never re-wraps. pane/pane-header labels never wrap.
-      if (item.detailKind === "pr") {
-        const lines = wrapPrLabel(
-          item.label,
-          maxWidth,
-          item.meta.rollupState !== null,
-        );
+      if (
+        (item.detailKind === "pr" && !item.meta.presentation) ||
+        item.detailKind === "pr-title"
+      ) {
+        const lines =
+          item.detailKind === "pr-title"
+            ? wrapPrTitle(item.label, maxWidth)
+            : wrapPrLabel(item.label, maxWidth, item.meta.rollupState !== null);
         rows.push({ itemIndex: idx, kind: "detail", prLine: lines[0] ?? "" });
         for (let piece = 1; piece < lines.length; piece++) {
           rows.push({
@@ -773,6 +850,14 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   if (!wt) return null;
   if (item.type === "worktree") return `wt:${repo.id}/${wt.branch}`;
   const base = `detail:${repo.id}/${wt.branch}/${item.detailKind}`;
+  if (item.detailKind === "pr" && item.meta.prKey)
+    return `${base}/${item.meta.prKey}`;
+  if (item.detailKind === "pr-title" || item.detailKind === "pr-fact")
+    return `${base}/${item.meta.prKey}${item.detailKind === "pr-fact" ? `/${item.meta.factKey}` : ""}`;
+  if (item.detailKind === "candidate-group")
+    return `${base}/${item.meta.groupKey}`;
+  if (item.detailKind === "candidate")
+    return `${base}/${item.meta.groupKey}/${item.meta.pr.number}`;
   if (item.detailKind === "pane" && item.meta.paneId)
     return `${base}/${item.meta.paneId}`;
   return base;
@@ -789,6 +874,32 @@ export function treeItemParentId(
   repos: RepoInfo[],
 ): string | null {
   if (item.type !== "detail") return null;
+  if (item.detailKind === "pr-title" || item.detailKind === "pr-fact") {
+    return treeItemId(
+      {
+        type: "detail",
+        repoIndex: item.repoIndex,
+        worktreeIndex: item.worktreeIndex,
+        detailKind: "pr",
+        label: "",
+        meta: { rollupState: null, prKey: item.meta.prKey },
+      },
+      repos,
+    );
+  }
+  if (item.detailKind === "candidate") {
+    return treeItemId(
+      {
+        type: "detail",
+        repoIndex: item.repoIndex,
+        worktreeIndex: item.worktreeIndex,
+        detailKind: "candidate-group",
+        label: "",
+        meta: { groupKey: item.meta.groupKey, expanded: false },
+      },
+      repos,
+    );
+  }
   return treeItemId(
     {
       type: "worktree",
@@ -843,6 +954,44 @@ export function resolveRecoveredSelectionIndex({
   }
 
   if (prevSelectionParentId) {
+    const parentIndex = treeItems.findIndex(
+      (candidate) => treeItemId(candidate, repos) === prevSelectionParentId,
+    );
+    if (
+      parentIndex >= 0 &&
+      (prevSelectionId.includes("/pr-title/") ||
+        prevSelectionId.includes("/pr-fact/") ||
+        prevSelectionId.includes("/candidate/"))
+    )
+      return parentIndex;
+    if (
+      prevSelectionId.includes("/pr/") ||
+      prevSelectionId.includes("/candidate-group/") ||
+      prevSelectionId.includes("/candidate/") ||
+      prevSelectionId.includes("/pr-title/") ||
+      prevSelectionId.includes("/pr-fact/")
+    ) {
+      const oldIndex = prevTree.findIndex(
+        (candidate) => treeItemId(candidate, repos) === prevSelectionId,
+      );
+      const oldOwner =
+        oldIndex < 0 ? null : findOwningWorktreeIndex(prevTree, oldIndex);
+      const oldWorktree = oldOwner === null ? undefined : prevTree[oldOwner];
+      const worktreeId = oldWorktree ? treeItemId(oldWorktree, repos) : null;
+      const currentOwner = treeItems.findIndex(
+        (candidate) =>
+          candidate.type === "worktree" &&
+          treeItemId(candidate, repos) === worktreeId,
+      );
+      if (currentOwner >= 0) {
+        if (prevSelectionId.includes("/candidate")) {
+          const next = treeItems[currentOwner + 1];
+          if (next?.type === "detail" && next.detailKind === "pr")
+            return currentOwner + 1;
+        }
+        return currentOwner;
+      }
+    }
     for (let i = 0; i < treeItems.length; i++) {
       const candidate = treeItems[i];
       if (

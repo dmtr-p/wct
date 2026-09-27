@@ -318,6 +318,7 @@ describe("WorkspaceService open", () => {
     const github: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
+      resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: () =>
         Effect.succeed({
           branch: "contrib-feature",
@@ -373,6 +374,7 @@ describe("WorkspaceService open", () => {
     const github: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
+      resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: (prNumber) =>
         Effect.sync(() => {
           calls.push(`resolve:${prNumber}`);
@@ -430,6 +432,7 @@ describe("WorkspaceService open", () => {
     const github: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
+      resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: () =>
         Effect.succeed({
           branch: "same-repo",

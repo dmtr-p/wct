@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GitHubService } from "../../services/github-service";
 import {
   PrCacheService,
@@ -356,16 +356,19 @@ export function useGitHub(repos: RepoInfo[]) {
     };
   }, [refresh]);
 
-  const prData = new Map<string, PRInfo>();
-  for (const [key, entry] of associations)
-    if (entry.pr)
-      prData.set(
-        key,
-        displayPr({
-          ...entry.pr,
-          lastError: entry.lastError ?? entry.pr.lastError,
-        }),
-      );
+  const prData = useMemo(() => {
+    const data = new Map<string, PRInfo>();
+    for (const [key, entry] of associations)
+      if (entry.pr)
+        data.set(
+          key,
+          displayPr({
+            ...entry.pr,
+            lastError: entry.lastError ?? entry.pr.lastError,
+          }),
+        );
+    return data;
+  }, [associations]);
   return {
     prData,
     associations,

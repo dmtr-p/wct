@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { PrFacts } from "../services/pr-model";
 import { AddProjectModal } from "./components/AddProjectModal";
 import {
   type ConfirmMode,
@@ -23,7 +24,6 @@ import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
 import { useGitHub } from "./hooks/useGitHub";
-import type { PrFacts } from "../services/pr-model";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
 import { useMouse } from "./hooks/useMouse";
@@ -1112,8 +1112,8 @@ export function App() {
             if (wtItem?.type === "worktree") {
               const repo = filteredRepos[wtItem.repoIndex];
               const wt = repo?.worktrees[wtItem.worktreeIndex];
-              if (repo && wt) {
-                selectTreeItem(owner!);
+              if (repo && wt && owner !== null) {
+                selectTreeItem(owner);
                 collapseWorktree(
                   `${repo.project}/${wt.branch}`,
                   repo.repoPath,

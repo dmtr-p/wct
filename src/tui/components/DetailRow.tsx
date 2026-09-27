@@ -93,22 +93,82 @@ export function DetailRow({
         const numberText = `#${pr.number}`;
         const numberAt = prefix.indexOf(numberText);
         const beforeNumber = numberAt >= 0 ? prefix.slice(0, numberAt) : prefix;
-        const afterNumber = numberAt >= 0 ? prefix.slice(numberAt + numberText.length) : "";
-        const suffix = statusAt >= 0 ? line.slice(statusAt + presentation.primary.length) : "";
+        const afterNumber =
+          numberAt >= 0 ? prefix.slice(numberAt + numberText.length) : "";
+        const suffix =
+          statusAt >= 0
+            ? line.slice(statusAt + presentation.primary.length)
+            : "";
         const checksMatch = suffix.match(/ · checks [✓✗◌?]/);
-        const checkBefore = checksMatch ? suffix.slice(0, checksMatch.index) : suffix;
-        const checkAfter = checksMatch ? suffix.slice((checksMatch.index ?? 0) + checksMatch[0].length) : "";
-        const checkTone = presentation.checks === "success" ? PR_COLORS.green : presentation.checks === "failure" ? PR_COLORS.red : presentation.checks === "pending" ? PR_COLORS.yellow : PR_COLORS.muted;
-        return <Box><Text {...selectedProps} wrap="truncate">
-          {beforeNumber}
-          {numberAt >= 0 ? <Text bold>{numberText}</Text> : null}
-          {afterNumber ? <Text color={isSelected ? undefined : statusAt < 0 && presentation.stale ? PR_COLORS.muted : undefined}>{afterNumber}</Text> : null}
-          {statusAt >= 0 ? <Text color={isSelected ? undefined : PR_COLORS[presentation.stale ? "muted" : presentation.tone]} bold={presentation.bold}>{presentation.primary}</Text> : null}
-          {checkBefore}
-          {checksMatch ? <Text color={isSelected ? undefined : presentation.stale ? PR_COLORS.muted : checkTone}>{checksMatch[0]}</Text> : null}
-          {checkAfter ? <Text color={isSelected ? undefined : PR_COLORS.muted}>{checkAfter}</Text> : null}
-          {selectedRowFill(isSelected, maxWidth, line)}
-        </Text></Box>;
+        const checkBefore = checksMatch
+          ? suffix.slice(0, checksMatch.index)
+          : suffix;
+        const checkAfter = checksMatch
+          ? suffix.slice((checksMatch.index ?? 0) + checksMatch[0].length)
+          : "";
+        const checkTone =
+          presentation.checks === "success"
+            ? PR_COLORS.green
+            : presentation.checks === "failure"
+              ? PR_COLORS.red
+              : presentation.checks === "pending"
+                ? PR_COLORS.yellow
+                : PR_COLORS.muted;
+        return (
+          <Box>
+            <Text {...selectedProps} wrap="truncate">
+              {beforeNumber}
+              {numberAt >= 0 ? <Text bold>{numberText}</Text> : null}
+              {afterNumber ? (
+                <Text
+                  color={
+                    isSelected
+                      ? undefined
+                      : statusAt < 0 && presentation.stale
+                        ? PR_COLORS.muted
+                        : undefined
+                  }
+                >
+                  {afterNumber}
+                </Text>
+              ) : null}
+              {statusAt >= 0 ? (
+                <Text
+                  color={
+                    isSelected
+                      ? undefined
+                      : PR_COLORS[
+                          presentation.stale ? "muted" : presentation.tone
+                        ]
+                  }
+                  bold={presentation.bold}
+                >
+                  {presentation.primary}
+                </Text>
+              ) : null}
+              {checkBefore}
+              {checksMatch ? (
+                <Text
+                  color={
+                    isSelected
+                      ? undefined
+                      : presentation.stale
+                        ? PR_COLORS.muted
+                        : checkTone
+                  }
+                >
+                  {checksMatch[0]}
+                </Text>
+              ) : null}
+              {checkAfter ? (
+                <Text color={isSelected ? undefined : PR_COLORS.muted}>
+                  {checkAfter}
+                </Text>
+              ) : null}
+              {selectedRowFill(isSelected, maxWidth, line)}
+            </Text>
+          </Box>
+        );
       }
       const { rollupState } = item.meta;
       const icon = rollupIcon(rollupState);
@@ -152,25 +212,59 @@ export function DetailRow({
     case "pr-title": {
       const indent = "         ";
       const content = indent + (prLine ?? item.label);
-      return <Box><Text {...selectedProps} wrap="truncate-end">{content}{selectedRowFill(isSelected, maxWidth, content)}</Text></Box>;
+      return (
+        <Box>
+          <Text {...selectedProps} wrap="truncate-end">
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
+          </Text>
+        </Box>
+      );
     }
 
     case "pr-fact": {
       const indent = "         ";
-      const content = indent + truncateBranch(item.label, maxWidth - indent.length);
-      return <Box><Text {...selectedProps} color={isSelected ? SELECTED_ROW_FOREGROUND : PR_COLORS.muted} wrap="truncate">{content}{selectedRowFill(isSelected, maxWidth, content)}</Text></Box>;
+      const content =
+        indent + truncateBranch(item.label, maxWidth - indent.length);
+      return (
+        <Box>
+          <Text
+            {...selectedProps}
+            color={isSelected ? SELECTED_ROW_FOREGROUND : PR_COLORS.muted}
+            wrap="truncate"
+          >
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
+          </Text>
+        </Box>
+      );
     }
 
     case "candidate-group": {
       const content = `     ${item.meta.expanded ? "▾" : "▸"} ${item.label}`;
       const line = truncateBranch(content, maxWidth);
-      return <Box><Text {...selectedProps} wrap="truncate">{line}{selectedRowFill(isSelected, maxWidth, line)}</Text></Box>;
+      return (
+        <Box>
+          <Text {...selectedProps} wrap="truncate">
+            {line}
+            {selectedRowFill(isSelected, maxWidth, line)}
+          </Text>
+        </Box>
+      );
     }
 
     case "candidate": {
       const indent = "         ";
-      const content = indent + truncateBranch(item.label, maxWidth - indent.length);
-      return <Box><Text {...selectedProps} wrap="truncate">{content}{selectedRowFill(isSelected, maxWidth, content)}</Text></Box>;
+      const content =
+        indent + truncateBranch(item.label, maxWidth - indent.length);
+      return (
+        <Box>
+          <Text {...selectedProps} wrap="truncate">
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
+          </Text>
+        </Box>
+      );
     }
 
     case "pane": {

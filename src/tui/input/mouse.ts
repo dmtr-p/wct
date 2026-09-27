@@ -159,7 +159,8 @@ export function resolveTreeDoubleClickAction(
   }
   if (
     item.type === "detail" &&
-    (item.detailKind === "pane" || (item.detailKind === "pr" && !item.meta.prKey)) &&
+    (item.detailKind === "pane" ||
+      (item.detailKind === "pr" && !item.meta.prKey)) &&
     item.action
   ) {
     return { type: "activate-detail", action: item.action };

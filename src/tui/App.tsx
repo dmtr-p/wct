@@ -59,6 +59,7 @@ import {
   isLifecycleActive,
   lifecycleKey,
 } from "./lifecycle";
+import { candidatePrLabel } from "./pr-status";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -66,6 +67,7 @@ import {
   insertConfirmationRows,
   isWorktreeEffectivelyExpanded,
   isWorktreeLifecycleActive,
+  openPrInBrowser,
   reconcileDiscoveredWorkspaceKeys,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
@@ -743,7 +745,9 @@ export function App() {
             (candidate) =>
               candidate.type === "detail" &&
               candidate.detailKind === "pr" &&
-              candidate.meta.prKey === item.meta.prKey,
+              candidate.meta.prKey === item.meta.prKey &&
+              candidate.repoIndex === item.repoIndex &&
+              candidate.worktreeIndex === item.worktreeIndex,
           )
         : item;
     const pr =
@@ -776,11 +780,16 @@ export function App() {
     : prMenu.screen === "choose"
       ? prMenu.candidates.map((candidate) => ({
           id: `use:${candidate.number}`,
-          label: `#${candidate.number} ${candidate.title} · ${candidate.headRepository ?? "unknown head"} · ${candidate.state.toLowerCase()}`,
+          label: candidatePrLabel(candidate),
         }))
       : [
-          ...(prMenu.kind === "group"
-            ? [{ id: "choose", label: "Choose PR…" }]
+          ...(prMenu.kind === "group" || prMenu.explicit
+            ? [
+                {
+                  id: "choose",
+                  label: prMenu.explicit ? "Change PR…" : "Choose PR…",
+                },
+              ]
             : []),
           ...(prMenu.kind === "candidate" && prMenu.pr
             ? [
@@ -794,7 +803,6 @@ export function App() {
           { id: "refresh", label: "Refresh" },
           ...(prMenu.explicit
             ? [
-                { id: "choose", label: "Change PR…" },
                 { id: "clear", label: "Clear association" },
               ]
             : []),
@@ -812,7 +820,8 @@ export function App() {
       return;
     }
     if (id === "open") {
-      if (prMenu.pr?.url) Bun.spawn(["open", prMenu.pr.url]);
+      if (prMenu.pr)
+        openPrInBrowser(prMenu.repoPath, prMenu.pr.number, prMenu.pr.url);
       closePrMenu();
       return;
     }
@@ -1094,9 +1103,13 @@ export function App() {
               (candidate) =>
                 candidate.type === "detail" &&
                 ((candidate.detailKind === "pr" &&
-                  candidate.meta.prKey === childKey) ||
+                  candidate.meta.prKey === childKey &&
+                  candidate.repoIndex === item.repoIndex &&
+                  candidate.worktreeIndex === item.worktreeIndex) ||
                   (candidate.detailKind === "candidate-group" &&
-                    candidate.meta.groupKey === childKey)),
+                    candidate.meta.groupKey === childKey &&
+                    candidate.repoIndex === item.repoIndex &&
+                    candidate.worktreeIndex === item.worktreeIndex)),
             );
             if (parentIndex >= 0) selectTreeItem(parentIndex);
             setPrExpanded(childKey, false);
@@ -1112,7 +1125,12 @@ export function App() {
             if (wtItem?.type === "worktree") {
               const repo = filteredRepos[wtItem.repoIndex];
               const wt = repo?.worktrees[wtItem.worktreeIndex];
-              if (repo && wt && owner !== null) {
+              if (
+                repo &&
+                wt &&
+                owner !== null &&
+                !isWorktreeLifecycleActive(wtItem, filteredRepos, lifecycle)
+              ) {
                 selectTreeItem(owner);
                 collapseWorktree(
                   `${repo.project}/${wt.branch}`,

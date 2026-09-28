@@ -1,13 +1,19 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { PrFacts } from "../../src/services/pr-model";
 import { displayPr } from "../../src/tui/hooks/useGitHub";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { lifecycleKey } from "../../src/tui/lifecycle";
-import { compactPrText, derivePrPresentation } from "../../src/tui/pr-status";
+import {
+  compactPrSegments,
+  compactPrText,
+  derivePrPresentation,
+} from "../../src/tui/pr-status";
 import {
   buildTreeItems,
   buildTreeRows,
   firstRowForItem,
+  openPrInBrowser,
+  prExpansionKey,
   resolveRecoveredSelectionIndex,
   treeItemId,
   treeItemParentId,
@@ -109,6 +115,28 @@ describe("PR status derivation", () => {
     ).toBe("Merge: blocked");
   });
 
+  test("merge detail follows the primary status when queued checks fail", () => {
+    const status = derivePrPresentation(
+      facts({
+        isQueued: true,
+        checks: [{ name: "test", outcome: "failed", required: true }],
+      }),
+    );
+    expect(status.primary).toBe("queued");
+    expect(status.details.find((detail) => detail.key === "merge")?.text).toBe(
+      "Merge: queued",
+    );
+  });
+
+  test("multi-line fetch errors stay on one detail row", () => {
+    const status = derivePrPresentation(
+      facts({ lastError: "fatal: offline\nhint: retry" }),
+    );
+    expect(status.details.find((detail) => detail.key === "updated")?.text).toContain(
+      "fatal: offline hint: retry",
+    );
+  });
+
   test("cancelled and unknown checks never show passed", () => {
     const status = derivePrPresentation(
       facts({
@@ -131,6 +159,17 @@ describe("PR status derivation", () => {
     expect(compactPrText(0, status, 18)).toContain("#? stale");
     expect(compactPrText(-1, status, 18)).toContain("#? stale");
     expect(compactPrText(150, status, 7).length).toBeLessThanOrEqual(7);
+    const segments = compactPrSegments(150, status, 18);
+    expect(segments.map((segment) => segment.text).join("")).toBe(
+      compactPrText(150, status, 18),
+    );
+    expect(segments.map((segment) => segment.kind)).toContain("number");
+    expect(segments.map((segment) => segment.kind)).toContain("stale");
+    expect(
+      compactPrSegments(150, derivePrPresentation(facts()), 16).some(
+        (segment) => segment.kind === "status" && segment.text.length > 0,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -153,10 +192,31 @@ function repo(): RepoInfo {
 }
 
 describe("PR tree rows", () => {
+  test("opens PR URLs through GitHub CLI on every platform", () => {
+    const spawn = vi.spyOn(Bun, "spawn").mockReturnValue({
+      exited: Promise.resolve(0),
+    } as unknown as ReturnType<typeof Bun.spawn>);
+    try {
+      openPrInBrowser("/repo", 150, "https://github.com/base/repo/pull/150");
+      expect(spawn).toHaveBeenCalledWith(
+        [
+          "gh",
+          "pr",
+          "view",
+          "--web",
+          "https://github.com/base/repo/pull/150",
+        ],
+        { cwd: "/repo" },
+      );
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
   test("wrapped Unicode title remains one selectable item across visual rows", () => {
     const pr = facts({ title: "修正 session cleanup 🧪 ".repeat(6) });
     const identity = lifecycleKey("/repo", "feature");
-    const prKey = "base/repo#150";
+    const prKey = prExpansionKey(identity, pr);
     const items = buildTreeItems({
       repos: [repo()],
       expandedWorktreeKeys: new Set(["repo/feature"]),
@@ -235,5 +295,71 @@ describe("PR tree rows", () => {
       type: "detail",
       detailKind: "candidate-group",
     });
+  });
+
+  test("expanding the same PR in one Workspace leaves the other collapsed", () => {
+    const sharedPr = facts();
+    const first = lifecycleKey("/repo", "feature");
+    const second = lifecycleKey("/repo", "other");
+    const multiRepo = repo();
+    multiRepo.worktrees.push({
+      branch: "other",
+      path: "/repo-other",
+      isMainWorktree: false,
+      changedFiles: 0,
+      sync: null,
+    });
+    const items = buildTreeItems({
+      repos: [multiRepo],
+      expandedWorktreeKeys: new Set(["repo/feature", "repo/other"]),
+      prData: new Map([
+        [first, displayPr(sharedPr)],
+        [second, displayPr(sharedPr)],
+      ]),
+      expandedPrKeys: new Set([prExpansionKey(first, sharedPr)]),
+      panes: new Map(),
+      jumpToPane: () => {},
+    });
+    expect(
+      items.filter(
+        (item) => item.type === "detail" && item.detailKind === "pr-title",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("selection recovery does not infer detail type from a branch name", () => {
+    const namedRepo = repo();
+    namedRepo.worktrees[0]!.branch = "feat/pr/login";
+    namedRepo.worktrees.push({
+      branch: "other",
+      path: "/repo-other",
+      isMainWorktree: false,
+      changedFiles: 0,
+      sync: null,
+    });
+    const pane = {
+      type: "detail" as const,
+      repoIndex: 0,
+      worktreeIndex: 0,
+      detailKind: "pane" as const,
+      label: "shell",
+      meta: { paneId: "pane-1", window: "0", paneIndex: 0, command: "zsh" },
+    };
+    const after = [
+      { type: "repo" as const, repoIndex: 0 },
+      { type: "worktree" as const, repoIndex: 0, worktreeIndex: 0 },
+      { type: "worktree" as const, repoIndex: 0, worktreeIndex: 1 },
+    ];
+    const before = [...after.slice(0, 2), pane, after[2]!];
+    expect(
+      resolveRecoveredSelectionIndex({
+        prevTree: before,
+        treeItems: after,
+        prevSelectionId: treeItemId(pane, [namedRepo]),
+        prevSelectionParentId: treeItemParentId(pane, [namedRepo]),
+        selectedIndex: 2,
+        repos: [namedRepo],
+      }),
+    ).toBeNull();
   });
 });

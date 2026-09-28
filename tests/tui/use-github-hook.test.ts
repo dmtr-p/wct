@@ -154,4 +154,32 @@ describe("useGitHub", () => {
     expect(harness.value.errors.has(initial.repoPath)).toBe(false);
     harness.unmount();
   });
+
+  test("an explicit association refreshes after an in-flight request", async () => {
+    let releaseFirst: (repository: string) => void = () => {};
+    let calls = 0;
+    runPromise.mockImplementation((() => {
+      calls++;
+      if (calls === 1)
+        return new Promise<string>((resolve) => {
+          releaseFirst = resolve;
+        });
+      if (calls === 3 || calls === 4 || calls === 8 || calls === 9)
+        return Promise.resolve([]);
+      return Promise.resolve(calls === 7 ? "base/repo" : undefined);
+    }) as typeof tuiRuntime.runPromise);
+    const harness = await renderHook([repo()]);
+    await settle();
+    expect(calls).toBe(1);
+    const update = harness.value.setExplicit("/tmp/repo", "feature", {
+      baseRepository: "base/repo",
+      number: 42,
+    } as Parameters<ReturnType<typeof useGitHub>["setExplicit"]>[2]);
+    await settle();
+    expect(calls).toBe(2);
+    releaseFirst("base/repo");
+    await update;
+    expect(calls).toBe(11);
+    harness.unmount();
+  });
 });

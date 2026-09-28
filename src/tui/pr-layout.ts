@@ -24,6 +24,8 @@ export const PR_INDENT = 5;
 export const PR_SELECTOR = 0;
 /** Rollup-icon columns ("✓ ") when a rollup state is present. */
 export const PR_ICON = 2;
+/** Leading columns for nested title, fact, and candidate rows. */
+export const PR_SUBROW_INDENT = 9;
 
 /**
  * Columns consumed before the PR label on its first line. Continuation lines
@@ -50,5 +52,5 @@ export function wrapPrLabel(
 
 /** Only the expanded title item may wrap in the new PR tree. */
 export function wrapPrTitle(title: string, maxWidth: number): string[] {
-  return wrapText(title, Math.max(1, maxWidth - 9));
+  return wrapText(title, Math.max(1, maxWidth - PR_SUBROW_INDENT));
 }

@@ -1,6 +1,6 @@
 import { checkSummary, countChecks, type PrFacts } from "../services/pr-model";
-import { displayWidth } from "./utils/display-width";
-import { truncateBranch } from "./utils/truncate";
+import { displayWidth, graphemeWidths } from "./utils/display-width";
+import { toSingleLine } from "./utils/truncate";
 
 export const PR_COLORS = {
   green: "#40a02b",
@@ -22,6 +22,10 @@ export interface PrPresentation {
 
 function plural(count: number, label: string): string {
   return `${count} ${label}`;
+}
+
+export function candidatePrLabel(pr: PrFacts): string {
+  return `#${pr.number} ${pr.title} · ${pr.headRepository ?? "unknown head"} · ${pr.state.toLowerCase()}`;
 }
 
 export function derivePrPresentation(pr: PrFacts): PrPresentation {
@@ -110,20 +114,24 @@ export function derivePrPresentation(pr: PrFacts): PrPresentation {
     if (all.unknown) parts.push(plural(all.unknown, "unknown"));
     details.push({ key: "checks", text: `Checks: ${parts.join(", ")}` });
   }
-  let merge = "unknown";
-  if (pr.state === "MERGED") merge = "merged";
-  else if (pr.state === "CLOSED") merge = "closed";
-  else if (pr.isDraft) merge = "blocked (draft)";
-  else if (conflict) merge = "blocked (conflicts)";
-  else if (pr.reviewDecision === "CHANGES_REQUESTED")
-    merge = "blocked (changes requested)";
-  else if (requiredFailure) merge = "blocked (required checks failed)";
-  else if (reviewPending) merge = "blocked (review required)";
-  else if (behind) merge = "blocked (behind base)";
-  else if (queued) merge = "queued";
-  else if (blocked) merge = "blocked";
-  else if (ready) merge = "ready";
-  else if (pr.mergeable === "UNKNOWN") merge = "checking…";
+  const merge =
+    {
+      merged: "merged",
+      closed: "closed",
+      draft: "blocked (draft)",
+      conflicts: "blocked (conflicts)",
+      "changes requested": "blocked (changes requested)",
+      queued: "queued",
+      "checks failed": "blocked (required checks failed)",
+      "behind base": "blocked (behind base)",
+      "awaiting review": "blocked (review required)",
+      "checks pending": "checks pending",
+      blocked: "blocked",
+      ready: "ready",
+      "checking…": "checking…",
+      unknown: "unknown",
+      open: "open",
+    }[primary] ?? "unknown";
   details.push({ key: "merge", text: `Merge: ${merge}` });
   if (stale) {
     const updated = pr.fetchedAt
@@ -131,7 +139,7 @@ export function derivePrPresentation(pr: PrFacts): PrPresentation {
       : "unknown";
     details.push({
       key: "updated",
-      text: `Updated: ${updated} — ${pr.lastError ?? "incomplete data"}`,
+      text: `Updated: ${updated} — ${toSingleLine(pr.lastError ?? "incomplete data")}`,
     });
   }
   return {
@@ -144,16 +152,53 @@ export function derivePrPresentation(pr: PrFacts): PrPresentation {
   };
 }
 
+export type PrTextSegment = {
+  text: string;
+  kind: "plain" | "number" | "status" | "checks" | "stale";
+};
+
+function truncateSegments(
+  segments: PrTextSegment[],
+  width: number,
+): PrTextSegment[] {
+  if (displayWidth(segments.map((segment) => segment.text).join("")) <= width)
+    return segments;
+  if (width <= 0) return [];
+  const result: PrTextSegment[] = [];
+  let remaining = width - 1;
+  for (const segment of segments) {
+    let text = "";
+    for (const [grapheme, graphemeWidth] of graphemeWidths(segment.text)) {
+      if (graphemeWidth > remaining) break;
+      text += grapheme;
+      remaining -= graphemeWidth;
+    }
+    if (text) result.push({ ...segment, text });
+    if (text !== segment.text || remaining === 0) break;
+  }
+  result.push({ text: "…", kind: "plain" });
+  return result;
+}
+
 /** Exactly one terminal row, preserving freshness ahead of status at narrow widths. */
-export function compactPrText(
+export function compactPrSegments(
   number: number,
   presentation: PrPresentation,
   width: number,
   expanded = false,
-): string {
+): PrTextSegment[] {
   const numberText = number > 0 ? `#${number}` : "#?";
-  const prefix = `     ${expanded ? "▾" : "▸"} ${numberText}`;
-  const stale = presentation.stale ? " · stale" : "";
+  const prefix: PrTextSegment[] = [
+    { text: `     ${expanded ? "▾" : "▸"} `, kind: "plain" },
+    { text: numberText, kind: "number" },
+  ];
+  const status: PrTextSegment[] = [
+    { text: "  ", kind: "plain" },
+    { text: presentation.primary, kind: "status" },
+  ];
+  const stale: PrTextSegment[] = presentation.stale
+    ? [{ text: " · stale", kind: "stale" }]
+    : [];
   const icon =
     presentation.checks === "success"
       ? "✓"
@@ -164,15 +209,39 @@ export function compactPrText(
           : presentation.checks === "unknown"
             ? "?"
             : "";
-  const check = icon ? ` · checks ${icon}` : "";
-  const full = `${prefix}  ${presentation.primary}${check}${stale}`;
-  if (displayWidth(full) <= width) return full;
-  const withoutChecks = `${prefix}  ${presentation.primary}${stale}`;
-  if (displayWidth(withoutChecks) <= width) return withoutChecks;
+  const checks: PrTextSegment[] = icon
+    ? [{ text: ` · checks ${icon}`, kind: "checks" }]
+    : [];
+  const full = [...prefix, ...status, ...checks, ...stale];
+  if (displayWidth(full.map((segment) => segment.text).join("")) <= width)
+    return full;
+  const withoutChecks = [...prefix, ...status, ...stale];
+  if (
+    displayWidth(withoutChecks.map((segment) => segment.text).join("")) <= width
+  )
+    return withoutChecks;
   if (presentation.stale) {
     const short = `${numberText} stale`;
     const indent = " ".repeat(Math.max(0, width - displayWidth(short)));
-    return truncateBranch(`${indent}${short}`, width);
+    return truncateSegments(
+      [
+        { text: indent, kind: "plain" },
+        { text: numberText, kind: "number" },
+        { text: " stale", kind: "stale" },
+      ],
+      width,
+    );
   }
-  return truncateBranch(`${prefix}  ${presentation.primary}`, width);
+  return truncateSegments([...prefix, ...status], width);
+}
+
+export function compactPrText(
+  number: number,
+  presentation: PrPresentation,
+  width: number,
+  expanded = false,
+): string {
+  return compactPrSegments(number, presentation, width, expanded)
+    .map((segment) => segment.text)
+    .join("");
 }

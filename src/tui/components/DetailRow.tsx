@@ -1,6 +1,11 @@
 import { Box, Text } from "ink";
-import { PR_INDENT, prLabelStart, wrapPrLabel } from "../pr-layout";
-import { compactPrText, PR_COLORS } from "../pr-status";
+import {
+  PR_INDENT,
+  PR_SUBROW_INDENT,
+  prLabelStart,
+  wrapPrLabel,
+} from "../pr-layout";
+import { compactPrSegments, PR_COLORS } from "../pr-status";
 import type { TreeItem } from "../types";
 import { truncateBranch, truncateWithPrefix } from "../utils/truncate";
 import {
@@ -87,25 +92,13 @@ export function DetailRow({
     case "pr": {
       if (item.meta.presentation && item.meta.pr) {
         const { presentation, pr, expanded } = item.meta;
-        const line = compactPrText(pr.number, presentation, maxWidth, expanded);
-        const statusAt = line.indexOf(presentation.primary);
-        const prefix = statusAt >= 0 ? line.slice(0, statusAt) : line;
-        const numberText = `#${pr.number}`;
-        const numberAt = prefix.indexOf(numberText);
-        const beforeNumber = numberAt >= 0 ? prefix.slice(0, numberAt) : prefix;
-        const afterNumber =
-          numberAt >= 0 ? prefix.slice(numberAt + numberText.length) : "";
-        const suffix =
-          statusAt >= 0
-            ? line.slice(statusAt + presentation.primary.length)
-            : "";
-        const checksMatch = suffix.match(/ · checks [✓✗◌?]/);
-        const checkBefore = checksMatch
-          ? suffix.slice(0, checksMatch.index)
-          : suffix;
-        const checkAfter = checksMatch
-          ? suffix.slice((checksMatch.index ?? 0) + checksMatch[0].length)
-          : "";
+        const segments = compactPrSegments(
+          pr.number,
+          presentation,
+          maxWidth,
+          expanded,
+        );
+        const line = segments.map((segment) => segment.text).join("");
         const checkTone =
           presentation.checks === "success"
             ? PR_COLORS.green
@@ -117,54 +110,32 @@ export function DetailRow({
         return (
           <Box>
             <Text {...selectedProps} wrap="truncate">
-              {beforeNumber}
-              {numberAt >= 0 ? <Text bold>{numberText}</Text> : null}
-              {afterNumber ? (
+              {segments.map((segment, index) => (
                 <Text
+                  key={index}
+                  bold={
+                    segment.kind === "number" ||
+                    (segment.kind === "status" && presentation.bold)
+                  }
                   color={
                     isSelected
                       ? undefined
-                      : statusAt < 0 && presentation.stale
-                        ? PR_COLORS.muted
-                        : undefined
+                      : segment.kind === "status"
+                        ? PR_COLORS[
+                            presentation.stale ? "muted" : presentation.tone
+                          ]
+                        : segment.kind === "checks"
+                          ? presentation.stale
+                            ? PR_COLORS.muted
+                            : checkTone
+                          : segment.kind === "stale"
+                            ? PR_COLORS.muted
+                            : undefined
                   }
                 >
-                  {afterNumber}
+                  {segment.text}
                 </Text>
-              ) : null}
-              {statusAt >= 0 ? (
-                <Text
-                  color={
-                    isSelected
-                      ? undefined
-                      : PR_COLORS[
-                          presentation.stale ? "muted" : presentation.tone
-                        ]
-                  }
-                  bold={presentation.bold}
-                >
-                  {presentation.primary}
-                </Text>
-              ) : null}
-              {checkBefore}
-              {checksMatch ? (
-                <Text
-                  color={
-                    isSelected
-                      ? undefined
-                      : presentation.stale
-                        ? PR_COLORS.muted
-                        : checkTone
-                  }
-                >
-                  {checksMatch[0]}
-                </Text>
-              ) : null}
-              {checkAfter ? (
-                <Text color={isSelected ? undefined : PR_COLORS.muted}>
-                  {checkAfter}
-                </Text>
-              ) : null}
+              ))}
               {selectedRowFill(isSelected, maxWidth, line)}
             </Text>
           </Box>
@@ -210,7 +181,7 @@ export function DetailRow({
     }
 
     case "pr-title": {
-      const indent = "         ";
+      const indent = " ".repeat(PR_SUBROW_INDENT);
       const content = indent + (prLine ?? item.label);
       return (
         <Box>
@@ -223,7 +194,7 @@ export function DetailRow({
     }
 
     case "pr-fact": {
-      const indent = "         ";
+      const indent = " ".repeat(PR_SUBROW_INDENT);
       const content =
         indent + truncateBranch(item.label, maxWidth - indent.length);
       return (
@@ -254,7 +225,7 @@ export function DetailRow({
     }
 
     case "candidate": {
-      const indent = "         ";
+      const indent = " ".repeat(PR_SUBROW_INDENT);
       const content =
         indent + truncateBranch(item.label, maxWidth - indent.length);
       return (

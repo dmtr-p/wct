@@ -10,7 +10,7 @@ import {
   resolvePushDestination,
   resolveWorkspacePr,
 } from "../../services/pr-discovery";
-import { checkSummary, type PrFacts } from "../../services/pr-model";
+import { checkSummary, prIdentity, type PrFacts } from "../../services/pr-model";
 import { lifecycleKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
@@ -18,9 +18,6 @@ import type { RepoInfo } from "./useRegistry";
 
 const GITHUB_POLL_INTERVAL = 120_000;
 const CACHE_FRESH_WINDOW = 30_000;
-const prIdentity = (pr: Pick<PrFacts, "baseRepository" | "number">) =>
-  `${pr.baseRepository.toLowerCase()}#${pr.number}`;
-
 export function displayPr(pr: PrFacts): PRInfo {
   return {
     number: pr.number,
@@ -392,6 +389,7 @@ export function useGitHub(repos: RepoInfo[]) {
           }),
         ),
       );
+      await inFlight.current.get(repoPath)?.promise;
       await refresh(repoPath);
     },
     [refresh],
@@ -401,6 +399,7 @@ export function useGitHub(repos: RepoInfo[]) {
       await tuiRuntime.runPromise(
         PrCacheService.use((s) => s.clearExplicit(repoPath, branch)),
       );
+      await inFlight.current.get(repoPath)?.promise;
       await refresh(repoPath);
     },
     [refresh],

@@ -279,4 +279,23 @@ describe("association resolution", () => {
     expect(entry.pr?.number).toBe(1);
     expect(entry.newerOpenPr).toBe(2);
   });
+  test("explicit PR outside the pool is selected only with matching identity", () => {
+    const explicit = { baseRepository: "other/repo", number: 7 };
+    const candidate = { ...pr(7, "MERGED"), baseRepository: "other/repo" };
+    const resolve = (fetched: PrFacts) =>
+      resolveWorkspacePr(
+        [pr(2, "OPEN")],
+        "feature",
+        { repository: "alice/repo", branch: "feature" },
+        explicit,
+        1,
+        fetched,
+      );
+    expect(resolve(candidate).pr).toEqual(candidate);
+    expect(resolve(candidate).newerOpenPr).toBe(2);
+    expect(resolve({ ...candidate, number: 8 }).pr).toBeNull();
+    expect(
+      resolve({ ...candidate, baseRepository: "base/repo" }).pr,
+    ).toBeNull();
+  });
 });

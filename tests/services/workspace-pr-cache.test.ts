@@ -81,6 +81,29 @@ describe("Workspace PR cache", () => {
     database.close();
   });
 
+  test("pruning rolls back cache deletes if association deletion fails", () => {
+    const database = db();
+    sqlSetWorkspace(database, "/a", "gone", {
+      pr: null,
+      candidates: [],
+      newerOpenPr: null,
+      uncertain: true,
+      fetchedAt: 123,
+      lastError: null,
+    });
+    sqlSetExplicit(database, "/a", "gone", {
+      baseRepository: "base/repo",
+      number: 2,
+    });
+    database.run(`CREATE TRIGGER block_association_delete
+      BEFORE DELETE ON workspace_pr_association
+      BEGIN SELECT RAISE(ABORT, 'blocked'); END`);
+    expect(() => sqlPruneWorkspaces(database, "/a", [])).toThrow("blocked");
+    expect(sqlGetWorkspace(database, "/a", "gone")).not.toBeNull();
+    expect(sqlGetExplicit(database, "/a", "gone")).not.toBeNull();
+    database.close();
+  });
+
   test("Open modal cache filters terminal PRs on write and hydration", () => {
     const database = db();
     sqlSetOpenPrs(database, "/a", [

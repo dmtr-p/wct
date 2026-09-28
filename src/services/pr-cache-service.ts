@@ -227,27 +227,29 @@ export function sqlPruneWorkspaces(
   repoPath: string,
   presentBranches: readonly string[],
 ): void {
-  const present = new Set(presentBranches);
-  const rows = db
-    .query("SELECT branch FROM workspace_pr_cache WHERE repo_path = ?")
-    .all(repoPath) as { branch: string }[];
-  for (const row of rows) {
-    if (!present.has(row.branch))
-      db.run(
-        "DELETE FROM workspace_pr_cache WHERE repo_path = ? AND branch = ?",
-        [repoPath, row.branch],
-      );
-  }
-  const associations = db
-    .query("SELECT branch FROM workspace_pr_association WHERE repo_path = ?")
-    .all(repoPath) as { branch: string }[];
-  for (const row of associations) {
-    if (!present.has(row.branch))
-      db.run(
-        "DELETE FROM workspace_pr_association WHERE repo_path = ? AND branch = ?",
-        [repoPath, row.branch],
-      );
-  }
+  db.transaction(() => {
+    const present = new Set(presentBranches);
+    const rows = db
+      .query("SELECT branch FROM workspace_pr_cache WHERE repo_path = ?")
+      .all(repoPath) as { branch: string }[];
+    for (const row of rows) {
+      if (!present.has(row.branch))
+        db.run(
+          "DELETE FROM workspace_pr_cache WHERE repo_path = ? AND branch = ?",
+          [repoPath, row.branch],
+        );
+    }
+    const associations = db
+      .query("SELECT branch FROM workspace_pr_association WHERE repo_path = ?")
+      .all(repoPath) as { branch: string }[];
+    for (const row of associations) {
+      if (!present.has(row.branch))
+        db.run(
+          "DELETE FROM workspace_pr_association WHERE repo_path = ? AND branch = ?",
+          [repoPath, row.branch],
+        );
+    }
+  }).immediate();
 }
 
 export function sqlGetExplicit(

@@ -192,6 +192,7 @@ export function resolveWorkspacePr(
   destination: PushDestination | null,
   explicit: ExplicitPrAssociation | null,
   fetchedAt: number,
+  explicitCandidate: PrFacts | null = null,
 ): WorkspacePrEntry {
   const sameBranch = pool.filter((pr) => pr.headRefName === branch);
   const matching = destination
@@ -207,7 +208,7 @@ export function resolveWorkspacePr(
     return open || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
   });
   const selected = explicit
-    ? (pool.find(
+    ? ([...pool, ...(explicitCandidate ? [explicitCandidate] : [])].find(
         (pr) =>
           pr.baseRepository.toLowerCase() ===
             explicit.baseRepository.toLowerCase() &&

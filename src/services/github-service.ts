@@ -119,7 +119,13 @@ export interface GitHubService {
   listRawPrs: (
     cwd: string,
     state: "open" | "all",
+    baseRepository: string,
   ) => Effect.Effect<unknown[], WctError, BunServices.BunServices>;
+  getRawPr: (
+    cwd: string,
+    baseRepository: string,
+    number: number,
+  ) => Effect.Effect<unknown, WctError, BunServices.BunServices>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
@@ -251,7 +257,66 @@ function listPrsImpl(cwd: string) {
 const DISCOVERY_FIELDS =
   "id,number,title,state,url,isDraft,reviewDecision,mergeable,mergeStateStatus,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,statusCheckRollup,updatedAt";
 
-function listRawPrsImpl(cwd: string, state: "open" | "all") {
+const DISCOVERY_GRAPHQL_FIELDS =
+  "id number title state url isDraft reviewDecision mergeable mergeStateStatus headRefName headRefOid headRepository { nameWithOwner name } headRepositoryOwner { login } baseRefName updatedAt";
+
+export function parseAllPrPages(stdout: string): unknown[] {
+  const pages: unknown = JSON.parse(stdout);
+  if (!Array.isArray(pages) || pages.length === 0)
+    throw new Error("Missing PR pages");
+  const prs: unknown[] = [];
+  for (const page of pages) {
+    const response = page as {
+      errors?: { message?: string }[];
+      data?: {
+        repository?: {
+          pullRequests?: {
+            nodes?: unknown[];
+            pageInfo?: { hasNextPage?: boolean };
+          };
+        };
+      };
+    };
+    if (response?.errors?.length)
+      throw new Error(response.errors.map((error) => error.message).join("; "));
+    const connection = response?.data?.repository?.pullRequests;
+    if (!Array.isArray(connection?.nodes) || !connection.pageInfo)
+      throw new Error("Incomplete PR page");
+    prs.push(...connection.nodes);
+  }
+  const last = pages.at(-1) as {
+    data?: {
+      repository?: { pullRequests?: { pageInfo?: { hasNextPage?: boolean } } };
+    };
+  };
+  if (last.data?.repository?.pullRequests?.pageInfo?.hasNextPage !== false)
+    throw new Error("PR pagination did not finish");
+  return prs;
+}
+
+function listRawPrsImpl(
+  cwd: string,
+  state: "open" | "all",
+  baseRepository: string,
+) {
+  if (state === "all") {
+    const [owner, repo] = baseRepository.split("/");
+    if (!owner || !repo)
+      return Effect.fail(commandError("pr_error", "Invalid base repository"));
+    const query = `query($endCursor: String) { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequests(first: 100, after: $endCursor) { nodes { ${DISCOVERY_GRAPHQL_FIELDS} } pageInfo { hasNextPage endCursor } } } }`;
+    return Effect.flatMap(
+      execProcess(
+        "gh",
+        ["api", "graphql", "--paginate", "--slurp", "-f", `query=${query}`],
+        { cwd },
+      ),
+      (result) =>
+        Effect.try({
+          try: () => parseAllPrPages(result.stdout),
+          catch: (error) => commandError("pr_error", String(error), error),
+        }),
+    );
+  }
   return Effect.flatMap(
     execProcess(
       "gh",
@@ -261,7 +326,7 @@ function listRawPrsImpl(cwd: string, state: "open" | "all") {
         "--state",
         state,
         "--limit",
-        state === "open" ? "100000" : "1000",
+        "100000",
         "--json",
         DISCOVERY_FIELDS,
       ],
@@ -272,11 +337,46 @@ function listRawPrsImpl(cwd: string, state: "open" | "all") {
         try: () => {
           const value: unknown = JSON.parse(result.stdout);
           if (!Array.isArray(value)) throw new Error("Expected PR array");
-          if (state === "all" && value.length >= 1000)
-            throw new Error(
-              "PR discovery reached its 1000 item cap; association is uncertain",
-            );
           return value;
+        },
+        catch: (error) => commandError("pr_error", String(error), error),
+      }),
+  );
+}
+
+function getRawPrImpl(cwd: string, baseRepository: string, number: number) {
+  const [owner, repo] = baseRepository.split("/");
+  if (!owner || !repo || !Number.isSafeInteger(number) || number < 1)
+    return Effect.fail(commandError("pr_error", "Invalid PR identity"));
+  const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequest(number: ${number}) { ${DISCOVERY_GRAPHQL_FIELDS} baseRepository { nameWithOwner } } } }`;
+  return Effect.flatMap(
+    execProcess("gh", ["api", "graphql", "-f", `query=${query}`], { cwd }),
+    (result) =>
+      Effect.try({
+        try: () => {
+          const response = JSON.parse(result.stdout) as {
+            errors?: { message?: string }[];
+            data?: {
+              repository?: {
+                pullRequest?: {
+                  number?: number;
+                  baseRepository?: { nameWithOwner?: string };
+                };
+              };
+            };
+          };
+          if (response.errors?.length)
+            throw new Error(
+              response.errors.map((error) => error.message).join("; "),
+            );
+          const pr = response.data?.repository?.pullRequest;
+          if (
+            pr?.number !== number ||
+            pr.baseRepository?.nameWithOwner?.toLowerCase() !==
+              baseRepository.toLowerCase()
+          )
+            throw new Error("Fetched PR identity does not match association");
+          return pr;
         },
         catch: (error) => commandError("pr_error", String(error), error),
       }),
@@ -434,11 +534,19 @@ export const liveGitHubService: GitHubService = GitHubService.of({
           error,
         ),
     ),
-  listRawPrs: (cwd, state) =>
-    Effect.mapError(listRawPrsImpl(cwd, state), (error) =>
+  listRawPrs: (cwd, state, baseRepository) =>
+    Effect.mapError(listRawPrsImpl(cwd, state, baseRepository), (error) =>
       commandError(
         "pr_error",
         `Failed to list ${state} PRs: ${extractShellError(error)}`,
+        error,
+      ),
+    ),
+  getRawPr: (cwd, baseRepository, number) =>
+    Effect.mapError(getRawPrImpl(cwd, baseRepository, number), (error) =>
+      commandError(
+        "pr_error",
+        `Failed to read PR #${number}: ${extractShellError(error)}`,
         error,
       ),
     ),

@@ -18,6 +18,8 @@ import type { RepoInfo } from "./useRegistry";
 
 const GITHUB_POLL_INTERVAL = 120_000;
 const CACHE_FRESH_WINDOW = 30_000;
+const prIdentity = (pr: Pick<PrFacts, "baseRepository" | "number">) =>
+  `${pr.baseRepository.toLowerCase()}#${pr.number}`;
 
 export function displayPr(pr: PrFacts): PRInfo {
   return {
@@ -75,7 +77,9 @@ export function useGitHub(repos: RepoInfo[]) {
     ]),
   );
   const firstRefresh = useRef(true);
-  const inFlight = useRef<Map<string, Promise<void>>>(new Map());
+  const inFlight = useRef<
+    Map<string, { promise: Promise<void>; signal?: AbortSignal }>
+  >(new Map());
 
   useEffect(() => {
     const cache = hydrate(repos);
@@ -96,7 +100,7 @@ export function useGitHub(repos: RepoInfo[]) {
   const refreshOne = useCallback(
     async (repo: RepoInfo, first: boolean, signal?: AbortSignal) => {
       const running = inFlight.current.get(repo.repoPath);
-      if (running) return running;
+      if (running && !running.signal?.aborted) return running.promise;
       if (first && repo.worktrees.length) {
         try {
           const cached = tuiRuntime.runSync(
@@ -114,7 +118,8 @@ export function useGitHub(repos: RepoInfo[]) {
           /* fetch */
         }
       }
-      const promise = (async () => {
+      let promise!: Promise<void>;
+      promise = (async () => {
         setRefreshingProjects((previous) =>
           new Set(previous).add(repo.repoPath),
         );
@@ -126,11 +131,15 @@ export function useGitHub(repos: RepoInfo[]) {
           );
           const [rawAll, rawOpen] = await Promise.all([
             tuiRuntime.runPromise(
-              GitHubService.use((s) => s.listRawPrs(repo.repoPath, "all")),
+              GitHubService.use((s) =>
+                s.listRawPrs(repo.repoPath, "all", base),
+              ),
               opts,
             ),
             tuiRuntime.runPromise(
-              GitHubService.use((s) => s.listRawPrs(repo.repoPath, "open")),
+              GitHubService.use((s) =>
+                s.listRawPrs(repo.repoPath, "open", base),
+              ),
               opts,
             ),
           ]);
@@ -142,6 +151,7 @@ export function useGitHub(repos: RepoInfo[]) {
             .map((raw) => normalizeGhPr(raw, base, now))
             .filter((pr): pr is PrFacts => pr !== null && pr.state === "OPEN");
           const found = new Map<string, WorkspacePrEntry>();
+          const explicitFetched = new Map<string, PrFacts | null>();
           for (const wt of repo.worktrees) {
             if (wt.isMainWorktree) continue;
             const [destination, explicit] = await Promise.all([
@@ -155,9 +165,42 @@ export function useGitHub(repos: RepoInfo[]) {
                 ),
               ),
             ]);
+            let explicitCandidate: PrFacts | null = null;
+            if (
+              explicit &&
+              !all.some((pr) => prIdentity(pr) === prIdentity(explicit))
+            ) {
+              const key = prIdentity(explicit);
+              if (!explicitFetched.has(key)) {
+                const fetched = await tuiRuntime
+                  .runPromise(
+                    GitHubService.use((s) =>
+                      s.getRawPr(
+                        repo.repoPath,
+                        explicit.baseRepository,
+                        explicit.number,
+                      ),
+                    ),
+                    opts,
+                  )
+                  .then((raw) =>
+                    normalizeGhPr(raw, explicit.baseRepository, now),
+                  )
+                  .catch(() => null);
+                explicitFetched.set(key, fetched);
+              }
+              explicitCandidate = explicitFetched.get(key) ?? null;
+            }
             found.set(
               lifecycleKey(repo.repoPath, wt.branch),
-              resolveWorkspacePr(all, wt.branch, destination, explicit, now),
+              resolveWorkspacePr(
+                all,
+                wt.branch,
+                destination,
+                explicit,
+                now,
+                explicitCandidate,
+              ),
             );
           }
           const candidates = [
@@ -165,20 +208,33 @@ export function useGitHub(repos: RepoInfo[]) {
               [...found.values()]
                 .flatMap((entry) => [entry.pr, ...entry.candidates])
                 .filter((pr): pr is PrFacts => pr !== null)
-                .map((pr) => [pr.number, pr]),
+                .map((pr) => [prIdentity(pr), pr]),
             ).values(),
           ];
-          const detailed = await tuiRuntime.runPromise(
-            fetchPrDetails(repo.repoPath, base, candidates),
-            opts,
-          );
-          const details = new Map(detailed.map((pr) => [pr.number, pr]));
+          const byBase = new Map<string, PrFacts[]>();
+          for (const pr of candidates) {
+            const group = byBase.get(pr.baseRepository) ?? [];
+            group.push(pr);
+            byBase.set(pr.baseRepository, group);
+          }
+          const detailed = (
+            await Promise.all(
+              [...byBase].map(([repository, prs]) =>
+                tuiRuntime.runPromise(
+                  fetchPrDetails(repo.repoPath, repository, prs),
+                  opts,
+                ),
+              ),
+            )
+          ).flat();
+          const details = new Map(detailed.map((pr) => [prIdentity(pr), pr]));
           for (const [identity, entry] of found) {
-            if (entry.pr) entry.pr = details.get(entry.pr.number) ?? null;
+            if (entry.pr) entry.pr = details.get(prIdentity(entry.pr)) ?? null;
             entry.candidates = entry.candidates.map(
-              (pr) => details.get(pr.number) ?? pr,
+              (pr) => details.get(prIdentity(pr)) ?? pr,
             );
             if (entry.pr?.lastError) {
+              const failedPr = entry.pr;
               const branch = repo.worktrees.find(
                 (wt) => lifecycleKey(repo.repoPath, wt.branch) === identity,
               )?.branch;
@@ -190,8 +246,8 @@ export function useGitHub(repos: RepoInfo[]) {
                   )
                 : null;
               if (
-                cached?.pr?.number === entry.pr.number &&
-                cached.pr.baseRepository === entry.pr.baseRepository &&
+                cached?.pr?.number === failedPr.number &&
+                cached.pr.baseRepository === failedPr.baseRepository &&
                 cached.pr.checksComplete
               ) {
                 entry.pr = cached.pr;
@@ -200,9 +256,8 @@ export function useGitHub(repos: RepoInfo[]) {
                 entry.uncertain = true;
               }
               entry.lastError =
-                details.get(
-                  cached?.pr?.number ?? entry.candidates[0]?.number ?? -1,
-                )?.lastError ?? "Incomplete PR data";
+                details.get(prIdentity(failedPr))?.lastError ??
+                "Incomplete PR data";
             }
             if (
               entry.pr === null &&
@@ -289,15 +344,17 @@ export function useGitHub(repos: RepoInfo[]) {
               ),
           );
         } finally {
-          inFlight.current.delete(repo.repoPath);
-          setRefreshingProjects((previous) => {
-            const next = new Set(previous);
-            next.delete(repo.repoPath);
-            return next;
-          });
+          if (inFlight.current.get(repo.repoPath)?.promise === promise) {
+            inFlight.current.delete(repo.repoPath);
+            setRefreshingProjects((previous) => {
+              const next = new Set(previous);
+              next.delete(repo.repoPath);
+              return next;
+            });
+          }
         }
       })();
-      inFlight.current.set(repo.repoPath, promise);
+      inFlight.current.set(repo.repoPath, { promise, signal });
       return promise;
     },
     [],

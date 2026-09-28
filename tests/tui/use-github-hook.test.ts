@@ -36,18 +36,23 @@ async function renderHook(repos: RepoInfo[]) {
   stdin.isTTY = false;
   stdin.setRawMode = () => stdin;
   const { render } = await import("ink");
-  const instance = render(
-    React.createElement(() => {
-      value = useGitHub(repos);
-      return null;
-    }),
-    { stdout, stdin, patchConsole: false, exitOnCtrlC: false },
-  );
+  function Hook({ repos: currentRepos }: { repos: RepoInfo[] }) {
+    value = useGitHub(currentRepos);
+    return null;
+  }
+  const instance = render(React.createElement(Hook, { repos }), {
+    stdout,
+    stdin,
+    patchConsole: false,
+    exitOnCtrlC: false,
+  });
   return {
     get value() {
       if (!value) throw new Error("Missing hook value");
       return value;
     },
+    rerender: (nextRepos: RepoInfo[]) =>
+      instance.rerender(React.createElement(Hook, { repos: nextRepos })),
     unmount: () => instance.unmount(),
   };
 }
@@ -109,6 +114,44 @@ describe("useGitHub", () => {
     await settle();
     expect(harness.value.errors.get("/tmp/a")).toContain("offline");
     expect(harness.value.errors.has("/tmp/b")).toBe(false);
+    harness.unmount();
+  });
+
+  test("a repository change starts a fresh request after aborting the old one", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    let calls = 0;
+    runPromise.mockImplementation(((_effect, options) => {
+      calls++;
+      if (calls === 1)
+        return new Promise((_, reject) => {
+          rejectFirst = reject;
+          options?.signal?.addEventListener("abort", () =>
+            rejectFirst(new Error("aborted")),
+          );
+        });
+      return Promise.resolve(calls === 2 ? "base/repo" : []);
+    }) as typeof tuiRuntime.runPromise);
+    const initial = repo();
+    const harness = await renderHook([initial]);
+    await settle();
+    expect(calls).toBe(1);
+    harness.rerender([
+      {
+        ...initial,
+        worktrees: [
+          {
+            branch: "main",
+            path: initial.repoPath,
+            isMainWorktree: true,
+            changedFiles: 0,
+            sync: null,
+          },
+        ],
+      },
+    ]);
+    await settle();
+    expect(calls).toBeGreaterThanOrEqual(4);
+    expect(harness.value.errors.has(initial.repoPath)).toBe(false);
     harness.unmount();
   });
 });

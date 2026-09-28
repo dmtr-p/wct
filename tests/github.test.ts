@@ -11,6 +11,7 @@ import {
   findMatchingRemote,
   isGhNotInstalledError,
   liveGitHubService,
+  parseAllPrPages,
   parseGhPrList,
   parsePrArg,
   parseRemoteOwnerRepo,
@@ -18,6 +19,50 @@ import {
 import { ProcessExitError } from "../src/services/process";
 
 describe("GitHub PR resolution", () => {
+  describe("paginated PR discovery", () => {
+    test("collects every page beyond 1,000 PRs", () => {
+      const pages = Array.from({ length: 11 }, (_, index) => ({
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: Array.from(
+                { length: index === 10 ? 1 : 100 },
+                (_, offset) => ({ number: index * 100 + offset + 1 }),
+              ),
+              pageInfo: { hasNextPage: index < 10 },
+            },
+          },
+        },
+      }));
+      const prs = parseAllPrPages(JSON.stringify(pages)) as {
+        number: number;
+      }[];
+      expect(prs).toHaveLength(1001);
+      expect(prs.at(-1)?.number).toBe(1001);
+    });
+
+    test("rejects incomplete pagination and GraphQL errors", () => {
+      const page = {
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: [{ number: 1 }],
+              pageInfo: { hasNextPage: true },
+            },
+          },
+        },
+      };
+      expect(() => parseAllPrPages(JSON.stringify([page]))).toThrow(
+        "PR pagination did not finish",
+      );
+      expect(() =>
+        parseAllPrPages(
+          JSON.stringify([{ ...page, errors: [{ message: "no" }] }]),
+        ),
+      ).toThrow("no");
+    });
+  });
+
   describe("parsePrArg", () => {
     test("parses a plain number", () => {
       expect(parsePrArg("123")).toBe(123);

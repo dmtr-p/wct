@@ -452,15 +452,10 @@ export function App() {
     rows,
     viewportRows,
     viewportRowsForSelection: (itemIndex) => {
-      const targetStatus = resolveStatusBarProps({
-        mode,
-        items: treeItems,
-        selectedIndex: itemIndex,
-        repos: filteredRepos,
-      });
+      const targetRepoPath =
+        filteredRepos[treeItems[itemIndex]?.repoIndex ?? -1]?.repoPath;
       const hasRepoError = Boolean(
-        targetStatus.selectedProject &&
-          githubErrors.get(targetStatus.selectedProject),
+        targetRepoPath && githubErrors.get(targetRepoPath),
       );
       return Math.max(
         0,

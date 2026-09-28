@@ -309,7 +309,7 @@ function listRawPrsImpl(
         "gh",
         ["api", "graphql", "--paginate", "--slurp", "-f", `query=${query}`],
         { cwd },
-      ),
+      ).pipe(Effect.timeout("2 minutes")),
       (result) =>
         Effect.try({
           try: () => parseAllPrPages(result.stdout),

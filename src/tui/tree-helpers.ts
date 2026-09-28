@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { WorkspacePrEntry } from "../services/pr-cache-service";
-import { prIdentity, type PrFacts } from "../services/pr-model";
+import { type PrFacts, prIdentity } from "../services/pr-model";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
 import type { RepoInfo } from "./hooks/useRegistry";

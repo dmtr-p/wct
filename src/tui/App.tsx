@@ -802,9 +802,7 @@ export function App() {
           ...(prMenu.pr ? [{ id: "open", label: "Open in GitHub" }] : []),
           { id: "refresh", label: "Refresh" },
           ...(prMenu.explicit
-            ? [
-                { id: "clear", label: "Clear association" },
-              ]
+            ? [{ id: "clear", label: "Clear association" }]
             : []),
         ];
 

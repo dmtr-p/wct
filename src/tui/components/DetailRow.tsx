@@ -110,9 +110,9 @@ export function DetailRow({
         return (
           <Box>
             <Text {...selectedProps} wrap="truncate">
-              {segments.map((segment, index) => (
+              {segments.map((segment) => (
                 <Text
-                  key={index}
+                  key={`${segment.kind}:${segment.text}`}
                   bold={
                     segment.kind === "number" ||
                     (segment.kind === "status" && presentation.bold)

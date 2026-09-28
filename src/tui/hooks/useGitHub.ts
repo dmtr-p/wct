@@ -10,7 +10,11 @@ import {
   resolvePushDestination,
   resolveWorkspacePr,
 } from "../../services/pr-discovery";
-import { checkSummary, prIdentity, type PrFacts } from "../../services/pr-model";
+import {
+  checkSummary,
+  type PrFacts,
+  prIdentity,
+} from "../../services/pr-model";
 import { lifecycleKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";

@@ -132,9 +132,9 @@ describe("PR status derivation", () => {
     const status = derivePrPresentation(
       facts({ lastError: "fatal: offline\nhint: retry" }),
     );
-    expect(status.details.find((detail) => detail.key === "updated")?.text).toContain(
-      "fatal: offline hint: retry",
-    );
+    expect(
+      status.details.find((detail) => detail.key === "updated")?.text,
+    ).toContain("fatal: offline hint: retry");
   });
 
   test("cancelled and unknown checks never show passed", () => {
@@ -199,13 +199,7 @@ describe("PR tree rows", () => {
     try {
       openPrInBrowser("/repo", 150, "https://github.com/base/repo/pull/150");
       expect(spawn).toHaveBeenCalledWith(
-        [
-          "gh",
-          "pr",
-          "view",
-          "--web",
-          "https://github.com/base/repo/pull/150",
-        ],
+        ["gh", "pr", "view", "--web", "https://github.com/base/repo/pull/150"],
         { cwd: "/repo" },
       );
     } finally {
@@ -329,7 +323,9 @@ describe("PR tree rows", () => {
 
   test("selection recovery does not infer detail type from a branch name", () => {
     const namedRepo = repo();
-    namedRepo.worktrees[0]!.branch = "feat/pr/login";
+    const firstWorktree = namedRepo.worktrees[0];
+    if (!firstWorktree) throw new Error("Missing fixture worktree");
+    firstWorktree.branch = "feat/pr/login";
     namedRepo.worktrees.push({
       branch: "other",
       path: "/repo-other",
@@ -345,12 +341,19 @@ describe("PR tree rows", () => {
       label: "shell",
       meta: { paneId: "pane-1", window: "0", paneIndex: 0, command: "zsh" },
     };
-    const after = [
-      { type: "repo" as const, repoIndex: 0 },
-      { type: "worktree" as const, repoIndex: 0, worktreeIndex: 0 },
-      { type: "worktree" as const, repoIndex: 0, worktreeIndex: 1 },
-    ];
-    const before = [...after.slice(0, 2), pane, after[2]!];
+    const repoItem = { type: "repo" as const, repoIndex: 0 };
+    const firstItem = {
+      type: "worktree" as const,
+      repoIndex: 0,
+      worktreeIndex: 0,
+    };
+    const secondItem = {
+      type: "worktree" as const,
+      repoIndex: 0,
+      worktreeIndex: 1,
+    };
+    const after = [repoItem, firstItem, secondItem];
+    const before = [repoItem, firstItem, pane, secondItem];
     expect(
       resolveRecoveredSelectionIndex({
         prevTree: before,

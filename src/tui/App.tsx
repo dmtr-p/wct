@@ -1275,6 +1275,7 @@ export function App() {
           />
         ) : mode.type === "PrMenu" && prMenu ? (
           <PrActionsModal
+            key={prMenu.screen}
             title={prMenu.screen === "choose" ? "Choose PR" : "PR actions"}
             options={prMenuOptions}
             width={Math.min(termCols, 70)}

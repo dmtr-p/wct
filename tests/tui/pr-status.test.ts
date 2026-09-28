@@ -58,6 +58,9 @@ describe("PR status derivation", () => {
       { checks: [{ name: "test", outcome: "pending", required: true }] },
       "checks pending",
     ],
+    [{ checksComplete: false }, "unknown"],
+    [{ checks: null }, "unknown"],
+    [{ checksComplete: false, mergeStateStatus: "BLOCKED" }, "blocked"],
     [{ mergeStateStatus: "BLOCKED" }, "blocked"],
     [{}, "ready"],
     [{ mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" }, "checking…"],
@@ -125,6 +128,8 @@ describe("PR status derivation", () => {
     );
     expect(compactPrText(150, status, 80)).not.toContain("Fix session cleanup");
     expect(compactPrText(150, status, 18)).toContain("#150 stale");
+    expect(compactPrText(0, status, 18)).toContain("#? stale");
+    expect(compactPrText(-1, status, 18)).toContain("#? stale");
     expect(compactPrText(150, status, 7).length).toBeLessThanOrEqual(7);
   });
 });

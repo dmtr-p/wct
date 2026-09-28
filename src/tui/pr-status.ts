@@ -42,6 +42,7 @@ export function derivePrPresentation(pr: PrFacts): PrPresentation {
     (pr.mergeStateStatus === "CLEAN" || pr.mergeStateStatus === "UNSTABLE") &&
     pr.mergeable === "MERGEABLE";
   const ready =
+    checks !== "unknown" &&
     readyEvidence &&
     !requiredFailure &&
     !requiredPending &&
@@ -70,6 +71,7 @@ export function derivePrPresentation(pr: PrFacts): PrPresentation {
   else if (requiredPending || checks === "pending")
     [primary, tone] = ["checks pending", "yellow"];
   else if (blocked) [primary, tone] = ["blocked", "muted"];
+  else if (checks === "unknown") [primary, tone] = ["unknown", "muted"];
   else if (ready) [primary, tone, bold] = ["ready", "green", true];
   else if (pr.mergeable === "UNKNOWN")
     [primary, tone] = ["checking…", "yellow"];
@@ -149,7 +151,8 @@ export function compactPrText(
   width: number,
   expanded = false,
 ): string {
-  const prefix = `     ${expanded ? "▾" : "▸"} ${number > 0 ? `#${number}` : "#?"}`;
+  const numberText = number > 0 ? `#${number}` : "#?";
+  const prefix = `     ${expanded ? "▾" : "▸"} ${numberText}`;
   const stale = presentation.stale ? " · stale" : "";
   const icon =
     presentation.checks === "success"
@@ -167,7 +170,7 @@ export function compactPrText(
   const withoutChecks = `${prefix}  ${presentation.primary}${stale}`;
   if (displayWidth(withoutChecks) <= width) return withoutChecks;
   if (presentation.stale) {
-    const short = `#${number} stale`;
+    const short = `${numberText} stale`;
     const indent = " ".repeat(Math.max(0, width - displayWidth(short)));
     return truncateBranch(`${indent}${short}`, width);
   }

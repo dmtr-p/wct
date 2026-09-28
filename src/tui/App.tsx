@@ -888,9 +888,7 @@ export function App() {
         : []),
       ...(prMenu.pr ? [{ id: "open", label: "Open in GitHub" }] : []),
       { id: "refresh", label: "Refresh" },
-      ...(prMenu.explicit
-        ? [{ id: "clear", label: "Clear association" }]
-        : []),
+      ...(prMenu.explicit ? [{ id: "clear", label: "Clear association" }] : []),
     ];
     if (prMenu.kind === "pr" && prMenu.pr) {
       if (prMenu.mergeCheck?.status === "refreshing")
@@ -917,7 +915,6 @@ export function App() {
     }
     return base;
   })();
-
 
   function closePrMenu() {
     if (mergePending.current) return;

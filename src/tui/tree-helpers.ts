@@ -985,7 +985,9 @@ export function resolveRecoveredSelectionIndex({
     )
       return parentIndex;
     if (
-      previousDetailKind === "pr" ||
+      (previousItem?.type === "detail" &&
+        previousItem.detailKind === "pr" &&
+        Boolean(previousItem.meta.prKey)) ||
       previousDetailKind === "candidate-group" ||
       previousDetailKind === "candidate" ||
       previousDetailKind === "pr-title" ||

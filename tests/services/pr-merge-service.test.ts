@@ -5,6 +5,7 @@ import {
   type MergeSnapshot,
   mergeEligibility,
   mergeSnapshotFingerprint,
+  resolveMergeConfiguration,
   validateSubmission,
 } from "../../src/services/pr-merge-service";
 import type { PrFacts } from "../../src/services/pr-model";
@@ -47,6 +48,25 @@ function snapshot(
 }
 
 describe("merge eligibility and routing", () => {
+  test("positive queue signals survive unrelated settings failures", () => {
+    expect(resolveMergeConfiguration(true, undefined, null)).toEqual({
+      queueRequired: true,
+      methods: null,
+      configurationError: null,
+    });
+    expect(
+      resolveMergeConfiguration(false, { mergeQueue: { id: "queue" } }, null),
+    ).toMatchObject({ queueRequired: true });
+    expect(
+      resolveMergeConfiguration(false, undefined, ["merge_queue"]),
+    ).toMatchObject({
+      queueRequired: true,
+    });
+    expect(resolveMergeConfiguration(false, undefined, null)).toMatchObject({
+      queueRequired: null,
+      configurationError: "queue settings unreadable",
+    });
+  });
   test("offers only repository-enabled methods", () => {
     expect(mergeEligibility(snapshot({}, { methods: ["REBASE"] }))).toEqual({
       route: "direct",

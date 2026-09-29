@@ -155,4 +155,25 @@ describe("PR merge confirmation", () => {
       rendered.unmount();
     }
   });
+
+  test("explains changed eligibility in the open menu", async () => {
+    const rendered = await renderApp(<App />);
+    try {
+      await openPrMenu(rendered);
+      mergeFixture.snapshot = {
+        ...mergeFixture.snapshot!,
+        pr: { ...mergeFixture.snapshot!.pr, reviewDecision: "REVIEW_REQUIRED" },
+      };
+      await sendKeys(rendered.stdin, "\x1b[B"); // Refresh
+      await sendKeys(rendered.stdin, "\x1b[B"); // Merge…
+      await sendKeys(rendered.stdin, "\r");
+      await tick(5);
+      const lines = rendered.lines().join("\n");
+      expect(lines).toContain("PR eligibility or routing changed");
+      expect(lines).not.toContain("Confirm: Merge now");
+      expect(mergeFixture.submissions).toBe(0);
+    } finally {
+      rendered.unmount();
+    }
+  });
 });

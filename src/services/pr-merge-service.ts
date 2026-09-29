@@ -39,6 +39,13 @@ export type MergeEligibility =
   | { route: "ineligible" }
   | { route: "unavailable"; reason: string };
 
+interface MergeSettings {
+  mergeCommitAllowed?: boolean;
+  squashMergeAllowed?: boolean;
+  rebaseMergeAllowed?: boolean;
+  mergeQueue?: { id?: string } | null;
+}
+
 const TARGET_FIELDS =
   "id,number,title,state,url,isDraft,reviewDecision,mergeable,mergeStateStatus,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,statusCheckRollup,updatedAt";
 
@@ -108,12 +115,7 @@ export function fetchMergeSnapshot(
             try: () =>
               decodeJson(result.stdout) as {
                 data?: {
-                  repository?: {
-                    mergeCommitAllowed?: boolean;
-                    squashMergeAllowed?: boolean;
-                    rebaseMergeAllowed?: boolean;
-                    mergeQueue?: { id?: string } | null;
-                  };
+                  repository?: MergeSettings;
                 };
               },
             catch: (error) => new Error(String(error)),
@@ -134,50 +136,56 @@ export function fetchMergeSnapshot(
       ),
       () => Effect.succeed(null),
     );
-    if (
-      !settings ||
-      settings.mergeQueue === undefined ||
-      rules === null ||
-      detailed.isMergeQueueEnabled === null
-    ) {
-      return {
-        pr: detailed,
-        queueRequired: null,
-        methods: null,
-        configurationError: "queue settings unreadable",
-      } satisfies MergeSnapshot;
-    }
-    if (
-      typeof settings.mergeCommitAllowed !== "boolean" ||
-      typeof settings.squashMergeAllowed !== "boolean" ||
-      typeof settings.rebaseMergeAllowed !== "boolean"
-    ) {
-      return {
-        pr: detailed,
-        queueRequired: null,
-        methods: null,
-        configurationError: "merge methods unreadable",
-      } satisfies MergeSnapshot;
-    }
-    const signals = [
-      detailed.isMergeQueueEnabled,
-      settings.mergeQueue !== null,
-      rules.includes("merge_queue"),
-    ];
-    const methods: MergeMethod[] = [];
-    if (settings.squashMergeAllowed) methods.push("SQUASH");
-    if (settings.rebaseMergeAllowed) methods.push("REBASE");
-    if (settings.mergeCommitAllowed) methods.push("MERGE");
-    // A positive read-access signal always routes through the queue. REST
-    // rules omit legacy branch-protection queues, so a negative REST result
-    // cannot override a positive PullRequest/repository signal.
     return {
       pr: detailed,
-      queueRequired: signals.some(Boolean),
-      methods,
-      configurationError: null,
+      ...resolveMergeConfiguration(
+        detailed.isMergeQueueEnabled,
+        settings,
+        rules,
+      ),
     } satisfies MergeSnapshot;
   });
+}
+
+export function resolveMergeConfiguration(
+  queueEnabled: boolean | null,
+  settings: MergeSettings | undefined,
+  rules: string[] | null,
+): Omit<MergeSnapshot, "pr"> {
+  // Any positive read-access signal establishes the queue route. A queue
+  // submission does not need direct-merge methods or the other two reads.
+  if (
+    queueEnabled === true ||
+    settings?.mergeQueue != null ||
+    rules?.includes("merge_queue")
+  )
+    return { queueRequired: true, methods: null, configurationError: null };
+  if (
+    !settings ||
+    settings.mergeQueue === undefined ||
+    rules === null ||
+    queueEnabled === null
+  )
+    return {
+      queueRequired: null,
+      methods: null,
+      configurationError: "queue settings unreadable",
+    };
+  if (
+    typeof settings.mergeCommitAllowed !== "boolean" ||
+    typeof settings.squashMergeAllowed !== "boolean" ||
+    typeof settings.rebaseMergeAllowed !== "boolean"
+  )
+    return {
+      queueRequired: false,
+      methods: null,
+      configurationError: "merge methods unreadable",
+    };
+  const methods: MergeMethod[] = [];
+  if (settings.squashMergeAllowed) methods.push("SQUASH");
+  if (settings.rebaseMergeAllowed) methods.push("REBASE");
+  if (settings.mergeCommitAllowed) methods.push("MERGE");
+  return { queueRequired: false, methods, configurationError: null };
 }
 
 export function mergeEligibility(snapshot: MergeSnapshot): MergeEligibility {

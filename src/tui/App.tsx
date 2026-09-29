@@ -168,6 +168,7 @@ export function App() {
       reason?: string;
     };
     method?: MergeMethod;
+    notice?: string;
   } | null>(null);
   const prMenuReturnMode = useRef<Mode>(Mode.Navigate);
   const prMenuRequest = useRef(0);
@@ -913,6 +914,8 @@ export function App() {
           });
       }
     }
+    if (prMenu.notice)
+      base.push({ id: "notice", label: prMenu.notice, disabled: true });
     return base;
   })();
 
@@ -934,6 +937,7 @@ export function App() {
       ...menu,
       screen: "actions",
       mergeCheck: { status: "refreshing" },
+      notice: undefined,
     });
     void tuiRuntime
       .runPromise(
@@ -954,9 +958,7 @@ export function App() {
           (eligibility.route === "direct" &&
             (!method || !eligibility.methods.includes(method)));
         if (changed) {
-          showActionError(
-            "PR eligibility or routing changed; choose the action again",
-          );
+          void refreshGitHub(menu.repoPath);
         }
         setPrMenu((previous) =>
           previous?.screen === "actions" &&
@@ -965,7 +967,10 @@ export function App() {
                 ...previous,
                 screen: changed ? "actions" : "confirm",
                 mergeCheck: { status: "ready", snapshot: fresh },
-                method,
+                method: changed ? undefined : method,
+                notice: changed
+                  ? "PR eligibility or routing changed; choose the action again"
+                  : undefined,
               }
             : previous,
         );

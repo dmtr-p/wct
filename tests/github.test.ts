@@ -11,6 +11,7 @@ import {
   findMatchingRemote,
   isGhNotInstalledError,
   liveGitHubService,
+  parseAllPrPages,
   parseGhPrList,
   parsePrArg,
   parseRemoteOwnerRepo,
@@ -18,6 +19,50 @@ import {
 import { ProcessExitError } from "../src/services/process";
 
 describe("GitHub PR resolution", () => {
+  describe("paginated PR discovery", () => {
+    test("collects every page beyond 1,000 PRs", () => {
+      const pages = Array.from({ length: 11 }, (_, index) => ({
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: Array.from(
+                { length: index === 10 ? 1 : 100 },
+                (_, offset) => ({ number: index * 100 + offset + 1 }),
+              ),
+              pageInfo: { hasNextPage: index < 10 },
+            },
+          },
+        },
+      }));
+      const prs = parseAllPrPages(JSON.stringify(pages)) as {
+        number: number;
+      }[];
+      expect(prs).toHaveLength(1001);
+      expect(prs.at(-1)?.number).toBe(1001);
+    });
+
+    test("rejects incomplete pagination and GraphQL errors", () => {
+      const page = {
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: [{ number: 1 }],
+              pageInfo: { hasNextPage: true },
+            },
+          },
+        },
+      };
+      expect(() => parseAllPrPages(JSON.stringify([page]))).toThrow(
+        "PR pagination did not finish",
+      );
+      expect(() =>
+        parseAllPrPages(
+          JSON.stringify([{ ...page, errors: [{ message: "no" }] }]),
+        ),
+      ).toThrow("no");
+    });
+  });
+
   describe("parsePrArg", () => {
     test("parses a plain number", () => {
       expect(parsePrArg("123")).toBe(123);
@@ -248,7 +293,7 @@ describe("computeRollup", () => {
     );
   });
 
-  test("returns success when mix includes SKIPPED, NEUTRAL, CANCELLED", () => {
+  test("returns unknown when mix includes CANCELLED", () => {
     expect(
       computeRollup([
         { state: "SUCCESS" },
@@ -256,7 +301,7 @@ describe("computeRollup", () => {
         { state: "NEUTRAL" },
         { state: "CANCELLED" },
       ]),
-    ).toBe("success");
+    ).toBe("unknown");
   });
 
   test("returns failure for any FAILURE entry", () => {
@@ -337,9 +382,9 @@ describe("computeRollup", () => {
     ).toBe("pending");
   });
 
-  test("unknown state strings do not throw and produce success when alone", () => {
+  test("unknown state strings do not throw or become success", () => {
     expect(() => computeRollup([{ state: "FUTURE_STATE_42" }])).not.toThrow();
-    expect(computeRollup([{ state: "FUTURE_STATE_42" }])).toBe("success");
+    expect(computeRollup([{ state: "FUTURE_STATE_42" }])).toBe("unknown");
   });
 
   test("unknown state does not override a known failure", () => {
@@ -348,8 +393,8 @@ describe("computeRollup", () => {
     ).toBe("failure");
   });
 
-  test("non-object entries are safely ignored", () => {
-    expect(computeRollup([null, undefined, "string", 42])).toBe("success");
+  test("non-object entries remain unknown", () => {
+    expect(computeRollup([null, undefined, "string", 42])).toBe("unknown");
   });
 });
 

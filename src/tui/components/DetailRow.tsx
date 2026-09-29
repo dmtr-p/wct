@@ -18,7 +18,7 @@ interface Props {
 }
 
 function rollupIcon(
-  rollupState: "success" | "failure" | "pending" | null,
+  rollupState: "success" | "failure" | "pending" | "unknown" | null,
 ): string {
   switch (rollupState) {
     case "success":
@@ -27,13 +27,15 @@ function rollupIcon(
       return "✗";
     case "pending":
       return "◌";
+    case "unknown":
+      return "?";
     default:
       return "";
   }
 }
 
 function rollupColor(
-  rollupState: "success" | "failure" | "pending" | null,
+  rollupState: "success" | "failure" | "pending" | "unknown" | null,
 ): "green" | "red" | "yellow" | undefined {
   switch (rollupState) {
     case "success":

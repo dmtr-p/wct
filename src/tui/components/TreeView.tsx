@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
-import type { LifecycleState } from "../lifecycle";
+import { type LifecycleState, lifecycleKey } from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
 import {
   type PaneInfo,
@@ -230,8 +230,8 @@ function renderRepoRow(idx: number, ctx: RenderRowContext): React.ReactNode {
       isChildSelected={childSelected}
       isHovered={idx === ctx.hoveredItemIndex}
       maxWidth={ctx.maxWidth}
-      isRefreshing={ctx.refreshingProjects?.has(repo.project)}
-      hasError={ctx.errors?.has(repo.project)}
+      isRefreshing={ctx.refreshingProjects?.has(repo.repoPath)}
+      hasError={ctx.errors?.has(repo.repoPath)}
     />
   );
 }
@@ -252,7 +252,9 @@ function renderWorktreeRow(
   const session = ctx.sessionMap.get(sessionName);
   const wtKey = pendingKey(repo.project, wt.branch);
 
-  const wtPr = ctx.prData.get(wtKey);
+  const wtPr =
+    ctx.prData.get(lifecycleKey(repo.repoPath, wt.branch)) ??
+    ctx.prData.get(wtKey);
   const wtPanes = ctx.panes.get(sessionName);
   const hasExpandableData = !!wtPr || (wtPanes && wtPanes.length > 0);
 

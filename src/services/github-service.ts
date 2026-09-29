@@ -1,6 +1,7 @@
 import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
 import { commandError, toWctError, type WctError } from "../errors";
+import { checkOutcome } from "./pr-model";
 import {
   execProcess,
   getProcessErrorMessage,
@@ -24,7 +25,7 @@ export interface PrListItem {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   headRefName: string;
-  rollupState: "success" | "failure" | "pending" | null;
+  rollupState: "success" | "failure" | "pending" | "unknown" | null;
 }
 
 /**
@@ -33,46 +34,26 @@ export interface PrListItem {
  *
  * - Any FAILURE / TIMED_OUT / STARTUP_FAILURE → "failure"
  * - Else any IN_PROGRESS / QUEUED / PENDING / ACTION_REQUIRED → "pending"
- * - Else (all SUCCESS / SKIPPED / NEUTRAL / CANCELLED / unknown) → "success"
+ * - Else any CANCELLED / unknown → "unknown"
+ * - Else all SUCCESS / SKIPPED / NEUTRAL → "success"
  * - Empty array → null
  */
 export function computeRollup(
   checks: unknown[],
-): "success" | "failure" | "pending" | null {
+): "success" | "failure" | "pending" | "unknown" | null {
   if (checks.length === 0) return null;
 
   let hasPending = false;
+  let hasUnknown = false;
 
   for (const entry of checks) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const e = entry as Record<string, unknown>;
-    // Derive effective state: status-style entries carry `state` and no
-    // `status`/`conclusion`. Check-run-style entries carry `status` and
-    // `conclusion`; `conclusion` is only meaningful once `status ===
-    // "COMPLETED"` — until then `status` is the live in-flight signal.
-    const raw =
-      typeof e.state === "string"
-        ? e.state
-        : e.status === "COMPLETED" && typeof e.conclusion === "string"
-          ? e.conclusion
-          : typeof e.status === "string"
-            ? e.status
-            : null;
-
-    if (raw === "FAILURE" || raw === "TIMED_OUT" || raw === "STARTUP_FAILURE") {
-      return "failure";
-    }
-    if (
-      raw === "IN_PROGRESS" ||
-      raw === "QUEUED" ||
-      raw === "PENDING" ||
-      raw === "ACTION_REQUIRED"
-    ) {
-      hasPending = true;
-    }
+    const outcome = checkOutcome(entry);
+    if (outcome === "failed") return "failure";
+    if (outcome === "pending") hasPending = true;
+    if (outcome === "unknown" || outcome === "cancelled") hasUnknown = true;
   }
 
-  return hasPending ? "pending" : "success";
+  return hasPending ? "pending" : hasUnknown ? "unknown" : "success";
 }
 
 export function parseGhPrList(stdout: string): PrListItem[] {
@@ -132,6 +113,19 @@ export interface GitHubService {
   listPrs: (
     cwd: string,
   ) => Effect.Effect<PrListItem[], WctError, BunServices.BunServices>;
+  resolveBaseRepo: (
+    cwd: string,
+  ) => Effect.Effect<string, WctError, BunServices.BunServices>;
+  listRawPrs: (
+    cwd: string,
+    state: "open" | "all",
+    baseRepository: string,
+  ) => Effect.Effect<unknown[], WctError, BunServices.BunServices>;
+  getRawPr: (
+    cwd: string,
+    baseRepository: string,
+    number: number,
+  ) => Effect.Effect<unknown, WctError, BunServices.BunServices>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
@@ -249,7 +243,7 @@ function listPrsImpl(cwd: string) {
         "--json",
         "number,title,state,headRefName,statusCheckRollup",
         "--limit",
-        "20",
+        "1000",
       ],
       { cwd },
     ).pipe(Effect.map((result) => parseGhPrList(result.stdout.trim()))),
@@ -257,6 +251,135 @@ function listPrsImpl(cwd: string) {
       isGhNotInstalledError(error)
         ? Effect.succeed([] as PrListItem[])
         : Effect.fail(error),
+  );
+}
+
+const DISCOVERY_FIELDS =
+  "id,number,title,state,url,isDraft,reviewDecision,mergeable,mergeStateStatus,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,statusCheckRollup,updatedAt";
+
+const DISCOVERY_GRAPHQL_FIELDS =
+  "id number title state url isDraft reviewDecision mergeable mergeStateStatus headRefName headRefOid headRepository { nameWithOwner name } headRepositoryOwner { login } baseRefName updatedAt";
+
+export function parseAllPrPages(stdout: string): unknown[] {
+  const pages: unknown = JSON.parse(stdout);
+  if (!Array.isArray(pages) || pages.length === 0)
+    throw new Error("Missing PR pages");
+  const prs: unknown[] = [];
+  for (const page of pages) {
+    const response = page as {
+      errors?: { message?: string }[];
+      data?: {
+        repository?: {
+          pullRequests?: {
+            nodes?: unknown[];
+            pageInfo?: { hasNextPage?: boolean };
+          };
+        };
+      };
+    };
+    if (response?.errors?.length)
+      throw new Error(response.errors.map((error) => error.message).join("; "));
+    const connection = response?.data?.repository?.pullRequests;
+    if (!Array.isArray(connection?.nodes) || !connection.pageInfo)
+      throw new Error("Incomplete PR page");
+    prs.push(...connection.nodes);
+  }
+  const last = pages.at(-1) as {
+    data?: {
+      repository?: { pullRequests?: { pageInfo?: { hasNextPage?: boolean } } };
+    };
+  };
+  if (last.data?.repository?.pullRequests?.pageInfo?.hasNextPage !== false)
+    throw new Error("PR pagination did not finish");
+  return prs;
+}
+
+function listRawPrsImpl(
+  cwd: string,
+  state: "open" | "all",
+  baseRepository: string,
+) {
+  if (state === "all") {
+    const [owner, repo] = baseRepository.split("/");
+    if (!owner || !repo)
+      return Effect.fail(commandError("pr_error", "Invalid base repository"));
+    const query = `query($endCursor: String) { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequests(first: 100, after: $endCursor) { nodes { ${DISCOVERY_GRAPHQL_FIELDS} } pageInfo { hasNextPage endCursor } } } }`;
+    return Effect.flatMap(
+      execProcess(
+        "gh",
+        ["api", "graphql", "--paginate", "--slurp", "-f", `query=${query}`],
+        { cwd },
+      ).pipe(Effect.timeout("2 minutes")),
+      (result) =>
+        Effect.try({
+          try: () => parseAllPrPages(result.stdout),
+          catch: (error) => commandError("pr_error", String(error), error),
+        }),
+    );
+  }
+  return Effect.flatMap(
+    execProcess(
+      "gh",
+      [
+        "pr",
+        "list",
+        "--state",
+        state,
+        "--limit",
+        "100000",
+        "--json",
+        DISCOVERY_FIELDS,
+      ],
+      { cwd },
+    ),
+    (result) =>
+      Effect.try({
+        try: () => {
+          const value: unknown = JSON.parse(result.stdout);
+          if (!Array.isArray(value)) throw new Error("Expected PR array");
+          return value;
+        },
+        catch: (error) => commandError("pr_error", String(error), error),
+      }),
+  );
+}
+
+function getRawPrImpl(cwd: string, baseRepository: string, number: number) {
+  const [owner, repo] = baseRepository.split("/");
+  if (!owner || !repo || !Number.isSafeInteger(number) || number < 1)
+    return Effect.fail(commandError("pr_error", "Invalid PR identity"));
+  const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequest(number: ${number}) { ${DISCOVERY_GRAPHQL_FIELDS} baseRepository { nameWithOwner } } } }`;
+  return Effect.flatMap(
+    execProcess("gh", ["api", "graphql", "-f", `query=${query}`], { cwd }),
+    (result) =>
+      Effect.try({
+        try: () => {
+          const response = JSON.parse(result.stdout) as {
+            errors?: { message?: string }[];
+            data?: {
+              repository?: {
+                pullRequest?: {
+                  number?: number;
+                  baseRepository?: { nameWithOwner?: string };
+                };
+              };
+            };
+          };
+          if (response.errors?.length)
+            throw new Error(
+              response.errors.map((error) => error.message).join("; "),
+            );
+          const pr = response.data?.repository?.pullRequest;
+          if (
+            pr?.number !== number ||
+            pr.baseRepository?.nameWithOwner?.toLowerCase() !==
+              baseRepository.toLowerCase()
+          )
+            throw new Error("Fetched PR identity does not match association");
+          return pr;
+        },
+        catch: (error) => commandError("pr_error", String(error), error),
+      }),
   );
 }
 
@@ -379,6 +502,53 @@ export const liveGitHubService: GitHubService = GitHubService.of({
   listPrs: (cwd) =>
     Effect.mapError(listPrsImpl(cwd), (error) =>
       commandError("pr_error", extractShellError(error), error),
+    ),
+  resolveBaseRepo: (cwd) =>
+    Effect.mapError(
+      execProcess("gh", ["repo", "view", "--json", "nameWithOwner"], {
+        cwd,
+      }).pipe(
+        Effect.flatMap((result) =>
+          Effect.try({
+            try: () => {
+              const name = (
+                JSON.parse(result.stdout) as { nameWithOwner?: unknown }
+              ).nameWithOwner;
+              if (typeof name !== "string" || !/^[^/]+\/[^/]+$/.test(name))
+                throw new Error("Invalid repository identity");
+              return name;
+            },
+            catch: (error) =>
+              commandError(
+                "pr_error",
+                "Unable to resolve base repository; run gh repo set-default in the main repository",
+                error,
+              ),
+          }),
+        ),
+      ),
+      (error) =>
+        commandError(
+          "pr_error",
+          "Unable to resolve base repository; run gh repo set-default in the main repository",
+          error,
+        ),
+    ),
+  listRawPrs: (cwd, state, baseRepository) =>
+    Effect.mapError(listRawPrsImpl(cwd, state, baseRepository), (error) =>
+      commandError(
+        "pr_error",
+        `Failed to list ${state} PRs: ${extractShellError(error)}`,
+        error,
+      ),
+    ),
+  getRawPr: (cwd, baseRepository, number) =>
+    Effect.mapError(getRawPrImpl(cwd, baseRepository, number), (error) =>
+      commandError(
+        "pr_error",
+        `Failed to read PR #${number}: ${extractShellError(error)}`,
+        error,
+      ),
     ),
   findRemoteForRepo: (owner, repo, cwd) =>
     Effect.gen(function* () {

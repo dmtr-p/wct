@@ -408,7 +408,8 @@ export function buildTreeItems({
 
       const sessionName = formatSessionName(basename(wt.path));
 
-      const pr = prData.get(wtKey);
+      const pr =
+        prData.get(lifecycleKey(repo.repoPath, wt.branch)) ?? prData.get(wtKey);
       if (pr) {
         items.push({
           type: "detail",

@@ -10,6 +10,10 @@ import {
   liveGitHubService,
 } from "../src/services/github-service";
 import {
+  livePrCacheService,
+  type PrCacheServiceApi,
+} from "../src/services/pr-cache-service";
+import {
   liveSetupService,
   type SetupResult,
   type SetupService,
@@ -318,6 +322,7 @@ describe("WorkspaceService open", () => {
     const github: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
+      resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: () =>
         Effect.succeed({
           branch: "contrib-feature",
@@ -373,6 +378,7 @@ describe("WorkspaceService open", () => {
     const github: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
+      resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: (prNumber) =>
         Effect.sync(() => {
           calls.push(`resolve:${prNumber}`);
@@ -430,6 +436,7 @@ describe("WorkspaceService open", () => {
     const github: GitHubService = {
       ...liveGitHubService,
       isGhInstalled: () => Effect.succeed(true),
+      resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: () =>
         Effect.succeed({
           branch: "same-repo",
@@ -465,6 +472,82 @@ describe("WorkspaceService open", () => {
       "create:same-repo:false:origin/same-repo",
     ]);
   });
+
+  for (const failedStep of [
+    "repository lookup",
+    "association write",
+  ] as const) {
+    test(`continues open after a failed PR ${failedStep}`, async () => {
+      await writeConfig(
+        repoDir,
+        `copy:
+  - .wct.yaml
+setup:
+  - name: install
+    command: "true"
+`,
+      );
+      const calls: string[] = [];
+      const github: GitHubService = {
+        ...liveGitHubService,
+        isGhInstalled: () => Effect.succeed(true),
+        resolvePr: () =>
+          Effect.succeed({
+            branch: "metadata-failure",
+            prNumber: 42,
+            isCrossRepository: false,
+          }),
+        fetchBranch: () => Effect.void,
+        resolveBaseRepo: () =>
+          failedStep === "repository lookup"
+            ? Effect.fail(commandError("pr_error", "lookup failed"))
+            : Effect.succeed("acme/wct"),
+      };
+      const prCache: PrCacheServiceApi = {
+        ...livePrCacheService,
+        setExplicit: () => {
+          calls.push("associate");
+          return Effect.fail(commandError("pr_error", "cache failed"));
+        },
+      };
+      const setup: SetupService = {
+        ...liveSetupService,
+        runSetupCommands: () => {
+          calls.push("setup");
+          return Effect.succeed([{ name: "install", _tag: "Succeeded" }]);
+        },
+      };
+      const tmux: TmuxService = {
+        ...noopTmuxService,
+        createSession: (name) => {
+          calls.push("tmux");
+          return Effect.succeed({ _tag: "Created", sessionName: name });
+        },
+      };
+
+      const result = await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ pr: "42", cwd: repoDir }),
+          ),
+          { github, prCache, setup, tmux, worktree: makeWorktreeService() },
+        ),
+      );
+
+      expect(result.operation).toBe("open");
+      expect(result.attempts.copy).toMatchObject({ attempted: true, ok: true });
+      expect(result.attempts.setup).toMatchObject({
+        attempted: true,
+        ok: true,
+      });
+      expect(result.attempts.tmux).toMatchObject({ attempted: true, ok: true });
+      expect(calls).toEqual(
+        failedStep === "repository lookup"
+          ? ["setup", "tmux"]
+          : ["associate", "setup", "tmux"],
+      );
+    });
+  }
 
   test("surfaces PR setup failures from gh, remote add, and fetch", async () => {
     await expect(

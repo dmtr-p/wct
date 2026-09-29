@@ -1,202 +1,379 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GitHubService } from "../../services/github-service";
-import { PrCacheService } from "../../services/pr-cache-service";
+import {
+  PrCacheService,
+  type WorkspacePrEntry,
+} from "../../services/pr-cache-service";
+import { fetchPrDetails } from "../../services/pr-details";
+import {
+  normalizeGhPr,
+  resolvePushDestination,
+  resolveWorkspacePr,
+} from "../../services/pr-discovery";
+import { checkSummary, type PrFacts } from "../../services/pr-model";
+import { lifecycleKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
-const GITHUB_POLL_INTERVAL = 120_000; // 120 seconds
-const CACHE_FRESH_WINDOW = 30_000; // skip initial fetch if cache is < 30s old
+const GITHUB_POLL_INTERVAL = 120_000;
+const CACHE_FRESH_WINDOW = 30_000;
+const prIdentity = (pr: Pick<PrFacts, "baseRepository" | "number">) =>
+  `${pr.baseRepository.toLowerCase()}#${pr.number}`;
 
-interface InitialCacheState {
-  prData: Map<string, PRInfo>;
-  errors: Map<string, string>;
+export function displayPr(pr: PrFacts): PRInfo {
+  return {
+    number: pr.number,
+    title: pr.title,
+    state: pr.state,
+    headRefName: pr.headRefName,
+    rollupState: checkSummary(pr.checks, pr.checksComplete),
+    facts: pr,
+  };
 }
 
-function readCacheSync(repos: RepoInfo[]): InitialCacheState {
-  const prData = new Map<string, PRInfo>();
-  const errors = new Map<string, string>();
+function hydrate(repos: RepoInfo[]) {
+  const associations = new Map<string, WorkspacePrEntry>();
+  const openPrs = new Map<string, PRInfo[]>();
   for (const repo of repos) {
     try {
-      const entry = tuiRuntime.runSync(
-        PrCacheService.use((s) => s.getCached(repo.project)),
+      const open = tuiRuntime.runSync(
+        PrCacheService.use((s) => s.getOpenPrs(repo.repoPath)),
       );
-      if (entry !== null) {
-        for (const pr of entry.payload) {
-          prData.set(`${repo.project}/${pr.headRefName}`, pr);
-        }
-        if (entry.lastError !== null) {
-          errors.set(repo.project, entry.lastError);
-        }
+      if (open)
+        openPrs.set(
+          repo.repoPath,
+          open.payload.filter((pr) => pr.state === "OPEN"),
+        );
+      for (const wt of repo.worktrees) {
+        const cached = tuiRuntime.runSync(
+          PrCacheService.use((s) => s.getWorkspace(repo.repoPath, wt.branch)),
+        );
+        if (cached)
+          associations.set(lifecycleKey(repo.repoPath, wt.branch), cached);
       }
     } catch {
-      // Cache read failed — start with empty state for this repo
+      /* cache errors leave unknown data */
     }
   }
-  return { prData, errors };
-}
-
-async function fetchRepoData(
-  repo: RepoInfo,
-  signal?: AbortSignal,
-): Promise<{ entries: [string, PRInfo][]; prs: PRInfo[] }> {
-  const opts = signal ? { signal } : undefined;
-  const prs = await tuiRuntime.runPromise(
-    GitHubService.use((s) => s.listPrs(repo.repoPath)),
-    opts,
-  );
-
-  const entries: [string, PRInfo][] = prs.map((pr) => [
-    `${repo.project}/${pr.headRefName}`,
-    { ...pr },
-  ]);
-
-  return { entries, prs };
+  return { associations, openPrs };
 }
 
 export function useGitHub(repos: RepoInfo[]) {
-  // Both state slices are initialised from a single synchronous DB scan.
-  // We use a lazily-evaluated tuple state so the scan runs at most once.
-  const [{ prData: _initPrData, errors: _initErrors }] =
-    useState<InitialCacheState>(() => readCacheSync(repos));
-  const [prData, setPrData] = useState<Map<string, PRInfo>>(_initPrData);
-  const [errors, setErrors] = useState<Map<string, string>>(_initErrors);
+  const [initial] = useState(() => hydrate(repos));
+  const [associations, setAssociations] = useState(initial.associations);
+  const [openPrs, setOpenPrs] = useState(initial.openPrs);
+  const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
-  // Set of project names currently being fetched — drives ↻ indicator re-renders
   const [refreshingProjects, setRefreshingProjects] = useState<Set<string>>(
     new Set(),
   );
   const reposRef = useRef(repos);
   reposRef.current = repos;
-  // Tracks whether the very first refresh call has completed; only the first
-  // call applies the 30s "fresh cache" debounce (rapid-relaunch guard).
-  const isFirstRefreshRef = useRef(true);
-  // Per-project in-flight promises — concurrent callers share the same fetch.
-  const inFlightRef = useRef<Map<string, Promise<void>>>(new Map());
+  const repoSignature = JSON.stringify(
+    repos.map((repo) => [
+      repo.repoPath,
+      repo.worktrees.map((wt) => [wt.branch, wt.path]),
+    ]),
+  );
+  const firstRefresh = useRef(true);
+  const inFlight = useRef<
+    Map<string, { promise: Promise<void>; signal?: AbortSignal }>
+  >(new Map());
+
+  useEffect(() => {
+    const cache = hydrate(repos);
+    setAssociations((previous) => {
+      const next = new Map(previous);
+      for (const [key, entry] of cache.associations)
+        if (!next.has(key)) next.set(key, entry);
+      return next;
+    });
+    setOpenPrs((previous) => {
+      const next = new Map(previous);
+      for (const [key, prs] of cache.openPrs)
+        if (!next.has(key)) next.set(key, prs);
+      return next;
+    });
+  }, [repos]);
 
   const refreshOne = useCallback(
-    async (repo: RepoInfo, isFirst: boolean, signal?: AbortSignal) => {
-      const project = repo.project;
-
-      // Coalesce: return existing in-flight promise if one exists for this project
-      const existing = inFlightRef.current.get(project);
-      if (existing !== undefined) {
-        return existing;
-      }
-
-      // On the first overall call only: skip fetch if the cache is fresh enough
-      // (debounce against rapid TUI relaunches within 30s). Done synchronously
-      // before creating the in-flight promise so a skipped fetch doesn't store
-      // a permanently-resolved promise in inFlightRef and block future fetches.
-      if (isFirst) {
+    async (repo: RepoInfo, first: boolean, signal?: AbortSignal) => {
+      const running = inFlight.current.get(repo.repoPath);
+      if (running && !running.signal?.aborted) return running.promise;
+      if (first && repo.worktrees.length) {
         try {
           const cached = tuiRuntime.runSync(
-            PrCacheService.use((s) => s.getCached(project)),
+            PrCacheService.use((s) =>
+              s.getWorkspace(repo.repoPath, repo.worktrees[0]?.branch ?? ""),
+            ),
           );
           if (
-            cached !== null &&
+            cached &&
+            !cached.lastError &&
             Date.now() - cached.fetchedAt < CACHE_FRESH_WINDOW
-          ) {
+          )
             return;
-          }
         } catch {
-          // If cache read fails, proceed with fetch
+          /* fetch */
         }
       }
-
-      const promise = (async () => {
-        setRefreshingProjects((prev) => {
-          const next = new Set(prev);
-          next.add(project);
-          return next;
-        });
-
+      let promise!: Promise<void>;
+      promise = (async () => {
+        setRefreshingProjects((previous) =>
+          new Set(previous).add(repo.repoPath),
+        );
         try {
-          // Fetch — may throw on error or abort
-          const { entries, prs } = await fetchRepoData(repo, signal);
-
-          // Write to cache only on success and only if not aborted
-          if (!signal?.aborted) {
-            tuiRuntime
-              .runPromise(PrCacheService.use((s) => s.setCached(project, prs)))
-              .catch(() => {
-                // Cache write failure is non-fatal
-              });
-
-            // Clear any previous error for this project
-            setErrors((prev) => {
-              if (!prev.has(project)) return prev;
-              const next = new Map(prev);
-              next.delete(project);
-              return next;
-            });
-
-            setPrData((prev) => {
-              const next = new Map(prev);
-              for (const [key, pr] of entries) {
-                next.set(key, pr);
+          const opts = signal ? { signal } : undefined;
+          const base = await tuiRuntime.runPromise(
+            GitHubService.use((s) => s.resolveBaseRepo(repo.repoPath)),
+            opts,
+          );
+          const [rawAll, rawOpen] = await Promise.all([
+            tuiRuntime.runPromise(
+              GitHubService.use((s) =>
+                s.listRawPrs(repo.repoPath, "all", base),
+              ),
+              opts,
+            ),
+            tuiRuntime.runPromise(
+              GitHubService.use((s) =>
+                s.listRawPrs(repo.repoPath, "open", base),
+              ),
+              opts,
+            ),
+          ]);
+          const now = Date.now();
+          const all = rawAll
+            .map((raw) => normalizeGhPr(raw, base, now))
+            .filter((pr): pr is PrFacts => pr !== null);
+          const open = rawOpen
+            .map((raw) => normalizeGhPr(raw, base, now))
+            .filter((pr): pr is PrFacts => pr !== null && pr.state === "OPEN");
+          const found = new Map<string, WorkspacePrEntry>();
+          const explicitFetched = new Map<string, PrFacts | null>();
+          for (const wt of repo.worktrees) {
+            if (wt.isMainWorktree) continue;
+            const [destination, explicit] = await Promise.all([
+              tuiRuntime.runPromise(
+                resolvePushDestination(wt.path, wt.branch),
+                opts,
+              ),
+              tuiRuntime.runPromise(
+                PrCacheService.use((s) =>
+                  s.getExplicit(repo.repoPath, wt.branch),
+                ),
+              ),
+            ]);
+            let explicitCandidate: PrFacts | null = null;
+            if (
+              explicit &&
+              !all.some((pr) => prIdentity(pr) === prIdentity(explicit))
+            ) {
+              const key = prIdentity(explicit);
+              if (!explicitFetched.has(key)) {
+                const fetched = await tuiRuntime
+                  .runPromise(
+                    GitHubService.use((s) =>
+                      s.getRawPr(
+                        repo.repoPath,
+                        explicit.baseRepository,
+                        explicit.number,
+                      ),
+                    ),
+                    opts,
+                  )
+                  .then((raw) =>
+                    normalizeGhPr(raw, explicit.baseRepository, now),
+                  )
+                  .catch(() => null);
+                explicitFetched.set(key, fetched);
               }
-              return next;
-            });
+              explicitCandidate = explicitFetched.get(key) ?? null;
+            }
+            found.set(
+              lifecycleKey(repo.repoPath, wt.branch),
+              resolveWorkspacePr(
+                all,
+                wt.branch,
+                destination,
+                explicit,
+                now,
+                explicitCandidate,
+              ),
+            );
           }
-        } catch (err) {
-          // Don't write error if aborted
-          if (!signal?.aborted) {
-            const errMsg =
-              err instanceof Error
-                ? err.message
-                : String(err ?? "unknown error");
-            tuiRuntime
-              .runPromise(
-                PrCacheService.use((s) => s.setError(project, errMsg)),
-              )
-              .catch(() => {
-                // Cache error write failure is non-fatal
-              });
-
-            // Surface the error in the errors map
-            setErrors((prev) => {
-              const next = new Map(prev);
-              next.set(project, errMsg);
-              return next;
-            });
+          const candidates = [
+            ...new Map(
+              [...found.values()]
+                .flatMap((entry) => [entry.pr, ...entry.candidates])
+                .filter((pr): pr is PrFacts => pr !== null)
+                .map((pr) => [prIdentity(pr), pr]),
+            ).values(),
+          ];
+          const byBase = new Map<string, PrFacts[]>();
+          for (const pr of candidates) {
+            const group = byBase.get(pr.baseRepository) ?? [];
+            group.push(pr);
+            byBase.set(pr.baseRepository, group);
           }
-        } finally {
-          inFlightRef.current.delete(project);
-          setRefreshingProjects((prev) => {
-            const next = new Set(prev);
-            next.delete(project);
+          const detailed = (
+            await Promise.all(
+              [...byBase].map(([repository, prs]) =>
+                tuiRuntime.runPromise(
+                  fetchPrDetails(repo.repoPath, repository, prs),
+                  opts,
+                ),
+              ),
+            )
+          ).flat();
+          const details = new Map(detailed.map((pr) => [prIdentity(pr), pr]));
+          for (const [identity, entry] of found) {
+            if (entry.pr) entry.pr = details.get(prIdentity(entry.pr)) ?? null;
+            entry.candidates = entry.candidates.map(
+              (pr) => details.get(prIdentity(pr)) ?? pr,
+            );
+            if (entry.pr?.lastError) {
+              const failedPr = entry.pr;
+              const branch = repo.worktrees.find(
+                (wt) => lifecycleKey(repo.repoPath, wt.branch) === identity,
+              )?.branch;
+              const cached = branch
+                ? await tuiRuntime.runPromise(
+                    PrCacheService.use((s) =>
+                      s.getWorkspace(repo.repoPath, branch),
+                    ),
+                  )
+                : null;
+              if (
+                cached?.pr?.number === failedPr.number &&
+                cached.pr.baseRepository === failedPr.baseRepository &&
+                cached.pr.checksComplete
+              ) {
+                entry.pr = cached.pr;
+              } else {
+                entry.pr = null;
+                entry.uncertain = true;
+              }
+              entry.lastError =
+                details.get(prIdentity(failedPr))?.lastError ??
+                "Incomplete PR data";
+            }
+            if (
+              entry.pr === null &&
+              entry.candidates.some((candidate) => !candidate.checksComplete)
+            )
+              entry.uncertain = true;
+          }
+          if (signal?.aborted) return;
+          await Promise.all([
+            ...repo.worktrees
+              .filter((wt) => !wt.isMainWorktree)
+              .map((wt) => {
+                const entry = found.get(lifecycleKey(repo.repoPath, wt.branch));
+                return entry
+                  ? tuiRuntime.runPromise(
+                      PrCacheService.use((s) =>
+                        s.setWorkspace(repo.repoPath, wt.branch, entry),
+                      ),
+                    )
+                  : Promise.resolve();
+              }),
+            tuiRuntime.runPromise(
+              PrCacheService.use((s) =>
+                s.setOpenPrs(repo.repoPath, open.map(displayPr)),
+              ),
+            ),
+            ...(!repo.error
+              ? [
+                  tuiRuntime.runPromise(
+                    PrCacheService.use((s) =>
+                      s.pruneWorkspaces(
+                        repo.repoPath,
+                        repo.worktrees
+                          .filter((wt) => !wt.isMainWorktree)
+                          .map((wt) => wt.branch),
+                      ),
+                    ),
+                  ),
+                ]
+              : []),
+          ]);
+          setAssociations((previous) => {
+            const next = new Map(
+              [...previous].filter(
+                ([key]) => !key.startsWith(`${repo.repoPath}\0`),
+              ),
+            );
+            for (const [key, entry] of found) next.set(key, entry);
             return next;
           });
+          setOpenPrs((previous) =>
+            new Map(previous).set(repo.repoPath, open.map(displayPr)),
+          );
+          setErrors((previous) => {
+            const next = new Map(previous);
+            next.delete(repo.repoPath);
+            return next;
+          });
+        } catch (cause) {
+          if (signal?.aborted) return;
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          setErrors((previous) =>
+            new Map(previous).set(repo.repoPath, message),
+          );
+          for (const wt of repo.worktrees.filter(
+            (worktree) => !worktree.isMainWorktree,
+          ))
+            void tuiRuntime
+              .runPromise(
+                PrCacheService.use((s) =>
+                  s.setWorkspaceError(repo.repoPath, wt.branch, message),
+                ),
+              )
+              .catch(() => {});
+          setAssociations(
+            (previous) =>
+              new Map(
+                [...previous].map(([key, entry]) =>
+                  key.startsWith(`${repo.repoPath}\0`)
+                    ? [key, { ...entry, lastError: message }]
+                    : [key, entry],
+                ),
+              ),
+          );
+        } finally {
+          if (inFlight.current.get(repo.repoPath)?.promise === promise) {
+            inFlight.current.delete(repo.repoPath);
+            setRefreshingProjects((previous) => {
+              const next = new Set(previous);
+              next.delete(repo.repoPath);
+              return next;
+            });
+          }
         }
       })();
-
-      inFlightRef.current.set(project, promise);
+      inFlight.current.set(repo.repoPath, { promise, signal });
       return promise;
     },
     [],
   );
 
-  // refresh(project?) — when called with a project, refreshes only that one;
-  // when called without args, refreshes all repos.
   const refresh = useCallback(
     async (project?: string, signal?: AbortSignal) => {
-      const repos = reposRef.current;
-      if (repos.length === 0) return;
-
-      const isFirst = isFirstRefreshRef.current;
-      isFirstRefreshRef.current = false;
-
       const targets = project
-        ? repos.filter((r) => r.project === project)
-        : repos;
-
-      if (targets.length === 0) return;
-
+        ? reposRef.current.filter(
+            (repo) => repo.project === project || repo.repoPath === project,
+          )
+        : reposRef.current;
+      if (!targets.length) return;
+      const first = firstRefresh.current;
+      firstRefresh.current = false;
       setLoading(true);
       try {
         await Promise.allSettled(
-          targets.map((repo) => refreshOne(repo, isFirst, signal)),
+          targets.map((repo) => refreshOne(repo, first, signal)),
         );
       } finally {
         setLoading(false);
@@ -205,18 +382,70 @@ export function useGitHub(repos: RepoInfo[]) {
     [refreshOne],
   );
 
+  const setExplicit = useCallback(
+    async (repoPath: string, branch: string, pr: PrFacts) => {
+      await tuiRuntime.runPromise(
+        PrCacheService.use((s) =>
+          s.setExplicit(repoPath, branch, {
+            baseRepository: pr.baseRepository,
+            number: pr.number,
+          }),
+        ),
+      );
+      await refresh(repoPath);
+    },
+    [refresh],
+  );
+  const clearExplicit = useCallback(
+    async (repoPath: string, branch: string) => {
+      await tuiRuntime.runPromise(
+        PrCacheService.use((s) => s.clearExplicit(repoPath, branch)),
+      );
+      await refresh(repoPath);
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
-    refresh(undefined, controller.signal);
-    const id = setInterval(
-      () => refresh(undefined, controller.signal),
+    if (repoSignature !== "[]") void refresh(undefined, controller.signal);
+    return () => controller.abort();
+  }, [repoSignature, refresh]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setInterval(
+      () => void refresh(undefined, controller.signal),
       GITHUB_POLL_INTERVAL,
     );
     return () => {
       controller.abort();
-      clearInterval(id);
+      clearInterval(timer);
     };
   }, [refresh]);
 
-  return { prData, errors, loading, refresh, refreshingProjects };
+  const prData = useMemo(() => {
+    const data = new Map<string, PRInfo>();
+    for (const [key, entry] of associations)
+      if (entry.pr)
+        data.set(
+          key,
+          displayPr({
+            ...entry.pr,
+            lastError: entry.lastError ?? entry.pr.lastError,
+          }),
+        );
+    return data;
+  }, [associations]);
+  return {
+    prData,
+    associations,
+    openPrs,
+    errors,
+    loading,
+    refresh,
+    refreshingProjects,
+    setExplicit,
+    clearExplicit,
+  };
 }

@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
+import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
@@ -37,6 +38,7 @@ interface Props {
   /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
+  associations?: Map<string, WorkspacePrEntry>;
   panes: Map<string, PaneInfo[]>;
   expandedWorktreeKeys?: Set<string>;
   discoveredWorkspaceKeys?: Set<string>;
@@ -77,6 +79,7 @@ export function TreeView({
   hoveredItemIndex = null,
   lifecycle = EMPTY_LIFECYCLE,
   prData,
+  associations,
   panes,
   expandedWorktreeKeys,
   discoveredWorkspaceKeys,
@@ -115,6 +118,7 @@ export function TreeView({
       lifecycle,
       sessionMap,
       prData,
+      associations,
       panes,
       maxWidth,
       refreshingProjects,
@@ -138,6 +142,7 @@ interface RenderRowContext {
   lifecycle: LifecycleState;
   sessionMap: Map<string, { name: string; attached: boolean }>;
   prData: Map<string, PRInfo>;
+  associations?: Map<string, WorkspacePrEntry>;
   panes: Map<string, PaneInfo[]>;
   maxWidth: number;
   refreshingProjects?: Set<string>;
@@ -256,7 +261,11 @@ function renderWorktreeRow(
     ctx.prData.get(lifecycleKey(repo.repoPath, wt.branch)) ??
     ctx.prData.get(wtKey);
   const wtPanes = ctx.panes.get(sessionName);
-  const hasExpandableData = !!wtPr || (wtPanes && wtPanes.length > 0);
+  const hasExpandableData =
+    !!wtPr ||
+    !!ctx.associations?.get(lifecycleKey(repo.repoPath, wt.branch))?.candidates
+      .length ||
+    (wtPanes && wtPanes.length > 0);
 
   const wtChildSelected =
     idx !== ctx.selectedIndex &&

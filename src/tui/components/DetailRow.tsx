@@ -1,5 +1,11 @@
 import { Box, Text } from "ink";
-import { PR_INDENT, prLabelStart, wrapPrLabel } from "../pr-layout";
+import {
+  PR_INDENT,
+  PR_SUBROW_INDENT,
+  prLabelStart,
+  wrapPrLabel,
+} from "../pr-layout";
+import { compactPrSegments, PR_COLORS } from "../pr-status";
 import type { TreeItem } from "../types";
 import { truncateBranch, truncateWithPrefix } from "../utils/truncate";
 import {
@@ -84,6 +90,57 @@ export function DetailRow({
     }
 
     case "pr": {
+      if (item.meta.presentation && item.meta.pr) {
+        const { presentation, pr, expanded } = item.meta;
+        const segments = compactPrSegments(
+          pr.number,
+          presentation,
+          maxWidth,
+          expanded,
+        );
+        const line = segments.map((segment) => segment.text).join("");
+        const checkTone =
+          presentation.checks === "success"
+            ? PR_COLORS.green
+            : presentation.checks === "failure"
+              ? PR_COLORS.red
+              : presentation.checks === "pending"
+                ? PR_COLORS.yellow
+                : PR_COLORS.muted;
+        return (
+          <Box>
+            <Text {...selectedProps} wrap="truncate">
+              {segments.map((segment) => (
+                <Text
+                  key={`${segment.kind}:${segment.text}`}
+                  bold={
+                    segment.kind === "number" ||
+                    (segment.kind === "status" && presentation.bold)
+                  }
+                  color={
+                    isSelected
+                      ? undefined
+                      : segment.kind === "status"
+                        ? PR_COLORS[
+                            presentation.stale ? "muted" : presentation.tone
+                          ]
+                        : segment.kind === "checks"
+                          ? presentation.stale
+                            ? PR_COLORS.muted
+                            : checkTone
+                          : segment.kind === "stale"
+                            ? PR_COLORS.muted
+                            : undefined
+                  }
+                >
+                  {segment.text}
+                </Text>
+              ))}
+              {selectedRowFill(isSelected, maxWidth, line)}
+            </Text>
+          </Box>
+        );
+      }
       const { rollupState } = item.meta;
       const icon = rollupIcon(rollupState);
       const iconText = icon ? `${icon} ` : "";
@@ -117,6 +174,64 @@ export function DetailRow({
               </Text>
             ) : null}
             {line}
+            {selectedRowFill(isSelected, maxWidth, content)}
+          </Text>
+        </Box>
+      );
+    }
+
+    case "pr-title": {
+      const indent = " ".repeat(PR_SUBROW_INDENT);
+      const content = indent + (prLine ?? item.label);
+      return (
+        <Box>
+          <Text {...selectedProps} wrap="truncate-end">
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
+          </Text>
+        </Box>
+      );
+    }
+
+    case "pr-fact": {
+      const indent = " ".repeat(PR_SUBROW_INDENT);
+      const content =
+        indent + truncateBranch(item.label, maxWidth - indent.length);
+      return (
+        <Box>
+          <Text
+            {...selectedProps}
+            color={isSelected ? SELECTED_ROW_FOREGROUND : PR_COLORS.muted}
+            wrap="truncate"
+          >
+            {content}
+            {selectedRowFill(isSelected, maxWidth, content)}
+          </Text>
+        </Box>
+      );
+    }
+
+    case "candidate-group": {
+      const content = `     ${item.meta.expanded ? "▾" : "▸"} ${item.label}`;
+      const line = truncateBranch(content, maxWidth);
+      return (
+        <Box>
+          <Text {...selectedProps} wrap="truncate">
+            {line}
+            {selectedRowFill(isSelected, maxWidth, line)}
+          </Text>
+        </Box>
+      );
+    }
+
+    case "candidate": {
+      const indent = " ".repeat(PR_SUBROW_INDENT);
+      const content =
+        indent + truncateBranch(item.label, maxWidth - indent.length);
+      return (
+        <Box>
+          <Text {...selectedProps} wrap="truncate">
+            {content}
             {selectedRowFill(isSelected, maxWidth, content)}
           </Text>
         </Box>

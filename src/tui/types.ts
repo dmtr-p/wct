@@ -3,6 +3,7 @@ export type Mode =
   | { type: "Search" }
   | { type: "Shortcuts" }
   | { type: "OpenModal" }
+  | { type: "PrMenu" }
   | { type: "AddProjectModal" }
   | {
       type: "UpModal";
@@ -60,6 +61,7 @@ export const Mode = {
   Search: { type: "Search" } as Mode,
   Shortcuts: { type: "Shortcuts" } as Mode,
   OpenModal: { type: "OpenModal" } as Mode,
+  PrMenu: { type: "PrMenu" } as Mode,
   AddProjectModal: { type: "AddProjectModal" } as Mode,
   UpModal: ({
     worktreePath,
@@ -149,7 +151,20 @@ export type TreeItem =
   | { type: "worktree"; repoIndex: number; worktreeIndex: number }
   | DetailItem<
       "pr",
-      { rollupState: "success" | "failure" | "pending" | "unknown" | null }
+      {
+        rollupState: "success" | "failure" | "pending" | "unknown" | null;
+        prKey?: string;
+        presentation?: import("./pr-status").PrPresentation;
+        pr?: import("../services/pr-model").PrFacts;
+        expanded?: boolean;
+      }
+    >
+  | DetailItem<"pr-title", { prKey: string }>
+  | DetailItem<"pr-fact", { prKey: string; factKey: string }>
+  | DetailItem<"candidate-group", { groupKey: string; expanded: boolean }>
+  | DetailItem<
+      "candidate",
+      { groupKey: string; pr: import("../services/pr-model").PrFacts }
     >
   | DetailItem<"pane-header">
   | DetailItem<
@@ -164,7 +179,14 @@ export type TreeItem =
       }
     >;
 
-export type DetailKind = "pr" | "pane-header" | "pane";
+export type DetailKind =
+  | "pr"
+  | "pr-title"
+  | "pr-fact"
+  | "candidate-group"
+  | "candidate"
+  | "pane-header"
+  | "pane";
 
 type DetailItem<
   TKind extends DetailKind,

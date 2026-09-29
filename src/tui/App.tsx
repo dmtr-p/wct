@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { PrFacts } from "../services/pr-model";
 import { AddProjectModal } from "./components/AddProjectModal";
 import {
   type ConfirmMode,
@@ -16,6 +17,7 @@ import {
   isConfirmMode,
 } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
+import { PrActionsModal, type PrMenuOption } from "./components/PrActionsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatusBar, statusBarRowCount } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
@@ -57,6 +59,7 @@ import {
   isLifecycleActive,
   lifecycleKey,
 } from "./lifecycle";
+import { candidatePrLabel } from "./pr-status";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -64,6 +67,7 @@ import {
   insertConfirmationRows,
   isWorktreeEffectivelyExpanded,
   isWorktreeLifecycleActive,
+  openPrInBrowser,
   reconcileDiscoveredWorkspaceKeys,
   reconcileExpandedWorktreeKeys,
   resolveConfirmationAnchorItemIndex,
@@ -97,6 +101,9 @@ export function App() {
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
+    associations,
+    setExplicit: setExplicitPr,
+    clearExplicit: clearExplicitPr,
     openPrs,
     errors: githubErrors,
     refresh: refreshGitHub,
@@ -137,12 +144,32 @@ export function App() {
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
+  const [prMenu, setPrMenu] = useState<{
+    repoPath: string;
+    branch: string;
+    pr: PrFacts | null;
+    candidates: PrFacts[];
+    explicit: boolean;
+    kind: "pr" | "group" | "candidate";
+    screen: "actions" | "choose";
+  } | null>(null);
+  const prMenuReturnMode = useRef<Mode>(Mode.Navigate);
   // The live `mode`, for async continuations that must not act on a stale
   // render-time capture.
   const modeRef = useRef<Mode>(mode);
   const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
     new Set(),
   );
+  const [expandedPrKeys, setExpandedPrKeys] = useState<Set<string>>(new Set());
+  const setPrExpanded = useCallback((key: string, expanded: boolean) => {
+    setExpandedPrKeys((previous) => {
+      if (previous.has(key) === expanded) return previous;
+      const next = new Set(previous);
+      if (expanded) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
   // Identity-scoped presentation overrides. A successful `open` adds its
   // discovered Workspace; collapsing a shared display key can also migrate
   // the other matching Workspaces here so only the selected identity closes.
@@ -311,6 +338,8 @@ export function App() {
         discoveredWorkspaceKeys,
         lifecycle,
         prData,
+        associations,
+        expandedPrKeys,
         panes,
         jumpToPane,
       }),
@@ -320,6 +349,8 @@ export function App() {
       discoveredWorkspaceKeys,
       lifecycle,
       prData,
+      associations,
+      expandedPrKeys,
       panes,
       jumpToPane,
     ],
@@ -367,10 +398,7 @@ export function App() {
 
   const repoError = statusBarProps.selectedProject
     ? githubErrors.get(
-        selectedWorktreeRepo?.repoPath ??
-          filteredRepos.find(
-            (repo) => repo.project === statusBarProps.selectedProject,
-          )?.repoPath ??
+        filteredRepos[treeItems[selectedIndex]?.repoIndex ?? -1]?.repoPath ??
           "",
       )
     : undefined;
@@ -695,6 +723,134 @@ export function App() {
     collapseWorktree,
   };
 
+  function openPrActions(item: (typeof treeItems)[number]) {
+    if (item.type !== "detail") return;
+    const relevant = [
+      "pr",
+      "pr-title",
+      "pr-fact",
+      "candidate-group",
+      "candidate",
+    ].includes(item.detailKind);
+    if (!relevant) return;
+    const repo = filteredRepos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    if (!repo || !wt) return;
+    const association = associations.get(
+      lifecycleKey(repo.repoPath, wt.branch),
+    );
+    const prRow =
+      item.detailKind === "pr-title" || item.detailKind === "pr-fact"
+        ? treeItems.find(
+            (candidate) =>
+              candidate.type === "detail" &&
+              candidate.detailKind === "pr" &&
+              candidate.meta.prKey === item.meta.prKey &&
+              candidate.repoIndex === item.repoIndex &&
+              candidate.worktreeIndex === item.worktreeIndex,
+          )
+        : item;
+    const pr =
+      item.detailKind === "candidate"
+        ? item.meta.pr
+        : prRow?.type === "detail" && prRow.detailKind === "pr"
+          ? (prRow.meta.pr ?? null)
+          : null;
+    const kind =
+      item.detailKind === "candidate"
+        ? "candidate"
+        : item.detailKind === "candidate-group"
+          ? "group"
+          : "pr";
+    prMenuReturnMode.current = mode;
+    setPrMenu({
+      repoPath: repo.repoPath,
+      branch: wt.branch,
+      pr,
+      candidates: association?.candidates ?? [],
+      explicit: association?.explicit === true,
+      kind,
+      screen: "actions",
+    });
+    setMode(Mode.PrMenu);
+  }
+
+  const prMenuOptions: PrMenuOption[] = !prMenu
+    ? []
+    : prMenu.screen === "choose"
+      ? prMenu.candidates.map((candidate) => ({
+          id: `use:${candidate.number}`,
+          label: candidatePrLabel(candidate),
+        }))
+      : [
+          ...(prMenu.kind === "group" || prMenu.explicit
+            ? [
+                {
+                  id: "choose",
+                  label: prMenu.explicit ? "Change PR…" : "Choose PR…",
+                },
+              ]
+            : []),
+          ...(prMenu.kind === "candidate" && prMenu.pr
+            ? [
+                {
+                  id: "use",
+                  label: `Use #${prMenu.pr.number} for this Workspace`,
+                },
+              ]
+            : []),
+          ...(prMenu.pr ? [{ id: "open", label: "Open in GitHub" }] : []),
+          { id: "refresh", label: "Refresh" },
+          ...(prMenu.explicit
+            ? [{ id: "clear", label: "Clear association" }]
+            : []),
+        ];
+
+  function closePrMenu() {
+    setPrMenu(null);
+    setMode(prMenuReturnMode.current);
+  }
+
+  function choosePrMenuOption(id: string) {
+    if (!prMenu) return;
+    if (id === "choose") {
+      setPrMenu({ ...prMenu, screen: "choose" });
+      return;
+    }
+    if (id === "open") {
+      if (prMenu.pr)
+        openPrInBrowser(prMenu.repoPath, prMenu.pr.number, prMenu.pr.url);
+      closePrMenu();
+      return;
+    }
+    if (id === "refresh") {
+      void refreshGitHub(prMenu.repoPath);
+      closePrMenu();
+      return;
+    }
+    if (id === "clear") {
+      void clearExplicitPr(prMenu.repoPath, prMenu.branch).catch((error) =>
+        showActionError(String(error)),
+      );
+      closePrMenu();
+      return;
+    }
+    const selected =
+      id === "use"
+        ? prMenu.pr
+        : id.startsWith("use:")
+          ? prMenu.candidates.find(
+              (candidate) => candidate.number === Number(id.slice(4)),
+            )
+          : null;
+    if (selected) {
+      void setExplicitPr(prMenu.repoPath, prMenu.branch, selected).catch(
+        (error) => showActionError(String(error)),
+      );
+      closePrMenu();
+    }
+  }
+
   function handleSearchInput(input: string, key: Key) {
     if (key.escape) {
       setMode(searchReturnModeRef.current);
@@ -846,6 +1002,25 @@ export function App() {
         lastMouseClickRef.current = detection.history;
         if (!detection.isDoubleClick) return;
 
+        if (target.type === "detail") {
+          const key =
+            target.detailKind === "pr"
+              ? target.meta.prKey
+              : target.detailKind === "candidate-group"
+                ? target.meta.groupKey
+                : null;
+          if (key) {
+            setPrExpanded(key, !expandedPrKeys.has(key));
+            return;
+          }
+          if (
+            target.detailKind === "pr-title" ||
+            target.detailKind === "pr-fact" ||
+            target.detailKind === "candidate"
+          )
+            return;
+        }
+
         // Same refusal as `canCollapse`: a double-click on a Workspace under
         // an active lifecycle must not write the stored expansion preference.
         if (
@@ -894,6 +1069,78 @@ export function App() {
       // Double-clicks require consecutive mouse presses. Any keyboard event
       // breaks the pair, even when it leaves the same row selected.
       lastMouseClickRef.current = null;
+      if (mode.type === "Navigate" || mode.type === "Expanded") {
+        const item = treeItems[selectedIndex];
+        if (item?.type === "detail") {
+          if (input === "p") {
+            openPrActions(item);
+            return;
+          }
+          const nodeKey =
+            item.detailKind === "pr"
+              ? item.meta.prKey
+              : item.detailKind === "candidate-group"
+                ? item.meta.groupKey
+                : null;
+          const childKey =
+            item.detailKind === "pr-title" || item.detailKind === "pr-fact"
+              ? item.meta.prKey
+              : item.detailKind === "candidate"
+                ? item.meta.groupKey
+                : null;
+          if (key.return && (nodeKey || childKey)) {
+            item.action?.();
+            return;
+          }
+          if (key.rightArrow && nodeKey) {
+            setPrExpanded(nodeKey, true);
+            return;
+          }
+          if (key.leftArrow && childKey) {
+            const parentIndex = treeItems.findIndex(
+              (candidate) =>
+                candidate.type === "detail" &&
+                ((candidate.detailKind === "pr" &&
+                  candidate.meta.prKey === childKey &&
+                  candidate.repoIndex === item.repoIndex &&
+                  candidate.worktreeIndex === item.worktreeIndex) ||
+                  (candidate.detailKind === "candidate-group" &&
+                    candidate.meta.groupKey === childKey &&
+                    candidate.repoIndex === item.repoIndex &&
+                    candidate.worktreeIndex === item.worktreeIndex)),
+            );
+            if (parentIndex >= 0) selectTreeItem(parentIndex);
+            setPrExpanded(childKey, false);
+            return;
+          }
+          if (key.leftArrow && nodeKey) {
+            if (expandedPrKeys.has(nodeKey)) {
+              setPrExpanded(nodeKey, false);
+              return;
+            }
+            const owner = findOwningWorktreeIndex(treeItems, selectedIndex);
+            const wtItem = owner === null ? undefined : treeItems[owner];
+            if (wtItem?.type === "worktree") {
+              const repo = filteredRepos[wtItem.repoIndex];
+              const wt = repo?.worktrees[wtItem.worktreeIndex];
+              if (
+                repo &&
+                wt &&
+                owner !== null &&
+                !isWorktreeLifecycleActive(wtItem, filteredRepos, lifecycle)
+              ) {
+                selectTreeItem(owner);
+                collapseWorktree(
+                  `${repo.project}/${wt.branch}`,
+                  repo.repoPath,
+                  wt.branch,
+                );
+              }
+            }
+            return;
+          }
+        }
+      }
 
       // Ctrl+C exits from EVERY mode (parity with Ink's default), but through
       // the same disable-mouse-first sequence as `q`: startTui renders with
@@ -911,6 +1158,7 @@ export function App() {
       if (
         input === "q" &&
         mode.type !== "OpenModal" &&
+        mode.type !== "PrMenu" &&
         mode.type !== "UpModal" &&
         mode.type !== "AddProjectModal" &&
         mode.type !== "Search" &&
@@ -945,6 +1193,7 @@ export function App() {
           if (key.escape) setMode(shortcutsReturnModeRef.current);
           return;
         case "OpenModal":
+        case "PrMenu":
         case "UpModal":
         case "AddProjectModal":
           return;
@@ -1009,6 +1258,7 @@ export function App() {
             hoveredItemIndex={hoveredItemIndex}
             lifecycle={lifecycle}
             prData={prData}
+            associations={associations}
             panes={panes}
             expandedWorktreeKeys={expandedWorktreeKeys}
             discoveredWorkspaceKeys={discoveredWorkspaceKeys}
@@ -1038,6 +1288,15 @@ export function App() {
           <ShortcutsModal
             width={Math.min(termCols, 60)}
             onHide={() => setMode(shortcutsReturnModeRef.current)}
+          />
+        ) : mode.type === "PrMenu" && prMenu ? (
+          <PrActionsModal
+            key={prMenu.screen}
+            title={prMenu.screen === "choose" ? "Choose PR" : "PR actions"}
+            options={prMenuOptions}
+            width={Math.min(termCols, 70)}
+            onChoose={choosePrMenuOption}
+            onCancel={closePrMenu}
           />
         ) : mode.type === "OpenModal" ? (
           <OpenModal

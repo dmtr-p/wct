@@ -177,7 +177,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         // Rows while Expanded: repo-1(0), main(1), feature/a(2), PR-detail(3),
         // feature/b(4). Confirm the PR detail row actually rendered before
         // clicking, so this test is exercising the index-shift it claims to.
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
 
         const sgrRow = sgrRowFor(4);
         await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
@@ -227,7 +227,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "r"); // fetch PRs (Navigate-only key)
         await tick(15);
         await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/a
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
 
         // Items while Expanded: repo-1(0), main(1), feature/a(2),
         // PR-detail(3), feature/b(4), feature/c(5). Walk the cursor PAST the
@@ -542,11 +542,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
   });
 
   describe("Bug: row reflow above the selection must not hide it (PR #104 r3530858752)", () => {
-    // 52 chars: the PR label ("PR #7: <title> (OPEN)", 66 chars) renders on
-    // ONE row at 100 columns (92-column label budget after the 8-column
-    // indent/selector chrome) but wraps onto TWO at 60 columns (52-column
-    // budget) — so narrowing the terminal shifts every row below the PR down
-    // by one while selectedIndex and viewportRows stay unchanged.
+    // The expanded PR title fits at 100 columns and wraps at 60 columns,
+    // shifting every row below it while selection and viewport size stay fixed.
     const wrappingTitle =
       "Keep the selection visible when rows above it reflow";
 
@@ -590,12 +587,16 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "r"); // fetch PRs for repo "alpha"
         await tick(15);
         await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/0
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
+        await sendKeys(rendered.stdin, "\x1b[B"); // select PR row
+        await sendKeys(rendered.stdin, "\x1b[C"); // show full title and facts
 
-        // Walk the cursor well past the first viewport so the keep-visible
-        // effect pins it to the BOTTOM visible row (12 downs from feature/0
-        // land on feature/11 at row index 14, past the PR detail row).
-        for (let i = 0; i < 12; i++) {
+        // Walk past the expanded PR facts to pin feature/11 to the bottom.
+        for (
+          let i = 0;
+          i < 30 && !selectedLine(rendered.lines())?.includes("feature/11");
+          i++
+        ) {
           await sendKeys(rendered.stdin, "\x1b[B", 2);
         }
         await tick(5);
@@ -617,17 +618,14 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         // Prove the reflow actually happened — otherwise this test passes
         // vacuously if the resize ever stops propagating `columns` (the
         // visible worktree set is identical pre/post resize by construction).
-        // Wheel back to the top: the PR label must now wrap onto a
-        // continuation row ("reflow (OPEN)" on its own line, no "PR #7").
+        // Wheel back to the top: the expanded title has a continuation row.
         for (let i = 0; i < 10; i++) {
           await sendKeys(rendered.stdin, sgrWheel(-1), 1);
         }
         await tick(5);
-        const contLine = rendered
-          .lines()
-          .find((l) => l.includes("reflow (OPEN)"));
+        const contLine = rendered.lines().find((l) => l.includes("reflow"));
         expect(contLine).toBeDefined();
-        expect(contLine).not.toContain("PR #7");
+        expect(contLine).not.toContain("#7");
       } finally {
         rendered.unmount();
       }
@@ -646,13 +644,21 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "r"); // fetch PRs for repo "alpha"
         await tick(15);
         await sendKeys(rendered.stdin, "\x1b[C"); // right: expand feature/0
-        expect(rendered.output()).toContain("PR #7");
+        expect(rendered.output()).toContain("#7");
+        await sendKeys(rendered.stdin, "\x1b[B"); // select PR row
+        await sendKeys(rendered.stdin, "\x1b[C"); // show full title and facts
 
-        // Park the cursor BELOW the PR detail row (feature/1, row 4) so the
+        // Park the cursor below the expanded PR title so the
         // wrap will move its visual row, then wheel the viewport away — the
         // deliberate PRD §3 state with the selection off-screen above.
-        await sendKeys(rendered.stdin, "\x1b[B"); // feature/0 -> PR detail
-        await sendKeys(rendered.stdin, "\x1b[B"); // PR detail -> feature/1
+        for (
+          let i = 0;
+          i < 10 && !selectedLine(rendered.lines())?.includes("feature/1");
+          i++
+        ) {
+          await sendKeys(rendered.stdin, "\x1b[B");
+        }
+        expect(selectedLine(rendered.lines())).toContain("feature/1");
         for (let i = 0; i < 15; i++) {
           await sendKeys(rendered.stdin, sgrWheel(1), 1);
         }

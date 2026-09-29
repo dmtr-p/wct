@@ -37,6 +37,12 @@ export interface PrFacts {
   lastError: string | null;
 }
 
+export function prIdentity(
+  pr: Pick<PrFacts, "baseRepository" | "number">,
+): string {
+  return `${pr.baseRepository.toLowerCase()}#${pr.number}`;
+}
+
 export interface CheckCounts {
   passed: number;
   failed: number;

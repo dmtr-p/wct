@@ -201,7 +201,7 @@ describe("App.tsx review fixes (real App)", () => {
       }
       await sendKeys(rendered.stdin, "\x1b[C");
       await sendKeys(rendered.stdin, "\x1b[B");
-      expect(selectedLine(rendered.lines())).toContain("PR #42");
+      expect(selectedLine(rendered.lines())).toContain("#42");
 
       await sendKeys(rendered.stdin, "c");
       expect(
@@ -211,7 +211,7 @@ describe("App.tsx review fixes (real App)", () => {
 
       await sendKeys(rendered.stdin, "\x1b");
       await new Promise((resolve) => setTimeout(resolve, 60));
-      expect(selectedLine(rendered.lines())).toContain("PR #42");
+      expect(selectedLine(rendered.lines())).toContain("#42");
     } finally {
       rendered.unmount();
     }

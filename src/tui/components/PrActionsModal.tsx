@@ -22,7 +22,12 @@ export function PrActionsModal({
   onChoose: (id: string) => void;
   onCancel: () => void;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(() =>
+    Math.max(
+      0,
+      options.findIndex((option) => !option.disabled),
+    ),
+  );
   useGuardedInput(
     (_input, key) => {
       if (key.escape) {

@@ -160,9 +160,11 @@ describe("PR merge confirmation", () => {
     const rendered = await renderApp(<App />);
     try {
       await openPrMenu(rendered);
+      const current = mergeFixture.snapshot;
+      if (!current) throw new Error("Missing merge snapshot fixture");
       mergeFixture.snapshot = {
-        ...mergeFixture.snapshot!,
-        pr: { ...mergeFixture.snapshot!.pr, reviewDecision: "REVIEW_REQUIRED" },
+        ...current,
+        pr: { ...current.pr, reviewDecision: "REVIEW_REQUIRED" },
       };
       await sendKeys(rendered.stdin, "\x1b[B"); // Refresh
       await sendKeys(rendered.stdin, "\x1b[B"); // Merge…

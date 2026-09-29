@@ -117,6 +117,7 @@ export function App() {
     openPrs,
     errors: githubErrors,
     refresh: refreshGitHub,
+    refreshAfterCurrent: refreshGitHubAfterCurrent,
     refreshingProjects,
   } = useGitHub(repos);
   const {
@@ -958,7 +959,7 @@ export function App() {
           (eligibility.route === "direct" &&
             (!method || !eligibility.methods.includes(method)));
         if (changed) {
-          void refreshGitHub(menu.repoPath);
+          void refreshGitHubAfterCurrent(menu.repoPath);
         }
         setPrMenu((previous) =>
           previous?.screen === "actions" &&
@@ -1038,7 +1039,7 @@ export function App() {
           mergePending.current = false;
           setPrOutcome(`PR #${snapshot.pr.number} ${result}`);
           closePrMenu();
-          void refreshGitHub(prMenu.repoPath);
+          void refreshGitHubAfterCurrent(prMenu.repoPath);
         })
         .catch((error) => {
           mergePending.current = false;
@@ -1046,7 +1047,7 @@ export function App() {
             error instanceof Error ? error.message : String(error),
           );
           closePrMenu();
-          void refreshGitHub(prMenu.repoPath);
+          void refreshGitHubAfterCurrent(prMenu.repoPath);
         });
       return;
     }

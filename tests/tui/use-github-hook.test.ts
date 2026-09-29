@@ -182,4 +182,27 @@ describe("useGitHub", () => {
     expect(calls).toBe(11);
     harness.unmount();
   });
+
+  test("a post-submission refresh waits for an older request", async () => {
+    let releaseFirst: (repository: string) => void = () => {};
+    let calls = 0;
+    runPromise.mockImplementation((() => {
+      calls++;
+      if (calls === 1)
+        return new Promise<string>((resolve) => {
+          releaseFirst = resolve;
+        });
+      return Promise.resolve(calls === 6 ? "base/repo" : []);
+    }) as typeof tuiRuntime.runPromise);
+    const harness = await renderHook([repo()]);
+    await settle();
+    expect(calls).toBe(1);
+    const fresh = harness.value.refreshAfterCurrent("/tmp/repo");
+    await settle();
+    expect(calls).toBe(1);
+    releaseFirst("base/repo");
+    await fresh;
+    expect(calls).toBe(10);
+    harness.unmount();
+  });
 });

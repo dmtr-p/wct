@@ -116,6 +116,13 @@ describe("merge eligibility and routing", () => {
       ),
     ).toMatchObject({ route: "direct" });
   });
+  test("allows a mergeable PR with pre-receive hooks", () => {
+    expect(
+      mergeEligibility(snapshot({ mergeStateStatus: "HAS_HOOKS" })),
+    ).toMatchObject({
+      route: "direct",
+    });
+  });
 });
 
 describe("confirmed submission", () => {

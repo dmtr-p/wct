@@ -383,6 +383,20 @@ export function useGitHub(repos: RepoInfo[]) {
     [refreshOne],
   );
 
+  const refreshAfterCurrent = useCallback(
+    async (repoPath: string) => {
+      // A request started before a merge can return the old PR state.
+      // Wait for it to finish before starting the post-submission read.
+      let running = inFlight.current.get(repoPath);
+      while (running) {
+        await running.promise;
+        running = inFlight.current.get(repoPath);
+      }
+      await refresh(repoPath);
+    },
+    [refresh],
+  );
+
   const setExplicit = useCallback(
     async (repoPath: string, branch: string, pr: PrFacts) => {
       await tuiRuntime.runPromise(
@@ -447,6 +461,7 @@ export function useGitHub(repos: RepoInfo[]) {
     errors,
     loading,
     refresh,
+    refreshAfterCurrent,
     refreshingProjects,
     setExplicit,
     clearExplicit,

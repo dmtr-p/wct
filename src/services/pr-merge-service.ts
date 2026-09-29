@@ -204,7 +204,9 @@ export function mergeEligibility(snapshot: MergeSnapshot): MergeEligibility {
     !pr.id ||
     !pr.headOid ||
     pr.mergeable !== "MERGEABLE" ||
-    (pr.mergeStateStatus !== "CLEAN" && pr.mergeStateStatus !== "UNSTABLE") ||
+    (pr.mergeStateStatus !== "CLEAN" &&
+      pr.mergeStateStatus !== "UNSTABLE" &&
+      pr.mergeStateStatus !== "HAS_HOOKS") ||
     pr.reviewDecision === "CHANGES_REQUESTED" ||
     pr.reviewDecision === "REVIEW_REQUIRED" ||
     pr.isQueued ||

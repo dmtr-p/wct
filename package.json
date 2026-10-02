@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
-    "@effect/vitest": "4.0.0-rc.117",
+    "@effect/vitest": "4.0.0-rc.118",
     "@types/bun": "1.4.2",
     "@types/react": "^19.3.0",
     "react-devtools-core": "^8.0.0",

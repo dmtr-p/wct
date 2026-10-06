@@ -124,9 +124,11 @@ within an existing scope.
 - Fork options include `startImmediately` and `uninterruptible`.
 - Read references with `Ref.get`, wait for deferred values with `Deferred.await`,
   and join fibers with `Fiber.join`.
-- Service keys, `Option`, and `Result` support `yield*` in `Effect.gen`.
-  Use `.asEffect()` to pass a yieldable Option or Result to Effect combinators.
-- Use `Result.ok` and `Result.err` for result values.
+- Service keys support `yield*` in `Effect.gen`. Convert optional and result
+  values with `Effect.fromOption` and `Effect.fromResult` before using them in
+  Effect programs.
+- Use `Option.gen` and `Result.gen` for generators over those data types.
+- Use `Result.succeed` and `Result.fail` for result values.
 
 ## Schemas
 
@@ -161,8 +163,9 @@ const decodeConfig = Schema.decodeUnknownSync(ConfigSchema);
   `Schema.decodeUnknownExit`, choosing the boundary appropriate to the caller.
 - Use `Schema.fromJsonString(schema)` for JSON string codecs.
 - Use `Schema.toStandardSchemaV1` for the Standard Schema validation interface.
-- Use `Schema.toType`, `Schema.toEncoded`, `Schema.toEquivalence`,
-  `Schema.toArbitrary`, and `Schema.toFormatter` for derived representations.
+- Use `Schema.toType`, `Schema.toEncoded`, `Schema.toEquivalence`, and
+  `Schema.toFormatter` for derived representations; use `Arbitrary.schema` for
+  schema-based value generation.
 - Use `Schema.decodeTo` with `SchemaTransformation.transform` for transformations.
 - Modify struct fields with `.mapFields(...)` and `Struct.pick`, `Struct.omit`,
   `Struct.assign`, or `Struct.map`.

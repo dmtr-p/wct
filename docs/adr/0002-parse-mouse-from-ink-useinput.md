@@ -1,31 +1,29 @@
 ---
-status: proposed
+status: accepted
 ---
 
-# Mouse input is parsed from Ink's `useInput` string, not a second stdin listener
+# Mouse input uses the shared guarded Ink input hook
 
-`wct tui` reads terminal SGR mouse events (`\x1b[<…M/m`) by parsing them out of
-the `input` string Ink already hands to the existing `useInput` handler — a
-`parseSgrMouse` guard at the top of the dispatcher that consumes and `return`s
-on any mouse sequence. It does **not** attach a second `stdin.on('data', …)`
-listener.
+All TUI input listeners use `useGuardedInput` in
+`src/tui/hooks/useGuardedInput.ts`. The hook reads mouse reports from the
+strings delivered by Ink's `useInput`, consumes them before keyboard handlers
+receive them, and dispatches recognized events through `onMouseEvent`.
+Biome restricts direct `useInput` imports to this hook.
 
-Why: Ink 7.1.0 reads stdin via `stdin.addListener('readable', …)` plus a
-`while ((chunk = stdin.read()) !== null)` drain loop and a stateful
-`createInputParser()` (`node_modules/ink/build/components/App.js`,
-`input-parser.js`), re-emitting each parsed event on an internal EventEmitter.
-A second `data` listener flips the stream into flowing mode and **races Ink's
-own `read()` loop for the same chunks**. Most reference implementations
-(Gemini CLI, octofriend, zenobi-us/ink-mouse) use the second-listener pattern;
-Gemini only gets away with it because it ships a *forked* ink. Verified on the
-installed 7.1.0: a full SGR sequence survives intact as one `input` string
-(`'[<0;45;12M'`, one leading ESC stripped), so parsing from `useInput` is both
-correct and race-free, and Ink's `pending` buffer already reassembles
-chunk-split sequences.
+Ink owns stdin through its readable loop and input parser. On the normal
+stdin path, it emits each complete SGR mouse sequence separately and strips
+the leading ESC before calling `useInput`. The guard also handles concatenated
+mouse sequences from Ink's bracketed-paste fallback. Legacy X10 reports are
+consumed as a prefix followed by three payload bytes; they do not trigger
+mouse actions.
 
-Trade-off: we depend on an Ink-internal detail (that an unrecognised CSI
-sequence is forwarded verbatim to `useInput`). Recorded here so a future
-contributor does not "clean this up" by adding a dedicated stdin listener and
-re-introduce the read-loop race.
+`src/tui/input/mouse.ts` contains sequence recognition, parsing, and tree
+hit-testing. `App.tsx` routes tree events, while `MouseClickable` and modal
+lists handle their own component events. Every active guarded hook consumes
+mouse reports, including reports that do not produce an action, so they
+cannot become text-field input.
 
-See `.scratch/tui-mouse-support/PRD.md` §6.2 and §10.
+Keep parsing on Ink's input stream. A separate stdin data listener would
+compete with Ink's readable loop for the same chunks. This depends on Ink's
+handling of unrecognized CSI sequences; preserve the mouse parser and input
+wiring checks when updating Ink.

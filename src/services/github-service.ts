@@ -218,7 +218,7 @@ function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
 /**
  * Returns true when the error represents "gh is not installed" — i.e. the
  * executable was not found on PATH.  We detect this via the ENOENT code that
- * Bun/Node sets on the underlying spawn error, surfaced through
+ * Bun sets on the underlying spawn error, surfaced through
  * `ProcessExitError.cause`.
  */
 export function isGhNotInstalledError(error: unknown): boolean {

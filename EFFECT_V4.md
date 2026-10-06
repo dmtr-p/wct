@@ -80,8 +80,9 @@ CLI Effect, provide application and Bun services, and call `BunRuntime.runMain`.
 - `provideWctServices` supplies the live application services and default JSON
   flag value.
 - `runBunPromise` runs Effects at imperative Bun boundaries.
-- The TUI uses the shared `ManagedRuntime` in `src/tui/runtime.ts`; dispose it
-  through the existing lifecycle when shutting down.
+- The TUI uses the process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
+  Command exit tears down the process; there is no explicit runtime disposal
+  path.
 - Use the process helpers in `src/services/process.ts` for command execution.
   They collect stdout, stderr, and exit status inside an Effect scope.
 - Use `Bun.spawn` with inherited stdio for interactive process handoff.

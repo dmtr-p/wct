@@ -5,9 +5,11 @@ bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
 ```
 
-**Do not run tests or linting manually.** Harness hooks handle this automatically:
-- **PostToolUse**: `biome format --write` runs on every file edit
-- **Stop**: `biome lint --write` and `bun run test` run when the session stops, waking the agent on failure (exit code 2)
+**Do not run tests or linting manually.** The Stop hook configured in
+`.codex/hooks.json` runs `.codex/hooks/stop.sh` when the session stops. It runs
+`bunx biome check --write --error-on-warnings .`, `bun run typecheck`, and
+`bun run test -- --reporter=agent`, and blocks completion with the failing
+check's output if any step fails.
 
 ## Architecture
 
@@ -44,6 +46,10 @@ src/
 │   ├── workspace-service.ts # Open/up/down/close workspace operations shared by CLI and TUI
 │   ├── db.ts             # ~/.wct SQLite database paths, schema migrations, and withDb
 │   ├── pr-cache-service.ts # Cached GitHub PR payloads with fetch timestamps
+│   ├── pr-model.ts       # PR identities, facts, normalization, and status derivation
+│   ├── pr-discovery.ts   # Push destination resolution and Workspace PR Association
+│   ├── pr-details.ts     # Batched PR checks and review detail fetching
+│   ├── pr-merge-service.ts # Merge eligibility, confirmation snapshots, and submission
 │   ├── project-registration.ts # Registering a repo in the multi-repo registry
 │   ├── copy.ts           # File copying utilities
 │   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
@@ -59,6 +65,8 @@ src/
 │   ├── tree-navigation.ts # Tree navigation state machine (selection, viewport, return slots)
 │   ├── lifecycle.ts       # Per-workspace lifecycle progress, keyed by Workspace Identity
 │   ├── pr-layout.ts       # Terminal-width-aware PR title wrapping
+│   ├── pr-status.ts       # Compact PR status presentation
+│   ├── session-utils.ts   # Safe tmux client handoff decisions and start action messages
 │   ├── input/             # Mode-specific keyboard and guarded mouse routing
 │   ├── components/
 │   │   ├── TreeView.tsx   # Repo list with expandable worktree details
@@ -66,25 +74,46 @@ src/
 │   │   ├── RepoNode.tsx   # Single repo group
 │   │   ├── WorktreeItem.tsx # Branch line with status indicators
 │   │   ├── OpenModal.tsx  # Modal for wct open
-│   │   ├── StatusBar.tsx  # Bottom keybinding hints
+│   │   ├── UpModal.tsx    # Modal for starting a workspace
+│   │   ├── AddProjectModal.tsx # Modal for explicit project registration
+│   │   ├── ConfirmModal.tsx # Destructive action confirmations
+│   │   ├── PrActionsModal.tsx # PR association and merge action menus
+│   │   ├── ShortcutsModal.tsx # Keyboard shortcut reference
+│   │   ├── StatusBar.tsx  # Search footer, repository errors, and footer row accounting
 │   │   ├── Modal.tsx      # Generic modal wrapper
+│   │   ├── ModalShortcut.tsx # Clickable modal shortcut legend
+│   │   ├── MouseClickable.tsx # Component bounds, hover, and click handling
+│   │   ├── TitledBox.tsx  # Shared titled border
+│   │   ├── EditableText.tsx # Text field cursor rendering
+│   │   ├── PathInput.tsx  # Directory input with completion
+│   │   ├── SessionOptionsSection.tsx # Profile and session option controls
+│   │   ├── session-options.ts # Session option values and profile choices
+│   │   ├── form-controls.tsx # Shared toggle and submit controls
 │   │   ├── DetailRow.tsx  # Single row in detail/status views
+│   │   ├── LifecycleProgressRow.tsx # Active Workspace lifecycle phase
 │   │   ├── RepoEmptyRow.tsx # Empty-repo visual row
 │   │   ├── WorktreeStatsRow.tsx # Worktree status visual row
 │   │   └── ScrollableList.tsx # Filterable scrollable list with scrollbar
-│   └── hooks/
-│       ├── useTreeNavigation.ts # React binding for the tree navigation state machine
-│       ├── useMouse.ts    # Terminal mouse reporting lifecycle
-│       ├── useGuardedInput.ts # Keyboard/mouse input routing
-│       ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
-│       ├── useModalActions.ts # Open/up/add modal orchestration
-│       ├── useSessionOptionsState.ts # Shared session option state
-│       ├── useActionError.ts # Timed action error state
-│       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
-│       ├── useRefresh.ts  # Hybrid poll + fs.watch
-│       ├── useTmux.ts     # Tmux sessions, panes, and clients (switch, detach, zoom)
-│       ├── useBlink.ts    # Toggling boolean for blink animations (used by useCursorBlink)
-│       └── useGitHub.ts   # Fetch PR and check status from GitHub
+│   ├── hooks/
+│   │   ├── useTreeNavigation.ts # React binding for the tree navigation state machine
+│   │   ├── useMouse.ts    # Terminal mouse reporting lifecycle
+│   │   ├── useGuardedInput.ts # Keyboard/mouse input routing
+│   │   ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
+│   │   ├── useModalActions.ts # Open/up/add modal orchestration
+│   │   ├── useProjectActions.ts # Project deletion and safe session handoff
+│   │   ├── useSessionOptionsState.ts # Shared session option state
+│   │   ├── useActionError.ts # Timed action error state
+│   │   ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
+│   │   ├── useRefresh.ts  # Hybrid poll + fs.watch
+│   │   ├── useTmux.ts     # Tmux sessions, panes, and clients (switch, detach, zoom)
+│   │   ├── useBlink.ts    # Toggling boolean for blink animations (used by useCursorBlink)
+│   │   ├── useCursorBlink.ts # Editing cursor visibility and blink resets
+│   │   ├── useTextEditing.ts # Cursor movement, insertion, and deletion for text fields
+│   │   └── useGitHub.ts   # Workspace PR Associations, open PR lists, and refreshes
+│   └── utils/
+│       ├── display-width.ts # Grapheme and terminal column measurements
+│       ├── truncate.ts    # Width-aware text truncation
+│       └── wrap-text.ts   # Width-aware text wrapping
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/

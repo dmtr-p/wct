@@ -90,7 +90,7 @@ wct --completions fish > ~/.config/fish/completions/wct.fish
 
 ## Configuration
 
-Run `wct init` to generate a starter `.wct.yaml` in your project root. Here's an annotated example covering all options:
+Run `wct init` to generate a starter `.wct.yaml` in your project root. Here's an annotated example:
 
 ```yaml
 version: 1
@@ -193,9 +193,9 @@ Mouse support is **on by default**:
 
 - **Wheel** scrolls the worktree viewport one row per tick. The selection stays put and may scroll out of view — the wheel never moves the cursor.
 - **Left-click** selects a row.
-- **Double-click** expands or collapses a branch, opens a PR, or switches to a tmux pane.
+- **Double-click** expands or collapses a branch, PR details, or PR candidates, or switches to a tmux pane.
 
-Mouse works in the Navigate and Expanded views only; modals and Search are mouse-free. Set `WCT_DISABLE_MOUSE=1` to disable it.
+Form modals support clicking fields, options, and buttons; focused lists support wheel scrolling and row selection. Confirmation buttons are clickable. Search and the PR actions menu use the keyboard. Set `WCT_DISABLE_MOUSE=1` to disable mouse reporting.
 
 Hold **Shift** while dragging to use native terminal text selection. If tmux mouse mode conflicts with the TUI, use `WCT_DISABLE_MOUSE=1`.
 
@@ -213,4 +213,4 @@ To run:
 bun run src/index.ts
 ```
 
-This project was created using `bun init` in bun v1.3.6. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Use [Bun](https://bun.com) for development and builds. See [AGENTS.md](./AGENTS.md) for repository conventions and automated checks.

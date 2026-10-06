@@ -1,12 +1,9 @@
 // src/tui/pr-layout.ts
 //
-// PR detail rows are the ONE tree line allowed to wrap onto multiple terminal
-// rows (the title is shown in full, never truncated). The visual-row model in
-// `tree-helpers` is otherwise 1:1 with terminal rows, so a wrapped PR would
-// shift every row below it and desync mouse hit-testing. To keep them aligned,
-// BOTH the row model (`buildTreeRows`) and the renderer (`DetailRow`) wrap the
-// label through this single pure helper — same input, same line breaks, so the
-// counted rows and the rendered lines can never diverge.
+// PR summaries with presentation metadata occupy one terminal row. Expanded
+// titles wrap through `wrapPrTitle`; PR labels without presentation metadata
+// wrap through `wrapPrLabel`. `buildTreeRows` computes the lines and passes
+// each piece to `DetailRow`, keeping rendering and mouse hit-testing aligned.
 //
 // Column width is measured as terminal display width (`utils/display-width`):
 // CJK and emoji glyphs count two columns, matching how Ink (via
@@ -50,7 +47,7 @@ export function wrapPrLabel(
   return wrapText(label, Math.max(1, maxWidth - prLabelStart(hasIcon)));
 }
 
-/** Only the expanded title item may wrap in the new PR tree. */
+/** Wrap an expanded PR title within its nested row's column budget. */
 export function wrapPrTitle(title: string, maxWidth: number): string[] {
   return wrapText(title, Math.max(1, maxWidth - PR_SUBROW_INDENT));
 }

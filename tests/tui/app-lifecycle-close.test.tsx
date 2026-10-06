@@ -218,6 +218,8 @@ describe("TUI close lifecycle", () => {
 
           const callsBeforeCancel = workspaceCalls("close").length;
           await sendKeys(app.stdin, ESCAPE);
+          // Ink waits 20ms before treating a lone ESC as an Escape key.
+          await new Promise((resolve) => setTimeout(resolve, 30));
           await tick(8);
           const frame = app.lines().join("\n");
           expect(frame).not.toContain("Close worktree feature/x?");

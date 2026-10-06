@@ -204,29 +204,30 @@ describe("TUI close lifecycle", () => {
           await sendKeys(app.stdin, ARROW_DOWN);
           await sendKeys(app.stdin, ARROW_DOWN);
           await sendKeys(app.stdin, "c");
-          expect(app.output()).toContain("Close worktree feature/x?");
+          expect(app.lines().join("\n")).toContain("Close worktree feature/x?");
 
           if (force) {
             await sendKeys(app.stdin, ENTER);
             await tick(4);
             lastWorkspaceCall("close").resolve(blockedResult());
             await tick(8);
-            expect(app.output()).toContain("feature/x has uncommitted changes");
+            expect(app.lines().join("\n")).toContain(
+              "feature/x has uncommitted changes",
+            );
           }
 
           const callsBeforeCancel = workspaceCalls("close").length;
           await sendKeys(app.stdin, ESCAPE);
           await tick(8);
-          expect(app.output()).not.toContain("Close worktree feature/x?");
-          expect(app.output()).not.toContain(
-            "feature/x has uncommitted changes",
-          );
-          expect(app.output()).not.toContain("Preparing Workspace…");
+          const frame = app.lines().join("\n");
+          expect(frame).not.toContain("Close worktree feature/x?");
+          expect(frame).not.toContain("feature/x has uncommitted changes");
+          expect(frame).not.toContain("Preparing Workspace…");
           expect(selectedLine(app.lines())).toContain("feature/x");
           expect(workspaceCalls("close")).toHaveLength(callsBeforeCancel);
 
           await sendKeys(app.stdin, "c");
-          expect(app.output()).toContain("Close worktree feature/x?");
+          expect(app.lines().join("\n")).toContain("Close worktree feature/x?");
         } finally {
           app.unmount();
         }

@@ -174,7 +174,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, sgrRelease(3, sgrRow));
 
         // Selecting the sibling preserves feature/a's expansion and PR row.
-        expect(rendered.output()).toContain("#7");
+        expect(rendered.lines().join("\n")).toContain("#7");
         const line = selectedLine(rendered.lines());
         expect(line).toContain("feature/b");
         expect(line).not.toContain("feature/a");

@@ -4,7 +4,7 @@ version: 1
 # Base directory for worktrees
 worktree_dir: "../worktrees"
 
-# Project name (used for tmux session naming)
+# Configured project name (used for worktree and tmux session naming)
 project_name: "wct"
 
 # Files to copy to new worktree

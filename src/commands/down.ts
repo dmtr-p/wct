@@ -9,7 +9,7 @@ import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "down",
-  description: "Kill tmux session for a worktree",
+  description: "Stop tmux session for a worktree",
   options: [
     {
       name: "path",
@@ -55,6 +55,6 @@ export function downCommand(
       return;
     }
 
-    yield* logger.success(`Killed tmux session '${result.sessionName}'`);
+    yield* logger.success(`Stopped tmux session '${result.sessionName}'`);
   });
 }

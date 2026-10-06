@@ -92,10 +92,10 @@ describe("ConfirmModal", () => {
     }
   });
 
-  test("explains that deleting a project preserves worktrees", async () => {
+  test("explains that removing a project preserves worktrees", async () => {
     const rendered = await renderWithInput(
       <ConfirmModal
-        mode={Mode.ConfirmDeleteProject("/tmp/myapp", "myapp") as ConfirmMode}
+        mode={Mode.ConfirmRemoveProject("/tmp/myapp", "myapp") as ConfirmMode}
         width={60}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -103,10 +103,10 @@ describe("ConfirmModal", () => {
     );
 
     try {
-      expect(rendered.output()).toContain("╭ Delete Project");
+      expect(rendered.output()).toContain("╭ Remove Project");
       expect(rendered.output()).toContain("Its sessions will be stopped");
       expect(rendered.output()).toContain("worktrees will be kept");
-      expect(rendered.output()).toContain("enter:delete  esc:cancel");
+      expect(rendered.output()).toContain("enter:remove  esc:cancel");
     } finally {
       rendered.unmount();
     }

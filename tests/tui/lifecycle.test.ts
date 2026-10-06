@@ -7,9 +7,9 @@ import {
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
-  lifecycleKey,
   lifecyclePhaseLabel,
   lifecycleProgressContent,
+  workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
@@ -19,7 +19,7 @@ import {
   reconcileExpandedWorktreeKeys,
   workspaceIdentityKeysForDisplayKey,
 } from "../../src/tui/tree-helpers";
-import { pendingKey } from "../../src/tui/types";
+import { worktreeDisplayKey } from "../../src/tui/types";
 import { displayWidth } from "../../src/tui/utils/display-width";
 import { elementText, hasElementProp } from "./react-elements";
 
@@ -32,7 +32,7 @@ function lifecycleOf(
 ): LifecycleState {
   return new Map([
     [
-      lifecycleKey(repoPath, branch),
+      workspaceIdentityKey(repoPath, branch),
       { operation, repoPath, project, branch, phase },
     ],
   ]);
@@ -52,11 +52,11 @@ describe("lifecyclePhaseLabel", () => {
     expect(
       lifecyclePhaseLabel({ _tag: "RunningSetup", name: "bun install" }),
     ).toBe("Setup: bun install…");
-    expect(lifecyclePhaseLabel({ _tag: "CreatingTmuxSession" })).toBe(
-      "Creating tmux session…",
+    expect(lifecyclePhaseLabel({ _tag: "StartingTmuxSession" })).toBe(
+      "Starting tmux session…",
     );
-    expect(lifecyclePhaseLabel({ _tag: "KillingTmuxSession" })).toBe(
-      "Killing tmux session…",
+    expect(lifecyclePhaseLabel({ _tag: "StoppingTmuxSession" })).toBe(
+      "Stopping tmux session…",
     );
     expect(lifecyclePhaseLabel({ _tag: "RemovingWorktree" })).toBe(
       "Removing worktree…",
@@ -203,7 +203,7 @@ describe("forced expansion is presentation-only", () => {
     // `reconcileExpandedWorktreeKeys` prunes on every repos change (the 5s
     // poll included), so the stored preference must stay untouched here.
     expect(stored.size).toBe(0);
-    expect(stored.has(pendingKey("alpha", branch))).toBe(false);
+    expect(stored.has(worktreeDisplayKey("alpha", branch))).toBe(false);
     expect(reconcileExpandedWorktreeKeys(stored, repos)).toBe(stored);
     expect(reconcileExpandedWorktreeKeys(stored, [])).toBe(stored);
   });
@@ -245,7 +245,9 @@ describe("discovered Workspace expansion", () => {
       },
     ];
     const storedPresentationKeys = new Set<string>();
-    const discoveredWorkspaceKeys = new Set([lifecycleKey("/repos/a", branch)]);
+    const discoveredWorkspaceKeys = new Set([
+      workspaceIdentityKey("/repos/a", branch),
+    ]);
 
     expect(
       isWorktreeEffectivelyExpanded({
@@ -294,15 +296,15 @@ describe("discovered Workspace expansion", () => {
       reconcileDiscoveredWorkspaceKeys(discoveredWorkspaceKeys, repos.slice(1)),
     ).toEqual(new Set());
 
-    const displayKey = pendingKey("same-name", branch);
+    const displayKey = worktreeDisplayKey("same-name", branch);
     const storedWithCollision = new Set([displayKey]);
     const overridesAfterCollapsingA = new Set(discoveredWorkspaceKeys);
     const identitiesToPreserve = workspaceIdentityKeysForDisplayKey(
       repos,
       displayKey,
     );
-    identitiesToPreserve.delete(lifecycleKey("/repos/a", branch));
-    overridesAfterCollapsingA.delete(lifecycleKey("/repos/a", branch));
+    identitiesToPreserve.delete(workspaceIdentityKey("/repos/a", branch));
+    overridesAfterCollapsingA.delete(workspaceIdentityKey("/repos/a", branch));
     for (const identity of identitiesToPreserve) {
       overridesAfterCollapsingA.add(identity);
     }

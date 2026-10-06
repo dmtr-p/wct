@@ -64,8 +64,8 @@ export type WorkspacePhase =
   | { _tag: "CreatingWorktree" }
   | { _tag: "CopyingFiles" }
   | { _tag: "RunningSetup"; name: string }
-  | { _tag: "CreatingTmuxSession" }
-  | { _tag: "KillingTmuxSession" }
+  | { _tag: "StartingTmuxSession" }
+  | { _tag: "StoppingTmuxSession" }
   | { _tag: "RemovingWorktree" };
 
 export type WorkspaceReporterEvent =
@@ -711,7 +711,7 @@ function openImpl(
     }
 
     if (resolved.tmux) {
-      yield* emitPhase(reporter, "open", { _tag: "CreatingTmuxSession" });
+      yield* emitPhase(reporter, "open", { _tag: "StartingTmuxSession" });
       yield* emitReporter(reporter, {
         operation: "open",
         _tag: "AttemptStarted",
@@ -910,7 +910,7 @@ function upImpl(
     const workingDir = env.WCT_WORK_DIR;
 
     if (resolved.tmux) {
-      yield* emitPhase(reporter, "up", { _tag: "CreatingTmuxSession" });
+      yield* emitPhase(reporter, "up", { _tag: "StartingTmuxSession" });
       yield* emitReporter(reporter, {
         operation: "up",
         _tag: "AttemptStarted",
@@ -1012,7 +1012,7 @@ function downImpl(
       };
     }
 
-    yield* emitPhase(reporter, "down", { _tag: "KillingTmuxSession" });
+    yield* emitPhase(reporter, "down", { _tag: "StoppingTmuxSession" });
     yield* TmuxService.use((service) => service.killSession(sessionName));
     yield* emitReporter(reporter, {
       operation: "down",
@@ -1095,7 +1095,7 @@ function closeImpl(
     );
 
     if (existed) {
-      yield* emitPhase(reporter, "close", { _tag: "KillingTmuxSession" });
+      yield* emitPhase(reporter, "close", { _tag: "StoppingTmuxSession" });
     }
 
     const kill: WorkspaceAttempt<null> = existed

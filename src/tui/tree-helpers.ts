@@ -10,7 +10,7 @@ import {
   type LifecyclePhase,
   type LifecycleState,
   lifecycleEntryFor,
-  lifecycleKey,
+  workspaceIdentityKey,
 } from "./lifecycle";
 import { wrapPrLabel, wrapPrTitle } from "./pr-layout";
 import { candidatePrLabel, derivePrPresentation } from "./pr-status";
@@ -18,8 +18,8 @@ import {
   Mode,
   type PaneInfo,
   type PRInfo,
-  pendingKey,
   type TreeItem,
+  worktreeDisplayKey,
 } from "./types";
 
 const NO_LIFECYCLE: LifecycleState = new Map();
@@ -58,8 +58,10 @@ export function isWorktreeEffectivelyExpanded({
   repoPath: string;
   branch: string;
 }): boolean {
-  if (expandedWorktreeKeys?.has(pendingKey(project, branch))) return true;
-  if (discoveredWorkspaceKeys?.has(lifecycleKey(repoPath, branch))) return true;
+  if (expandedWorktreeKeys?.has(worktreeDisplayKey(project, branch)))
+    return true;
+  if (discoveredWorkspaceKeys?.has(workspaceIdentityKey(repoPath, branch)))
+    return true;
   return lifecycleEntryFor(lifecycle, repoPath, branch) !== undefined;
 }
 
@@ -129,14 +131,14 @@ export type TreeRow =
       pieceIndex: number;
       prLine: string;
     }
-  /** A Workspace that an `open` has begun but git does not yet expose as a worktree. */
+  /** A Pending Workspace, before Git exposes its worktree during `open`. */
   | {
       itemIndex: null;
       kind: "pending-workspace";
       repoIndex: number;
       branch: string;
     }
-  /** The single progress row for one Workspace under an active lifecycle. */
+  /** The Lifecycle Progress Row for one Workspace under an active lifecycle. */
   | {
       itemIndex: null;
       kind: "lifecycle-progress";
@@ -247,7 +249,7 @@ export function resolveConfirmationAnchorItemIndex(
   items: TreeItem[],
   repos: RepoInfo[],
 ): number | null {
-  if (mode.type === "ConfirmDeleteProject") {
+  if (mode.type === "ConfirmRemoveProject") {
     const repoIndex = items.findIndex((item) => {
       if (item.type !== "repo") return false;
       return repos[item.repoIndex]?.repoPath === mode.repoPath;
@@ -264,7 +266,7 @@ export function resolveConfirmationAnchorItemIndex(
       return (
         repo !== undefined &&
         worktree !== undefined &&
-        pendingKey(repo.project, worktree.branch) === mode.worktreeKey
+        worktreeDisplayKey(repo.project, worktree.branch) === mode.worktreeKey
       );
     });
     return paneIndex === -1 ? null : paneIndex;
@@ -285,7 +287,7 @@ export function resolveConfirmationAnchorItemIndex(
     return (
       repo !== undefined &&
       worktree !== undefined &&
-      pendingKey(repo.project, worktree.branch) === mode.worktreeKey
+      worktreeDisplayKey(repo.project, worktree.branch) === mode.worktreeKey
     );
   });
   return worktreeIndex === -1 ? null : worktreeIndex;
@@ -317,13 +319,13 @@ export function reconcileExpandedWorktreeKeys(
   const available = new Set(
     repos.flatMap((repo) =>
       repo.worktrees.map((worktree) =>
-        pendingKey(repo.project, worktree.branch),
+        worktreeDisplayKey(repo.project, worktree.branch),
       ),
     ),
   );
   const uncertainRepoPrefixes = repos
     .filter((repo) => repo.error !== undefined)
-    .map((repo) => pendingKey(repo.project, ""));
+    .map((repo) => worktreeDisplayKey(repo.project, ""));
   const next = new Set(
     [...previous].filter(
       (key) =>
@@ -341,13 +343,13 @@ export function reconcileDiscoveredWorkspaceKeys(
   const available = new Set(
     repos.flatMap((repo) =>
       repo.worktrees.map((worktree) =>
-        lifecycleKey(repo.repoPath, worktree.branch),
+        workspaceIdentityKey(repo.repoPath, worktree.branch),
       ),
     ),
   );
   const uncertainRepoPrefixes = repos
     .filter((repo) => repo.error !== undefined)
-    .map((repo) => lifecycleKey(repo.repoPath, ""));
+    .map((repo) => workspaceIdentityKey(repo.repoPath, ""));
   const next = new Set(
     [...previous].filter(
       (key) =>
@@ -365,8 +367,9 @@ export function workspaceIdentityKeysForDisplayKey(
   const identities = new Set<string>();
   for (const repo of repos) {
     for (const worktree of repo.worktrees) {
-      if (pendingKey(repo.project, worktree.branch) !== worktreeKey) continue;
-      identities.add(lifecycleKey(repo.repoPath, worktree.branch));
+      if (worktreeDisplayKey(repo.project, worktree.branch) !== worktreeKey)
+        continue;
+      identities.add(workspaceIdentityKey(repo.repoPath, worktree.branch));
     }
   }
   return identities;
@@ -396,7 +399,6 @@ export function buildTreeItems({
 
       const wt = repo.worktrees[wi];
       if (!wt) continue;
-      const wtKey = pendingKey(repo.project, wt.branch);
       // Suppress PR/pane detail items under an active lifecycle, so a phase
       // change can never reshuffle detail rows under the user's cursor.
       if (lifecycleEntryFor(lifecycle, repo.repoPath, wt.branch)) continue;
@@ -412,9 +414,9 @@ export function buildTreeItems({
 
       const sessionName = formatSessionName(basename(wt.path));
 
-      const workspaceKey = lifecycleKey(repo.repoPath, wt.branch);
+      const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
       const association = associations?.get(workspaceKey);
-      const pr = prData.get(workspaceKey) ?? prData.get(wtKey);
+      const pr = prData.get(workspaceKey);
       if (pr) {
         const facts = pr.facts;
         const prKey = facts ? prExpansionKey(workspaceKey, facts) : undefined;
@@ -776,7 +778,7 @@ export function lifecycleProgressRowIndex(
 
 /** The one-time viewport reveal for a newly active lifecycle operation. */
 export interface LifecycleReveal {
-  /** The `lifecycleKey` to mark revealed, so this happens exactly once. */
+  /** The `workspaceIdentityKey` to mark revealed, so this happens exactly once. */
   key: string;
   /** The offset that makes the progress row visible — minimally adjusted. */
   scrollOffset: number;
@@ -1058,7 +1060,7 @@ export function resolveExpandedRightArrowAction({
 
   return {
     type: "expand-worktree",
-    worktreeKey: pendingKey(repo.project, worktree.branch),
+    worktreeKey: worktreeDisplayKey(repo.project, worktree.branch),
     nextSelectedIndex: selectedIndex,
   };
 }
@@ -1127,7 +1129,7 @@ export function resolveSelectedPane({
   return {
     pane,
     label: selected.label,
-    worktreeKey: pendingKey(repo.project, worktree.branch),
+    worktreeKey: worktreeDisplayKey(repo.project, worktree.branch),
   };
 }
 

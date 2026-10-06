@@ -30,15 +30,15 @@ export interface ProjectActionDeps {
     sessionNames: readonly string[],
   ) => Promise<boolean>;
 
-  confirmDeleteProjectReturnModeRef: MutableRefObject<Mode>;
+  confirmRemoveProjectReturnModeRef: MutableRefObject<Mode>;
 }
 
 function restoreProjectUi(deps: ProjectActionDeps) {
-  deps.restoreTreeReturnPosition("delete-project");
-  deps.setMode(deps.confirmDeleteProjectReturnModeRef.current);
+  deps.restoreTreeReturnPosition("remove-project");
+  deps.setMode(deps.confirmRemoveProjectReturnModeRef.current);
 }
 
-export function createPrepareDeleteProject(deps: ProjectActionDeps) {
+export function createPrepareRemoveProject(deps: ProjectActionDeps) {
   return () => {
     const item = deps.treeItems[deps.selectedIndex];
     if (item?.type !== "repo") return;
@@ -56,13 +56,13 @@ export function createPrepareDeleteProject(deps: ProjectActionDeps) {
     }
 
     deps.clearActionError();
-    deps.confirmDeleteProjectReturnModeRef.current = deps.mode;
-    deps.captureTreeReturnPosition("delete-project");
-    deps.setMode(Mode.ConfirmDeleteProject(repo.repoPath, repo.project));
+    deps.confirmRemoveProjectReturnModeRef.current = deps.mode;
+    deps.captureTreeReturnPosition("remove-project");
+    deps.setMode(Mode.ConfirmRemoveProject(repo.repoPath, repo.project));
   };
 }
 
-export function createExecuteDeleteProject(deps: ProjectActionDeps) {
+export function createExecuteRemoveProject(deps: ProjectActionDeps) {
   return (repoPath: string, project: string) => {
     deps.clearActionError();
 
@@ -96,7 +96,7 @@ export function createExecuteDeleteProject(deps: ProjectActionDeps) {
         return yield* Effect.fail(
           toWctError(
             new Error(
-              "Cannot safely delete the project because the active tmux client could not be moved away",
+              "Cannot safely remove the project because the active tmux client could not be moved away",
             ),
           ),
         );
@@ -129,7 +129,7 @@ export function createExecuteDeleteProject(deps: ProjectActionDeps) {
 
       yield* RegistryService.use((service) => service.unregister(repoPath));
       yield* Effect.ignore(
-        PrCacheService.use((service) => service.invalidate(project)),
+        PrCacheService.use((service) => service.invalidate(repoPath)),
       );
 
       const refreshedRepos = yield* refresh;
@@ -137,7 +137,7 @@ export function createExecuteDeleteProject(deps: ProjectActionDeps) {
         return yield* Effect.fail(
           toWctError(
             new Error(
-              "Project was deleted, but validation refresh failed — showing the last known project state",
+              "Project was removed from the registry, but validation refresh failed — showing the last known project state",
             ),
           ),
         );
@@ -162,7 +162,7 @@ export function createExecuteDeleteProject(deps: ProjectActionDeps) {
 
 export function useProjectActions(deps: ProjectActionDeps) {
   return {
-    prepareDeleteProject: createPrepareDeleteProject(deps),
-    executeDeleteProject: createExecuteDeleteProject(deps),
+    prepareRemoveProject: createPrepareRemoveProject(deps),
+    executeRemoveProject: createExecuteRemoveProject(deps),
   };
 }

@@ -18,6 +18,7 @@ export interface WorktreeInfo {
 export interface RepoInfo {
   id: string;
   repoPath: string;
+  /** Project Display Name from the registry, not the configured project_name. */
   project: string;
   worktrees: WorktreeInfo[];
   profileNames: string[];

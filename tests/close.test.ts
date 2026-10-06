@@ -690,7 +690,7 @@ describe("closeCommand", () => {
       const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
       expect(
         loggedLines.some((line) =>
-          line.includes("Killed tmux session 'myapp-feature-a'"),
+          line.includes("Stopped tmux session 'myapp-feature-a'"),
         ),
       ).toBe(true);
       expect(
@@ -750,7 +750,7 @@ describe("closeCommand", () => {
       ]);
       const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
       expect(
-        loggedLines.some((line) => line.includes("Killed tmux session")),
+        loggedLines.some((line) => line.includes("Stopped tmux session")),
       ).toBe(false);
       expect(
         loggedLines.some((line) => line.includes("Removed worktree")),

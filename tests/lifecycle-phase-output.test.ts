@@ -134,8 +134,8 @@ const ALL_PHASES: WorkspacePhase[] = [
   { _tag: "CreatingWorktree" },
   { _tag: "CopyingFiles" },
   { _tag: "RunningSetup", name: "install" },
-  { _tag: "CreatingTmuxSession" },
-  { _tag: "KillingTmuxSession" },
+  { _tag: "StartingTmuxSession" },
+  { _tag: "StoppingTmuxSession" },
   { _tag: "RemovingWorktree" },
 ];
 

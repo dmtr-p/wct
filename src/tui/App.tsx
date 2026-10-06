@@ -66,7 +66,7 @@ import type { LifecycleState } from "./lifecycle";
 import {
   createLifecycleClaims,
   isLifecycleActive,
-  lifecycleKey,
+  workspaceIdentityKey,
 } from "./lifecycle";
 import { candidatePrLabel } from "./pr-status";
 import { tuiRuntime } from "./runtime";
@@ -91,7 +91,7 @@ import type {
   ReturnSlot,
   TreeNavigationSnapshot,
 } from "./tree-navigation";
-import { Mode } from "./types";
+import { Mode, worktreeDisplayKey } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -223,7 +223,7 @@ export function App() {
   );
   const waitForLifecyclePresentationCleanup = useCallback(
     (repoPath: string, branch: string): Promise<void> => {
-      const key = lifecycleKey(repoPath, branch);
+      const key = workspaceIdentityKey(repoPath, branch);
       if (!lifecycleRef.current.has(key)) return Promise.resolve();
       return new Promise((resolve) => {
         const waiters = lifecycleCleanupWaitersRef.current.get(key);
@@ -242,7 +242,7 @@ export function App() {
   const lifecycleClaims = lifecycleClaimsRef.current;
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
-  const confirmDeleteProjectReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const confirmRemoveProjectReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const searchReturnModeRef = useRef<Mode>(Mode.Navigate);
   const shortcutsReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -270,10 +270,10 @@ export function App() {
             slot: "close",
             returnMode: confirmCloseReturnModeRef.current,
           };
-        case "ConfirmDeleteProject":
+        case "ConfirmRemoveProject":
           return {
-            slot: "delete-project",
-            returnMode: confirmDeleteProjectReturnModeRef.current,
+            slot: "remove-project",
+            returnMode: confirmRemoveProjectReturnModeRef.current,
           };
       }
     },
@@ -584,11 +584,11 @@ export function App() {
 
   const collapseWorktree = useCallback(
     (worktreeKey: string, repoPath: string, branch: string) => {
-      const workspaceIdentityKey = lifecycleKey(repoPath, branch);
+      const workspaceKey = workspaceIdentityKey(repoPath, branch);
       const preservedWorkspaceKeys = expandedWorktreeKeys.has(worktreeKey)
         ? workspaceIdentityKeysForDisplayKey(repos, worktreeKey)
         : new Set<string>();
-      preservedWorkspaceKeys.delete(workspaceIdentityKey);
+      preservedWorkspaceKeys.delete(workspaceKey);
 
       setExpandedWorktreeKeys((previous) => {
         const next = new Set(previous);
@@ -597,7 +597,7 @@ export function App() {
       });
       setDiscoveredWorkspaceKeys((previous) => {
         const next = new Set(previous);
-        next.delete(workspaceIdentityKey);
+        next.delete(workspaceKey);
         for (const preserved of preservedWorkspaceKeys) next.add(preserved);
         if (
           next.size === previous.size &&
@@ -629,9 +629,9 @@ export function App() {
 
   const openModalOnRefresh = useCallback(
     (signal?: AbortSignal) => {
-      void refreshGitHub(openModalRepoProject, signal);
+      void refreshGitHub(openModalRepoPath, signal);
     },
-    [refreshGitHub, openModalRepoProject],
+    [refreshGitHub, openModalRepoPath],
   );
 
   const sessionActions = useSessionActions({
@@ -701,7 +701,7 @@ export function App() {
     clearActionError,
     refreshAll,
     switchClientAwayFromSessions: sessionActions.switchClientAwayFromSessions,
-    confirmDeleteProjectReturnModeRef,
+    confirmRemoveProjectReturnModeRef,
   });
 
   const setTreeInputMode = useCallback(
@@ -731,8 +731,8 @@ export function App() {
     handleSpaceSwitch: sessionActions.handleSpaceSwitch,
     handleDownSelectedWorktree: sessionActions.handleDownSelectedWorktree,
     handleCloseSelectedWorktree: sessionActions.handleCloseSelectedWorktree,
-    prepareDeleteProject: projectActions.prepareDeleteProject,
-    refreshRepo: (project: string) => void refreshGitHub(project),
+    prepareRemoveProject: projectActions.prepareRemoveProject,
+    refreshRepo: (repoPath: string) => void refreshGitHub(repoPath),
   };
 
   const expCtx: ExpandedContext = {
@@ -760,7 +760,7 @@ export function App() {
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
     const association = associations.get(
-      lifecycleKey(repo.repoPath, wt.branch),
+      workspaceIdentityKey(repo.repoPath, wt.branch),
     );
     const prRow =
       item.detailKind === "pr-title" || item.detailKind === "pr-fact"
@@ -1174,11 +1174,11 @@ export function App() {
           });
         return;
       }
-      case "ConfirmDeleteProject": {
+      case "ConfirmRemoveProject": {
         if (confirmPendingRef.current) return;
         confirmPendingRef.current = true;
         void projectActions
-          .executeDeleteProject(mode.repoPath, mode.project)
+          .executeRemoveProject(mode.repoPath, mode.project)
           .finally(() => {
             confirmPendingRef.current = false;
           });
@@ -1369,7 +1369,7 @@ export function App() {
               ) {
                 selectTreeItem(owner);
                 collapseWorktree(
-                  `${repo.project}/${wt.branch}`,
+                  worktreeDisplayKey(repo.project, wt.branch),
                   repo.repoPath,
                   wt.branch,
                 );
@@ -1404,7 +1404,7 @@ export function App() {
         mode.type !== "ConfirmDown" &&
         mode.type !== "ConfirmClose" &&
         mode.type !== "ConfirmCloseForce" &&
-        mode.type !== "ConfirmDeleteProject"
+        mode.type !== "ConfirmRemoveProject"
       ) {
         // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
         // mode before React unmount, so the unmount-cleanup disable is too late.
@@ -1441,7 +1441,7 @@ export function App() {
         case "ConfirmDown":
         case "ConfirmClose":
         case "ConfirmCloseForce":
-        case "ConfirmDeleteProject":
+        case "ConfirmRemoveProject":
           return handleConfirmInput(key);
       }
     },

@@ -25,7 +25,7 @@ import {
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
-import { Mode, pendingKey, type TreeItem } from "../types";
+import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
@@ -338,7 +338,7 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
-    const worktreeKey = pendingKey(repo.project, wt.branch);
+    const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
     deps.captureTreeReturnPosition("close");
     deps.confirmCloseReturnModeRef.current =
       deps.mode.type === "Expanded"
@@ -459,7 +459,7 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     const hasSession = deps.sessions.some((s) => s.name === sessionName);
     if (!hasSession) return;
 
-    const worktreeKey = pendingKey(repo.project, wt.branch);
+    const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
     deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =
       deps.mode.type === "Expanded"

@@ -6,7 +6,7 @@ import {
   resolveExpandedRightArrowAction,
   resolveSelectedPane,
 } from "../tree-helpers";
-import { Mode, type PaneInfo, pendingKey } from "../types";
+import { Mode, type PaneInfo, worktreeDisplayKey } from "../types";
 import type { NavigateContext } from "./navigate";
 
 export interface ExpandedContext extends NavigateContext {
@@ -44,7 +44,7 @@ export function handleExpandedInput(
 
     ctx.selectTreeItem(worktreeIndex);
     ctx.collapseWorktree(
-      pendingKey(repo.project, worktree.branch),
+      worktreeDisplayKey(repo.project, worktree.branch),
       repo.repoPath,
       worktree.branch,
     );
@@ -110,7 +110,7 @@ export function handleExpandedInput(
   }
 
   if (key.delete || key.backspace) {
-    ctx.prepareDeleteProject();
+    ctx.prepareRemoveProject();
     return;
   }
 

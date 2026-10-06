@@ -30,7 +30,7 @@ export interface TreeNavigationSnapshot {
 }
 
 /** Action-keyed slot for a saved tree selection and viewport. */
-export type ReturnSlot = "down" | "close" | "delete-project" | "kill" | "up";
+export type ReturnSlot = "down" | "close" | "remove-project" | "kill" | "up";
 
 export type ReturnDestination = "saved" | "owning-worktree";
 

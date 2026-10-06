@@ -6,6 +6,7 @@ import { withDb } from "./db";
 export interface RegistryItem {
   id: string;
   repo_path: string;
+  /** Project Display Name; membership is keyed by repo_path. */
   project: string;
   created_at: number;
 }

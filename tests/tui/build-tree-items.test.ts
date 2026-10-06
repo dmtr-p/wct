@@ -1,18 +1,23 @@
 import { basename } from "node:path";
 import { describe, expect, test } from "vitest";
 import { formatSessionName } from "../../src/services/tmux";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
   findOwningWorktreeIndex,
   reconcileExpandedWorktreeKeys,
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
-import { type PaneInfo, pendingKey, type TreeItem } from "../../src/tui/types";
+import {
+  type PaneInfo,
+  type TreeItem,
+  worktreeDisplayKey,
+} from "../../src/tui/types";
 
 describe("buildTreeItems", () => {
   test("preserves expanded keys for errored repo snapshots", () => {
-    const alphaKey = pendingKey("alpha", "feature/a");
-    const betaKey = pendingKey("beta", "feature/b");
+    const alphaKey = worktreeDisplayKey("alpha", "feature/a");
+    const betaKey = worktreeDisplayKey("beta", "feature/b");
     const previous = new Set([alphaKey, betaKey]);
     const repos = [
       {
@@ -55,7 +60,7 @@ describe("buildTreeItems", () => {
     ];
     const prData = new Map([
       [
-        pendingKey("example", "main"),
+        workspaceIdentityKey("/tmp/example-repo", "main"),
         {
           number: 1,
           title: "Main PR",
@@ -65,7 +70,7 @@ describe("buildTreeItems", () => {
         },
       ],
       [
-        pendingKey("example", "feature"),
+        workspaceIdentityKey("/tmp/example-repo", "feature"),
         {
           number: 2,
           title: "Feature PR",
@@ -79,8 +84,8 @@ describe("buildTreeItems", () => {
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set([
-        pendingKey("example", "main"),
-        pendingKey("example", "feature"),
+        worktreeDisplayKey("example", "main"),
+        worktreeDisplayKey("example", "feature"),
       ]),
       prData,
       panes: new Map(),
@@ -135,7 +140,7 @@ describe("buildTreeItems", () => {
           profileNames: [],
         },
       ],
-      expandedWorktreeKeys: new Set([pendingKey("example", branch)]),
+      expandedWorktreeKeys: new Set([worktreeDisplayKey("example", branch)]),
       prData: new Map(),
       panes: new Map([[sessionName, panes]]),
       jumpToPane: () => undefined,
@@ -196,7 +201,7 @@ describe("buildTreeItems", () => {
           profileNames: [],
         },
       ],
-      expandedWorktreeKeys: new Set([pendingKey("example", branch)]),
+      expandedWorktreeKeys: new Set([worktreeDisplayKey("example", branch)]),
       prData: new Map(),
       panes: new Map([[sessionName, sessionPanes]]),
       jumpToPane: () => undefined,
@@ -253,7 +258,7 @@ describe("buildTreeItems", () => {
         paneIndex: 4,
       },
       label: "editor:1 git status",
-      worktreeKey: pendingKey("example", branch),
+      worktreeKey: worktreeDisplayKey("example", branch),
     });
   });
 

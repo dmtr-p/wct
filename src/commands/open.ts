@@ -174,7 +174,7 @@ function createOpenHumanReporter(
         case "setup":
           return logger.info("Running setup commands...");
         case "tmux":
-          return logger.info("Creating tmux session...");
+          return logger.info("Starting tmux session...");
       }
     },
   };

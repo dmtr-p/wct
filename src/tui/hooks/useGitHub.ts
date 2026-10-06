@@ -15,7 +15,7 @@ import {
   type PrFacts,
   prIdentity,
 } from "../../services/pr-model";
-import { lifecycleKey } from "../lifecycle";
+import { workspaceIdentityKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
@@ -51,7 +51,10 @@ function hydrate(repos: RepoInfo[]) {
           PrCacheService.use((s) => s.getWorkspace(repo.repoPath, wt.branch)),
         );
         if (cached)
-          associations.set(lifecycleKey(repo.repoPath, wt.branch), cached);
+          associations.set(
+            workspaceIdentityKey(repo.repoPath, wt.branch),
+            cached,
+          );
       }
     } catch {
       /* cache errors leave unknown data */
@@ -193,7 +196,7 @@ export function useGitHub(repos: RepoInfo[]) {
               explicitCandidate = explicitFetched.get(key) ?? null;
             }
             found.set(
-              lifecycleKey(repo.repoPath, wt.branch),
+              workspaceIdentityKey(repo.repoPath, wt.branch),
               resolveWorkspacePr(
                 all,
                 wt.branch,
@@ -237,7 +240,8 @@ export function useGitHub(repos: RepoInfo[]) {
             if (entry.pr?.lastError) {
               const failedPr = entry.pr;
               const branch = repo.worktrees.find(
-                (wt) => lifecycleKey(repo.repoPath, wt.branch) === identity,
+                (wt) =>
+                  workspaceIdentityKey(repo.repoPath, wt.branch) === identity,
               )?.branch;
               const cached = branch
                 ? await tuiRuntime.runPromise(
@@ -271,7 +275,9 @@ export function useGitHub(repos: RepoInfo[]) {
             ...repo.worktrees
               .filter((wt) => !wt.isMainWorktree)
               .map((wt) => {
-                const entry = found.get(lifecycleKey(repo.repoPath, wt.branch));
+                const entry = found.get(
+                  workspaceIdentityKey(repo.repoPath, wt.branch),
+                );
                 return entry
                   ? tuiRuntime.runPromise(
                       PrCacheService.use((s) =>
@@ -362,12 +368,11 @@ export function useGitHub(repos: RepoInfo[]) {
   );
 
   const refresh = useCallback(
-    async (project?: string, signal?: AbortSignal) => {
-      const targets = project
-        ? reposRef.current.filter(
-            (repo) => repo.project === project || repo.repoPath === project,
-          )
-        : reposRef.current;
+    async (repoPath?: string, signal?: AbortSignal) => {
+      const targets =
+        repoPath !== undefined
+          ? reposRef.current.filter((repo) => repo.repoPath === repoPath)
+          : reposRef.current;
       if (!targets.length) return;
       const first = firstRefresh.current;
       firstRefresh.current = false;

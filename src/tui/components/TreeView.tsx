@@ -5,14 +5,9 @@ import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { RepoInfo } from "../hooks/useRegistry";
-import { type LifecycleState, lifecycleKey } from "../lifecycle";
+import { type LifecycleState, workspaceIdentityKey } from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
-import {
-  type PaneInfo,
-  type PRInfo,
-  pendingKey,
-  type TreeItem,
-} from "../types";
+import type { PaneInfo, PRInfo, TreeItem } from "../types";
 import { ConfirmModal, type ConfirmMode } from "./ConfirmModal";
 import { DetailRow } from "./DetailRow";
 import { LifecycleProgressRow } from "./LifecycleProgressRow";
@@ -255,16 +250,12 @@ function renderWorktreeRow(
 
   const sessionName = formatSessionName(basename(wt.path));
   const session = ctx.sessionMap.get(sessionName);
-  const wtKey = pendingKey(repo.project, wt.branch);
-
-  const wtPr =
-    ctx.prData.get(lifecycleKey(repo.repoPath, wt.branch)) ??
-    ctx.prData.get(wtKey);
+  const wtPr = ctx.prData.get(workspaceIdentityKey(repo.repoPath, wt.branch));
   const wtPanes = ctx.panes.get(sessionName);
   const hasExpandableData =
     !!wtPr ||
-    !!ctx.associations?.get(lifecycleKey(repo.repoPath, wt.branch))?.candidates
-      .length ||
+    !!ctx.associations?.get(workspaceIdentityKey(repo.repoPath, wt.branch))
+      ?.candidates.length ||
     (wtPanes && wtPanes.length > 0);
 
   const wtChildSelected =

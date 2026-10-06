@@ -5,7 +5,7 @@ import {
   handleNavigateInput,
   type NavigateContext,
 } from "../../src/tui/input/navigate";
-import { lifecycleKey } from "../../src/tui/lifecycle";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode, type TreeItem } from "../../src/tui/types";
 
 const noKey: Key = {
@@ -47,7 +47,7 @@ function makeCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleSpaceSwitch: vi.fn(),
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
-    prepareDeleteProject: vi.fn(),
+    prepareRemoveProject: vi.fn(),
     prepareAddProjectModal: vi.fn(),
     refreshRepo: vi.fn(),
     ...overrides,
@@ -104,16 +104,16 @@ describe("handleNavigateInput", () => {
     expect(ctx.prepareUpModal).toHaveBeenCalled();
   });
 
-  test("delete calls prepareDeleteProject", () => {
+  test("delete calls prepareRemoveProject", () => {
     const ctx = makeCtx();
     handleNavigateInput(ctx, "", { ...noKey, delete: true });
-    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
+    expect(ctx.prepareRemoveProject).toHaveBeenCalled();
   });
 
-  test("mac backspace calls prepareDeleteProject", () => {
+  test("mac backspace calls prepareRemoveProject", () => {
     const ctx = makeCtx();
     handleNavigateInput(ctx, "", { ...noKey, backspace: true });
-    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
+    expect(ctx.prepareRemoveProject).toHaveBeenCalled();
   });
 
   test("up arrow calls navigateTree(-1)", () => {
@@ -195,7 +195,7 @@ describe("handleNavigateInput", () => {
       selectedIndex: 0,
       lifecycle: new Map([
         [
-          lifecycleKey("/repos/myproj", "feat"),
+          workspaceIdentityKey("/repos/myproj", "feat"),
           {
             operation: "up",
             repoPath: "/repos/myproj",
@@ -247,9 +247,10 @@ describe("handleNavigateInput", () => {
     expect(ctx.handleCloseSelectedWorktree).not.toHaveBeenCalled();
   });
 
-  test("r calls refreshRepo with the focused repo's project", () => {
+  test("r refreshes the focused repository path when display names collide", () => {
     const repos = [
-      { id: "repo1", project: "myproj", worktrees: [] },
+      { id: "repo1", repoPath: "/repos/a", project: "myproj", worktrees: [] },
+      { id: "repo2", repoPath: "/repos/b", project: "myproj", worktrees: [] },
     ] as unknown as RepoInfo[];
     const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
     const ctx = makeCtx({
@@ -258,13 +259,14 @@ describe("handleNavigateInput", () => {
       selectedIndex: 0,
     });
     handleNavigateInput(ctx, "r", noKey);
-    expect(ctx.refreshRepo).toHaveBeenCalledWith("myproj");
+    expect(ctx.refreshRepo).toHaveBeenCalledExactlyOnceWith("/repos/a");
   });
 
-  test("r calls refreshRepo with the project of the worktree's parent repo", () => {
+  test("r refreshes a worktree's parent repository path", () => {
     const repos = [
       {
         id: "repo1",
+        repoPath: "/repos/myproj",
         project: "myproj",
         worktrees: [{ branch: "feat", path: "/tmp/feat" }],
       },
@@ -278,6 +280,6 @@ describe("handleNavigateInput", () => {
       selectedIndex: 0,
     });
     handleNavigateInput(ctx, "r", noKey);
-    expect(ctx.refreshRepo).toHaveBeenCalledWith("myproj");
+    expect(ctx.refreshRepo).toHaveBeenCalledExactlyOnceWith("/repos/myproj");
   });
 });

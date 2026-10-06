@@ -185,7 +185,7 @@ export function normalizeGhPr(
   };
 }
 
-/** The explicit choice wins; otherwise uncertain heads never auto-bind. */
+/** An Explicit PR Association wins; uncertain heads never associate automatically. */
 export function resolveWorkspacePr(
   pool: readonly PrFacts[],
   branch: string,

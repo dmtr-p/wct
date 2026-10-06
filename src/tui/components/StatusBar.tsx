@@ -75,7 +75,7 @@ function getHints(
     case "ConfirmKill":
       return [`Kill pane ${mode.label}?`, "enter:confirm  esc:cancel"];
     case "ConfirmDown":
-      return [`Kill session for ${mode.branch}?`, "enter:confirm  esc:cancel"];
+      return [`Stop session for ${mode.branch}?`, "enter:confirm  esc:cancel"];
     case "ConfirmClose":
       return [`Close worktree ${mode.branch}?`, "enter:confirm  esc:cancel"];
     case "ConfirmCloseForce":
@@ -83,8 +83,8 @@ function getHints(
         `${mode.branch} has uncommitted changes`,
         "enter:force close  esc:cancel",
       ];
-    case "ConfirmDeleteProject":
-      return [`Delete project ${mode.project}?`, "enter:delete  esc:cancel"];
+    case "ConfirmRemoveProject":
+      return [`Remove project ${mode.project}?`, "enter:remove  esc:cancel"];
     case "UpModal":
     case "AddProjectModal":
       return ["", ""];
@@ -110,7 +110,7 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
     case "ConfirmDown":
     case "ConfirmClose":
     case "ConfirmCloseForce":
-    case "ConfirmDeleteProject":
+    case "ConfirmRemoveProject":
       return 0;
     // divider + query line + hint line
     case "Search":
@@ -164,7 +164,7 @@ export function StatusBar({
     mode.type === "ConfirmDown" ||
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce" ||
-    mode.type === "ConfirmDeleteProject"
+    mode.type === "ConfirmRemoveProject"
   ) {
     return null;
   }

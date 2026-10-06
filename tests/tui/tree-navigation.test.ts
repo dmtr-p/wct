@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
-import { type LifecycleState, lifecycleKey } from "../../src/tui/lifecycle";
+import {
+  type LifecycleState,
+  workspaceIdentityKey,
+} from "../../src/tui/lifecycle";
 import type { TreeRow } from "../../src/tui/tree-helpers";
 import {
   effectiveTreeScrollOffset,
@@ -148,7 +151,7 @@ describe("tree navigation sequences", () => {
     const phase = { _tag: "Preparing" } as const;
     const lifecycle: LifecycleState = new Map([
       [
-        lifecycleKey("/one", "main"),
+        workspaceIdentityKey("/one", "main"),
         {
           operation: "up",
           repoPath: "/one",
@@ -174,9 +177,9 @@ describe("tree navigation sequences", () => {
       ],
     });
     state = step(state, active, { type: "reconcile" });
-    expect(state.revealedLifecycles.has(lifecycleKey("/one", "main"))).toBe(
-      true,
-    );
+    expect(
+      state.revealedLifecycles.has(workspaceIdentityKey("/one", "main")),
+    ).toBe(true);
     expect(state.selectedIndex).toBe(2);
     expect(state.scrollOffset).toBe(1);
   });
@@ -189,7 +192,7 @@ describe("tree navigation sequences", () => {
     const phase = { _tag: "Preparing" } as const;
     const lifecycle: LifecycleState = new Map([
       [
-        lifecycleKey("/one", "main"),
+        workspaceIdentityKey("/one", "main"),
         {
           operation: "up",
           repoPath: "/one",
@@ -438,7 +441,7 @@ describe("tree navigation sequences", () => {
     const phase = { _tag: "Preparing" } as const;
     const lifecycle: LifecycleState = new Map([
       [
-        lifecycleKey("/one", "main"),
+        workspaceIdentityKey("/one", "main"),
         {
           operation: "up",
           repoPath: "/one",
@@ -466,9 +469,9 @@ describe("tree navigation sequences", () => {
     });
     state = step(state, after, { type: "reconcile" });
     expect(state.selectedIndex).toBe(1);
-    expect(state.revealedLifecycles.has(lifecycleKey("/one", "main"))).toBe(
-      true,
-    );
+    expect(
+      state.revealedLifecycles.has(workspaceIdentityKey("/one", "main")),
+    ).toBe(true);
   });
 
   test("Up restoration still recovers a detail suppressed by its lifecycle", () => {
@@ -496,7 +499,7 @@ describe("tree navigation sequences", () => {
     expect(state.previousLayout.selectionParentId).toBe("wt:one/main");
 
     const phase = { _tag: "Preparing" } as const;
-    const key = lifecycleKey("/one", "main");
+    const key = workspaceIdentityKey("/one", "main");
     const lifecycle: LifecycleState = new Map([
       [
         key,
@@ -535,7 +538,7 @@ describe("tree navigation sequences", () => {
     const layout = snapshot();
     let state = settled(layout);
     state = step(state, layout, { type: "wheel", delta: 3 });
-    const key = lifecycleKey("/one", "main");
+    const key = workspaceIdentityKey("/one", "main");
     const lifecycle: LifecycleState = new Map([
       [
         key,
@@ -575,8 +578,8 @@ describe("tree navigation sequences", () => {
   });
 
   test("unavailable lifecycle rows wait; simultaneous operations reveal in order", () => {
-    const first = lifecycleKey("/one", "main");
-    const second = lifecycleKey("/two", "feature");
+    const first = workspaceIdentityKey("/one", "main");
+    const second = workspaceIdentityKey("/two", "feature");
     const phase = { _tag: "Preparing" } as const;
     const lifecycle: LifecycleState = new Map([
       [

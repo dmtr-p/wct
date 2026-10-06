@@ -2,7 +2,7 @@ import type { Key } from "ink";
 import type { TmuxClient } from "../../services/tmux";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { isLifecycleActive, type LifecycleState } from "../lifecycle";
-import { Mode, pendingKey, type TreeItem } from "../types";
+import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
 
 export interface NavigateContext {
   treeItems: TreeItem[];
@@ -21,9 +21,9 @@ export interface NavigateContext {
   handleSpaceSwitch: () => void;
   handleDownSelectedWorktree: () => void;
   handleCloseSelectedWorktree: () => void;
-  prepareDeleteProject: () => void;
+  prepareRemoveProject: () => void;
   prepareAddProjectModal: () => void;
-  refreshRepo: (project: string) => void;
+  refreshRepo: (repoPath: string) => void;
 }
 
 export function handleNavigateInput(
@@ -63,7 +63,7 @@ export function handleNavigateInput(
   }
 
   if (key.delete || key.backspace) {
-    ctx.prepareDeleteProject();
+    ctx.prepareRemoveProject();
     return;
   }
 
@@ -84,7 +84,7 @@ export function handleNavigateInput(
   if (!currentRepo) return;
 
   if (input === "r") {
-    ctx.refreshRepo(currentRepo.project);
+    ctx.refreshRepo(currentRepo.repoPath);
     return;
   }
 
@@ -105,7 +105,7 @@ export function handleNavigateInput(
         return;
       }
       ctx.expandWorktree(
-        pendingKey(currentRepo.project, currentWorktree.branch),
+        worktreeDisplayKey(currentRepo.project, currentWorktree.branch),
       );
       return;
     }

@@ -25,7 +25,7 @@ export interface RegisterProjectResult {
   item: RegistryItem;
   registration: RegistryRegistrationResult;
   repoPath: string;
-  projectName: string;
+  projectDisplayName: string;
 }
 
 function currentDirectory(): Effect.Effect<string, WctError> {
@@ -64,7 +64,7 @@ function resolveInputPath(
   });
 }
 
-function deriveProjectName(
+function deriveProjectDisplayName(
   repoPath: string,
   explicitName: string | undefined,
   tolerateConfigErrors: boolean,
@@ -105,14 +105,14 @@ export function registerProject(
       );
     }
 
-    const projectName = yield* deriveProjectName(
+    const projectDisplayName = yield* deriveProjectDisplayName(
       repoPath,
       options.name,
       options.tolerateConfigErrors ?? false,
     );
 
     const registration = yield* RegistryService.use((service) =>
-      service.register(repoPath, projectName, {
+      service.register(repoPath, projectDisplayName, {
         forceRename: options.forceRename,
       }),
     );
@@ -121,7 +121,7 @@ export function registerProject(
       item: registration.item,
       registration,
       repoPath,
-      projectName: registration.item.project,
+      projectDisplayName: registration.item.project,
     };
   });
 }

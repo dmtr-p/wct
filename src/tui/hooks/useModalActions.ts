@@ -15,9 +15,9 @@ import type { UpModalResult } from "../components/UpModal";
 import {
   type LifecycleClaims,
   type LifecycleState,
-  lifecycleKey,
   rejectIfLifecycleActive,
   runLifecycleOperation,
+  workspaceIdentityKey,
 } from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
@@ -25,7 +25,7 @@ import {
   resolveTreeReturnMode,
 } from "../tree-helpers";
 import type { ReturnSlot } from "../tree-navigation";
-import { Mode, pendingKey, type TreeItem } from "../types";
+import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
 import type { RepoInfo } from "./useRegistry";
 import type { StartWorkspaceTarget } from "./useSessionActions";
 import type { TmuxClientDiscovery } from "./useTmux";
@@ -53,7 +53,7 @@ function discoveredWorkspaceIdentityKey(
     if (repo.repoPath !== repoPath) continue;
     const hasWorktree = repo.worktrees.some((wt) => wt.branch === branch);
     if (!hasWorktree) continue;
-    return lifecycleKey(repo.repoPath, branch);
+    return workspaceIdentityKey(repo.repoPath, branch);
   }
   return undefined;
 }
@@ -248,7 +248,7 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
       return;
     }
 
-    const worktreeKey = pendingKey(repo.project, wt.branch);
+    const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
     deps.captureTreeReturnPosition("up");
     deps.upModalReturnModeRef.current =
       deps.mode.type === "Expanded"
@@ -273,7 +273,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
 
     // Identity comes off the mode, never off the display key: `project` is
     // free-form and may itself contain a slash, so splitting `worktreeKey`
-    // would claim a bogus lifecycleKey and lose the operation.
+    // would claim a bogus workspaceIdentityKey and lose the operation.
     const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
     deps.restoreTreeReturnPosition("up");

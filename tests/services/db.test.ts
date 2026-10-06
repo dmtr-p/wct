@@ -105,4 +105,91 @@ describe("wct-db migration runner", () => {
 
     db.close();
   });
+
+  it("upgrading v5 retires the legacy cache while preserving repository data", () => {
+    const db = new Database(":memory:");
+    try {
+      db.run(`CREATE TABLE schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_at INTEGER NOT NULL
+      )`);
+      for (const [index, sql] of MIGRATIONS.slice(0, 5).entries()) {
+        db.run(sql);
+        db.run(
+          "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+          [index + 1, 1],
+        );
+      }
+      db.run("INSERT INTO pr_cache VALUES (?, ?, ?, ?)", [
+        "same-name",
+        "[]",
+        1,
+        null,
+      ]);
+      db.run("INSERT INTO registry VALUES (?, ?, ?, ?)", [
+        "repo-id",
+        "/repo",
+        "same-name",
+        1,
+      ]);
+      db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
+        "/repo",
+        "feature",
+        "{}",
+        2,
+        null,
+      ]);
+      db.run("INSERT INTO open_pr_cache VALUES (?, ?, ?, ?)", [
+        "/repo",
+        "[]",
+        3,
+        null,
+      ]);
+      db.run("INSERT INTO workspace_pr_association VALUES (?, ?, ?, ?)", [
+        "/repo",
+        "feature",
+        "base/repo",
+        42,
+      ]);
+
+      runMigrations(db);
+      runMigrations(db);
+
+      expect(
+        db
+          .query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pr_cache'",
+          )
+          .get(),
+      ).toBeNull();
+      expect(db.query("SELECT repo_path, project FROM registry").all()).toEqual(
+        [{ repo_path: "/repo", project: "same-name" }],
+      );
+      expect(
+        db
+          .query(
+            "SELECT repo_path, branch, payload, fetched_at FROM workspace_pr_cache",
+          )
+          .all(),
+      ).toEqual([
+        { repo_path: "/repo", branch: "feature", payload: "{}", fetched_at: 2 },
+      ]);
+      expect(
+        db
+          .query("SELECT repo_path, payload, fetched_at FROM open_pr_cache")
+          .all(),
+      ).toEqual([{ repo_path: "/repo", payload: "[]", fetched_at: 3 }]);
+      expect(db.query("SELECT * FROM workspace_pr_association").all()).toEqual([
+        {
+          repo_path: "/repo",
+          branch: "feature",
+          base_repository: "base/repo",
+          pr_number: 42,
+        },
+      ]);
+      expect(getCurrentSchemaVersion(db)).toBe(TARGET_SCHEMA_VERSION);
+    } finally {
+      db.close();
+    }
+  });
 });

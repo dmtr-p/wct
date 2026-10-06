@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
-import { type LifecycleState, lifecycleKey } from "../../src/tui/lifecycle";
+import {
+  type LifecycleState,
+  workspaceIdentityKey,
+} from "../../src/tui/lifecycle";
 import { resolveSessionsHandoff } from "../../src/tui/session-utils";
 import {
   resolveExpandedRightArrowAction,
@@ -9,7 +12,7 @@ import {
   resolveTreeReturnMode,
   treeItemId,
 } from "../../src/tui/tree-helpers";
-import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
+import { Mode, type TreeItem, worktreeDisplayKey } from "../../src/tui/types";
 
 function repo(repoIndex: number): TreeItem {
   return { type: "repo", repoIndex };
@@ -58,7 +61,7 @@ function lifecycleFor(
 ): LifecycleState {
   return new Map([
     [
-      lifecycleKey(repoPath, branch),
+      workspaceIdentityKey(repoPath, branch),
       {
         operation: "up" as const,
         repoPath,
@@ -442,7 +445,7 @@ describe("resolveExpandedRightArrowAction", () => {
       }),
     ).toEqual({
       type: "expand-worktree",
-      worktreeKey: pendingKey("repo-a", "feature-b"),
+      worktreeKey: worktreeDisplayKey("repo-a", "feature-b"),
       nextSelectedIndex: 4,
     });
   });

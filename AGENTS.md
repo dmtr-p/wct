@@ -100,7 +100,7 @@ src/
 Use Bun exclusively - no Node.js fallback. The runtime boundary is:
 
 - `effect` for the application, services, errors, schemas, and CLI
-- `effect/unstable/cli` for the root command tree and built-in CLI UX
+- `effect/cli` for the root command tree and built-in CLI UX
 - `@effect/platform-bun` for `BunRuntime.runMain` and `BunServices.layer`
 
 Leverage Bun built-in APIs where they are still the right primitive:

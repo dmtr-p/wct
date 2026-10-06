@@ -193,7 +193,7 @@ export function openCommand(
 ): Effect.Effect<
   void,
   WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
+  WctServices | "effect/cli/GlobalFlag/json"
 > {
   return Effect.gen(function* () {
     const { noAttach, ...workspaceOptions } = options;

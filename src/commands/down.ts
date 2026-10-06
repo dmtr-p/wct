@@ -38,7 +38,7 @@ export function downCommand(
 ): Effect.Effect<
   void,
   WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
+  WctServices | "effect/cli/GlobalFlag/json"
 > {
   return Effect.gen(function* () {
     const result = yield* WorkspaceService.use((service) =>

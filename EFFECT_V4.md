@@ -9,7 +9,7 @@
 
 Many packages merged into `effect`:
 
-- `@effect/platform` → `effect` (FileSystem, Path, etc. now under `effect/unstable/*`)
+- `@effect/platform` → `effect` (FileSystem, Path, etc. are available from `effect`)
 - `@effect/rpc`, `@effect/cluster` → `effect`
 - Platform-specific packages remain separate: `@effect/platform-bun`, `@effect/platform-node`
 
@@ -19,7 +19,10 @@ All packages share a single version number. Use matching versions everywhere.
 
 ### Unstable Modules
 
-New imports under `effect/unstable/*` (e.g., `effect/unstable/cli/Command`, `effect/unstable/process`). These may break in minor releases.
+As of rc.118, imports use `effect/cli/Command`, `effect/process`, etc.
+The former `effect/unstable/*` export paths have been removed. These APIs still
+have `@stability unstable` and may break in later releases. CLI global flag
+service identifiers also use the new prefix, e.g. `effect/cli/GlobalFlag/json`.
 
 ---
 
@@ -304,6 +307,9 @@ Effect.runForkWith(services)(program);
 | ----------------------------- | ------------------------------ |
 | `Scope.extend(effect, scope)` | `Scope.provide(scope)(effect)` |
 
+As of rc.118, `Scope.close` and `Scope.closeUnsafe` require `Scope.Closeable`
+(created by `Scope.make` or `Scope.fork`), rather than any `Scope.Scope`.
+
 ---
 
 ## Equality
@@ -513,11 +519,11 @@ Result.err("error");
 | `Runtime`          | Mostly removed; use `Effect.runFork`, `Effect.services` |
 | `Either`           | `Result`                                                |
 | `ParseResult`      | `SchemaIssue`                                           |
-| `@effect/platform` | `effect` (many modules moved to `effect/unstable/*`)    |
+| `@effect/platform` | `effect` (platform-specific runtimes remain separate) |
 
 ## Testing with @effect/vitest
 
-We use `@effect/vitest@4.0.0-rc.111` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
+We use `@effect/vitest@4.0.0-rc.118` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
 
 ### `it.effect` + `it.layer` — preferred for new tests
 

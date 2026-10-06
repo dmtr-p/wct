@@ -36,7 +36,7 @@ import {
   type WorktreeService as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
-type JsonFlagRequirement = "effect/unstable/cli/GlobalFlag/json";
+type JsonFlagRequirement = "effect/cli/GlobalFlag/json";
 
 export interface ServiceOverrides {
   github?: GitHubServiceApi;

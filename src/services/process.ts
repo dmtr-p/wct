@@ -1,5 +1,5 @@
 import { Effect, Stream } from "effect";
-import { ChildProcess } from "effect/unstable/process";
+import { ChildProcess } from "effect/process";
 
 export interface ProcessOptions {
   cwd?: string;

@@ -62,7 +62,7 @@ export function closeCommand(
 ): Effect.Effect<
   void,
   WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
+  WctServices | "effect/cli/GlobalFlag/json"
 > {
   return Effect.gen(function* () {
     const { branches, yes = false, force = false } = options;

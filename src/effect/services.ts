@@ -70,11 +70,11 @@ export function provideWctServices<A, E, R>(
 ): Effect.Effect<
   A,
   E,
-  Exclude<R, WctServices | "effect/unstable/cli/GlobalFlag/json">
+  Exclude<R, WctServices | "effect/cli/GlobalFlag/json">
 > {
   return Effect.provide(effect, WctServicesLayer) as Effect.Effect<
     A,
     E,
-    Exclude<R, WctServices | "effect/unstable/cli/GlobalFlag/json">
+    Exclude<R, WctServices | "effect/cli/GlobalFlag/json">
   >;
 }

@@ -79,7 +79,7 @@ CLI Effect, provide application and Bun services, and call `BunRuntime.runMain`.
 - `provideBunServices` supplies `BunServices.layer`.
 - `provideWctServices` supplies the live application services and default JSON
   flag value.
-- `runBunPromise` and `runBunSync` run Effects at imperative Bun boundaries.
+- `runBunPromise` runs Effects at imperative Bun boundaries.
 - The TUI uses the shared `ManagedRuntime` in `src/tui/runtime.ts`; dispose it
   through the existing lifecycle when shutting down.
 - Use the process helpers in `src/services/process.ts` for command execution.

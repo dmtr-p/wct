@@ -26,13 +26,3 @@ export function runBunPromise<A, E, R extends never | BunServices.BunServices>(
 ): Promise<A> {
   return Effect.runPromise(provideBunServices(effect));
 }
-
-export function runBunSync<A, E>(effect: Effect.Effect<A, E, never>): A;
-export function runBunSync<A, E>(
-  effect: Effect.Effect<A, E, BunServices.BunServices>,
-): A;
-export function runBunSync<A, E, R extends never | BunServices.BunServices>(
-  effect: Effect.Effect<A, E, R>,
-): A {
-  return Effect.runSync(provideBunServices(effect));
-}

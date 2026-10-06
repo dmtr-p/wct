@@ -6,7 +6,6 @@ const colors = {
   yellow: "\x1b[33m",
   blue: "\x1b[34m",
   cyan: "\x1b[36m",
-  gray: "\x1b[90m",
   reset: "\x1b[0m",
   bold: "\x1b[1m",
 };
@@ -38,10 +37,6 @@ export function error(message: string) {
 export function step(current: number, total: number, message: string) {
   const prefix = `${colors.cyan}[${current}/${total}]${colors.reset}`;
   return log(`${prefix} ${message}`);
-}
-
-export function dim(message: string): string {
-  return `${colors.gray}${message}${colors.reset}`;
 }
 
 export function bold(message: string): string {

@@ -190,11 +190,7 @@ function createOpenHumanReporter(
 
 export function openCommand(
   options: OpenCommandOptions,
-): Effect.Effect<
-  void,
-  WctError,
-  WctServices | "effect/cli/GlobalFlag/json"
-> {
+): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const { noAttach, ...workspaceOptions } = options;
     const json = yield* JsonFlag;

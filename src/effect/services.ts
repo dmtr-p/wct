@@ -67,11 +67,7 @@ export const WctServicesLayer = Layer.mergeAll(
 
 export function provideWctServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E,
-  Exclude<R, WctServices | "effect/cli/GlobalFlag/json">
-> {
+): Effect.Effect<A, E, Exclude<R, WctServices | "effect/cli/GlobalFlag/json">> {
   return Effect.provide(effect, WctServicesLayer) as Effect.Effect<
     A,
     E,

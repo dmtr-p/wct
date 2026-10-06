@@ -59,11 +59,7 @@ function jsonAborted(
 
 export function closeCommand(
   options: CloseOptions,
-): Effect.Effect<
-  void,
-  WctError,
-  WctServices | "effect/cli/GlobalFlag/json"
-> {
+): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const { branches, yes = false, force = false } = options;
     const branchQueue = [...branches];

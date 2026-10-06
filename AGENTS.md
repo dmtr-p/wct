@@ -98,7 +98,7 @@ src/
 │   │   ├── useGuardedInput.ts # Keyboard/mouse input routing
 │   │   ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
 │   │   ├── useModalActions.ts # Open/up/add modal orchestration
-│   │   ├── useProjectActions.ts # Project deletion and safe session handoff
+│   │   ├── useProjectActions.ts # Project removal and safe session handoff
 │   │   ├── useSessionOptionsState.ts # Shared session option state
 │   │   ├── useActionError.ts # Timed action error state
 │   │   ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git

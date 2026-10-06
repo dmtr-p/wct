@@ -5,7 +5,7 @@ import {
   handleExpandedInput,
 } from "../../src/tui/input/expanded";
 import type { NavigateContext } from "../../src/tui/input/navigate";
-import { lifecycleKey } from "../../src/tui/lifecycle";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
@@ -58,7 +58,7 @@ function makeNavCtx(overrides?: Partial<NavigateContext>): NavigateContext {
     handleSpaceSwitch: vi.fn(),
     handleDownSelectedWorktree: vi.fn(),
     handleCloseSelectedWorktree: vi.fn(),
-    prepareDeleteProject: vi.fn(),
+    prepareRemoveProject: vi.fn(),
     prepareAddProjectModal: vi.fn(),
     refreshRepo: vi.fn(),
     ...overrides,
@@ -147,7 +147,7 @@ describe("handleExpandedInput", () => {
       ],
       lifecycle: new Map([
         [
-          lifecycleKey("/tmp/repo", "feat"),
+          workspaceIdentityKey("/tmp/repo", "feat"),
           {
             operation: "down",
             repoPath: "/tmp/repo",
@@ -184,16 +184,16 @@ describe("handleExpandedInput", () => {
     expect(ctx.navigateTree).toHaveBeenCalledWith(1);
   });
 
-  test("delete calls prepareDeleteProject", () => {
+  test("delete calls prepareRemoveProject", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "", { ...noKey, delete: true });
-    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
+    expect(ctx.prepareRemoveProject).toHaveBeenCalled();
   });
 
-  test("mac backspace calls prepareDeleteProject", () => {
+  test("mac backspace calls prepareRemoveProject", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "", { ...noKey, backspace: true });
-    expect(ctx.prepareDeleteProject).toHaveBeenCalled();
+    expect(ctx.prepareRemoveProject).toHaveBeenCalled();
   });
 
   test("right arrow handles expand-worktree action", () => {
@@ -254,7 +254,7 @@ describe("handleExpandedInput", () => {
       ],
       lifecycle: new Map([
         [
-          lifecycleKey("/tmp/repo", "feat"),
+          workspaceIdentityKey("/tmp/repo", "feat"),
           {
             operation: "close",
             repoPath: "/tmp/repo",

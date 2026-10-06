@@ -593,7 +593,7 @@ export const liveTmuxService: TmuxService = TmuxService.of({
     Effect.mapError(killSessionImpl(name), (error) =>
       commandError(
         "tmux_error",
-        `Failed to kill tmux session: ${getProcessErrorMessage(error)}`,
+        `Failed to stop tmux session: ${getProcessErrorMessage(error)}`,
         error,
       ),
     ),

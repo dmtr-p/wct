@@ -13,7 +13,7 @@ export type ConfirmMode = Extract<
       | "ConfirmDown"
       | "ConfirmClose"
       | "ConfirmCloseForce"
-      | "ConfirmDeleteProject";
+      | "ConfirmRemoveProject";
   }
 >;
 
@@ -23,7 +23,7 @@ export function isConfirmMode(mode: Mode): mode is ConfirmMode {
     mode.type === "ConfirmDown" ||
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce" ||
-    mode.type === "ConfirmDeleteProject"
+    mode.type === "ConfirmRemoveProject"
   );
 }
 
@@ -48,8 +48,8 @@ export function copyFor(mode: ConfirmMode): {
       };
     case "ConfirmDown":
       return {
-        title: "Kill Session",
-        question: `Kill session for ${mode.branch}?`,
+        title: "Stop Session",
+        question: `Stop session for ${mode.branch}?`,
         confirmLabel: "enter:confirm",
       };
     case "ConfirmClose":
@@ -64,11 +64,11 @@ export function copyFor(mode: ConfirmMode): {
         question: `${mode.branch} has uncommitted changes`,
         confirmLabel: "enter:force close",
       };
-    case "ConfirmDeleteProject":
+    case "ConfirmRemoveProject":
       return {
-        title: "Delete Project",
-        question: `Delete project ${mode.project}? Its sessions will be stopped; worktrees will be kept.`,
-        confirmLabel: "enter:delete",
+        title: "Remove Project",
+        question: `Remove project ${mode.project}? Its sessions will be stopped; worktrees will be kept.`,
+        confirmLabel: "enter:remove",
       };
   }
 }

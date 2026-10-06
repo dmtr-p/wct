@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
 import type { ProjectActionDeps } from "../../src/tui/hooks/useProjectActions";
 import {
-  createExecuteDeleteProject,
-  createPrepareDeleteProject,
+  createExecuteRemoveProject,
+  createPrepareRemoveProject,
 } from "../../src/tui/hooks/useProjectActions";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
-import { lifecycleKey } from "../../src/tui/lifecycle";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";
 
 vi.mock("../../src/tui/runtime", async () => {
@@ -79,19 +79,19 @@ function makeDeps(
     clearActionError: vi.fn(),
     refreshAll: vi.fn().mockResolvedValue([]),
     switchClientAwayFromSessions: vi.fn().mockResolvedValue(true),
-    confirmDeleteProjectReturnModeRef: { current: Mode.Navigate },
+    confirmRemoveProjectReturnModeRef: { current: Mode.Navigate },
     ...overrides,
   };
 }
 
-describe("createPrepareDeleteProject", () => {
+describe("createPrepareRemoveProject", () => {
   test("opens confirmation for a selected project row", () => {
     const deps = makeDeps();
 
-    createPrepareDeleteProject(deps)();
+    createPrepareRemoveProject(deps)();
 
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.ConfirmDeleteProject(repo.repoPath, repo.project),
+      Mode.ConfirmRemoveProject(repo.repoPath, repo.project),
     );
   });
 
@@ -102,28 +102,28 @@ describe("createPrepareDeleteProject", () => {
       filteredRepos: [{ ...repo, worktrees: [mainWorktree] }],
       lifecycle: new Map([
         [
-          lifecycleKey(repo.repoPath, "feature"),
+          workspaceIdentityKey(repo.repoPath, "feature"),
           {
             operation: "up",
             repoPath: repo.repoPath,
             project: repo.project,
             branch: "feature",
-            phase: { _tag: "CreatingTmuxSession" },
+            phase: { _tag: "StartingTmuxSession" },
           },
         ],
       ]),
     });
 
-    createPrepareDeleteProject(deps)();
+    createPrepareRemoveProject(deps)();
 
     expect(deps.setMode).not.toHaveBeenCalled();
     expect(deps.showActionError).toHaveBeenCalledWith(
-      "'feature' is busy (Creating tmux session…)",
+      "'feature' is busy (Starting tmux session…)",
     );
   });
 });
 
-describe("createExecuteDeleteProject", () => {
+describe("createExecuteRemoveProject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     down.mockImplementation((options: { path: string }) =>
@@ -132,15 +132,23 @@ describe("createExecuteDeleteProject", () => {
     unregister.mockImplementation((repoPath: string) =>
       Effect.succeed({ operation: "unregister", repoPath }),
     );
-    invalidate.mockImplementation((project: string) =>
-      Effect.succeed({ operation: "invalidate", project }),
+    invalidate.mockImplementation((repoPath: string) =>
+      Effect.succeed({ operation: "invalidate", repoPath }),
     );
   });
 
-  test("downs every worktree before unregistering and keeps worktrees intact", async () => {
-    const deps = makeDeps();
+  test("removal stops and invalidates only the selected same-named repository", async () => {
+    const mainWorktree = repo.worktrees[0];
+    if (!mainWorktree) throw new Error("missing main worktree fixture");
+    const sibling = {
+      ...repo,
+      id: "sibling-id",
+      repoPath: "/repos/sibling",
+      worktrees: [{ ...mainWorktree, path: "/repos/sibling" }],
+    };
+    const deps = makeDeps({ repos: [repo, sibling] });
 
-    await createExecuteDeleteProject(deps)(repo.repoPath, repo.project);
+    await createExecuteRemoveProject(deps)(repo.repoPath, repo.project);
 
     expect(deps.switchClientAwayFromSessions).toHaveBeenCalledWith([
       "project",
@@ -150,7 +158,7 @@ describe("createExecuteDeleteProject", () => {
     expect(down).toHaveBeenCalledWith({ path: "/repos/project" });
     expect(down).toHaveBeenCalledWith({ path: "/worktrees/project-feature" });
     expect(unregister).toHaveBeenCalledWith(repo.repoPath);
-    expect(invalidate).toHaveBeenCalledWith(repo.project);
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith(repo.repoPath);
     expect(deps.refreshAll).toHaveBeenCalled();
   });
 
@@ -162,7 +170,7 @@ describe("createExecuteDeleteProject", () => {
     );
     const deps = makeDeps();
 
-    await createExecuteDeleteProject(deps)(repo.repoPath, repo.project);
+    await createExecuteRemoveProject(deps)(repo.repoPath, repo.project);
 
     expect(down).toHaveBeenCalledTimes(2);
     expect(unregister).not.toHaveBeenCalled();
@@ -176,12 +184,12 @@ describe("createExecuteDeleteProject", () => {
       switchClientAwayFromSessions: vi.fn().mockResolvedValue(false),
     });
 
-    await createExecuteDeleteProject(deps)(repo.repoPath, repo.project);
+    await createExecuteRemoveProject(deps)(repo.repoPath, repo.project);
 
     expect(down).not.toHaveBeenCalled();
     expect(unregister).not.toHaveBeenCalled();
     expect(deps.showActionError).toHaveBeenCalledWith(
-      "Cannot safely delete the project because the active tmux client could not be moved away",
+      "Cannot safely remove the project because the active tmux client could not be moved away",
     );
   });
 
@@ -190,11 +198,11 @@ describe("createExecuteDeleteProject", () => {
       refreshAll: vi.fn().mockResolvedValue(null),
     });
 
-    await createExecuteDeleteProject(deps)(repo.repoPath, repo.project);
+    await createExecuteRemoveProject(deps)(repo.repoPath, repo.project);
 
     expect(unregister).toHaveBeenCalledWith(repo.repoPath);
     expect(deps.showActionError).toHaveBeenCalledWith(
-      "Project was deleted, but validation refresh failed — showing the last known project state",
+      "Project was removed from the registry, but validation refresh failed — showing the last known project state",
     );
   });
 });

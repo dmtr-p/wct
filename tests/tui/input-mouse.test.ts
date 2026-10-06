@@ -16,13 +16,13 @@ import {
   resolveTreeDoubleClickAction,
   splitMouseSequences,
 } from "../../src/tui/input/mouse";
-import { lifecycleKey } from "../../src/tui/lifecycle";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
   type TreeRow,
 } from "../../src/tui/tree-helpers";
-import { Mode, type PaneInfo, pendingKey } from "../../src/tui/types";
+import { Mode, type PaneInfo, worktreeDisplayKey } from "../../src/tui/types";
 
 describe("add-project button mouse targeting", () => {
   test("matches a left click on the right-aligned header button", () => {
@@ -263,7 +263,7 @@ describe("double-click actions", () => {
       repoIndex: 0,
       worktreeIndex: 0,
     } as const;
-    const key = pendingKey("alpha", "feature/a");
+    const key = worktreeDisplayKey("alpha", "feature/a");
     expect(resolveTreeDoubleClickAction(worktree, [repo], new Set())).toEqual({
       type: "expand-worktree",
       worktreeKey: key,
@@ -281,7 +281,7 @@ describe("double-click actions", () => {
         worktree,
         [repo],
         new Set(),
-        new Set([lifecycleKey("/tmp/alpha", "feature/a")]),
+        new Set([workspaceIdentityKey("/tmp/alpha", "feature/a")]),
       ),
     ).toEqual({
       type: "collapse-worktree",
@@ -636,7 +636,7 @@ describe("resolveMouseAction", () => {
   });
 
   test("Expanded: within-subtree click selects and stays", () => {
-    const key = pendingKey("alpha", "feature/a");
+    const key = worktreeDisplayKey("alpha", "feature/a");
     const ctx = buildCtx(Mode.Expanded(key), key);
     // items: repo-1(0), wt-a(1), [pr detail if any], wt-b, repo-2, wt-c.
     // Clicking wt-a (the expanded worktree itself, item 1, row index 1).
@@ -650,7 +650,7 @@ describe("resolveMouseAction", () => {
   });
 
   test("Expanded: outside-subtree click selects without collapsing", () => {
-    const key = pendingKey("alpha", "feature/a");
+    const key = worktreeDisplayKey("alpha", "feature/a");
     const ctx = buildCtx(Mode.Expanded(key), key);
     // Click the sibling worktree feature/b. Find its row index in rows.
     const rowIndex = ctx.rows.findIndex((r: TreeRow) => {
@@ -669,7 +669,7 @@ describe("resolveMouseAction", () => {
   });
 
   test("a click on an inert pane-header row resolves to none, but a pane row selects (keyboard parity)", () => {
-    const key = pendingKey("alpha", "feature/a");
+    const key = worktreeDisplayKey("alpha", "feature/a");
     // feature/a's session name is formatSessionName(basename("/tmp/a")) = "a".
     const panes = new Map<string, PaneInfo[]>([
       [
@@ -738,10 +738,10 @@ describe("resolveMouseAction", () => {
 
   test("Expanded: a click on a wrapped PR's continuation row selects the PR", () => {
     const branch = "feature/a";
-    const key = pendingKey("alpha", branch);
+    const key = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        key,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "a very long pull request title that certainly wraps",
@@ -879,7 +879,7 @@ describe("resolveHoverItemIndex", () => {
     ).toBeNull();
   });
 
-  test("move over chrome, phantom rows, or an inert pane-header resolves to null", () => {
+  test("move over chrome or an inert pane-header resolves to null", () => {
     const ctx = buildCtx(Mode.Navigate, null);
     // Header/spacer rows (SGR rows 1 and 2).
     expect(
@@ -889,7 +889,7 @@ describe("resolveHoverItemIndex", () => {
       resolveHoverItemIndex({ kind: "move", col: 1, row: 2 }, ctx),
     ).toBeNull();
 
-    const key = pendingKey("alpha", "feature/a");
+    const key = worktreeDisplayKey("alpha", "feature/a");
     const panes = new Map<string, PaneInfo[]>([
       [
         "a",

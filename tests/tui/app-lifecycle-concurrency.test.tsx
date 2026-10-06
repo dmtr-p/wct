@@ -12,9 +12,9 @@ import {
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
-  lifecycleKey,
   lifecyclePhaseLabel,
   runLifecycleOperation,
+  workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import { resolveLifecycleReveal } from "../../src/tui/tree-helpers";
 import {
@@ -46,7 +46,7 @@ function trackLifecycle() {
       return tracker.state;
     },
     phaseOf: (repoPath: string, branch: string): LifecyclePhase | undefined =>
-      tracker.state.get(lifecycleKey(repoPath, branch))?.phase,
+      tracker.state.get(workspaceIdentityKey(repoPath, branch))?.phase,
   };
   return tracker;
 }
@@ -84,24 +84,24 @@ describe("lifecycle identity", () => {
     expect(tracker.state.size).toBe(3);
 
     one?.setPhase({ _tag: "CreatingWorktree" });
-    two?.setPhase({ _tag: "CreatingTmuxSession" });
-    sibling?.setPhase({ _tag: "KillingTmuxSession" });
+    two?.setPhase({ _tag: "StartingTmuxSession" });
+    sibling?.setPhase({ _tag: "StoppingTmuxSession" });
     expect(tracker.phaseOf("/repos/one", "feature/x")).toEqual({
       _tag: "CreatingWorktree",
     });
     expect(tracker.phaseOf("/repos/two", "feature/x")).toEqual({
-      _tag: "CreatingTmuxSession",
+      _tag: "StartingTmuxSession",
     });
     expect(tracker.phaseOf("/repos/one", "feature/y")).toEqual({
-      _tag: "KillingTmuxSession",
+      _tag: "StoppingTmuxSession",
     });
 
     // Neither the project display name nor any registry id participates in
     // the key space.
     expect([...tracker.state.keys()]).toEqual([
-      lifecycleKey("/repos/one", "feature/x"),
-      lifecycleKey("/repos/two", "feature/x"),
-      lifecycleKey("/repos/one", "feature/y"),
+      workspaceIdentityKey("/repos/one", "feature/x"),
+      workspaceIdentityKey("/repos/two", "feature/x"),
+      workspaceIdentityKey("/repos/one", "feature/y"),
     ]);
     for (const key of tracker.state.keys()) {
       expect(key).not.toContain("alpha");
@@ -110,17 +110,17 @@ describe("lifecycle identity", () => {
     expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).toBeNull();
     expect(tracker.state.size).toBe(3);
     expect(tracker.phaseOf("/repos/two", "feature/x")).toEqual({
-      _tag: "CreatingTmuxSession",
+      _tag: "StartingTmuxSession",
     });
 
     one?.end();
     expect(tracker.state.size).toBe(2);
     expect(tracker.phaseOf("/repos/one", "feature/x")).toBeUndefined();
     expect(tracker.phaseOf("/repos/two", "feature/x")).toEqual({
-      _tag: "CreatingTmuxSession",
+      _tag: "StartingTmuxSession",
     });
     expect(tracker.phaseOf("/repos/one", "feature/y")).toEqual({
-      _tag: "KillingTmuxSession",
+      _tag: "StoppingTmuxSession",
     });
     expect(begin(entryFor("/repos/two", "alpha", "feature/x"))).toBeNull();
     expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).not.toBeNull();
@@ -212,13 +212,13 @@ describe("lifecycle teardown is scoped to its own operation", () => {
 
     const second = begin(entryFor("/repos/one", "alpha", "feature/x", "down"));
     expect(second).not.toBeNull();
-    second?.setPhase({ _tag: "KillingTmuxSession" });
+    second?.setPhase({ _tag: "StoppingTmuxSession" });
 
     first?.end();
     first?.setPhase({ _tag: "CopyingFiles" });
     expect(tracker.state.size).toBe(1);
     expect(tracker.phaseOf("/repos/one", "feature/x")).toEqual({
-      _tag: "KillingTmuxSession",
+      _tag: "StoppingTmuxSession",
     });
     expect(claims.active("/repos/one", "feature/x")?.operation).toBe("down");
     expect(begin(entryFor("/repos/one", "alpha", "feature/x"))).toBeNull();
@@ -380,7 +380,7 @@ describe("TUI lifecycle viewport reveal", () => {
         repos: [],
         lifecycle: new Map([
           [
-            lifecycleKey(repoPath, "feature/new"),
+            workspaceIdentityKey(repoPath, "feature/new"),
             entryFor(repoPath, "alpha", "feature/new"),
           ],
         ]),

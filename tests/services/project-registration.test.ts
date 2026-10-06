@@ -65,7 +65,7 @@ describe("project registration", () => {
         ),
       );
 
-      expect(result.projectName).toBe("explicit-name");
+      expect(result.projectDisplayName).toBe("explicit-name");
       expect(result.registration.status).toBe("registered");
       expect(result.repoPath).toBe(tempDir);
       expect(calls).toEqual([{ path: tempDir, project: "explicit-name" }]);
@@ -88,7 +88,7 @@ describe("project registration", () => {
         }),
       );
 
-      expect(result.projectName).toBe("from-config");
+      expect(result.projectDisplayName).toBe("from-config");
       expect(result.registration.status).toBe("registered");
       expect(calls).toEqual([{ path: tempDir, project: "from-config" }]);
     } finally {
@@ -113,7 +113,7 @@ describe("project registration", () => {
         ),
       );
 
-      expect(result.projectName).toBe(basename(tempDir));
+      expect(result.projectDisplayName).toBe(basename(tempDir));
       expect(result.registration.status).toBe("registered");
       expect(calls).toEqual([{ path: tempDir, project: basename(tempDir) }]);
     } finally {

@@ -24,7 +24,7 @@ export const commandDef: CommandDef = {
           name: "name",
           short: "n",
           type: "string",
-          description: "Override project name",
+          description: "Override project display name",
         },
       ],
     },
@@ -68,30 +68,33 @@ export function projectsAddCommand(opts?: {
 }): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;
-    const { registration, repoPath, projectName } = yield* registerProject({
-      path: opts?.path,
-      name: opts?.name,
-      forceRename: opts?.name !== undefined,
-      tolerateConfigErrors: true,
-    });
+    const { registration, repoPath, projectDisplayName } =
+      yield* registerProject({
+        path: opts?.path,
+        name: opts?.name,
+        forceRename: opts?.name !== undefined,
+        tolerateConfigErrors: true,
+      });
 
     if (json) {
       yield* jsonSuccess(registration);
       return;
     }
     if (registration.status === "registered") {
-      yield* logger.success(`Added ${repoPath} as '${projectName}'`);
+      yield* logger.success(`Added ${repoPath} as '${projectDisplayName}'`);
       return;
     }
 
     if (registration.status === "updated") {
       yield* logger.success(
-        `Updated ${repoPath} from '${registration.previousItem.project}' to '${projectName}'`,
+        `Updated ${repoPath} from '${registration.previousItem.project}' to '${projectDisplayName}'`,
       );
       return;
     }
 
-    yield* logger.info(`Already registered ${repoPath} as '${projectName}'`);
+    yield* logger.info(
+      `Already registered ${repoPath} as '${projectDisplayName}'`,
+    );
   });
 }
 
@@ -126,12 +129,10 @@ export function projectsRemoveCommand(
       );
     }
 
-    const projectName = registryItem.project;
-
     yield* RegistryService.use((service) => service.unregister(targetPath));
 
     yield* Effect.ignore(
-      PrCacheService.use((service) => service.invalidate(projectName)),
+      PrCacheService.use((service) => service.invalidate(targetPath)),
     );
 
     if (json) {

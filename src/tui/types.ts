@@ -51,7 +51,7 @@ export type Mode =
       project: string;
     }
   | {
-      type: "ConfirmDeleteProject";
+      type: "ConfirmRemoveProject";
       repoPath: string;
       project: string;
     };
@@ -139,8 +139,8 @@ export const Mode = {
     repoPath,
     project,
   }),
-  ConfirmDeleteProject: (repoPath: string, project: string): Mode => ({
-    type: "ConfirmDeleteProject",
+  ConfirmRemoveProject: (repoPath: string, project: string): Mode => ({
+    type: "ConfirmRemoveProject",
     repoPath,
     project,
   }),
@@ -222,7 +222,10 @@ export interface PRInfo {
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
 
-/** Display key for a project+branch pair. */
-export function pendingKey(project: string, branch: string): string {
-  return `${project}/${branch}`;
+/** Worktree Display Key: Project Display Name + branch, not Workspace Identity. */
+export function worktreeDisplayKey(
+  projectDisplayName: string,
+  branch: string,
+): string {
+  return `${projectDisplayName}/${branch}`;
 }

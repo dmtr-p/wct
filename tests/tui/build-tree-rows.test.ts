@@ -9,8 +9,8 @@ import {
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
-  lifecycleKey,
   lifecyclePhaseLabel,
+  workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import { wrapPrLabel } from "../../src/tui/pr-layout";
 import {
@@ -24,7 +24,7 @@ import {
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
-import { Mode, pendingKey } from "../../src/tui/types";
+import { Mode, worktreeDisplayKey } from "../../src/tui/types";
 
 function openLifecycle(
   repoPath: string,
@@ -39,7 +39,7 @@ function openLifecycle(
     branch,
     phase,
   };
-  return new Map([[lifecycleKey(repoPath, branch), entry]]);
+  return new Map([[workspaceIdentityKey(repoPath, branch), entry]]);
 }
 
 function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
@@ -111,7 +111,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
@@ -152,7 +152,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const items = buildTreeItems({
       repos,
       expandedWorktreeKeys: new Set([expandedWorktreeKey]),
@@ -275,10 +275,10 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        expandedWorktreeKey,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "Add thing",
@@ -342,10 +342,10 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        expandedWorktreeKey,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "Add thing",
@@ -447,10 +447,10 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        expandedWorktreeKey,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "Add thing",
@@ -509,10 +509,10 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        expandedWorktreeKey,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "a very long pull request title that certainly wraps",
@@ -586,10 +586,10 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        expandedWorktreeKey,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "short",
@@ -635,10 +635,10 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = pendingKey("alpha", branch);
+    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
     const prData = new Map([
       [
-        expandedWorktreeKey,
+        workspaceIdentityKey("/tmp/repo-1", branch),
         {
           number: 1,
           title: "a very long pull request title that certainly wraps",
@@ -770,11 +770,11 @@ describe("anchored confirmation rows", () => {
     expect(confirmationRowRange(rows)).toEqual({ start: 2, end: 6 });
   });
 
-  test("anchors project deletion immediately below its project row", () => {
+  test("anchors project removal immediately below its project row", () => {
     const baseRows = buildTreeRows({ items, repos });
     const targetRepo = repos[0];
     if (!targetRepo) throw new Error("missing repository fixture");
-    const mode = Mode.ConfirmDeleteProject(targetRepo.repoPath, "alpha");
+    const mode = Mode.ConfirmRemoveProject(targetRepo.repoPath, "alpha");
     const anchor = resolveConfirmationAnchorItemIndex(mode, items, repos);
 
     expect(anchor).toBe(0);
@@ -846,7 +846,7 @@ describe("lifecycle rows", () => {
       { _tag: "CreatingWorktree" },
       { _tag: "CopyingFiles" },
       { _tag: "RunningSetup", name: "install" },
-      { _tag: "CreatingTmuxSession" },
+      { _tag: "StartingTmuxSession" },
     ];
 
     const seen: string[] = [];
@@ -872,7 +872,7 @@ describe("lifecycle rows", () => {
       "Creating worktree…",
       "Copying files…",
       "Setup: install…",
-      "Creating tmux session…",
+      "Starting tmux session…",
     ]);
 
     const { rows } = rowsFor(

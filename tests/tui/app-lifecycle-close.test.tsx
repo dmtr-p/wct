@@ -14,11 +14,11 @@ import type {
 } from "../../src/tui/lifecycle";
 import {
   createLifecycleClaims,
-  lifecycleKey,
   lifecyclePhaseLabel,
+  workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import { isWorktreeEffectivelyExpanded } from "../../src/tui/tree-helpers";
-import { Mode, pendingKey } from "../../src/tui/types";
+import { Mode, worktreeDisplayKey } from "../../src/tui/types";
 import {
   emitWorkspacePhase,
   githubFixtures,
@@ -44,7 +44,7 @@ const REPO_PATH = "/repo";
 const BRANCH = "feat";
 const PROJECT = "proj";
 const WORKTREE_PATH = "/repo/feat";
-const WORKTREE_KEY = pendingKey(PROJECT, BRANCH);
+const WORKTREE_KEY = worktreeDisplayKey(PROJECT, BRANCH);
 
 /** A live `setLifecycle` stand-in: applies updates exactly as React would. */
 function trackLifecycle() {
@@ -64,7 +64,7 @@ function trackLifecycle() {
       return tracker.state;
     },
     entry: (): LifecycleEntry | undefined =>
-      tracker.state.get(lifecycleKey(REPO_PATH, BRANCH)),
+      tracker.state.get(workspaceIdentityKey(REPO_PATH, BRANCH)),
     labels: () =>
       tracker.phases.map((phase) =>
         phase ? lifecyclePhaseLabel(phase) : null,
@@ -282,7 +282,7 @@ describe("TUI close lifecycle", () => {
       app.unmount();
     });
 
-    test("shows Preparing, then Killing tmux session only when a kill runs, then Removing worktree before removal", async () => {
+    test("shows Preparing, then Stopping tmux session only when a kill runs, then Removing worktree before removal", async () => {
       const { App } = await import("../../src/tui/App");
       const app = await renderApp(<App />);
       await tick(6);
@@ -301,15 +301,15 @@ describe("TUI close lifecycle", () => {
       expect(call.options.path).toBe(join(repoPath, "feature-x"));
       expect(call.options.cwd).toBe(repoPath);
 
-      emitWorkspacePhase(call, { _tag: "KillingTmuxSession" });
+      emitWorkspacePhase(call, { _tag: "StoppingTmuxSession" });
       await tick(3);
-      expect(app.lines().join("\n")).toContain("Killing tmux session…");
+      expect(app.lines().join("\n")).toContain("Stopping tmux session…");
 
       emitWorkspacePhase(call, { _tag: "RemovingWorktree" });
       await tick(3);
       const midFlight = app.lines().join("\n");
       expect(midFlight).toContain("Removing worktree…");
-      expect(midFlight).not.toContain("Killing tmux session…");
+      expect(midFlight).not.toContain("Stopping tmux session…");
       expect(midFlight).toContain("feature/x");
 
       worktreeFixtures.byRepoPath.set(repoPath, [
@@ -357,7 +357,7 @@ describe("TUI close lifecycle", () => {
       emitWorkspacePhase(skipKill, { _tag: "RemovingWorktree" });
       await tick(3);
       expect(second.lines().join("\n")).toContain("Removing worktree…");
-      expect(second.output()).not.toContain("Killing tmux session…");
+      expect(second.output()).not.toContain("Stopping tmux session…");
       second.unmount();
     });
 

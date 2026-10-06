@@ -117,6 +117,30 @@ describe("useGitHub", () => {
     harness.unmount();
   });
 
+  test("targeted refresh isolates repositories with the same display name", async () => {
+    runPromise.mockRejectedValue(new Error("offline"));
+    const harness = await renderHook([repo("/tmp/a"), repo("/tmp/b")]);
+    try {
+      await settle();
+      expect(harness.value.errors.get("/tmp/a")).toBe("offline");
+      expect(harness.value.errors.get("/tmp/b")).toBe("offline");
+
+      runPromise.mockClear();
+      runPromise.mockRejectedValue(new Error("retry failed"));
+      await harness.value.refresh("/tmp/a");
+      await settle();
+      expect(runPromise).toHaveBeenCalledTimes(1);
+      expect(harness.value.errors.get("/tmp/a")).toBe("retry failed");
+      expect(harness.value.errors.get("/tmp/b")).toBe("offline");
+
+      runPromise.mockClear();
+      await harness.value.refresh("same-name");
+      expect(runPromise).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
   test("a repository change starts a fresh request after aborting the old one", async () => {
     let rejectFirst: (error: Error) => void = () => {};
     let calls = 0;
@@ -155,7 +179,7 @@ describe("useGitHub", () => {
     harness.unmount();
   });
 
-  test("an explicit association refreshes after an in-flight request", async () => {
+  test("an Explicit PR Association refreshes after an in-flight request", async () => {
     let releaseFirst: (repository: string) => void = () => {};
     let calls = 0;
     runPromise.mockImplementation((() => {

@@ -14,10 +14,10 @@ import {
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
-  lifecycleKey,
   lifecyclePhaseLabel,
+  workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
-import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
+import { Mode, type TreeItem, worktreeDisplayKey } from "../../src/tui/types";
 
 // Applies functional updates like React would, so a test can read the phase
 // the tree would be rendering at any point in the async flow.
@@ -34,7 +34,7 @@ function trackLifecycle() {
       return tracker.state;
     },
     entry: (): LifecycleEntry | undefined =>
-      tracker.state.get(lifecycleKey("/repo", "feat")),
+      tracker.state.get(workspaceIdentityKey("/repo", "feat")),
   };
   return tracker;
 }
@@ -256,7 +256,7 @@ describe("createPrepareOpenModal", () => {
     expect(deps.showActionError).not.toHaveBeenCalled();
     // A presentation-only override, not the stored preference.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
-      lifecycleKey("/repo", "feat"),
+      workspaceIdentityKey("/repo", "feat"),
     );
   });
 
@@ -648,7 +648,7 @@ describe("createPrepareUpModal", () => {
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.UpModal({
         worktreePath: "/repo/feat",
-        worktreeKey: pendingKey("proj", "feat"),
+        worktreeKey: worktreeDisplayKey("proj", "feat"),
         repoPath: "/repo",
         branch: "feat",
         project: "proj",
@@ -679,7 +679,7 @@ describe("createPrepareUpModal", () => {
       selectedIndex: 0,
       lifecycle: new Map([
         [
-          lifecycleKey("/repo", "feat"),
+          workspaceIdentityKey("/repo", "feat"),
           {
             operation: "up" as const,
             repoPath: "/repo",
@@ -702,7 +702,7 @@ describe("createPrepareUpModal", () => {
   });
 
   test("saves Expanded mode in return ref when in Expanded mode", () => {
-    const worktreeKey = pendingKey("proj", "feat");
+    const worktreeKey = worktreeDisplayKey("proj", "feat");
     const items: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
     ];
@@ -781,7 +781,7 @@ describe("createHandleUpSubmit", () => {
     const deps = makeDeps({
       mode: Mode.UpModal({
         worktreePath: "/repo/my-feature",
-        worktreeKey: pendingKey("myorg/webapp", "my-feature"),
+        worktreeKey: worktreeDisplayKey("myorg/webapp", "my-feature"),
         repoPath: "/repo",
         branch: "my-feature",
         project: "myorg/webapp",
@@ -931,7 +931,7 @@ describe("open lifecycle reconciliation", () => {
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
     // A presentation-only override; setExpandedWorktreeKeys is out of reach here.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
-      lifecycleKey("/repo", "feat"),
+      workspaceIdentityKey("/repo", "feat"),
     );
     expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
   });
@@ -962,7 +962,7 @@ describe("open lifecycle reconciliation", () => {
       );
     });
     expect(partial.markWorkspaceDiscovered).toHaveBeenCalledWith(
-      lifecycleKey("/repo", "feat"),
+      workspaceIdentityKey("/repo", "feat"),
     );
 
     // A same-named worktree in another repository: identity matches on repo path.
@@ -1183,10 +1183,14 @@ describe("open lifecycle reconciliation", () => {
     createHandleOpen(depsB)(submit);
 
     await vi.waitFor(() => {
-      expect(shared.get(lifecycleKey("/repo-a", "feat"))?.phase).toEqual({
+      expect(
+        shared.get(workspaceIdentityKey("/repo-a", "feat"))?.phase,
+      ).toEqual({
         _tag: "Validating",
       });
-      expect(shared.get(lifecycleKey("/repo-b", "feat"))?.phase).toEqual({
+      expect(
+        shared.get(workspaceIdentityKey("/repo-b", "feat"))?.phase,
+      ).toEqual({
         _tag: "Validating",
       });
     });
@@ -1197,8 +1201,8 @@ describe("open lifecycle reconciliation", () => {
         "Validation after open failed — showing the last known Workspace state",
       ]);
     });
-    expect(shared.has(lifecycleKey("/repo-a", "feat"))).toBe(false);
-    expect(shared.get(lifecycleKey("/repo-b", "feat"))?.phase).toEqual({
+    expect(shared.has(workspaceIdentityKey("/repo-a", "feat"))).toBe(false);
+    expect(shared.get(workspaceIdentityKey("/repo-b", "feat"))?.phase).toEqual({
       _tag: "Validating",
     });
 

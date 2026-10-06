@@ -77,6 +77,8 @@ export const MIGRATIONS: readonly string[] = [
     fetched_at INTEGER NOT NULL,
     last_error TEXT
   )`,
+  // v6 — repository-keyed caches replace the unused display-name cache.
+  `DROP TABLE IF EXISTS pr_cache`,
 ];
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;

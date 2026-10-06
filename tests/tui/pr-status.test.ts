@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { PrFacts } from "../../src/services/pr-model";
 import { displayPr } from "../../src/tui/hooks/useGitHub";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
-import { lifecycleKey } from "../../src/tui/lifecycle";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   compactPrSegments,
   derivePrPresentation,
@@ -214,7 +214,7 @@ describe("PR tree rows", () => {
 
   test("wrapped Unicode title remains one selectable item across visual rows", () => {
     const pr = facts({ title: "修正 session cleanup 🧪 ".repeat(6) });
-    const identity = lifecycleKey("/repo", "feature");
+    const identity = workspaceIdentityKey("/repo", "feature");
     const prKey = prExpansionKey(identity, pr);
     const items = buildTreeItems({
       repos: [repo()],
@@ -248,7 +248,7 @@ describe("PR tree rows", () => {
 
   test("candidate group has Workspace identity and removal recovers to group", () => {
     const candidate = facts();
-    const identity = lifecycleKey("/repo", "feature");
+    const identity = workspaceIdentityKey("/repo", "feature");
     const associations = new Map([
       [
         identity,
@@ -298,8 +298,8 @@ describe("PR tree rows", () => {
 
   test("expanding the same PR in one Workspace leaves the other collapsed", () => {
     const sharedPr = facts();
-    const first = lifecycleKey("/repo", "feature");
-    const second = lifecycleKey("/repo", "other");
+    const first = workspaceIdentityKey("/repo", "feature");
+    const second = workspaceIdentityKey("/repo", "other");
     const multiRepo = repo();
     multiRepo.worktrees.push({
       branch: "other",

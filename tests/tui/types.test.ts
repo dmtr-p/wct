@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { Mode, pendingKey } from "../../src/tui/types";
+import { Mode, worktreeDisplayKey } from "../../src/tui/types";
 
-describe("pendingKey", () => {
+describe("worktreeDisplayKey", () => {
   test("formats project/branch", () => {
-    expect(pendingKey("wct", "feat/tui")).toBe("wct/feat/tui");
+    expect(worktreeDisplayKey("wct", "feat/tui")).toBe("wct/feat/tui");
   });
 });
 
@@ -38,9 +38,9 @@ describe("Mode", () => {
     });
   });
 
-  test("constructs ConfirmDeleteProject mode", () => {
-    expect(Mode.ConfirmDeleteProject("/tmp/myapp", "myapp")).toEqual({
-      type: "ConfirmDeleteProject",
+  test("constructs ConfirmRemoveProject mode", () => {
+    expect(Mode.ConfirmRemoveProject("/tmp/myapp", "myapp")).toEqual({
+      type: "ConfirmRemoveProject",
       repoPath: "/tmp/myapp",
       project: "myapp",
     });

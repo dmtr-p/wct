@@ -7,9 +7,9 @@ Git worktree workflow automation CLI. Quickly create isolated development enviro
 ```bash
 wct open <branch>       # Create worktree, run setup, and start tmux session
 wct up                  # Start tmux session in current directory
-wct down                # Kill tmux session for current directory
-wct close <branch...>   # Kill tmux session and remove one or more worktrees
-wct list                # Show active worktrees with tmux session status
+wct down                # Stop tmux session for current directory
+wct close <branch...>   # Stop tmux session and remove one or more worktrees
+wct list                # Show worktrees with tmux session status
 wct switch <branch>     # Switch to another worktree's tmux session
 wct cd <branch>         # Open a shell in a worktree directory
 wct tui                 # Interactive TUI sidebar for managing worktrees
@@ -98,7 +98,7 @@ version: 1
 # Base directory for worktrees (relative to project root, supports ~ expansion)
 worktree_dir: ".."
 
-# Project name used for tmux session naming ("project-branch")
+# Configured project name used for worktree and tmux session naming ("project-branch")
 # Defaults to the git repo directory name
 project_name: "myapp"
 
@@ -177,6 +177,8 @@ profiles:
 ## TUI
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
+
+Register repositories explicitly with `wct projects add` or the TUI's Add Project action. Opening or starting a workspace does not register its repository. `--name` changes the project's display name in the registry; it does not change the configured `project_name`. The TUI's Remove Project action stops the project's sessions and removes it from the registry while keeping its worktrees. `wct projects remove` removes registry membership and leaves sessions running.
 
 Text fields support Left/Right, Home/End, Backspace/Delete, and insertion at the visible cursor. Right accepts a selected path completion when the cursor is already at the end. Ghostty's default Command+Left/Right and Command+Backspace bindings send Ctrl+A/E/U; in text fields these move to the start/end and delete from the cursor to the start. The same Ctrl shortcuts work because the terminal sends identical bytes. To send distinct Home/End sequences instead, you can use these optional Ghostty bindings:
 

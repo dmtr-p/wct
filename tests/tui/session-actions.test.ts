@@ -26,15 +26,15 @@ import {
   type LifecycleEntry,
   type LifecyclePhase,
   type LifecycleState,
-  lifecycleKey,
   lifecyclePhaseLabel,
+  workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
   isWorktreeEffectivelyExpanded,
 } from "../../src/tui/tree-helpers";
-import { Mode, pendingKey, type TreeItem } from "../../src/tui/types";
+import { Mode, type TreeItem, worktreeDisplayKey } from "../../src/tui/types";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -589,7 +589,7 @@ describe("createExecuteClose", () => {
       false,
     );
 
-    expect(lifecycle.has(lifecycleKey("/repo", "feat"))).toBe(true);
+    expect(lifecycle.has(workspaceIdentityKey("/repo", "feat"))).toBe(true);
     await executeClose(
       "target-session",
       "feat",
@@ -892,7 +892,7 @@ describe("createExecuteDown", () => {
       "proj",
     );
 
-    expect(lifecycle.has(lifecycleKey("/repo", "feat"))).toBe(true);
+    expect(lifecycle.has(workspaceIdentityKey("/repo", "feat"))).toBe(true);
     await executeDown("target-session", "feat", "/tmp/wt", "/repo", "proj");
     expect(deps.showActionError).toHaveBeenCalledWith(
       expect.stringContaining("'feat' is busy"),
@@ -1106,7 +1106,7 @@ describe("createHandleDownSelectedWorktree", () => {
   });
 
   test("preserves Expanded mode in return ref", () => {
-    const worktreeKey = pendingKey("proj", "feat");
+    const worktreeKey = worktreeDisplayKey("proj", "feat");
     const items: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
     ];
@@ -1175,13 +1175,13 @@ describe("a Workspace under an active lifecycle", () => {
       branch,
       phase: { _tag: "CreatingWorktree" },
     };
-    return new Map([[lifecycleKey(repoPath, branch), entry]]);
+    return new Map([[workspaceIdentityKey(repoPath, branch), entry]]);
   }
 
   test("is presented expanded with details hidden, stays selectable, and refuses actions", () => {
     const lifecycle = lifecycleFor();
     const repoList = repos();
-    const worktreeKey = pendingKey("proj", branch);
+    const worktreeKey = worktreeDisplayKey("proj", branch);
 
     // Presentation: expanded, but stats/PR/pane detail rows suppressed.
     const items = buildTreeItems({
@@ -1190,7 +1190,7 @@ describe("a Workspace under an active lifecycle", () => {
       lifecycle,
       prData: new Map([
         [
-          worktreeKey,
+          workspaceIdentityKey(repoPath, branch),
           {
             number: 7,
             title: "Add thing",
@@ -1282,7 +1282,7 @@ describe("a Workspace under an active lifecycle", () => {
 describe("up and down lifecycle progress", () => {
   const repoPath = "/repo";
   const branch = "feat";
-  const worktreeKey = pendingKey("proj", branch);
+  const worktreeKey = worktreeDisplayKey("proj", branch);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1305,7 +1305,7 @@ describe("up and down lifecycle progress", () => {
         return tracker.state;
       },
       entry: (): LifecycleEntry | undefined =>
-        tracker.state.get(lifecycleKey(repoPath, branch)),
+        tracker.state.get(workspaceIdentityKey(repoPath, branch)),
       labels: () =>
         tracker.phases.map((phase) =>
           phase ? lifecyclePhaseLabel(phase) : null,
@@ -1369,7 +1369,7 @@ describe("up and down lifecycle progress", () => {
     };
   }
 
-  test("up shows Preparing, and Creating tmux session only when attempted", async () => {
+  test("up shows Preparing, and Starting tmux session only when attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
     // tmux configured: the creation phase is emitted and rendered.
@@ -1378,7 +1378,7 @@ describe("up and down lifecycle progress", () => {
       serviceEmitting(
         workspaceUp,
         "up",
-        [{ _tag: "CreatingTmuxSession" }],
+        [{ _tag: "StartingTmuxSession" }],
         () =>
           Promise.resolve(
             makeWorkspaceUpResult({
@@ -1400,7 +1400,7 @@ describe("up and down lifecycle progress", () => {
 
     expect(configured.labels()).toEqual([
       "Preparing Workspace…",
-      "Creating tmux session…",
+      "Starting tmux session…",
       "Validating Workspace…",
       null,
     ]);
@@ -1422,10 +1422,10 @@ describe("up and down lifecycle progress", () => {
       "Validating Workspace…",
       null,
     ]);
-    expect(skipped.labels()).not.toContain("Creating tmux session…");
+    expect(skipped.labels()).not.toContain("Starting tmux session…");
   });
 
-  test("down shows Preparing, and Killing tmux session only when a kill is attempted", async () => {
+  test("down shows Preparing, and Stopping tmux session only when a kill is attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
     // A session exists: the kill phase is emitted and rendered.
@@ -1434,7 +1434,7 @@ describe("up and down lifecycle progress", () => {
       serviceEmitting(
         workspaceDown,
         "down",
-        [{ _tag: "KillingTmuxSession" }],
+        [{ _tag: "StoppingTmuxSession" }],
         () =>
           Promise.resolve({
             operation: "down",
@@ -1458,7 +1458,7 @@ describe("up and down lifecycle progress", () => {
 
     expect(killed.labels()).toEqual([
       "Preparing Workspace…",
-      "Killing tmux session…",
+      "Stopping tmux session…",
       "Validating Workspace…",
       null,
     ]);
@@ -1492,7 +1492,7 @@ describe("up and down lifecycle progress", () => {
       "Validating Workspace…",
       null,
     ]);
-    expect(absent.labels()).not.toContain("Killing tmux session…");
+    expect(absent.labels()).not.toContain("Stopping tmux session…");
   });
 
   test("a running up/down is inert, presented expanded without details, and validates on success and failure", async () => {
@@ -1502,13 +1502,13 @@ describe("up and down lifecycle progress", () => {
     const repoList = repos();
     const lifecycle: LifecycleState = new Map([
       [
-        lifecycleKey(repoPath, branch),
+        workspaceIdentityKey(repoPath, branch),
         {
           operation: "up",
           repoPath,
           project: "proj",
           branch,
-          phase: { _tag: "CreatingTmuxSession" },
+          phase: { _tag: "StartingTmuxSession" },
         } satisfies LifecycleEntry,
       ],
     ]);
@@ -1518,7 +1518,7 @@ describe("up and down lifecycle progress", () => {
       lifecycle,
       prData: new Map([
         [
-          worktreeKey,
+          workspaceIdentityKey(repoPath, branch),
           {
             number: 7,
             title: "Add thing",
@@ -1611,7 +1611,7 @@ describe("up and down lifecycle progress", () => {
       serviceEmitting(
         workspaceUp,
         "up",
-        [{ _tag: "CreatingTmuxSession" }],
+        [{ _tag: "StartingTmuxSession" }],
         () =>
           Promise.resolve(
             makeWorkspaceUpResult({
@@ -1666,7 +1666,7 @@ describe("up and down lifecycle progress", () => {
       serviceEmitting(
         workspaceDown,
         "down",
-        [{ _tag: "KillingTmuxSession" }],
+        [{ _tag: "StoppingTmuxSession" }],
         () =>
           Promise.resolve({
             operation: "down",

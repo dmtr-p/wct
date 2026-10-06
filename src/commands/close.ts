@@ -16,7 +16,7 @@ import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
   name: "close",
-  description: "Kill tmux session and remove worktree",
+  description: "Stop tmux session and remove worktree",
   args: "<branch...>",
   completionType: "worktree",
   options: [
@@ -127,7 +127,7 @@ export function closeCommand(
       if (!yes) {
         const confirmed = yield* Effect.mapError(
           confirm(
-            `Close worktree '${branch}' and kill tmux session '${sessionName}'?`,
+            `Close worktree '${branch}' and stop tmux session '${sessionName}'?`,
           ),
           (error) =>
             commandError("tmux_error", "Confirmation prompt failed", error),
@@ -153,7 +153,7 @@ export function closeCommand(
       if (currentSession === sessionName && !yes) {
         const confirmed = yield* Effect.mapError(
           confirm(
-            "You are inside this tmux session. It will be killed. Continue?",
+            "You are inside this tmux session. It will be stopped. Continue?",
           ),
           (error) =>
             commandError("tmux_error", "Confirmation prompt failed", error),
@@ -179,7 +179,7 @@ export function closeCommand(
       let result = yield* WorkspaceService.use((service) =>
         service.close({ path: worktreePath, force }),
       );
-      const killedSession = result.existed;
+      const stoppedSession = result.existed;
 
       if (result.status === "blocked_by_changes") {
         if (!force) {
@@ -209,7 +209,7 @@ export function closeCommand(
           result = yield* WorkspaceService.use((service) =>
             service.close({ path: worktreePath, force: true }),
           );
-          if (killedSession && !result.existed) {
+          if (stoppedSession && !result.existed) {
             result = {
               ...result,
               existed: true,
@@ -236,8 +236,8 @@ export function closeCommand(
       }
 
       if (!json) {
-        if (killedSession) {
-          yield* logger.success(`Killed tmux session '${result.sessionName}'`);
+        if (stoppedSession) {
+          yield* logger.success(`Stopped tmux session '${result.sessionName}'`);
         } else {
           yield* logger.info(`No tmux session '${result.sessionName}' found`);
         }

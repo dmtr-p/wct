@@ -1382,7 +1382,7 @@ setup:
       { _tag: "CopyingFiles" },
       { _tag: "RunningSetup", name: "install" },
       { _tag: "RunningSetup", name: "build" },
-      { _tag: "CreatingTmuxSession" },
+      { _tag: "StartingTmuxSession" },
     ]);
     expect(events[0]).toEqual({
       operation: "open",
@@ -1513,7 +1513,7 @@ project_name: "myapp"
     );
     expect(phasesOf(withTmux)).toEqual([
       { _tag: "Preparing" },
-      { _tag: "CreatingTmuxSession" },
+      { _tag: "StartingTmuxSession" },
     ]);
     expect(withTmux[0]?._tag).toBe("PhaseStarted");
 
@@ -1539,7 +1539,7 @@ project_name: "myapp"
     expect(phasesOf(withoutTmux)).toEqual([{ _tag: "Preparing" }]);
   });
 
-  test("down and close emit the kill phase before killSession, and only when a session exists", async () => {
+  test("down and close emit the stop phase before killSession, and only when a session exists", async () => {
     const worktree: WorktreeService = {
       ...liveWorktreeService,
       isGitRepo: () => Effect.succeed(true),
@@ -1597,15 +1597,15 @@ project_name: "myapp"
       await runOperation(operation, true, trace);
 
       expect(trace[0]).toBe("phase:Preparing");
-      const killPhaseIndex = trace.indexOf("phase:KillingTmuxSession");
+      const stopPhaseIndex = trace.indexOf("phase:StoppingTmuxSession");
       const killCallIndex = trace.indexOf("call:killSession");
-      expect(killPhaseIndex).toBeGreaterThan(-1);
-      expect(killCallIndex).toBeGreaterThan(killPhaseIndex);
+      expect(stopPhaseIndex).toBeGreaterThan(-1);
+      expect(killCallIndex).toBeGreaterThan(stopPhaseIndex);
 
       const absentTrace: string[] = [];
       await runOperation(operation, false, absentTrace);
       expect(absentTrace[0]).toBe("phase:Preparing");
-      expect(absentTrace).not.toContain("phase:KillingTmuxSession");
+      expect(absentTrace).not.toContain("phase:StoppingTmuxSession");
       expect(absentTrace).not.toContain("call:killSession");
     }
   });

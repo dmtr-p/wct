@@ -1,7 +1,7 @@
 import type { RepoInfo } from "../hooks/useRegistry";
-import { lifecycleKey } from "../lifecycle";
+import { workspaceIdentityKey } from "../lifecycle";
 import { isInertTreeItem, type TreeRow } from "../tree-helpers";
-import { type Mode, pendingKey, type TreeItem } from "../types";
+import { type Mode, type TreeItem, worktreeDisplayKey } from "../types";
 
 /**
  * Rows of fixed chrome above the tree viewport: the `wct` header line + a blank
@@ -146,9 +146,11 @@ export function resolveTreeDoubleClickAction(
     const repo = repos[item.repoIndex];
     const worktree = repo?.worktrees[item.worktreeIndex];
     if (!repo || !worktree) return { type: "noop" };
-    const worktreeKey = pendingKey(repo.project, worktree.branch);
+    const worktreeKey = worktreeDisplayKey(repo.project, worktree.branch);
     return expandedWorktreeKeys.has(worktreeKey) ||
-      discoveredWorkspaceKeys.has(lifecycleKey(repo.repoPath, worktree.branch))
+      discoveredWorkspaceKeys.has(
+        workspaceIdentityKey(repo.repoPath, worktree.branch),
+      )
       ? {
           type: "collapse-worktree",
           worktreeKey,
@@ -260,7 +262,7 @@ export type MouseAction =
  * Map a 1-based SGR row to a clickable/hoverable tree item, shared by
  * `resolveMouseAction` (press) and `resolveHoverItemIndex` (move) so the two
  * can never disagree about which row a given terminal row hits. Returns
- * `null` for chrome, lifecycle rows (Pending Workspace / Lifecycle Progress),
+ * `null` for chrome, lifecycle rows (Pending Workspace / Lifecycle Progress Row),
  * and inert rows (pane headers) — the same predicate keyboard navigation
  * uses, so a pointer can't select/hover a row arrow keys refuse.
  */

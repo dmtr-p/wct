@@ -189,8 +189,8 @@ describe("StatusBar", () => {
         repoError: "boom",
       },
       {
-        name: "ConfirmDeleteProject",
-        mode: Mode.ConfirmDeleteProject("/tmp/proj", "proj"),
+        name: "ConfirmRemoveProject",
+        mode: Mode.ConfirmRemoveProject("/tmp/proj", "proj"),
         repoError: "boom",
       },
     ];

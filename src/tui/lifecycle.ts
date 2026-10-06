@@ -1,6 +1,6 @@
 // A lifecycle entry is keyed by Workspace Identity — main repository path +
 // branch — not the project display name used for expansion keys
-// (`pendingKey`, `Mode.Expanded`, `treeItemId`). Two registered repos can
+// (`worktreeDisplayKey`, `Mode.Expanded`, `treeItemId`). Two registered repos can
 // share a display name, so a display-name key would let one repo's `open`
 // blank out another repo's progress row.
 
@@ -32,14 +32,18 @@ export interface LifecycleEntry {
   phase: LifecyclePhase;
 }
 
-/** Active lifecycle operations, keyed by `lifecycleKey`. */
+/** Active lifecycle operations, keyed by `workspaceIdentityKey`. */
 export type LifecycleState = ReadonlyMap<string, LifecycleEntry>;
 
 // NUL cannot appear in a filesystem path or a git ref, unlike `#` or `/`, so
 // the two halves of the identity can never be confused with each other.
 const KEY_SEPARATOR = "\u0000";
 
-export function lifecycleKey(mainRepoPath: string, branch: string): string {
+/** Shared Workspace Identity Key for lifecycle, PR, and expansion state. */
+export function workspaceIdentityKey(
+  mainRepoPath: string,
+  branch: string,
+): string {
   return `${mainRepoPath}${KEY_SEPARATOR}${branch}`;
 }
 
@@ -48,7 +52,7 @@ export function lifecycleEntryFor(
   mainRepoPath: string,
   branch: string,
 ): LifecycleEntry | undefined {
-  return lifecycle.get(lifecycleKey(mainRepoPath, branch));
+  return lifecycle.get(workspaceIdentityKey(mainRepoPath, branch));
 }
 
 /**
@@ -80,24 +84,24 @@ export function createLifecycleClaims(): LifecycleClaims {
   >();
   return {
     claim: (entry) => {
-      const key = lifecycleKey(entry.repoPath, entry.branch);
+      const key = workspaceIdentityKey(entry.repoPath, entry.branch);
       if (held.has(key)) return false;
       held.set(key, { owner: entry, current: entry });
       return true;
     },
     record: (entry) => {
-      const key = lifecycleKey(entry.repoPath, entry.branch);
+      const key = workspaceIdentityKey(entry.repoPath, entry.branch);
       const holder = held.get(key);
       if (!holder) return;
       held.set(key, { owner: holder.owner, current: entry });
     },
     release: (entry) => {
-      const key = lifecycleKey(entry.repoPath, entry.branch);
+      const key = workspaceIdentityKey(entry.repoPath, entry.branch);
       if (held.get(key)?.owner !== entry) return;
       held.delete(key);
     },
     active: (mainRepoPath, branch) =>
-      held.get(lifecycleKey(mainRepoPath, branch))?.current,
+      held.get(workspaceIdentityKey(mainRepoPath, branch))?.current,
   };
 }
 
@@ -106,7 +110,7 @@ export function isLifecycleActive(
   mainRepoPath: string,
   branch: string,
 ): boolean {
-  return lifecycle.has(lifecycleKey(mainRepoPath, branch));
+  return lifecycle.has(workspaceIdentityKey(mainRepoPath, branch));
 }
 
 export function lifecycleBusyMessage(
@@ -152,10 +156,10 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
       return "Copying files…";
     case "RunningSetup":
       return `Setup: ${toSingleLine(phase.name)}…`;
-    case "CreatingTmuxSession":
-      return "Creating tmux session…";
-    case "KillingTmuxSession":
-      return "Killing tmux session…";
+    case "StartingTmuxSession":
+      return "Starting tmux session…";
+    case "StoppingTmuxSession":
+      return "Stopping tmux session…";
     case "RemovingWorktree":
       return "Removing worktree…";
     case "Validating":
@@ -219,7 +223,7 @@ export function beginLifecycle(
   options: BeginLifecycleOptions,
 ): LifecycleController | null {
   const { claims, setLifecycle, entry } = options;
-  const key = lifecycleKey(entry.repoPath, entry.branch);
+  const key = workspaceIdentityKey(entry.repoPath, entry.branch);
 
   if (!claims.claim(entry)) {
     options.showActionError(

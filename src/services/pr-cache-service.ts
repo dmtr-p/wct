@@ -27,13 +27,8 @@ export interface ExplicitPrAssociation {
 }
 
 export interface PrCacheServiceApi {
-  getCached: (project: string) => Effect.Effect<CachedPrEntry | null, WctError>;
-  setCached: (
-    project: string,
-    payload: PRInfo[],
-  ) => Effect.Effect<void, WctError>;
-  setError: (project: string, error: string) => Effect.Effect<void, WctError>;
-  invalidate: (project: string) => Effect.Effect<void, WctError>;
+  /** Clear a repository's cached PR payloads, retaining Explicit PR Associations. */
+  invalidate: (repoPath: string) => Effect.Effect<void, WctError>;
   getWorkspace: (
     repoPath: string,
     branch: string,
@@ -82,66 +77,11 @@ export const PrCacheService =
 // `:memory:` Database without going through `withDb`.
 // ---------------------------------------------------------------------------
 
-interface RawCacheRow {
-  project: string;
-  payload: string;
-  fetched_at: number;
-  last_error: string | null;
-}
-
-export function sqlGetCached(
-  db: Database,
-  project: string,
-): CachedPrEntry | null {
-  const row = db
-    .query(
-      "SELECT payload, fetched_at, last_error FROM pr_cache WHERE project = ?",
-    )
-    .get(project) as RawCacheRow | null;
-  if (row === null) return null;
-  let parsed: PRInfo[];
-  try {
-    parsed = JSON.parse(row.payload) as PRInfo[];
-  } catch {
-    parsed = [];
-  }
-  return {
-    payload: parsed,
-    fetchedAt: row.fetched_at,
-    lastError: row.last_error ?? null,
-  };
-}
-
-export function sqlSetCached(
-  db: Database,
-  project: string,
-  payload: PRInfo[],
-): void {
-  db.run(
-    `INSERT OR REPLACE INTO pr_cache (project, payload, fetched_at, last_error)
-     VALUES (?, ?, ?, NULL)`,
-    [project, JSON.stringify(payload), Date.now()],
-  );
-}
-
-export function sqlSetError(
-  db: Database,
-  project: string,
-  error: string,
-): void {
-  // Update last_error but keep existing payload/fetched_at if a row exists;
-  // if no row exists yet, insert a sentinel with empty payload so we can
-  // record the error without fabricating a fetched_at.
-  db.run(
-    `INSERT INTO pr_cache (project, payload, fetched_at, last_error)
-       VALUES (?, '[]', 0, ?)
-     ON CONFLICT(project) DO UPDATE SET last_error = excluded.last_error`,
-    [project, error],
-  );
-}
-
-export function sqlInvalidate(db: Database, project: string): void {
-  db.run("DELETE FROM pr_cache WHERE project = ?", [project]);
+export function sqlInvalidate(db: Database, repoPath: string): void {
+  db.transaction(() => {
+    db.run("DELETE FROM workspace_pr_cache WHERE repo_path = ?", [repoPath]);
+    db.run("DELETE FROM open_pr_cache WHERE repo_path = ?", [repoPath]);
+  }).immediate();
 }
 
 export function sqlGetWorkspace(
@@ -347,17 +287,8 @@ function prCacheDb<A>(
 }
 
 export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
-  getCached: (project) =>
-    prCacheDb("getCached", (db) => sqlGetCached(db, project)),
-
-  setCached: (project, payload) =>
-    prCacheDb("setCached", (db) => sqlSetCached(db, project, payload)),
-
-  setError: (project, error) =>
-    prCacheDb("setError", (db) => sqlSetError(db, project, error)),
-
-  invalidate: (project) =>
-    prCacheDb("invalidate", (db) => sqlInvalidate(db, project)),
+  invalidate: (repoPath) =>
+    prCacheDb("invalidate", (db) => sqlInvalidate(db, repoPath)),
   getWorkspace: (repoPath, branch) =>
     prCacheDb("getWorkspace", (db) => sqlGetWorkspace(db, repoPath, branch)),
   setWorkspace: (repoPath, branch, entry) =>

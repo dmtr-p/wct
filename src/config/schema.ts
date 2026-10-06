@@ -66,8 +66,6 @@ export const ResolvedConfigSchema = Schema.Struct({
 });
 
 export type SetupCommand = typeof SetupCommandSchema.Type;
-export type TmuxPane = typeof TmuxPaneSchema.Type;
-export type TmuxLayout = (typeof VALID_LAYOUTS)[number];
 export type TmuxWindow = typeof TmuxWindowSchema.Type;
 export type TmuxConfig = typeof TmuxConfigSchema.Type;
 export type Profile = typeof ProfileSchema.Type;

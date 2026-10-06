@@ -10,11 +10,6 @@ export interface RegistryItem {
   created_at: number;
 }
 
-export type RegistryRegistrationStatus =
-  | "registered"
-  | "already-registered"
-  | "updated";
-
 export interface RegistryRegisterOptions {
   forceRename?: boolean;
 }

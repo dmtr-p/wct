@@ -115,7 +115,6 @@ src/
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/
-    ├── bin.ts            # wct binary resolution and shell command formatting
     ├── json-output.ts    # JSON success/error envelopes for --json mode
     ├── logger.ts         # Effect-native logging helpers
     └── prompt.ts         # Effect-native prompt helpers

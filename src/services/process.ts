@@ -11,16 +11,6 @@ export interface ProcessOptions {
   stderr?: ChildProcess.CommandOutput | ChildProcess.StderrConfig;
 }
 
-export interface ProcessOutput {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
-
-export interface ProcessResult extends ProcessOutput {
-  success: boolean;
-}
-
 export class ProcessExitError extends Error {
   override readonly cause?: unknown;
   readonly command: string;
@@ -170,13 +160,6 @@ export function execShell(
   return execProcess("sh", ["-c", command], options);
 }
 
-export function runShell(
-  command: string,
-  options?: Omit<ProcessOptions, "shell">,
-) {
-  return runProcess("sh", ["-c", command], options);
-}
-
 export function spawnInteractive(
   command: string,
   args: ReadonlyArray<string> = [],
@@ -207,46 +190,6 @@ export function spawnInteractive(
 
       return handle.exited;
     },
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-  });
-}
-
-export function readStdinText() {
-  if ("Bun" in globalThis && globalThis.Bun?.stdin?.text) {
-    return Effect.tryPromise({
-      try: () => globalThis.Bun.stdin.text(),
-      catch: (error) =>
-        error instanceof Error ? error : new Error(String(error)),
-    });
-  }
-
-  return Effect.tryPromise({
-    try: () =>
-      new Promise<string>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        const onData = (chunk: string | Buffer) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        };
-        const onEnd = () => {
-          cleanup();
-          resolve(Buffer.concat(chunks).toString("utf8"));
-        };
-        const onError = (error: unknown) => {
-          cleanup();
-          reject(error);
-        };
-        const cleanup = () => {
-          process.stdin.off("data", onData);
-          process.stdin.off("end", onEnd);
-          process.stdin.off("error", onError);
-        };
-
-        process.stdin.on("data", onData);
-        process.stdin.once("end", onEnd);
-        process.stdin.once("error", onError);
-        process.stdin.resume();
-      }),
     catch: (error) =>
       error instanceof Error ? error : new Error(String(error)),
   });

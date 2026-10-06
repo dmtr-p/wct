@@ -1,12 +1,6 @@
-// Regression tests for Bug 1 (click-to-exit-Expanded selects the wrong
-// worktree) and Bug 2 (background refresh re-anchors a wheel-scrolled
-// viewport) that render the REAL exported `App` from `src/tui/App.tsx` — not
-// a hand-copied reimplementation of its effects — so reverting the fix in
-// App.tsx actually fails these tests.
-//
-// Service mocks and the Ink render harness live in tests/tui/app-harness.tsx
-// (shared with tests/tui/app-review-fixes.test.tsx); see the mocking-strategy
-// note there.
+// Mouse selection and viewport regression tests render the exported App
+// through Ink's input pipeline. Shared service mocks and render helpers live
+// in tests/tui/app-harness.tsx.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,7 +82,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     }
   });
 
-  describe("Bug 1: click-to-exit-Expanded selects the clicked sibling, not the old identity", () => {
+  describe("clicking a sibling while another worktree is expanded", () => {
     test("without a detail row on the expanded worktree", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },
@@ -116,7 +110,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
 
         // No PR/pane data for feature/a → no detail row while Expanded, so
         // rows still map 1:1 to items: repo-1(0), main(1), feature/a(2),
-        // feature/b(3). Click feature/b (viewportRow 3) to exit Expanded.
+        // feature/b(3). Click feature/b at viewport row 3.
         const sgrRow = sgrRowFor(3);
         await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
         await sendKeys(rendered.stdin, sgrRelease(3, sgrRow));
@@ -140,10 +134,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         worktree("feature/a"),
         worktree("feature/b"),
       ]);
-      // feature/a has a PR — while Expanded on feature/a, one extra "detail"
-      // row renders beneath it, shifting feature/b's row down by one. This
-      // is exactly the scenario adjustIndexForDetailCollapse must correct
-      // for when the click resolves against the pre-collapse item indices.
+      // Expanding feature/a adds a PR detail row beneath it, shifting
+      // feature/b's row down by one. Hit-testing must account for that row.
       githubFixtures.prsByRepoPath.set(repoPath, [
         {
           number: 7,
@@ -181,11 +173,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
         await sendKeys(rendered.stdin, sgrRelease(3, sgrRow));
 
-        // Bug 1a: without adjustIndexForDetailCollapse, the raw clicked
-        // itemIndex (4) is used post-collapse, but after the PR detail row
-        // is removed feature/b sits at index 3 — so an unadjusted click would
-        // select the wrong row (or the row after feature/b, if any existed).
-        // With the fix, feature/b is selected correctly.
+        // Selecting the sibling preserves feature/a's expansion and PR row.
+        expect(rendered.output()).toContain("#7");
         const line = selectedLine(rendered.lines());
         expect(line).toContain("feature/b");
         expect(line).not.toContain("feature/a");
@@ -195,7 +184,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
       }
     });
 
-    test("selects the clicked row even when its post-collapse index equals the cursor's (PR #104 r3511242204)", async () => {
+    test("selects the next sibling after navigating past expanded PR details", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },
       ];
@@ -235,12 +224,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "\x1b[B"); // PR detail -> feature/b
         expect(selectedLine(rendered.lines())).toContain("feature/b");
 
-        // Click feature/c (item 5). Collapsing removes the PR detail row, so
-        // feature/c's adjusted index is 4 — exactly the cursor's pre-collapse
-        // index. setSelectedIndex(4) is then a no-op and selectionChanged
-        // stays false; without pre-storing the clicked item's identity, the
-        // recovery effect would treat the collapse as a background tree
-        // change and snap the cursor back to feature/b.
+        // Click feature/c at item 5. Selection recovery must retain the
+        // clicked identity instead of returning to feature/b.
         const sgrRow = sgrRowFor(5);
         await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
         await sendKeys(rendered.stdin, sgrRelease(3, sgrRow));

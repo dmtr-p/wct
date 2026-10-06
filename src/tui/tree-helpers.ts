@@ -242,13 +242,6 @@ interface ResolveRecoveredSelectionIndexOptions {
   skipIdentityRecovery?: boolean;
 }
 
-interface ResolveCloseSelectedWorktreeActionOptions {
-  mode: Mode;
-  repos: RepoInfo[];
-  items: TreeItem[];
-  selectedIndex: number;
-}
-
 export function resolveConfirmationAnchorItemIndex(
   mode: Mode,
   items: TreeItem[],
@@ -304,16 +297,6 @@ type ExpandedRightArrowAction =
       type: "expand-worktree";
       worktreeKey: string;
       nextSelectedIndex: number;
-    };
-
-type CloseSelectedWorktreeAction =
-  | { type: "noop" }
-  | {
-      type: "close-worktree";
-      worktreeIndex: number;
-      worktreeKey: string;
-      nextMode?: Mode;
-      nextSelectedIndex?: number;
     };
 
 export interface ResolvedStatusBarProps {
@@ -924,23 +907,6 @@ export function treeItemParentId(
   );
 }
 
-export function adjustIndexForDetailCollapse(
-  items: TreeItem[],
-  selectedIndex: number,
-): number {
-  const current = items[selectedIndex];
-
-  if (current?.type === "detail") {
-    return findOwningWorktreeIndex(items, selectedIndex) ?? 0;
-  }
-
-  let detailsBefore = 0;
-  for (let i = 0; i < selectedIndex; i++) {
-    if (items[i]?.type === "detail") detailsBefore++;
-  }
-  return selectedIndex - detailsBefore;
-}
-
 export function resolveRecoveredSelectionIndex({
   prevTree,
   treeItems,
@@ -1064,53 +1030,6 @@ export function resolveSelectedWorktreeIndex(
   }
 
   return null;
-}
-
-export function resolveCloseSelectedWorktreeAction({
-  mode,
-  repos,
-  items,
-  selectedIndex,
-}: ResolveCloseSelectedWorktreeActionOptions): CloseSelectedWorktreeAction {
-  const worktreeIndex = resolveSelectedWorktreeIndex(items, selectedIndex);
-  if (worktreeIndex === null) {
-    return { type: "noop" };
-  }
-
-  const selectedWorktree = items[worktreeIndex];
-  if (selectedWorktree?.type !== "worktree") {
-    return { type: "noop" };
-  }
-
-  const repo = repos[selectedWorktree.repoIndex];
-  const worktree = repo?.worktrees[selectedWorktree.worktreeIndex];
-  if (!repo || !worktree) {
-    return { type: "noop" };
-  }
-
-  const worktreeKey = pendingKey(repo.project, worktree.branch);
-  if (
-    (mode.type === "Expanded" ||
-      mode.type === "ConfirmKill" ||
-      mode.type === "ConfirmDown" ||
-      mode.type === "ConfirmClose" ||
-      mode.type === "ConfirmCloseForce") &&
-    mode.worktreeKey === worktreeKey
-  ) {
-    return {
-      type: "close-worktree",
-      worktreeIndex,
-      worktreeKey,
-      nextMode: Mode.Navigate,
-      nextSelectedIndex: adjustIndexForDetailCollapse(items, selectedIndex),
-    };
-  }
-
-  return {
-    type: "close-worktree",
-    worktreeIndex,
-    worktreeKey,
-  };
 }
 
 export function resolveExpandedRightArrowAction({

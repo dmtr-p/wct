@@ -178,12 +178,22 @@ Prefer `it.effect` with `it.layer` for new Effect-aware tests:
 import { describe, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
-import { WorktreeService } from "../src/services/worktree-service";
-import { WctTestLayer } from "./helpers/effect-vitest";
+import {
+  liveWorktreeService,
+  WorktreeService,
+} from "../src/services/worktree-service";
+import { wctTestLayer } from "./helpers/effect-vitest";
+
+const TestLayer = wctTestLayer({
+  worktree: {
+    ...liveWorktreeService,
+    getCurrentBranch: () => Effect.succeed("main"),
+  },
+});
 
 describe("getCurrentBranch", () => {
-  it.layer(WctTestLayer)("in a temp git repo", (it) => {
-    it.effect("returns the active branch", () =>
+  it.layer(TestLayer)("with an overridden service", (it) => {
+    it.effect("returns the provided branch", () =>
       Effect.gen(function* () {
         const wt = yield* WorktreeService;
         const branch = yield* wt.getCurrentBranch();

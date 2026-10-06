@@ -170,7 +170,7 @@ profiles:
       - .env.production
 ```
 
-**Auto-matching:** When you run `wct open <branch>`, profiles are matched against the branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
+**Auto-matching:** When you run `wct open <branch>` or `wct up`, profiles are matched against the workspace's branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
 
 **Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open` or `wct up` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
 

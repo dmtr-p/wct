@@ -1,10 +1,8 @@
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { type LifecycleState, lifecycleKey } from "../../src/tui/lifecycle";
-import { resolveSessionHandoff } from "../../src/tui/session-utils";
+import { resolveSessionsHandoff } from "../../src/tui/session-utils";
 import {
-  adjustIndexForDetailCollapse,
-  resolveCloseSelectedWorktreeAction,
   resolveExpandedRightArrowAction,
   resolveRecoveredSelectionIndex,
   resolveSelectedWorktreeIndex,
@@ -80,55 +78,6 @@ describe("resolveTreeReturnMode", () => {
 
   test("falls back to Navigate for non-tree modes", () => {
     expect(resolveTreeReturnMode(Mode.Search)).toEqual(Mode.Navigate);
-  });
-});
-
-describe("adjustIndexForDetailCollapse", () => {
-  // [0] Repo A
-  // [1]   branch-1  (expanded)
-  // [2]     PR #42        (detail)
-  // [3]     Panes (1)     (detail)
-  // [4]     pane 0:0      (detail)
-  // [5]   branch-2
-  // [6] Repo B
-  // [7]   branch-3
-  const items: TreeItem[] = [
-    repo(0),
-    worktree(0, 0),
-    detail(0, 0, "pr"),
-    detail(0, 0, "pane-header"),
-    detail(0, 0, "pr"),
-    worktree(0, 1),
-    repo(1),
-    worktree(1, 0),
-  ];
-
-  test("cursor on detail row snaps to parent worktree", () => {
-    expect(adjustIndexForDetailCollapse(items, 2)).toBe(1);
-    expect(adjustIndexForDetailCollapse(items, 3)).toBe(1);
-    expect(adjustIndexForDetailCollapse(items, 4)).toBe(1);
-  });
-
-  test("cursor after details subtracts detail count", () => {
-    expect(adjustIndexForDetailCollapse(items, 5)).toBe(2);
-    expect(adjustIndexForDetailCollapse(items, 6)).toBe(3);
-    expect(adjustIndexForDetailCollapse(items, 7)).toBe(4);
-  });
-
-  test("cursor before details stays unchanged", () => {
-    expect(adjustIndexForDetailCollapse(items, 0)).toBe(0);
-    expect(adjustIndexForDetailCollapse(items, 1)).toBe(1);
-  });
-
-  test("no detail rows returns same index", () => {
-    const simple: TreeItem[] = [repo(0), worktree(0, 0), worktree(0, 1)];
-    expect(adjustIndexForDetailCollapse(simple, 0)).toBe(0);
-    expect(adjustIndexForDetailCollapse(simple, 1)).toBe(1);
-    expect(adjustIndexForDetailCollapse(simple, 2)).toBe(2);
-  });
-
-  test("empty tree returns selected index unchanged", () => {
-    expect(adjustIndexForDetailCollapse([], 0)).toBe(0);
   });
 });
 
@@ -474,33 +423,6 @@ describe("resolveSelectedWorktreeIndex", () => {
   });
 });
 
-describe("resolveCloseSelectedWorktreeAction", () => {
-  test("exits expanded mode when closing the active expanded worktree", () => {
-    const repos: RepoInfo[] = [fakeRepo("repo-a", ["main", "feat-1"])];
-    const items: TreeItem[] = [
-      repo(0),
-      worktree(0, 0),
-      detail(0, 0, "pr"),
-      worktree(0, 1),
-    ];
-
-    expect(
-      resolveCloseSelectedWorktreeAction({
-        mode: Mode.Expanded(pendingKey("repo-a", "main")),
-        repos,
-        items,
-        selectedIndex: 2,
-      }),
-    ).toEqual({
-      type: "close-worktree",
-      worktreeIndex: 1,
-      worktreeKey: "repo-a/main",
-      nextMode: Mode.Navigate,
-      nextSelectedIndex: 1,
-    });
-  });
-});
-
 describe("resolveExpandedRightArrowAction", () => {
   test("expands another worktree without collapsing existing detail rows", () => {
     const repos: RepoInfo[] = [fakeRepo("repo-a", ["main", "feature-b"])];
@@ -526,15 +448,15 @@ describe("resolveExpandedRightArrowAction", () => {
   });
 });
 
-describe("resolveSessionHandoff", () => {
+describe("resolveSessionsHandoff", () => {
   test("returns a switch plan when the active client is on the target", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: {
           type: "single",
           client: { tty: "/dev/ttys001", session: "feature-a" },
         },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "feature-a" }, { name: "main" }],
       }),
     ).toEqual({
@@ -545,12 +467,12 @@ describe("resolveSessionHandoff", () => {
 
   test("returns a no-op plan when the active client is on a different session", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: {
           type: "single",
           client: { tty: "/dev/ttys001", session: "main" },
         },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "feature-a" }, { name: "main" }],
       }),
     ).toEqual({ type: "not-needed" });
@@ -558,9 +480,9 @@ describe("resolveSessionHandoff", () => {
 
   test("returns a no-op plan when there is no active client", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: { type: "none" },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "feature-a" }, { name: "main" }],
       }),
     ).toEqual({ type: "not-needed" });
@@ -568,12 +490,12 @@ describe("resolveSessionHandoff", () => {
 
   test("returns a detach plan when there is no alternate session to switch to", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: {
           type: "single",
           client: { tty: "/dev/ttys001", session: "feature-a" },
         },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "feature-a" }],
       }),
     ).toEqual({ type: "detach" });
@@ -581,9 +503,9 @@ describe("resolveSessionHandoff", () => {
 
   test("returns a blocked plan when multiple tmux clients are attached", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: { type: "multiple" },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "feature-a" }, { name: "main" }],
       }),
     ).toEqual({ type: "blocked" });
@@ -591,9 +513,9 @@ describe("resolveSessionHandoff", () => {
 
   test("returns a blocked plan when client discovery fails", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: { type: "error" },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "feature-a" }, { name: "main" }],
       }),
     ).toEqual({ type: "blocked" });
@@ -601,17 +523,17 @@ describe("resolveSessionHandoff", () => {
 
   test("returns a no-op plan when target session is absent even if client discovery is ambiguous", () => {
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: { type: "multiple" },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "main" }],
       }),
     ).toEqual({ type: "not-needed" });
 
     expect(
-      resolveSessionHandoff({
+      resolveSessionsHandoff({
         client: { type: "error" },
-        targetSession: "feature-a",
+        targetSessions: ["feature-a"],
         sessions: [{ name: "main" }],
       }),
     ).toEqual({ type: "not-needed" });

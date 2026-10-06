@@ -5,13 +5,6 @@ export interface SessionOptionsSubmitState {
   profile?: string;
 }
 
-export interface FilterInputKey {
-  ctrl: boolean;
-  meta: boolean;
-  return: boolean;
-  tab?: boolean;
-}
-
 export function buildProfileItems(profileNames: string[]): ListItem[] {
   return [
     { label: "(default)", value: "" },
@@ -26,13 +19,6 @@ export function getInitialSelectedProfileValue(
   profileNames: string[],
 ): string | undefined {
   return profileNames.length > 0 ? "" : undefined;
-}
-
-export function isFilterInputCharacter(
-  input: string,
-  key: FilterInputKey,
-): boolean {
-  return Boolean(input) && !key.ctrl && !key.meta && !key.return && !key.tab;
 }
 
 export function resolveSelectedProfileValue(

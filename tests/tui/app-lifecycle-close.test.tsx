@@ -31,6 +31,7 @@ import {
   sendKeys,
   tick,
   triggerRefresh,
+  workspaceCalls,
   worktreeFixtures,
 } from "./app-harness";
 
@@ -189,6 +190,48 @@ describe("TUI close lifecycle", () => {
       rmSync(homeDir, { recursive: true, force: true });
       rmSync(repoPath, { recursive: true, force: true });
     });
+
+    test.each([
+      ["normal", false],
+      ["force", true],
+    ] as const)(
+      "cancels the %s close confirmation through the App",
+      async (_name, force) => {
+        const { App } = await import("../../src/tui/App");
+        const app = await renderApp(<App />);
+        try {
+          await tick(6);
+          await sendKeys(app.stdin, ARROW_DOWN);
+          await sendKeys(app.stdin, ARROW_DOWN);
+          await sendKeys(app.stdin, "c");
+          expect(app.output()).toContain("Close worktree feature/x?");
+
+          if (force) {
+            await sendKeys(app.stdin, ENTER);
+            await tick(4);
+            lastWorkspaceCall("close").resolve(blockedResult());
+            await tick(8);
+            expect(app.output()).toContain("feature/x has uncommitted changes");
+          }
+
+          const callsBeforeCancel = workspaceCalls("close").length;
+          await sendKeys(app.stdin, ESCAPE);
+          await tick(8);
+          expect(app.output()).not.toContain("Close worktree feature/x?");
+          expect(app.output()).not.toContain(
+            "feature/x has uncommitted changes",
+          );
+          expect(app.output()).not.toContain("Preparing Workspace…");
+          expect(selectedLine(app.lines())).toContain("feature/x");
+          expect(workspaceCalls("close")).toHaveLength(callsBeforeCancel);
+
+          await sendKeys(app.stdin, "c");
+          expect(app.output()).toContain("Close worktree feature/x?");
+        } finally {
+          app.unmount();
+        }
+      },
+    );
 
     test("moves the cursor to the branch row when a lifecycle suppresses the selected detail row", async () => {
       // A branch after feature/x, so the index the vanished detail row leaves
@@ -485,34 +528,6 @@ describe("TUI close lifecycle", () => {
     forcedRun.call.resolve(makeCloseResult());
     await forcedRun.settled;
     expect(forced.state.size).toBe(0);
-
-    // Cancelling leaves no lifecycle state, no lock and no stale phase.
-    const { handleConfirmCloseInput } = await import(
-      "../../src/tui/input/confirm-close"
-    );
-    const cancelSetMode = vi.fn();
-    const executeClose = vi.fn();
-    handleConfirmCloseInput(
-      {
-        mode: Mode.ConfirmCloseForce(
-          "feat",
-          BRANCH,
-          WORKTREE_PATH,
-          WORKTREE_KEY,
-          REPO_PATH,
-          PROJECT,
-        ),
-        returnMode: Mode.Navigate,
-        returnSelectedIndex: 3,
-        setMode: cancelSetMode,
-        setSelectedIndex: vi.fn(),
-        executeClose,
-      },
-      ESCAPE,
-      { escape: true } as never,
-    );
-    expect(cancelSetMode).toHaveBeenCalledWith(Mode.Navigate);
-    expect(executeClose).not.toHaveBeenCalled();
   });
 
   test("does not present the force confirmation over whatever the user moved on to", async () => {

@@ -53,14 +53,6 @@ export const commandDef: CommandDef = {
   ],
 };
 
-export interface OpenOptions {
-  branch: string;
-  existing: boolean;
-  base?: string;
-  cwd?: string;
-  profile?: string;
-}
-
 export interface OpenCommandOptions extends WorkspaceOpenOptions {
   noAttach?: boolean;
 }

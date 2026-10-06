@@ -5,11 +5,9 @@ bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
 ```
 
-**Do not run tests or linting manually.** The Stop hook configured in
-`.codex/hooks.json` runs `.codex/hooks/stop.sh` when the session stops. It runs
-`bunx biome check --write --error-on-warnings .`, `bun run typecheck`, and
-`bun run test -- --reporter=agent`, and blocks completion with the failing
-check's output if any step fails.
+**Do not run tests or linting manually.** Agent harness hooks run lint fixes
+and tests automatically when the session stops. If a check fails, the hooks
+block completion and report the failure so the agent can fix it.
 
 ## Architecture
 

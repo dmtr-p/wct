@@ -289,9 +289,9 @@ function hitTestTreeRow(
 
 /**
  * Resolve a parsed mouse event into a pure description of what should happen,
- * testable without React. Only Navigate and Expanded mode act on mouse; every
- * other mode (modals, Search, confirmations) resolves to `none` (the event is
- * still swallowed upstream so no escape garble reaches the screen).
+ * testable without React. This tree dispatcher acts only in Navigate and
+ * Expanded modes; other modes resolve to `none`. Modal components handle
+ * their own mouse events through `useGuardedInput` and `MouseClickable`.
  *
  * - Wheel → scroll only; the selection is untouched and may scroll out of view.
  * - Left-click → hit-test the row under the cursor and select it. Activation

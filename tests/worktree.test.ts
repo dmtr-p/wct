@@ -11,7 +11,6 @@ import {
   formatChanges,
   formatSync,
   liveWorktreeService,
-  normalizeDefaultBranchRef,
   parseAheadBehind,
   parseGitStatusCount,
   parseWorktreeListOutput,
@@ -128,16 +127,6 @@ describe("formatSync", () => {
 
   test("returns ? when sync is null", () => {
     expect(formatSync(null)).toBe("?");
-  });
-});
-
-describe("normalizeDefaultBranchRef", () => {
-  test("strips origin prefix from remote HEAD ref names", () => {
-    expect(normalizeDefaultBranchRef("origin/main")).toBe("main");
-  });
-
-  test("leaves local branch names unchanged", () => {
-    expect(normalizeDefaultBranchRef("master")).toBe("master");
   });
 });
 

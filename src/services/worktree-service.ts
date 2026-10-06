@@ -180,10 +180,6 @@ export function parseAheadBehind(
   };
 }
 
-export function normalizeDefaultBranchRef(ref: string): string {
-  return ref.replace(/^origin\//, "");
-}
-
 export function formatChanges(count: number): string {
   return `${count} ${count === 1 ? "file" : "files"}`;
 }

@@ -5,7 +5,6 @@ import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { lifecycleKey } from "../../src/tui/lifecycle";
 import {
   compactPrSegments,
-  compactPrText,
   derivePrPresentation,
 } from "../../src/tui/pr-status";
 import {
@@ -18,6 +17,12 @@ import {
   treeItemId,
   treeItemParentId,
 } from "../../src/tui/tree-helpers";
+
+function compactPrText(...args: Parameters<typeof compactPrSegments>): string {
+  return compactPrSegments(...args)
+    .map((segment) => segment.text)
+    .join("");
+}
 
 function facts(overrides: Partial<PrFacts> = {}): PrFacts {
   return {

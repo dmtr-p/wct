@@ -53,14 +53,6 @@ export const commandDef: CommandDef = {
   ],
 };
 
-export interface OpenOptions {
-  branch: string;
-  existing: boolean;
-  base?: string;
-  cwd?: string;
-  profile?: string;
-}
-
 export interface OpenCommandOptions extends WorkspaceOpenOptions {
   noAttach?: boolean;
 }
@@ -190,11 +182,7 @@ function createOpenHumanReporter(
 
 export function openCommand(
   options: OpenCommandOptions,
-): Effect.Effect<
-  void,
-  WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
-> {
+): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const { noAttach, ...workspaceOptions } = options;
     const json = yield* JsonFlag;

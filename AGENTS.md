@@ -5,9 +5,9 @@ bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
 ```
 
-**Do not run tests or linting manually.** Harness hooks handle this automatically:
-- **PostToolUse**: `biome format --write` runs on every file edit
-- **Stop**: `biome lint --write` and `bun run test` run when the session stops, waking the agent on failure (exit code 2)
+**Do not run tests or linting manually.** Agent harness hooks run lint fixes
+and tests automatically when the session stops. If a check fails, the hooks
+block completion and report the failure so the agent can fix it.
 
 ## Architecture
 
@@ -37,7 +37,6 @@ src/
 │   ├── schema.ts         # Effect Schema model for .wct.yaml
 │   └── validator.ts      # Validation helpers and path-aware error rendering
 ├── effect/
-│   ├── cli.ts            # Re-exports for Effect unstable CLI modules
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
 │   └── services.ts       # Live service bundle provided to the app
 ├── services/
@@ -45,6 +44,10 @@ src/
 │   ├── workspace-service.ts # Open/up/down/close workspace operations shared by CLI and TUI
 │   ├── db.ts             # ~/.wct SQLite database paths, schema migrations, and withDb
 │   ├── pr-cache-service.ts # Cached GitHub PR payloads with fetch timestamps
+│   ├── pr-model.ts       # PR identities, facts, normalization, and status derivation
+│   ├── pr-discovery.ts   # Push destination resolution and Workspace PR Association
+│   ├── pr-details.ts     # Batched PR checks and review detail fetching
+│   ├── pr-merge-service.ts # Merge eligibility, confirmation snapshots, and submission
 │   ├── project-registration.ts # Registering a repo in the multi-repo registry
 │   ├── copy.ts           # File copying utilities
 │   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
@@ -60,6 +63,8 @@ src/
 │   ├── tree-navigation.ts # Tree navigation state machine (selection, viewport, return slots)
 │   ├── lifecycle.ts       # Per-workspace lifecycle progress, keyed by Workspace Identity
 │   ├── pr-layout.ts       # Terminal-width-aware PR title wrapping
+│   ├── pr-status.ts       # Compact PR status presentation
+│   ├── session-utils.ts   # Safe tmux client handoff decisions and start action messages
 │   ├── input/             # Mode-specific keyboard and guarded mouse routing
 │   ├── components/
 │   │   ├── TreeView.tsx   # Repo list with expandable worktree details
@@ -67,29 +72,49 @@ src/
 │   │   ├── RepoNode.tsx   # Single repo group
 │   │   ├── WorktreeItem.tsx # Branch line with status indicators
 │   │   ├── OpenModal.tsx  # Modal for wct open
-│   │   ├── StatusBar.tsx  # Bottom keybinding hints
+│   │   ├── UpModal.tsx    # Modal for starting a workspace
+│   │   ├── AddProjectModal.tsx # Modal for explicit project registration
+│   │   ├── ConfirmModal.tsx # Destructive action confirmations
+│   │   ├── PrActionsModal.tsx # PR association and merge action menus
+│   │   ├── ShortcutsModal.tsx # Keyboard shortcut reference
+│   │   ├── StatusBar.tsx  # Search footer, repository errors, and footer row accounting
 │   │   ├── Modal.tsx      # Generic modal wrapper
+│   │   ├── ModalShortcut.tsx # Clickable modal shortcut legend
+│   │   ├── MouseClickable.tsx # Component bounds, hover, and click handling
+│   │   ├── TitledBox.tsx  # Shared titled border
+│   │   ├── EditableText.tsx # Text field cursor rendering
+│   │   ├── PathInput.tsx  # Directory input with completion
+│   │   ├── SessionOptionsSection.tsx # Profile and session option controls
+│   │   ├── session-options.ts # Session option values and profile choices
+│   │   ├── form-controls.tsx # Shared toggle and submit controls
 │   │   ├── DetailRow.tsx  # Single row in detail/status views
+│   │   ├── LifecycleProgressRow.tsx # Active Workspace lifecycle phase
 │   │   ├── RepoEmptyRow.tsx # Empty-repo visual row
 │   │   ├── WorktreeStatsRow.tsx # Worktree status visual row
 │   │   └── ScrollableList.tsx # Filterable scrollable list with scrollbar
-│   └── hooks/
-│       ├── useTreeNavigation.ts # React binding for the tree navigation state machine
-│       ├── useMouse.ts    # Terminal mouse reporting lifecycle
-│       ├── useGuardedInput.ts # Keyboard/mouse input routing
-│       ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
-│       ├── useModalActions.ts # Open/up/add modal orchestration
-│       ├── useSessionOptionsState.ts # Shared session option state
-│       ├── useActionError.ts # Timed action error state
-│       ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
-│       ├── useRefresh.ts  # Hybrid poll + fs.watch
-│       ├── useTmux.ts     # Tmux sessions, panes, and clients (switch, detach, zoom)
-│       ├── useBlink.ts    # Toggling boolean for blink animations (used by useCursorBlink)
-│       └── useGitHub.ts   # Fetch PR and check status from GitHub
+│   ├── hooks/
+│   │   ├── useTreeNavigation.ts # React binding for the tree navigation state machine
+│   │   ├── useMouse.ts    # Terminal mouse reporting lifecycle
+│   │   ├── useGuardedInput.ts # Keyboard/mouse input routing
+│   │   ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
+│   │   ├── useModalActions.ts # Open/up/add modal orchestration
+│   │   ├── useProjectActions.ts # Project deletion and safe session handoff
+│   │   ├── useSessionOptionsState.ts # Shared session option state
+│   │   ├── useActionError.ts # Timed action error state
+│   │   ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git
+│   │   ├── useRefresh.ts  # Hybrid poll + fs.watch
+│   │   ├── useTmux.ts     # Tmux sessions, panes, and clients (switch, detach, zoom)
+│   │   ├── useBlink.ts    # Toggling boolean for blink animations (used by useCursorBlink)
+│   │   ├── useCursorBlink.ts # Editing cursor visibility and blink resets
+│   │   ├── useTextEditing.ts # Cursor movement, insertion, and deletion for text fields
+│   │   └── useGitHub.ts   # Workspace PR Associations, open PR lists, and refreshes
+│   └── utils/
+│       ├── display-width.ts # Grapheme and terminal column measurements
+│       ├── truncate.ts    # Width-aware text truncation
+│       └── wrap-text.ts   # Width-aware text wrapping
 ├── types/
 │   └── env.ts            # Environment variable type definitions
 └── utils/
-    ├── bin.ts            # wct binary resolution and shell command formatting
     ├── json-output.ts    # JSON success/error envelopes for --json mode
     ├── logger.ts         # Effect-native logging helpers
     └── prompt.ts         # Effect-native prompt helpers
@@ -100,7 +125,7 @@ src/
 Use Bun exclusively - no Node.js fallback. The runtime boundary is:
 
 - `effect` for the application, services, errors, schemas, and CLI
-- `effect/unstable/cli` for the root command tree and built-in CLI UX
+- `effect/cli` for the root command tree and built-in CLI UX
 - `@effect/platform-bun` for `BunRuntime.runMain` and `BunServices.layer`
 
 Leverage Bun built-in APIs where they are still the right primitive:
@@ -112,7 +137,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 
 The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. Exception: `ink` and `react` are runtime dependencies used exclusively by the `wct tui` subcommand. They are lazy-imported so they are never loaded for other commands. The only dev dependencies are `@biomejs/biome`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, and `@effect/vitest`.
 
-This project uses **Effect v4**. If your training data covers Effect v3, read [EFFECT_V4.md](./EFFECT_V4.md) for the correct v4 APIs and patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
+This project uses **Effect v4**. Read [EFFECT_V4.md](./EFFECT_V4.md) for the current APIs and repository patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
 
 ## Agent skills
 

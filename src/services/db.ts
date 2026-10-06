@@ -23,7 +23,7 @@ const SCHEMA_VERSION_SQL = `CREATE TABLE IF NOT EXISTS schema_version (
  * Rules:
  *  - Never edit, reorder, or delete an entry — that breaks DBs already at
  *    that version.
- *  - Always append. To add v2, push exactly one new SQL string.
+ *  - Add each new migration by appending one SQL string.
  *  - Each statement must be idempotent against a partially-applied schema
  *    (use `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN` only
  *    after a presence check via PRAGMA, etc.) so legacy DBs that pre-date
@@ -46,9 +46,7 @@ export const MIGRATIONS: readonly string[] = [
     project TEXT NOT NULL,
     created_at INTEGER NOT NULL
   )`,
-  // v2 — PR cache for TUI. Stores the last-fetched PR list per project so
-  // the TUI can render PR decorations immediately on launch without waiting
-  // for the first network call to return.
+  // v2 — project-keyed PR payloads and fetch metadata.
   `CREATE TABLE IF NOT EXISTS pr_cache (
     project TEXT PRIMARY KEY,
     payload TEXT NOT NULL,

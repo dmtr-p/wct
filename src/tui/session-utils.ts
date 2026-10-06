@@ -1,12 +1,6 @@
 import type { WorkspaceUpResult } from "../services/workspace-service";
 import type { TmuxClientDiscovery } from "./hooks/useTmux";
 
-interface ResolveSessionSwitchTargetOptions {
-  client: TmuxClientDiscovery;
-  targetSession: string;
-  sessions: Array<{ name: string }>;
-}
-
 interface ResolveSessionsSwitchTargetOptions {
   client: TmuxClientDiscovery;
   targetSessions: readonly string[];
@@ -18,18 +12,6 @@ type SessionHandoff =
   | { type: "blocked" }
   | { type: "detach" }
   | { type: "switch"; sessionName: string };
-
-export function resolveSessionHandoff({
-  client,
-  targetSession,
-  sessions,
-}: ResolveSessionSwitchTargetOptions): SessionHandoff {
-  return resolveSessionsHandoff({
-    client,
-    targetSessions: [targetSession],
-    sessions,
-  });
-}
 
 export function resolveSessionsHandoff({
   client,

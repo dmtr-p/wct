@@ -1,27 +1,24 @@
 ---
-status: proposed
+status: accepted
 ---
 
-# Navigate/Expanded uses an independent scroll-offset viewport
+# Tree and modal lists use independent scroll offsets
 
-To support a mouse wheel that scrolls the worktree tree without moving the
-selection, `wct tui`'s Navigate and Expanded modes gain an **independent scroll
-offset** (the viewport top is tracked separately from `selectedIndex`). This
-deliberately diverges from the only other scroll model in the app —
-`getVisibleWindow` (`src/tui/components/ScrollableList.tsx`), used by the modals,
-which is **selection-anchored** (the visible window is a pure function of the
-selection, with no independent offset).
+The worktree tree tracks its viewport offset independently of its selection.
+The mouse wheel scrolls content without moving the selected item; keyboard
+navigation moves the viewport only far enough to reveal the selected item.
 
-We chose independent-offset because the conventional sidebar mental model is
-"wheel scrolls content, selection stays put," which a selection-anchored window
-cannot express (if the selection doesn't move, the window doesn't move). The
-trade-off accepted: two scroll models now coexist in one codebase, keyboard
-↑/↓ must become viewport-aware (auto-scroll the offset to keep the selection
-visible), and the windowing/hit-testing must share an explicit `rows[]` model
-because visual rows are not 1:1 with logical tree items.
+`src/tui/tree-navigation.ts` owns the tree's selection, viewport, and saved
+return positions. `buildTreeRows` in `src/tui/tree-helpers.ts` supplies the
+visual rows shared by rendering, windowing, and mouse hit-testing, because a
+logical tree item can occupy multiple terminal rows.
 
-Rejected alternative: reuse `getVisibleWindow` and have the wheel move the
-selection. Simpler and no new state, but the wheel would not behave like a
-conventional scroll.
+`src/tui/components/ScrollableList.tsx` also tracks an independent offset for
+modal lists. Wheel scrolling leaves selection unchanged. Selection or filter
+changes reveal the selected item; list size changes clamp the offset.
+`getVisibleWindow` initializes the viewport, while `scrollToRevealListItem`
+and `clampListScrollOffset` handle subsequent updates.
 
-See `.scratch/tui-mouse-support/PRD.md` §6.4 and §10.
+Keeping viewport and selection separate lets users browse with the wheel
+without changing the target of a keyboard action. Both tree and modal lists
+must clamp offsets when their contents or available height change.

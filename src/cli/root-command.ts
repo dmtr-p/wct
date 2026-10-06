@@ -1,4 +1,5 @@
 import { Option } from "effect";
+import { Argument, Command, Flag } from "effect/cli";
 import { cdCommand } from "../commands/cd";
 import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
@@ -13,7 +14,6 @@ import {
 import { switchCommand } from "../commands/switch";
 import { tuiCommand } from "../commands/tui";
 import { upCommand } from "../commands/up";
-import { Argument, Command, Flag } from "../effect/cli";
 import { JsonFlag } from "./json-flag";
 
 const branchArgument = Argument.String("branch").pipe(

@@ -65,11 +65,7 @@ function currentDirectory(): Effect.Effect<string, WctError> {
 export function projectsAddCommand(opts?: {
   path?: string;
   name?: string;
-}): Effect.Effect<
-  void,
-  WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
-> {
+}): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;
     const { registration, repoPath, projectName } = yield* registerProject({
@@ -101,11 +97,7 @@ export function projectsAddCommand(opts?: {
 
 export function projectsRemoveCommand(
   path?: string,
-): Effect.Effect<
-  void,
-  WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
-> {
+): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;
     const originalCwd = yield* currentDirectory();
@@ -153,7 +145,7 @@ export function projectsRemoveCommand(
 export function projectsListCommand(): Effect.Effect<
   void,
   WctError,
-  WctServices | "effect/unstable/cli/GlobalFlag/json"
+  WctServices | "effect/cli/GlobalFlag/json"
 > {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;

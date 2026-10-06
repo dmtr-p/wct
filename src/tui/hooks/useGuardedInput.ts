@@ -34,10 +34,8 @@ export interface GuardedInputOptions {
  * ALL active `useInput` hooks (one sequence per event on the normal stdin
  * path; multi-sequence strings only via the bracketed-paste fallback), so a
  * guard living only in App.tsx's dispatcher leaves every modal/text-input
- * handler pasting raw `[<0;12;38M…` bytes into its field — that per-hook gap
- * was the real cause of the screenshot garble (three per-sequence events
- * appended in order). Centralising the guard here keeps the invariant true
- * for handlers added in the future; a biome `noRestrictedImports` rule
+ * handler pasting raw `[<0;12;38M…` bytes into its field. Centralising the
+ * guard here protects every input handler; a biome `noRestrictedImports` rule
  * forbids importing `useInput` from "ink" anywhere else (this file carries
  * the sole override).
  *

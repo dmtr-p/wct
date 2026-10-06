@@ -1,5 +1,4 @@
-import { Console, Effect } from "effect";
-import { JsonFlag } from "../cli/json-flag";
+import { Console } from "effect";
 
 export function jsonSuccess<T>(data: T) {
   const normalizedData = data === undefined ? null : data;
@@ -13,7 +12,3 @@ export function jsonError(code: string, message: string) {
     JSON.stringify({ ok: false, error: { code, message } }, null, 2),
   );
 }
-
-export const isJsonMode = Effect.gen(function* () {
-  return yield* JsonFlag;
-});

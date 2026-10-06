@@ -1,4 +1,4 @@
-import { Flag, GlobalFlag } from "../effect/cli";
+import { Flag, GlobalFlag } from "effect/cli";
 
 export const JsonFlag = GlobalFlag.Setting("json")({
   flag: Flag.Boolean("json").pipe(

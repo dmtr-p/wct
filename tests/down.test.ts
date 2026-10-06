@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { Command } from "effect/cli";
 import {
   afterEach,
   beforeEach,
@@ -10,7 +11,6 @@ import {
 } from "vitest";
 import { rootCommand } from "../src/cli/root-command";
 import { type DownOptions, downCommand } from "../src/commands/down";
-import { Command } from "../src/effect/cli";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";

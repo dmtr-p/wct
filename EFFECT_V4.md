@@ -1,536 +1,199 @@
 # Effect v4 Reference for Agents
 
-> This project uses Effect v4. If your training data covers Effect v3, read this
-> document carefully — it describes the correct v4 APIs and patterns you must use.
+This project uses Effect v4. Use the APIs and repository patterns below when
+working on application code, services, schemas, CLI commands, and tests.
 
-## Package Changes
+## Packages and imports
 
-### Consolidation
+Keep `effect`, `@effect/platform-bun`, and `@effect/vitest` on matching versions.
+`package.json` is the source of truth for dependency versions.
 
-Many packages merged into `effect`:
+- Import core APIs, including `Context`, `Effect`, `FileSystem`, `Layer`, and
+  `Schema`, from `effect`.
+- Import CLI APIs directly from `effect/cli`.
+- Import `ChildProcess` from `effect/process`.
+- Import Bun runtime services through `src/effect/runtime.ts`.
+- CLI global flag service identifiers use `effect/cli/GlobalFlag/<name>`;
+  the JSON flag requirement is `effect/cli/GlobalFlag/json`.
 
-- `@effect/platform` → `effect` (FileSystem, Path, etc. now under `effect/unstable/*`)
-- `@effect/rpc`, `@effect/cluster` → `effect`
-- Platform-specific packages remain separate: `@effect/platform-bun`, `@effect/platform-node`
+## Services and layers
 
-### Versioning
-
-All packages share a single version number. Use matching versions everywhere.
-
-### Unstable Modules
-
-New imports under `effect/unstable/*` (e.g., `effect/unstable/cli/Command`, `effect/unstable/process`). These may break in minor releases.
-
----
-
-## Services: `Context.Tag` → `ServiceMap.Service`
-
-This is the most pervasive change. Every service definition must be updated.
-
-### Simple services
+Define service keys with `Context.Service`. The service identifier string is
+its runtime identity; use a distinct `wct/<ServiceName>` key for each service.
 
 ```ts
-// ❌ v3
-import { Context } from "effect";
-const Database = Context.GenericTag<Database>("Database");
+import { Context, Effect, Layer } from "effect";
 
-// ✅ v4
-import { ServiceMap } from "effect";
-const Database = ServiceMap.Service<Database>("Database");
-```
-
-### Class-based services
-
-```ts
-// ❌ v3
-class Database extends Context.Tag("Database")<
-  Database,
-  {
-    readonly query: (sql: string) => string;
-  }
->() {}
-
-// ✅ v4 — note: type params first, then id string in second call
-class Database extends ServiceMap.Service<
-  Database,
-  {
-    readonly query: (sql: string) => string;
-  }
->()("Database") {}
-```
-
-### Services with constructors (`Effect.Service` → `ServiceMap.Service` with `make`)
-
-```ts
-// ❌ v3
-class Logger extends Effect.Service<Logger>()("Logger", {
-  effect: Effect.gen(function*() { ... }),
-  dependencies: [Config.Default]
-}) {}
-// Logger.Default auto-generated
-
-// ✅ v4 — no auto-generated layer, build it yourself
-class Logger extends ServiceMap.Service<Logger>()("Logger", {
-  make: Effect.gen(function*() { ... })
-}) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(Config.layer)
-  )
+interface Database {
+  readonly query: (sql: string) => Effect.Effect<string>;
 }
-```
 
-**Key differences:**
+const Database = Context.Service<Database>("wct/Database");
 
-- `effect:` → `make:`
-- `dependencies:` removed — use `Layer.provide()` explicitly
-- Generic upstream guidance often uses `layer` instead of `Default` or `Live`
-- Repo convention here is more specific:
-  - for service classes such as `Logger extends ServiceMap.Service(...)`, `static readonly layer` is the preferred name
-  - for concrete service values provided from plain objects, keep the existing `live<ServiceName>Service` style, for example `liveGitHubService`, `liveTmuxService`, and `liveWorktreeService`
-- Do not rename the current `live*Service` values just to match upstream examples; the important part is consistent Effect provisioning, not forcing every concrete implementation to be named `layer`
+const liveDatabase: Database = {
+  query: (sql) => Effect.succeed(sql),
+};
 
-### Accessors removed
+const databaseLayer = Layer.succeed(Database, liveDatabase);
 
-```ts
-// ❌ v3 — static proxy access
-const program = Notifications.notify("hello");
-
-// ✅ v4 — use `use` or `yield*`
-const program = Notifications.use((n) => n.notify("hello"));
-// or preferably:
 const program = Effect.gen(function* () {
-  const n = yield* Notifications;
-  yield* n.notify("hello");
+  const database = yield* Database;
+  return yield* database.query("SELECT 1");
 });
+
+const provided = Effect.provide(program, databaseLayer);
 ```
 
-### References (services with defaults)
+Class-based keys use the two-stage constructor:
 
 ```ts
-// ❌ v3
-class LogLevel extends Context.Reference<LogLevel>()("LogLevel", {
+class Database extends Context.Service<
+  Database,
+  { readonly query: (sql: string) => Effect.Effect<string> }
+>()("wct/Database") {}
+```
+
+Use `Context.Reference` for a service with a default value:
+
+```ts
+const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
   defaultValue: () => "info",
-}) {}
-
-// ✅ v4
-const LogLevel = ServiceMap.Reference<"info" | "warn" | "error">("LogLevel", {
-  defaultValue: () => "info",
 });
 ```
 
-### Quick reference table
+- Use `yield* Service` or `Service.use(...)` to access a service.
+- Provide implementations with `Layer.succeed` or `Layer.effect`; compose
+  dependencies with `Layer.provide` and `Layer.provideMerge`.
+- Prefer `static readonly layer` for service classes that define their own layer.
+- Keep the `live<ServiceName>Service` naming convention for existing concrete
+  service values, such as `liveGitHubService` and `liveWorktreeService`.
+- Use `Effect.provideService` for individual overrides.
+- Use `Context.make` and `Context.get` when manipulating a context directly.
+- Use `Layer.fresh(layer)` when a layer must be built independently.
 
-| v3                                    | v4                                         |
-| ------------------------------------- | ------------------------------------------ |
-| `Context.GenericTag<T>(id)`           | `ServiceMap.Service<T>(id)`                |
-| `Context.Tag(id)<Self, Shape>()`      | `ServiceMap.Service<Self, Shape>()(id)`    |
-| `Effect.Tag(id)<Self, Shape>()`       | `ServiceMap.Service<Self, Shape>()(id)`    |
-| `Effect.Service<Self>()(id, opts)`    | `ServiceMap.Service<Self>()(id, { make })` |
-| `Context.Reference<Self>()(id, opts)` | `ServiceMap.Reference<T>(id, opts)`        |
-| `Context.make(tag, impl)`             | `ServiceMap.make(tag, impl)`               |
-| `Context.get(ctx, tag)`               | `ServiceMap.get(map, tag)`                 |
-| `Context`                             | `ServiceMap`                               |
+## Runtime and process boundaries
 
----
+Keep `src/index.ts` thin: handle completion/version shortcuts, build the root
+CLI Effect, provide application and Bun services, and call `BunRuntime.runMain`.
 
-## Error Handling: `catch*` Renamings
+- `provideBunServices` supplies `BunServices.layer`.
+- `provideWctServices` supplies the live application services and default JSON
+  flag value.
+- `runBunPromise` runs Effects at imperative Bun boundaries.
+- The TUI uses the process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
+  Command exit tears down the process; there is no explicit runtime disposal
+  path.
+- Use the process helpers in `src/services/process.ts` for command execution.
+  They collect stdout, stderr, and exit status inside an Effect scope.
+- Use `Bun.spawn` with inherited stdio for interactive process handoff.
+- Use `Bun.YAML.parse`, `Bun.Glob`, and `Bun.which` for their respective runtime
+  primitives.
 
-| v3                       | v4                               |
-| ------------------------ | -------------------------------- |
-| `Effect.catchAll`        | `Effect.catch`                   |
-| `Effect.catchAllCause`   | `Effect.catchCause`              |
-| `Effect.catchAllDefect`  | `Effect.catchDefect`             |
-| `Effect.catchTag`        | `Effect.catchTag` _(unchanged)_  |
-| `Effect.catchTags`       | `Effect.catchTags` _(unchanged)_ |
-| `Effect.catchIf`         | `Effect.catchIf` _(unchanged)_   |
-| `Effect.catchSome`       | `Effect.catchFilter`             |
-| `Effect.catchSomeCause`  | `Effect.catchCauseFilter`        |
-| `Effect.catchSomeDefect` | _Removed_                        |
+`Effect.Effect<A, E, R>` records the result type, typed error, and required
+services. Preserve these types when defining command and service interfaces.
 
----
+## Errors and cleanup
 
-## Forking
+Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
+Tagged application errors use `Data.TaggedError`.
 
-| v3                            | v4                                |
-| ----------------------------- | --------------------------------- |
-| `Effect.fork`                 | `Effect.forkChild`                |
-| `Effect.forkDaemon`           | `Effect.forkDetach`               |
-| `Effect.forkScoped`           | `Effect.forkScoped` _(unchanged)_ |
-| `Effect.forkIn`               | `Effect.forkIn` _(unchanged)_     |
-| `Effect.forkAll`              | _Removed_                         |
-| `Effect.forkWithErrorHandler` | _Removed_                         |
+| Purpose | API |
+| --- | --- |
+| Handle typed failures | `Effect.catch` |
+| Handle failures by tag | `Effect.catchTag`, `Effect.catchTags` |
+| Handle a full cause | `Effect.catchCause` |
+| Handle defects | `Effect.catchDefect` |
+| Handle selected errors | `Effect.catchIf`, `Effect.catchFilter` |
+| Convert an error | `Effect.mapError` |
+| Observe both outcomes | `Effect.match`, `Effect.matchCause` |
 
-Fork functions now accept an options object:
+`Cause` contains a flat `reasons` array with `Fail`, `Die`, and `Interrupt`
+reasons. Inspect it with `Cause.hasFails`, `Cause.hasDies`,
+`Cause.hasInterrupts`, `Cause.findErrorOption`, and `Cause.findDefect`.
 
-```ts
-Effect.forkChild(myEffect, { startImmediately: true, uninterruptible: true });
-```
+Use `Effect.scoped` and `Effect.acquireRelease` for resource ownership.
+`Scope.close` and `Scope.closeUnsafe` require a `Scope.Closeable` created by
+`Scope.make` or `Scope.fork`. Use `Scope.provide(scope)(effect)` to run an Effect
+within an existing scope.
 
----
+## Fibers and yieldable values
 
-## Yieldable (replaces Effect subtyping)
+- `Effect.forkChild` creates a child fiber.
+- `Effect.forkScoped` and `Effect.forkIn` bind fibers to a scope.
+- `Effect.forkDetach` detaches a fiber from its parent.
+- Fork options include `startImmediately` and `uninterruptible`.
+- Read references with `Ref.get`, wait for deferred values with `Deferred.await`,
+  and join fibers with `Fiber.join`.
+- Service keys support `yield*` in `Effect.gen`. Convert optional and result
+  values with `Effect.fromOption` and `Effect.fromResult` before using them in
+  Effect programs.
+- Use `Option.gen` and `Result.gen` for generators over those data types.
+- Use `Result.succeed` and `Result.fail` for result values.
 
-In v3, types like `Ref`, `Deferred`, `Fiber`, `Option`, `Either`, `Context.Tag` were subtypes of `Effect`.
-In v4, they are **not** — some implement `Yieldable` (works with `yield*`), others need explicit conversion.
+## Schemas
 
-### Still works with `yield*`:
-
-- `Option` — yields value or fails with `NoSuchElementError`
-- `Result` (renamed from `Either`) — yields success or fails
-- `ServiceMap.Service` — yields the service
-
-### No longer Effect subtypes — use explicit functions:
-
-```ts
-// ❌ v3 — Ref is an Effect
-const value = yield * ref;
-
-// ✅ v4
-const value = yield * Ref.get(ref);
-```
-
-```ts
-// ❌ v3 — Deferred is an Effect
-const value = yield * deferred;
-
-// ✅ v4
-const value = yield * Deferred.await(deferred);
-```
+Define configuration schemas in `src/config/schema.ts` and use the validation
+helpers in `src/config/validator.ts`.
 
 ```ts
-// ❌ v3 — Fiber is an Effect
-const result = yield * fiber;
+import { Schema } from "effect";
 
-// ✅ v4
-const result = yield * Fiber.join(fiber);
-```
-
-### Using Yieldable types with combinators
-
-```ts
-// ❌ v3 — Option assignable to Effect
-Effect.map(Option.some(42), (n) => n + 1);
-
-// ✅ v4 — must convert explicitly
-Effect.map(Option.some(42).asEffect(), (n) => n + 1);
-// or use a generator (preferred)
-Effect.gen(function* () {
-  const n = yield* Option.some(42);
-  return n + 1;
+const ConfigSchema = Schema.Struct({
+  name: Schema.String.check(Schema.isNonEmpty()),
+  layout: Schema.Literals(["horizontal", "vertical"]),
+  enabled: Schema.optional(Schema.Boolean),
+  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
+
+type Config = typeof ConfigSchema.Type;
+const decodeConfig = Schema.decodeUnknownSync(ConfigSchema);
 ```
 
----
-
-## Cause: Flattened Structure
-
-`Cause` is now a flat array of `Reason` values instead of a recursive tree.
-
-```ts
-// v4 Cause structure
-interface Cause<E> {
-  readonly reasons: ReadonlyArray<Reason<E>>;
-}
-type Reason<E> = Fail<E> | Die | Interrupt;
-```
-
-**Removed variants:** `Empty`, `Sequential`, `Parallel`
-
-| v3                            | v4                             |
-| ----------------------------- | ------------------------------ |
-| `Cause.isFailure(cause)`      | `Cause.hasFails(cause)`        |
-| `Cause.isDie(cause)`          | `Cause.hasDies(cause)`         |
-| `Cause.isInterrupted(cause)`  | `Cause.hasInterrupts(cause)`   |
-| `Cause.sequential(l, r)`      | `Cause.combine(l, r)`          |
-| `Cause.parallel(l, r)`        | `Cause.combine(l, r)`          |
-| `Cause.failureOption(cause)`  | `Cause.findErrorOption(cause)` |
-| `Cause.failureOrCause(cause)` | `Cause.findError(cause)`       |
-| `Cause.dieOption(cause)`      | `Cause.findDefect(cause)`      |
-
-### Exception → Error renames
-
-| v3                               | v4                           |
-| -------------------------------- | ---------------------------- |
-| `Cause.NoSuchElementException`   | `Cause.NoSuchElementError`   |
-| `Cause.TimeoutException`         | `Cause.TimeoutError`         |
-| `Cause.IllegalArgumentException` | `Cause.IllegalArgumentError` |
-| `Cause.UnknownException`         | `Cause.UnknownError`         |
-
----
-
-## FiberRef → `ServiceMap.Reference`
-
-`FiberRef` is removed. Use `ServiceMap.Reference` instead.
-
-| v3                         | v4                           |
-| -------------------------- | ---------------------------- |
-| `FiberRef.currentLogLevel` | `References.CurrentLogLevel` |
-
-```ts
-// ❌ v3
-const level = yield * FiberRef.get(FiberRef.currentLogLevel);
-
-// ✅ v4
-const level = yield * References.CurrentLogLevel;
-```
-
-```ts
-// ❌ v3
-Effect.locally(myEffect, FiberRef.currentLogLevel, LogLevel.Debug);
-
-// ✅ v4
-Effect.provideService(myEffect, References.CurrentLogLevel, "Debug");
-```
-
----
-
-## Runtime: `Runtime<R>` Removed
-
-```ts
-// ❌ v3
-const runtime = yield * Effect.runtime<MyService>();
-Runtime.runFork(runtime)(program);
-
-// ✅ v4
-const services = yield * Effect.services<MyService>();
-Effect.runForkWith(services)(program);
-```
-
----
-
-## Scope
-
-| v3                            | v4                             |
-| ----------------------------- | ------------------------------ |
-| `Scope.extend(effect, scope)` | `Scope.provide(scope)(effect)` |
-
----
-
-## Equality
-
-- `Equal.equals` now uses **structural equality** by default (v3 used reference equality)
-- `NaN === NaN` is now `true`
-- `Equal.equivalence` → `Equal.asEquivalence`
-- Use `Equal.byReference(obj)` to opt out of structural equality
-
----
-
-## Layer Memoization
-
-In v4, layers are automatically memoized across `Effect.provide` calls (v3 only memoized within a single `provide`).
-
-- Use `Layer.fresh(layer)` to force rebuilding
-- Use `Effect.provide(layer, { local: true })` for isolated memo map
-
----
-
-## Fiber Keep-Alive
-
-The runtime now automatically keeps the process alive while fibers are suspended. You no longer need `@effect/platform-node`'s `runMain` just for keep-alive (though `runMain` is still recommended for signal handling and exit codes).
-
----
-
-## Schema Changes
-
-### Simple renames
-
-| v3                           | v4                              |
-| ---------------------------- | ------------------------------- |
-| `Schema.annotations(ann)`    | `Schema.annotate(ann)`          |
-| `Schema.compose(schemaB)`    | `Schema.decodeTo(schemaB)`      |
-| `Schema.parseJson()`         | `Schema.fromJsonString(Schema.Unknown)` |
-| `Schema.parseJson(schema)`   | `Schema.fromJsonString(schema)` |
-| `Schema.nonEmptyString`      | `Schema.isNonEmpty`             |
-| `Schema.BigIntFromSelf`      | `Schema.BigInt`                 |
-| `Schema.TaggedError`         | `Schema.TaggedError`            |
-| `Schema.decodeUnknown`       | `Schema.decodeUnknownEffect`    |
-| `Schema.decode`              | `Schema.decodeEffect`           |
-| `Schema.decodeUnknownEither` | `Schema.decodeUnknownExit`      |
-| `Schema.decodeEither`        | `Schema.decodeExit`             |
-| `Schema.encodeUnknown`       | `Schema.encodeUnknownEffect`    |
-| `Schema.encode`              | `Schema.encodeEffect`           |
-| `Schema.encodeUnknownEither` | `Schema.encodeUnknownExit`      |
-| `Schema.encodeEither`        | `Schema.encodeExit`             |
-| `Schema.encodedSchema`       | `Schema.toEncoded`              |
-| `Schema.typeSchema`          | `Schema.toType`                 |
-| `Schema.asSchema`            | `Schema.revealCodec`            |
-
-### `*FromSelf` renames (drop the suffix)
-
-`DateFromSelf` → `Date`, `DurationFromSelf` → `Duration`, `OptionFromSelf` → `Option`, `CauseFromSelf` → `Cause`, `ExitFromSelf` → `Exit`, etc.
-
-### Variadic → Array arguments
-
-```ts
-// ❌ v3
-Schema.Literal("a", "b");
-Schema.Union(A, B);
-Schema.Tuple(A, B);
-
-// ✅ v4
-Schema.Literals(["a", "b"]);
-Schema.Union([A, B]);
-Schema.Tuple([A, B]);
-```
-
-Note: single literal stays as `Schema.Literal("a")`, multiple use `Schema.Literals(["a", "b"])`.
-
-### Filter renames (add `is` prefix)
-
-`greaterThan` → `isGreaterThan`, `lessThan` → `isLessThan`, `int` → `isInt`, `minLength` → `isMinLength`, `maxLength` → `isMaxLength`, `between` → `isBetween`, `pattern` → `isPattern`, etc.
-
-Filters now use `check()`:
-
-```ts
-// ❌ v3
-Schema.String.pipe(Schema.pattern(/^[a-z]+$/));
-
-// ✅ v4
-Schema.String.check(Schema.isPattern(/^[a-z]+$/));
-```
-
-### Record
-
-```ts
-// ❌ v3
-Schema.Record({ key: Schema.String, value: Schema.Number });
-
-// ✅ v4
-Schema.Record(Schema.String, Schema.Number);
-```
-
-### filter → check/refine
-
-```ts
-// ❌ v3 — predicate filter
-Schema.String.pipe(Schema.filter((s) => s.length > 0));
-
-// ✅ v4
-Schema.String.check(Schema.makeFilter((s) => s.length > 0));
-
-// ❌ v3 — refinement filter
-Schema.Option(Schema.String).pipe(Schema.filter(Option.isSome));
-
-// ✅ v4
-Schema.Option(Schema.String).pipe(Schema.refine(Option.isSome));
-```
-
-### transform
-
-```ts
-// ❌ v3
-Schema.transform(SchemaA, SchemaB, { decode, encode });
-
-// ✅ v4
-import { SchemaTransformation } from "effect";
-SchemaA.pipe(
-  Schema.decodeTo(SchemaB, SchemaTransformation.transform({ decode, encode })),
-);
-```
-
-### pick / omit
-
-```ts
-// ❌ v3
-myStruct.pipe(Schema.pick("a"));
-myStruct.pipe(Schema.omit("b"));
-
-// ✅ v4
-import { Struct } from "effect";
-myStruct.mapFields(Struct.pick(["a"]));
-myStruct.mapFields(Struct.omit(["b"]));
-```
-
-### partial
-
-```ts
-// ❌ v3
-myStruct.pipe(Schema.partial);
-myStruct.pipe(Schema.partialWith({ exact: true }));
-
-// ✅ v4
-import { Struct } from "effect";
-myStruct.mapFields(Struct.map(Schema.optional));
-myStruct.mapFields(Struct.map(Schema.optionalKey));
-```
-
-### extend (Struct + Struct)
-
-```ts
-// ❌ v3
-structA.pipe(Schema.extend(Schema.Struct({ c: Schema.Number })));
-
-// ✅ v4
-import { Struct } from "effect";
-structA.mapFields(Struct.assign({ c: Schema.Number }));
-// or
-structA.pipe(Schema.fieldsAssign({ c: Schema.Number }));
-```
-
-### Removed Schema APIs
-
-- `Schema.validate*` — use `Schema.decode*` + `Schema.toType` instead
-- `Schema.keyof` — removed
-- `Schema.Data` — removed (structural equality is default in v4)
-- `Schema.ArrayEnsure`, `Schema.NonEmptyArrayEnsure` — removed
-- `Schema.withDefaults`, `Schema.fromKey` — removed
-- `positive`, `negative`, `nonNegative`, `nonPositive` filters — removed
-
-### Utility renames
-
-| v3                   | v4                     |
-| -------------------- | ---------------------- |
-| `Schema.equivalence` | `Schema.toEquivalence` |
-| `Schema.arbitrary`   | `Schema.toArbitrary`   |
-| `Schema.pretty`      | `Schema.toFormatter`   |
-
----
-
-## Either → Result
-
-`Either` has been renamed to `Result` throughout v4:
-
-```ts
-// ❌ v3
-import { Either } from "effect";
-Either.right(42);
-Either.left("error");
-
-// ✅ v4
-import { Result } from "effect";
-Result.ok(42);
-Result.err("error");
-```
-
----
-
-## Summary of Import Changes
-
-| v3 import          | v4 import                                               |
-| ------------------ | ------------------------------------------------------- |
-| `Context`          | `ServiceMap`                                            |
-| `FiberRef`         | `References` / `ServiceMap.Reference`                   |
-| `Runtime`          | Mostly removed; use `Effect.runFork`, `Effect.services` |
-| `Either`           | `Result`                                                |
-| `ParseResult`      | `SchemaIssue`                                           |
-| `@effect/platform` | `effect` (many modules moved to `effect/unstable/*`)    |
+- Pass arrays to `Schema.Literals`, `Schema.Union`, and `Schema.Tuple`.
+  Use `Schema.Literal` for a single literal.
+- Use `Schema.optional` or `Schema.optionalKey` for optional fields.
+- Apply checks with `.check(...)` and refinements with `Schema.refine`.
+- Numeric checks include `isGreaterThan`, `isLessThan`, `isInt`, and `isBetween`.
+- String checks include `isPattern`, `isStartingWith`, `isEndingWith`, and
+  `isIncluding`.
+- Length and cardinality ranges use `isBetweenLength`, `isBetweenCodePoints`,
+  `isBetweenSize`, and `isBetweenProperties`.
+- Use `isMinCodePoints` and `isMaxCodePoints` when counting Unicode code points.
+- Decode with `Schema.decodeUnknownEffect`, `Schema.decodeUnknownSync`, or
+  `Schema.decodeUnknownExit`, choosing the boundary appropriate to the caller.
+- Use `Schema.fromJsonString(schema)` for JSON string codecs.
+- Use `Schema.toStandardSchemaV1` for the Standard Schema validation interface.
+- Use `Schema.toType`, `Schema.toEncoded`, `Schema.toEquivalence`, and
+  `Schema.toFormatter` for derived representations; use `Arbitrary.schema` for
+  schema-based value generation.
+- Use `Schema.decodeTo` with `SchemaTransformation.transform` for transformations.
+- Modify struct fields with `.mapFields(...)` and `Struct.pick`, `Struct.omit`,
+  `Struct.assign`, or `Struct.map`.
 
 ## Testing with @effect/vitest
 
-We use `@effect/vitest@4.0.0-rc.111` for Effect-aware tests. Two patterns coexist; pick based on what the test needs:
-
-### `it.effect` + `it.layer` — preferred for new tests
+Prefer `it.effect` with `it.layer` for new Effect-aware tests:
 
 ```ts
 import { describe, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
-import { WorktreeService } from "../src/services/worktree-service";
-import { WctTestLayer } from "./helpers/effect-vitest";
+import {
+  liveWorktreeService,
+  WorktreeService,
+} from "../src/services/worktree-service";
+import { wctTestLayer } from "./helpers/effect-vitest";
+
+const TestLayer = wctTestLayer({
+  worktree: {
+    ...liveWorktreeService,
+    getCurrentBranch: () => Effect.succeed("main"),
+  },
+});
 
 describe("getCurrentBranch", () => {
-  it.layer(WctTestLayer)("in a temp git repo", (it) => {
-    it.effect("returns the active branch", () =>
+  it.layer(TestLayer)("with an overridden service", (it) => {
+    it.effect("returns the provided branch", () =>
       Effect.gen(function* () {
         const wt = yield* WorktreeService;
         const branch = yield* wt.getCurrentBranch();
@@ -541,14 +204,18 @@ describe("getCurrentBranch", () => {
 });
 ```
 
-Adjust the relative import paths when the test file lives in a nested directory.
+Adjust relative imports for the test's location. For service overrides, use
+`wctTestLayer({ tmux: fakeTmux })`; its options match `withTestServices`.
 
-For per-test service overrides, use `wctTestLayer({ tmux: fakeTmux })` instead of `WctTestLayer`. The overrides shape matches the existing `withTestServices` helper.
+Keep `runBunPromise` with `withTestServices` when an existing test mixes
+imperative mocks with Effect execution or mutates state between separate Effect
+runs. Both patterns are supported; choose the one appropriate to the test.
 
-### `runBunPromise` + `withTestServices` — keep using when
+For Vitest fixtures, create Effect test methods with
+`makeMethods(test.extend(...))` using the top-level `test` export.
+`it.effect.each` receives the test context as its second argument.
+`Arbitrary.configureGlobal` can configure shared property-test defaults before
+concurrent tests start.
 
-- The test mixes imperative `vi.spyOn` mocks with the Effect call (e.g. spying on `console.log`).
-- The test composes multiple `runBunPromise(...)` calls with intervening synchronous mutation.
-- You're touching an existing test file and don't want to expand the diff.
-
-Both patterns are correct; do not bulk-migrate. Migrate opportunistically when editing an Effect-aware file.
+Do not run tests or lint manually; the harness hooks handle those checks as
+specified in `AGENTS.md`.

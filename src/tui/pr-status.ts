@@ -234,14 +234,3 @@ export function compactPrSegments(
   }
   return truncateSegments([...prefix, ...status], width);
 }
-
-export function compactPrText(
-  number: number,
-  presentation: PrPresentation,
-  width: number,
-  expanded = false,
-): string {
-  return compactPrSegments(number, presentation, width, expanded)
-    .map((segment) => segment.text)
-    .join("");
-}

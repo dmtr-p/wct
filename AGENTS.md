@@ -37,7 +37,6 @@ src/
 │   ├── schema.ts         # Effect Schema model for .wct.yaml
 │   └── validator.ts      # Validation helpers and path-aware error rendering
 ├── effect/
-│   ├── cli.ts            # Re-exports for Effect CLI modules
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
 │   └── services.ts       # Live service bundle provided to the app
 ├── services/

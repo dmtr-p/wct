@@ -1,17 +1,17 @@
 import { Effect } from "effect";
 import {
-  generateCompletionScript,
-  getCustomCompletionShell,
-} from "./cli/completions";
-import { JsonFlag } from "./cli/json-flag";
-import { rootCommand } from "./cli/root-command";
-import {
   CliConfig,
   CliError,
   CliOutput,
   Command,
   GlobalFlag,
-} from "./effect/cli";
+} from "effect/cli";
+import {
+  generateCompletionScript,
+  getCustomCompletionShell,
+} from "./cli/completions";
+import { JsonFlag } from "./cli/json-flag";
+import { rootCommand } from "./cli/root-command";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
 import { provideWctServices } from "./effect/services";
 import { commandError, toWctError } from "./errors";

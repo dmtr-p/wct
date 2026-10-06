@@ -10,8 +10,7 @@ Keep `effect`, `@effect/platform-bun`, and `@effect/vitest` on matching versions
 
 - Import core APIs, including `Context`, `Effect`, `FileSystem`, `Layer`, and
   `Schema`, from `effect`.
-- Import CLI APIs through `src/effect/cli.ts`, which re-exports
-  `effect/cli/*` modules.
+- Import CLI APIs directly from `effect/cli`.
 - Import `ChildProcess` from `effect/process`.
 - Import Bun runtime services through `src/effect/runtime.ts`.
 - CLI global flag service identifiers use `effect/cli/GlobalFlag/<name>`;

@@ -9,6 +9,15 @@ export interface ProcessOptions {
   stdin?: ChildProcess.CommandInput | ChildProcess.StdinConfig;
   stdout?: ChildProcess.CommandOutput | ChildProcess.StdoutConfig;
   stderr?: ChildProcess.CommandOutput | ChildProcess.StderrConfig;
+  /** Fail while reading, rather than retaining an unbounded output buffer. */
+  maxOutputBytes?: number;
+}
+
+export class ProcessOutputLimitError extends Error {
+  constructor() {
+    super("Process output limit exceeded");
+    this.name = "ProcessOutputLimitError";
+  }
 }
 
 export class ProcessExitError extends Error {
@@ -51,7 +60,17 @@ function formatCommand(command: string, args: ReadonlyArray<string>): string {
 
 function decodeOutput(
   stream: Stream.Stream<Uint8Array, unknown>,
+  maxBytes?: number,
 ): Effect.Effect<string, unknown> {
+  if (maxBytes !== undefined) {
+    let bytes = 0;
+    stream = Stream.mapEffect(stream, (chunk) => {
+      bytes += chunk.byteLength;
+      return bytes > maxBytes
+        ? Effect.fail(new ProcessOutputLimitError())
+        : Effect.succeed(chunk);
+    });
+  }
   return Stream.mkString(Stream.decodeText(stream));
 }
 
@@ -60,9 +79,10 @@ function makeCommand(
   args: ReadonlyArray<string>,
   options?: ProcessOptions,
 ) {
+  const { maxOutputBytes: _limit, ...commandOptions } = options ?? {};
   return ChildProcess.make(command, [...args], {
     extendEnv: options?.extendEnv ?? true,
-    ...options,
+    ...commandOptions,
   });
 }
 
@@ -82,8 +102,8 @@ function collectOutput(
 
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [
-          decodeOutput(handle.stdout),
-          decodeOutput(handle.stderr),
+          decodeOutput(handle.stdout, options?.maxOutputBytes),
+          decodeOutput(handle.stderr, options?.maxOutputBytes),
           Effect.map(handle.exitCode, Number),
         ],
         { concurrency: "unbounded" },

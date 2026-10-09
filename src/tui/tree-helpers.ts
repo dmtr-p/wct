@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import type { AgentObservation } from "../services/agent-model";
 import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import { type PrFacts, prIdentity } from "../services/pr-model";
 import { formatSessionName } from "../services/tmux";
@@ -83,6 +84,7 @@ export function isWorktreeLifecycleActive(
 }
 
 interface BuildTreeOptions {
+  agents?: Map<string, AgentObservation>;
   repos: RepoInfo[];
   expandedWorktreeKeys?: Set<string>;
   discoveredWorkspaceKeys?: Set<string>;
@@ -384,6 +386,7 @@ export function buildTreeItems({
   associations,
   expandedPrKeys,
   panes,
+  agents,
   jumpToPane,
 }: BuildTreeOptions): TreeItem[] {
   const items: TreeItem[] = [];
@@ -522,6 +525,7 @@ export function buildTreeItems({
               window: pane.window,
               paneIndex: pane.paneIndex,
               command: pane.command,
+              agent: agents?.get(pane.paneId),
             },
             action: () => jumpToPane(pane.paneId),
           });

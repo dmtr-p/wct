@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
+import type { WorkspaceAgentSnapshot } from "../hooks/useAgents";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { type LifecycleState, workspaceIdentityKey } from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
@@ -17,6 +18,7 @@ import { WorktreeItem } from "./WorktreeItem";
 import { WorktreeStatsRow } from "./WorktreeStatsRow";
 
 interface Props {
+  agents?: WorkspaceAgentSnapshot;
   repos: RepoInfo[];
   sessions: Array<{ name: string; attached: boolean }>;
   selectedIndex: number;
@@ -76,6 +78,7 @@ export function TreeView({
   prData,
   associations,
   panes,
+  agents,
   expandedWorktreeKeys,
   discoveredWorkspaceKeys,
   maxWidth,
@@ -115,6 +118,7 @@ export function TreeView({
       prData,
       associations,
       panes,
+      agents,
       maxWidth,
       refreshingProjects,
       errors,
@@ -127,6 +131,7 @@ export function TreeView({
 }
 
 interface RenderRowContext {
+  agents?: WorkspaceAgentSnapshot;
   repos: RepoInfo[];
   items: TreeItem[];
   selectedIndex: number;
@@ -269,6 +274,9 @@ function renderWorktreeRow(
     <WorktreeItem
       key={`wt-${repo.id}-${wt.branch}`}
       branch={wt.branch}
+      agentSummary={ctx.agents?.summaries.get(
+        workspaceIdentityKey(repo.repoPath, wt.branch),
+      )}
       hasSession={!!session}
       isAttached={session?.attached ?? false}
       isSelected={idx === ctx.selectedIndex}

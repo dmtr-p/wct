@@ -1,6 +1,7 @@
 import { BunServices } from "@effect/platform-bun";
 import { Console, Effect, Layer, ManagedRuntime } from "effect";
 import type { WctServices } from "../effect/services";
+import { AgentService, liveAgentService } from "../services/agent-service";
 import { GitHubService, liveGitHubService } from "../services/github-service";
 import {
   livePrCacheService,
@@ -22,6 +23,7 @@ import {
 } from "../services/worktree-service";
 
 const tuiLayer = Layer.mergeAll(
+  Layer.succeed(AgentService, liveAgentService),
   Layer.succeed(TmuxService, liveTmuxService),
   Layer.succeed(WorktreeService, liveWorktreeService),
   Layer.succeed(GitHubService, liveGitHubService),

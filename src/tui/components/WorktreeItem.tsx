@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { displayWidth } from "../utils/display-width";
 import { truncateBranch } from "../utils/truncate";
 import {
   SELECTED_ROW_BACKGROUND,
@@ -7,6 +8,7 @@ import {
 } from "./tree-row";
 
 interface Props {
+  agentSummary?: string;
   branch: string;
   hasSession: boolean;
   isAttached: boolean;
@@ -32,6 +34,7 @@ export function WorktreeItem({
   isExpanded,
   hasExpandableData,
   maxWidth,
+  agentSummary = "",
 }: Props) {
   const active = isSelected || !!isChildSelected || !!isHovered;
   const indicator = hasSession ? "●" : "○";
@@ -39,6 +42,12 @@ export function WorktreeItem({
   const attached = isAttached ? " *" : "";
   const expandIcon = isExpanded ? "▼ " : hasExpandableData ? "▶ " : "";
   const prefix = "   ";
+  const summary = agentSummary
+    ? truncateBranch(
+        `  [${agentSummary}]`,
+        Math.max(0, maxWidth - 14 - attached.length),
+      )
+    : "";
 
   const displayBranch = truncateBranch(
     branch,
@@ -48,10 +57,11 @@ export function WorktreeItem({
         expandIcon.length +
         indicator.length +
         1 +
-        attached.length,
+        attached.length +
+        displayWidth(summary),
     ),
   );
-  const content = `${prefix}${expandIcon}${indicator} ${displayBranch}${attached}`;
+  const content = `${prefix}${expandIcon}${indicator} ${displayBranch}${attached}${summary}`;
 
   return (
     <Box>
@@ -67,6 +77,7 @@ export function WorktreeItem({
         <Text dimColor={!active} bold={isHovered}>
           {attached}
         </Text>
+        <Text dimColor={!active}>{summary}</Text>
         {selectedRowFill(isSelected, maxWidth, content)}
       </Text>
     </Box>

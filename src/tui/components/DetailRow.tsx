@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { agentPaneLabel } from "../../services/agent-model";
 import {
   PR_INDENT,
   PR_SUBROW_INDENT,
@@ -7,6 +8,7 @@ import {
 } from "../pr-layout";
 import { compactPrSegments, PR_COLORS } from "../pr-status";
 import type { TreeItem } from "../types";
+import { displayWidth } from "../utils/display-width";
 import { truncateBranch, truncateWithPrefix } from "../utils/truncate";
 import {
   SELECTED_ROW_BACKGROUND,
@@ -240,14 +242,26 @@ export function DetailRow({
 
     case "pane": {
       const indent = "       ";
-      const { window, paneIndex, command, zoomed, active } = item.meta;
+      const { window, paneIndex, command, zoomed, active, agent } = item.meta;
       const zoomedEmoji = zoomed && active ? "🔍 " : "";
       const panePrefix = `${window}:${paneIndex} `;
-      const displayLabel = truncateWithPrefix(
-        panePrefix,
-        command,
-        maxWidth - indent.length - (zoomedEmoji ? 3 : 0),
-      );
+      const available = maxWidth - indent.length - (zoomedEmoji ? 3 : 0);
+      const stateSuffix = agent
+        ? truncateBranch(
+            agentPaneLabel(agent).slice(agent.agent.length),
+            Math.max(0, available - 8),
+          )
+        : "";
+      const displayLabel =
+        truncateWithPrefix(
+          panePrefix,
+          agent
+            ? command === agent.agent
+              ? agent.agent
+              : `${agent.agent} (${command})`
+            : command,
+          available - displayWidth(stateSuffix),
+        ) + stateSuffix;
       const content = indent + zoomedEmoji + displayLabel;
       return (
         <Box>

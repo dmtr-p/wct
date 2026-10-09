@@ -1,10 +1,34 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
-import { spawnInteractive } from "../src/services/process";
+import {
+  execProcess,
+  ProcessExitError,
+  ProcessOutputLimitError,
+  spawnInteractive,
+} from "../src/services/process";
 
 describe("process", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+  test("bounded output fails without retaining oversized stdout", async () => {
+    let failure: unknown;
+    try {
+      await runBunPromise(
+        execProcess(
+          process.execPath,
+          ["-e", 'process.stdout.write("x".repeat(300000))'],
+          { maxOutputBytes: 1024 },
+        ),
+      );
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(ProcessExitError);
+    expect((failure as ProcessExitError).cause).toBeInstanceOf(
+      ProcessOutputLimitError,
+    );
+    expect((failure as ProcessExitError).stdout).toBe("");
   });
 
   test("spawnInteractive uses Bun.spawn with inherited stdio", async () => {

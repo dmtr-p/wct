@@ -176,6 +176,7 @@ export type TreeItem =
         window: string;
         paneIndex: number;
         command: string;
+        agent?: import("../services/agent-model").AgentObservation;
       }
     >;
 

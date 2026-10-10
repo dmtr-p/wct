@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-rc.118",
-    "effect": "4.0.0-rc.118",
+    "effect": "4.0.1",
     "ink": "7.1.1",
     "react": "^19.3.0"
   }

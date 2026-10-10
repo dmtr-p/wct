@@ -32,6 +32,7 @@ import { StatusBar, statusBarRowCount } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { useActionError } from "./hooks/useActionError";
+import { useAgents } from "./hooks/useAgents";
 import { useGitHub } from "./hooks/useGitHub";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
@@ -133,6 +134,7 @@ export function App() {
     refreshSessions,
     discoverClient,
   } = useTmux();
+  const agents = useAgents(repos);
 
   const navigation = useTreeNavigation(() => navigationSnapshot);
   const selectedIndex = navigation.selectedIndex;
@@ -362,6 +364,7 @@ export function App() {
         associations,
         expandedPrKeys,
         panes,
+        agents: agents.observations,
         jumpToPane,
       }),
     [
@@ -373,6 +376,7 @@ export function App() {
       associations,
       expandedPrKeys,
       panes,
+      agents.observations,
       jumpToPane,
     ],
   );
@@ -1498,6 +1502,7 @@ export function App() {
             prData={prData}
             associations={associations}
             panes={panes}
+            agents={agents}
             expandedWorktreeKeys={expandedWorktreeKeys}
             discoveredWorkspaceKeys={discoveredWorkspaceKeys}
             maxWidth={termCols}

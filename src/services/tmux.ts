@@ -26,6 +26,122 @@ export interface TmuxPaneInfo {
   active: boolean;
 }
 
+/** Observation-only metadata; never part of the CLI JSON contract. */
+export interface AgentPaneMetadata {
+  server: string;
+  session: string;
+  paneId: string;
+  tty: string;
+  initialPid: number;
+  command: string;
+  title: string;
+  width: number;
+  height: number;
+  dead: boolean;
+  progress?: string;
+}
+
+export function parseAgentPaneMetadata(output: string): AgentPaneMetadata[] {
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [
+        socket,
+        pid,
+        start,
+        session,
+        paneId,
+        tty,
+        initialPid,
+        command,
+        width,
+        height,
+        dead,
+        progress,
+        ...title
+      ] = line.split("\t");
+      if (
+        !socket ||
+        !pid ||
+        !start ||
+        !session ||
+        !paneId ||
+        !tty ||
+        !/^%\d+$/.test(paneId) ||
+        !/^\d+$/.test(initialPid ?? "") ||
+        !/^\d+$/.test(width ?? "") ||
+        !/^\d+$/.test(height ?? "")
+      )
+        return [];
+      return [
+        {
+          server: `${socket}\0${pid}\0${start}`,
+          session,
+          paneId,
+          tty,
+          initialPid: Number(initialPid),
+          command: command ?? "",
+          title: title.join("\t"),
+          width: Number(width),
+          height: Number(height),
+          dead: dead === "1",
+          progress: [
+            "hidden",
+            "normal",
+            "error",
+            "indeterminate",
+            "paused",
+          ].includes(progress ?? "")
+            ? progress
+            : undefined,
+        },
+      ];
+    });
+}
+
+// Unknown format variables expand to empty on older servers. A recognized
+// progress value is the capability check; no client-version assumption.
+export function discoverAgentPanes() {
+  return execProcess(
+    "tmux",
+    [
+      "list-panes",
+      "-a",
+      "-F",
+      "#{socket_path}\t#{pid}\t#{start_time}\t#{session_name}\t#{pane_id}\t#{pane_tty}\t#{pane_pid}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{pane_dead}\t#{pane_pb_state}\t#{pane_title}",
+    ],
+    { maxOutputBytes: 1024 * 1024 },
+  ).pipe(
+    Effect.flatMap(({ stdout }) => {
+      const panes = parseAgentPaneMetadata(stdout);
+      return stdout.trim() && !panes.length
+        ? Effect.fail(new Error("Tmux observation metadata unavailable"))
+        : Effect.succeed(panes);
+    }),
+    Effect.timeout("1 second"),
+    Effect.catch((error) =>
+      error instanceof ProcessExitError &&
+      error.exitCode === 1 &&
+      error.cause === undefined &&
+      /^(?:no server running on [^\r\n]+|error connecting to [^\r\n]+ \((?:No such file or directory|Connection refused)\))$/.test(
+        error.stderr.trim(),
+      )
+        ? Effect.succeed([] as AgentPaneMetadata[])
+        : Effect.fail(error),
+    ),
+  );
+}
+
+export function captureAgentPane(paneId: string) {
+  return execProcess("tmux", ["capture-pane", "-p", "-t", paneId], {
+    maxOutputBytes: 256 * 1024,
+  }).pipe(
+    Effect.map(({ stdout }) => stdout),
+    Effect.timeout("1 second"),
+  );
+}
+
 export interface TmuxClient {
   tty: string;
   session: string;

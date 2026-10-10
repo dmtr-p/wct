@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { WctServices } from "../effect/services";
-import type { WctError } from "../errors";
+import { toWctError, type WctError } from "../errors";
 import type { CommandDef } from "./command-def";
 
 export const commandDef: CommandDef = {
@@ -11,9 +11,15 @@ export const commandDef: CommandDef = {
 
 export function tuiCommand(): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const { startTui } = yield* Effect.promise(() => import("../tui/App"));
+    const { startTui } = yield* Effect.tryPromise({
+      try: () => import("../tui/App"),
+      catch: (error) => toWctError(error, "Failed to load TUI"),
+    });
     // The TUI runtime is process-scoped here; we intentionally omit an
     // explicit runtime disposal call because command exit tears down the process.
-    yield* Effect.promise(() => startTui());
+    yield* Effect.tryPromise({
+      try: () => startTui(),
+      catch: (error) => toWctError(error, "Failed to start TUI"),
+    });
   });
 }

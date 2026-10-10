@@ -220,7 +220,7 @@ export function spawnInteractive(
       }),
     (handle) =>
       Effect.promise(async () => {
-        if (handle.exitCode === null) {
+        if (handle.exitCode === null && handle.signalCode === null) {
           // Cancellation must also stop children that ignore SIGTERM.
           handle.kill("SIGKILL");
           await handle.exited;

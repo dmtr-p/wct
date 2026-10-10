@@ -112,14 +112,19 @@ describe("process", () => {
       spawnInteractive(process.execPath, ["-e", "setInterval(() => {}, 1000)"]),
     );
     const child = await started.promise;
+    let exited = false;
+    void child.exited.then(() => {
+      exited = true;
+    });
     try {
       expect(child.exitCode).toBeNull();
       await Effect.runPromise(Fiber.interrupt(fiber));
-      expect(child.exitCode).not.toBeNull();
+      expect(exited).toBe(true);
       expect(child.signalCode).toBe("SIGKILL");
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
       await child.exited;
     }
   });

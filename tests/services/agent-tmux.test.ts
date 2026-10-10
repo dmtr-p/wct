@@ -1,6 +1,10 @@
 import { Effect } from "effect";
 import { describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../../src/effect/runtime";
+import {
+  ProcessExitError,
+  ProcessOutputLimitError,
+} from "../../src/services/process";
 
 const exec = vi.hoisted(() => vi.fn());
 vi.mock("../../src/services/process", async () => ({
@@ -12,6 +16,20 @@ vi.mock("../../src/services/process", async () => ({
 const { captureAgentPane, discoverAgentPanes } = await import(
   "../../src/services/tmux"
 );
+
+const processFailure = (
+  stderr: string,
+  exitCode: number | null = 1,
+  cause?: unknown,
+) =>
+  new ProcessExitError({
+    command: "tmux",
+    args: ["list-panes", "-a"],
+    stdout: "",
+    stderr,
+    exitCode,
+    cause,
+  });
 
 describe("tmux observation primitives", () => {
   test("captures the live base grid without alternate/copy/scrollback flags", async () => {
@@ -51,5 +69,71 @@ describe("tmux observation primitives", () => {
     await expect(runBunPromise(discoverAgentPanes())).rejects.toThrow(
       "metadata unavailable",
     );
+  });
+  test.each([
+    "no server running on /tmp/tmux-501/default\n",
+    "error connecting to /tmp/tmux-501/default (No such file or directory)\n",
+    "error connecting to /tmp/tmux-501/default (Connection refused)\n",
+  ])("absent-server exit returns an empty pane list: %s", async (stderr) => {
+    exec.mockReturnValueOnce(Effect.fail(processFailure(stderr)));
+    expect(await runBunPromise(discoverAgentPanes())).toEqual([]);
+  });
+  test.each([
+    [
+      "permission denied",
+      processFailure(
+        "error connecting to /tmp/tmux-501/default (Permission denied)",
+      ),
+    ],
+    [
+      "operation not permitted",
+      processFailure(
+        "error connecting to /tmp/tmux-501/default (Operation not permitted)",
+      ),
+    ],
+    [
+      "connection timeout",
+      processFailure(
+        "error connecting to /tmp/tmux-501/default (Connection timed out)",
+      ),
+    ],
+    ["other exit", processFailure("unknown option: -F")],
+    ["plain error", new Error("no server running on /tmp/tmux-501/default")],
+    [
+      "spawn failure",
+      processFailure("no server running on /tmp/tmux-501/default", null),
+    ],
+    ["output limit", processFailure("", null, new ProcessOutputLimitError())],
+    [
+      "exit with output-limit cause",
+      processFailure(
+        "no server running on /tmp/tmux-501/default",
+        1,
+        new ProcessOutputLimitError(),
+      ),
+    ],
+  ])("discovery preserves %s as a failure", async (_label, error) => {
+    exec.mockReturnValueOnce(Effect.fail(error));
+    const result = await runBunPromise(
+      discoverAgentPanes().pipe(
+        Effect.match({
+          onFailure: (failure) => failure,
+          onSuccess: () => undefined,
+        }),
+      ),
+    );
+    expect(result).toBe(error);
+  });
+  test("discovery timeout remains a failure", async () => {
+    exec.mockReturnValueOnce(Effect.never);
+    const result = await runBunPromise(
+      discoverAgentPanes().pipe(
+        Effect.match({
+          onFailure: (failure) => failure,
+          onSuccess: () => undefined,
+        }),
+      ),
+    );
+    expect(result).toMatchObject({ _tag: "TimeoutError" });
   });
 });

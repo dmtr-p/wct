@@ -120,6 +120,16 @@ export function discoverAgentPanes() {
         : Effect.succeed(panes);
     }),
     Effect.timeout("1 second"),
+    Effect.catch((error) =>
+      error instanceof ProcessExitError &&
+      error.exitCode === 1 &&
+      error.cause === undefined &&
+      /^(?:no server running on [^\r\n]+|error connecting to [^\r\n]+ \((?:No such file or directory|Connection refused)\))$/.test(
+        error.stderr.trim(),
+      )
+        ? Effect.succeed([] as AgentPaneMetadata[])
+        : Effect.fail(error),
+    ),
   );
 }
 

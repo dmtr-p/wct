@@ -266,6 +266,37 @@ describe("agent classifier", () => {
     ).toBe("blocked");
     expect(classifyAgent("claude", "Initializing...").state).toBe("unknown");
   });
+  test("Claude bordered approval menus cannot establish prompt-box readiness", () => {
+    const menu = "──────\n❯ 1. Yes\n2. No\n──────";
+    for (const footer of [
+      "Esc to cancel · Tab to amend",
+      "Esc to cancel · Ctrl+E to explain",
+    ]) {
+      const screen = `Bash command\necho hello\nDo you want to proceed?\n${menu}\n${footer}`;
+      const classified = classifyAgent("claude", screen);
+      expect(classified).toMatchObject({
+        state: "blocked",
+        rule: "bash_permission_prompt",
+        strong: true,
+      });
+      const observation = reconcileAgent(
+        undefined,
+        "claude",
+        "job",
+        classified,
+        0,
+      );
+      expect(observation.freshness).toBe("fresh");
+      expect(agentSummary([observation])).toBe("1 blocked");
+    }
+    expect(classifyAgent("claude", `${menu}\nEsc to cancel`).state).toBe(
+      "unknown",
+    );
+    expect(classifyAgent("claude", `${menu}\n? for shortcuts`)).toMatchObject({
+      state: "idle",
+      rule: "live_prompt_box",
+    });
+  });
   test("Claude editable draft cannot become activity, blockers, or a menu view", () => {
     for (const draft of [
       "✻ Thinking… (2s · tokens)",

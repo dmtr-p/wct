@@ -241,16 +241,19 @@ export function classifyAgent(
   // response text cannot establish a blocker or corroborate a blocked title.
   const blockerScreen =
     promptBox?.blockerScreen ?? composer?.blockerScreen ?? controlScreen;
-  const candidates = agentRules[agent].filter((rule) =>
-    agentGateMatches(
+  const candidates = agentRules[agent].filter((rule) => {
+    // Bordered selection menus also contain ❯, but are not editable composers.
+    if (agent === "claude" && rule.id === "live_prompt_box" && !promptBox)
+      return false;
+    return agentGateMatches(
       rule,
       agentRegion(
         rule.state === "blocked" ? blockerScreen : controlScreen,
         rule.region,
         title,
       ),
-    ),
-  );
+    );
+  });
   const matched = candidates
     .filter(
       (rule) =>

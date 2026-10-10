@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import {
   CliConfig,
   CliError,
@@ -80,17 +80,8 @@ const program = provideBunServices(
   provideWctServices(
     Effect.catch(commandProgram, (error) => {
       return Effect.gen(function* () {
-        let json = false;
-
-        try {
-          json = yield* JsonFlag;
-        } catch {
-          // JsonFlag may not be in context if CLI parsing failed.
-        }
-
-        if (!json && args.includes("--json")) {
-          json = true;
-        }
+        const jsonFlag = yield* Effect.serviceOption(JsonFlag);
+        const json = Option.getOrElse(jsonFlag, () => false) || jsonRequested;
 
         if (
           CliError.isCliError(error) &&

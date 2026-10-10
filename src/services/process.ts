@@ -185,34 +185,48 @@ export function spawnInteractive(
   args: ReadonlyArray<string> = [],
   options?: Omit<ProcessOptions, "stdin" | "stdout" | "stderr">,
 ) {
-  return Effect.tryPromise({
-    try: () => {
-      const env =
-        options?.env === undefined
-          ? undefined
-          : Object.fromEntries(
-              Object.entries(
-                options.extendEnv === false
-                  ? options.env
-                  : { ...process.env, ...options.env },
-              ).filter(
-                (entry): entry is [string, string] => entry[1] !== undefined,
-              ),
-            );
+  return Effect.acquireUseRelease(
+    Effect.try({
+      try: () => {
+        const env =
+          options?.env === undefined
+            ? undefined
+            : Object.fromEntries(
+                Object.entries(
+                  options.extendEnv === false
+                    ? options.env
+                    : { ...process.env, ...options.env },
+                ).filter(
+                  (entry): entry is [string, string] => entry[1] !== undefined,
+                ),
+              );
 
-      const handle = Bun.spawn([command, ...args], {
-        cwd: options?.cwd,
-        env,
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-
-      return handle.exited;
-    },
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-  });
+        return Bun.spawn([command, ...args], {
+          cwd: options?.cwd,
+          env,
+          stdin: "inherit",
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+      },
+      catch: (error) =>
+        error instanceof Error ? error : new Error(String(error)),
+    }),
+    (handle) =>
+      Effect.tryPromise({
+        try: () => handle.exited,
+        catch: (error) =>
+          error instanceof Error ? error : new Error(String(error)),
+      }),
+    (handle) =>
+      Effect.promise(async () => {
+        if (handle.exitCode === null) {
+          // Cancellation must also stop children that ignore SIGTERM.
+          handle.kill("SIGKILL");
+          await handle.exited;
+        }
+      }),
+  );
 }
 
 export function getProcessErrorMessage(error: unknown): string {

@@ -6,8 +6,10 @@ import {
   resolveProfile,
   resolveWorktreePath,
 } from "../config/loader";
+import type { ResolvedConfig } from "../config/schema";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
+import { type CommandResult, runShellCommands } from "./command-runner";
 import { type CopyResult, copyEntries } from "./copy";
 import {
   GitHubService,
@@ -20,6 +22,7 @@ import {
   SetupService,
   type SetupService as SetupServiceApi,
 } from "./setup-service";
+import { runDetachedShutdown, type ShutdownRequest } from "./shutdown-runner";
 import {
   type CreateSessionResult,
   formatSessionName,
@@ -45,7 +48,16 @@ export type WorkspaceAttempt<T> =
   | { attempted: true; ok: true; value: T }
   | { attempted: true; ok: false; error: WorkspaceError };
 
+export type WorkspaceDownWarning = {
+  _tag: "DownFailed";
+  operation: "down" | "close";
+  name: string;
+  optional: true;
+  error: WorkspaceError;
+};
+
 export type WorkspaceWarning =
+  | WorkspaceDownWarning
   | {
       _tag: "TmuxStartFailed";
       operation: "open" | "up";
@@ -64,11 +76,17 @@ export type WorkspacePhase =
   | { _tag: "CreatingWorktree" }
   | { _tag: "CopyingFiles" }
   | { _tag: "RunningSetup"; name: string }
+  | { _tag: "RunningDown"; name: string }
   | { _tag: "StartingTmuxSession" }
   | { _tag: "StoppingTmuxSession" }
   | { _tag: "RemovingWorktree" };
 
 export type WorkspaceReporterEvent =
+  | {
+      operation: "down" | "close";
+      _tag: "ShutdownDelegated";
+      resultPath: string;
+    }
   | {
       operation: WorkspaceOperation;
       _tag: "PhaseStarted";
@@ -89,12 +107,12 @@ export type WorkspaceReporterEvent =
   | {
       operation: WorkspaceOperation;
       _tag: "AttemptStarted";
-      attempt: "worktree" | "copy" | "setup" | "tmux";
+      attempt: "worktree" | "copy" | "setup" | "tmux" | "down";
     }
   | {
       operation: WorkspaceOperation;
       _tag: "AttemptCompleted";
-      attempt: "worktree" | "copy" | "setup" | "tmux";
+      attempt: "worktree" | "copy" | "setup" | "tmux" | "down";
       ok: boolean;
     }
   | {
@@ -123,6 +141,18 @@ export type WorkspaceReporterEvent =
       result: SetupResult;
     }
   | {
+      operation: "down" | "close";
+      _tag: "DownCommandStarted";
+      name: string;
+      current: number;
+      total: number;
+    }
+  | {
+      operation: "down" | "close";
+      _tag: "DownCommandCompleted";
+      result: CommandResult;
+    }
+  | {
       operation: WorkspaceOperation;
       _tag: "SessionAbsent";
       sessionName: string;
@@ -148,12 +178,16 @@ export interface WorkspaceUpOptions extends ResolveWorkspaceTargetOptions {
 }
 
 export interface WorkspaceDownOptions extends ResolveWorkspaceTargetOptions {
+  profile?: string;
   reporter?: WorkspaceReporter;
 }
 
 export interface WorkspaceCloseOptions extends ResolveWorkspaceTargetOptions {
+  profile?: string;
   cwd?: string;
   force?: boolean;
+  /** Allows an independent runner to retry removal without a terminal prompt. */
+  retryWithForce?: boolean;
   reporter?: WorkspaceReporter;
 }
 
@@ -209,8 +243,9 @@ export interface WorkspaceDownResult {
   status: "killed" | "absent";
   attempts: {
     kill: WorkspaceAttempt<null>;
+    down: WorkspaceAttempt<CommandResult[]>;
   };
-  warnings: [];
+  warnings: WorkspaceDownWarning[];
 }
 
 export interface WorkspaceCloseResult {
@@ -221,9 +256,10 @@ export interface WorkspaceCloseResult {
   status: "removed" | "blocked_by_changes";
   attempts: {
     kill: WorkspaceAttempt<null>;
+    down: WorkspaceAttempt<CommandResult[]>;
     remove: WorkspaceAttempt<RemoveWorktreeResult>;
   };
-  warnings: [];
+  warnings: WorkspaceDownWarning[];
 }
 
 export interface WorkspaceService {
@@ -259,6 +295,14 @@ export interface WorkspaceService {
     WorkspaceCloseResult,
     WctError,
     WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
+  >;
+  retryCloseRemoval: (
+    previous: WorkspaceCloseResult,
+    options?: { cwd?: string; reporter?: WorkspaceReporter },
+  ) => Effect.Effect<
+    WorkspaceCloseResult,
+    WctError,
+    WorktreeServiceApi | BunServices.BunServices
   >;
 }
 
@@ -962,6 +1006,259 @@ function upImpl(
   });
 }
 
+interface ShutdownConfig {
+  config: ResolvedConfig;
+  env: WctEnv;
+}
+
+function prepareShutdown(worktreePath: string, profile?: string) {
+  return Effect.gen(function* () {
+    const [mainRepoPath, branch] = yield* Effect.all([
+      WorktreeService.use((service) => service.getMainRepoPath(worktreePath)),
+      WorktreeService.use((service) => service.getCurrentBranch(worktreePath)),
+    ]);
+    if (!mainRepoPath) {
+      return yield* Effect.fail(
+        commandError("worktree_error", "Could not determine repository root"),
+      );
+    }
+    const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
+      commandError("config_error", error.message, error),
+    );
+    if (profile && !config.profiles?.[profile]) {
+      return yield* Effect.fail(
+        commandError("config_error", `Profile '${profile}' not found`),
+      );
+    }
+    // Detached HEAD cannot select a branch-matched profile.
+    const resolved = yield* Effect.try({
+      try: () =>
+        resolveProfile(
+          config,
+          branch ?? "",
+          profile ?? (branch ? undefined : ""),
+        ),
+      catch: (error) =>
+        commandError(
+          "config_error",
+          error instanceof Error ? error.message : String(error),
+        ),
+    });
+    return {
+      config: resolved.config,
+      env: createWctEnv(
+        worktreePath,
+        resolved.config.work_dir,
+        mainRepoPath,
+        branch ?? "",
+        config.project_name,
+      ),
+    } satisfies ShutdownConfig;
+  });
+}
+
+function stopSession(
+  worktreePath: string,
+  operation: "down" | "close",
+  reporter?: WorkspaceReporter,
+) {
+  return Effect.gen(function* () {
+    const sessionName = formatSessionName(basename(worktreePath));
+    const existed = yield* TmuxService.use((service) =>
+      service.sessionExists(sessionName),
+    );
+    if (existed) {
+      yield* emitPhase(reporter, operation, { _tag: "StoppingTmuxSession" });
+      yield* TmuxService.use((service) => service.killSession(sessionName));
+    }
+    yield* emitReporter(reporter, {
+      operation,
+      _tag: existed ? "SessionKilled" : "SessionAbsent",
+      sessionName,
+    });
+    const kill: WorkspaceAttempt<null> = existed
+      ? { attempted: true, ok: true, value: null }
+      : skippedAttempt("session_absent");
+    return { sessionName, existed, kill };
+  });
+}
+
+function runDownScripts(
+  shutdown: ShutdownConfig | undefined,
+  operation: "down" | "close",
+  reporter?: WorkspaceReporter,
+) {
+  return Effect.gen(function* () {
+    const warnings: WorkspaceDownWarning[] = [];
+    if (!shutdown?.config.down?.length) {
+      return {
+        down: skippedAttempt<CommandResult[]>(
+          shutdown ? "down_not_configured" : "worktree_missing",
+        ),
+        warnings,
+      };
+    }
+    yield* emitReporter(reporter, {
+      operation,
+      _tag: "AttemptStarted",
+      attempt: "down",
+    });
+    const results = yield* runShellCommands(
+      shutdown.config.down,
+      shutdown.env.WCT_WORK_DIR,
+      shutdown.env,
+      {
+        commandStarted: (name, current, total) =>
+          Effect.gen(function* () {
+            yield* emitPhase(reporter, operation, {
+              _tag: "RunningDown",
+              name,
+            });
+            yield* emitReporter(reporter, {
+              operation,
+              _tag: "DownCommandStarted",
+              name,
+              current,
+              total,
+            });
+          }),
+        commandCompleted: (result) =>
+          emitReporter(reporter, {
+            operation,
+            _tag: "DownCommandCompleted",
+            result,
+          }),
+      },
+    );
+    const failed = results.filter((result) => result._tag === "Failed");
+    yield* emitReporter(reporter, {
+      operation,
+      _tag: "AttemptCompleted",
+      attempt: "down",
+      ok: failed.length === 0,
+    });
+    if (failed.length > 0) {
+      const details = results
+        .filter((result) => result._tag !== "Succeeded")
+        .map(
+          (result) =>
+            `${result.name}${result._tag === "OptionalFailed" ? " (optional)" : ""}: ${result.error ?? "Unknown error"}`,
+        )
+        .join("; ");
+      return yield* Effect.fail(
+        commandError(
+          "down_failed",
+          `Down scripts failed; tmux is stopped and the worktree is preserved: ${details}`,
+        ),
+      );
+    }
+    for (const result of results) {
+      if (result._tag === "OptionalFailed") {
+        warnings.push({
+          _tag: "DownFailed",
+          operation,
+          name: result.name,
+          optional: true,
+          error: {
+            code: "optional_down_failed",
+            message: result.error ?? "Unknown error",
+          },
+        });
+      }
+    }
+    const down: WorkspaceAttempt<CommandResult[]> = {
+      attempted: true,
+      ok: true,
+      value: results,
+    };
+    return { down, warnings };
+  });
+}
+
+export function executeWorkspaceShutdown(
+  request: ShutdownRequest,
+  reporter?: WorkspaceReporter,
+): Effect.Effect<
+  WorkspaceDownResult | WorkspaceCloseResult,
+  WctError,
+  WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
+> {
+  return Effect.gen(function* () {
+    const { operation, worktreePath } = request;
+    const { sessionName, existed, kill } = yield* stopSession(
+      worktreePath,
+      operation,
+      reporter,
+    );
+    const { down, warnings } = yield* runDownScripts(
+      request.shutdown,
+      operation,
+      reporter,
+    );
+    if (operation === "down") {
+      return {
+        operation,
+        worktreePath,
+        sessionName,
+        existed,
+        status: existed ? "killed" : "absent",
+        attempts: { kill, down },
+        warnings,
+      };
+    }
+    let removeResult = yield* removeWorkspace(
+      worktreePath,
+      request.force ?? false,
+      request.cwd,
+      reporter,
+    );
+    if (removeResult._tag === "BlockedByChanges" && request.retryWithForce) {
+      removeResult = yield* removeWorkspace(
+        worktreePath,
+        true,
+        request.cwd,
+        reporter,
+      );
+    }
+    return {
+      operation,
+      worktreePath,
+      sessionName,
+      existed,
+      status:
+        removeResult._tag === "Removed" ? "removed" : "blocked_by_changes",
+      attempts: {
+        kill,
+        down,
+        remove: { attempted: true, ok: true, value: removeResult },
+      },
+      warnings,
+    };
+  });
+}
+
+function finishShutdown(
+  request: ShutdownRequest,
+  reporter?: WorkspaceReporter,
+) {
+  return Effect.gen(function* () {
+    if (process.env.TMUX && process.env.TMUX_PANE) {
+      const currentSession = yield* TmuxService.use((service) =>
+        service.getCurrentSession(),
+      );
+      if (
+        currentSession === formatSessionName(basename(request.worktreePath))
+      ) {
+        return yield* runDetachedShutdown(request, reporter);
+      }
+    }
+    return yield* executeWorkspaceShutdown(
+      { ...request, retryWithForce: false },
+      reporter,
+    );
+  });
+}
+
 function downImpl(
   options: WorkspaceDownOptions = {},
 ): Effect.Effect<
@@ -972,68 +1269,111 @@ function downImpl(
   return Effect.gen(function* () {
     const { reporter } = options;
     yield* emitPhase(reporter, "down", { _tag: "Preparing" });
-    const worktreePath = yield* resolveTargetImpl(options);
-    yield* emitReporter(reporter, {
-      operation: "down",
-      _tag: "TargetResolved",
-      worktreePath,
-    });
-
+    const targetPath = yield* resolveTargetImpl(options);
     const isRepo = yield* WorktreeService.use((service) =>
-      service.isGitRepo(worktreePath),
+      service.isGitRepo(targetPath),
     );
     if (!isRepo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),
       );
     }
-
-    const sessionName = formatSessionName(basename(worktreePath));
-    const existed = yield* TmuxService.use((service) =>
-      service.sessionExists(sessionName),
+    const worktreePath = yield* WorktreeService.use((service) =>
+      service.getWorktreeRoot(targetPath),
     );
-
-    if (!existed) {
-      yield* emitReporter(reporter, {
-        operation: "down",
-        _tag: "SessionAbsent",
-        sessionName,
-      });
-      return {
-        operation: "down",
-        worktreePath,
-        sessionName,
-        existed: false,
-        status: "absent",
-        attempts: {
-          kill: skippedAttempt("session_absent"),
-        },
-        warnings: [],
-      };
-    }
-
-    yield* emitPhase(reporter, "down", { _tag: "StoppingTmuxSession" });
-    yield* TmuxService.use((service) => service.killSession(sessionName));
     yield* emitReporter(reporter, {
       operation: "down",
-      _tag: "SessionKilled",
-      sessionName,
-    });
-
-    return {
-      operation: "down",
+      _tag: "TargetResolved",
       worktreePath,
-      sessionName,
-      existed: true,
-      status: "killed",
+    });
+    const shutdown = yield* prepareShutdown(worktreePath, options.profile);
+    const result = yield* finishShutdown(
+      { operation: "down", worktreePath, shutdown },
+      reporter,
+    );
+    if (result.operation !== "down") {
+      return yield* Effect.fail(
+        commandError("unexpected_error", "Unexpected shutdown result"),
+      );
+    }
+    return result;
+  });
+}
+
+function removeWorkspace(
+  worktreePath: string,
+  force: boolean,
+  cwd?: string,
+  reporter?: WorkspaceReporter,
+) {
+  return Effect.gen(function* () {
+    yield* emitPhase(reporter, "close", { _tag: "RemovingWorktree" });
+    yield* emitReporter(reporter, {
+      operation: "close",
+      _tag: "AttemptStarted",
+      attempt: "worktree",
+    });
+    const result = yield* WorktreeService.use((service) =>
+      service.removeWorktree(worktreePath, force, cwd),
+    );
+    yield* emitReporter(reporter, {
+      operation: "close",
+      _tag: "AttemptCompleted",
+      attempt: "worktree",
+      ok: result._tag === "Removed",
+    });
+    return result;
+  });
+}
+
+function retryCloseRemovalImpl(
+  previous: WorkspaceCloseResult,
+  options: { cwd?: string; reporter?: WorkspaceReporter } = {},
+): Effect.Effect<
+  WorkspaceCloseResult,
+  WctError,
+  WorktreeServiceApi | BunServices.BunServices
+> {
+  return Effect.gen(function* () {
+    if (
+      previous.status !== "blocked_by_changes" ||
+      !previous.attempts.remove.attempted ||
+      !previous.attempts.remove.ok ||
+      previous.attempts.remove.value._tag !== "BlockedByChanges"
+    ) {
+      return yield* Effect.fail(
+        commandError(
+          "invalid_options",
+          "Removal retry requires a close result blocked by changes",
+        ),
+      );
+    }
+    const cwd =
+      options.cwd ??
+      (yield* WorktreeService.use((service) =>
+        service.getMainRepoPath(previous.worktreePath),
+      ));
+    if (!cwd) {
+      return yield* Effect.fail(
+        commandError(
+          "worktree_error",
+          "Cannot resolve repository for removal retry",
+        ),
+      );
+    }
+    const result = yield* removeWorkspace(
+      previous.worktreePath,
+      true,
+      cwd,
+      options.reporter,
+    );
+    return {
+      ...previous,
+      status: result._tag === "Removed" ? "removed" : "blocked_by_changes",
       attempts: {
-        kill: {
-          attempted: true,
-          ok: true,
-          value: null,
-        },
+        ...previous.attempts,
+        remove: { attempted: true, ok: true, value: result },
       },
-      warnings: [],
     };
   });
 }
@@ -1048,13 +1388,9 @@ function closeImpl(
   return Effect.gen(function* () {
     const { cwd, force = false, reporter } = options;
     yield* emitPhase(reporter, "close", { _tag: "Preparing" });
-    const worktreePath = yield* resolveTargetImpl(options);
-    yield* emitReporter(reporter, {
-      operation: "close",
-      _tag: "TargetResolved",
-      worktreePath,
-    });
+    let worktreePath = yield* resolveTargetImpl(options);
 
+    let missing = false;
     let isRepo = yield* WorktreeService.use((service) =>
       service.isGitRepo(worktreePath),
     );
@@ -1072,6 +1408,7 @@ function closeImpl(
           ),
         );
       if (!exists) {
+        missing = true;
         // A deleted directory can still have a registered worktree. Git's
         // targeted remove also cleans up that record, without pruning others.
         const worktrees = yield* WorktreeService.use((service) =>
@@ -1089,74 +1426,36 @@ function closeImpl(
       );
     }
 
-    const sessionName = formatSessionName(basename(worktreePath));
-    const existed = yield* TmuxService.use((service) =>
-      service.sessionExists(sessionName),
-    );
-
-    if (existed) {
-      yield* emitPhase(reporter, "close", { _tag: "StoppingTmuxSession" });
+    if (!missing) {
+      worktreePath = yield* WorktreeService.use((service) =>
+        service.getWorktreeRoot(worktreePath),
+      );
     }
-
-    const kill: WorkspaceAttempt<null> = existed
-      ? yield* TmuxService.use((service) =>
-          service.killSession(sessionName),
-        ).pipe(
-          Effect.as({
-            attempted: true as const,
-            ok: true as const,
-            value: null,
-          }),
-        )
-      : skippedAttempt("session_absent");
-
-    if (existed) {
-      yield* emitReporter(reporter, {
-        operation: "close",
-        _tag: "SessionKilled",
-        sessionName,
-      });
-    } else {
-      yield* emitReporter(reporter, {
-        operation: "close",
-        _tag: "SessionAbsent",
-        sessionName,
-      });
-    }
-
-    yield* emitPhase(reporter, "close", { _tag: "RemovingWorktree" });
     yield* emitReporter(reporter, {
       operation: "close",
-      _tag: "AttemptStarted",
-      attempt: "worktree",
-    });
-    const removeResult = yield* WorktreeService.use((service) =>
-      service.removeWorktree(worktreePath, force, cwd),
-    );
-    yield* emitReporter(reporter, {
-      operation: "close",
-      _tag: "AttemptCompleted",
-      attempt: "worktree",
-      ok: removeResult._tag === "Removed",
-    });
-
-    return {
-      operation: "close",
+      _tag: "TargetResolved",
       worktreePath,
-      sessionName,
-      existed,
-      status:
-        removeResult._tag === "Removed" ? "removed" : "blocked_by_changes",
-      attempts: {
-        kill,
-        remove: {
-          attempted: true,
-          ok: true,
-          value: removeResult,
-        },
+    });
+    const shutdown = missing
+      ? undefined
+      : yield* prepareShutdown(worktreePath, options.profile);
+    const result = yield* finishShutdown(
+      {
+        operation: "close",
+        worktreePath,
+        shutdown,
+        force,
+        retryWithForce: options.retryWithForce,
+        cwd: cwd ?? shutdown?.env.WCT_MAIN_DIR,
       },
-      warnings: [],
-    };
+      reporter,
+    );
+    if (result.operation !== "close") {
+      return yield* Effect.fail(
+        commandError("unexpected_error", "Unexpected shutdown result"),
+      );
+    }
+    return result;
   });
 }
 
@@ -1165,4 +1464,5 @@ export const liveWorkspaceService: WorkspaceService = WorkspaceService.of({
   up: upImpl,
   down: downImpl,
   close: closeImpl,
+  retryCloseRemoval: retryCloseRemovalImpl,
 });

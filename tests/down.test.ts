@@ -15,11 +15,12 @@ import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import type { WorkspaceService } from "../src/services/workspace-service";
+import type { WorktreeService } from "../src/services/worktree-service";
 import {
-  liveWorktreeService,
-  type WorktreeService,
-} from "../src/services/worktree-service";
-import { noopTmuxService, withTestServices } from "./helpers/services";
+  noopTmuxService,
+  shutdownWorktreeService,
+  withTestServices,
+} from "./helpers/services";
 
 async function runCommand(
   options?: DownOptions,
@@ -71,7 +72,7 @@ describe("downCommand behavior", () => {
   beforeEach(() => {
     cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/outside-git-repo");
     worktreeOverrides = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: () => Effect.succeed(true),
       findWorktreeByBranch: () => Effect.succeed(null),
     };
@@ -129,7 +130,7 @@ describe("downCommand behavior", () => {
         }),
     };
     const worktreePathOverrides: WorktreeService = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: (cwd?: string) =>
         Effect.sync(() => {
           isGitRepoArg = cwd;
@@ -159,7 +160,7 @@ describe("downCommand behavior", () => {
         }),
     };
     const worktreeOverridesViaRoot: WorktreeService = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: (cwd?: string) =>
         Effect.sync(() => {
           isGitRepoArg = cwd;
@@ -189,7 +190,7 @@ describe("downCommand behavior", () => {
         }),
     };
     const worktreeOverridesByBranch: WorktreeService = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: (cwd?: string) =>
         Effect.sync(() => {
           isGitRepoArg = cwd;
@@ -276,6 +277,10 @@ describe("downCommand behavior", () => {
                 existed: false,
                 status: "absent",
                 attempts: {
+                  down: {
+                    attempted: false as const,
+                    reason: "down_not_configured",
+                  },
                   kill: {
                     attempted: false,
                     reason: "session_absent",
@@ -283,6 +288,7 @@ describe("downCommand behavior", () => {
                 },
                 warnings: [] as [],
               }),
+            retryCloseRemoval: () => Effect.die("unused"),
             close: () => Effect.die("unused"),
           },
         },
@@ -299,6 +305,7 @@ describe("downCommand behavior", () => {
           existed: false,
           status: "absent",
           attempts: {
+            down: { attempted: false as const, reason: "down_not_configured" },
             kill: {
               attempted: false,
               reason: "session_absent",

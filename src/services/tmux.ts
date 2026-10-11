@@ -582,9 +582,12 @@ function getCurrentSessionImpl() {
   }
 
   return Effect.catch(
-    execProcess("tmux", ["display-message", "-p", "#S"]).pipe(
-      Effect.map((result) => result.stdout.trim()),
-    ),
+    execProcess("tmux", [
+      "display-message",
+      ...(process.env.TMUX_PANE ? ["-t", process.env.TMUX_PANE] : []),
+      "-p",
+      "#S",
+    ]).pipe(Effect.map((result) => result.stdout.trim())),
     () => Effect.succeed(null),
   );
 }

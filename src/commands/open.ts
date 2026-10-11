@@ -174,6 +174,8 @@ function createOpenHumanReporter(
         return logger.info("Copying files...");
       case "setup":
         return logger.info("Running setup commands...");
+      case "down":
+        return Effect.void;
       case "tmux":
         return logger.info("Starting tmux session...");
     }

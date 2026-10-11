@@ -73,12 +73,19 @@ const closeCliCommand = Command.make(
   "close",
   {
     branches: branchesArgument,
+    profile: optionalStringFlag(
+      "profile",
+      "Use a named config profile",
+      "P",
+      "NAME",
+    ),
     yes: booleanFlag("yes", "Skip confirmation prompt", "y"),
     force: booleanFlag("force", "Force removal even if worktree is dirty", "f"),
   },
-  ({ branches, yes, force }) =>
+  ({ branches, yes, force, profile }) =>
     closeCommand({
       branches: [...branches],
+      profile: optionToUndefined(profile),
       yes,
       force,
     }),
@@ -87,6 +94,12 @@ const closeCliCommand = Command.make(
 const downCliCommand = Command.make(
   "down",
   {
+    profile: optionalStringFlag(
+      "profile",
+      "Use a named config profile",
+      "P",
+      "NAME",
+    ),
     path: optionalStringFlag(
       "path",
       "Path to worktree directory",
@@ -100,8 +113,9 @@ const downCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ path, branch }) =>
+  ({ path, branch, profile }) =>
     downCommand({
+      profile: optionToUndefined(profile),
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
     }),

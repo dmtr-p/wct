@@ -52,6 +52,9 @@ describe("lifecyclePhaseLabel", () => {
     expect(
       lifecyclePhaseLabel({ _tag: "RunningSetup", name: "bun install" }),
     ).toBe("Setup: bun install…");
+    expect(
+      lifecyclePhaseLabel({ _tag: "RunningDown", name: "Stop\ncontainers" }),
+    ).toBe("Down: Stop containers…");
     expect(lifecyclePhaseLabel({ _tag: "StartingTmuxSession" })).toBe(
       "Starting tmux session…",
     );

@@ -7,7 +7,6 @@ import type { TmuxClient } from "../../services/tmux";
 import {
   type WorkspaceOpenResult,
   WorkspaceService,
-  type WorkspaceWarning,
 } from "../../services/workspace-service";
 import type { AddProjectModalResult } from "../components/AddProjectModal";
 import type { OpenModalResult } from "../components/OpenModal";
@@ -26,21 +25,13 @@ import {
 } from "../tree-helpers";
 import type { ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { StartWorkspaceTarget } from "./useSessionActions";
 import type { TmuxClientDiscovery } from "./useTmux";
 
 function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
   return result.attempts.tmux.attempted && result.attempts.tmux.ok;
-}
-
-function formatWorkspaceWarning(warning: WorkspaceWarning): string {
-  switch (warning._tag) {
-    case "SetupFailed":
-      return `${warning.optional ? "Optional setup failed" : "Setup failed"}: ${warning.name}: ${warning.error.message}`;
-    case "TmuxStartFailed":
-      return `Failed to create tmux session: ${warning.error.message}`;
-  }
 }
 
 function discoveredWorkspaceIdentityKey(

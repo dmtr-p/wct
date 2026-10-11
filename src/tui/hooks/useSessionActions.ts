@@ -26,6 +26,7 @@ import {
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
@@ -292,6 +293,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
+      resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
       entry: {
         operation: "down",
         repoPath,
@@ -381,6 +383,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
+      resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
       entry: {
         operation: "close",
         repoPath,

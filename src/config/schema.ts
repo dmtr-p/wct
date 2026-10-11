@@ -40,6 +40,7 @@ export const ProfileSchema = Schema.Struct({
   copy: Schema.optional(Schema.Array(Schema.String)),
   work_dir: Schema.optional(Schema.String),
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
+  down: Schema.optional(Schema.Array(SetupCommandSchema)),
   tmux: Schema.optional(TmuxConfigSchema),
 });
 
@@ -50,6 +51,7 @@ export const WctConfigSchema = Schema.Struct({
   work_dir: Schema.optional(Schema.String),
   copy: Schema.optional(Schema.Array(Schema.String)),
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
+  down: Schema.optional(Schema.Array(SetupCommandSchema)),
   tmux: Schema.optional(TmuxConfigSchema),
   profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });
@@ -61,6 +63,7 @@ export const ResolvedConfigSchema = Schema.Struct({
   work_dir: Schema.String,
   copy: Schema.optional(Schema.Array(Schema.String)),
   setup: Schema.optional(Schema.Array(SetupCommandSchema)),
+  down: Schema.optional(Schema.Array(SetupCommandSchema)),
   tmux: Schema.optional(TmuxConfigSchema),
   profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });

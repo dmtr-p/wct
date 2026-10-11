@@ -292,6 +292,7 @@ describe("upCommand", () => {
           };
         }),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: () => Effect.die("unused"),
     };
 
@@ -703,6 +704,7 @@ tmux:
           },
         }),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: () => Effect.die("unused"),
     };
 

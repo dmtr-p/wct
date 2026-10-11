@@ -112,7 +112,7 @@ worktree_dir: ".."
 # Defaults to the git repo directory name
 project_name: "myapp"
 
-# Working directory for setup commands and tmux panes (relative to each worktree)
+# Working directory for setup/down commands and tmux panes (relative to each worktree)
 work_dir: "apps/web"
 
 # Files/directories to copy from main repo into new worktrees
@@ -127,6 +127,14 @@ setup:
   - name: "Generate types"
     command: "bun run codegen"
     optional: true # continue even if this fails
+
+# Commands to run after stopping tmux, before removing the worktree (in order)
+down:
+  - name: "Stop containers"
+    command: "docker compose down"
+  - name: "Clean temporary resources"
+    command: "./cleanup.sh"
+    optional: true
 
 # Tmux session layout
 tmux:
@@ -158,13 +166,25 @@ profiles:
       - .env.production
 ```
 
-Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` commands and tmux panes. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
+Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` and `down` commands and tmux panes. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
 
 A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
 
+### Down scripts
+
+Both `wct down` and `wct close` run `down` scripts after stopping the tmux session, including when no session exists. Scripts run sequentially from `work_dir`; every script is attempted. A required failure makes the operation fail and keeps the worktree, including with `close --force`. Optional failures produce warnings and allow removal.
+
+Shutdown resolves the checkout root even when invoked from a subdirectory, so `work_dir` and `WCT_WORKTREE_DIR` refer to that checkout.
+
+When shutdown stops the tmux session containing the invoking pane, an independent Bun runner finishes cleanup after that pane disappears. Human output prints the path to its saved JSON result before handing off. `close --yes` authorizes the worker's force-removal retry; without `--yes` or `--force`, a dirty worktree remains and the saved result reports `blocked_by_changes`.
+
+Shutdown reads the main repository's current configuration and automatically selects the first profile matching the current branch. Use `wct down --profile <name>` or `wct close <branch> --profile <name>` (`-P`) to override it. The TUI uses automatic matching. The profile selected at startup is not remembered. Detached HEAD uses the base configuration unless a profile is specified, with an empty `WCT_BRANCH`.
+
+A project or profile `down` list replaces its inherited list; `down: []` disables inherited scripts. Scripts run again on separate down/close calls, so make cleanup safe to repeat. The CLI's internal force-removal retry skips scripts already run by that close action. If a registered worktree directory has already been deleted, close skips scripts and cleans up the git registration.
+
 ### Config Profiles
 
-Profiles let you override `work_dir`, `copy`, `setup`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
+Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
 
 ```yaml
 profiles:
@@ -180,9 +200,9 @@ profiles:
       - .env.production
 ```
 
-**Auto-matching:** When you run `wct open <branch>` or `wct up`, profiles are matched against the workspace's branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
+**Auto-matching:** When you run `wct open <branch>`, `wct up`, `wct down`, or `wct close`, profiles are matched against the workspace's branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
 
-**Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open` or `wct up` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
+**Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open`, `wct up`, `wct down`, or `wct close` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
 
 ## TUI
 
@@ -190,7 +210,7 @@ profiles:
 
 Claude Code and Codex foreground agents are detected automatically in Workspace panes, including agents started manually. Pane rows show `idle`, `working`, `blocked`, or `unknown`; Workspace rows show counts, including collapsed and detached Workspaces. Unknown means the current UI could not be classified. Stale observations retain their last state for at most five seconds before becoming unavailable. Detection uses a separate one-second observation loop and does not install agent hooks or save transcripts. See [agent detection behavior and compatibility](docs/agent-detection.md) for supported wrappers and validation requirements.
 
-Register repositories explicitly with `wct projects add` or the TUI's Add Project action. Opening or starting a workspace does not register its repository. `--name` changes the project's display name in the registry; it does not change the configured `project_name`. The TUI's Remove Project action stops the project's sessions and removes it from the registry while keeping its worktrees. `wct projects remove` removes registry membership and leaves sessions running.
+Register repositories explicitly with `wct projects add` or the TUI's Add Project action. Opening or starting a workspace does not register its repository. `--name` changes the project's display name in the registry; it does not change the configured `project_name`. The TUI's Remove Project action stops the project's sessions, runs down scripts, and removes it from the registry while keeping its worktrees. `wct projects remove` removes registry membership and leaves sessions running.
 
 Text fields support Left/Right, Home/End, Backspace/Delete, and insertion at the visible cursor. Right accepts a selected path completion when the cursor is already at the end. Ghostty's default Command+Left/Right and Command+Backspace bindings send Ctrl+A/E/U; in text fields these move to the start/end and delete from the cursor to the start. The same Ctrl shortcuts work because the terminal sends identical bytes. To send distinct Home/End sequences instead, you can use these optional Ghostty bindings:
 

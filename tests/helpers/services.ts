@@ -36,6 +36,13 @@ import {
   type WorktreeService as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
+export const shutdownWorktreeService: WorktreeServiceApi = {
+  ...liveWorktreeService,
+  getWorktreeRoot: (cwd) => Effect.succeed(cwd),
+  getMainRepoPath: () => Effect.succeed("/tmp/wct-test-main"),
+  getCurrentBranch: () => Effect.succeed("feature"),
+};
+
 type JsonFlagRequirement = "effect/cli/GlobalFlag/json";
 
 export interface ServiceOverrides {

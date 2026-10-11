@@ -26,6 +26,9 @@ export interface WorktreeStatusOptions {
 }
 
 export interface WorktreeService {
+  getWorktreeRoot: (
+    cwd: string,
+  ) => Effect.Effect<string, WctError, BunServices.BunServices>;
   getMainRepoPath: (
     cwd?: string,
   ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
@@ -284,6 +287,17 @@ function listBranchesImpl(cwd: string) {
 }
 
 export const liveWorktreeService: WorktreeService = WorktreeService.of({
+  getWorktreeRoot: (cwd) =>
+    execProcess("git", ["rev-parse", "--show-toplevel"], { cwd }).pipe(
+      Effect.map((result) => result.stdout.trim()),
+      Effect.mapError((error) =>
+        commandError(
+          "worktree_error",
+          "Failed to resolve checkout root",
+          error,
+        ),
+      ),
+    ),
   getMainRepoPath: (cwd) =>
     Effect.gen(function* () {
       const worktrees = yield* Effect.catch(listWorktreesImpl(cwd), () =>

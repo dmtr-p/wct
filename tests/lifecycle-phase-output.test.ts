@@ -86,7 +86,10 @@ const downResult: WorkspaceDownResult = {
   sessionName: "myapp-feature",
   existed: true,
   status: "killed",
-  attempts: { kill: { attempted: true, ok: true, value: null } },
+  attempts: {
+    down: { attempted: false as const, reason: "down_not_configured" },
+    kill: { attempted: true, ok: true, value: null },
+  },
   warnings: [],
 };
 
@@ -97,6 +100,7 @@ const closeResult: WorkspaceCloseResult = {
   existed: false,
   status: "removed",
   attempts: {
+    down: { attempted: false as const, reason: "down_not_configured" },
     kill: { attempted: false, reason: "session_absent" },
     remove: {
       attempted: true,
@@ -175,6 +179,7 @@ function stubWorkspace(
   seenOptions: Array<Record<string, unknown>>,
 ): WorkspaceServiceApi {
   return {
+    retryCloseRemoval: () => Effect.die("unused"),
     open: (options) =>
       Effect.gen(function* () {
         seenOptions.push(options as Record<string, unknown>);
@@ -279,11 +284,9 @@ describe("semantic phases and CLI output", () => {
       expect(line).not.toContain("PhaseStarted");
     }
 
-    // `up`, `down`, and `close` never pass a reporter.
-    const nonOpen = withPhasesOptions.slice(1);
-    expect(nonOpen.length).toBeGreaterThan(0);
-    for (const options of nonOpen) {
-      expect(options.reporter).toBeUndefined();
-    }
+    // Human shutdown output uses a reporter; JSON stays silent.
+    expect(withPhasesOptions[1]?.reporter).toBeUndefined();
+    expect(withPhasesOptions[2]?.reporter).toBeDefined();
+    expect(withPhasesOptions[3]?.reporter).toBeDefined();
   });
 });

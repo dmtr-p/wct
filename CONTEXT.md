@@ -6,7 +6,7 @@
 
 A Workspace is a managed worktree environment controlled by `wct`: a Git
 worktree plus its lifecycle resources, including tmux session startup and
-shutdown, setup and copy side effects, and the derived `WCT_*` environment.
+shutdown, setup/down scripts and copy side effects, and the derived `WCT_*` environment.
 Its existence is determined by the managed worktree; missing or failed
 optional lifecycle resources do not make it a Pending Workspace.
 
@@ -37,7 +37,20 @@ A Workspace Operation is an `open`, `up`, `down`, or `close` action. Open
 creates or reuses a worktree, prepares its configured environment, and starts
 its tmux session when configured. Start means `up`, which starts its tmux
 session. Stop means `down`, which stops its tmux session while keeping the
-worktree. Close stops the session and removes the worktree.
+worktree. Stop then runs configured `down` scripts. Close stops the session,
+runs the same scripts, and removes the worktree only if required scripts
+succeed. Scripts also run when no tmux session exists; every command is
+attempted, and optional failures are warnings. Separate operations rerun
+scripts. The CLI's internal force-removal retry only retries removal.
+Removal retries resolve the main repository from the worktree root rather
+than using the invoking directory, which cleanup scripts may delete.
+Missing registered worktree directories skip scripts during Close.
+Shutdown targets the containing checkout root, including calls from nested
+working directories. Stopping the session containing the invoking pane hands
+completion to an independent process before the kill; its JSON outcome is
+saved outside the worktree, bypassing project-local temporary directories
+and symlinks into the checkout. The worker uses the configuration and environment
+resolved before handoff. A CLI `--yes` also authorizes its force-removal retry.
 
 Use Start and Stop in user-facing action names, and `up` and `down` when
 referring to the CLI commands. Stopping a session uses tmux's `kill-session`
@@ -51,7 +64,7 @@ a stopped session as `status: "killed"`, and down and close expose an
 
 A Lifecycle Phase is the current step of a Workspace Operation, such as
 preparing, creating a worktree, copying files, running setup, starting or
-stopping a tmux session, or removing a worktree. The TUI adds a validation
+stopping a tmux session, running down scripts, or removing a worktree. The TUI adds a validation
 phase after the service operation settles to reconcile the displayed state
 with a fresh repository scan.
 
@@ -183,9 +196,9 @@ Workspace does not imply project registration.
 ### Project Removal
 
 Project Removal removes a repository's membership in the Project Registry.
-The TUI also stops its worktree sessions before unregistering it; the CLI
-`wct projects remove` only unregisters it. Both keep the repository and its
-worktrees.
+The TUI also stops its worktree sessions and runs down scripts before
+unregistering it; the CLI `wct projects remove` only unregisters it. Both keep
+the repository and its worktrees.
 
 Removal clears repository-owned PR caches. Explicit PR Associations remain
 tied to the surviving Workspace Identities.
@@ -197,6 +210,11 @@ _Avoid_: Delete Project
 ### Config Profile
 
 A Config Profile is a named set of overrides for `work_dir`, `copy`, `setup`,
-and `tmux`. Open and Start select a profile explicitly with `--profile` or use
-the first profile whose branch glob matches. Sections absent from the profile
-retain their base configuration.
+`down`, and `tmux`. Open, Start, Stop, and Close select a profile explicitly
+with `--profile` or use the first profile whose branch glob matches. Sections
+absent from the profile retain their base configuration.
+
+Shutdown resolves the current main-repository configuration rather than
+remembering the startup profile. The TUI selects shutdown profiles by branch
+matching. A profile script list replaces the inherited list; an empty list
+disables it.

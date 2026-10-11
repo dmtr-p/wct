@@ -170,6 +170,32 @@ describe("Effect CLI root", () => {
     );
   });
 
+  test.each(["down", "close"])(
+    "bash completes %s profile values",
+    (command) => {
+      const repoRoot = mkdtempSync(join(tmpdir(), "wct-shutdown-completion-"));
+      writeFileSync(
+        join(repoRoot, ".wct.yaml"),
+        "profiles:\n  cleanup:\n    down: []\n  minimal:\n    down: []\n",
+      );
+      try {
+        for (const flag of ["--profile", "-P"]) {
+          const result = runBashCompletion(
+            ["wct", command, flag, ""],
+            repoRoot,
+          );
+          expect(result.exitCode).toBe(0);
+          expect(result.stdout.toString().trim().split("\n")).toEqual([
+            "cleanup",
+            "minimal",
+          ]);
+        }
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("bash completions do not offer directories for projects add --name or -n values", () => {
     const repoRoot = mkdtempSync(join(tmpdir(), "wct-bash-completion-repo-"));
     mkdirSync(join(repoRoot, "alpha"), { recursive: true });

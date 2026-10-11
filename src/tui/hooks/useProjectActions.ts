@@ -102,7 +102,7 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         );
       }
 
-      const [failures] = yield* Effect.partition(
+      const [, failures] = yield* Effect.partition(
         repo.worktrees,
         (worktree) =>
           WorkspaceService.use((service) =>

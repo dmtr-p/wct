@@ -59,6 +59,8 @@ describe("Effect CLI root", () => {
     expect(result.exitCode).toBe(0);
     expect(output).toContain("GLOBAL FLAGS");
     expect(output).toContain("--completions <bash|zsh|fish|sh>");
+    expect(output).not.toContain("powershell");
+    expect(output).not.toContain("pwsh");
     expect(output).toContain("projects");
     expect(output).toContain("switch, sw");
     expect(output).not.toContain("\n  register");
@@ -224,6 +226,23 @@ describe("Effect CLI root", () => {
     expect(result.exitCode).toBe(0);
     expect(output).toContain("Static completion script for Bash");
   });
+
+  test.each(["powershell", "pwsh"])(
+    "rejects unsupported %s completions",
+    (shell) => {
+      for (const args of [
+        ["--completions", shell],
+        [`--completions=${shell}`],
+      ]) {
+        const result = runCliProcess(args);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr.toString()).toContain(shell);
+        expect(result.stdout.toString()).not.toContain(
+          "Register-ArgumentCompleter",
+        );
+      }
+    },
+  );
 
   test("does not expose the legacy completions subcommand", async () => {
     const result = runCliProcess(["completions", "fish"]);

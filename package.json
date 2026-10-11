@@ -18,21 +18,21 @@
     "build:all": "bun run scripts/build-all.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
-    "@effect/vitest": "4.0.0-rc.118",
+    "@biomejs/biome": "2.5.15",
+    "@effect/vitest": "4.0.3",
     "@types/bun": "1.4.2",
-    "@types/react": "^19.3.0",
-    "react-devtools-core": "^8.0.0",
+    "@types/react": "19.3.0",
+    "react-devtools-core": "8.0.0",
     "typescript": "7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "5.0.3"
   },
   "peerDependencies": {
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-rc.118",
-    "effect": "4.0.0-rc.118",
+    "@effect/platform-bun": "4.0.3",
+    "effect": "4.0.3",
     "ink": "8.0.0",
-    "react": "^19.3.0"
+    "react": "19.3.0"
   }
 }

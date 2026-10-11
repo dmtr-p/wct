@@ -298,6 +298,8 @@ if (command === "display-message") {
         operation === "down",
       );
     },
+    // CLI and worker startup need time in addition to the bounded result wait.
+    15000,
   );
 
   test("required failures still preserve the worktree after terminal loss", async () => {

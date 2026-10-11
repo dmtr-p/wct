@@ -43,6 +43,9 @@ Effect 4.0.3 adds the following relevant capabilities:
   clusters as two columns, while Effect counts them as one.
 - CLI prompts respect `NO_COLOR` and acquire terminal input only when needed.
   Keep confirmations routed through `src/utils/prompt.ts` and `Prompt.Confirm`.
+  The shared helper returns its safe default (`false`) without terminal access
+  in JSON mode. Use `close --json --yes` to explicitly authorize closing;
+  without `--yes`, close emits a structured aborted result.
 - The `Stdio` service exposes `stderrIsTerminal` as an Effect, allowing terminal
   detection to be overridden in service implementations. Bun's platform layer
   supplies runtime detection; the default implementation returns false.

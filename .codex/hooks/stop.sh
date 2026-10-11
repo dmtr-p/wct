@@ -18,28 +18,44 @@ emit_continue() {
   printf '%s\n' '{"continue":true}'
 }
 
+snapshot_files() {
+  bun -e '
+import { lstatSync, readFileSync, readlinkSync } from "node:fs";
+
+const files = Bun.spawnSync([
+  "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+], { stderr: "inherit" });
+if (files.exitCode !== 0) process.exit(files.exitCode);
+const paths = [...new Set(files.stdout.toString().split("\0").filter(Boolean))].sort();
+const snapshot = new Bun.CryptoHasher("sha256");
+for (const path of paths) {
+  snapshot.update(path + "\0");
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) snapshot.update("link\0" + readlinkSync(path));
+    else if (stat.isFile()) {
+      const hash = new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
+      snapshot.update("file\0" + hash);
+    } else snapshot.update("directory\0");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    snapshot.update("missing\0");
+  }
+}
+console.log(snapshot.digest("hex"));
+'
+}
+
 emit_block_with_log() {
   prefix="$1"
   log_file="$2"
   reason=$(
-    /usr/bin/python3 - "${prefix}" "${log_file}" "${trim_lines}" <<'PY'
-import json
-import pathlib
-import sys
-
-prefix = sys.argv[1]
-path = pathlib.Path(sys.argv[2])
-trim_lines = int(sys.argv[3])
-
-content = path.read_text(errors="replace").splitlines()
-snippet = "\n".join(content[-trim_lines:]).strip()
-if snippet:
-    message = f"{prefix}\n\n{snippet}"
-else:
-    message = prefix
-
-print(json.dumps(message))
-PY
+    bun -e '
+const [prefix, logFile, trimLines] = process.argv.slice(1);
+const content = await Bun.file(logFile).text();
+const snippet = content.trimEnd().split(/\r?\n/).slice(-Number(trimLines)).join("\n").trim();
+console.log(JSON.stringify(snippet ? prefix + "\n\n" + snippet : prefix));
+' "${prefix}" "${log_file}" "${trim_lines}"
   )
   printf '{"decision":"block","reason":%s}\n' "${reason}"
 }
@@ -59,10 +75,27 @@ cd "${repo_root}" || {
   exit 0
 }
 
+if ! before_biome=$(snapshot_files 2>"${biome_log}"); then
+  emit_block_with_log "Failed to snapshot files before Biome." "${biome_log}"
+  exit 0
+fi
+
 if ! bunx biome check --write --error-on-warnings . >"${biome_log}" 2>&1; then
   cat "${biome_log}" >&2
   emit_block_with_log \
     "Biome checks failed. Fix the reported issues, then rerun the relevant verification." \
+    "${biome_log}"
+  exit 0
+fi
+
+if ! after_biome=$(snapshot_files 2>>"${biome_log}"); then
+  emit_block_with_log "Failed to snapshot files after Biome." "${biome_log}"
+  exit 0
+fi
+
+if [ "${before_biome}" != "${after_biome}" ]; then
+  emit_block_with_log \
+    "Biome modified files. Review and commit the lint/format fixes, then rerun verification." \
     "${biome_log}"
   exit 0
 fi

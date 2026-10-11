@@ -8,6 +8,8 @@ bun run test             # Run tests (vitest)
 **Do not run tests or linting manually.** Agent harness hooks run lint fixes
 and tests automatically when the session stops. If a check fails, the hooks
 block completion and report the failure so the agent can fix it.
+The stop hook also blocks if Biome changes file contents. Review and commit
+those fixes before completing the task.
 
 ## Documentation and comments
 

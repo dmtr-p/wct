@@ -87,7 +87,6 @@ describe("confirmation prompts", () => {
     "JSON mode never displays a prompt or acquires input with NO_COLOR=%s",
     async (noColor) => {
       vi.stubEnv("NO_COLOR", noColor);
-      // A queued 'y' must remain unread: JSON mode defaults to declining.
       const result = await runConfirmation("y", true);
       expect(result).toEqual({
         value: false,

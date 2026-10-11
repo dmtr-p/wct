@@ -28,7 +28,6 @@ function style(message: string, color: string, enabled: boolean): string {
   return enabled ? `${color}${message}${colors.reset}` : message;
 }
 
-/** Resolve stdout styling inside the Effect before formatting table cells or hints. */
 export const stdoutStyles = Effect.map(colorsEnabled("stdout"), (enabled) => ({
   bold: (message: string) => style(message, colors.bold, enabled),
   green: (message: string) => style(message, colors.green, enabled),

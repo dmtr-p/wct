@@ -15,9 +15,9 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 
 ## Pull requests as a triage surface
 
-**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
+**PRs as a request surface: no.**
 
-When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
+Use the `gh pr` commands to inspect and manage pull requests:
 
 - **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
 - **List PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,comments`. To filter external contributors by association, use `gh api 'repos/{owner}/{repo}/pulls?state=open' --paginate --jq '.[] | select(.author_association == "CONTRIBUTOR" or .author_association == "FIRST_TIME_CONTRIBUTOR" or .author_association == "NONE")'`; `gh pr list --json` does not expose author association.

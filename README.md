@@ -21,6 +21,16 @@ wct projects list                      # List registered projects
 
 Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
 
+### JSON and terminal output
+
+`open`, `up`, `down`, `close`, `list`, and `projects` support the global
+`--json` flag. Success envelopes use stdout; error envelopes use stderr.
+JSON output has no color or bold styling. `close --json` returns a structured
+aborted result unless `--yes` is supplied; it never opens a confirmation prompt.
+
+Human-readable logs use styling only when their destination stream is a
+terminal. A nonempty `NO_COLOR` disables color and bold styling.
+
 ## Installation
 
 ### Homebrew (recommended)
@@ -178,7 +188,7 @@ profiles:
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
 
-Claude Code and Codex foreground agents are detected automatically in Workspace panes, including agents started manually. Pane rows show `idle`, `working`, `blocked`, or `unknown`; Workspace rows show counts, including collapsed and detached Workspaces. Unknown means the current UI could not be classified. Stale observations retain their last state for at most five seconds before becoming unavailable. Detection uses a separate one-second observation loop and does not install agent hooks or save transcripts. See [agent detection behavior and release validation](docs/agent-detection.md) for compatibility and supported wrappers.
+Claude Code and Codex foreground agents are detected automatically in Workspace panes, including agents started manually. Pane rows show `idle`, `working`, `blocked`, or `unknown`; Workspace rows show counts, including collapsed and detached Workspaces. Unknown means the current UI could not be classified. Stale observations retain their last state for at most five seconds before becoming unavailable. Detection uses a separate one-second observation loop and does not install agent hooks or save transcripts. See [agent detection behavior and compatibility](docs/agent-detection.md) for supported wrappers and validation requirements.
 
 Register repositories explicitly with `wct projects add` or the TUI's Add Project action. Opening or starting a workspace does not register its repository. `--name` changes the project's display name in the registry; it does not change the configured `project_name`. The TUI's Remove Project action stops the project's sessions and removes it from the registry while keeping its worktrees. `wct projects remove` removes registry membership and leaves sessions running.
 

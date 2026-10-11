@@ -276,8 +276,8 @@ export function classifyAgent(
         matched.visible_idle
       ),
     };
-  // Unlike Herdr's arbitrary title fallback, require the live composer AND
-  // its readiness footer. A composer alone can coexist with an active turn.
+  // Require the live composer and readiness footer: a composer alone can
+  // coexist with an active turn.
   if (composer) {
     const { footer, passiveStatusLine } = composer;
     if (

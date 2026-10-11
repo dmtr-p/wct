@@ -1,8 +1,7 @@
 # Effect v4 Reference for Agents
 
-This project uses stable Effect v4, currently pinned to 4.0.3. Use the APIs and
-repository patterns below when working on application code, services, schemas,
-CLI commands, and tests.
+This project uses Effect v4. Use the APIs and repository patterns below for
+application code, services, schemas, CLI commands, and tests.
 
 ## Packages and imports
 
@@ -32,15 +31,10 @@ dependency versions.
   for repository-specific branch, worktree, and profile suggestions.
 - CLI APIs are marked `@stability unstable`; review their behavior and help
   output when upgrading Effect, even when the core package is stable.
-
-Effect 4.0.3 adds the following relevant capabilities:
-
-- `CliOutput.displayWidth(text)` measures terminal cells, ignoring ANSI styling
-  and accounting for graphemes, combining marks, emoji, and fullwidth text.
-  The TUI still uses `src/tui/utils/display-width.ts`. Before adopting this API
-  there, verify agreement with Ink and update whole-string and per-grapheme
-  measurements together: the existing helper deliberately counts combining-mark
-  clusters as two columns, while Effect counts them as one.
+- The TUI uses `src/tui/utils/display-width.ts` for whole-string and
+  per-grapheme width calculations. This approximation can differ from Ink
+  and `CliOutput.displayWidth`, especially for complex Unicode clusters.
+  Keep wrapping and truncation measurements consistent with each other.
 - CLI prompts respect `NO_COLOR` and acquire terminal input only when needed.
   Keep confirmations routed through `src/utils/prompt.ts` and `Prompt.Confirm`.
   The shared helper returns its safe default (`false`) without terminal access
@@ -55,8 +49,6 @@ Effect 4.0.3 adds the following relevant capabilities:
   or terminal detection; JSON envelopes bypass the logger entirely.
   For table cells and hints, yield `logger.stdoutStyles` inside the
   Effect and use its `bold` and `green` formatters.
-
-See the [Effect 4.0.3 release notes](https://github.com/Effect-TS/effect/releases/tag/effect%404.0.3).
 
 ## Services and layers
 
@@ -150,7 +142,7 @@ Tagged application errors use `Data.TaggedError`.
 | Observe both outcomes | `Effect.match`, `Effect.matchCause` |
 
 `Effect.partition` returns `[successes, failures]`. Read the second tuple
-element when aggregating failures; the earlier RC used the opposite order.
+element when aggregating failures.
 
 `Cause` contains a flat `reasons` array with `Fail`, `Die`, and `Interrupt`
 reasons. Inspect it with `Cause.hasFails`, `Cause.hasDies`,

@@ -1,16 +1,9 @@
 import { displayWidth, graphemeWidths } from "./display-width";
 
-const ELLIPSIS = "…"; // 1 display column
+const ELLIPSIS = "…";
 
-/**
- * Truncate `text` to at most `available` terminal display columns, appending
- * an ellipsis when anything was cut. Widths are measured like Ink measures
- * them (CJK/emoji glyphs count 2 columns; see `display-width`): tree rows are
- * budgeted as exactly ONE visual row by `buildTreeRows`, so a label that
- * renders wider than its budget would soft-wrap and desync the viewport and
- * mouse hit-testing for every row below it. Cutting happens on grapheme
- * boundaries — never splitting a surrogate pair or emoji ZWJ sequence.
- */
+// Keep grapheme clusters intact; callers still need Ink truncation to prevent
+// soft wrapping when the width approximation differs from the renderer.
 export function truncateBranch(text: string, available: number): string {
   if (displayWidth(text) <= available) return text;
   if (available <= 0) return "";
@@ -25,15 +18,8 @@ export function truncateBranch(text: string, available: number): string {
   return `${out}${ELLIPSIS}`;
 }
 
-/**
- * Collapse a possibly multi-line string onto one line by squashing every
- * newline run (with surrounding indentation) to a single space. The TUI's
- * bottom-chrome budget counts each error line as EXACTLY one terminal row and
- * relies on wrap="truncate" for width — but truncation does not remove
- * embedded newlines, and stderr-derived messages (git's "fatal: …\nhint: …")
- * regularly contain them; an un-collapsed message renders extra rows,
- * overflows the fixed-height layout, and desyncs mouse hit-testing.
- */
+// Ink truncation does not remove embedded newlines from process errors.
+// Collapse them to preserve the footer's row budget and mouse hit-testing.
 export function toSingleLine(text: string): string {
   return text.replace(/[ \t]*(?:\r\n|[\r\n])[\s]*/g, " ").trim();
 }

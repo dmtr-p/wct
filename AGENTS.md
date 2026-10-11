@@ -9,6 +9,13 @@ bun run test             # Run tests (vitest)
 and tests automatically when the session stops. If a check fails, the hooks
 block completion and report the failure so the agent can fix it.
 
+## Documentation and comments
+
+Describe current behavior and repository conventions. Keep release histories,
+migration narratives, and dated work logs out of documentation. Comments should
+explain constraints or non-obvious reasoning; omit descriptions that repeat the
+code.
+
 ## Architecture
 
 ```
@@ -18,6 +25,7 @@ src/
 ├── cli/
 │   ├── root-command.ts   # Effect CLI root command tree and command dispatch
 │   ├── completions.ts    # Custom shell completions layered on top of the Effect CLI UX
+│   ├── completions-flag.ts # Supported built-in shell completion choices
 │   └── json-flag.ts      # Global --json flag
 ├── commands/
 │   ├── command-def.ts    # Shared command option and metadata interfaces
@@ -40,6 +48,10 @@ src/
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
 │   └── services.ts       # Live service bundle provided to the app
 ├── services/
+│   ├── agent-service.ts  # Foreground agent observation and freshness tracking
+│   ├── agent-process.ts  # Bounded foreground process inspection
+│   ├── agent-model.ts    # Agent identities, screen regions, states, and summaries
+│   ├── agent-rules.ts    # Claude Code and Codex detection rules
 │   ├── worktree-service.ts # Effect service for git worktree operations and status helpers
 │   ├── workspace-service.ts # Open/up/down/close workspace operations shared by CLI and TUI
 │   ├── db.ts             # ~/.wct SQLite database paths, schema migrations, and withDb
@@ -93,6 +105,7 @@ src/
 │   │   ├── WorktreeStatsRow.tsx # Worktree status visual row
 │   │   └── ScrollableList.tsx # Filterable scrollable list with scrollbar
 │   ├── hooks/
+│   │   ├── useAgents.ts   # Agent observation loop and TUI state
 │   │   ├── useTreeNavigation.ts # React binding for the tree navigation state machine
 │   │   ├── useMouse.ts    # Terminal mouse reporting lifecycle
 │   │   ├── useGuardedInput.ts # Keyboard/mouse input routing

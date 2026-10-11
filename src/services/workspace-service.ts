@@ -688,7 +688,11 @@ function openImpl(
                 }),
             }),
             (error) =>
-              commandError("worktree_error", "Failed to copy files", error),
+              commandError(
+                "worktree_error",
+                `Failed to copy files: ${error instanceof Error ? error.message : String(error)}`,
+                error,
+              ),
           ).pipe(
             Effect.flatMap((results) => {
               const failed = results.find((result) => !result.success);

@@ -1,23 +1,10 @@
-import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, FileSystem, Stream } from "effect";
 import { commandError } from "../errors";
+import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
 import { execProcess, runProcess } from "./process";
 
 const INCLUDE_FILENAME = ".worktreeinclude";
-
-function nulPaths(output: string): string[] {
-  return output.split("\0").filter((path) => path.length > 0);
-}
-
-function safePath(path: string): boolean {
-  return (
-    !path.startsWith("/") &&
-    path
-      .split("/")
-      .every((part) => part !== ".." && part.toLowerCase() !== ".git")
-  );
-}
 
 function checkIgnore(
   paths: ReadonlyArray<string>,
@@ -73,39 +60,8 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
         .filter((line) => line.length > 0 && !line.startsWith("#"));
       if (rules.length === 0) return [];
 
-      const discoveryArgs = [
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "-z",
-      ];
-      const discovered = yield* execProcess("git", discoveryArgs, {
-        cwd: mainRepoPath,
-      });
-      const candidates: string[] = [];
-      for (const path of new Set(nulPaths(discovered.stdout))) {
-        if (!safePath(path)) continue;
-        const info = yield* Effect.tryPromise({
-          try: () => lstat(join(mainRepoPath, path)),
-          catch: (error) => error,
-        });
-        if (info.isFile()) candidates.push(path);
-      }
+      const candidates = yield* discoverIgnoredFiles(mainRepoPath);
       if (candidates.length === 0) return [];
-
-      const ancestors = new Set<string>();
-      for (const path of candidates) {
-        const parts = path.split("/");
-        for (let i = 1; i < parts.length; i++) {
-          ancestors.add(`${parts.slice(0, i).join("/")}/`);
-        }
-      }
-      // Query directories themselves: ignoring all their current files is not
-      // the same as ignoring the directory as a whole.
-      const ignoredDirectories = [
-        ...(yield* checkIgnore([...ancestors], mainRepoPath)),
-      ];
 
       // A separate, empty worktree keeps repository and global ignore rules out
       // of include matching. Git remains the authority for pattern syntax.
@@ -135,11 +91,28 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
       const selected = new Set<string>();
       for (const rule of rules) {
         const negate = rule.startsWith("!");
-        const pattern = negate ? rule.slice(1) : rule;
+        let pattern = negate ? rule.slice(1) : rule;
         if (!pattern) continue;
+        // After negation, # and ! name literal characters, not a new comment
+        // or another negation in the single-rule matcher.
+        if (negate && (pattern.startsWith("#") || pattern.startsWith("!"))) {
+          pattern = `\\${pattern}`;
+        }
         const matches = yield* matchPaths(pattern, candidates);
         let blockedDirectories: string[] = [];
-        if (pattern.startsWith("**/")) {
+        if (pattern.startsWith("**/") && matches.size > 0) {
+          const ancestors = new Set<string>();
+          for (const path of matches) {
+            const parts = path.split("/");
+            for (let i = 1; i < parts.length; i++) {
+              ancestors.add(`${parts.slice(0, i).join("/")}/`);
+            }
+          }
+          // Query matched paths' directories themselves: ignoring all their
+          // current files is not the same as ignoring the whole directory.
+          const ignoredDirectories = [
+            ...(yield* checkIgnore([...ancestors], mainRepoPath)),
+          ];
           const firstName = pattern.slice(3).split("/")[0];
           const reachable = yield* matchPaths(
             `${pattern}\n${firstName}/`,
@@ -156,7 +129,7 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
           else selected.add(path);
         }
       }
-      return [...selected];
+      return yield* filterRegularFiles([...selected], mainRepoPath);
     }),
   ).pipe(
     Effect.mapError((error) =>

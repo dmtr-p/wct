@@ -24,7 +24,7 @@ worktree_dir: ".."
 # Directory used for setup/down commands and tmux panes (relative to each worktree)
 # work_dir: "apps/web"
 
-# Files/directories to copy to new worktree
+# Gitignored files/directories to copy to new worktree
 copy:
   - .env
   - .env.local

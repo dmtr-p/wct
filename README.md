@@ -118,7 +118,7 @@ project_name: "myapp"
 # Working directory for setup/down commands and tmux panes (relative to each worktree)
 work_dir: "apps/web"
 
-# Files/directories to copy from main repo into new worktrees
+# Gitignored files/directories to copy from main repo into worktrees
 copy:
   - .env
   - .env.local
@@ -186,9 +186,11 @@ creating a worktree, the first available copy source wins:
 A project or selected profile `copy: []` disables copying. An existing empty,
 comments-only, or no-match `.worktreeinclude` also overrides global copying.
 A missing include file falls through to global configuration. YAML copy lists
-keep their file, directory, and Bun glob behavior.
+support file paths, directory paths ending in `/`, and Bun globs; only matching
+gitignored files are copied. Missing files and matches excluded by Git's filter
+are skipped.
 
-`.worktreeinclude` selects only **untracked, gitignored regular files**. Git's
+All copy sources select only **untracked, gitignored regular files**. Git's
 repository ignore files, `.git/info/exclude`, and global ignore configuration
 all count. Tracked files (even those matching ignore rules), nonignored files,
 symlinks, and Git metadata are excluded. For example, if these files are
@@ -219,7 +221,8 @@ in the ignored directory's path. If `outer/` is ignored as a whole, use
 
 The include source applies only to newly created worktrees, including new
 checkouts of existing branches. Reopening an existing worktree skips the include
-source and keeps existing YAML copy behavior. `wct up` does not copy files.
+source; YAML copy lists still run, with the same Gitignored-file filter.
+`wct up` does not copy files.
 Unreadable include files, Git discovery failures, and copy failures stop Open
 before setup; empty selections skip copying.
 

@@ -726,13 +726,15 @@ project_name: "myapp"
   });
 
   test("openCommand JSON leaves fatal copy output to the root JSON error envelope", async () => {
+    await Bun.write(join(fixture.repoDir, "copy.env"), "secret");
+    await Bun.write(join(fixture.repoDir, ".gitignore"), "copy.env\n");
     await Bun.write(
       join(fixture.repoDir, ".wct.yaml"),
       `version: 1
 worktree_dir: "worktrees"
 project_name: "myapp"
 copy:
-  - "missing.env"
+  - "copy.env"
 `,
     );
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -756,14 +758,14 @@ copy:
                 branchExists: () => Effect.succeed(false),
                 createWorktree: (path) =>
                   Effect.promise(async () => {
-                    await mkdir(path, { recursive: true });
+                    await mkdir(join(path, "copy.env"), { recursive: true });
                     return { _tag: "Created" as const, path };
                   }),
               },
             },
           ),
         ),
-      ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+      ).rejects.toThrow("Failed to copy files: copy.env:");
       expect(logSpy).not.toHaveBeenCalled();
     } finally {
       logSpy.mockRestore();
@@ -778,13 +780,15 @@ project_name: "myapp"
   });
 
   test("openCommand human output reports fatal copy failures", async () => {
+    await Bun.write(join(fixture.repoDir, "copy.env"), "secret");
+    await Bun.write(join(fixture.repoDir, ".gitignore"), "copy.env\n");
     await Bun.write(
       join(fixture.repoDir, ".wct.yaml"),
       `version: 1
 worktree_dir: "worktrees"
 project_name: "myapp"
 copy:
-  - "missing.env"
+  - "copy.env"
 `,
     );
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -807,17 +811,17 @@ copy:
                 branchExists: () => Effect.succeed(false),
                 createWorktree: (path) =>
                   Effect.promise(async () => {
-                    await mkdir(path, { recursive: true });
+                    await mkdir(join(path, "copy.env"), { recursive: true });
                     return { _tag: "Created" as const, path };
                   }),
               },
             },
           ),
         ),
-      ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+      ).rejects.toThrow("Failed to copy files: copy.env:");
       expect(
         logSpy.mock.calls.some((args) =>
-          String(args[0]).includes("File not found: missing.env"),
+          String(args[0]).includes("Failed to copy copy.env:"),
         ),
       ).toBe(true);
     } finally {

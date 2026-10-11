@@ -1,5 +1,6 @@
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { Effect, FileSystem } from "effect";
+import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
 
 export interface CopyResult {
   file: string;
@@ -105,10 +106,14 @@ export function copyEntries(
   reporter?: CopyReporter,
 ) {
   return Effect.gen(function* () {
+    if (entries.length === 0) return [];
+    const ignoredFiles = new Set(yield* discoverIgnoredFiles(sourceDir));
     const allFiles: string[] = [];
 
     for (const entry of entries) {
-      const expanded = yield* expandEntry(entry, sourceDir);
+      const expanded = (yield* expandEntry(entry, sourceDir))
+        .map((file) => normalize(file))
+        .filter((file) => ignoredFiles.has(file));
       if (expanded.length === 0) {
         const entryType = detectEntryType(entry);
         if (entryType === "directory") {
@@ -133,7 +138,8 @@ export function copyEntries(
     // Deduplicate files (in case of overlapping patterns)
     const uniqueFiles = [...new Set(allFiles)];
 
-    return yield* copyFiles(uniqueFiles, sourceDir, targetDir, reporter);
+    const regularFiles = yield* filterRegularFiles(uniqueFiles, sourceDir);
+    return yield* copyFiles(regularFiles, sourceDir, targetDir, reporter);
   });
 }
 

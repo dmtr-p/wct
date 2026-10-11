@@ -1,8 +1,11 @@
 import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { Effect } from "effect";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { copyFiles } from "../src/services/copy";
+import * as ignoredFiles from "../src/services/ignored-files";
+import * as processService from "../src/services/process";
 import { resolveWorktreeInclude } from "../src/services/worktree-include";
 import { type IncludeRepo, makeIncludeRepo } from "./helpers/include-repo";
 
@@ -90,6 +93,65 @@ describe(".worktreeinclude resolver", () => {
     expect((await resolve())?.sort()).toEqual(["a.json", "nested/a.json"]);
     await fixture.write(".worktreeinclude", "*.json\n!*.json\n");
     expect(await resolve()).toEqual([]);
+  });
+
+  test("negated rules preserve literal leading # and ! markers", async () => {
+    await fixture.write(".gitignore", "*\n");
+    for (const file of ["#secret", "!secret", "keep.env"])
+      await fixture.write(file);
+    for (const rules of [
+      "*\n!#secret\n!!secret\n",
+      "*\n!\\#secret\n!\\!secret\n",
+    ]) {
+      await fixture.write(".worktreeinclude", rules);
+      expect(await resolve()).not.toContain("#secret");
+      expect(await resolve()).not.toContain("!secret");
+      expect(await resolve()).toContain("keep.env");
+    }
+    await fixture.write(
+      ".worktreeinclude",
+      "*\n!#secret\n!!secret\n\\!secret\n\\#secret\n",
+    );
+    expect(await resolve()).toEqual(
+      expect.arrayContaining(["#secret", "!secret", "keep.env"]),
+    );
+  });
+
+  test("checks only selected files, ignoring unrelated files removed after discovery", async () => {
+    await fixture.write(".env");
+    await fixture.write(".worktreeinclude", ".env\n");
+    const discoveredPaths = [
+      ".env",
+      ...Array.from({ length: 500 }, (_, i) => `cache/removed-${i}`),
+    ];
+    const originalExec = processService.execProcess;
+    const discoverySpy = vi
+      .spyOn(processService, "execProcess")
+      .mockImplementation((command, args, options) =>
+        command === "git" && args?.[0] === "ls-files"
+          ? Effect.succeed({
+              stdout: `${discoveredPaths.join("\0")}\0`,
+              stderr: "",
+              exitCode: 0,
+            })
+          : originalExec(command, args, options),
+      );
+    const regularFilesSpy = vi.spyOn(ignoredFiles, "filterRegularFiles");
+    try {
+      expect(await resolve()).toEqual([".env"]);
+      expect(regularFilesSpy).toHaveBeenCalledExactlyOnceWith(
+        [".env"],
+        fixture.repo,
+      );
+      expect(
+        discoverySpy.mock.calls.filter(
+          ([, args]) => args?.[0] === "check-ignore",
+        ),
+      ).toEqual([]);
+    } finally {
+      regularFilesSpy.mockRestore();
+      discoverySpy.mockRestore();
+    }
   });
 
   test("supports root anchoring, nested patterns, directory patterns, and dotfiles", async () => {

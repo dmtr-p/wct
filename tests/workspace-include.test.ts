@@ -307,6 +307,40 @@ describe("WorkspaceService .worktreeinclude", () => {
     ).toBe(false);
   });
 
+  test.each(["project", "profile", "global"])(
+    "%s YAML copying filters tracked and nonignored matches",
+    async (source) => {
+      await fixture.write(".gitignore", "*.env\ntracked.txt\n");
+      await fixture.write("nonignored.json");
+      const copy = "copy: ['*']\n";
+      if (source === "project") await fixture.write(".wct.yaml", copy);
+      if (source === "profile")
+        await fixture.write(
+          ".wct.yaml",
+          "profiles:\n  selected:\n    match: 'feature/*'\n    copy: ['*']\n",
+        );
+      if (source === "global")
+        await Bun.write(join(fixture.home, ".wct.yaml"), copy);
+      const result = await open();
+      const copied = result.attempts.copy;
+      expect(copied).toMatchObject({ attempted: true, ok: true });
+      if (!copied.attempted || !copied.ok)
+        throw new Error("Expected copy to succeed");
+      expect(copied.value.map((file) => file.file).sort()).toEqual([
+        ".global.env",
+        ".include.env",
+        ".profile.env",
+        ".project.env",
+      ]);
+      expect(
+        await Bun.file(join(result.worktreePath, "tracked.txt")).text(),
+      ).toBe("tracked.txt");
+      expect(
+        await Bun.file(join(result.worktreePath, "nonignored.json")).exists(),
+      ).toBe(false);
+    },
+  );
+
   test("copies before real setup commands and reports copy progress", async () => {
     await fixture.write(".worktreeinclude", ".include.env\n");
     await fixture.write(

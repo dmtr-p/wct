@@ -67,13 +67,18 @@ include file falls through. Config loading preserves project copy provenance
 alongside the merged config, and the shared Workspace service selects the source
 after profile resolution.
 
+All copy sources select only untracked, gitignored regular files discovered by
+Git, including repository, `.git/info/exclude`, and global ignore rules.
+Tracked and nonignored files, symlinks, and Git metadata are excluded.
+YAML `copy` lists expand file, directory, and Bun glob entries, then filter the
+matches against those eligible files; missing files are skipped.
+
 `.worktreeinclude` uses gitignore syntax, including comments, blank lines,
 escapes, negation, root anchoring, directory patterns, and ordered rules.
 Positive rules include, negations exclude, and later matches override earlier
-ones. It selects only untracked, gitignored regular files discovered by Git,
-including repository, `.git/info/exclude`, and global ignore rules. Tracked and
-nonignored files, symlinks, and Git metadata are excluded. NUL-delimited Git
-paths are deduplicated and copied as concrete filenames before setup.
+ones. NUL-delimited Git paths are deduplicated and copied as concrete filenames
+before setup. Regular-file checks run only after pattern selection, with bounded
+concurrency, so unrelated ignored files are not statted.
 
 Inside a directory ignored as a whole, a leading `**/` reaches files only if
 the directory matches the pattern or the first name after `**/` occurs in the
@@ -83,7 +88,8 @@ files; `vendor/**/config.json` does. `**/.claude/skills/*.md` reaches an ignored
 `outer/**/.claude/skills/*.md` instead. Only the root include file is read.
 
 Include copying applies only when Open creates a Worktree. Reopening skips
-that source and retains YAML copy behavior. Start does not copy files.
+that source and still applies YAML copy lists with the Gitignored-file filter.
+Start does not copy files.
 Unreadable include files, Git discovery failures, and copy failures are fatal
 before setup; an empty selection skips the copy phase.
 

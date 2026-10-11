@@ -1,4 +1,3 @@
-
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";

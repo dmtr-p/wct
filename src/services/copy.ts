@@ -135,7 +135,6 @@ export function copyEntries(
       allFiles.push(...expanded);
     }
 
-    // Deduplicate files (in case of overlapping patterns)
     const uniqueFiles = [...new Set(allFiles)];
 
     const regularFiles = yield* filterRegularFiles(uniqueFiles, sourceDir);

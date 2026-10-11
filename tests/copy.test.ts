@@ -241,7 +241,6 @@ describe("copyEntries", () => {
     ).text();
     expect(data).toBe('{"data": true}');
 
-    // Ensure .md file was not copied
     const mdExists = await Bun.file(
       join(targetDir, ".claude/readme.md"),
     ).exists();
@@ -280,7 +279,6 @@ describe("copyEntries", () => {
       ),
     );
 
-    // Should only copy once despite matching all three patterns
     expect(results).toHaveLength(1);
     expect(results[0]?.success).toBe(true);
   });
@@ -346,7 +344,6 @@ describe("copyEntries", () => {
       copyEntries(["missing/"], sourceDir, targetDir),
     );
 
-    // Empty result since directory doesn't exist
     expect(results).toHaveLength(0);
   });
 

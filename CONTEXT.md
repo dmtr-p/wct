@@ -76,23 +76,24 @@ matches against those eligible files; missing files are skipped.
 `.worktreeinclude` uses gitignore syntax, including comments, blank lines,
 escapes, negation, root anchoring, directory patterns, and ordered rules.
 Positive rules include, negations exclude, and later matches override earlier
-ones. NUL-delimited Git paths are deduplicated and copied as concrete filenames
-before setup. Regular-file checks run only after pattern selection, with bounded
-concurrency, so unrelated ignored files are not statted.
+ones. Git discovery uses NUL-delimited paths; selected paths are deduplicated,
+checked for regular files, and copied directly without glob expansion.
 
 Inside a directory ignored as a whole, a leading `**/` reaches files only if
 the directory matches the pattern or the first name after `**/` occurs in the
 directory's path. For ignored `vendor/`, `**/config.json` does not reach its
 files; `vendor/**/config.json` does. `**/.claude/skills/*.md` reaches an ignored
 `.claude/` directory. Beneath an ignored `outer/`, use
-`outer/**/.claude/skills/*.md` instead. Only the root include file is read.
+`outer/**/.claude/skills/*.md` instead. This restriction applies only to include
+rules, not YAML Bun globs. Only the root include file is read.
 
 Include copying applies when Open creates a Worktree and when retrying failed
 initial include resolution or copying. A pending marker in worktree-local Git
 metadata persists across failures and is cleared after successful copy processing,
 including an explicit YAML override or an empty selection. Retrying reads the
-current configuration and include rules before setup. After success, reopening skips
-that source and still applies YAML copy lists with the Gitignored-file filter.
+current configuration and include rules before setup. After success, reopening
+skips that source. YAML copy lists run on every Open and can overwrite previously
+copied files.
 Start does not copy files.
 Unreadable include files, Git discovery failures, and copy failures are fatal
 before setup; an empty selection skips the copy phase.

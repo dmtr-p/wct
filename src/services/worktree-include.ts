@@ -69,8 +69,8 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
       const candidates = yield* discoverIgnoredFiles(mainRepoPath);
       if (candidates.length === 0) return [];
 
-      // A separate, empty worktree keeps repository and global ignore rules out
-      // of include matching. Git remains the authority for pattern syntax.
+      // A temporary repository isolates include matching from the source's
+      // ignore rules; core.excludesFile below disables global ignores.
       const scratch = yield* fs.makeTempDirectoryScoped({
         prefix: "wct-include-",
       });
@@ -115,8 +115,7 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
             ...(yield* checkIgnore([...ancestors], mainRepoPath)),
           ];
           const firstName = pattern.slice(3).split("/")[0];
-          // An extracted name is a literal fragment even when its first
-          // character would introduce a comment or negation in a whole rule.
+          // Preserve leading # and ! as literals in the standalone directory rule.
           const directoryPattern = escapeLeadingMarker(`${firstName}/`);
           const reachable = yield* matchPaths(
             `${pattern}\n${directoryPattern}`,

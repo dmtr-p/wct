@@ -219,8 +219,11 @@ name after `**/` occurs in that directory's path. If `.gitignore` contains
 in the ignored directory's path. If `outer/` is ignored as a whole, use
 `outer/**/.claude/skills/*.md` to reach skills beneath it.
 
-The include source applies only to newly created worktrees, including new
-checkouts of existing branches. Reopening an existing worktree skips the include
+The include source applies to newly created worktrees, including new
+checkouts of existing branches, and retries after failed initial include
+resolution or copying. Pending include processing is recorded in the worktree's
+Git metadata, so retrying Open resumes copying before setup. After successful
+processing, reopening an existing worktree skips the include
 source; YAML copy lists still run, with the same Gitignored-file filter.
 `wct up` does not copy files.
 Unreadable include files, Git discovery failures, and copy failures stop Open

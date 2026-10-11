@@ -17,6 +17,7 @@ import {
   type GitHubService as GitHubServiceApi,
   parsePrArg,
 } from "./github-service";
+import { getIncludeCopyState } from "./include-copy-state";
 import { PrCacheService, type PrCacheServiceApi } from "./pr-cache-service";
 import {
   type SetupResult,
@@ -650,12 +651,15 @@ function openImpl(
     const profileDefinesCopy =
       profileName !== undefined &&
       config.profiles?.[profileName]?.copy !== undefined;
-    const includeFiles =
+    const includeState = yield* getIncludeCopyState(worktreePath);
+    const processInclude =
       !projectDefinesCopy &&
       !profileDefinesCopy &&
-      worktreeResult._tag !== "AlreadyExists"
-        ? yield* resolveWorktreeInclude(mainRepoPath)
-        : undefined;
+      (worktreeResult._tag !== "AlreadyExists" || includeState.pending);
+    if (processInclude) yield* includeState.begin;
+    const includeFiles = processInclude
+      ? yield* resolveWorktreeInclude(mainRepoPath)
+      : undefined;
     const filesToCopy = includeFiles ?? resolved.copy;
     const copyRoutine = includeFiles === undefined ? copyEntries : copyFiles;
 
@@ -720,6 +724,7 @@ function openImpl(
         ok: copy.ok,
       });
     }
+    if (processInclude || includeState.pending) yield* includeState.complete;
 
     if (resolved.setup && resolved.setup.length > 0) {
       yield* emitReporter(reporter, {

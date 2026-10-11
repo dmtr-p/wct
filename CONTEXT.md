@@ -87,7 +87,11 @@ files; `vendor/**/config.json` does. `**/.claude/skills/*.md` reaches an ignored
 `.claude/` directory. Beneath an ignored `outer/`, use
 `outer/**/.claude/skills/*.md` instead. Only the root include file is read.
 
-Include copying applies only when Open creates a Worktree. Reopening skips
+Include copying applies when Open creates a Worktree and when retrying failed
+initial include resolution or copying. A pending marker in worktree-local Git
+metadata persists across failures and is cleared after successful copy processing,
+including an explicit YAML override or an empty selection. Retrying reads the
+current configuration and include rules before setup. After success, reopening skips
 that source and still applies YAML copy lists with the Gitignored-file filter.
 Start does not copy files.
 Unreadable include files, Git discovery failures, and copy failures are fatal

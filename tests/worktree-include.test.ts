@@ -252,6 +252,27 @@ describe(".worktreeinclude resolver", () => {
     expect(await resolve()).toEqual(["cache/config.json/secret"]);
   });
 
+  test.each(["#cache", "!cache"])(
+    "reaches ignored %s directories without interpreting name markers",
+    async (directory) => {
+      await fixture.write(".gitignore", `\\${directory}/\n`);
+      const selected = [
+        `${directory}/local.env`,
+        `nested/${directory}/local.env`,
+      ];
+      for (const file of [...selected, `${directory}/excluded.env`]) {
+        await fixture.write(file);
+      }
+      for (const name of [directory, `\\${directory}`]) {
+        await fixture.write(
+          ".worktreeinclude",
+          `**/${name}/*.env\n!**/${name}/excluded.env\n`,
+        );
+        expect((await resolve())?.sort()).toEqual([...selected].sort());
+      }
+    },
+  );
+
   test("fails clearly on unreadable include files and Git discovery failures", async () => {
     await mkdir(join(fixture.repo, ".worktreeinclude"));
     await expect(resolve()).rejects.toThrow("Failed to resolve");

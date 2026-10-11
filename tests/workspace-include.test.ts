@@ -409,6 +409,58 @@ describe("WorkspaceService .worktreeinclude", () => {
     ).toBe("local worktree edit");
   });
 
+  test("retries failed initial include resolution on the registered worktree", async () => {
+    await Bun.write(join(fixture.home, ".wct.yaml"), "copy: []\n");
+    await fixture.write(
+      ".wct.yaml",
+      "setup:\n  - name: Read copied file\n    command: 'cat .include.env > setup-result'\n",
+    );
+    await mkdir(join(fixture.repo, ".worktreeinclude"));
+    await expect(open()).rejects.toThrow("Failed to resolve");
+    const registered = await runBunPromise(
+      liveWorktreeService.findWorktreeByBranch("feature/copy", fixture.repo),
+    );
+    expect(registered).not.toBeNull();
+    if (!registered)
+      throw new Error("Expected the failed worktree to remain registered");
+    expect(await Bun.file(join(registered.path, "setup-result")).exists()).toBe(
+      false,
+    );
+
+    await rm(join(fixture.repo, ".worktreeinclude"), { recursive: true });
+    await fixture.write(".worktreeinclude", ".include.env\n");
+    const recovered = await open();
+    expect(recovered.created).toBe(false);
+    expect(recovered.worktreePath).toBe(registered.path);
+    expect(recovered.attempts.copy).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(await Bun.file(join(registered.path, "setup-result")).text()).toBe(
+      ".include.env",
+    );
+
+    await fixture.write(".include.env", "changed after successful recovery");
+    expect((await open()).attempts.copy.attempted).toBe(false);
+    expect(await Bun.file(join(registered.path, ".include.env")).text()).toBe(
+      ".include.env",
+    );
+  });
+
+  test("successful YAML override clears failed initial include processing", async () => {
+    await mkdir(join(fixture.repo, ".worktreeinclude"));
+    await expect(open()).rejects.toThrow("Failed to resolve");
+    await fixture.write(".wct.yaml", "copy: []\n");
+    expect((await open()).attempts.copy.attempted).toBe(false);
+    await fixture.write(".wct.yaml", "setup: []\n");
+    await rm(join(fixture.repo, ".worktreeinclude"), { recursive: true });
+    await fixture.write(".worktreeinclude", ".include.env\n");
+    const reopened = await open();
+    expect(
+      await Bun.file(join(reopened.worktreePath, ".include.env")).exists(),
+    ).toBe(false);
+  });
+
   test.each(["project", "profile", "global"])(
     "reopening preserves %s YAML copying",
     async (source) => {
@@ -494,7 +546,8 @@ describe("WorkspaceService .worktreeinclude", () => {
     await fixture.git("commit", "--quiet", "-m", "Tracked directory collision");
     await fixture.git("switch", "--quiet", "main");
     await fixture.write(".include.env");
-    await fixture.write(".worktreeinclude", ".include.env\n");
+    await fixture.write(".first.env", "first partial copy");
+    await fixture.write(".worktreeinclude", ".first.env\n.include.env\n");
     await fixture.write(
       ".wct.yaml",
       "setup:\n  - name: setup\n    command: 'touch setup-ran'\n",
@@ -524,5 +577,36 @@ describe("WorkspaceService .worktreeinclude", () => {
         (event) => event._tag === "AttemptStarted" && event.attempt === "setup",
       ),
     ).toBe(false);
+    const registered = await runBunPromise(
+      liveWorktreeService.findWorktreeByBranch("collision", fixture.repo),
+    );
+    if (!registered)
+      throw new Error("Expected the failed worktree to remain registered");
+    expect(await Bun.file(join(registered.path, ".first.env")).text()).toBe(
+      "first partial copy",
+    );
+    await rm(join(registered.path, ".include.env"), { recursive: true });
+    await fixture.write(".first.env", "updated before retry");
+    const recovered = await open({ branch: "collision", existing: true });
+    expect(recovered.created).toBe(false);
+    expect(recovered.attempts.copy).toMatchObject({
+      attempted: true,
+      ok: true,
+    });
+    expect(await Bun.file(join(registered.path, ".include.env")).text()).toBe(
+      ".include.env",
+    );
+    expect(await Bun.file(join(registered.path, ".first.env")).text()).toBe(
+      "updated before retry",
+    );
+    expect(await Bun.file(join(registered.path, "setup-ran")).exists()).toBe(
+      true,
+    );
+
+    await fixture.write(".include.env", "updated after recovery");
+    await open({ branch: "collision", existing: true });
+    expect(await Bun.file(join(registered.path, ".include.env")).text()).toBe(
+      ".include.env",
+    );
   });
 });

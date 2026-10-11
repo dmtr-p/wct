@@ -6,6 +6,12 @@ import { execProcess, runProcess } from "./process";
 
 const INCLUDE_FILENAME = ".worktreeinclude";
 
+function escapeLeadingMarker(pattern: string): string {
+  return pattern.startsWith("#") || pattern.startsWith("!")
+    ? `\\${pattern}`
+    : pattern;
+}
+
 function checkIgnore(
   paths: ReadonlyArray<string>,
   cwd: string,
@@ -91,13 +97,8 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
       const selected = new Set<string>();
       for (const rule of rules) {
         const negate = rule.startsWith("!");
-        let pattern = negate ? rule.slice(1) : rule;
+        const pattern = negate ? escapeLeadingMarker(rule.slice(1)) : rule;
         if (!pattern) continue;
-        // After negation, # and ! name literal characters, not a new comment
-        // or another negation in the single-rule matcher.
-        if (negate && (pattern.startsWith("#") || pattern.startsWith("!"))) {
-          pattern = `\\${pattern}`;
-        }
         const matches = yield* matchPaths(pattern, candidates);
         let blockedDirectories: string[] = [];
         if (pattern.startsWith("**/") && matches.size > 0) {
@@ -114,8 +115,11 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
             ...(yield* checkIgnore([...ancestors], mainRepoPath)),
           ];
           const firstName = pattern.slice(3).split("/")[0];
+          // An extracted name is a literal fragment even when its first
+          // character would introduce a comment or negation in a whole rule.
+          const directoryPattern = escapeLeadingMarker(`${firstName}/`);
           const reachable = yield* matchPaths(
-            `${pattern}\n${firstName}/`,
+            `${pattern}\n${directoryPattern}`,
             ignoredDirectories,
           );
           blockedDirectories = ignoredDirectories.filter(

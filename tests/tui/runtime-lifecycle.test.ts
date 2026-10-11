@@ -20,8 +20,10 @@ describe("tui runtime lifecycle", () => {
       "utf-8",
     );
 
-    expect(tuiCommandSource).not.toContain(".dispose(");
-    expect(appSource).not.toContain(".dispose(");
+    // Input adapter cleanup is separate from disposing the ManagedRuntime.
+    const runtimeDisposal = /\btuiRuntime\s*\.\s*dispose\s*\(/;
+    expect(tuiCommandSource).not.toMatch(runtimeDisposal);
+    expect(appSource).not.toMatch(runtimeDisposal);
   });
 
   test("provides WorkspaceService to TUI effects", async () => {

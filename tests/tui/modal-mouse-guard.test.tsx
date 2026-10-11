@@ -2,19 +2,10 @@
 // while a modal text input was focused pasted raw SGR mouse escape text
 // (`[<0;12;38M[<0;12;38m[<0;1;1m`) into the field.
 //
-// Delivery model (verified against ink/build/input-parser.js): Ink 7.1 splits
-// every complete CSI sequence in a stdin chunk into its OWN useInput event
-// and strips the leading ESC per event. The screenshot garble was therefore
-// THREE per-sequence events (press, release, release) each appended in order
-// by the unguarded modal handlers — the per-hook guard in useGuardedInput is
-// the real fix, and it must live in the shared wrapper because Ink dispatches
-// every event to ALL active useInput hooks, not only App.tsx's dispatcher.
-// (The guard's multi-sequence regex additionally covers Ink's bracketed-paste
-// fallback, the one path that can deliver a concatenated string.)
-//
-// These tests render the real modal components through the PassThrough-stdout
-// harness and write the bug's sequences to stdin — as one chunk (which Ink
-// splits into per-sequence events before dispatch) and individually.
+// Ink 8 discards terminal reports. The harness uses the same read adapter as
+// startTui to deliver mouse actions separately. The shared string guard also
+// handles the screenshot's first token, whose leading ESC was already stripped.
+// These tests cover both batched reports and individual writes.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const runPromiseMock = vi.hoisted(() => vi.fn());
@@ -38,9 +29,7 @@ const { CTRL_ENTER, renderWithInput, sendKeys } = await import(
   "./keypress-harness"
 );
 
-// The bug's press + release + release written as one stdin chunk. Ink's
-// parser splits this into three per-sequence useInput events (one leading
-// ESC stripped per event), so each event must be swallowed by the guard.
+// The bug's press + release + release written as one stdin chunk.
 const BATCHED_CLICK = "[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m";
 const SINGLE_PRESS = "\x1b[<0;12;38M";
 const SINGLE_RELEASE = "\x1b[<0;12;38m";

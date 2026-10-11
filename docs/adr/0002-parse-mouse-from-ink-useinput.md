@@ -5,25 +5,28 @@ status: accepted
 # Mouse input uses the shared guarded Ink input hook
 
 All TUI input listeners use `useGuardedInput` in
-`src/tui/hooks/useGuardedInput.ts`. The hook reads mouse reports from the
-strings delivered by Ink's `useInput`, consumes them before keyboard handlers
-receive them, and dispatches recognized events through `onMouseEvent`.
-Biome restricts direct `useInput` imports to this hook.
+`src/tui/hooks/useGuardedInput.ts`. Biome restricts direct `useInput` imports
+to this hook. Keyboard events use Ink's input channel; mouse events use
+`src/tui/input/terminal-input.ts` subscriptions.
 
-Ink owns stdin through its readable loop and input parser. On the normal
-stdin path, it emits each complete SGR mouse sequence separately and strips
-the leading ESC before calling `useInput`. The guard also handles concatenated
-mouse sequences from Ink's bracketed-paste fallback. Legacy X10 reports are
-consumed as a prefix followed by three payload bytes; they do not trigger
-mouse actions.
+The original implementation parsed mouse reports from Ink 7's `useInput`
+strings. Ink 8 discards unrecognized control sequences before that hook, so
+mouse reports now need to be observed before Ink parses them.
 
-`src/tui/input/mouse.ts` contains sequence recognition, parsing, and tree
-hit-testing. `App.tsx` routes tree events, while `MouseClickable` and modal
-lists handle their own component events. Every active guarded hook consumes
-mouse reports, including reports that do not produce an action, so they
-cannot become text-field input.
+`startTui` passes a read facade from `createTerminalInput` to Ink. Ink remains
+the only stdin reader. The facade recognizes SGR reports across chunks and
+broadcasts events between reads to preserve keyboard/mouse order. It forwards
+SGR bytes for Ink to discard without adding an escape timeout.
 
-Keep parsing on Ink's input stream. A separate stdin data listener would
-compete with Ink's readable loop for the same chunks. This depends on Ink's
-handling of unrecognized CSI sequences; preserve the mouse parser and input
-wiring checks when updating Ink.
+Legacy X10 reports trigger no actions. The adapter removes their three raw
+payload bytes before UTF-8 decoding; Ink discards only their CSI prefix and
+would otherwise deliver coordinates as text. Stream events, raw mode, and
+ref/unref stay on the source. Releasing raw mode or disposing the adapter
+resets parser state; hook cleanup removes subscriptions.
+
+Bracketed paste stays literal on Ink's paste channel. When no paste listener
+exists, the shared hook retains the previous fallback: mouse-only strings
+are swallowed and dispatched, while mixed strings remain keyboard input.
+
+`src/tui/input/mouse.ts` owns parsing and tree hit-testing. `App.tsx` routes
+tree events; `MouseClickable` and modal lists handle component events.

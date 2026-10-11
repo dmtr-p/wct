@@ -21,6 +21,7 @@ import type {
 } from "../../src/services/workspace-service";
 import type { Worktree } from "../../src/services/worktree-service";
 import { HEADER_OFFSET } from "../../src/tui/input/mouse";
+import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
 const runtimeMock = vi.hoisted(() => ({
   runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
@@ -475,9 +476,10 @@ export async function renderApp(
   });
 
   const { render } = await import("ink");
+  const input = createTerminalInput(stdin);
   const instance = render(node, {
     stdout,
-    stdin,
+    stdin: input.stdin,
     debug: true,
     patchConsole: false,
     exitOnCtrlC: false,
@@ -493,6 +495,7 @@ export async function renderApp(
     output: () => stripAnsi(chunks.join("\n")),
     unmount() {
       instance.unmount();
+      input.dispose();
     },
   };
 }

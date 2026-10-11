@@ -473,7 +473,9 @@ if (command === "display-message") {
           },
         },
       });
-      expect(await Bun.file(join(root, "started-session")).text()).toBe(session);
+      expect(await Bun.file(join(root, "started-session")).text()).toBe(
+        session,
+      );
       expect(await Bun.file(join(root, "started-directory")).text()).toBe(
         workingDir,
       );
@@ -485,7 +487,11 @@ if (command === "display-message") {
       expect(await down.exited, await downStderr).toBe(0);
       expect(JSON.parse(await downStdout)).toMatchObject({
         ok: true,
-        data: { worktreePath: worktree, sessionName: session, status: "killed" },
+        data: {
+          worktreePath: worktree,
+          sessionName: session,
+          status: "killed",
+        },
       });
       expect(await Bun.file(join(root, "session")).exists()).toBe(false);
       expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");

@@ -777,7 +777,7 @@ project_name: "myapp"
     }
   });
 
-  test("openCommand human output preserves the legacy fatal copy warning", async () => {
+  test("openCommand human output reports fatal copy failures", async () => {
     await Bun.write(
       join(fixture.repoDir, ".wct.yaml"),
       `version: 1

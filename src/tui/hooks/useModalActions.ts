@@ -1,4 +1,3 @@
-// src/tui/hooks/useModalActions.ts
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";

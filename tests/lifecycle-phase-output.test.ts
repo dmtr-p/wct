@@ -111,7 +111,7 @@ const closeResult: WorkspaceCloseResult = {
   warnings: [],
 };
 
-const LEGACY_OPEN_EVENTS: WorkspaceReporterEvent[] = [
+const OPEN_EVENTS: WorkspaceReporterEvent[] = [
   {
     operation: "open",
     _tag: "TargetResolved",
@@ -138,12 +138,13 @@ const ALL_PHASES: WorkspacePhase[] = [
   { _tag: "CreatingWorktree" },
   { _tag: "CopyingFiles" },
   { _tag: "RunningSetup", name: "install" },
+  { _tag: "RunningDown", name: "cleanup" },
   { _tag: "StartingTmuxSession" },
   { _tag: "StoppingTmuxSession" },
   { _tag: "RemovingWorktree" },
 ];
 
-// Interleaves a phase event before each legacy event, so a listener reacting
+// Interleaves a phase event before each operation event, so a listener reacting
 // to phase order anywhere in the stream would be caught.
 function eventsWithPhases(): WorkspaceReporterEvent[] {
   const phaseEvents: WorkspaceReporterEvent[] = ALL_PHASES.map((phase) => ({
@@ -153,7 +154,7 @@ function eventsWithPhases(): WorkspaceReporterEvent[] {
   }));
   const woven: WorkspaceReporterEvent[] = [];
   const phases = [...phaseEvents];
-  for (const event of LEGACY_OPEN_EVENTS) {
+  for (const event of OPEN_EVENTS) {
     const phaseEvent = phases.shift();
     if (phaseEvent) woven.push(phaseEvent);
     woven.push(event);
@@ -259,7 +260,7 @@ describe("semantic phases and CLI output", () => {
     const withPhasesOptions: Array<Record<string, unknown>> = [];
 
     const humanWithout = await transcript(
-      LEGACY_OPEN_EVENTS,
+      OPEN_EVENTS,
       false,
       withoutPhasesOptions,
     );
@@ -277,7 +278,7 @@ describe("semantic phases and CLI output", () => {
       expect(line).not.toContain("Setup: install…");
     }
 
-    const jsonWithout = await transcript(LEGACY_OPEN_EVENTS, true, []);
+    const jsonWithout = await transcript(OPEN_EVENTS, true, []);
     const jsonWith = await transcript(eventsWithPhases(), true, []);
     expect(jsonWith).toEqual(jsonWithout);
     for (const line of jsonWith) {

@@ -89,7 +89,9 @@ const closeCliCommand = Command.make(
       yes,
       force,
     }),
-).pipe(Command.withDescription("Stop tmux session and remove worktree"));
+).pipe(
+  Command.withDescription("Stop tmux, run down scripts, and remove worktree"),
+);
 
 const downCliCommand = Command.make(
   "down",
@@ -119,7 +121,7 @@ const downCliCommand = Command.make(
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
     }),
-).pipe(Command.withDescription("Stop tmux session for a worktree"));
+).pipe(Command.withDescription("Stop tmux session and run down scripts"));
 
 const initCliCommand = Command.make("init", {}, () => initCommand()).pipe(
   Command.withDescription("Generate a starter .wct.yaml config file"),

@@ -11,7 +11,6 @@ import type {
 import { executeWorkspaceShutdown } from "../services/workspace-service";
 
 function send(message: ShutdownMessage) {
-  // The caller may disappear as soon as its pane is killed.
   if (!process.connected) return;
   try {
     process.send?.(message);

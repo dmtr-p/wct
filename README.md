@@ -6,9 +6,9 @@ Git worktree workflow automation CLI. Quickly create isolated development enviro
 
 ```bash
 wct open <branch>       # Create worktree, run setup, and start tmux session
-wct up                  # Start tmux session in current directory
-wct down                # Stop tmux session for current directory
-wct close <branch...>   # Stop tmux session and remove one or more worktrees
+wct up                  # Start tmux session for the containing checkout
+wct down                # Stop tmux session and run down scripts
+wct close <branch...>   # Stop tmux, run down scripts, and remove worktrees
 wct list                # Show worktrees with tmux session status
 wct switch <branch>     # Switch to another worktree's tmux session
 wct cd <branch>         # Open a shell in a worktree directory
@@ -19,7 +19,7 @@ wct projects remove [path]             # Remove a repo from the project registry
 wct projects list                      # List registered projects
 ```
 
-Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
+`open`, `up`, `down`, and `close` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
 
 ### JSON and terminal output
 
@@ -27,6 +27,9 @@ Both `open` and `up` accept `--profile <name>` / `-P <name>` to select a named c
 `--json` flag. Success envelopes use stdout; error envelopes use stderr.
 JSON output has no color or bold styling. `close --json` returns a structured
 aborted result unless `--yes` is supplied; it never opens a confirmation prompt.
+
+When shutdown destroys the invoking tmux pane, the caller cannot emit its
+final envelope. The detached runner saves the outcome in `result.json`.
 
 Human-readable logs use styling only when their destination stream is a
 terminal. A nonempty `NO_COLOR` disables color and bold styling.
@@ -120,13 +123,13 @@ copy:
   - .env
   - .env.local
 
-# Commands to run after worktree creation (in order)
+# Commands to run during open, before starting tmux (in order)
 setup:
   - name: "Install dependencies"
     command: "bun install"
   - name: "Generate types"
     command: "bun run codegen"
-    optional: true # continue even if this fails
+    optional: true # report failures as optional warnings
 
 # Commands to run after stopping tmux, before removing the worktree (in order)
 down:
@@ -174,7 +177,7 @@ A global config at `~/.wct.yaml` can provide defaults; project-level config take
 
 Both `wct down` and `wct close` run `down` scripts after stopping the tmux session, including when no session exists. Scripts run sequentially from `work_dir`; every script is attempted. A required failure makes the operation fail and keeps the worktree, including with `close --force`. Optional failures produce warnings and allow removal.
 
-Shutdown resolves the checkout root even when invoked from a subdirectory, so `work_dir` and `WCT_WORKTREE_DIR` refer to that checkout.
+`up`, `down`, and `close` resolve the checkout root even when invoked from a subdirectory, so session names, `work_dir`, and `WCT_WORKTREE_DIR` refer to that checkout.
 
 When shutdown stops the tmux session containing the invoking pane, an independent Bun runner finishes cleanup after that pane disappears. Human output prints the path to its saved JSON result before handing off. `close --yes` authorizes the worker's force-removal retry; without `--yes` or `--force`, a dirty worktree remains and the saved result reports `blocked_by_changes`.
 

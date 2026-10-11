@@ -97,7 +97,6 @@ describe("WorktreeItem", () => {
     });
 
     expect(output).toContain("feature/layout");
-    // Stats are no longer part of WorktreeItem — they render as a separate row.
     expect(output).not.toContain("↑1");
     expect(output).not.toContain("~3");
 

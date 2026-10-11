@@ -1,4 +1,3 @@
-// src/tui/hooks/useSessionActions.ts
 
 import { basename } from "node:path";
 import { Effect } from "effect";

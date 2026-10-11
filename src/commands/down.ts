@@ -10,7 +10,7 @@ import { createDownHumanReporter } from "./down-reporter";
 
 export const commandDef: CommandDef = {
   name: "down",
-  description: "Stop tmux session for a worktree",
+  description: "Stop tmux session and run down scripts",
   options: [
     {
       name: "profile",

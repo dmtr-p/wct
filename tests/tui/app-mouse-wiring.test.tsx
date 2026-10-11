@@ -436,7 +436,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
   });
 
-  describe("Bug: a viewport shrink must not hide the selection (PR #104 r3512096209)", () => {
+  describe("viewport shrink preserves selection visibility", () => {
     test("resizing the terminal shorter keeps a bottom-row selection visible", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },
@@ -518,7 +518,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
   });
 
-  describe("Bug: row reflow above the selection must not hide it (PR #104 r3530858752)", () => {
+  describe("row reflow above the selection preserves its visibility", () => {
     // The expanded PR title fits at 100 columns and wraps at 60 columns,
     // shifting every row below it while selection and viewport size stay fixed.
     const wrappingTitle =
@@ -656,7 +656,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
   });
 
-  describe("Bug: narrow terminals must not wrap bottom chrome (PR #104 r3520956519)", () => {
+  describe("narrow terminals keep bottom chrome on one line", () => {
     test("the frame stays within terminal rows when an error exceeds the width", async () => {
       registryItems.items = [
         { id: "repo-1", repo_path: repoPath, project: "alpha" },

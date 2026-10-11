@@ -6,7 +6,8 @@
 
 A Workspace is a managed worktree environment controlled by `wct`: a Git
 worktree plus its lifecycle resources, including tmux session startup and
-shutdown, setup/down scripts and copy side effects, and the derived `WCT_*` environment.
+shutdown, setup/down scripts and copy side effects, and the derived `WCT_*`
+environment.
 Its existence is determined by the managed worktree; missing or failed
 optional lifecycle resources do not make it a Pending Workspace.
 
@@ -45,18 +46,19 @@ scripts. The CLI's internal force-removal retry only retries removal.
 Removal retries resolve the main repository from the worktree root rather
 than using the invoking directory, which cleanup scripts may delete.
 Missing registered worktree directories skip scripts during Close.
-Startup and shutdown target the containing checkout root, including calls from nested
-working directories. Stopping the session containing the invoking pane hands
-completion to an independent process before the kill; its JSON outcome is
-saved outside the worktree, bypassing project-local temporary directories
-and symlinks into the checkout. The worker uses the configuration and environment
-resolved before handoff. A CLI `--yes` also authorizes its force-removal retry.
+Startup and shutdown target the containing checkout root, including calls
+from nested working directories. Stopping the session containing the invoking
+pane hands completion to an independent process before the kill; its JSON
+outcome is saved outside the worktree, bypassing project-local temporary
+directories and symlinks into the checkout. The worker uses the configuration and
+environment resolved before handoff. A CLI `--yes` also authorizes its
+force-removal retry.
 
 Use Start and Stop in user-facing action names, and `up` and `down` when
 referring to the CLI commands. Stopping a session uses tmux's `kill-session`
 operation; it does not suspend the processes in the session.
 
-The JSON contract retains tmux's kill wording for compatibility: down reports
+The JSON contract uses tmux's kill wording: down reports
 a stopped session as `status: "killed"`, and down and close expose an
 `attempts.kill` field.
 
@@ -64,9 +66,9 @@ a stopped session as `status: "killed"`, and down and close expose an
 
 A Lifecycle Phase is the current step of a Workspace Operation, such as
 preparing, creating a worktree, copying files, running setup, starting or
-stopping a tmux session, running down scripts, or removing a worktree. The TUI adds a validation
-phase after the service operation settles to reconcile the displayed state
-with a fresh repository scan.
+stopping a tmux session, running down scripts, or removing a worktree. The TUI
+adds a validation phase after the service operation settles to reconcile the
+displayed state with a fresh repository scan.
 
 ### Lifecycle Progress Row
 

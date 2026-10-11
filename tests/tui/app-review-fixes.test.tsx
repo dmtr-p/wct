@@ -1,24 +1,3 @@
-// Regression tests for the PR #104 review fixes that render the REAL exported
-// `App` from `src/tui/App.tsx` through Ink's actual input pipeline:
-//
-// 1. Opening a true modal (`o`) and cancelling must not wipe a wheel-scrolled
-//    viewport (the old `viewportRows = rows.length` modal branch clamped the
-//    scroll offset to 0 and re-anchored to the selection on cancel).
-// 2. A true modal over a tree taller than the terminal renders intact instead
-//    of being garbled by the overflowing full tree (overflowY clipping).
-// 3. Ctrl+C writes MOUSE_DISABLE BEFORE Ink turns raw mode off (same ordering
-//    fix as the `q` path; requires exitOnCtrlC to be off so the app owns \x03).
-// 4. Legacy X10 mouse bytes (terminal honors ?1000 but not ?1006) are
-//    swallowed by the guard instead of typing junk into the Search query —
-//    including payload bytes ≥ 0x80 that UTF-8 decode merges into ONE
-//    multi-byte character (the guard must count raw bytes, not characters).
-// 5. Horizontal wheel events (SGR cb 66/67) do not scroll the viewport.
-// 6. A multi-line bracketed paste into Search is collapsed onto one query row
-//    (StatusBar budgets the query line as exactly one terminal row).
-//
-// Service mocks and the Ink render harness live in tests/tui/app-harness.tsx
-// (shared with tests/tui/app-mouse-wiring.test.tsx); see the mocking-strategy
-// note there.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -38,7 +38,10 @@ describe("Codex stop hook", () => {
     env.HOME = join(root, "home");
     env.TMPDIR = join(root, "tmp");
     await Bun.write(join(repo, "tracked file.txt"), "original\n");
-    for (const args of [["init", "-q"], ["add", "tracked file.txt"]]) {
+    for (const args of [
+      ["init", "-q"],
+      ["add", "tracked file.txt"],
+    ]) {
       const result = Bun.spawnSync(["git", ...args], { cwd: repo, env });
       expect(result.exitCode, result.stderr.toString()).toBe(0);
     }
@@ -118,7 +121,7 @@ printf '%s\\n' "$*" >> "$WCT_HOOK_LOG"
   test("blocks on Biome errors and emits valid JSON", async () => {
     expect(runHook("error")).toMatchObject({
       decision: "block",
-      reason: expect.stringContaining("Biome failure \"quoted\""),
+      reason: expect.stringContaining('Biome failure "quoted"'),
     });
     expect(await Bun.file(log).exists()).toBe(false);
   });

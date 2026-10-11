@@ -891,21 +891,24 @@ function upImpl(
     const { profile, reporter } = options;
 
     yield* emitPhase(reporter, "up", { _tag: "Preparing" });
-    const worktreePath = yield* resolveTargetImpl(options);
-    yield* emitReporter(reporter, {
-      operation: "up",
-      _tag: "TargetResolved",
-      worktreePath,
-    });
+    const targetPath = yield* resolveTargetImpl(options);
 
     const isRepo = yield* WorktreeService.use((service) =>
-      service.isGitRepo(worktreePath),
+      service.isGitRepo(targetPath),
     );
     if (!isRepo) {
       return yield* Effect.fail(
         commandError("not_git_repo", "Not a git repository"),
       );
     }
+    const worktreePath = yield* WorktreeService.use((service) =>
+      service.getWorktreeRoot(targetPath),
+    );
+    yield* emitReporter(reporter, {
+      operation: "up",
+      _tag: "TargetResolved",
+      worktreePath,
+    });
 
     const [mainRepoPath, branch] = yield* Effect.all([
       WorktreeService.use((service) => service.getMainRepoPath(worktreePath)),

@@ -45,7 +45,7 @@ scripts. The CLI's internal force-removal retry only retries removal.
 Removal retries resolve the main repository from the worktree root rather
 than using the invoking directory, which cleanup scripts may delete.
 Missing registered worktree directories skip scripts during Close.
-Shutdown targets the containing checkout root, including calls from nested
+Startup and shutdown target the containing checkout root, including calls from nested
 working directories. Stopping the session containing the invoking pane hands
 completion to an independent process before the kill; its JSON outcome is
 saved outside the worktree, bypassing project-local temporary directories

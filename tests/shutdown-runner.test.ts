@@ -128,6 +128,14 @@ if (command === "display-message") {
   console.log(process.env.WCT_TEST_SESSION);
 } else if (command === "has-session") {
   process.exit(await Bun.file(root + "/session").exists() ? 0 : 1);
+} else if (command === "new-session") {
+  const name = process.argv[process.argv.indexOf("-s") + 1];
+  const cwd = process.argv[process.argv.indexOf("-c") + 1];
+  await Bun.write(root + "/started-session", name);
+  await Bun.write(root + "/started-directory", cwd);
+  await Bun.write(root + "/session", "exists");
+} else if (command === "set-environment" || command === "select-window") {
+  process.exit(0);
 } else if (command === "kill-session") {
   if (!process.argv.includes("=" + process.env.WCT_TEST_SESSION)) process.exit(91);
   await appendFile(root + "/trace", "kill\\n");
@@ -417,6 +425,76 @@ if (command === "display-message") {
       await expect(realpath(worktree)).rejects.toMatchObject({
         code: "ENOENT",
       });
+    },
+  );
+
+  test.each([
+    ["current directory", false],
+    ["current directory", true],
+    ["explicit path", false],
+    ["explicit path", true],
+  ] as const)(
+    "up and down share the checkout-root session via %s (configured work_dir=%s)",
+    async (target, configuredWorkDir) => {
+      const config = await Bun.file(join(main, ".wct.yaml")).json();
+      if (!configuredWorkDir) delete config.work_dir;
+      config.tmux = { windows: [{ name: "main" }] };
+      await Bun.write(join(main, ".wct.yaml"), JSON.stringify(config));
+      await rm(join(root, "session"));
+      const subdirectory = join(worktree, "apps/web");
+      const args = [
+        "up",
+        "--no-attach",
+        "--json",
+        ...(target === "explicit path" ? ["--path", subdirectory] : []),
+      ];
+      const up = start(
+        "source",
+        args,
+        false,
+        target === "explicit path" ? main : subdirectory,
+      );
+      const upStdout = new Response(up.stdout).text();
+      const upStderr = new Response(up.stderr).text();
+      expect(await up.exited, await upStderr).toBe(0);
+      const workingDir = configuredWorkDir ? subdirectory : worktree;
+      expect(JSON.parse(await upStdout)).toMatchObject({
+        ok: true,
+        data: {
+          worktreePath: worktree,
+          sessionName: session,
+          env: { WCT_WORKTREE_DIR: worktree, WCT_WORK_DIR: workingDir },
+          attempts: {
+            tmux: {
+              attempted: true,
+              ok: true,
+              value: { _tag: "Created" },
+            },
+          },
+        },
+      });
+      expect(await Bun.file(join(root, "started-session")).text()).toBe(session);
+      expect(await Bun.file(join(root, "started-directory")).text()).toBe(
+        workingDir,
+      );
+      expect(await Bun.file(join(root, "session")).exists()).toBe(true);
+
+      const down = start("source", ["down", "--json"], false);
+      const downStdout = new Response(down.stdout).text();
+      const downStderr = new Response(down.stderr).text();
+      expect(await down.exited, await downStderr).toBe(0);
+      expect(JSON.parse(await downStdout)).toMatchObject({
+        ok: true,
+        data: { worktreePath: worktree, sessionName: session, status: "killed" },
+      });
+      expect(await Bun.file(join(root, "session")).exists()).toBe(false);
+      expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");
+      expect((await Bun.file(environment).text()).trim().split("\n")).toEqual([
+        workingDir,
+        worktree,
+        workingDir,
+        main,
+      ]);
     },
   );
 

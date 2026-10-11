@@ -133,6 +133,7 @@ describe("WorkspaceService target resolution", () => {
     const mainRepoPath = await mkdtemp(join(tmpdir(), "wct-workspace-main-"));
     const worktree: WorktreeService = {
       ...liveWorktreeService,
+      getWorktreeRoot: (cwd) => Effect.succeed(cwd),
       findWorktreeByBranch: (branch) =>
         Effect.succeed(
           branch === "feature"
@@ -304,6 +305,7 @@ describe("WorkspaceService open", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            getWorktreeRoot: (cwd) => Effect.succeed(cwd),
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(repoDir),
             getCurrentBranch: () => Effect.succeed("profiled"),

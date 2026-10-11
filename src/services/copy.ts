@@ -137,7 +137,7 @@ export function copyEntries(
   });
 }
 
-function copyFiles(
+export function copyFiles(
   files: ReadonlyArray<string>,
   sourceDir: string,
   targetDir: string,

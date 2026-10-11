@@ -3,6 +3,7 @@ import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect, FileSystem } from "effect";
 import {
   loadConfig,
+  loadWorkspaceConfig,
   resolveProfile,
   resolveWorktreePath,
 } from "../config/loader";
@@ -10,7 +11,7 @@ import type { ResolvedConfig } from "../config/schema";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { type CommandResult, runShellCommands } from "./command-runner";
-import { type CopyResult, copyEntries } from "./copy";
+import { type CopyResult, copyEntries, copyFiles } from "./copy";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,
@@ -29,6 +30,7 @@ import {
   TmuxService,
   type TmuxService as TmuxServiceApi,
 } from "./tmux";
+import { resolveWorktreeInclude } from "./worktree-include";
 import {
   type CreateWorktreeResult,
   type RemoveWorktreeResult,
@@ -538,8 +540,9 @@ function openImpl(
       );
     }
 
-    const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
-      commandError("config_error", error.message, error),
+    const { config, projectDefinesCopy } = yield* Effect.mapError(
+      loadWorkspaceConfig(mainRepoPath),
+      (error) => commandError("config_error", error.message, error),
     );
     const { config: resolved, profileName } = yield* Effect.try({
       try: () => resolveProfile(config, branch, profile),
@@ -644,7 +647,19 @@ function openImpl(
       );
     }
 
-    if (resolved.copy && resolved.copy.length > 0) {
+    const profileDefinesCopy =
+      profileName !== undefined &&
+      config.profiles?.[profileName]?.copy !== undefined;
+    const includeFiles =
+      !projectDefinesCopy &&
+      !profileDefinesCopy &&
+      worktreeResult._tag !== "AlreadyExists"
+        ? yield* resolveWorktreeInclude(mainRepoPath)
+        : undefined;
+    const filesToCopy = includeFiles ?? resolved.copy;
+    const copyRoutine = includeFiles === undefined ? copyEntries : copyFiles;
+
+    if (filesToCopy && filesToCopy.length > 0) {
       yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });
       yield* emitReporter(reporter, {
         operation: "open",
@@ -653,9 +668,9 @@ function openImpl(
       });
     }
     const copy =
-      resolved.copy && resolved.copy.length > 0
+      filesToCopy && filesToCopy.length > 0
         ? yield* Effect.mapError(
-            copyEntries(resolved.copy, mainRepoPath, worktreePath, {
+            copyRoutine(filesToCopy, mainRepoPath, worktreePath, {
               entrySkipped: ({ entry, reason }) =>
                 emitReporter(reporter, {
                   operation: "open",

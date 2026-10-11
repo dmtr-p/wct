@@ -128,9 +128,14 @@ function captureConfigFile(
   });
 }
 
-export function loadConfig(
+export interface LoadedWorkspaceConfig {
+  config: ResolvedConfig;
+  projectDefinesCopy: boolean;
+}
+
+export function loadWorkspaceConfig(
   projectDir: string,
-): Effect.Effect<ResolvedConfig, ConfigError, FileSystem.FileSystem> {
+): Effect.Effect<LoadedWorkspaceConfig, ConfigError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const projectConfigPath = join(projectDir, CONFIG_FILENAME);
     const globalConfigPath = join(homeDir(), CONFIG_FILENAME);
@@ -164,8 +169,17 @@ export function loadConfig(
       return yield* Effect.fail(configError(validation.errors.join("\n")));
     }
 
-    return resolveConfig(merged, projectDir);
+    return {
+      config: resolveConfig(merged, projectDir),
+      projectDefinesCopy: projectConfig.config?.copy !== undefined,
+    };
   });
+}
+
+export function loadConfig(
+  projectDir: string,
+): Effect.Effect<ResolvedConfig, ConfigError, FileSystem.FileSystem> {
+  return Effect.map(loadWorkspaceConfig(projectDir), ({ config }) => config);
 }
 
 export function resolveWorktreePath(

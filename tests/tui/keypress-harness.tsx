@@ -1,5 +1,6 @@
 import { PassThrough } from "node:stream";
 import type React from "react";
+import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
 export const CTRL_ENTER = "\x1b[13;5u";
 export const ENTER = "\r";
@@ -60,9 +61,10 @@ export async function renderWithInput(node: React.ReactElement) {
   });
 
   const { render } = await import("ink");
+  const input = createTerminalInput(stdin);
   const instance = render(node, {
     stdout,
-    stdin,
+    stdin: input.stdin,
     debug: true,
     patchConsole: false,
     exitOnCtrlC: false,
@@ -76,6 +78,7 @@ export async function renderWithInput(node: React.ReactElement) {
     lastFrame: () => stripAnsi(chunks.at(-1) ?? ""),
     unmount() {
       instance.unmount();
+      input.dispose();
     },
   };
 }

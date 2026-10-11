@@ -63,6 +63,7 @@ import {
 } from "./input/mouse";
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
+import { createTerminalInput } from "./input/terminal-input";
 import type { LifecycleState } from "./lifecycle";
 import {
   createLifecycleClaims,
@@ -1299,13 +1300,6 @@ export function App() {
     }
   }
 
-  // useGuardedInput parses mouse events out of the string Ink already forwards
-  // (no second stdin listener, ADR 0002) and swallows ANY SGR mouse sequence
-  // in EVERY mode — including release/motion/extra-button sequences, and
-  // multi-sequence strings from Ink's paste-fallback path (normal stdin
-  // delivery is one sequence per event) — so no escape garble ever reaches
-  // the handler below (or any other useGuardedInput handler, e.g. the modals'
-  // text inputs). Actionable events arrive via onMouseEvent, in order.
   useGuardedInput(
     (input, key) => {
       // Double-clicks require consecutive mouse presses. Any keyboard event
@@ -1618,13 +1612,16 @@ export function App() {
 }
 
 export async function startTui(): Promise<void> {
-  // exitOnCtrlC stays OFF: the guarded input dispatcher in App owns Ctrl+C so
-  // it can write MOUSE_DISABLE before Ink turns raw mode off (Ink's built-in
-  // \x03 shortcut disables raw mode before React unmount, which would leak
-  // mouse reports onto the shell — the same ordering bug the `q` path avoids).
-  const instance = render(<App />, {
-    alternateScreen: true,
-    exitOnCtrlC: false,
-  });
-  await instance.waitUntilExit();
+  // App handles Ctrl+C so mouse reporting stops before Ink releases raw mode.
+  const input = createTerminalInput(process.stdin);
+  try {
+    const instance = render(<App />, {
+      stdin: input.stdin,
+      alternateScreen: true,
+      exitOnCtrlC: false,
+    });
+    await instance.waitUntilExit();
+  } finally {
+    input.dispose();
+  }
 }

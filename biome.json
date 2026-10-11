@@ -23,7 +23,7 @@
             "paths": {
               "ink": {
                 "importNames": ["useInput"],
-                "message": "Use useGuardedInput (src/tui/hooks/useGuardedInput.ts) instead: raw useInput handlers receive SGR mouse escape chunks as printable input and paste them into text fields."
+                "message": "Use useGuardedInput (src/tui/hooks/useGuardedInput.ts) for shared keyboard and mouse routing, including the paste fallback guard."
               }
             }
           }

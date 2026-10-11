@@ -36,18 +36,10 @@ export function createMouseController(stdout: MouseWriter) {
 export type MouseController = ReturnType<typeof createMouseController>;
 
 /**
- * Enable mouse reporting for the lifetime of the TUI and guarantee the terminal
- * is restored on every exit path. Mirrors `useRefresh`: a plain React hook over
- * Node/Ink primitives, no Effect service. This is a DELIBERATE, lifecycle-only
- * exception to the repo's effect-first guideline — enabling/disabling mouse
- * reporting is pure terminal-lifecycle plumbing tied to React mount/unmount
- * and Ink's exit sequencing, with no business logic to lift into Effect.
- *
- * Returns `disableMouse()` — call it on the `q` quit path *before* `exit()`,
- * because Ink's `handleExit` turns off raw mode before React unmount runs, so
- * the unmount-cleanup disable would be too late to avoid echoed bytes.
- *
- * `WCT_DISABLE_MOUSE` (any non-empty value) makes the hook a complete no-op.
+ * Own mouse reporting for the React mount/unmount lifecycle. Quit handlers
+ * must call disableMouse before exit(): Ink releases raw mode before React
+ * cleanup, allowing mouse bytes to echo during that gap.
+ * Any non-empty WCT_DISABLE_MOUSE value disables reporting.
  */
 export function useMouse(): { disableMouse: () => void } {
   const { stdout } = useStdout();
@@ -65,7 +57,6 @@ export function useMouse(): { disableMouse: () => void } {
 
   useEffect(() => {
     if (process.env.WCT_DISABLE_MOUSE) {
-      // Complete no-op: never enable, never register handlers.
       return;
     }
 
@@ -73,22 +64,9 @@ export function useMouse(): { disableMouse: () => void } {
     if (!controller) return;
     controller.enable();
 
-    // Synchronous restore for explicit-exit paths. Idempotent via the `enabled`
-    // guard, so firing more than once (e.g. exit after the `q` disable) is
-    // harmless.
-    //
-    // We deliberately do NOT register per-signal handlers
-    // (process.on("SIGINT"/"SIGTERM"/"SIGHUP", …)). Ink tears down on signals
-    // via signal-exit (ink.js:255 `signalExit(this.unmount)`), which only
-    // re-raises the signal — and thus runs Ink's unmount — when it is the SOLE
-    // owner of that signal: `process.listeners(sig).length === emitter.count`.
-    // Adding our own listener breaks that invariant, so signal-exit bails: Ink
-    // never unmounts (alt-screen/cursor/raw-mode left broken) and the signal is
-    // never re-raised, hanging the process (notably on SIGHUP, which nothing
-    // else owns). Instead we rely on the existing path — signal-exit →
-    // Ink.unmount → React unmount → this effect's cleanup disable() — to write
-    // the disable bytes while Ink restores the terminal. The "exit" event is
-    // NOT signal-counted by signal-exit, so process.once("exit") is safe.
+    // Separate signal listeners interfere with Ink's signal-exit ownership,
+    // preventing unmount and terminal restoration. Use React cleanup for
+    // signals and the process exit event for explicit exits; both are idempotent.
     const restore = () => controller.disable();
     const processEvents: EventEmitter = process;
     processEvents.once("exit", restore);

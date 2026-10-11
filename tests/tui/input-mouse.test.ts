@@ -340,14 +340,7 @@ describe("isMouseSequence", () => {
     expect(isMouseSequence("")).toBe(false);
   });
 
-  // Multi-sequence strings — defense-in-depth, NOT the normal stdin path.
-  // Ink 7.1's input parser (ink/build/input-parser.js) splits every complete
-  // CSI sequence in a stdin chunk into its OWN useInput event and strips the
-  // leading ESC per event, so a concatenated string can only reach useInput
-  // via Ink's bracketed-paste fallback (emitInput(event.paste) when no paste
-  // listener is registered) carrying mouse-shaped pasted text — or a future
-  // change in Ink's delivery model. The guard accepts one-or-more sequences
-  // so that path can never leak escape bytes into text inputs either.
+  // Ink's paste fallback can deliver multiple mouse-shaped tokens together.
   test("matches a concatenated press+release+release string (paste-fallback shape)", () => {
     expect(isMouseSequence("[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m")).toBe(true);
   });
@@ -387,11 +380,6 @@ describe("isMouseSequence", () => {
 });
 
 describe("splitMouseSequences", () => {
-  // Pins the ordering/multi-event contract for multi-sequence strings (the
-  // paste-fallback shape — see the delivery-model note above). This pure
-  // suite is the real coverage for the splitter; the app-mouse-wiring tests
-  // exercise guard integration end-to-end but Ink splits their stdin writes
-  // into per-sequence events before the splitter is ever needed.
   test("splits a concatenated string into single sequences, in order", () => {
     expect(splitMouseSequences("[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m")).toEqual(
       ["[<0;12;38M", "\x1b[<0;12;38m", "\x1b[<0;1;1m"],
@@ -429,28 +417,10 @@ describe("splitMouseSequences", () => {
   });
 });
 
-describe("dispatcher guard: release/motion events never reach Search text input", () => {
-  // Mirrors the exact guard shape in App.tsx's useInput dispatcher:
-  //   if (isMouseSequence(input)) {
-  //     const mouse = parseSgrMouse(input);
-  //     if (mouse) handleMouse(mouse);
-  //     return;
-  //   }
-  //   ... falls through to handleSearchInput(input, key) in Search mode ...
-  // Bug 3 was that the OLD guard checked `parseSgrMouse(input)` truthiness
-  // instead of sequence shape, so release/motion/extra-button sequences (which
-  // parseSgrMouse deliberately resolves to null) fell through and got appended
-  // to the search query as raw escape bytes.
+describe("paste fallback guard: mouse reports never reach Search text input", () => {
+  // Reports without an action still need to be swallowed by the string guard.
   function dispatch(input: string, appendToQuery: (text: string) => void) {
-    if (isMouseSequence(input)) {
-      const mouse = parseSgrMouse(input);
-      if (mouse) {
-        // handleMouse(mouse) — not relevant to this test, Search ignores mouse
-      }
-      return;
-    }
-    // handleSearchInput's catch-all text-input branch (App.tsx ~line 445):
-    // `else if (input && !key.ctrl && !key.meta) setSearchQuery((q) => q + input)`
+    if (isMouseSequence(input)) return;
     appendToQuery(input);
   }
 

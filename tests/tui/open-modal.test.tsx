@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import type React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
 const runPromiseMock = vi.hoisted(() => vi.fn());
 
@@ -61,9 +62,10 @@ async function renderNode(node: React.ReactElement) {
   });
 
   const { render } = await import("ink");
+  const input = createTerminalInput(stdin);
   const instance = render(node, {
     stdout,
-    stdin,
+    stdin: input.stdin,
     debug: true,
     patchConsole: false,
     exitOnCtrlC: false,
@@ -78,6 +80,7 @@ async function renderNode(node: React.ReactElement) {
     stdin,
     unmount() {
       instance.unmount();
+      input.dispose();
     },
   };
 }

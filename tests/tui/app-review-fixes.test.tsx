@@ -319,10 +319,7 @@ describe("App.tsx review fixes (real App)", () => {
       expect(rendered.output()).toContain("main");
 
       await sendKeys(rendered.stdin, "/"); // enter Search
-      // An X10 left-click press+release at col 5, row 12: ESC [ M + 3 payload
-      // bytes each. Ink splits each report into an "[M" CSI event plus a
-      // separate printable payload event; the payload (" %," / "#%,") is what
-      // leaked into the query before the guard armed a byte-counted swallow.
+      // X10 press/release at col 5, row 12. Payloads must not enter Search.
       await sendKeys(rendered.stdin, "\x1b[M %,\x1b[M#%,");
       await sendKeys(rendered.stdin, "f");
       await tick(5);
@@ -336,7 +333,7 @@ describe("App.tsx review fixes (real App)", () => {
     }
   });
 
-  test("X10 payload bytes that UTF-8 decode merges into one character do not desync the guard", async () => {
+  test("X10 coordinates that form valid UTF-8 do not swallow the next key", async () => {
     setTallWorktrees(repoPath, 5);
 
     const rendered = await renderApp(<App />, 20);
@@ -345,12 +342,8 @@ describe("App.tsx review fixes (real App)", () => {
       expect(rendered.output()).toContain("main");
 
       await sendKeys(rendered.stdin, "/"); // enter Search
-      // An X10 left-click press+release at col 163, row 137: the coordinate
-      // bytes are col+32 = 0xC3 and row+32 = 0xA9, which stdin's UTF-8
-      // decode merges into the SINGLE character "é" — the 3-byte payload
-      // arrives as the two-character string " é". A guard that decrements by
-      // string length drains only 2 of the 3 armed bytes, stays armed, and
-      // eats the next real keystroke; the byte-counted guard drains exactly.
+      // Coordinates 163/137 encode as C3 A9 (é). The adapter must count three
+      // raw payload bytes, even though UTF-8 decoding would produce two chars.
       await sendKeys(rendered.stdin, "\x1b[M é\x1b[M#é");
       await sendKeys(rendered.stdin, "f");
       await tick(5);
@@ -364,7 +357,7 @@ describe("App.tsx review fixes (real App)", () => {
     }
   });
 
-  test("X10 payload bytes that are INVALID UTF-8 are swallowed, not leaked to the query", async () => {
+  test("X10 coordinates containing invalid UTF-8 never enter the query", async () => {
     setTallWorktrees(repoPath, 5);
 
     const rendered = await renderApp(<App />, 20);
@@ -373,14 +366,8 @@ describe("App.tsx review fixes (real App)", () => {
       expect(rendered.output()).toContain("main");
 
       await sendKeys(rendered.stdin, "/"); // enter Search
-      // An X10 left-click press+release at col 100, row 8: the col byte is
-      // col+32 = 0x84 — a lone UTF-8 continuation byte, which stdin's decode
-      // replaces with U+FFFD (THREE UTF-8 bytes standing in for ONE raw
-      // byte). Counting the replacement char at its encoded width overshoots
-      // the 3-byte counter, drops the guard, and leaks "�(" into the query;
-      // counting it as the single raw byte it replaced drains exactly. The
-      // bytes must be written RAW (a JS string would re-encode 0x84 as two
-      // valid UTF-8 bytes and never produce the replacement char).
+      // Col 100 encodes as the invalid UTF-8 byte 0x84. Write raw bytes:
+      // a string would re-encode the value and miss this regression.
       rendered.stdin.write(
         Buffer.from([
           0x1b,

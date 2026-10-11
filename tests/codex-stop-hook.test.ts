@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,6 +52,7 @@ case "$WCT_HOOK_MODE" in
   modify) printf 'formatted\\n' > "tracked file.txt" ;;
   untracked) printf 'formatted\\n' > "new file.txt" ;;
   create) printf 'formatted\\n' > "created file.txt" ;;
+  temporary) printf 'formatted\\n' > "$TMPDIR/user-file.txt" ;;
   delete) rm "tracked file.txt" ;;
   error) printf 'Biome failure "quoted"\\n'; exit 1 ;;
 esac
@@ -115,6 +116,30 @@ printf '%s\\n' "$*" >> "$WCT_HOOK_LOG"
       expect(await Bun.file(log).text()).toBe(
         "run typecheck\nrun test -- --reporter=agent\n",
       );
+    },
+  );
+
+  test.each(["absolute", "relative", "symlink"])(
+    "ignores its own logs in a project-local TMPDIR (%s)",
+    async (kind) => {
+      const temporaryDirectory = join(repo, "tmp");
+      await mkdir(temporaryDirectory);
+      if (kind === "symlink") {
+        env.TMPDIR = join(root, "temp-alias");
+        await symlink(temporaryDirectory, env.TMPDIR);
+      } else {
+        env.TMPDIR = kind === "relative" ? "./tmp" : temporaryDirectory;
+      }
+      expect(runHook("unchanged")).toEqual({ continue: true });
+      expect(await Bun.file(log).text()).toBe(
+        "run typecheck\nrun test -- --reporter=agent\n",
+      );
+      for (const mode of ["modify", "temporary"]) {
+        expect(runHook(mode)).toMatchObject({
+          decision: "block",
+          reason: expect.stringContaining("Biome modified files"),
+        });
+      }
     },
   );
 

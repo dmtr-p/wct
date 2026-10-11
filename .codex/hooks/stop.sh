@@ -5,7 +5,7 @@ set -u
 cat >/dev/null
 
 trim_lines=100
-tmp_dir="${TMPDIR:-/tmp}"
+tmp_dir=$(cd "${TMPDIR:-/tmp}" && pwd -P)
 biome_log=$(mktemp "${tmp_dir%/}/codex-stop-biome.XXXXXX")
 typecheck_log=$(mktemp "${tmp_dir%/}/codex-stop-typecheck.XXXXXX")
 test_log=$(mktemp "${tmp_dir%/}/codex-stop-test.XXXXXX")
@@ -20,7 +20,12 @@ emit_continue() {
 
 snapshot_files() {
   bun -e '
-import { lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
+
+// Hook logs can live inside the repo when TMPDIR is project-local.
+const logs = new Set(process.argv.slice(1).map(path => realpathSync(path)));
+const root = realpathSync(".");
 
 const files = Bun.spawnSync([
   "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
@@ -29,6 +34,7 @@ if (files.exitCode !== 0) process.exit(files.exitCode);
 const paths = [...new Set(files.stdout.toString().split("\0").filter(Boolean))].sort();
 const snapshot = new Bun.CryptoHasher("sha256");
 for (const path of paths) {
+  if (logs.has(resolve(root, path))) continue;
   snapshot.update(path + "\0");
   try {
     const stat = lstatSync(path);
@@ -43,7 +49,7 @@ for (const path of paths) {
   }
 }
 console.log(snapshot.digest("hex"));
-'
+' "${biome_log}" "${typecheck_log}" "${test_log}"
 }
 
 emit_block_with_log() {

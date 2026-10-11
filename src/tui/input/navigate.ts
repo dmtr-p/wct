@@ -47,7 +47,7 @@ export function handleNavigateInput(
     return;
   }
 
-  if (input === "d" && ctx.tmuxClient) {
+  if (input === "d") {
     ctx.handleDownSelectedWorktree();
     return;
   }

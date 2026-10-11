@@ -94,7 +94,7 @@ export function handleExpandedInput(
     return;
   }
 
-  if (input === "d" && ctx.tmuxClient) {
+  if (input === "d") {
     ctx.handleDownSelectedWorktree();
     return;
   }

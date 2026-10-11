@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stdio } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import type { WctError } from "../errors";
@@ -6,6 +6,7 @@ import {
   type WorkspaceOpenOptions,
   type WorkspaceOpenResult,
   type WorkspaceReporter,
+  type WorkspaceReporterEvent,
   WorkspaceService,
 } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
@@ -118,65 +119,67 @@ function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
 
 function createOpenHumanReporter(
   options: WorkspaceOpenOptions,
+  stdio: Stdio.Stdio,
 ): WorkspaceReporter {
   let resolvedBranch = options.branch;
   let resolvedBase = options.base;
 
+  const onEvent = (event: WorkspaceReporterEvent) => {
+    if (event._tag === "TargetResolved") {
+      resolvedBranch = event.branch ?? resolvedBranch;
+      resolvedBase = event.base ?? resolvedBase;
+      return Effect.void;
+    }
+
+    if (event._tag === "CopyEntrySkipped") {
+      return event.reason === "directory_not_found_or_empty"
+        ? logger.warn(`Directory not found or empty: ${event.entry}`)
+        : logger.warn(`No files matched pattern: ${event.entry}`);
+    }
+
+    if (event._tag === "CopyEntryFailed") {
+      return event.reason === "source_not_found"
+        ? logger.warn(`File not found: ${event.file}`)
+        : logger.warn(`Failed to copy ${event.file}: ${event.error}`);
+    }
+
+    if (event._tag === "SetupCommandStarted") {
+      return logger.step(event.current, event.total, event.name);
+    }
+
+    if (event._tag === "SetupCommandCompleted") {
+      if (event.result._tag === "OptionalFailed") {
+        return logger.warn(
+          `${event.result.name} failed (optional): ${event.result.error ?? "Unknown error"}`,
+        );
+      }
+      if (event.result._tag === "Failed") {
+        return logger.error(
+          `${event.result.name} failed: ${event.result.error ?? "Unknown error"}`,
+        );
+      }
+      return Effect.void;
+    }
+
+    if (event._tag !== "AttemptStarted") return Effect.void;
+
+    switch (event.attempt) {
+      case "worktree":
+        return logger.info(
+          `Creating worktree${resolvedBranch ? ` for '${resolvedBranch}'` : ""}${
+            resolvedBase ? ` based on '${resolvedBase}'` : ""
+          }`,
+        );
+      case "copy":
+        return logger.info("Copying files...");
+      case "setup":
+        return logger.info("Running setup commands...");
+      case "tmux":
+        return logger.info("Starting tmux session...");
+    }
+  };
   return {
-    event: (event) => {
-      if (event._tag === "TargetResolved") {
-        resolvedBranch = event.branch ?? resolvedBranch;
-        resolvedBase = event.base ?? resolvedBase;
-        return Effect.void;
-      }
-
-      if (event._tag === "CopyEntrySkipped") {
-        return event.reason === "directory_not_found_or_empty"
-          ? logger.warn(`Directory not found or empty: ${event.entry}`)
-          : logger.warn(`No files matched pattern: ${event.entry}`);
-      }
-
-      if (event._tag === "CopyEntryFailed") {
-        return event.reason === "source_not_found"
-          ? logger.warn(`File not found: ${event.file}`)
-          : logger.warn(`Failed to copy ${event.file}: ${event.error}`);
-      }
-
-      if (event._tag === "SetupCommandStarted") {
-        return logger.step(event.current, event.total, event.name);
-      }
-
-      if (event._tag === "SetupCommandCompleted") {
-        if (event.result._tag === "OptionalFailed") {
-          return logger.warn(
-            `${event.result.name} failed (optional): ${event.result.error ?? "Unknown error"}`,
-          );
-        }
-        if (event.result._tag === "Failed") {
-          return logger.error(
-            `${event.result.name} failed: ${event.result.error ?? "Unknown error"}`,
-          );
-        }
-        return Effect.void;
-      }
-
-      if (event._tag !== "AttemptStarted") return Effect.void;
-
-      switch (event.attempt) {
-        case "worktree":
-          return logger.info(
-            `Creating worktree${resolvedBranch ? ` for '${resolvedBranch}'` : ""}${
-              resolvedBase ? ` based on '${resolvedBase}'` : ""
-            }`,
-          );
-        case "copy":
-          return logger.info("Copying files...");
-        case "setup":
-          return logger.info("Running setup commands...");
-        case "tmux":
-          return logger.info("Starting tmux session...");
-      }
-    },
+    event: (event) => Effect.provideService(onEvent(event), Stdio.Stdio, stdio),
   };
 }
 
@@ -186,12 +189,13 @@ export function openCommand(
   return Effect.gen(function* () {
     const { noAttach, ...workspaceOptions } = options;
     const json = yield* JsonFlag;
+    const reporter = json
+      ? undefined
+      : createOpenHumanReporter(workspaceOptions, yield* Stdio.Stdio);
     const result = yield* WorkspaceService.use((service) =>
       service.open({
         ...workspaceOptions,
-        ...(json
-          ? {}
-          : { reporter: createOpenHumanReporter(workspaceOptions) }),
+        ...(reporter ? { reporter } : {}),
       }),
     );
 

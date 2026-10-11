@@ -115,13 +115,14 @@ export function listCommand(opts?: {
       return;
     }
 
+    const styles = yield* logger.stdoutStyles;
     const rows = worktreeData.map((row) => {
       let tmux = "";
       let tmuxRaw = "";
       if (row.session) {
         if (row.session.attached) {
           tmuxRaw = `* ${row.sessionName}`;
-          tmux = logger.green(tmuxRaw);
+          tmux = styles.green(tmuxRaw);
         } else {
           tmuxRaw = `  ${row.sessionName}`;
           tmux = tmuxRaw;
@@ -150,7 +151,7 @@ export function listCommand(opts?: {
     const headerLine = headers
       .map((header, index) => header.padEnd(colWidths[index] as number))
       .join("  ");
-    yield* Console.log(logger.bold(headerLine));
+    yield* Console.log(styles.bold(headerLine));
 
     for (const row of rows) {
       const tmuxPadded =

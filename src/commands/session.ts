@@ -13,9 +13,10 @@ export function maybeAttachSession(
   noAttach?: boolean,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
+    const styles = yield* logger.stdoutStyles;
     if (noAttach || !canAutoAttachTmux()) {
       yield* Console.log(
-        `\nAttach to tmux session: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+        `\nAttach to tmux session: ${styles.bold(`tmux attach -t ${sessionName}`)}`,
       );
       return;
     }
@@ -43,7 +44,7 @@ export function maybeAttachSession(
       ),
       (error) =>
         logger.warn(
-          `Failed to attach session: ${toWctError(error).message}\nAttach manually with: ${logger.bold(`tmux attach -t ${sessionName}`)}`,
+          `Failed to attach session: ${toWctError(error).message}\nAttach manually with: ${styles.bold(`tmux attach -t ${sessionName}`)}`,
         ),
     );
   });

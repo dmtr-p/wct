@@ -46,6 +46,12 @@ Effect 4.0.3 adds the following relevant capabilities:
 - The `Stdio` service exposes `stderrIsTerminal` as an Effect, allowing terminal
   detection to be overridden in service implementations. Bun's platform layer
   supplies runtime detection; the default implementation returns false.
+  `src/utils/logger.ts` uses `stdoutIsTerminal` for normal output and
+  `stderrIsTerminal` for errors. A nonempty `NO_COLOR` disables styling on both
+  streams. JSON mode always disables logger styling, regardless of `NO_COLOR`
+  or terminal detection; JSON envelopes bypass the logger entirely.
+  For table cells and hints, yield `logger.stdoutStyles` inside the
+  Effect and use its `bold` and `green` formatters.
 
 See the [Effect 4.0.3 release notes](https://github.com/Effect-TS/effect/releases/tag/effect%404.0.3).
 

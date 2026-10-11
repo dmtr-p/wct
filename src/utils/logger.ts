@@ -1,4 +1,5 @@
-import { Console } from "effect";
+import { Console, Effect, Option, Stdio } from "effect";
+import { JsonFlag } from "../cli/json-flag";
 
 const colors = {
   red: "\x1b[31m",
@@ -10,39 +11,56 @@ const colors = {
   bold: "\x1b[1m",
 };
 
-function log(message: string) {
-  return Console.log(message);
+function colorsEnabled(stream: "stdout" | "stderr") {
+  return Effect.gen(function* () {
+    const json = yield* Effect.serviceOption(JsonFlag);
+    if (Option.getOrElse(json, () => false) || process.env.NO_COLOR) {
+      return false;
+    }
+    const stdio = yield* Stdio.Stdio;
+    return yield* stream === "stdout"
+      ? stdio.stdoutIsTerminal
+      : stdio.stderrIsTerminal;
+  });
 }
 
-function logError(message: string) {
-  return Console.error(message);
+function style(message: string, color: string, enabled: boolean): string {
+  return enabled ? `${color}${message}${colors.reset}` : message;
+}
+
+export const stdoutStyles = Effect.map(colorsEnabled("stdout"), (enabled) => ({
+  bold: (message: string) => style(message, colors.bold, enabled),
+  green: (message: string) => style(message, colors.green, enabled),
+}));
+
+function log(
+  label: string,
+  color: string,
+  message: string,
+  stream: "stdout" | "stderr" = "stdout",
+) {
+  return Effect.flatMap(colorsEnabled(stream), (enabled) => {
+    const line = `${style(label, color, enabled)} ${message}`;
+    return stream === "stdout" ? Console.log(line) : Console.error(line);
+  });
 }
 
 export function info(message: string) {
-  return log(`${colors.blue}info${colors.reset} ${message}`);
+  return log("info", colors.blue, message);
 }
 
 export function success(message: string) {
-  return log(`${colors.green}done${colors.reset} ${message}`);
+  return log("done", colors.green, message);
 }
 
 export function warn(message: string) {
-  return log(`${colors.yellow}warn${colors.reset} ${message}`);
+  return log("warn", colors.yellow, message);
 }
 
 export function error(message: string) {
-  return logError(`${colors.red}error${colors.reset} ${message}`);
+  return log("error", colors.red, message, "stderr");
 }
 
 export function step(current: number, total: number, message: string) {
-  const prefix = `${colors.cyan}[${current}/${total}]${colors.reset}`;
-  return log(`${prefix} ${message}`);
-}
-
-export function bold(message: string): string {
-  return `${colors.bold}${message}${colors.reset}`;
-}
-
-export function green(message: string): string {
-  return `${colors.green}${message}${colors.reset}`;
+  return log(`[${current}/${total}]`, colors.cyan, message);
 }

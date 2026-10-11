@@ -1,23 +1,9 @@
-// src/tui/utils/display-width.ts
-//
-// Terminal display-width measurement for TUI layout math. Ink decides whether
-// a line soft-wraps by measuring it with `string-width` (grapheme
-// segmentation + East Asian Width + emoji detection), so layout code that
-// budgets in "columns" must measure the same way — counting code points
-// undercounts CJK and emoji glyphs, which render two columns wide.
-//
-// The project forbids new runtime dependencies, so this is a small inline
-// approximation with a deliberate safety bias: it never UNDERcounts relative
-// to `string-width`. It may overcount rare clusters (a letter followed by a
-// combining mark counts 2 here, 1 in `string-width`), which only makes
-// callers wrap or truncate a column early — cosmetic, never a row desync.
+// Approximate Ink's terminal column measurements without another dependency.
+// Multi-code-point graphemes count as two columns, including combining marks.
+// Rare clusters can differ from Ink; callers must also prevent soft wrapping.
 
 const segmenter = new Intl.Segmenter();
 
-/**
- * East Asian Fullwidth/Wide code points (mirrors the well-known
- * `is-fullwidth-code-point` range list).
- */
 function isFullwidthCodePoint(cp: number): boolean {
   return (
     cp >= 0x1100 &&
@@ -41,15 +27,10 @@ function isFullwidthCodePoint(cp: number): boolean {
   );
 }
 
-/** Default-emoji-presentation code points render two columns wide. */
 const EMOJI_PRESENTATION = /^\p{Emoji_Presentation}$/u;
 
-/** Columns one grapheme cluster occupies. */
 function graphemeWidth(segment: string): number {
   const codePoints = [...segment];
-  // Multi-code-point cluster: ZWJ emoji, flag, keycap, VS16 sequence, or a
-  // base letter + combining marks. All render at most two columns; counting 2
-  // overcounts only the combining-mark case, which is the safe direction.
   if (codePoints.length > 1) return 2;
   const cp = segment.codePointAt(0) ?? 0;
   if (cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f)) return 0; // control chars
@@ -57,10 +38,6 @@ function graphemeWidth(segment: string): number {
   return 1;
 }
 
-/**
- * Grapheme clusters of `text` with the column width of each — for callers
- * that break lines and must never split a surrogate pair or emoji sequence.
- */
 export function graphemeWidths(text: string): Array<[string, number]> {
   const result: Array<[string, number]> = [];
   for (const { segment } of segmenter.segment(text)) {
@@ -69,7 +46,6 @@ export function graphemeWidths(text: string): Array<[string, number]> {
   return result;
 }
 
-/** Terminal columns `text` occupies when rendered on one line. */
 export function displayWidth(text: string): number {
   let width = 0;
   for (const { segment } of segmenter.segment(text)) {

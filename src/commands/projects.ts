@@ -168,8 +168,9 @@ export function projectsListCommand(): Effect.Effect<
       Math.max(headers[1].length, ...repos.map((r) => r.repo_path.length)),
     ] as const;
 
+    const styles = yield* logger.stdoutStyles;
     yield* Console.log(
-      logger.bold(
+      styles.bold(
         headers.map((h, i) => h.padEnd(colWidths[i] as number)).join("  "),
       ),
     );

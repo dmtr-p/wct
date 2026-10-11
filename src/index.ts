@@ -10,6 +10,7 @@ import {
   generateCompletionScript,
   getCustomCompletionShell,
 } from "./cli/completions";
+import { CompletionsFlag } from "./cli/completions-flag";
 import { JsonFlag } from "./cli/json-flag";
 import { rootCommand } from "./cli/root-command";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
@@ -28,7 +29,7 @@ const cliConfigLayer = CliConfig.layer({
   builtIns: [
     GlobalFlag.Help,
     GlobalFlag.Version,
-    GlobalFlag.Completions,
+    CompletionsFlag,
     GlobalFlag.LogLevel,
   ],
 });

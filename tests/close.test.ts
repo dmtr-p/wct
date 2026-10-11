@@ -22,6 +22,8 @@ import {
 import * as prompt from "../src/utils/prompt";
 import { noopTmuxService, withTestServices } from "./helpers/services";
 
+const realConfirm = prompt.confirm;
+
 async function runCommand(
   options: {
     branches: string[];
@@ -540,6 +542,7 @@ describe("closeCommand", () => {
         },
       );
 
+      expect(mocks.confirmSpy).not.toHaveBeenCalled();
       expect(logSpy).toHaveBeenCalledTimes(1);
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
       expect(output).toEqual({
@@ -554,9 +557,9 @@ describe("closeCommand", () => {
     }
   });
 
-  test("json output emits structured result when confirmation is declined", async () => {
+  test("json output aborts without --yes instead of prompting", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    mocks.confirmSpy.mockImplementation(() => Effect.succeed(false));
+    mocks.confirmSpy.mockImplementation(realConfirm);
     const workspace: WorkspaceService = {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
@@ -597,12 +600,10 @@ describe("closeCommand", () => {
     }
   });
 
-  test("json output preserves closed results when a later confirmation is declined", async () => {
+  test("json output without --yes stops before closing any queued branch", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const closeCalls: unknown[] = [];
-    mocks.confirmSpy
-      .mockImplementationOnce(() => Effect.succeed(true))
-      .mockImplementationOnce(() => Effect.succeed(false));
+    mocks.confirmSpy.mockImplementation(realConfirm);
     const workspace: WorkspaceService = {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
@@ -627,21 +628,19 @@ describe("closeCommand", () => {
         },
       );
 
-      expect(closeCalls).toEqual([
-        { path: "/tmp/myapp-feature-a", force: false },
-      ]);
+      expect(closeCalls).toEqual([]);
+      expect(mocks.confirmSpy).toHaveBeenCalledTimes(1);
       expect(logSpy).toHaveBeenCalledTimes(1);
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
       expect(output).toEqual({
         ok: true,
         data: [
-          removedCloseResult("feature-a"),
           {
             operation: "close",
             status: "aborted",
-            branch: "feature-b",
-            worktreePath: "/tmp/myapp-feature-b",
-            sessionName: "myapp-feature-b",
+            branch: "feature-a",
+            worktreePath: "/tmp/myapp-feature-a",
+            sessionName: "myapp-feature-a",
             reason: "confirmation_declined",
           },
         ],

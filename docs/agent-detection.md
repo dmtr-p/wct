@@ -35,8 +35,9 @@ Revalidation applies to retained observations even if argument failures skipped
 their captures, including cycles where every pane skipped capture. A recovered
 identity check without a fresh screen does not renew the retained evidence.
 
-Screen rules adapt the Herdr manifests pinned in issue #202. Agent-specific
-priorities are preserved. In particular, an active title spinner can outrank a
+Screen rules in `src/services/agent-rules.ts` adapt the Herdr manifests
+attributed in `THIRD_PARTY_NOTICES.md`. Each agent has its own rule priorities.
+An active title spinner can outrank a
 screen approval signal; there is no universal blocked-before-working rule.
 Arbitrary titles and hidden progress do not imply readiness. A blocked title
 requires corroborating live controls. Composer-only screens do not prove idle;
@@ -107,38 +108,24 @@ without increasing concurrency or overlapping cycles.
 Capture uses the live base grid: `capture-pane -p -t <pane-id>`. It preserves
 physical line boundaries and does not request scrollback, joined lines, the
 saved alternate grid, or the user's copy-mode screen. There is no terminal
-emulator or control-mode client. Attachment semantics remain unchanged.
+emulator or control-mode client.
 
 The implementation targets tmux 3.2 core metadata/capture on macOS and Linux.
 Optional `pane_pb_state` values are capability-checked against the connected
 server: missing fields leave title/screen rules operational. Progress is not
-used alone to classify state. Older-version and Linux release validation is
-still pending below.
+used alone to classify state. Live compatibility validation for Linux and
+tmux 3.2 and 3.7 remains pending.
 
-Pane rows retain their existing actions and IDs. Workspace counts use Workspace
+Pane rows support jump, zoom, and kill actions. Workspace counts use Workspace
 Identity and include collapsed/detached sessions. Counts appear in blocked,
 working, idle, unknown order; retained counts explicitly say stale. Each linked
 pane counts once per Workspace. Rows remain single-line with width-aware
 truncation. Only semantic/membership/freshness changes update presentation.
-The existing full registry/git/PR refresh remains on its existing cadence.
+Registry, Git, and tmux refreshes run separately on a five-second interval
+and respond to registry database changes. GitHub PR data refreshes every two
+minutes, when the repository set changes, and on explicit refresh actions.
 
-## Validation record and release gates
-
-Implementation checks on 2026-10-09:
-
-- Type checking completed successfully. Repository harness hooks own tests and
-  lint; neither was invoked manually.
-- Read-only local macOS observation identified four foreground agents across
-  nine panes. Three cycles took 85, 82, and 81 ms. Results included Claude idle,
-  Codex idle, Codex working, and one conservative Codex unknown classification.
-  This verifies input plumbing on this host, not classifier accuracy across
-  transitions or a scaling guarantee.
-- No input, approval, agent configuration, layout, or lifecycle changes were
-  made to the observed panes. Transcript/title/argv payloads were not retained.
-- The connected server reported tmux **3.7c** (the installed client reported
-  3.8). Optional progress metadata was available. The running agent binary
-  versions were not established. This smoke check does not complete the
-  interactive tmux 3.7 or compatibility-floor validation.
+## Compatibility validation
 
 The following checks must pass before calling the feature release-ready. Record
 versions, expected/observed states, latency, and results without saving user
@@ -157,6 +144,3 @@ transcripts. Synthetic tests are not substitutes for these observations.
   update latency, UI responsiveness, cancellation, and timeout behavior.
 - [ ] Existing attachment/client discovery, pane jump/zoom/kill, keyboard
   selection, viewport scrolling, and mouse hit-testing in the live TUI.
-
-V1 adds no database migration, CLI JSON change, daemon, notifications, global
-hooks, agent launch/resume management, or multi-server aggregation.

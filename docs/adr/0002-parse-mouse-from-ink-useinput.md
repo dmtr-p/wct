@@ -9,9 +9,8 @@ All TUI input listeners use `useGuardedInput` in
 to this hook. Keyboard events use Ink's input channel; mouse events use
 `src/tui/input/terminal-input.ts` subscriptions.
 
-The original implementation parsed mouse reports from Ink 7's `useInput`
-strings. Ink 8 discards unrecognized control sequences before that hook, so
-mouse reports now need to be observed before Ink parses them.
+Ink discards unrecognized control sequences before `useInput`, so the
+terminal adapter observes mouse reports before Ink parses them.
 
 `startTui` passes a read facade from `createTerminalInput` to Ink. Ink remains
 the only stdin reader. The facade recognizes SGR reports across chunks and
@@ -25,7 +24,7 @@ ref/unref stay on the source. Releasing raw mode or disposing the adapter
 resets parser state; hook cleanup removes subscriptions.
 
 Bracketed paste stays literal on Ink's paste channel. When no paste listener
-exists, the shared hook retains the previous fallback: mouse-only strings
+exists, the shared hook handles the paste fallback: mouse-only strings
 are swallowed and dispatched, while mixed strings remain keyboard input.
 
 `src/tui/input/mouse.ts` owns parsing and tree hit-testing. `App.tsx` routes

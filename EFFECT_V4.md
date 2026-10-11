@@ -1,20 +1,54 @@
 # Effect v4 Reference for Agents
 
-This project uses Effect v4. Use the APIs and repository patterns below when
-working on application code, services, schemas, CLI commands, and tests.
+This project uses Effect v4. Use the APIs and repository patterns below for
+application code, services, schemas, CLI commands, and tests.
 
 ## Packages and imports
 
-Keep `effect`, `@effect/platform-bun`, and `@effect/vitest` on matching versions.
-`package.json` is the source of truth for dependency versions.
+Keep `effect`, `@effect/platform-bun`, and `@effect/vitest` on matching exact
+versions in `package.json`, without `^` or `~`. Resolved transitive `@effect/*`
+packages in `bun.lock`, including `@effect/platform-node-shared`, must match too.
+Update the Effect packages together. `package.json` is the source of truth for
+dependency versions.
 
 - Import core APIs, including `Context`, `Effect`, `FileSystem`, `Layer`, and
   `Schema`, from `effect`.
 - Import CLI APIs directly from `effect/cli`.
 - Import `ChildProcess` from `effect/process`.
 - Import Bun runtime services through `src/effect/runtime.ts`.
-- CLI global flag service identifiers use `effect/cli/GlobalFlag/<name>`;
-  the JSON flag requirement is `effect/cli/GlobalFlag/json`.
+- Use the exported `JsonFlag` service from `src/cli/json-flag.ts` when reading
+  or providing the JSON setting. `GlobalFlag.Setting` generates runtime service
+  keys with unique suffixes; do not reconstruct those keys from strings.
+
+## CLI and terminal output
+
+- Configure built-in actions through `CliConfig.layer` in `src/index.ts`.
+- Use `CompletionsFlag` from `src/cli/completions-flag.ts` instead of the default
+  `GlobalFlag.Completions`. The repository supports only `bash`, `zsh`, `fish`,
+  and `sh`; `sh` maps to the built-in Bash generator. Both `powershell` and
+  `pwsh` must be rejected and omitted from help and completion choices.
+- Keep the custom Bash, Zsh, and Fish generators in `src/cli/completions.ts`
+  for repository-specific branch, worktree, and profile suggestions.
+- CLI APIs are marked `@stability unstable`; review their behavior and help
+  output when upgrading Effect, even when the core package is stable.
+- The TUI uses `src/tui/utils/display-width.ts` for whole-string and
+  per-grapheme width calculations. This approximation can differ from Ink
+  and `CliOutput.displayWidth`, especially for complex Unicode clusters.
+  Keep wrapping and truncation measurements consistent with each other.
+- CLI prompts respect `NO_COLOR` and acquire terminal input only when needed.
+  Keep confirmations routed through `src/utils/prompt.ts` and `Prompt.Confirm`.
+  The shared helper returns its safe default (`false`) without terminal access
+  in JSON mode. Use `close --json --yes` to explicitly authorize closing;
+  without `--yes`, close emits a structured aborted result.
+- The `Stdio` service exposes `stderrIsTerminal` as an Effect, allowing terminal
+  detection to be overridden in service implementations. Bun's platform layer
+  supplies runtime detection; the default implementation returns false.
+  `src/utils/logger.ts` uses `stdoutIsTerminal` for normal output and
+  `stderrIsTerminal` for errors. A nonempty `NO_COLOR` disables styling on both
+  streams. JSON mode always disables logger styling, regardless of `NO_COLOR`
+  or terminal detection; JSON envelopes bypass the logger entirely.
+  For table cells and hints, yield `logger.stdoutStyles` inside the
+  Effect and use its `bold` and `green` formatters.
 
 ## Services and layers
 
@@ -106,6 +140,9 @@ Tagged application errors use `Data.TaggedError`.
 | Handle selected errors | `Effect.catchIf`, `Effect.catchFilter` |
 | Convert an error | `Effect.mapError` |
 | Observe both outcomes | `Effect.match`, `Effect.matchCause` |
+
+`Effect.partition` returns `[successes, failures]`. Read the second tuple
+element when aggregating failures.
 
 `Cause` contains a flat `reasons` array with `Fail`, `Die`, and `Interrupt`
 reasons. Inspect it with `Cause.hasFails`, `Cause.hasDies`,

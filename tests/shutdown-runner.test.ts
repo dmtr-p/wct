@@ -25,6 +25,22 @@ import type { ShutdownOutcome } from "../src/services/shutdown-runner";
 const CLI_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
+function gitEnv() {
+  const env = { ...process.env };
+  for (const name of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+  ]) {
+    delete env[name];
+  }
+  return env;
+}
+
 // The fake pane sends SIGHUP to the caller's entire process group, like a lost
 // terminal. Each CLI starts in its own group so the test harness is unaffected.
 describe("shutdown across terminal loss", () => {
@@ -62,7 +78,7 @@ describe("shutdown across terminal loss", () => {
   });
 
   function git(args: string[], cwd = main) {
-    const result = Bun.spawnSync(["git", ...args], { cwd });
+    const result = Bun.spawnSync(["git", ...args], { cwd, env: gitEnv() });
     expect(result.exitCode, result.stderr.toString()).toBe(0);
   }
 
@@ -191,7 +207,7 @@ if (command === "display-message") {
       {
         cwd,
         env: {
-          ...process.env,
+          ...gitEnv(),
           PATH: `${join(root, "bin")}:${process.env.PATH}`,
           HOME: join(root, "home"),
           TMPDIR: join(root, "tmp"),
@@ -268,7 +284,7 @@ if (command === "display-message") {
       ]);
       const worktrees = Bun.spawnSync(
         ["git", "worktree", "list", "--porcelain"],
-        { cwd: main },
+        { cwd: main, env: gitEnv() },
       ).stdout.toString();
       expect(worktrees.includes(`worktree ${worktree}\n`)).toBe(
         operation === "down",
@@ -295,6 +311,7 @@ if (command === "display-message") {
     expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");
     const listed = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
       cwd: main,
+      env: gitEnv(),
     }).stdout.toString();
     expect(listed).toContain(`worktree ${worktree}\n`);
   });

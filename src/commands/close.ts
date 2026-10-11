@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { Effect } from "effect";
+import { Effect, Stdio } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
@@ -13,13 +13,22 @@ import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
 import type { CommandDef } from "./command-def";
+import { createDownHumanReporter } from "./down-reporter";
 
 export const commandDef: CommandDef = {
   name: "close",
-  description: "Stop tmux session and remove worktree",
+  description: "Stop tmux, run down scripts, and remove worktree",
   args: "<branch...>",
   completionType: "worktree",
   options: [
+    {
+      name: "profile",
+      short: "P",
+      type: "string",
+      placeholder: "name",
+      description: "Use a named config profile",
+      completionValues: "__wct_profiles",
+    },
     {
       name: "yes",
       short: "y",
@@ -36,6 +45,7 @@ export const commandDef: CommandDef = {
 };
 
 export interface CloseOptions {
+  profile?: string;
   branches: string[];
   yes?: boolean;
   force?: boolean;
@@ -68,6 +78,9 @@ export function closeCommand(
       WorkspaceCloseResult | ReturnType<typeof jsonAborted>
     > = [];
     const json = yield* JsonFlag;
+    const reporter = json
+      ? undefined
+      : createDownHumanReporter(yield* Stdio.Stdio);
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
@@ -177,7 +190,15 @@ export function closeCommand(
       }
 
       let result = yield* WorkspaceService.use((service) =>
-        service.close({ path: worktreePath, force }),
+        service.close({
+          path: worktreePath,
+          force,
+          ...(yes && !force ? { retryWithForce: true } : {}),
+          ...(options.profile !== undefined
+            ? { profile: options.profile }
+            : {}),
+          ...(reporter ? { reporter } : {}),
+        }),
       );
       const stoppedSession = result.existed;
 
@@ -207,22 +228,10 @@ export function closeCommand(
             }
           }
           result = yield* WorkspaceService.use((service) =>
-            service.close({ path: worktreePath, force: true }),
+            service.retryCloseRemoval(result, {
+              ...(reporter ? { reporter } : {}),
+            }),
           );
-          if (stoppedSession && !result.existed) {
-            result = {
-              ...result,
-              existed: true,
-              attempts: {
-                ...result.attempts,
-                kill: {
-                  attempted: true,
-                  ok: true,
-                  value: null,
-                },
-              },
-            };
-          }
         }
 
         if (result.status === "blocked_by_changes") {

@@ -154,6 +154,8 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
       return "Creating worktree…";
     case "CopyingFiles":
       return "Copying files…";
+    case "RunningDown":
+      return `Down: ${toSingleLine(phase.name)}…`;
     case "RunningSetup":
       return `Setup: ${toSingleLine(phase.name)}…`;
     case "StartingTmuxSession":

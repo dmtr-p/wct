@@ -73,20 +73,35 @@ const closeCliCommand = Command.make(
   "close",
   {
     branches: branchesArgument,
+    profile: optionalStringFlag(
+      "profile",
+      "Use a named config profile",
+      "P",
+      "NAME",
+    ),
     yes: booleanFlag("yes", "Skip confirmation prompt", "y"),
     force: booleanFlag("force", "Force removal even if worktree is dirty", "f"),
   },
-  ({ branches, yes, force }) =>
+  ({ branches, yes, force, profile }) =>
     closeCommand({
       branches: [...branches],
+      profile: optionToUndefined(profile),
       yes,
       force,
     }),
-).pipe(Command.withDescription("Stop tmux session and remove worktree"));
+).pipe(
+  Command.withDescription("Stop tmux, run down scripts, and remove worktree"),
+);
 
 const downCliCommand = Command.make(
   "down",
   {
+    profile: optionalStringFlag(
+      "profile",
+      "Use a named config profile",
+      "P",
+      "NAME",
+    ),
     path: optionalStringFlag(
       "path",
       "Path to worktree directory",
@@ -100,12 +115,13 @@ const downCliCommand = Command.make(
       "NAME",
     ),
   },
-  ({ path, branch }) =>
+  ({ path, branch, profile }) =>
     downCommand({
+      profile: optionToUndefined(profile),
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
     }),
-).pipe(Command.withDescription("Stop tmux session for a worktree"));
+).pipe(Command.withDescription("Stop tmux session and run down scripts"));
 
 const initCliCommand = Command.make("init", {}, () => initCommand()).pipe(
   Command.withDescription("Generate a starter .wct.yaml config file"),

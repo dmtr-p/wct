@@ -127,7 +127,7 @@ describe("createExecuteRemoveProject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     down.mockImplementation((options: { path: string }) =>
-      Effect.succeed({ operation: "down", path: options.path }),
+      Effect.succeed({ operation: "down", path: options.path, warnings: [] }),
     );
     unregister.mockImplementation((repoPath: string) =>
       Effect.succeed({ operation: "unregister", repoPath }),
@@ -166,7 +166,11 @@ describe("createExecuteRemoveProject", () => {
     down.mockImplementation((options: { path: string }) =>
       options.path === "/worktrees/project-feature"
         ? Effect.fail(commandError("tmux_error", "tmux failed"))
-        : Effect.succeed({ operation: "down", path: options.path }),
+        : Effect.succeed({
+            operation: "down",
+            path: options.path,
+            warnings: [],
+          }),
     );
     const deps = makeDeps();
 
@@ -176,6 +180,46 @@ describe("createExecuteRemoveProject", () => {
     expect(unregister).not.toHaveBeenCalled();
     expect(deps.showActionError).toHaveBeenCalledWith(
       "Failed to stop all sessions for 'project': feature: tmux failed",
+    );
+  });
+
+  test("keeps the project registered when required down scripts fail", async () => {
+    down.mockImplementation(() =>
+      Effect.fail(commandError("down_failed", "cleanup failed")),
+    );
+    const deps = makeDeps();
+    await createExecuteRemoveProject(deps)(repo.repoPath, repo.project);
+    expect(down).toHaveBeenCalledTimes(2);
+    expect(unregister).not.toHaveBeenCalled();
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      expect.stringContaining("cleanup failed"),
+    );
+  });
+
+  test("reports optional down-script failures after unregistering", async () => {
+    down.mockImplementation((options: { path: string }) =>
+      Effect.succeed({
+        operation: "down",
+        path: options.path,
+        warnings:
+          options.path === "/worktrees/project-feature"
+            ? [
+                {
+                  _tag: "DownFailed",
+                  operation: "down",
+                  name: "cleanup",
+                  optional: true,
+                  error: { code: "optional_down_failed", message: "exit 1" },
+                },
+              ]
+            : [],
+      }),
+    );
+    const deps = makeDeps();
+    await createExecuteRemoveProject(deps)(repo.repoPath, repo.project);
+    expect(unregister).toHaveBeenCalledWith(repo.repoPath);
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      "Optional down script failed: cleanup: exit 1",
     );
   });
 

@@ -110,6 +110,7 @@ function makeCloseResult(
     existed: true,
     status: "removed",
     attempts: {
+      down: { attempted: false as const, reason: "down_not_configured" },
       kill: { attempted: true, ok: true, value: null },
       remove: {
         attempted: true,
@@ -126,6 +127,7 @@ const blockedResult = () =>
   makeCloseResult({
     status: "blocked_by_changes",
     attempts: {
+      down: { attempted: false as const, reason: "down_not_configured" },
       kill: { attempted: true, ok: true, value: null },
       remove: {
         attempted: true,
@@ -282,7 +284,7 @@ describe("TUI close lifecycle", () => {
       app.unmount();
     });
 
-    test("shows Preparing, then Stopping tmux session only when a kill runs, then Removing worktree before removal", async () => {
+    test("shows shutdown and down-script progress before worktree removal", async () => {
       const { App } = await import("../../src/tui/App");
       const app = await renderApp(<App />);
       await tick(6);
@@ -305,11 +307,20 @@ describe("TUI close lifecycle", () => {
       await tick(3);
       expect(app.lines().join("\n")).toContain("Stopping tmux session…");
 
+      emitWorkspacePhase(call, {
+        _tag: "RunningDown",
+        name: "Stop containers",
+      });
+      await tick(3);
+      expect(app.lines().join("\n")).toContain("Down: Stop containers…");
+      expect(app.lines().join("\n")).not.toContain("Stopping tmux session…");
+
       emitWorkspacePhase(call, { _tag: "RemovingWorktree" });
       await tick(3);
       const midFlight = app.lines().join("\n");
       expect(midFlight).toContain("Removing worktree…");
       expect(midFlight).not.toContain("Stopping tmux session…");
+      expect(midFlight).not.toContain("Down: Stop containers…");
       expect(midFlight).toContain("feature/x");
 
       worktreeFixtures.byRepoPath.set(repoPath, [
@@ -322,6 +333,7 @@ describe("TUI close lifecycle", () => {
         existed: true,
         status: "removed",
         attempts: {
+          down: { attempted: false as const, reason: "down_not_configured" },
           kill: { attempted: true, ok: true, value: null },
           remove: {
             attempted: true,

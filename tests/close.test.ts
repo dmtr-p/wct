@@ -15,12 +15,13 @@ import type {
   WorkspaceCloseResult,
   WorkspaceService,
 } from "../src/services/workspace-service";
-import {
-  liveWorktreeService,
-  type WorktreeService,
-} from "../src/services/worktree-service";
+import type { WorktreeService } from "../src/services/worktree-service";
 import * as prompt from "../src/utils/prompt";
-import { noopTmuxService, withTestServices } from "./helpers/services";
+import {
+  noopTmuxService,
+  shutdownWorktreeService,
+  withTestServices,
+} from "./helpers/services";
 
 const realConfirm = prompt.confirm;
 
@@ -67,6 +68,7 @@ function removedCloseResult(branch: string): WorkspaceCloseResult {
     existed: true,
     status: "removed",
     attempts: {
+      down: { attempted: false as const, reason: "down_not_configured" },
       kill: { attempted: true, ok: true, value: null },
       remove: {
         attempted: true,
@@ -94,7 +96,7 @@ function setupMocks(): CloseCommandSpies {
       }),
   };
   const worktree = {
-    ...liveWorktreeService,
+    ...shutdownWorktreeService,
     isGitRepo: () => Effect.succeed(true),
     findWorktreeByBranch: (branch: string) =>
       Effect.succeed(makeWorktree(branch)),
@@ -121,11 +123,13 @@ describe("closeCommand", () => {
   let mocks: CloseCommandSpies;
 
   beforeEach(() => {
+    vi.stubEnv("TMUX", "");
     mocks = setupMocks();
   });
 
   afterEach(() => {
     mocks.restore();
+    vi.unstubAllEnvs();
   });
 
   test("is exported as a function", () => {
@@ -161,6 +165,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
@@ -180,7 +185,7 @@ describe("closeCommand", () => {
       },
     );
 
-    expect(closeCalls).toEqual([
+    expect(closeCalls).toMatchObject([
       { path: "/tmp/myapp-feature-a", force: false },
       { path: "/tmp/myapp-feature-b", force: false },
     ]);
@@ -241,7 +246,11 @@ describe("closeCommand", () => {
       "Worktree has uncommitted changes. Force remove anyway?",
     );
     expect(forceRemoveCalled).toBe(true);
-    expect(mocks.tmuxCalls).toHaveLength(4);
+    expect(mocks.tmuxCalls).toEqual([
+      "myapp-feature-a",
+      "myapp-feature-b",
+      "myapp-feature-c",
+    ]);
     // feature-a, feature-b (blocked), feature-b (force), feature-c
     expect(mocks.worktreeCalls).toHaveLength(4);
   });
@@ -252,6 +261,25 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: (previous) =>
+        Effect.sync(() => {
+          closeCalls.push({ retry: previous.worktreePath });
+          return {
+            ...previous,
+            status: "removed" as const,
+            attempts: {
+              ...previous.attempts,
+              remove: {
+                attempted: true as const,
+                ok: true as const,
+                value: {
+                  _tag: "Removed" as const,
+                  path: previous.worktreePath,
+                },
+              },
+            },
+          };
+        }),
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
@@ -263,6 +291,10 @@ describe("closeCommand", () => {
               ...removedCloseResult(branch),
               status: "blocked_by_changes" as const,
               attempts: {
+                down: {
+                  attempted: false as const,
+                  reason: "down_not_configured",
+                },
                 kill: {
                   attempted: true as const,
                   ok: true as const,
@@ -297,9 +329,9 @@ describe("closeCommand", () => {
     expect(mocks.confirmSpy).toHaveBeenCalledWith(
       "Worktree has uncommitted changes. Force remove anyway?",
     );
-    expect(closeCalls).toEqual([
+    expect(closeCalls).toMatchObject([
       { path: "/tmp/myapp-feature-a", force: false },
-      { path: "/tmp/myapp-feature-a", force: true },
+      { retry: "/tmp/myapp-feature-a" },
     ]);
   });
 
@@ -310,6 +342,25 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: (previous) =>
+        Effect.sync(() => {
+          closeCalls.push({ retry: previous.worktreePath });
+          return {
+            ...previous,
+            status: "removed" as const,
+            attempts: {
+              ...previous.attempts,
+              remove: {
+                attempted: true as const,
+                ok: true as const,
+                value: {
+                  _tag: "Removed" as const,
+                  path: previous.worktreePath,
+                },
+              },
+            },
+          };
+        }),
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
@@ -322,6 +373,10 @@ describe("closeCommand", () => {
               ...removedCloseResult(branch),
               status: "blocked_by_changes" as const,
               attempts: {
+                down: {
+                  attempted: false as const,
+                  reason: "down_not_configured",
+                },
                 kill: {
                   attempted: true as const,
                   ok: true as const,
@@ -343,6 +398,10 @@ describe("closeCommand", () => {
             ...removedCloseResult(branch),
             existed: false,
             attempts: {
+              down: {
+                attempted: false as const,
+                reason: "down_not_configured",
+              },
               kill: {
                 attempted: false as const,
                 reason: "session_absent",
@@ -371,9 +430,9 @@ describe("closeCommand", () => {
         },
       );
 
-      expect(closeCalls).toEqual([
+      expect(closeCalls).toMatchObject([
         { path: "/tmp/myapp-feature-a", force: false },
-        { path: "/tmp/myapp-feature-a", force: true },
+        { retry: "/tmp/myapp-feature-a" },
       ]);
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
       expect(output.data[0]).toMatchObject({
@@ -381,6 +440,7 @@ describe("closeCommand", () => {
         status: "removed",
         existed: true,
         attempts: {
+          down: { attempted: false as const, reason: "down_not_configured" },
           kill: { attempted: true, ok: true, value: null },
           remove: {
             attempted: true,
@@ -520,6 +580,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: (options) =>
         Effect.succeed(
           removedCloseResult(
@@ -564,6 +625,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: () => Effect.die("close should not run after abort"),
     };
 
@@ -608,6 +670,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
@@ -628,7 +691,7 @@ describe("closeCommand", () => {
         },
       );
 
-      expect(closeCalls).toEqual([]);
+      expect(closeCalls).toMatchObject([]);
       expect(mocks.confirmSpy).toHaveBeenCalledTimes(1);
       expect(logSpy).toHaveBeenCalledTimes(1);
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
@@ -656,6 +719,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: (options) =>
         Effect.succeed({
           ...removedCloseResult(
@@ -663,6 +727,7 @@ describe("closeCommand", () => {
           ),
           existed: !options?.path?.endsWith("feature-b"),
           attempts: {
+            down: { attempted: false as const, reason: "down_not_configured" },
             kill: options?.path?.endsWith("feature-b")
               ? { attempted: false as const, reason: "session_absent" }
               : { attempted: true as const, ok: true as const, value: null },
@@ -719,6 +784,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
@@ -744,7 +810,7 @@ describe("closeCommand", () => {
         ),
       ).rejects.toThrow("kill boom");
 
-      expect(closeCalls).toEqual([
+      expect(closeCalls).toMatchObject([
         { path: "/tmp/myapp-feature-a", force: false },
       ]);
       const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
@@ -766,6 +832,7 @@ describe("closeCommand", () => {
       open: () => Effect.die("unused"),
       up: () => Effect.die("unused"),
       down: () => Effect.die("unused"),
+      retryCloseRemoval: () => Effect.die("unused"),
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
@@ -792,7 +859,7 @@ describe("closeCommand", () => {
         ),
       ).rejects.toThrow("kill boom");
 
-      expect(closeCalls).toEqual([
+      expect(closeCalls).toMatchObject([
         { path: "/tmp/myapp-feature-a", force: false },
       ]);
       expect(logSpy).not.toHaveBeenCalled();

@@ -534,6 +534,7 @@ describe("open workflow", () => {
             open: () => Effect.succeed(workspaceResult),
             up: () => Effect.die("unused"),
             down: () => Effect.die("unused"),
+            retryCloseRemoval: () => Effect.die("unused"),
             close: () => Effect.die("unused"),
           },
           registry: {
@@ -614,6 +615,7 @@ describe("open workflow", () => {
               },
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              retryCloseRemoval: () => Effect.die("unused"),
               close: () => Effect.die("unused"),
             },
             registry: {
@@ -775,7 +777,7 @@ project_name: "myapp"
     }
   });
 
-  test("openCommand human output preserves the legacy fatal copy warning", async () => {
+  test("openCommand human output reports fatal copy failures", async () => {
     await Bun.write(
       join(fixture.repoDir, ".wct.yaml"),
       `version: 1
@@ -939,6 +941,7 @@ project_name: "myapp"
                 }),
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              retryCloseRemoval: () => Effect.die("unused"),
               close: () => Effect.die("unused"),
             },
             registry: {
@@ -1057,6 +1060,7 @@ project_name: "myapp"
                 }),
               up: () => Effect.die("unused"),
               down: () => Effect.die("unused"),
+              retryCloseRemoval: () => Effect.die("unused"),
               close: () => Effect.die("unused"),
             },
           },

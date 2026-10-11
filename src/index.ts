@@ -15,7 +15,9 @@ import { JsonFlag } from "./cli/json-flag";
 import { rootCommand } from "./cli/root-command";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
 import { provideWctServices } from "./effect/services";
+import { runShutdownWorker } from "./effect/shutdown-worker";
 import { commandError, toWctError } from "./errors";
+import { SHUTDOWN_WORKER_FLAG } from "./services/shutdown-runner";
 import { jsonError } from "./utils/json-output";
 
 const { version: VERSION } = require("../package.json");
@@ -125,4 +127,8 @@ const runnableProgram = shouldSuppressCliOutputForJson
     )
   : program;
 
-BunRuntime.runMain(runnableProgram);
+BunRuntime.runMain(
+  args[0] === SHUTDOWN_WORKER_FLAG
+    ? provideBunServices(provideWctServices(runShutdownWorker(args[1] ?? "")))
+    : runnableProgram,
+);

@@ -120,6 +120,8 @@ CLI Effect, provide application and Bun services, and call `BunRuntime.runMain`.
 - Use the process helpers in `src/services/process.ts` for command execution.
   They collect stdout, stderr, and exit status inside an Effect scope.
 - Use `Bun.spawn` with inherited stdio for interactive process handoff.
+- Self-session shutdown uses a detached `Bun.spawn` worker with IPC; it saves
+  its outcome outside the target checkout before exiting.
 - Use `Bun.YAML.parse`, `Bun.Glob`, and `Bun.which` for their respective runtime
   primitives.
 

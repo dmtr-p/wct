@@ -10,6 +10,7 @@ export type ErrorCode =
   | "worktree_error"
   | "worktree_not_found"
   | "worktree_remove_failed"
+  | "down_failed"
   | "tmux_error"
   | "detached_head"
   | "missing_main_worktree"

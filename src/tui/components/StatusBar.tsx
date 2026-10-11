@@ -1,4 +1,3 @@
-// src/tui/components/StatusBar.tsx
 import { Box, Text, useWindowSize } from "ink";
 import type { ComponentProps } from "react";
 import { useCursorBlink } from "../hooks/useCursorBlink";

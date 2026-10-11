@@ -86,10 +86,10 @@ describe("handleNavigateInput", () => {
     expect(ctx.handleDownSelectedWorktree).toHaveBeenCalled();
   });
 
-  test("d does NOT call handleDownSelectedWorktree when tmuxClient is null", () => {
+  test("d calls handleDownSelectedWorktree when tmuxClient is null", () => {
     const ctx = makeCtx({ tmuxClient: null });
     handleNavigateInput(ctx, "d", noKey);
-    expect(ctx.handleDownSelectedWorktree).not.toHaveBeenCalled();
+    expect(ctx.handleDownSelectedWorktree).toHaveBeenCalledOnce();
   });
 
   test("a calls prepareAddProjectModal", () => {

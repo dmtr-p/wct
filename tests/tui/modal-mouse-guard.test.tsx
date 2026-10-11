@@ -1,11 +1,3 @@
-// Regression tests for the manual-testing bug where clicking the terminal
-// while a modal text input was focused pasted raw SGR mouse escape text
-// (`[<0;12;38M[<0;12;38m[<0;1;1m`) into the field.
-//
-// Ink 8 discards terminal reports. The harness uses the same read adapter as
-// startTui to deliver mouse actions separately. The shared string guard also
-// handles the screenshot's first token, whose leading ESC was already stripped.
-// These tests cover both batched reports and individual writes.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const runPromiseMock = vi.hoisted(() => vi.fn());
@@ -29,7 +21,7 @@ const { CTRL_ENTER, renderWithInput, sendKeys } = await import(
   "./keypress-harness"
 );
 
-// The bug's press + release + release written as one stdin chunk.
+// The first press lacks ESC to exercise reports already stripped by Ink.
 const BATCHED_CLICK = "[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m";
 const SINGLE_PRESS = "\x1b[<0;12;38M";
 const SINGLE_RELEASE = "\x1b[<0;12;38m";
@@ -66,7 +58,7 @@ describe("modal text inputs never consume mouse sequences as text", () => {
     runPromiseMock.mockReset();
   });
 
-  test("OpenModal Branch input: a batched click chunk inserts nothing (screenshot bug)", async () => {
+  test("OpenModal Branch input: a batched click chunk inserts nothing", async () => {
     const onSubmitMock = vi.fn();
     const rendered = await renderNewBranchForm(onSubmitMock);
 

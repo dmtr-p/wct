@@ -131,6 +131,7 @@ function makeWorkspaceCloseResult(
     existed: true,
     status: "removed",
     attempts: {
+      down: { attempted: false as const, reason: "down_not_configured" },
       kill: { attempted: true, ok: true, value: null },
       remove: {
         attempted: true,
@@ -646,6 +647,40 @@ describe("createExecuteClose", () => {
     expect(deps.showActionError).not.toHaveBeenCalled();
   });
 
+  test("reports optional down-script failures after close refresh", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValue(
+      makeWorkspaceCloseResult({
+        warnings: [
+          {
+            _tag: "DownFailed",
+            operation: "close",
+            name: "cleanup",
+            optional: true,
+            error: { code: "optional_down_failed", message: "exit 1" },
+          },
+        ],
+      }),
+    );
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
+      refreshSessions: vi.fn().mockResolvedValue([]),
+    });
+    await createExecuteClose(deps)(
+      "wt",
+      "feat",
+      "/tmp/wt",
+      "proj/feat",
+      "/repo",
+      "proj",
+      false,
+    );
+    expect(deps.refreshAll).toHaveBeenCalledOnce();
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      "Optional down script failed: cleanup: exit 1",
+    );
+  });
+
   test("passes selected repoPath as WorkspaceService.close cwd for multi-repo TUI close", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue(
@@ -729,6 +764,7 @@ describe("createExecuteClose", () => {
       makeWorkspaceCloseResult({
         status: "blocked_by_changes",
         attempts: {
+          down: { attempted: false as const, reason: "down_not_configured" },
           kill: { attempted: true, ok: true, value: null },
           remove: {
             attempted: true,
@@ -915,7 +951,10 @@ describe("createExecuteDown", () => {
       sessionName: "wt",
       existed: true,
       status: "killed",
-      attempts: { kill: { attempted: true, ok: true, value: null } },
+      attempts: {
+        down: { attempted: false as const, reason: "down_not_configured" },
+        kill: { attempted: true, ok: true, value: null },
+      },
       warnings: [],
     });
 
@@ -942,6 +981,43 @@ describe("createExecuteDown", () => {
     expect(deps.setLifecycle).toHaveBeenCalled();
   });
 
+  test("reports optional down-script failures after down refresh", async () => {
+    const { tuiRuntime } = await import("../../src/tui/runtime");
+    (tuiRuntime.runPromise as Mock).mockResolvedValue({
+      operation: "down",
+      worktreePath: "/tmp/wt",
+      sessionName: "wt",
+      existed: false,
+      status: "absent",
+      attempts: {
+        kill: { attempted: false, reason: "session_absent" },
+        down: {
+          attempted: true,
+          ok: true,
+          value: [{ name: "cleanup", _tag: "OptionalFailed", error: "exit 1" }],
+        },
+      },
+      warnings: [
+        {
+          _tag: "DownFailed",
+          operation: "down",
+          name: "cleanup",
+          optional: true,
+          error: { code: "optional_down_failed", message: "exit 1" },
+        },
+      ],
+    });
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({ type: "none" }),
+      refreshSessions: vi.fn().mockResolvedValue([]),
+    });
+    await createExecuteDown(deps)("wt", "feat", "/tmp/wt", "/repo", "proj");
+    expect(deps.refreshAll).toHaveBeenCalledOnce();
+    expect(deps.showActionError).toHaveBeenCalledWith(
+      "Optional down script failed: cleanup: exit 1",
+    );
+  });
+
   test("treats absent-session down as informational success", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
     (tuiRuntime.runPromise as Mock).mockResolvedValue({
@@ -950,7 +1026,10 @@ describe("createExecuteDown", () => {
       sessionName: "wt",
       existed: false,
       status: "absent",
-      attempts: { kill: { attempted: false, reason: "session_absent" } },
+      attempts: {
+        down: { attempted: false as const, reason: "down_not_configured" },
+        kill: { attempted: false, reason: "session_absent" },
+      },
       warnings: [],
     });
 
@@ -974,7 +1053,10 @@ describe("createExecuteDown", () => {
       sessionName: "wt",
       existed: false,
       status: "absent",
-      attempts: { kill: { attempted: false, reason: "session_absent" } },
+      attempts: {
+        down: { attempted: false as const, reason: "down_not_configured" },
+        kill: { attempted: false, reason: "session_absent" },
+      },
       warnings: [],
     });
 
@@ -1026,38 +1108,79 @@ describe("createHandleDownSelectedWorktree", () => {
     expect(deps.setMode).not.toHaveBeenCalled();
   });
 
-  test("no-op when worktree has no active session", () => {
-    const items: TreeItem[] = [
-      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
-    ];
-    const repos = [
-      {
-        id: "r1",
-        project: "proj",
-        repoPath: "/repo",
-        profileNames: [],
-        worktrees: [
-          {
-            branch: "feat",
-            path: "/repo/feat",
-            isMainWorktree: false,
-            changedFiles: 0,
-            sync: null,
-          },
-        ],
-      },
-    ];
-    const deps = makeDeps({
-      treeItems: items,
-      filteredRepos: repos,
-      selectedIndex: 0,
-      sessions: [],
-    });
-    const handleDown = createHandleDownSelectedWorktree(deps);
+  test.each([false, true])(
+    "allows cleanup without an active session (retry=%s)",
+    async (retry) => {
+      const items: TreeItem[] = [
+        { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+      ];
+      const repos = [
+        {
+          id: "r1",
+          project: "proj",
+          repoPath: "/repo",
+          profileNames: [],
+          worktrees: [
+            {
+              branch: "feat",
+              path: "/repo/feat",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+        },
+      ];
+      const deps = makeDeps({
+        treeItems: items,
+        filteredRepos: repos,
+        selectedIndex: 0,
+        sessions: [],
+        refreshAll: vi.fn().mockResolvedValue(repos),
+      });
+      const { tuiRuntime } = await import("../../src/tui/runtime");
+      const runtime = tuiRuntime.runPromise as Mock;
+      runtime.mockReset();
+      workspaceDown.mockClear();
+      const executeDown = createExecuteDown(deps);
+      if (retry) {
+        runtime.mockRejectedValueOnce(
+          commandError("down_failed", "Cleanup failed; worktree preserved"),
+        );
+        await executeDown("feat", "feat", "/repo/feat", "/repo", "proj");
+        expect(deps.showActionError).toHaveBeenCalledWith(
+          "Cleanup failed; worktree preserved",
+        );
+        expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
+        deps.setMode = vi.fn();
+      }
 
-    handleDown();
-    expect(deps.setMode).not.toHaveBeenCalled();
-  });
+      createHandleDownSelectedWorktree(deps)();
+      expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("down");
+      expect(deps.setMode).toHaveBeenCalledWith(
+        Mode.ConfirmDown({
+          sessionName: "feat",
+          branch: "feat",
+          worktreePath: "/repo/feat",
+          worktreeKey: "proj/feat",
+          repoPath: "/repo",
+          project: "proj",
+        }),
+      );
+
+      runtime.mockResolvedValueOnce({ warnings: [] });
+      await executeDown("feat", "feat", "/repo/feat", "/repo", "proj");
+      expect(workspaceDown).toHaveBeenCalledTimes(retry ? 2 : 1);
+      expect(workspaceDown).toHaveBeenLastCalledWith({
+        path: "/repo/feat",
+        reporter: expect.anything(),
+      });
+      expect(deps.refreshAll).toHaveBeenCalledTimes(retry ? 2 : 1);
+      expect(deps.showActionError).toHaveBeenCalledTimes(retry ? 1 : 0);
+      expect(deps.switchSession).not.toHaveBeenCalled();
+      expect(deps.detachClient).not.toHaveBeenCalled();
+    },
+  );
 
   test("saves return refs and sets ConfirmDown mode when session exists", () => {
     const items: TreeItem[] = [
@@ -1442,7 +1565,13 @@ describe("up and down lifecycle progress", () => {
             sessionName: "wt-feat",
             existed: true,
             status: "killed",
-            attempts: { kill: { attempted: true, ok: true, value: null } },
+            attempts: {
+              down: {
+                attempted: false as const,
+                reason: "down_not_configured",
+              },
+              kill: { attempted: true, ok: true, value: null },
+            },
             warnings: [],
           }),
       ),
@@ -1473,7 +1602,10 @@ describe("up and down lifecycle progress", () => {
           sessionName: "wt-feat",
           existed: false,
           status: "absent",
-          attempts: { kill: { attempted: false, reason: "session_absent" } },
+          attempts: {
+            down: { attempted: false as const, reason: "down_not_configured" },
+            kill: { attempted: false, reason: "session_absent" },
+          },
           warnings: [],
         }),
       ),
@@ -1674,7 +1806,13 @@ describe("up and down lifecycle progress", () => {
             sessionName: "wt-feat",
             existed: true,
             status: "killed",
-            attempts: { kill: { attempted: true, ok: true, value: null } },
+            attempts: {
+              down: {
+                attempted: false as const,
+                reason: "down_not_configured",
+              },
+              kill: { attempted: true, ok: true, value: null },
+            },
             warnings: [],
           }),
       ),

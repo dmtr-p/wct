@@ -1,5 +1,3 @@
-// src/tui/hooks/useSessionActions.ts
-
 import { basename } from "node:path";
 import { Effect } from "effect";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
@@ -26,6 +24,7 @@ import {
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
@@ -292,6 +291,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
+      resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
       entry: {
         operation: "down",
         repoPath,
@@ -381,6 +381,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
       setLifecycle: deps.setLifecycle,
       refreshAll: deps.refreshAll,
       showActionError: deps.showActionError,
+      resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
       entry: {
         operation: "close",
         repoPath,
@@ -456,9 +457,6 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
-    const hasSession = deps.sessions.some((s) => s.name === sessionName);
-    if (!hasSession) return;
-
     const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
     deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =

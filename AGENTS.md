@@ -20,7 +20,7 @@ code.
 
 ```
 src/
-├── index.ts              # Entry point; handles completions/version shortcuts and runs the Effect root via BunRuntime.runMain
+├── index.ts              # CLI/worker entry point; completions/version shortcuts and BunRuntime.runMain
 ├── errors.ts             # Unified error types (WctCommandError) and error constructors
 ├── cli/
 │   ├── root-command.ts   # Effect CLI root command tree and command dispatch
@@ -32,7 +32,8 @@ src/
 │   ├── open.ts           # Native Effect implementation of wct open <branch>
 │   ├── up.ts             # Native Effect implementation of wct up
 │   ├── down.ts           # Native Effect implementation of wct down
-│   ├── close.ts          # Native Effect implementation of wct close <branch>
+│   ├── down-reporter.ts  # Human output for shutdown progress and failures
+│   ├── close.ts          # Native Effect implementation of wct close <branch...>
 │   ├── list.ts           # Native Effect implementation of wct list
 │   ├── switch.ts         # Native Effect implementation of wct switch
 │   ├── cd.ts             # Native Effect implementation of wct cd
@@ -46,7 +47,8 @@ src/
 │   └── validator.ts      # Validation helpers and path-aware error rendering
 ├── effect/
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
-│   └── services.ts       # Live service bundle provided to the app
+│   ├── services.ts       # Live service bundle provided to the app
+│   └── shutdown-worker.ts # Independent shutdown execution and outcome persistence
 ├── services/
 │   ├── agent-service.ts  # Foreground agent observation and freshness tracking
 │   ├── agent-process.ts  # Bounded foreground process inspection
@@ -62,8 +64,10 @@ src/
 │   ├── pr-merge-service.ts # Merge eligibility, confirmation snapshots, and submission
 │   ├── project-registration.ts # Registering a repo in the multi-repo registry
 │   ├── copy.ts           # File copying utilities
+│   ├── command-runner.ts # Sequential shell command execution shared by setup and down
 │   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
 │   ├── setup-service.ts  # Effect service for setup command execution
+│   ├── shutdown-runner.ts # Detached shutdown handoff and safe result staging
 │   ├── tmux.ts           # Tmux session management
 │   ├── github-service.ts # Effect service for GitHub PR integration
 │   └── registry-service.ts # Effect service for multi-repo registry
@@ -77,6 +81,7 @@ src/
 │   ├── pr-layout.ts       # Terminal-width-aware PR title wrapping
 │   ├── pr-status.ts       # Compact PR status presentation
 │   ├── session-utils.ts   # Safe tmux client handoff decisions and start action messages
+│   ├── workspace-warning.ts # Shared lifecycle warning messages
 │   ├── input/             # Mode-specific keyboard and guarded mouse routing
 │   ├── components/
 │   │   ├── TreeView.tsx   # Repo list with expandable worktree details
@@ -150,7 +155,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 
 The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. Exception: `ink` and `react` are runtime dependencies used exclusively by the `wct tui` subcommand. They are lazy-imported so they are never loaded for other commands. The only dev dependencies are `@biomejs/biome`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, and `@effect/vitest`.
 
-This project uses **Effect v4**. Read [EFFECT_V4.md](./EFFECT_V4.md) for the current APIs and repository patterns. `src/index.ts` should stay thin: it wires completions/version shortcuts, builds the root Effect program, provides live services, and hands execution to `BunRuntime.runMain`.
+This project uses **Effect v4**. Read [EFFECT_V4.md](./EFFECT_V4.md) for the current APIs and repository patterns. `src/index.ts` should stay thin: it handles completions/version shortcuts, dispatches the CLI or private shutdown worker, provides live services, and hands execution to `BunRuntime.runMain`.
 
 ## Agent skills
 

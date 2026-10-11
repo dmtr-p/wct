@@ -290,6 +290,12 @@ describe("handleExpandedInput", () => {
     expect(ctx.handleDownSelectedWorktree).toHaveBeenCalled();
   });
 
+  test("d without tmuxClient calls handleDownSelectedWorktree", () => {
+    const ctx = makeExpCtx({ tmuxClient: null });
+    handleExpandedInput(ctx, "d", noKey);
+    expect(ctx.handleDownSelectedWorktree).toHaveBeenCalledOnce();
+  });
+
   test("u calls prepareUpModal", () => {
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "u", noKey);

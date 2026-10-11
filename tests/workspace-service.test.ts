@@ -29,7 +29,11 @@ import {
   liveWorktreeService,
   type WorktreeService,
 } from "../src/services/worktree-service";
-import { noopTmuxService, withTestServices } from "./helpers/services";
+import {
+  noopTmuxService,
+  shutdownWorktreeService,
+  withTestServices,
+} from "./helpers/services";
 
 async function writeConfig(repoDir: string, body = "") {
   await Bun.write(
@@ -58,7 +62,7 @@ describe("WorkspaceService target resolution", () => {
   test("resolves current directory, explicit path, and branch targets", async () => {
     const seenPaths: string[] = [];
     const worktree: WorktreeService = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: (cwd) =>
         Effect.sync(() => {
           if (cwd) seenPaths.push(cwd);
@@ -129,6 +133,7 @@ describe("WorkspaceService target resolution", () => {
     const mainRepoPath = await mkdtemp(join(tmpdir(), "wct-workspace-main-"));
     const worktree: WorktreeService = {
       ...liveWorktreeService,
+      getWorktreeRoot: (cwd) => Effect.succeed(cwd),
       findWorktreeByBranch: (branch) =>
         Effect.succeed(
           branch === "feature"
@@ -300,6 +305,7 @@ describe("WorkspaceService open", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            getWorktreeRoot: (cwd) => Effect.succeed(cwd),
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(repoDir),
             getCurrentBranch: () => Effect.succeed("profiled"),
@@ -781,7 +787,7 @@ describe("WorkspaceService down", () => {
         WorkspaceService.use((service) => service.down()),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
           },
           tmux: {
@@ -803,6 +809,7 @@ describe("WorkspaceService down", () => {
       existed: true,
       status: "killed",
       attempts: {
+        down: { attempted: false as const, reason: "down_not_configured" },
         kill: {
           attempted: true,
           ok: true,
@@ -822,7 +829,7 @@ describe("WorkspaceService down", () => {
         WorkspaceService.use((service) => service.down()),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
           },
           tmux: {
@@ -856,7 +863,7 @@ describe("WorkspaceService down", () => {
           ),
           {
             worktree: {
-              ...liveWorktreeService,
+              ...shutdownWorktreeService,
               findWorktreeByBranch: () => Effect.succeed(null),
             },
           },
@@ -878,7 +885,7 @@ describe("WorkspaceService down", () => {
           WorkspaceService.use((service) => service.down()),
           {
             worktree: {
-              ...liveWorktreeService,
+              ...shutdownWorktreeService,
               isGitRepo: () => Effect.succeed(true),
             },
             tmux,
@@ -908,7 +915,7 @@ describe("WorkspaceService close", () => {
         WorkspaceService.use((service) => service.close()),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
             removeWorktree: (path, force) =>
               Effect.sync(() => {
@@ -932,6 +939,7 @@ describe("WorkspaceService close", () => {
       existed: false,
       status: "removed",
       attempts: {
+        down: { attempted: false as const, reason: "down_not_configured" },
         kill: {
           attempted: false,
           reason: "session_absent",
@@ -956,7 +964,7 @@ describe("WorkspaceService close", () => {
         WorkspaceService.use((service) => service.close({ branch: "feature" })),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             findWorktreeByBranch: (branch) =>
               Effect.succeed({
                 path: `/tmp/myapp-${branch}`,
@@ -1000,7 +1008,7 @@ describe("WorkspaceService close", () => {
         ),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             findWorktreeByBranch: (branch) =>
               Effect.succeed({
                 path: relativePath,
@@ -1047,7 +1055,7 @@ describe("WorkspaceService close", () => {
         ),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: (cwd) =>
               Effect.sync(() => {
                 if (cwd) seenPaths.push(cwd);
@@ -1083,7 +1091,7 @@ describe("WorkspaceService close", () => {
           WorkspaceService.use((service) => service.close()),
           {
             worktree: {
-              ...liveWorktreeService,
+              ...shutdownWorktreeService,
               isGitRepo: () => Effect.succeed(true),
               removeWorktree: (path) =>
                 Effect.sync(() => {
@@ -1110,7 +1118,7 @@ describe("WorkspaceService close", () => {
         WorkspaceService.use((service) => service.close()),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
             removeWorktree: (path) =>
               Effect.succeed({ _tag: "BlockedByChanges" as const, path }),
@@ -1140,7 +1148,7 @@ describe("WorkspaceService close", () => {
         WorkspaceService.use((service) => service.close({ force: true })),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
             removeWorktree: (path, force) =>
               Effect.sync(() => {
@@ -1177,7 +1185,7 @@ describe("WorkspaceService close", () => {
         ),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
             removeWorktree: (path, force, cwd) =>
               Effect.sync(() => {
@@ -1232,7 +1240,7 @@ describe("WorkspaceService reporter", () => {
           ),
           {
             worktree: {
-              ...liveWorktreeService,
+              ...shutdownWorktreeService,
               isGitRepo: () => Effect.succeed(true),
             },
             tmux: {
@@ -1279,7 +1287,7 @@ describe("WorkspaceService reporter", () => {
           ),
           {
             worktree: {
-              ...liveWorktreeService,
+              ...shutdownWorktreeService,
               isGitRepo: () => Effect.succeed(true),
             },
             tmux: {
@@ -1298,6 +1306,7 @@ test("liveWorkspaceService exposes public lifecycle operations", () => {
   expect(typeof liveWorkspaceService.up).toBe("function");
   expect(typeof liveWorkspaceService.down).toBe("function");
   expect(typeof liveWorkspaceService.close).toBe("function");
+  expect(typeof liveWorkspaceService.retryCloseRemoval).toBe("function");
 });
 
 describe("WorkspaceService semantic phases", () => {
@@ -1493,7 +1502,7 @@ project_name: "myapp"
 
   test("up emits preparing first and a tmux phase only when tmux is configured", async () => {
     const worktree: WorktreeService = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: () => Effect.succeed(true),
       getMainRepoPath: () => Effect.succeed(repoDir),
       getCurrentBranch: () => Effect.succeed("feature"),
@@ -1541,7 +1550,7 @@ project_name: "myapp"
 
   test("down and close emit the stop phase before killSession, and only when a session exists", async () => {
     const worktree: WorktreeService = {
-      ...liveWorktreeService,
+      ...shutdownWorktreeService,
       isGitRepo: () => Effect.succeed(true),
       removeWorktree: (path) =>
         Effect.succeed({ _tag: "Removed" as const, path }),
@@ -1628,7 +1637,7 @@ project_name: "myapp"
         ),
         {
           worktree: {
-            ...liveWorktreeService,
+            ...shutdownWorktreeService,
             isGitRepo: () => Effect.succeed(true),
             removeWorktree: (path) =>
               Effect.sync(() => {

@@ -10,6 +10,7 @@ import { type LifecycleState, lifecycleBusyMessage } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";
+import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 
 export interface ProjectActionDeps {
@@ -102,7 +103,7 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         );
       }
 
-      const [, failures] = yield* Effect.partition(
+      const [stopped, failures] = yield* Effect.partition(
         repo.worktrees,
         (worktree) =>
           WorkspaceService.use((service) =>
@@ -143,7 +144,13 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         );
       }
 
-      yield* Effect.sync(() => restoreProjectUi(deps));
+      yield* Effect.sync(() => {
+        restoreProjectUi(deps);
+        const warnings = stopped.flatMap((result) =>
+          result.warnings.map(formatWorkspaceWarning),
+        );
+        if (warnings.length > 0) deps.showActionError(warnings.join("; "));
+      });
     }).pipe(
       Effect.catch((error) =>
         Effect.gen(function* () {

@@ -59,6 +59,7 @@ function mergeConfigs(
     ...project,
     copy: project.copy ?? global.copy,
     setup: project.setup ?? global.setup,
+    down: project.down ?? global.down,
     tmux: project.tmux
       ? {
           ...global.tmux,
@@ -210,6 +211,7 @@ function applyProfile(
     ...base,
     work_dir: profile.work_dir ?? base.work_dir,
     setup: profile.setup ?? base.setup,
+    down: profile.down ?? base.down,
     tmux: profile.tmux ?? base.tmux,
     copy: profile.copy ?? base.copy,
   };

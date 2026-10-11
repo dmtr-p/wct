@@ -1,5 +1,3 @@
-// src/tui/App.tsx
-
 import { Box, type Key, render, Text, useApp, useWindowSize } from "ink";
 import {
   useCallback,

@@ -1108,38 +1108,79 @@ describe("createHandleDownSelectedWorktree", () => {
     expect(deps.setMode).not.toHaveBeenCalled();
   });
 
-  test("no-op when worktree has no active session", () => {
-    const items: TreeItem[] = [
-      { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
-    ];
-    const repos = [
-      {
-        id: "r1",
-        project: "proj",
-        repoPath: "/repo",
-        profileNames: [],
-        worktrees: [
-          {
-            branch: "feat",
-            path: "/repo/feat",
-            isMainWorktree: false,
-            changedFiles: 0,
-            sync: null,
-          },
-        ],
-      },
-    ];
-    const deps = makeDeps({
-      treeItems: items,
-      filteredRepos: repos,
-      selectedIndex: 0,
-      sessions: [],
-    });
-    const handleDown = createHandleDownSelectedWorktree(deps);
+  test.each([false, true])(
+    "allows cleanup without an active session (retry=%s)",
+    async (retry) => {
+      const items: TreeItem[] = [
+        { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
+      ];
+      const repos = [
+        {
+          id: "r1",
+          project: "proj",
+          repoPath: "/repo",
+          profileNames: [],
+          worktrees: [
+            {
+              branch: "feat",
+              path: "/repo/feat",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+        },
+      ];
+      const deps = makeDeps({
+        treeItems: items,
+        filteredRepos: repos,
+        selectedIndex: 0,
+        sessions: [],
+        refreshAll: vi.fn().mockResolvedValue(repos),
+      });
+      const { tuiRuntime } = await import("../../src/tui/runtime");
+      const runtime = tuiRuntime.runPromise as Mock;
+      runtime.mockReset();
+      workspaceDown.mockClear();
+      const executeDown = createExecuteDown(deps);
+      if (retry) {
+        runtime.mockRejectedValueOnce(
+          commandError("down_failed", "Cleanup failed; worktree preserved"),
+        );
+        await executeDown("feat", "feat", "/repo/feat", "/repo", "proj");
+        expect(deps.showActionError).toHaveBeenCalledWith(
+          "Cleanup failed; worktree preserved",
+        );
+        expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
+        deps.setMode = vi.fn();
+      }
 
-    handleDown();
-    expect(deps.setMode).not.toHaveBeenCalled();
-  });
+      createHandleDownSelectedWorktree(deps)();
+      expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("down");
+      expect(deps.setMode).toHaveBeenCalledWith(
+        Mode.ConfirmDown({
+          sessionName: "feat",
+          branch: "feat",
+          worktreePath: "/repo/feat",
+          worktreeKey: "proj/feat",
+          repoPath: "/repo",
+          project: "proj",
+        }),
+      );
+
+      runtime.mockResolvedValueOnce({ warnings: [] });
+      await executeDown("feat", "feat", "/repo/feat", "/repo", "proj");
+      expect(workspaceDown).toHaveBeenCalledTimes(retry ? 2 : 1);
+      expect(workspaceDown).toHaveBeenLastCalledWith({
+        path: "/repo/feat",
+        reporter: expect.anything(),
+      });
+      expect(deps.refreshAll).toHaveBeenCalledTimes(retry ? 2 : 1);
+      expect(deps.showActionError).toHaveBeenCalledTimes(retry ? 1 : 0);
+      expect(deps.switchSession).not.toHaveBeenCalled();
+      expect(deps.detachClient).not.toHaveBeenCalled();
+    },
+  );
 
   test("saves return refs and sets ConfirmDown mode when session exists", () => {
     const items: TreeItem[] = [

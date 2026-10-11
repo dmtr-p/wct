@@ -457,9 +457,6 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
-    const hasSession = deps.sessions.some((s) => s.name === sessionName);
-    if (!hasSession) return;
-
     const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
     deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =

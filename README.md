@@ -244,6 +244,8 @@ A project or profile `down` list replaces its inherited list; `down: []` disable
 
 Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
 
+Profile names must match `[A-Za-z0-9][A-Za-z0-9._-]*`: start with an ASCII letter or digit, followed by ASCII letters, digits, dots, underscores, or hyphens. For example, `dev`, `ci-linux`, and `team.local` are valid names.
+
 ```yaml
 profiles:
   ci:

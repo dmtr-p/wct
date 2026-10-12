@@ -343,6 +343,44 @@ describe("validateConfig", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  test.each(["dev", "CI-linux", "team.local", "123_dev"])(
+    "accepts profile identifier %s",
+    (name) => {
+      expect(validateConfig({ profiles: { [name]: {} } })).toEqual({
+        valid: true,
+        errors: [],
+      });
+    },
+  );
+
+  test.each([
+    "",
+    "-dev",
+    ".dev",
+    "_dev",
+    "two words",
+    "dev:region",
+    "dev=region",
+    "bang!wow",
+    "tab\tname",
+    "line\nbreak",
+    "dev\n",
+    "dev\r",
+    "nul\0name",
+    "quote'and\"double",
+    "back\\slash",
+    "$(touch injected)",
+    "semi;colon",
+    "日本語",
+  ])("rejects invalid profile name %j", (name) => {
+    expect(validateConfig({ profiles: { [name]: {} } })).toEqual({
+      valid: false,
+      errors: [
+        `Profile name ${JSON.stringify(name)} must match [A-Za-z0-9][A-Za-z0-9._-]*.`,
+      ],
+    });
+  });
+
   test("rejects profile with invalid tmux config", () => {
     const result = validateConfig({
       profiles: {
@@ -493,6 +531,20 @@ describe("DEFAULT_CONFIG", () => {
       );
     },
   );
+
+  test("loadConfig rejects invalid profile names with a configuration error", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "wct-profile-name-"));
+    await Bun.write(
+      join(projectDir, ".wct.yaml"),
+      'profiles: {"dev:region": {}}\n',
+    );
+    await expect(runBunPromise(loadConfig(projectDir))).rejects.toMatchObject({
+      _tag: "ConfigError",
+      details: expect.stringContaining(
+        'Profile name "dev:region" must match [A-Za-z0-9][A-Za-z0-9._-]*.',
+      ),
+    });
+  });
 });
 
 describe("resolveWorktreePath", () => {

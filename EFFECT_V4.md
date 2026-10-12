@@ -71,11 +71,10 @@ Worktree service and uses `loadConfig`. Configuration errors produce no
 suggestions. Preserve profile names and typed prefixes as data without
 evaluating shell text.
 
-Bash and Fish consume NUL records; Zsh decodes quoted words. Fish uses
-`string split0` to preserve candidate boundaries and handles insertion quoting.
-Bash matches dequoted prefixes, escapes candidates for the active quote context,
-and trims prefixes retained by Readline at word breaks. Cursor slicing must
-respect the Bash version's byte or character offsets in UTF-8 text.
+Config validation restricts profile names to `[A-Za-z0-9][A-Za-z0-9._-]*`.
+All three shells consume newline-separated identifiers. Bash strips surrounding
+single or double quotes from the current word before matching; it uses
+`COMP_WORDS` so completion also works mid-line after multibyte text.
 
 ## Services and layers
 

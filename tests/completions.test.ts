@@ -1,5 +1,4 @@
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -574,7 +573,7 @@ describe("resolved profile completions", () => {
       );
       writeFileSync(
         join(fixture.repo, ".wct.yaml"),
-        'profiles: {"project profile": {}, "123: special": {}}\n',
+        'profiles: {"project-profile": {}, "123.special": {}}\n',
       );
       writeFileSync(
         join(fixture.nested, ".wct.yaml"),
@@ -596,8 +595,8 @@ describe("resolved profile completions", () => {
             fixture.env,
           );
           expect(result.stdout.toString().trim().split("\n")).toEqual([
-            "project\\ profile",
-            "123:\\ special",
+            "project-profile",
+            "123.special",
           ]);
           expect(result.stderr.toString()).toBe("");
         }
@@ -634,95 +633,13 @@ describe("resolved profile completions", () => {
     }
   });
 
-  test("preserves YAML names and prefix matching without evaluating shell text", () => {
-    const fixture = profileFixture();
-    const names = [
-      "two words",
-      "quote'and\"double",
-      "back\\slash",
-      "$(touch injected)",
-      "semi;colon",
-      "123: colon",
-      "日本語",
-      "line\nbreak",
-      "tab\tname",
-    ];
-    writeFileSync(
-      join(fixture.repo, ".wct.yaml"),
-      `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
-    );
-    mkdirSync(join(fixture.linked, "two words"));
-    try {
-      const result = runBashCompletion(
-        ["wct", "open", "--profile", ""],
-        fixture.nested,
-        fixture.env,
-      );
-      const quoted = Bun.spawnSync([
-        "bash",
-        "-c",
-        'printf "%q\n" "$@"',
-        "bash",
-        ...names,
-      ]);
-      expect(result.stdout.toString()).toBe(quoted.stdout.toString());
-      expect(result.stderr.toString()).toBe("");
-      expect(existsSync(join(fixture.nested, "injected"))).toBe(false);
-      const prefixed = runBashCompletion(
-        ["wct", "open", "-P", "two "],
-        fixture.linked,
-        fixture.env,
-      );
-      expect(prefixed.stdout.toString()).toBe("two\\ words\n");
-    } finally {
-      rmSync(fixture.dir, { recursive: true, force: true });
-    }
-  });
-
-  test("continues Bash completion after inserting an escaped common prefix", () => {
-    const fixture = profileFixture();
-    writeFileSync(
-      join(fixture.repo, ".wct.yaml"),
-      'profiles: {"dev^one": {}, "dev^two": {}}\n',
-    );
-    try {
-      for (const [prefix, expected] of [
-        ["dev", "dev\\^one\ndev\\^two\n"],
-        ["dev\\^", "dev\\^one\ndev\\^two\n"],
-        ["dev\\^o", "dev\\^one\n"],
-      ] as const) {
-        const result = runBashCompletion(
-          ["wct", "open", "--profile", prefix],
-          fixture.linked,
-          fixture.env,
-        );
-        expect(result.exitCode).toBe(0);
-        expect(result.stderr.toString()).toBe("");
-        expect(result.stdout.toString()).toBe(expected);
-      }
-    } finally {
-      rmSync(fixture.dir, { recursive: true, force: true });
-    }
-  });
-
-  test.each([
-    ["two\\ ", "two words", "two\\ words"],
-    ['"two ', "two words", "two words"],
-    ["'two ", "two words", "two words"],
-    ["'quote", "quote'and\\slash", "quote'\\''and\\slash"],
-    ["back\\\\", "back\\slash", "back\\\\slash"],
-    ['"back\\s', "back\\slash", "back\\\\slash"],
-    ["$'line\\n'", "line\nbreak", "$'line\\nbreak'"],
-    ["$'tab\\t", "tab\tname", "tab\\tname"],
-    ["\\$\\(touch\\ ", "$(touch injected)", "\\$\\(touch\\ injected\\)"],
-    ["'$(touch ", "$(touch injected)", "$(touch injected)"],
-  ])(
-    "matches and quotes Bash prefix %s without evaluation",
-    (prefix, name, candidate) => {
+  test.each(["de", '\"de', "'de", '\"de\"', "'de'"])(
+    "matches Bash identifier prefix %s",
+    (prefix) => {
       const fixture = profileFixture();
       writeFileSync(
         join(fixture.repo, ".wct.yaml"),
-        `profiles: ${JSON.stringify({ [name]: {} })}\n`,
+        "profiles: {dev: {}, prod: {}}\n",
       );
       try {
         const result = runBashCompletion(
@@ -732,8 +649,7 @@ describe("resolved profile completions", () => {
         );
         expect(result.exitCode).toBe(0);
         expect(result.stderr.toString()).toBe("");
-        expect(result.stdout.toString()).toBe(`${candidate}\n`);
-        expect(existsSync(join(fixture.linked, "injected"))).toBe(false);
+        expect(result.stdout.toString()).toBe("dev\n");
       } finally {
         rmSync(fixture.dir, { recursive: true, force: true });
       }
@@ -741,24 +657,23 @@ describe("resolved profile completions", () => {
   );
 
   test.each([
-    ['"two \t', ["two words"], "two words"],
-    ["'two \t", ["two words"], "two words"],
-    ['"quote\t', ['quote"$back\\slash'], 'quote"$back\\slash'],
-    ["'quote\t", ["quote'and\\slash"], "quote'and\\slash"],
-    ["$'line\\n\t", ["line\nbreak"], "line\nbreak"],
-    ["dev\to\t", ["dev:one", "dev:two"], "dev:one"],
-    ["dev:region\to\t", ["dev:region:one", "dev:region:two"], "dev:region:one"],
-    ['"dev:o\t', ["dev:one", "dev:two"], "dev:one"],
-    ["dev\\:o\t", ["dev:one", "dev:two"], "dev:one"],
-    ["dev=o\t", ["dev=one", "dev=two"], "dev=one"],
+    ["de\t", ["dev"], "dev"],
+    ['"de\t', ["dev"], "dev"],
+    ["'de\t", ["dev"], "dev"],
+    ['"de"\t', ["dev"], "dev"],
+    ["'de'\t", ["dev"], "dev"],
+    ["dev\tl\t", ["dev-linux", "dev-macos"], "dev-linux"],
+    ["team.\tl\t", ["team.local", "team.remote"], "team.local"],
+    ["123_\td\t", ["123_dev", "123_prod"], "123_dev"],
   ])(
-    "Readline inserts the configured profile for %s",
+    "Readline inserts the configured identifier for %s",
     async (input, names, expected) => {
       const fixture = profileFixture();
       writeFileSync(
         join(fixture.repo, ".wct.yaml"),
         `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
       );
+      mkdirSync(join(fixture.linked, expected));
       try {
         expect(
           await insertBashCompletion(
@@ -834,22 +749,45 @@ describe("resolved profile completions", () => {
     }
   });
 
+  test.each(["bash", "zsh", "fish"])(
+    "%s produces no candidates for invalid profile names",
+    (shell) => {
+      const fixture = profileFixture();
+      const profiles = Object.fromEntries(
+        ["dev:region", "bang!wow", "tab\tname", "two words"].map((name) => [
+          name,
+          {},
+        ]),
+      );
+      writeFileSync(
+        join(fixture.repo, ".wct.yaml"),
+        `profiles: ${JSON.stringify(profiles)}\n`,
+      );
+      try {
+        const result = Bun.spawnSync(
+          [
+            process.execPath,
+            resolve("src/index.ts"),
+            "--wct-completion-profiles",
+            shell,
+          ],
+          { cwd: fixture.linked, env: { ...process.env, ...fixture.env } },
+        );
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.toString()).toBe("");
+        expect(result.stderr.toString()).toBe("");
+      } finally {
+        rmSync(fixture.dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   test.each(["zsh", "fish"])(
-    "%s profile helpers preserve shell-sensitive names",
+    "%s profile helpers preserve identifiers",
     (shell) => {
       if (!Bun.which(shell)) return;
       const fixture = profileFixture();
-      const names = [
-        "two words",
-        "quote'and\"double",
-        "back\\slash",
-        "$(touch injected)",
-        "semi;colon",
-        "123: colon",
-        "日本語",
-        "line\nbreak",
-        "tab\tname",
-      ];
+      const names = ["dev", "CI-linux", "team.local", "123_dev"];
       const scriptPath = join(fixture.dir, `completion.${shell}`);
       writeFileSync(
         join(fixture.repo, ".wct.yaml"),
@@ -859,7 +797,7 @@ describe("resolved profile completions", () => {
       const command =
         shell === "zsh"
           ? `compdef() { :; }; compadd() { printf "%s\\0" "\${profiles[@]}"; }; source "$1"; _wct_profiles`
-          : 'source $argv[1]; for profile in (__wct_profiles | string split0); printf "%s\\0" $profile; end';
+          : 'source $argv[1]; for profile in (__wct_profiles); printf "%s\\0" $profile; end';
       try {
         const result = Bun.spawnSync(
           [
@@ -877,20 +815,19 @@ describe("resolved profile completions", () => {
         expect(result.stdout.toString().split("\0").filter(Boolean)).toEqual(
           names,
         );
-        expect(existsSync(join(fixture.linked, "injected"))).toBe(false);
       } finally {
         rmSync(fixture.dir, { recursive: true, force: true });
       }
     },
   );
 
-  test("fish receives raw profile values to quote during insertion", () => {
+  test("fish offers complete identifiers with descriptions", () => {
     if (!Bun.which("fish")) return;
     const fixture = profileFixture();
     const scriptPath = join(fixture.dir, "completion.fish");
     writeFileSync(
       join(fixture.repo, ".wct.yaml"),
-      'profiles: {"two words": {}, "semi;colon": {}}\n',
+      'profiles: {"CI-linux": {}, "team.local": {}}\n',
     );
     writeFileSync(scriptPath, runCliProcess(["--completions", "fish"]).stdout);
     try {
@@ -907,8 +844,8 @@ describe("resolved profile completions", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stderr.toString()).toBe("");
       expect(result.stdout.toString().trimEnd().split("\n")).toEqual([
-        "semi;colon\tUse a named config profile",
-        "two words\tUse a named config profile",
+        "CI-linux\tUse a named config profile",
+        "team.local\tUse a named config profile",
       ]);
     } finally {
       rmSync(fixture.dir, { recursive: true, force: true });

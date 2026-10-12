@@ -17,15 +17,9 @@ export function renderCompletionProfiles(
 ): string {
   switch (shell) {
     case "bash":
-      // NUL records preserve whitespace and newlines in profile names.
-      return profiles.map((profile) => `${profile}\0`).join("");
     case "zsh":
-      // Zsh's (z)/(Q) decoding preserves names without evaluating shell text.
-      return profiles
-        .map((profile) => `'${profile.replaceAll("'", "'\\''")}'`)
-        .join(" ");
     case "fish":
-      return profiles.map((profile) => `${profile}\0`).join("");
+      return profiles.length ? `${profiles.join("\n")}\n` : "";
     default:
       return "";
   }

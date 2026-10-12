@@ -256,6 +256,9 @@ A Config Profile is a named set of overrides for `work_dir`, `copy`, `setup`,
 with `--profile` or use the first profile whose branch glob matches. Sections
 absent from the profile retain their base configuration.
 
+Profile names match `[A-Za-z0-9][A-Za-z0-9._-]*` so they work as shell completion
+candidates without quoting or completion delimiter conflicts.
+
 Shutdown resolves the current main-repository configuration rather than
 remembering the startup profile. The TUI selects shutdown profiles by branch
 matching. A profile script list replaces the inherited list; an empty list

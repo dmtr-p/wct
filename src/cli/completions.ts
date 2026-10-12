@@ -90,11 +90,7 @@ function generateFishCompletions(): string {
           }
           parts.push(`-d ${quoteFish(option.description)}`);
           if (option.completionValues) {
-            const completion =
-              option.completionValues === "__wct_profiles"
-                ? "__wct_profiles | string split0"
-                : option.completionValues;
-            parts.push(`-a '(${completion})'`);
+            parts.push(`-a '(${option.completionValues})'`);
           }
           lines.push(parts.join(" "));
         }
@@ -139,11 +135,7 @@ function generateFishCompletions(): string {
       }
       parts.push(`-d ${quoteFish(option.description)}`);
       if (option.completionValues) {
-        const completion =
-          option.completionValues === "__wct_profiles"
-            ? "__wct_profiles | string split0"
-            : option.completionValues;
-        parts.push(`-a '(${completion})'`);
+        parts.push(`-a '(${option.completionValues})'`);
       }
       lines.push(parts.join(" "));
     }
@@ -202,127 +194,6 @@ function generateBashCompletions(): string {
     "    git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'",
     "}",
     "",
-    // Bash before 4.3 reports byte offsets; newer Bash reports character offsets.
-    "_wct_completion_line() {",
-    "    if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3))); then",
-    "        local LC_ALL=C",
-    "    fi",
-    '    profile_line="${COMP_LINE:0:COMP_POINT}"',
-    "}",
-    "",
-    // Typed prefixes are data; shell substitutions must not execute.
-    "_wct_profile_prefix() {",
-    '    local word="$1" scan_line="${2:-}" quote="" char next ansi="" decoded',
-    "    local index started=0",
-    '    profile_prefix=""',
-    '    profile_prev=""',
-    "    profile_retained=0",
-    "    for ((index = 0; index < ${#word}; index++)); do",
-    '        char="${word:index:1}"',
-    '        if [[ "$scan_line" && ! "$quote" && "$char" == [$\' \\t\\n\'] ]]; then',
-    '            if [[ $started == 1 ]]; then profile_prev="$profile_prefix"; fi',
-    '            profile_prefix=""',
-    "            profile_retained=0",
-    "            started=0",
-    "            continue",
-    "        fi",
-    "        started=1",
-    '        case "$quote" in',
-    "            single)",
-    '                if [[ "$char" == "\'" ]]; then quote=""; profile_retained=0; else profile_prefix+="$char"; fi',
-    "                ;;",
-    "            ansi)",
-    "                if [[ \"$char\" == '\\' ]]; then",
-    "                    ((index++))",
-    '                    next="${word:index:1}"',
-    '                    case "$next" in',
-    "                        \"'\"|'\"'|'?') ansi+=\"$next\" ;;",
-    "                        '') ;;",
-    '                        *) ansi+="\\\\$next" ;;',
-    "                    esac",
-    '                elif [[ "$char" == "\'" ]]; then',
-    "                    printf -v decoded '%b' \"$ansi\" 2>/dev/null",
-    '                    profile_prefix+="$decoded"',
-    '                    ansi=""',
-    '                    quote=""',
-    "                    profile_retained=0",
-    "                else",
-    '                    ansi+="$char"',
-    "                fi",
-    "                ;;",
-    "            *)",
-    "                if [[ \"$char\" == '\\' ]]; then",
-    "                    ((index++))",
-    '                    next="${word:index:1}"',
-    '                    if [[ "$quote" == double && "$next" != \'\\\' && "$next" != \'"\' && "$next" != \'$\' && "$next" != \'`\' && "$next" != $\'\\n\' ]]; then',
-    "                        profile_prefix+='\\'",
-    "                    fi",
-    '                    [[ "$next" == $\'\\n\' ]] || profile_prefix+="$next"',
-    '                elif [[ "$quote" == double ]]; then',
-    '                    if [[ "$char" == \'"\' ]]; then quote=""; profile_retained=0; else profile_prefix+="$char"; fi',
-    '                elif [[ "$char" == "\'" ]]; then',
-    "                    quote=single",
-    "                    profile_retained=${#profile_prefix}",
-    '                elif [[ "$char" == \'"\' ]]; then',
-    "                    quote=double",
-    "                    profile_retained=${#profile_prefix}",
-    '                elif [[ "$char" == \'$\' && "${word:index+1:1}" == "\'" ]]; then',
-    "                    quote=ansi",
-    "                    profile_retained=${#profile_prefix}",
-    "                    ((index++))",
-    "                else",
-    '                    profile_prefix+="$char"',
-    '                    if [[ "$COMP_WORDBREAKS" == *"$char"* && "$char" != [$\' \\t\\n\'] ]]; then',
-    "                        profile_retained=${#profile_prefix}",
-    "                    fi",
-    "                fi",
-    "                ;;",
-    "        esac",
-    "    done",
-    '    if [[ "$quote" == ansi ]]; then',
-    "        printf -v decoded '%b' \"$ansi\" 2>/dev/null",
-    '        profile_prefix+="$decoded"',
-    "    fi",
-    '    profile_quote="$quote"',
-    "}",
-    "",
-    // Bash 3.2 parameter-substitution replacements can rewrite apostrophe escapes.
-    "_wct_quote_profile() {",
-    '    local value="${1:profile_retained}" char index',
-    '    quoted_profile=""',
-    '    case "$profile_quote" in',
-    "        double|single)",
-    "            for ((index = 0; index < ${#value}; index++)); do",
-    '                char="${value:index:1}"',
-    '                if [[ "$profile_quote" == single && "$char" == "\'" ]]; then',
-    "                    quoted_profile+=\"'\\\\''\"",
-    "                else",
-    '                    if [[ "$profile_quote" == double ]]; then',
-    '                        case "$char" in',
-    "                            '\\'|'\"'|'$'|'`') quoted_profile+='\\' ;;",
-    "                        esac",
-    "                    fi",
-    '                    quoted_profile+="$char"',
-    "                fi",
-    "            done",
-    "            ;;",
-    "        ansi)",
-    "            printf -v quoted_profile '%q' \"$value\"",
-    "            if [[ \"$quoted_profile\" == \\$\\'*\\' ]]; then",
-    '                quoted_profile="${quoted_profile:2:${#quoted_profile}-3}"',
-    "            else",
-    '                quoted_profile=""',
-    "                for ((index = 0; index < ${#value}; index++)); do",
-    '                    char="${value:index:1}"',
-    "                    case \"$char\" in '\\'|\"'\") quoted_profile+='\\' ;; esac",
-    '                    quoted_profile+="$char"',
-    "                done",
-    "            fi",
-    "            ;;",
-    "        *) printf -v quoted_profile '%q' \"$value\" ;;",
-    "    esac",
-    "}",
-    "",
     "_wct_profiles() {",
     `    command wct ${COMPLETION_PROFILES_FLAG} bash 2>/dev/null`,
     "}",
@@ -334,17 +205,6 @@ function generateBashCompletions(): string {
     '    local cmd="${COMP_WORDS[1]}"',
     "    local cmd_index=1",
     "    local scan_index=1",
-    "    local profile_line profile_prefix profile_prev profile_retained profile_quote",
-    '    if [[ -n "${COMP_LINE-}" ]]; then',
-    "        _wct_completion_line",
-    '        _wct_profile_prefix "$profile_line" line',
-    '        if [[ "$profile_prev" == --profile || "$profile_prev" == -P ]]; then',
-    '            prev="$profile_prev"',
-    "        fi",
-    "    else",
-    '        _wct_profile_prefix "$cur"',
-    "    fi",
-    "",
     ...globalOptions
       .filter((option) => option.values)
       .flatMap((option) => [
@@ -420,16 +280,18 @@ function generateBashCompletions(): string {
         : option.completionValues;
       lines.push(`            if [[ ${prevCheck} ]]; then`);
       if (option.completionValues === "__wct_profiles") {
-        // Filename completion can append a slash to a profile matching a directory.
-        lines.push("                COMPREPLY=()");
-        lines.push("                local profile quoted_profile");
-        lines.push("                while IFS= read -r -d '' profile; do");
+        lines.push('                local profile_prefix="$cur"');
+        lines.push('                case "$profile_prefix" in');
         lines.push(
-          '                    [[ "$profile" == "$profile_prefix"* ]] || continue',
+          '                    \\"*) profile_prefix="${profile_prefix#\\"}"; profile_prefix="${profile_prefix%\\"}" ;;',
         );
-        lines.push('                    _wct_quote_profile "$profile"');
-        lines.push('                    COMPREPLY+=("$quoted_profile")');
-        lines.push("                done < <(_wct_profiles)");
+        lines.push(
+          '                    \\\'*) profile_prefix="${profile_prefix#\\\'}"; profile_prefix="${profile_prefix%\\\'}" ;;',
+        );
+        lines.push("                esac");
+        lines.push(
+          '                COMPREPLY=($(compgen -W "$(_wct_profiles)" -- "$profile_prefix"))',
+        );
       } else {
         lines.push(
           `                COMPREPLY=($(compgen -W "$(${bashFunc})" -- "$cur"))`,
@@ -580,9 +442,9 @@ function generateZshCompletions(): string {
     "",
     "_wct_profiles() {",
     "    local -a profiles",
-    '    profiles=("${(@Q)${(z)$(command wct ' +
+    '    profiles=("${(@f)$(command wct ' +
       COMPLETION_PROFILES_FLAG +
-      ' zsh 2>/dev/null)}}")',
+      ' zsh 2>/dev/null)}")',
     "    (( ${#profiles} )) && compadd -a profiles",
     "}",
     "",

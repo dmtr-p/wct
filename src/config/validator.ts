@@ -104,6 +104,11 @@ export function validateConfig(config: unknown): ValidationResult {
 
   if (decoded.profiles) {
     for (const [profileName, profile] of Object.entries(decoded.profiles)) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(profileName)) {
+        errors.push(
+          `Profile name ${JSON.stringify(profileName)} must match [A-Za-z0-9][A-Za-z0-9._-]*.`,
+        );
+      }
       errors.push(
         ...validateWorkDir(
           profile.work_dir,

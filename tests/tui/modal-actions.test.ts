@@ -254,7 +254,6 @@ describe("createPrepareOpenModal", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
     expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    // Open records expansion only after validation finds the Workspace.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       workspaceIdentityKey("/repo", "feat"),
     );
@@ -929,7 +928,6 @@ describe("open lifecycle reconciliation", () => {
     expect(entryAtRefresh).toEqual([true]);
     expect(tracker.phases).toContainEqual({ _tag: "Validating" });
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
-    // The App records the validated identity in its shared expansion set.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       workspaceIdentityKey("/repo", "feat"),
     );

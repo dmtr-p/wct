@@ -11,7 +11,6 @@ export type Mode =
       worktreePath: string;
       workspaceKey: string;
       repoPath: string;
-      /** Carry branch explicitly; Workspace Identity Keys are opaque. */
       branch: string;
       project: string;
       profileNames: string[];
@@ -212,7 +211,6 @@ type DetailItem<
       meta: TMeta;
     };
 
-/** GitHub PR info from `gh` CLI */
 export interface PRInfo {
   number: number;
   title: string;

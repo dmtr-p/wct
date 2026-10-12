@@ -204,9 +204,6 @@ export function App() {
     row: number;
   } | null>(null);
   const { actionError, showActionError, clearActionError } = useActionError();
-  // Keyed by Workspace Identity (main repository path + branch), never by
-  // the project display name, so two repos sharing a display name can't
-  // clobber each other's progress.
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
   // External handoffs such as `tmux switch-client` can detach the terminal
   // immediately. They need a commit barrier, not merely a queued state
@@ -534,7 +531,6 @@ export function App() {
     return refreshedRepos;
   }, [refreshRegistry, refreshSessions, discoverClient]);
 
-  // The poll/watch path only needs the side effect, not the resolved snapshot.
   const pollRefresh = useCallback(async (): Promise<void> => {
     await refreshAll();
   }, [refreshAll]);

@@ -1765,7 +1765,6 @@ describe("up and down lifecycle progress", () => {
     expect(tracker.state.size).toBe(0);
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
 
-    // With the entry gone, effective expansion reverts to the stored preference.
     expect(deps).not.toHaveProperty("setExpandedWorkspaceKeys");
     for (const stored of [new Set<string>(), new Set([workspaceKey])]) {
       expect(

@@ -225,7 +225,6 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     const item = deps.treeItems[deps.selectedIndex];
     if (!item) return;
 
-    // For any detail row with an action, fire it (pane jump, PR open, etc.)
     if (item.type === "detail" && item.action) {
       item.action();
       return;

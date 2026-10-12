@@ -293,7 +293,7 @@ type ExpandedRightArrowAction =
 export interface ResolvedStatusBarProps {
   mode: Mode;
   selectedPaneRow?: boolean;
-  /** The project identifier of the repo that the cursor is on or under. */
+  /** Project Display Name of the selected item's repository. */
   selectedProject?: string;
 }
 

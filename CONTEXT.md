@@ -141,10 +141,11 @@ as lifecycle progress, PR Associations, worktree expansion, and expansion-relate
 mode and action targets. It uses the main repository path and branch, never a
 Project Display Name or registry ID.
 
-Worktree expansion preferences and successful Open expansion share one set of
-Workspace Identity Keys. Active lifecycle operations temporarily force expansion
-without changing that set. Project Display Names are presentation labels only;
-renaming one does not change a Workspace's expansion or action target.
+Manual expansion and Workspaces found during Open validation share one set of
+Workspace Identity Keys, including Workspaces discovered after a later Open
+phase fails. Active lifecycle operations temporarily force expansion without
+changing that set. Project Display Names are presentation labels only; renaming
+one does not change a Workspace's expansion or action target.
 
 ### PR Identity
 

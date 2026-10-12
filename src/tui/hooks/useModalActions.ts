@@ -130,8 +130,8 @@ export function createHandleOpen(deps: ModalActionDeps) {
     const project = deps.openModalRepoProject || "unknown";
     const repoPath = deps.openModalRepoPath;
 
-    // The Workspace doesn't exist yet, so this lifecycle entry is its only
-    // representation in the tree until validation confirms it on disk.
+    // Create the entry before service.open so Pending Workspaces can render
+    // before Git exposes their worktrees.
     void runLifecycleOperation<WorkspaceOpenResult>({
       claims: deps.lifecycleClaims,
       setLifecycle: deps.setLifecycle,
@@ -159,8 +159,6 @@ export function createHandleOpen(deps: ModalActionDeps) {
           ),
         ),
       resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
-      // Persist Open expansion only after validation finds the Workspace.
-      // Lifecycle-driven expansion itself never writes a preference.
       onValidated: (snapshot) => {
         const discovered = discoveredWorkspaceIdentityKey(
           snapshot,
@@ -259,7 +257,6 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
   return (result: UpModalResult) => {
     if (deps.mode.type !== "UpModal") return;
 
-    // Carry the operation target explicitly rather than parsing its identity key.
     const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
     deps.restoreTreeReturnPosition("up");

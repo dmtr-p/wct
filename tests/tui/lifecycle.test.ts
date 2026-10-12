@@ -198,8 +198,6 @@ describe("forced expansion is presentation-only", () => {
       maxWidth: 80,
     });
 
-    // `reconcileExpandedWorkspaceKeys` prunes on every repos change (the 5s
-    // poll included), so the stored preference must stay untouched here.
     expect(stored.size).toBe(0);
     expect(stored.has(workspaceIdentityKey(repoPath, branch))).toBe(false);
     expect(reconcileExpandedWorkspaceKeys(stored, repos)).toBe(stored);

@@ -1,38 +1,12 @@
 import { BunServices } from "@effect/platform-bun";
 import { Console, Effect, Layer, ManagedRuntime } from "effect";
-import type { WctServices } from "../effect/services";
+import { type WctServices, WctServicesLayer } from "../effect/services";
 import { AgentService, liveAgentService } from "../services/agent-service";
-import { GitHubService, liveGitHubService } from "../services/github-service";
-import {
-  livePrCacheService,
-  PrCacheService,
-} from "../services/pr-cache-service";
-import {
-  liveRegistryService,
-  RegistryService,
-} from "../services/registry-service";
-import { liveSetupService, SetupService } from "../services/setup-service";
-import { liveTmuxService, TmuxService } from "../services/tmux";
-import {
-  liveWorkspaceService,
-  WorkspaceService,
-} from "../services/workspace-service";
-import {
-  liveWorktreeService,
-  WorktreeService,
-} from "../services/worktree-service";
 
 const tuiLayer = Layer.mergeAll(
   Layer.succeed(AgentService, liveAgentService),
-  Layer.succeed(TmuxService, liveTmuxService),
-  Layer.succeed(WorktreeService, liveWorktreeService),
-  Layer.succeed(GitHubService, liveGitHubService),
-  Layer.succeed(RegistryService, liveRegistryService),
-  Layer.succeed(SetupService, liveSetupService),
-  Layer.succeed(WorkspaceService, liveWorkspaceService),
-  Layer.succeed(PrCacheService, livePrCacheService),
-  BunServices.layer,
-);
+  WctServicesLayer,
+).pipe(Layer.provideMerge(BunServices.layer));
 
 export const tuiRuntime = ManagedRuntime.make(tuiLayer);
 

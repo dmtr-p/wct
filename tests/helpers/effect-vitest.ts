@@ -1,32 +1,9 @@
 import { BunServices } from "@effect/platform-bun";
 import { Layer } from "effect";
-import { JsonFlag } from "../../src/cli/json-flag";
-import { WctServicesLayer } from "../../src/effect/services";
 import {
-  GitHubService,
-  liveGitHubService,
-} from "../../src/services/github-service";
-import {
-  livePrCacheService,
-  PrCacheService,
-} from "../../src/services/pr-cache-service";
-import {
-  liveRegistryService,
-  RegistryService,
-} from "../../src/services/registry-service";
-import {
-  liveSetupService,
-  SetupService,
-} from "../../src/services/setup-service";
-import { liveTmuxService, TmuxService } from "../../src/services/tmux";
-import {
-  liveWorkspaceService,
-  WorkspaceService,
-} from "../../src/services/workspace-service";
-import {
-  liveWorktreeService,
-  WorktreeService,
-} from "../../src/services/worktree-service";
+  makeWctServicesLayer,
+  WctServicesLayer,
+} from "../../src/effect/services";
 import type { ServiceOverrides } from "./services";
 
 export type { ServiceOverrides };
@@ -40,7 +17,9 @@ export type { ServiceOverrides };
  * Use with `it.layer(WctTestLayer)((it) => { it.effect(...) })` from
  * @effect/vitest.
  */
-export const WctTestLayer = Layer.mergeAll(WctServicesLayer, BunServices.layer);
+export const WctTestLayer = WctServicesLayer.pipe(
+  Layer.provideMerge(BunServices.layer),
+);
 
 /**
  * Variant of `WctTestLayer` that swaps in per-test overrides matching
@@ -49,42 +28,7 @@ export const WctTestLayer = Layer.mergeAll(WctServicesLayer, BunServices.layer);
  * in `BunServices.layer` so live fallthroughs that call execProcess work.
  */
 export function wctTestLayer(overrides: ServiceOverrides = {}) {
-  return Layer.mergeAll(
-    Layer.succeed(GitHubService, overrides.github ?? liveGitHubService),
-    Layer.succeed(SetupService, overrides.setup ?? liveSetupService),
-    Layer.succeed(TmuxService, overrides.tmux ?? liveTmuxService),
-    Layer.succeed(WorktreeService, overrides.worktree ?? liveWorktreeService),
-    Layer.succeed(
-      WorkspaceService,
-      overrides.workspace ?? liveWorkspaceService,
-    ),
-    Layer.succeed(PrCacheService, overrides.prCache ?? livePrCacheService),
-    Layer.succeed(RegistryService, overrides.registry ?? liveRegistryService),
-    Layer.succeed(JsonFlag, overrides.json ?? false),
-    BunServices.layer,
+  return makeWctServicesLayer(overrides).pipe(
+    Layer.provideMerge(BunServices.layer),
   );
 }
-
-// Compile-time exhaustiveness check: every key of `ServiceOverrides` must
-// appear in the `_HandledOverrideKeys` union below. If a new optional key is
-// added to `ServiceOverrides` in `./services.ts` and not handled by
-// `wctTestLayer`, this assignment fails to compile, forcing the helper to be
-// updated alongside. Keep the union literal in sync with the keys handled
-// in `wctTestLayer` above.
-type _HandledOverrideKeys =
-  | "github"
-  | "json"
-  | "prCache"
-  | "registry"
-  | "setup"
-  | "tmux"
-  | "worktree"
-  | "workspace";
-type _AssertOverridesExhaustive =
-  keyof ServiceOverrides extends _HandledOverrideKeys
-    ? _HandledOverrideKeys extends keyof ServiceOverrides
-      ? true
-      : never
-    : never;
-const _exhaustive: _AssertOverridesExhaustive = true;
-void _exhaustive;

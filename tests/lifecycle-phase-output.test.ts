@@ -20,7 +20,7 @@ import type {
 } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
-  type WorktreeService,
+  type WorktreeServiceImplementation as WorktreeService,
 } from "../src/services/worktree-service";
 import { withTestServices } from "./helpers/services";
 

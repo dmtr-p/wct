@@ -76,6 +76,7 @@ export function runDetachedShutdown(
   reporter?: WorkspaceReporter,
 ) {
   return Effect.gen(function* () {
+    const context = yield* Effect.context();
     const directory = yield* Effect.tryPromise({
       try: async () => {
         const directory = await createShutdownDirectory(request.worktreePath);
@@ -119,7 +120,7 @@ export function runDetachedShutdown(
               completed.resolve(message.outcome);
             else if (message._tag === "Event" && reporter) {
               events = events.then(() =>
-                Effect.runPromise(
+                Effect.runPromiseWith(context)(
                   Effect.suspend(() => reporter.event(message.event)).pipe(
                     Effect.ignoreCause,
                   ),

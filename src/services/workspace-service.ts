@@ -8,6 +8,11 @@ import {
   resolveWorktreePath,
 } from "../config/loader";
 import type { ResolvedConfig } from "../config/schema";
+import {
+  bindServiceContext,
+  bunServiceKeys,
+  type ServiceImplementation,
+} from "../effect/service-context";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { type CommandResult, runShellCommands } from "./command-runner";
@@ -268,45 +273,20 @@ export interface WorkspaceCloseResult {
 export interface WorkspaceService {
   open: (
     options: WorkspaceOpenOptions,
-  ) => Effect.Effect<
-    WorkspaceOpenResult,
-    WctError,
-    | WorktreeServiceApi
-    | TmuxServiceApi
-    | SetupServiceApi
-    | GitHubServiceApi
-    | PrCacheServiceApi
-    | BunServices.BunServices
-  >;
+  ) => Effect.Effect<WorkspaceOpenResult, WctError>;
   up: (
     options?: WorkspaceUpOptions,
-  ) => Effect.Effect<
-    WorkspaceUpResult,
-    WctError,
-    WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
-  >;
+  ) => Effect.Effect<WorkspaceUpResult, WctError>;
   down: (
     options?: WorkspaceDownOptions,
-  ) => Effect.Effect<
-    WorkspaceDownResult,
-    WctError,
-    WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
-  >;
+  ) => Effect.Effect<WorkspaceDownResult, WctError>;
   close: (
     options?: WorkspaceCloseOptions,
-  ) => Effect.Effect<
-    WorkspaceCloseResult,
-    WctError,
-    WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
-  >;
+  ) => Effect.Effect<WorkspaceCloseResult, WctError>;
   retryCloseRemoval: (
     previous: WorkspaceCloseResult,
     options?: { cwd?: string; reporter?: WorkspaceReporter },
-  ) => Effect.Effect<
-    WorkspaceCloseResult,
-    WctError,
-    WorktreeServiceApi | BunServices.BunServices
-  >;
+  ) => Effect.Effect<WorkspaceCloseResult, WctError>;
 }
 
 export const WorkspaceService = Context.Service<WorkspaceService>(
@@ -1453,10 +1433,41 @@ function closeImpl(
   });
 }
 
-export const liveWorkspaceService: WorkspaceService = WorkspaceService.of({
+type WorkspaceServiceDependencies =
+  | BunServices.BunServices
+  | WorktreeServiceApi
+  | TmuxServiceApi
+  | SetupServiceApi
+  | GitHubServiceApi
+  | PrCacheServiceApi;
+
+export type WorkspaceServiceImplementation = ServiceImplementation<
+  WorkspaceService,
+  WorkspaceServiceDependencies
+>;
+
+export const liveWorkspaceService: WorkspaceServiceImplementation = {
   open: openImpl,
   up: upImpl,
   down: downImpl,
   close: closeImpl,
   retryCloseRemoval: retryCloseRemovalImpl,
-});
+};
+
+export function makeWorkspaceService(
+  implementation: WorkspaceServiceImplementation = liveWorkspaceService,
+) {
+  return Effect.map(Effect.context<WorkspaceServiceDependencies>(), (context) =>
+    bindServiceContext<WorkspaceService, WorkspaceServiceDependencies>(
+      implementation,
+      Context.pick(
+        ...bunServiceKeys,
+        WorktreeService,
+        TmuxService,
+        SetupService,
+        GitHubService,
+        PrCacheService,
+      )(context),
+    ),
+  );
+}

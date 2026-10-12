@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { BunServices } from "@effect/platform-bun";
 import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -52,7 +53,7 @@ function alreadyRegisteredResult(
 }
 
 async function expectWctFailure(
-  effect: Effect.Effect<unknown, unknown, never>,
+  effect: Effect.Effect<unknown, unknown, BunServices.BunServices>,
   code: string,
   message: string,
 ) {

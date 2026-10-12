@@ -1,5 +1,9 @@
 import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
+import {
+  captureBunService,
+  type ServiceImplementation,
+} from "../effect/service-context";
 import { commandError, toWctError, type WctError } from "../errors";
 import { checkOutcome } from "./pr-model";
 import {
@@ -90,43 +94,39 @@ export function parseGhPrList(stdout: string): PrListItem[] {
 }
 
 export interface GitHubService {
-  isGhInstalled: Effect.Effect<boolean, WctError, BunServices.BunServices>;
+  isGhInstalled: Effect.Effect<boolean, WctError>;
   resolvePr: (
     prNumber: number,
     cwd?: string,
-  ) => Effect.Effect<PrInfo, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<PrInfo, WctError>;
   addForkRemote: (
     remoteName: string,
     owner: string,
     repo: string,
     cwd?: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<void, WctError>;
   fetchBranch: (
     branch: string,
     remote?: string,
     cwd?: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  listPrs: (
-    cwd: string,
-  ) => Effect.Effect<PrListItem[], WctError, BunServices.BunServices>;
-  resolveBaseRepo: (
-    cwd: string,
-  ) => Effect.Effect<string, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<void, WctError>;
+  listPrs: (cwd: string) => Effect.Effect<PrListItem[], WctError>;
+  resolveBaseRepo: (cwd: string) => Effect.Effect<string, WctError>;
   listRawPrs: (
     cwd: string,
     state: "open" | "all",
     baseRepository: string,
-  ) => Effect.Effect<unknown[], WctError, BunServices.BunServices>;
+  ) => Effect.Effect<unknown[], WctError>;
   getRawPr: (
     cwd: string,
     baseRepository: string,
     number: number,
-  ) => Effect.Effect<unknown, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<unknown, WctError>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
     cwd?: string,
-  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<string | null, WctError>;
 }
 
 export const GitHubService =
@@ -377,7 +377,12 @@ function getRawPrImpl(cwd: string, baseRepository: string, number: number) {
   );
 }
 
-export const liveGitHubService: GitHubService = GitHubService.of({
+export type GitHubServiceImplementation = ServiceImplementation<
+  GitHubService,
+  BunServices.BunServices
+>;
+
+export const liveGitHubService: GitHubServiceImplementation = {
   isGhInstalled: Effect.mapError(
     runProcess("gh", ["--version"]).pipe(Effect.map((r) => r.success)),
     (error) =>
@@ -549,4 +554,10 @@ export const liveGitHubService: GitHubService = GitHubService.of({
       if (!result) return null;
       return findMatchingRemote(result.stdout, owner, repo);
     }),
-});
+};
+
+export function makeGitHubService(
+  implementation: GitHubServiceImplementation = liveGitHubService,
+) {
+  return captureBunService<GitHubService>(implementation);
+}

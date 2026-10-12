@@ -20,9 +20,7 @@ import {
 import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return provideWctServices(
-    Effect.provideService(effect, WorktreeService, liveWorktreeService),
-  );
+  return provideWctServices(effect);
 }
 
 interface LinkedWorktreeFixture {

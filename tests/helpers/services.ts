@@ -1,39 +1,14 @@
+import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
-import { JsonFlag } from "../../src/cli/json-flag";
-import type { WctServices } from "../../src/effect/services";
 import {
-  GitHubService,
-  type GitHubService as GitHubServiceApi,
-  liveGitHubService,
-} from "../../src/services/github-service";
-import {
-  livePrCacheService,
-  PrCacheService,
-  type PrCacheServiceApi,
-} from "../../src/services/pr-cache-service";
-import {
-  liveRegistryService,
-  RegistryService,
-  type RegistryServiceApi,
-} from "../../src/services/registry-service";
-import {
-  liveSetupService,
-  SetupService,
-  type SetupService as SetupServiceApi,
-} from "../../src/services/setup-service";
-import {
-  TmuxService,
-  type TmuxService as TmuxServiceApi,
-} from "../../src/services/tmux";
-import {
-  liveWorkspaceService,
-  WorkspaceService,
-  type WorkspaceService as WorkspaceServiceApi,
-} from "../../src/services/workspace-service";
+  makeWctServicesLayer,
+  type WctServiceOverrides,
+  type WctServices,
+} from "../../src/effect/services";
+import type { TmuxService as TmuxServiceApi } from "../../src/services/tmux";
 import {
   liveWorktreeService,
-  WorktreeService,
-  type WorktreeService as WorktreeServiceApi,
+  type WorktreeServiceImplementation as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
 export const shutdownWorktreeService: WorktreeServiceApi = {
@@ -45,16 +20,7 @@ export const shutdownWorktreeService: WorktreeServiceApi = {
 
 type JsonFlagRequirement = "effect/cli/GlobalFlag/json";
 
-export interface ServiceOverrides {
-  github?: GitHubServiceApi;
-  json?: boolean;
-  prCache?: PrCacheServiceApi;
-  registry?: RegistryServiceApi;
-  setup?: SetupServiceApi;
-  tmux?: TmuxServiceApi;
-  worktree?: WorktreeServiceApi;
-  workspace?: WorkspaceServiceApi;
-}
+export type ServiceOverrides = WctServiceOverrides;
 
 /**
  * No-op TmuxService that never calls real tmux.
@@ -84,49 +50,17 @@ export const noopTmuxService: TmuxServiceApi = {
 export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   overrides: ServiceOverrides = {},
-): Effect.Effect<A, E, Exclude<R, WctServices | JsonFlagRequirement>> {
-  let provided = effect;
-
-  provided = Effect.provideService(
-    provided,
-    GitHubService,
-    overrides.github ?? liveGitHubService,
-  );
-  provided = Effect.provideService(
-    provided,
-    SetupService,
-    overrides.setup ?? liveSetupService,
-  );
-  provided = Effect.provideService(
-    provided,
-    TmuxService,
-    overrides.tmux ?? noopTmuxService,
-  );
-  provided = Effect.provideService(
-    provided,
-    WorktreeService,
-    overrides.worktree ?? liveWorktreeService,
-  );
-  provided = Effect.provideService(
-    provided,
-    WorkspaceService,
-    overrides.workspace ?? liveWorkspaceService,
-  );
-  provided = Effect.provideService(
-    provided,
-    PrCacheService,
-    overrides.prCache ?? livePrCacheService,
-  );
-  provided = Effect.provideService(
-    provided,
-    RegistryService,
-    overrides.registry ?? liveRegistryService,
-  );
-  provided = Effect.provideService(provided, JsonFlag, overrides.json ?? false);
-
-  return provided as Effect.Effect<
+): Effect.Effect<
+  A,
+  E,
+  Exclude<R, WctServices | JsonFlagRequirement> | BunServices.BunServices
+> {
+  return Effect.provide(
+    effect,
+    makeWctServicesLayer({ tmux: noopTmuxService, ...overrides }),
+  ) as Effect.Effect<
     A,
     E,
-    Exclude<R, WctServices | JsonFlagRequirement>
+    Exclude<R, WctServices | JsonFlagRequirement> | BunServices.BunServices
   >;
 }

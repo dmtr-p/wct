@@ -1,6 +1,10 @@
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect, FileSystem } from "effect";
+import {
+  captureBunService,
+  type ServiceImplementation,
+} from "../effect/service-context";
 import { commandError, type WctError } from "../errors";
 import * as logger from "../utils/logger";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
@@ -26,67 +30,47 @@ export interface WorktreeStatusOptions {
 }
 
 export interface WorktreeService {
-  getWorktreeRoot: (
-    cwd: string,
-  ) => Effect.Effect<string, WctError, BunServices.BunServices>;
-  getMainRepoPath: (
-    cwd?: string,
-  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
-  getCurrentBranch: (
-    cwd?: string,
-  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
-  getMainWorktreePath: (
-    cwd?: string,
-  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
-  isGitRepo: (
-    cwd?: string,
-  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
-  listWorktrees: (
-    cwd?: string,
-  ) => Effect.Effect<Worktree[], WctError, BunServices.BunServices>;
+  getWorktreeRoot: (cwd: string) => Effect.Effect<string, WctError>;
+  getMainRepoPath: (cwd?: string) => Effect.Effect<string | null, WctError>;
+  getCurrentBranch: (cwd?: string) => Effect.Effect<string | null, WctError>;
+  getMainWorktreePath: (cwd?: string) => Effect.Effect<string | null, WctError>;
+  isGitRepo: (cwd?: string) => Effect.Effect<boolean, WctError>;
+  listWorktrees: (cwd?: string) => Effect.Effect<Worktree[], WctError>;
   createWorktree: (
     path: string,
     branch: string,
     useExisting: boolean,
     base?: string,
     cwd?: string,
-  ) => Effect.Effect<CreateWorktreeResult, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<CreateWorktreeResult, WctError>;
   branchExists: (
     branch: string,
     cwd?: string,
-  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<boolean, WctError>;
   remoteBranchExists: (
     branch: string,
     cwd?: string,
-  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<boolean, WctError>;
   removeWorktree: (
     path: string,
     force?: boolean,
     cwd?: string,
-  ) => Effect.Effect<RemoveWorktreeResult, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<RemoveWorktreeResult, WctError>;
   findWorktreeByBranch: (
     branch: string,
     cwd?: string,
-  ) => Effect.Effect<Worktree | null, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<Worktree | null, WctError>;
   getChangedFileCount: (
     cwd: string,
     options?: WorktreeStatusOptions,
-  ) => Effect.Effect<number, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<number, WctError>;
   getAheadBehind: (
     cwd: string,
     ref: string,
     options?: WorktreeStatusOptions,
-  ) => Effect.Effect<
-    { ahead: number; behind: number } | null,
-    WctError,
-    BunServices.BunServices
-  >;
-  getDefaultBranch: (
-    cwd: string,
-  ) => Effect.Effect<string | null, WctError, BunServices.BunServices>;
-  listBranches: (
-    cwd: string,
-  ) => Effect.Effect<string[], WctError, BunServices.BunServices>;
+  ) => Effect.Effect<{ ahead: number; behind: number } | null, WctError>;
+  getDefaultBranch: (cwd: string) => Effect.Effect<string | null, WctError>;
+  listBranches: (cwd: string) => Effect.Effect<string[], WctError>;
 }
 
 export const WorktreeService = Context.Service<WorktreeService>(
@@ -286,7 +270,12 @@ function listBranchesImpl(cwd: string) {
   );
 }
 
-export const liveWorktreeService: WorktreeService = WorktreeService.of({
+export type WorktreeServiceImplementation = ServiceImplementation<
+  WorktreeService,
+  BunServices.BunServices
+>;
+
+export const liveWorktreeService: WorktreeServiceImplementation = {
   getWorktreeRoot: (cwd) =>
     execProcess("git", ["rev-parse", "--show-toplevel"], { cwd }).pipe(
       Effect.map((result) => result.stdout.trim()),
@@ -541,4 +530,10 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
     Effect.mapError(listBranchesImpl(cwd), (error) =>
       commandError("worktree_error", "Failed to list branches", error),
     ),
-});
+};
+
+export function makeWorktreeService(
+  implementation: WorktreeServiceImplementation = liveWorktreeService,
+) {
+  return captureBunService<WorktreeService>(implementation);
+}

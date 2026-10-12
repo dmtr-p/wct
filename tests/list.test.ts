@@ -11,6 +11,7 @@ import { provideWctServices } from "../src/effect/services";
 import {
   formatSync,
   liveWorktreeService,
+  makeWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
 
@@ -404,14 +405,14 @@ describe("listCommand integration", () => {
     try {
       await runBunPromise(
         provideWctServices(
-          Effect.provideService(
+          Effect.provideServiceEffect(
             Effect.provideService(
               listCommand({ short: false }),
               JsonFlag,
               true,
             ),
             WorktreeService,
-            WorktreeService.of({
+            makeWorktreeService({
               ...liveWorktreeService,
               listWorktrees: () =>
                 Effect.succeed([
@@ -482,14 +483,14 @@ describe("listCommand integration", () => {
     try {
       await runBunPromise(
         provideWctServices(
-          Effect.provideService(
+          Effect.provideServiceEffect(
             Effect.provideService(
               listCommand({ short: false }),
               JsonFlag,
               true,
             ),
             WorktreeService,
-            WorktreeService.of({
+            makeWorktreeService({
               ...liveWorktreeService,
               getChangedFileCount: (worktreePath, options) => {
                 if (worktreePath.includes("feature-test")) {

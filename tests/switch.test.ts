@@ -6,7 +6,7 @@ import { commandError } from "../src/errors";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import {
   liveWorktreeService,
-  type WorktreeService,
+  type WorktreeServiceImplementation as WorktreeService,
 } from "../src/services/worktree-service";
 import { noopTmuxService, withTestServices } from "./helpers/services";
 

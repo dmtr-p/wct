@@ -15,7 +15,7 @@ import type {
   WorkspaceCloseResult,
   WorkspaceService,
 } from "../src/services/workspace-service";
-import type { WorktreeService } from "../src/services/worktree-service";
+import type { WorktreeServiceImplementation as WorktreeService } from "../src/services/worktree-service";
 import * as prompt from "../src/utils/prompt";
 import {
   noopTmuxService,

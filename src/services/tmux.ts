@@ -1,6 +1,10 @@
 import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
+import {
+  captureBunService,
+  type ServiceImplementation,
+} from "../effect/service-context";
 import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import {
@@ -150,65 +154,33 @@ export type CreateSessionResult =
   | { _tag: "AlreadyExists"; sessionName: string };
 
 export interface TmuxService {
-  listSessions: Effect.Effect<
-    TmuxSession[] | null,
-    WctError,
-    BunServices.BunServices
-  >;
-  isPaneAlive: (
-    pane: string,
-  ) => Effect.Effect<boolean | null, WctError, BunServices.BunServices>;
-  sessionExists: (
-    name: string,
-  ) => Effect.Effect<boolean, WctError, BunServices.BunServices>;
+  listSessions: Effect.Effect<TmuxSession[] | null, WctError>;
+  isPaneAlive: (pane: string) => Effect.Effect<boolean | null, WctError>;
+  sessionExists: (name: string) => Effect.Effect<boolean, WctError>;
   getSessionStatus: (
     name: string,
-  ) => Effect.Effect<
-    "attached" | "detached" | null,
-    WctError,
-    BunServices.BunServices
-  >;
+  ) => Effect.Effect<"attached" | "detached" | null, WctError>;
   createSession: (
     name: string,
     workingDir: string,
     config?: TmuxConfig,
     env?: WctEnv,
-  ) => Effect.Effect<CreateSessionResult, WctError, BunServices.BunServices>;
-  killSession: (
-    name: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  getCurrentSession: Effect.Effect<
-    string | null,
-    WctError,
-    BunServices.BunServices
-  >;
-  switchSession: (
-    name: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  attachSession: (
-    name: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  listPanes: (
-    sessionName: string,
-  ) => Effect.Effect<TmuxPaneInfo[], WctError, BunServices.BunServices>;
-  listClients: Effect.Effect<TmuxClient[], WctError, BunServices.BunServices>;
-  detachClient: (
-    clientTty: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<CreateSessionResult, WctError>;
+  killSession: (name: string) => Effect.Effect<void, WctError>;
+  getCurrentSession: Effect.Effect<string | null, WctError>;
+  switchSession: (name: string) => Effect.Effect<void, WctError>;
+  attachSession: (name: string) => Effect.Effect<void, WctError>;
+  listPanes: (sessionName: string) => Effect.Effect<TmuxPaneInfo[], WctError>;
+  listClients: Effect.Effect<TmuxClient[], WctError>;
+  detachClient: (clientTty: string) => Effect.Effect<void, WctError>;
   switchClientToPane: (
     clientTty: string,
     target: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  selectPane: (
-    pane: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  togglePaneZoom: (
-    paneId: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  killPane: (
-    paneId: string,
-  ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  refreshClient: Effect.Effect<void, WctError, BunServices.BunServices>;
+  ) => Effect.Effect<void, WctError>;
+  selectPane: (pane: string) => Effect.Effect<void, WctError>;
+  togglePaneZoom: (paneId: string) => Effect.Effect<void, WctError>;
+  killPane: (paneId: string) => Effect.Effect<void, WctError>;
+  refreshClient: Effect.Effect<void, WctError>;
 }
 
 export const TmuxService = Context.Service<TmuxService>("wct/TmuxService");
@@ -658,7 +630,12 @@ function refreshClientImpl() {
   return execProcess("tmux", ["refresh-client", "-S"]).pipe(Effect.asVoid);
 }
 
-export const liveTmuxService: TmuxService = TmuxService.of({
+export type TmuxServiceImplementation = ServiceImplementation<
+  TmuxService,
+  BunServices.BunServices
+>;
+
+export const liveTmuxService: TmuxServiceImplementation = {
   listSessions: Effect.mapError(listSessionsImpl(), (error) =>
     commandError("tmux_error", "Failed to list tmux sessions", error),
   ),
@@ -771,4 +748,10 @@ export const liveTmuxService: TmuxService = TmuxService.of({
   refreshClient: Effect.mapError(refreshClientImpl(), (error) =>
     commandError("tmux_error", "Failed to refresh tmux client", error),
   ),
-});
+};
+
+export function makeTmuxService(
+  implementation: TmuxServiceImplementation = liveTmuxService,
+) {
+  return captureBunService<TmuxService>(implementation);
+}

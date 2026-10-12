@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError, WctCommandError } from "../src/errors";
 import {
-  type GitHubService,
+  type GitHubServiceImplementation as GitHubService,
   liveGitHubService,
 } from "../src/services/github-service";
 import {
@@ -28,7 +28,7 @@ import {
 } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
-  type WorktreeService,
+  type WorktreeServiceImplementation as WorktreeService,
 } from "../src/services/worktree-service";
 import {
   noopTmuxService,

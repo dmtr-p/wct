@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Effect } from "effect";
+import type { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { provideWctServices } from "../src/effect/services";
@@ -10,7 +10,6 @@ import { WorkspaceService } from "../src/services/workspace-service";
 import {
   formatChanges,
   formatSync,
-  liveWorktreeService,
   parseAheadBehind,
   parseGitStatusCount,
   parseWorktreeListOutput,
@@ -19,9 +18,7 @@ import {
 import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return provideWctServices(
-    Effect.provideService(effect, WorktreeService, liveWorktreeService),
-  );
+  return provideWctServices(effect);
 }
 
 describe("parseWorktreeListOutput", () => {

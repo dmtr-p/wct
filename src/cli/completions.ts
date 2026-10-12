@@ -60,7 +60,11 @@ function generateFishCompletions(): string {
     "",
     "# Helper: list config profile names",
     "function __wct_profiles",
-    `    command wct ${COMPLETION_PROFILES_FLAG} fish 2>/dev/null | string split0 | string escape --no-quoted`,
+    // Fish string builtins split piped input into lines; pass NUL records as arguments.
+    `    set -l profiles (command wct ${COMPLETION_PROFILES_FLAG} fish 2>/dev/null | string split0)`,
+    "    if set -q profiles[1]",
+    "        string escape --no-quoted -- $profiles",
+    "    end",
     "end",
     "",
     "# Commands",

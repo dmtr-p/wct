@@ -230,7 +230,7 @@ export function isGhNotInstalledError(error: unknown): boolean {
 }
 
 function listPrsImpl(cwd: string) {
-  return Effect.catch(
+  return Effect.catchIf(
     execProcess(
       "gh",
       [
@@ -243,10 +243,8 @@ function listPrsImpl(cwd: string) {
       ],
       { cwd },
     ).pipe(Effect.map((result) => parseGhPrList(result.stdout.trim()))),
-    (error) =>
-      isGhNotInstalledError(error)
-        ? Effect.succeed([] as PrListItem[])
-        : Effect.fail(error),
+    isGhNotInstalledError,
+    () => Effect.succeed([] as PrListItem[]),
   );
 }
 
@@ -386,7 +384,7 @@ export const liveGitHubService: GitHubService = GitHubService.of({
       commandError("gh_not_installed", "Failed to run GitHub CLI", error),
   ),
   resolvePr: (prNumber, cwd) =>
-    Effect.catch(
+    Effect.mapError(
       Effect.gen(function* () {
         const result = yield* execProcess(
           "gh",
@@ -427,15 +425,13 @@ export const liveGitHubService: GitHubService = GitHubService.of({
         return pr;
       }),
       (error) =>
-        Effect.fail(
-          error instanceof Error && "code" in error
-            ? toWctError(error)
-            : commandError(
-                "pr_error",
-                `Failed to resolve PR #${prNumber}: ${extractShellError(error)}`,
-                error,
-              ),
-        ),
+        error instanceof Error && "code" in error
+          ? toWctError(error)
+          : commandError(
+              "pr_error",
+              `Failed to resolve PR #${prNumber}: ${extractShellError(error)}`,
+              error,
+            ),
     ),
   addForkRemote: (remoteName, owner, repo, cwd) =>
     Effect.gen(function* () {

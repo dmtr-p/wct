@@ -52,12 +52,10 @@ export function resolveWorktreeInclude(mainRepoPath: string) {
   return Effect.scoped(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const content = yield* Effect.catch(
+      const content = yield* Effect.catchIf(
         fs.readFileString(includePath),
-        (error) =>
-          error.reason._tag === "NotFound"
-            ? Effect.succeed(undefined)
-            : Effect.fail(error),
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.void,
       );
       if (content === undefined) return undefined;
 

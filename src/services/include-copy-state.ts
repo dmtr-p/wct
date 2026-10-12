@@ -8,10 +8,10 @@ export function getIncludeCopyState(worktreePath: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const gitPath = join(worktreePath, ".git");
-    const info = yield* Effect.catch(fs.stat(gitPath), (error) =>
-      error.reason._tag === "NotFound"
-        ? Effect.succeed(undefined)
-        : Effect.fail(error),
+    const info = yield* Effect.catchIf(
+      fs.stat(gitPath),
+      (error) => error.reason._tag === "NotFound",
+      () => Effect.void,
     );
     if (!info)
       return { pending: false, begin: Effect.void, complete: Effect.void };

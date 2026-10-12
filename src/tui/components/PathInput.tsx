@@ -96,13 +96,13 @@ export function PathInput({
           Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem;
             const items = yield* fs.readDirectory(parent);
-            const checked = yield* Effect.all(
-              items.map((item) =>
+            const checked = yield* Effect.forEach(
+              items,
+              (item) =>
                 Effect.gen(function* () {
                   const stat = yield* fs.stat(parent + item);
                   return stat.type === "Directory" ? item : null;
                 }).pipe(Effect.orElseSucceed(() => null)),
-              ),
               { concurrency: 16 },
             );
             return checked.filter((d): d is string => d !== null).sort();

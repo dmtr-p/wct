@@ -123,31 +123,28 @@ export function execProcess(
   args: ReadonlyArray<string> = [],
   options?: ProcessOptions,
 ) {
-  return Effect.catch(
-    Effect.flatMap(collectOutput(command, args, options), (output) =>
-      output.exitCode === 0
-        ? Effect.succeed(output)
-        : Effect.fail(
-            new ProcessExitError({
-              command,
-              args,
-              ...output,
-            }),
-          ),
+  return Effect.mapError(
+    Effect.filterOrFail(
+      collectOutput(command, args, options),
+      (output) => output.exitCode === 0,
+      (output) =>
+        new ProcessExitError({
+          command,
+          args,
+          ...output,
+        }),
     ),
     (error) =>
       error instanceof ProcessExitError
-        ? Effect.fail(error)
-        : Effect.fail(
-            new ProcessExitError({
-              command,
-              args,
-              stdout: "",
-              stderr: "",
-              exitCode: null,
-              cause: error,
-            }),
-          ),
+        ? error
+        : new ProcessExitError({
+            command,
+            args,
+            stdout: "",
+            stderr: "",
+            exitCode: null,
+            cause: error,
+          }),
   );
 }
 
@@ -156,20 +153,19 @@ export function runProcess(
   args: ReadonlyArray<string> = [],
   options?: ProcessOptions,
 ) {
-  return Effect.catch(
+  return Effect.catchIf(
     Effect.map(execProcess(command, args, options), (output) => ({
       ...output,
       success: true as const,
     })),
-    (error) =>
-      error instanceof ProcessExitError
-        ? Effect.succeed({
-            stdout: error.stdout,
-            stderr: error.stderr,
-            exitCode: error.exitCode ?? -1,
-            success: false as const,
-          })
-        : Effect.fail(error),
+    (error) => error instanceof ProcessExitError,
+    (error: ProcessExitError) =>
+      Effect.succeed({
+        stdout: error.stdout,
+        stderr: error.stderr,
+        exitCode: error.exitCode ?? -1,
+        success: false as const,
+      }),
   );
 }
 

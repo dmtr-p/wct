@@ -478,6 +478,21 @@ describe("DEFAULT_CONFIG", () => {
       ConfigError,
     );
   });
+
+  test.each([".nan", ".inf", "-.inf"])(
+    "loadConfig rejects non-finite YAML version %s",
+    async (version) => {
+      const projectDir = mkdtempSync(join(tmpdir(), "wct-config-version-"));
+      await Bun.write(join(projectDir, ".wct.yaml"), `version: ${version}\n`);
+
+      await expect(runBunPromise(loadConfig(projectDir))).rejects.toMatchObject(
+        {
+          _tag: "ConfigError",
+          details: expect.stringContaining("version:"),
+        },
+      );
+    },
+  );
 });
 
 describe("resolveWorktreePath", () => {

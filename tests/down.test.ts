@@ -79,7 +79,7 @@ describe("downCommand behavior", () => {
     tmuxOverrides = {
       ...noopTmuxService,
       sessionExists: () => Effect.succeed(true),
-      killSession: () => Effect.succeed(undefined),
+      killSession: () => Effect.void,
     };
   });
 

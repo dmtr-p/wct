@@ -128,8 +128,9 @@ export function readRuntimeArguments(processes: readonly ForegroundProcess[]) {
   if (!runtimes.length)
     return Effect.succeed(new Map<number, readonly string[]>());
   if (process.platform === "linux") {
-    return Effect.all(
-      runtimes.map((item) =>
+    return Effect.forEach(
+      runtimes,
+      (item) =>
         Effect.tryPromise({
           try: async (signal) => {
             const reader = Bun.file(`/proc/${item.pid}/cmdline`)
@@ -164,7 +165,6 @@ export function readRuntimeArguments(processes: readonly ForegroundProcess[]) {
           },
           catch: () => new Error("Arguments unavailable"),
         }).pipe(Effect.orElseSucceed(() => [item.pid, []] as const)),
-      ),
       { concurrency: 4 },
     ).pipe(
       Effect.map((entries) => new Map<number, readonly string[]>(entries)),

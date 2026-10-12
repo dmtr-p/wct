@@ -192,8 +192,9 @@ export function makeAgentService(
           }
         }
         const observations = new Map<string, AgentObservation>();
-        const captures = yield* Effect.all(
-          [...panes.values()].map((pane) =>
+        const captures = yield* Effect.forEach(
+          [...panes.values()],
+          (pane) =>
             Effect.gen(function* () {
               if (pane.dead) return undefined;
               const recognition = relevant
@@ -271,7 +272,6 @@ export function makeAgentService(
                 ...result,
               };
             }),
-          ),
           { concurrency: 4 },
         );
         const active = captures.filter((capture) => capture !== undefined);

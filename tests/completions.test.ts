@@ -513,25 +513,31 @@ describe("shared command metadata", () => {
 });
 
 describe("resolved profile completions", () => {
-  test("uses Main Repository profiles from nested and linked directories", () => {
-    const fixture = profileFixture();
-    writeFileSync(
-      join(fixture.env.HOME, ".wct.yaml"),
-      "profiles: {global: {}}\n",
-    );
-    writeFileSync(
-      join(fixture.repo, ".wct.yaml"),
-      'profiles: {"project profile": {}, "123: special": {}}\n',
-    );
-    writeFileSync(join(fixture.nested, ".wct.yaml"), "profiles: {wrong: {}}\n");
-    writeFileSync(join(fixture.linked, ".wct.yaml"), "profiles: {wrong: {}}\n");
-    try {
-      for (const cwd of [
-        fixture.repo,
-        fixture.nested,
-        fixture.linked,
-        join(fixture.linked, "nested"),
-      ]) {
+  test.each(["repo", "nested", "linked", "linkedNested"] as const)(
+    "uses Main Repository profiles from %s",
+    (directory) => {
+      const fixture = profileFixture();
+      writeFileSync(
+        join(fixture.env.HOME, ".wct.yaml"),
+        "profiles: {global: {}}\n",
+      );
+      writeFileSync(
+        join(fixture.repo, ".wct.yaml"),
+        'profiles: {"project profile": {}, "123: special": {}}\n',
+      );
+      writeFileSync(
+        join(fixture.nested, ".wct.yaml"),
+        "profiles: {wrong: {}}\n",
+      );
+      writeFileSync(
+        join(fixture.linked, ".wct.yaml"),
+        "profiles: {wrong: {}}\n",
+      );
+      const cwd =
+        directory === "linkedNested"
+          ? join(fixture.linked, "nested")
+          : fixture[directory];
+      try {
         for (const command of ["open", "up", "down", "close"]) {
           for (const flag of ["--profile", "-P"]) {
             const result = runBashCompletion(
@@ -546,11 +552,11 @@ describe("resolved profile completions", () => {
             expect(result.stderr.toString()).toBe("");
           }
         }
+      } finally {
+        rmSync(fixture.dir, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(fixture.dir, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   test("falls back to global profiles, but project profiles replace the map even when empty", () => {
     const fixture = profileFixture();

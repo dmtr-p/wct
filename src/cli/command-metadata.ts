@@ -246,18 +246,12 @@ function completionDefinition(definition: CommandDefinition): CommandDef {
   };
 }
 
-export const completionCommands = {
-  cd: completionDefinition(commandDefinitions.cd),
-  close: completionDefinition(commandDefinitions.close),
-  down: completionDefinition(commandDefinitions.down),
-  init: completionDefinition(commandDefinitions.init),
-  list: completionDefinition(commandDefinitions.list),
-  open: completionDefinition(commandDefinitions.open),
-  projects: completionDefinition(commandDefinitions.projects),
-  switch: completionDefinition(commandDefinitions.switch),
-  tui: completionDefinition(commandDefinitions.tui),
-  up: completionDefinition(commandDefinitions.up),
-};
+export const completionCommands = Object.fromEntries(
+  Object.entries(commandDefinitions).map(([key, definition]) => [
+    key,
+    completionDefinition(definition),
+  ]),
+) as { [K in keyof typeof commandDefinitions]: CommandDef };
 
 export const {
   cd: cdCommandDef,

@@ -23,6 +23,7 @@ import type { TmuxService } from "../src/services/tmux";
 import {
   liveWorkspaceService,
   type WorkspacePhase,
+  type WorkspaceReporter,
   type WorkspaceReporterEvent,
   WorkspaceService,
 } from "../src/services/workspace-service";
@@ -732,7 +733,9 @@ setup:
               reporter: {
                 event: (event) =>
                   event._tag === "CopyEntryFailed"
-                    ? Effect.fail("reporter failed")
+                    ? Effect.fail(
+                        commandError("unexpected_error", "reporter failed"),
+                      )
                     : Effect.void,
               },
             }),
@@ -1677,7 +1680,7 @@ project_name: "myapp"
     expect(removeCallIndex).toBe(removePhaseIndex + 1);
   });
 
-  test("a failing or synchronously throwing reporter cannot fail or change an open", async () => {
+  test("reporter failures, defects, and synchronous throws cannot fail or change an open", async () => {
     await writeConfig(
       repoDir,
       `copy:
@@ -1689,7 +1692,7 @@ setup:
     );
 
     const runOpen = (
-      reporter?: { event: (event: WorkspaceReporterEvent) => never },
+      reporter?: WorkspaceReporter,
       branch = "reporter-isolation",
     ) =>
       runBunPromise(
@@ -1698,7 +1701,7 @@ setup:
             service.open({
               branch,
               cwd: repoDir,
-              ...(reporter ? { reporter: reporter as never } : {}),
+              ...(reporter ? { reporter } : {}),
             }),
           ),
           { worktree: openWorktreeService() },
@@ -1707,21 +1710,24 @@ setup:
 
     const baseline = await runOpen(undefined, "reporter-baseline");
 
-    // Fails inside the returned Effect.
     const failing = await runOpen({
-      event: (() => Effect.fail("reporter failed")) as never,
+      event: () =>
+        Effect.fail(commandError("unexpected_error", "reporter failed")),
     });
-    // Throws before returning an Effect at all.
+    const defective = await runOpen(
+      { event: () => Effect.die(new Error("reporter defect")) },
+      "reporter-defect",
+    );
     const throwing = await runOpen(
       {
-        event: (() => {
+        event: () => {
           throw new Error("reporter construction failed");
-        }) as never,
+        },
       },
       "reporter-throwing",
     );
 
-    for (const result of [failing, throwing]) {
+    for (const result of [failing, defective, throwing]) {
       expect(result.operation).toBe("open");
       expect(result.warnings).toEqual(baseline.warnings);
       expect(result.attempts.copy.attempted).toBe(

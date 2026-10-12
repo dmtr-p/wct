@@ -1,5 +1,6 @@
 import type { BunServices } from "@effect/platform-bun";
-import { Context, Effect } from "effect";
+import { type Cause, Context, Effect } from "effect";
+import type { WctError } from "../errors";
 import {
   type AgentObservation,
   classifyAgent,
@@ -26,7 +27,16 @@ export interface AgentSnapshot {
   /** Session -> pane IDs, including linked-window memberships. */
   memberships: Map<string, Set<string>>;
 }
-type ObservationEffect<A> = Effect.Effect<A, unknown, BunServices.BunServices>;
+type ObservationError =
+  | WctError
+  | ProcessExitError
+  | ProcessOutputLimitError
+  | Cause.TimeoutError;
+type ObservationEffect<A> = Effect.Effect<
+  A,
+  ObservationError,
+  BunServices.BunServices
+>;
 export interface AgentObservationPorts {
   discover: ObservationEffect<AgentPaneMetadata[]>;
   processes: ObservationEffect<ForegroundProcess[]>;

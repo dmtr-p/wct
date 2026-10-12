@@ -7,14 +7,26 @@ import {
   ProcessOutputLimitError,
 } from "../../src/services/process";
 
-const exec = vi.hoisted(() => vi.fn());
+type ExecProcess = typeof import("../../src/services/process").execProcess;
+type ProcessResult = ReturnType<ExecProcess>;
+
+const exec = vi.hoisted(() =>
+  vi.fn<
+    (
+      ...args: Parameters<ExecProcess>
+    ) => Effect.Effect<
+      Effect.Success<ProcessResult>,
+      Error,
+      Effect.Services<ProcessResult>
+    >
+  >(),
+);
 vi.mock("../../src/services/process", async () => ({
   ...(await vi.importActual<typeof import("../../src/services/process")>(
     "../../src/services/process",
   )),
-  execProcess: (
-    ...args: Parameters<typeof import("../../src/services/process").execProcess>
-  ) => Effect.suspend(() => exec(...args)),
+  execProcess: (...args: Parameters<ExecProcess>) =>
+    Effect.suspend(() => exec(...args)),
 }));
 const { captureAgentPane, discoverAgentPanes, liveTmuxService } = await import(
   "../../src/services/tmux"
@@ -91,6 +103,7 @@ describe("tmux observation primitives", () => {
     const call = exec.mock.calls.at(-1);
     if (!call) throw new Error("Missing tmux metadata command");
     const [command, args] = call;
+    if (!args) throw new Error("Missing tmux metadata arguments");
     expect(command).toBe("tmux");
     expect(args.slice(0, 3)).toEqual(["list-panes", "-a", "-F"]);
     expect(args[3]).toContain("#{start_time}");

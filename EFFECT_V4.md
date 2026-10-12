@@ -149,6 +149,11 @@ or private shutdown worker, provide application and Bun services, and call
 `Effect.Effect<A, E, R>` records the result type, typed error, and required
 services. Preserve these types when defining command and service interfaces.
 
+The `anyUnknownInErrorContext` diagnostic rejects `any` and `unknown` in error
+and requirement channels. Use concrete error unions for application interfaces
+and generic error parameters in reusable helpers. `unknown` remains appropriate
+for external payloads and nested error causes.
+
 ## Errors and cleanup
 
 Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
@@ -156,6 +161,11 @@ Tagged application errors use `Data.TaggedError`.
 Yield tagged errors directly inside `Effect.gen`, for example
 `return yield* commandError("not_git_repo", "Not a git repository")`.
 Use `Effect.fail` when returning a failed Effect outside a generator.
+
+Workspace reporters return Effects with no required services and `WctError`
+for typed failures. Reporter failures and defects, including synchronous
+callback throws, are discarded with `Effect.ignoreCause` so reporting cannot
+fail a Workspace Operation.
 
 | Purpose | API |
 | --- | --- |

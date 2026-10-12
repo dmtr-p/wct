@@ -45,20 +45,21 @@ function formatCommand(command: string, args: ReadonlyArray<string>): string {
   return [command, ...args].join(" ");
 }
 
-function decodeOutput(
-  stream: Stream.Stream<Uint8Array, unknown>,
+function decodeOutput<E>(
+  stream: Stream.Stream<Uint8Array, E>,
   maxBytes?: number,
-): Effect.Effect<string, unknown> {
+): Effect.Effect<string, E | ProcessOutputLimitError> {
+  let bounded: Stream.Stream<Uint8Array, E | ProcessOutputLimitError> = stream;
   if (maxBytes !== undefined) {
     let bytes = 0;
-    stream = Stream.mapEffect(stream, (chunk) => {
+    bounded = Stream.mapEffect(stream, (chunk) => {
       bytes += chunk.byteLength;
       return bytes > maxBytes
         ? Effect.fail(new ProcessOutputLimitError())
         : Effect.succeed(chunk);
     });
   }
-  return Stream.mkString(Stream.decodeText(stream));
+  return Stream.mkString(Stream.decodeText(bounded));
 }
 
 function makeCommand(

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { commandError } from "../../src/errors";
+import { commandError, type WctError } from "../../src/errors";
 import type { ProjectActionDeps } from "../../src/tui/hooks/useProjectActions";
 import {
   createExecuteRemoveProject,
@@ -14,10 +14,8 @@ vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await vi.importActual<typeof import("effect")>("effect");
   return {
     tuiRuntime: {
-      runPromise: vi.fn((effect: unknown) =>
-        Effect.runPromise(
-          effect as import("effect").Effect.Effect<unknown, unknown>,
-        ),
+      runPromise: vi.fn((effect: Effect.Effect<unknown, WctError>) =>
+        Effect.runPromise(effect),
       ),
     },
   };

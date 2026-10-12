@@ -118,9 +118,7 @@ describe("handleExpandedInput", () => {
     );
     expect(ctx.selectTreeItem).toHaveBeenCalledWith(0);
     expect(ctx.collapseWorktree).toHaveBeenCalledWith(
-      "proj/feat",
-      "/tmp/repo",
-      "feat",
+      workspaceIdentityKey("/tmp/repo", "feat"),
     );
   });
 
@@ -199,7 +197,7 @@ describe("handleExpandedInput", () => {
   test("right arrow handles expand-worktree action", () => {
     vi.mocked(resolveExpandedRightArrowAction).mockReturnValue({
       type: "expand-worktree",
-      worktreeKey: "proj/feat",
+      workspaceKey: workspaceIdentityKey("/tmp/repo", "feat"),
       nextSelectedIndex: 0,
     });
     const ctx = makeExpCtx({
@@ -224,13 +222,13 @@ describe("handleExpandedInput", () => {
     });
     handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
     expect(ctx.selectTreeItem).toHaveBeenCalledWith(0);
-    expect(ctx.expandWorktree).toHaveBeenCalledWith("proj/feat");
+    expect(ctx.expandWorktree).toHaveBeenCalledWith(workspaceIdentityKey("/tmp/repo", "feat"));
   });
 
   test("right arrow leaves an active Workspace's expansion state unchanged", () => {
     vi.mocked(resolveExpandedRightArrowAction).mockReturnValue({
       type: "expand-worktree",
-      worktreeKey: "proj/feat",
+      workspaceKey: workspaceIdentityKey("/tmp/repo", "feat"),
       nextSelectedIndex: 0,
     });
     const ctx = makeExpCtx({
@@ -326,7 +324,7 @@ describe("handleExpandedInput", () => {
         window: "1",
       },
       label: "vim",
-      worktreeKey: "proj/feat",
+      workspaceKey: workspaceIdentityKey("/tmp/repo", "feat"),
     });
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "z", noKey);
@@ -353,13 +351,13 @@ describe("handleExpandedInput", () => {
         window: "1",
       },
       label: "vim",
-      worktreeKey: "proj/feat",
+      workspaceKey: workspaceIdentityKey("/tmp/repo", "feat"),
     });
     const ctx = makeExpCtx();
     handleExpandedInput(ctx, "x", noKey);
     expect(ctx.captureTreeReturnPosition).toHaveBeenCalledWith("kill");
     expect(ctx.setMode).toHaveBeenCalledWith(
-      Mode.ConfirmKill("%5", "vim", "proj/feat"),
+      Mode.ConfirmKill("%5", "vim", workspaceIdentityKey("/tmp/repo", "feat")),
     );
   });
 

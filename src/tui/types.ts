@@ -1,3 +1,4 @@
+/** Expansion-related targets carry opaque Workspace Identity Keys. */
 export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }
@@ -8,26 +9,26 @@ export type Mode =
   | {
       type: "UpModal";
       worktreePath: string;
-      worktreeKey: string;
+      workspaceKey: string;
       repoPath: string;
-      /** Never derive branch from worktreeKey — project display names can collide across repos. */
+      /** Carry branch explicitly; Workspace Identity Keys are opaque. */
       branch: string;
       project: string;
       profileNames: string[];
     }
-  | { type: "Expanded"; worktreeKey: string }
+  | { type: "Expanded"; workspaceKey: string }
   | {
       type: "ConfirmKill";
       paneId: string;
       label: string;
-      worktreeKey: string;
+      workspaceKey: string;
     }
   | {
       type: "ConfirmDown";
       sessionName: string;
       branch: string;
       worktreePath: string;
-      worktreeKey: string;
+      workspaceKey: string;
       repoPath: string;
       project: string;
     }
@@ -36,7 +37,7 @@ export type Mode =
       sessionName: string;
       branch: string;
       worktreePath: string;
-      worktreeKey: string;
+      workspaceKey: string;
       repoPath: string;
       project: string;
       changedFiles: number;
@@ -46,7 +47,7 @@ export type Mode =
       sessionName: string;
       branch: string;
       worktreePath: string;
-      worktreeKey: string;
+      workspaceKey: string;
       repoPath: string;
       project: string;
     }
@@ -65,7 +66,7 @@ export const Mode = {
   AddProjectModal: { type: "AddProjectModal" } as Mode,
   UpModal: ({
     worktreePath,
-    worktreeKey,
+    workspaceKey,
     repoPath,
     branch,
     project,
@@ -73,27 +74,27 @@ export const Mode = {
   }: Omit<Extract<Mode, { type: "UpModal" }>, "type">): Mode => ({
     type: "UpModal",
     worktreePath,
-    worktreeKey,
+    workspaceKey,
     repoPath,
     branch,
     project,
     profileNames,
   }),
-  Expanded: (worktreeKey: string): Mode => ({
+  Expanded: (workspaceKey: string): Mode => ({
     type: "Expanded",
-    worktreeKey,
+    workspaceKey,
   }),
-  ConfirmKill: (paneId: string, label: string, worktreeKey: string): Mode => ({
+  ConfirmKill: (paneId: string, label: string, workspaceKey: string): Mode => ({
     type: "ConfirmKill",
     paneId,
     label,
-    worktreeKey,
+    workspaceKey,
   }),
   ConfirmDown: ({
     sessionName,
     branch,
     worktreePath,
-    worktreeKey,
+    workspaceKey,
     repoPath,
     project,
   }: Omit<Extract<Mode, { type: "ConfirmDown" }>, "type">): Mode => ({
@@ -101,7 +102,7 @@ export const Mode = {
     sessionName,
     branch,
     worktreePath,
-    worktreeKey,
+    workspaceKey,
     repoPath,
     project,
   }),
@@ -109,7 +110,7 @@ export const Mode = {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    worktreeKey: string,
+    workspaceKey: string,
     repoPath: string,
     project: string,
     changedFiles: number,
@@ -118,7 +119,7 @@ export const Mode = {
     sessionName,
     branch,
     worktreePath,
-    worktreeKey,
+    workspaceKey,
     repoPath,
     project,
     changedFiles,
@@ -127,7 +128,7 @@ export const Mode = {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    worktreeKey: string,
+    workspaceKey: string,
     repoPath: string,
     project: string,
   ): Mode => ({
@@ -135,7 +136,7 @@ export const Mode = {
     sessionName,
     branch,
     worktreePath,
-    worktreeKey,
+    workspaceKey,
     repoPath,
     project,
   }),
@@ -222,11 +223,3 @@ export interface PRInfo {
 }
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";
-
-/** Worktree Display Key: Project Display Name + branch, not Workspace Identity. */
-export function worktreeDisplayKey(
-  projectDisplayName: string,
-  branch: string,
-): string {
-  return `${projectDisplayName}/${branch}`;
-}

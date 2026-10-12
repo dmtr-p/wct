@@ -9,7 +9,7 @@ import {
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { buildTreeItems, buildTreeRows } from "../../src/tui/tree-helpers";
-import { worktreeDisplayKey } from "../../src/tui/types";
+
 import { displayWidth } from "../../src/tui/utils/display-width";
 import { elementText } from "./react-elements";
 
@@ -59,8 +59,8 @@ describe("agent presentation", () => {
     const jump = vi.fn();
     const items = buildTreeItems({
       repos: [repo],
-      expandedWorktreeKeys: new Set([
-        worktreeDisplayKey(repo.project, "feature"),
+      expandedWorkspaceKeys: new Set([
+        workspaceIdentityKey(repo.repoPath, "feature"),
       ]),
       prData: new Map(),
       agents: new Map([["%1", agent]]),
@@ -94,8 +94,8 @@ describe("agent presentation", () => {
       items,
       repos: [repo],
       maxWidth: 40,
-      expandedWorktreeKeys: new Set([
-        worktreeDisplayKey(repo.project, "feature"),
+      expandedWorkspaceKeys: new Set([
+        workspaceIdentityKey(repo.repoPath, "feature"),
       ]),
     });
     expect(

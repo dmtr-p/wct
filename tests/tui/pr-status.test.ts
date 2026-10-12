@@ -218,7 +218,7 @@ describe("PR tree rows", () => {
     const prKey = prExpansionKey(identity, pr);
     const items = buildTreeItems({
       repos: [repo()],
-      expandedWorktreeKeys: new Set(["repo/feature"]),
+      expandedWorkspaceKeys: new Set([workspaceIdentityKey("/repo", "feature")]),
       prData: new Map([[identity, displayPr(pr)]]),
       expandedPrKeys: new Set([prKey]),
       panes: new Map(),
@@ -230,7 +230,7 @@ describe("PR tree rows", () => {
     const rows = buildTreeRows({
       items,
       repos: [repo()],
-      expandedWorktreeKeys: new Set(["repo/feature"]),
+      expandedWorkspaceKeys: new Set([workspaceIdentityKey("/repo", "feature")]),
       maxWidth: 28,
     });
     expect(
@@ -265,7 +265,7 @@ describe("PR tree rows", () => {
     const build = (expanded: boolean) =>
       buildTreeItems({
         repos: [repo()],
-        expandedWorktreeKeys: new Set(["repo/feature"]),
+        expandedWorkspaceKeys: new Set([workspaceIdentityKey("/repo", "feature")]),
         prData: new Map(),
         associations,
         expandedPrKeys: expanded
@@ -310,7 +310,7 @@ describe("PR tree rows", () => {
     });
     const items = buildTreeItems({
       repos: [multiRepo],
-      expandedWorktreeKeys: new Set(["repo/feature", "repo/other"]),
+      expandedWorkspaceKeys: new Set([workspaceIdentityKey("/repo", "feature"), workspaceIdentityKey("/repo", "other")]),
       prData: new Map([
         [first, displayPr(sharedPr)],
         [second, displayPr(sharedPr)],

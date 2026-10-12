@@ -1,7 +1,7 @@
 import type { RepoInfo } from "../hooks/useRegistry";
 import { workspaceIdentityKey } from "../lifecycle";
 import { isInertTreeItem, type TreeRow } from "../tree-helpers";
-import { type Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import type { Mode, TreeItem } from "../types";
 
 /**
  * Rows of fixed chrome above the tree viewport: the `wct` header line + a blank
@@ -108,37 +108,29 @@ export function detectDoubleClick(
 
 export type TreeDoubleClickAction =
   | { type: "noop" }
-  | { type: "expand-worktree"; worktreeKey: string }
+  | { type: "expand-worktree"; workspaceKey: string }
   | {
       type: "collapse-worktree";
-      worktreeKey: string;
-      repoPath: string;
-      branch: string;
+      workspaceKey: string;
     }
   | { type: "activate-detail"; action: () => void };
 
 export function resolveTreeDoubleClickAction(
   item: TreeItem,
   repos: RepoInfo[],
-  expandedWorktreeKeys: Set<string>,
-  discoveredWorkspaceKeys: Set<string> = new Set(),
+  expandedWorkspaceKeys: Set<string>,
 ): TreeDoubleClickAction {
   if (item.type === "worktree") {
     const repo = repos[item.repoIndex];
     const worktree = repo?.worktrees[item.worktreeIndex];
     if (!repo || !worktree) return { type: "noop" };
-    const worktreeKey = worktreeDisplayKey(repo.project, worktree.branch);
-    return expandedWorktreeKeys.has(worktreeKey) ||
-      discoveredWorkspaceKeys.has(
-        workspaceIdentityKey(repo.repoPath, worktree.branch),
-      )
+    const workspaceKey = workspaceIdentityKey(repo.repoPath, worktree.branch);
+    return expandedWorkspaceKeys.has(workspaceKey)
       ? {
           type: "collapse-worktree",
-          worktreeKey,
-          repoPath: repo.repoPath,
-          branch: worktree.branch,
+          workspaceKey,
         }
-      : { type: "expand-worktree", worktreeKey };
+      : { type: "expand-worktree", workspaceKey };
   }
   if (
     item.type === "detail" &&

@@ -16,6 +16,7 @@ import {
   sendKeys,
   tick,
   tmuxFixtures,
+  triggerRefresh,
   worktreeFixtures,
 } from "./app-harness";
 
@@ -143,6 +144,16 @@ describe("TUI open lifecycle", () => {
   });
 
   test("leaves the discovered Workspace expanded after a successful open", async () => {
+    const otherRepoPath = join(repoPath, "other");
+    mkdirSync(otherRepoPath, { recursive: true });
+    registryItems.items.push({
+      id: "repo-2",
+      repo_path: otherRepoPath,
+      project: "alpha",
+    });
+    worktreeFixtures.byRepoPath.set(otherRepoPath, [
+      makeWorktree(otherRepoPath, "feature/new"),
+    ]);
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
     await tick(6);
@@ -186,6 +197,20 @@ describe("TUI open lifecycle", () => {
     expect(text).not.toContain("Validating Workspace…");
     expect(frame.find((line) => line.includes("feature/new"))).toContain("▼");
     expect(frame.find((line) => line.includes("main"))).not.toContain("▼");
+    const matchingBranches = frame.filter((line) =>
+      line.includes("feature/new"),
+    );
+    expect(matchingBranches).toHaveLength(2);
+    expect(matchingBranches[0]).toContain("▼");
+    expect(matchingBranches[1]).not.toContain("▼");
+
+    await sendKeys(app.stdin, "\x1b[B");
+    await sendKeys(app.stdin, "\x1b[B");
+    await sendKeys(app.stdin, "\x1b[D");
+    expect(selectedLine(app.lines())).toContain("feature/new");
+    expect(selectedLine(app.lines())).not.toContain("▼");
+    await triggerRefresh();
+    expect(selectedLine(app.lines())).not.toContain("▼");
 
     app.unmount();
   });

@@ -15,6 +15,7 @@ import {
   type LifecycleState,
   rejectIfLifecycleActive as refuseWhenLifecycleActive,
   runLifecycleOperation,
+  workspaceIdentityKey,
 } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
@@ -23,7 +24,7 @@ import {
 } from "../session-utils";
 import { resolveSelectedWorktreeIndex } from "../tree-helpers";
 import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
-import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import { Mode, type TreeItem } from "../types";
 import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
@@ -338,18 +339,18 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
-    const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
+    const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
     deps.captureTreeReturnPosition("close");
     deps.confirmCloseReturnModeRef.current =
       deps.mode.type === "Expanded"
-        ? Mode.Expanded(worktreeKey)
+        ? Mode.Expanded(workspaceKey)
         : Mode.Navigate;
     deps.setMode(
       Mode.ConfirmClose(
         sessionName,
         wt.branch,
         wt.path,
-        worktreeKey,
+        workspaceKey,
         repo.repoPath,
         repo.project,
         wt.changedFiles,
@@ -368,7 +369,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    worktreeKey: string,
+    workspaceKey: string,
     repoPath: string,
     project: string,
     force: boolean,
@@ -428,7 +429,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
             sessionName,
             branch,
             worktreePath,
-            worktreeKey,
+            workspaceKey,
             repoPath,
             project,
           ),
@@ -457,18 +458,18 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
-    const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
+    const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
     deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =
       deps.mode.type === "Expanded"
-        ? Mode.Expanded(worktreeKey)
+        ? Mode.Expanded(workspaceKey)
         : Mode.Navigate;
     deps.setMode(
       Mode.ConfirmDown({
         sessionName,
         branch: wt.branch,
         worktreePath: wt.path,
-        worktreeKey,
+        workspaceKey,
         repoPath: repo.repoPath,
         project: repo.project,
       }),

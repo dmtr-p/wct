@@ -78,20 +78,18 @@ import {
   isWorktreeEffectivelyExpanded,
   isWorktreeLifecycleActive,
   openPrInBrowser,
-  reconcileDiscoveredWorkspaceKeys,
-  reconcileExpandedWorktreeKeys,
+  reconcileExpandedWorkspaceKeys,
   resolveConfirmationAnchorItemIndex,
   resolveStatusBarProps,
   resolveTreeReturnMode,
   treeItemId,
-  workspaceIdentityKeysForDisplayKey,
 } from "./tree-helpers";
 import type {
   ReturnDestination,
   ReturnSlot,
   TreeNavigationSnapshot,
 } from "./tree-navigation";
-import { Mode, worktreeDisplayKey } from "./types";
+import { Mode } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
 // Top chrome above the tree: the `wct` header line + a blank spacer line. Same
@@ -179,7 +177,8 @@ export function App() {
   // The live `mode`, for async continuations that must not act on a stale
   // render-time capture.
   const modeRef = useRef<Mode>(mode);
-  const [expandedWorktreeKeys, setExpandedWorktreeKeys] = useState<Set<string>>(
+  // Manual and validated Open expansion share Workspace Identity Keys.
+  const [expandedWorkspaceKeys, setExpandedWorkspaceKeys] = useState<Set<string>>(
     new Set(),
   );
   const [expandedPrKeys, setExpandedPrKeys] = useState<Set<string>>(new Set());
@@ -192,12 +191,6 @@ export function App() {
       return next;
     });
   }, []);
-  // Identity-scoped presentation overrides. A successful `open` adds its
-  // discovered Workspace; collapsing a shared display key can also migrate
-  // the other matching Workspaces here so only the selected identity closes.
-  const [discoveredWorkspaceKeys, setDiscoveredWorkspaceKeys] = useState<
-    Set<string>
-  >(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const searchEditing = useTextEditing(
     searchQuery,
@@ -258,7 +251,7 @@ export function App() {
         case "ConfirmKill":
           return {
             slot: "kill",
-            returnMode: Mode.Expanded(confirmMode.worktreeKey),
+            returnMode: Mode.Expanded(confirmMode.workspaceKey),
           };
         case "ConfirmDown":
           return {
@@ -329,35 +322,31 @@ export function App() {
   }, [lifecycle]);
 
   useEffect(() => {
-    setExpandedWorktreeKeys((previous) =>
-      reconcileExpandedWorktreeKeys(previous, repos),
-    );
-    setDiscoveredWorkspaceKeys((previous) =>
-      reconcileDiscoveredWorkspaceKeys(previous, repos),
+    setExpandedWorkspaceKeys((previous) =>
+      reconcileExpandedWorkspaceKeys(previous, repos),
     );
   }, [repos]);
 
   useEffect(() => {
     if (
       mode.type !== "Expanded" ||
-      expandedWorktreeKeys.has(mode.worktreeKey)
+      expandedWorkspaceKeys.has(mode.workspaceKey)
     ) {
       return;
     }
-    const remainingKey = expandedWorktreeKeys.values().next().value;
+    const remainingKey = expandedWorkspaceKeys.values().next().value;
     setMode(
       typeof remainingKey === "string"
         ? Mode.Expanded(remainingKey)
         : Mode.Navigate,
     );
-  }, [expandedWorktreeKeys, mode]);
+  }, [expandedWorkspaceKeys, mode]);
 
   const treeItems = useMemo(
     () =>
       buildTreeItems({
         repos: filteredRepos,
-        expandedWorktreeKeys,
-        discoveredWorkspaceKeys,
+        expandedWorkspaceKeys,
         lifecycle,
         prData,
         associations,
@@ -368,8 +357,7 @@ export function App() {
       }),
     [
       filteredRepos,
-      expandedWorktreeKeys,
-      discoveredWorkspaceKeys,
+      expandedWorkspaceKeys,
       lifecycle,
       prData,
       associations,
@@ -411,10 +399,8 @@ export function App() {
         selectedWorktreeData.branch,
       ) &&
       isWorktreeEffectivelyExpanded({
-        expandedWorktreeKeys,
-        discoveredWorkspaceKeys,
+        expandedWorkspaceKeys,
         lifecycle,
-        project: selectedWorktreeRepo.project,
         repoPath: selectedWorktreeRepo.repoPath,
         branch: selectedWorktreeData.branch,
       }),
@@ -434,16 +420,14 @@ export function App() {
       buildTreeRows({
         items: treeItems,
         repos: filteredRepos,
-        expandedWorktreeKeys,
-        discoveredWorkspaceKeys,
+        expandedWorkspaceKeys,
         lifecycle,
         maxWidth: termCols,
       }),
     [
       treeItems,
       filteredRepos,
-      expandedWorktreeKeys,
-      discoveredWorkspaceKeys,
+      expandedWorkspaceKeys,
       lifecycle,
       termCols,
     ],
@@ -563,55 +547,32 @@ export function App() {
 
   useRefresh(pollRefresh);
 
-  const expandWorktree = useCallback((worktreeKey: string) => {
-    setExpandedWorktreeKeys((previous) => {
+  const expandWorktree = useCallback((workspaceKey: string) => {
+    setExpandedWorkspaceKeys((previous) => {
       const next = new Set(previous);
-      next.add(worktreeKey);
+      next.add(workspaceKey);
       return next;
     });
-    setMode(Mode.Expanded(worktreeKey));
+    setMode(Mode.Expanded(workspaceKey));
   }, []);
 
-  const collapseWorktree = useCallback(
-    (worktreeKey: string, repoPath: string, branch: string) => {
-      const workspaceKey = workspaceIdentityKey(repoPath, branch);
-      const preservedWorkspaceKeys = expandedWorktreeKeys.has(worktreeKey)
-        ? workspaceIdentityKeysForDisplayKey(repos, worktreeKey)
-        : new Set<string>();
-      preservedWorkspaceKeys.delete(workspaceKey);
+  const collapseWorktree = useCallback((workspaceKey: string) => {
+    setExpandedWorkspaceKeys((previous) => {
+      if (!previous.has(workspaceKey)) return previous;
+      const next = new Set(previous);
+      next.delete(workspaceKey);
+      return next;
+    });
+  }, []);
 
-      setExpandedWorktreeKeys((previous) => {
-        const next = new Set(previous);
-        next.delete(worktreeKey);
-        return next;
-      });
-      setDiscoveredWorkspaceKeys((previous) => {
-        const next = new Set(previous);
-        next.delete(workspaceKey);
-        for (const preserved of preservedWorkspaceKeys) next.add(preserved);
-        if (
-          next.size === previous.size &&
-          [...next].every((key) => previous.has(key))
-        ) {
-          return previous;
-        }
-        return next;
-      });
-    },
-    [expandedWorktreeKeys, repos],
-  );
-
-  const markWorkspaceDiscovered = useCallback(
-    (workspaceIdentityKey: string) => {
-      setDiscoveredWorkspaceKeys((previous) => {
-        if (previous.has(workspaceIdentityKey)) return previous;
-        const next = new Set(previous);
-        next.add(workspaceIdentityKey);
-        return next;
-      });
-    },
-    [],
-  );
+  const markWorkspaceDiscovered = useCallback((workspaceKey: string) => {
+    setExpandedWorkspaceKeys((previous) => {
+      if (previous.has(workspaceKey)) return previous;
+      const next = new Set(previous);
+      next.add(workspaceKey);
+      return next;
+    });
+  }, []);
 
   const openModalPRList = useMemo(() => {
     return openPrs.get(openModalRepoPath) ?? [];
@@ -1110,7 +1071,7 @@ export function App() {
         if (confirmPendingRef.current) return;
         confirmPendingRef.current = true;
         const attempt = ++confirmKillAttemptRef.current;
-        const { paneId, worktreeKey } = mode;
+        const { paneId, workspaceKey } = mode;
         clearActionError();
         void executeConfirmKill({
           paneId,
@@ -1120,7 +1081,7 @@ export function App() {
           showActionError,
           onSuccess: () => {
             restoreTreeReturnPosition("kill", "owning-worktree");
-            setMode(Mode.Expanded(worktreeKey));
+            setMode(Mode.Expanded(workspaceKey));
           },
         }).finally(() => {
           if (confirmKillAttemptRef.current === attempt) {
@@ -1154,7 +1115,7 @@ export function App() {
             mode.sessionName,
             mode.branch,
             mode.worktreePath,
-            mode.worktreeKey,
+            mode.workspaceKey,
             mode.repoPath,
             mode.project,
             mode.type === "ConfirmCloseForce",
@@ -1260,19 +1221,14 @@ export function App() {
         const doubleClickAction = resolveTreeDoubleClickAction(
           target,
           filteredRepos,
-          expandedWorktreeKeys,
-          discoveredWorkspaceKeys,
+          expandedWorkspaceKeys,
         );
         switch (doubleClickAction.type) {
           case "expand-worktree":
-            expandWorktree(doubleClickAction.worktreeKey);
+            expandWorktree(doubleClickAction.workspaceKey);
             return;
           case "collapse-worktree":
-            collapseWorktree(
-              doubleClickAction.worktreeKey,
-              doubleClickAction.repoPath,
-              doubleClickAction.branch,
-            );
+            collapseWorktree(doubleClickAction.workspaceKey);
             return;
           case "activate-detail":
             doubleClickAction.action();
@@ -1351,11 +1307,7 @@ export function App() {
                 !isWorktreeLifecycleActive(wtItem, filteredRepos, lifecycle)
               ) {
                 selectTreeItem(owner);
-                collapseWorktree(
-                  worktreeDisplayKey(repo.project, wt.branch),
-                  repo.repoPath,
-                  wt.branch,
-                );
+                collapseWorktree(workspaceIdentityKey(repo.repoPath, wt.branch));
               }
             }
             return;
@@ -1407,6 +1359,9 @@ export function App() {
 
       switch (mode.type) {
         case "Navigate":
+          if (key.leftArrow && canCollapse) {
+            return handleExpandedInput(expCtx, input, key);
+          }
           return handleNavigateInput(navCtx, input, key);
         case "Search":
           return handleSearchInput(input, key);
@@ -1482,8 +1437,7 @@ export function App() {
             associations={associations}
             panes={panes}
             agents={agents}
-            expandedWorktreeKeys={expandedWorktreeKeys}
-            discoveredWorkspaceKeys={discoveredWorkspaceKeys}
+            expandedWorkspaceKeys={expandedWorkspaceKeys}
             maxWidth={termCols}
             refreshingProjects={refreshingProjects}
             errors={githubErrors}

@@ -22,7 +22,7 @@ import {
   resolveTreeReturnMode,
 } from "../tree-helpers";
 import type { ReturnSlot } from "../tree-navigation";
-import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import { Mode, type TreeItem } from "../types";
 import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { StartWorkspaceTarget } from "./useSessionActions";
@@ -69,9 +69,8 @@ export interface ModalActionDeps {
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
 
-  // Presents a freshly-opened Workspace as expanded without writing the
-  // stored `expandedWorktreeKeys` preference.
-  markWorkspaceDiscovered: (workspaceIdentityKey: string) => void;
+  // Records persistent expansion for a Workspace found by Open validation.
+  markWorkspaceDiscovered: (workspaceKey: string) => void;
   /** Resolves only after Ink commits removal of this Workspace's progress row. */
   waitForLifecyclePresentationCleanup: (
     repoPath: string,
@@ -160,8 +159,8 @@ export function createHandleOpen(deps: ModalActionDeps) {
           ),
         ),
       resultWarnings: (result) => result.warnings.map(formatWorkspaceWarning),
-      // Only a Workspace validation actually found gets left expanded; this
-      // never writes the stored expansion preference.
+      // Persist Open expansion only after validation finds the Workspace.
+      // Lifecycle-driven expansion itself never writes a preference.
       onValidated: (snapshot) => {
         const discovered = discoveredWorkspaceIdentityKey(
           snapshot,
@@ -237,16 +236,16 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
       return;
     }
 
-    const worktreeKey = worktreeDisplayKey(repo.project, wt.branch);
+    const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
     deps.captureTreeReturnPosition("up");
     deps.upModalReturnModeRef.current =
       deps.mode.type === "Expanded"
-        ? Mode.Expanded(worktreeKey)
+        ? Mode.Expanded(workspaceKey)
         : Mode.Navigate;
     deps.setMode(
       Mode.UpModal({
         worktreePath: wt.path,
-        worktreeKey,
+        workspaceKey,
         repoPath: repo.repoPath,
         branch: wt.branch,
         project: repo.project,
@@ -260,9 +259,7 @@ export function createHandleUpSubmit(deps: ModalActionDeps) {
   return (result: UpModalResult) => {
     if (deps.mode.type !== "UpModal") return;
 
-    // Identity comes off the mode, never off the display key: `project` is
-    // free-form and may itself contain a slash, so splitting `worktreeKey`
-    // would claim a bogus workspaceIdentityKey and lose the operation.
+    // Carry the operation target explicitly rather than parsing its identity key.
     const { worktreePath, repoPath, branch, project } = deps.mode;
     deps.clearActionError();
     deps.restoreTreeReturnPosition("up");

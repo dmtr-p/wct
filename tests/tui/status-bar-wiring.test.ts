@@ -1,3 +1,4 @@
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
@@ -36,12 +37,12 @@ describe("resolveStatusBarProps", () => {
 
     expect(
       resolveStatusBarProps({
-        mode: Mode.Expanded("proj/branch"),
+        mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
         items,
         selectedIndex: 1,
       }),
     ).toEqual({
-      mode: Mode.Expanded("proj/branch"),
+      mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
       selectedPaneRow: true,
       selectedProject: undefined,
     });
@@ -55,19 +56,19 @@ describe("resolveStatusBarProps", () => {
 
     expect(
       resolveStatusBarProps({
-        mode: Mode.Expanded("proj/branch"),
+        mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
         items,
         selectedIndex: 1,
       }),
     ).toEqual({
-      mode: Mode.Expanded("proj/branch"),
+      mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
       selectedPaneRow: false,
       selectedProject: undefined,
     });
   });
 
   test("passes ConfirmKill mode through unchanged", () => {
-    const confirmKill = Mode.ConfirmKill("%1", "shell:1 vim", "proj/branch");
+    const confirmKill = Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch"));
 
     expect(
       resolveStatusBarProps({
@@ -104,7 +105,7 @@ describe("resolveStatusBarProps", () => {
       sessionName: "myapp-feature",
       branch: "feature",
       worktreePath: "/tmp/myapp-feature",
-      worktreeKey: "proj/feature",
+      workspaceKey: workspaceIdentityKey("/tmp/myapp", "feature"),
       repoPath: "/tmp/myapp",
       project: "proj",
     });

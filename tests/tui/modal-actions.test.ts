@@ -17,7 +17,7 @@ import {
   lifecyclePhaseLabel,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
-import { Mode, type TreeItem, worktreeDisplayKey } from "../../src/tui/types";
+import { Mode, type TreeItem } from "../../src/tui/types";
 
 // Applies functional updates like React would, so a test can read the phase
 // the tree would be rendering at any point in the async flow.
@@ -140,7 +140,7 @@ function makeDeps(overrides: Partial<ModalActionDeps> = {}): ModalActionDeps {
 
 describe("createPrepareOpenModal", () => {
   test("remembers Expanded mode for modal return", () => {
-    const expanded = Mode.Expanded("proj/feat");
+    const expanded = Mode.Expanded(workspaceIdentityKey("/repo", "feat"));
     const returnModeRef = { current: Mode.Navigate };
     const deps = makeDeps({
       mode: expanded,
@@ -254,7 +254,7 @@ describe("createPrepareOpenModal", () => {
     expect(registerProjectMock).not.toHaveBeenCalled();
     expect(runTuiSilentPromise).not.toHaveBeenCalled();
     expect(deps.showActionError).not.toHaveBeenCalled();
-    // A presentation-only override, not the stored preference.
+    // Open records expansion only after validation finds the Workspace.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       workspaceIdentityKey("/repo", "feat"),
     );
@@ -648,7 +648,7 @@ describe("createPrepareUpModal", () => {
     expect(deps.setMode).toHaveBeenCalledWith(
       Mode.UpModal({
         worktreePath: "/repo/feat",
-        worktreeKey: worktreeDisplayKey("proj", "feat"),
+        workspaceKey: workspaceIdentityKey("/repo", "feat"),
         repoPath: "/repo",
         branch: "feat",
         project: "proj",
@@ -702,7 +702,7 @@ describe("createPrepareUpModal", () => {
   });
 
   test("saves Expanded mode in return ref when in Expanded mode", () => {
-    const worktreeKey = worktreeDisplayKey("proj", "feat");
+    const workspaceKey = workspaceIdentityKey("/repo", "feat");
     const items: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
     ];
@@ -728,13 +728,13 @@ describe("createPrepareUpModal", () => {
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
-      mode: Mode.Expanded(worktreeKey),
+      mode: Mode.Expanded(workspaceKey),
       upModalReturnModeRef: returnModeRef,
     });
     const prepare = createPrepareUpModal(deps);
 
     prepare();
-    expect(returnModeRef.current).toEqual(Mode.Expanded(worktreeKey));
+    expect(returnModeRef.current).toEqual(Mode.Expanded(workspaceKey));
   });
 });
 
@@ -749,7 +749,7 @@ describe("createHandleUpSubmit", () => {
     const deps = makeDeps({
       mode: Mode.UpModal({
         worktreePath: "/repo/feat",
-        worktreeKey: "proj/feat",
+        workspaceKey: workspaceIdentityKey("/repo", "feat"),
         repoPath: "/repo",
         branch: "feat",
         project: "proj",
@@ -781,7 +781,7 @@ describe("createHandleUpSubmit", () => {
     const deps = makeDeps({
       mode: Mode.UpModal({
         worktreePath: "/repo/my-feature",
-        worktreeKey: worktreeDisplayKey("myorg/webapp", "my-feature"),
+        workspaceKey: workspaceIdentityKey("/repo", "my-feature"),
         repoPath: "/repo",
         branch: "my-feature",
         project: "myorg/webapp",
@@ -815,7 +815,7 @@ describe("createHandleUpSubmit", () => {
 
 describe("createPrepareAddProjectModal", () => {
   test("remembers Expanded mode for modal return", () => {
-    const expanded = Mode.Expanded("proj/feat");
+    const expanded = Mode.Expanded(workspaceIdentityKey("/repo", "feat"));
     const returnModeRef = { current: Mode.Navigate };
     const deps = makeDeps({
       mode: expanded,
@@ -929,14 +929,14 @@ describe("open lifecycle reconciliation", () => {
     expect(entryAtRefresh).toEqual([true]);
     expect(tracker.phases).toContainEqual({ _tag: "Validating" });
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
-    // A presentation-only override; setExpandedWorktreeKeys is out of reach here.
+    // The App records the validated identity in its shared expansion set.
     expect(deps.markWorkspaceDiscovered).toHaveBeenCalledWith(
       workspaceIdentityKey("/repo", "feat"),
     );
-    expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
+    expect(deps).not.toHaveProperty("setExpandedWorkspaceKeys");
   });
 
-  test("records the expansion override only for an identity validation found on disk", async () => {
+  test("records expansion only for an identity validation found on disk", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
     // Worktree created, a later phase then failed fatally.

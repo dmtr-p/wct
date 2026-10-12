@@ -1,3 +1,4 @@
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
@@ -55,7 +56,7 @@ async function renderStatusBar(
 describe("StatusBar", () => {
   test("hides shortcut hints in Expanded mode", async () => {
     const rendered = await renderStatusBar({
-      mode: Mode.Expanded("proj/branch"),
+      mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
       selectedPaneRow: true,
       canCollapse: true,
     });
@@ -82,7 +83,7 @@ describe("StatusBar", () => {
 
   test("does not duplicate the anchored kill confirmation", async () => {
     const rendered = await renderStatusBar({
-      mode: Mode.ConfirmKill("%1", "shell:1 vim", "proj/branch"),
+      mode: Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch")),
     });
 
     expect(rendered.lastFrame()).toBe("");
@@ -96,7 +97,7 @@ describe("StatusBar", () => {
         sessionName: "myapp-feature",
         branch: "feature",
         worktreePath: "/tmp/myapp-feature",
-        worktreeKey: "proj/feature",
+        workspaceKey: workspaceIdentityKey("/tmp/myapp", "feature"),
         repoPath: "/tmp/myapp",
         project: "proj",
       }),
@@ -174,10 +175,10 @@ describe("StatusBar", () => {
     }> = [
       { name: "Navigate", mode: Mode.Navigate },
       { name: "Navigate + repoError", mode: Mode.Navigate, repoError: "boom" },
-      { name: "Expanded", mode: Mode.Expanded("proj/branch") },
+      { name: "Expanded", mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")) },
       {
         name: "Expanded + repoError",
-        mode: Mode.Expanded("proj/branch"),
+        mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
         repoError: "boom",
       },
       { name: "Search", mode: Mode.Search },
@@ -185,7 +186,7 @@ describe("StatusBar", () => {
       { name: "Search + repoError", mode: Mode.Search, repoError: "boom" },
       {
         name: "ConfirmKill",
-        mode: Mode.ConfirmKill("%1", "1:0 vim", "proj/branch"),
+        mode: Mode.ConfirmKill("%1", "1:0 vim", workspaceIdentityKey("/tmp/myapp", "branch")),
         repoError: "boom",
       },
       {

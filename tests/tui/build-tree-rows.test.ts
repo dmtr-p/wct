@@ -24,7 +24,7 @@ import {
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
-import { Mode, worktreeDisplayKey } from "../../src/tui/types";
+import { Mode } from "../../src/tui/types";
 
 function openLifecycle(
   repoPath: string,
@@ -78,14 +78,14 @@ describe("buildTreeRows", () => {
     const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
     });
 
     // items: [repo, worktree]; sync is clean so no stats row even if expanded.
@@ -111,17 +111,17 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
     });
 
     // items: [repo(0), worktree(1)]
@@ -152,17 +152,17 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
     });
 
     expect(rows.map((r) => r.kind)).toEqual(["repo", "worktree"]);
@@ -173,14 +173,14 @@ describe("buildTreeRows", () => {
     const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
     });
 
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
@@ -196,14 +196,14 @@ describe("buildTreeRows", () => {
     const expandedRepos = new Set<string>();
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
     });
 
     expect(rows.map((r) => r.kind)).toEqual(["repo"]);
@@ -229,14 +229,14 @@ describe("buildTreeRows", () => {
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       lifecycle,
     });
 
@@ -275,7 +275,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -291,7 +291,7 @@ describe("buildTreeRows", () => {
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -300,7 +300,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       lifecycle,
     });
 
@@ -342,7 +342,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -358,7 +358,7 @@ describe("buildTreeRows", () => {
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -367,7 +367,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       lifecycle,
     });
 
@@ -405,14 +405,14 @@ describe("buildTreeRows", () => {
     const lifecycle = openLifecycle("/tmp/repo-2", "empty", "feature/seed");
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       lifecycle,
     });
 
@@ -447,7 +447,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -462,7 +462,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -471,7 +471,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
     });
 
     // items: [repo(0), worktree(1), pr-detail(2)]; clean sync → no stats row.
@@ -509,7 +509,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -524,7 +524,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -533,7 +533,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       maxWidth: 40,
     });
 
@@ -586,7 +586,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -601,7 +601,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -610,7 +610,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       maxWidth: 80,
     });
 
@@ -635,7 +635,7 @@ describe("buildTreeRows", () => {
       }),
     ];
     const expandedRepos = new Set(["repo-1"]);
-    const expandedWorktreeKey = worktreeDisplayKey("alpha", branch);
+    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -652,7 +652,7 @@ describe("buildTreeRows", () => {
     ]);
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -661,7 +661,7 @@ describe("buildTreeRows", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([expandedWorktreeKey]),
+      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       maxWidth: 40,
     });
 
@@ -736,7 +736,7 @@ describe("anchored confirmation rows", () => {
   ];
   const items = buildTreeItems({
     repos,
-    expandedWorktreeKeys: new Set<string>(),
+    expandedWorkspaceKeys: new Set<string>(),
     ...emptyOpts,
   });
 
@@ -749,7 +749,7 @@ describe("anchored confirmation rows", () => {
       "alpha-x",
       "feature/x",
       "/tmp/alpha-x",
-      "alpha/feature/x",
+      workspaceIdentityKey("/tmp/repo-1", "feature/x"),
       "/tmp/alpha",
       "alpha",
       0,
@@ -820,7 +820,7 @@ describe("lifecycle rows", () => {
   function rowsFor(repos: RepoInfo[], lifecycle: LifecycleState) {
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       lifecycle,
       prData: new Map(),
       panes: new Map(),
@@ -832,7 +832,7 @@ describe("lifecycle rows", () => {
         items,
         repos,
         expandedRepos: new Set(["repo-1"]),
-        expandedWorktreeKeys: new Set<string>(),
+        expandedWorkspaceKeys: new Set<string>(),
         lifecycle,
         maxWidth: 80,
       }),

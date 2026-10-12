@@ -1,19 +1,14 @@
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { describe, expect, test } from "vitest";
-import { Mode, worktreeDisplayKey } from "../../src/tui/types";
-
-describe("worktreeDisplayKey", () => {
-  test("formats project/branch", () => {
-    expect(worktreeDisplayKey("wct", "feat/tui")).toBe("wct/feat/tui");
-  });
-});
+import { Mode } from "../../src/tui/types";
 
 describe("Mode", () => {
   test("constructs ConfirmKill mode", () => {
-    expect(Mode.ConfirmKill("%1", "shell:1 vim", "proj/branch")).toEqual({
+    expect(Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch"))).toEqual({
       type: "ConfirmKill",
       paneId: "%1",
       label: "shell:1 vim",
-      worktreeKey: "proj/branch",
+      workspaceKey: workspaceIdentityKey("/tmp/myapp", "branch"),
     });
   });
 
@@ -23,7 +18,7 @@ describe("Mode", () => {
         sessionName: "myapp-feature",
         branch: "feature",
         worktreePath: "/tmp/myapp-feature",
-        worktreeKey: "proj/feature",
+        workspaceKey: workspaceIdentityKey("/tmp/myapp", "feature"),
         repoPath: "/tmp/myapp",
         project: "proj",
       }),
@@ -32,7 +27,7 @@ describe("Mode", () => {
       sessionName: "myapp-feature",
       branch: "feature",
       worktreePath: "/tmp/myapp-feature",
-      worktreeKey: "proj/feature",
+      workspaceKey: workspaceIdentityKey("/tmp/myapp", "feature"),
       repoPath: "/tmp/myapp",
       project: "proj",
     });

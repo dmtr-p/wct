@@ -137,15 +137,14 @@ _Avoid_: Project and branch, registry ID and branch
 ### Workspace Identity Key
 
 A Workspace Identity Key encodes a Workspace Identity for keyed state such
-as lifecycle progress, PR Associations, and identity-specific expansion. It
-uses the main repository path and branch, never a Project Display Name or
-registry ID.
+as lifecycle progress, PR Associations, worktree expansion, and expansion-related
+mode and action targets. It uses the main repository path and branch, never a
+Project Display Name or registry ID.
 
-### Worktree Display Key
-
-A Worktree Display Key combines a Project Display Name and branch for TUI
-expansion state. It is not a Workspace Identity Key: display names can collide
-across repositories. It is also not specific to a Pending Workspace.
+Worktree expansion preferences and successful Open expansion share one set of
+Workspace Identity Keys. Active lifecycle operations temporarily force expansion
+without changing that set. Project Display Names are presentation labels only;
+renaming one does not change a Workspace's expansion or action target.
 
 ### PR Identity
 

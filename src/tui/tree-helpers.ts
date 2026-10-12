@@ -15,13 +15,7 @@ import {
 } from "./lifecycle";
 import { wrapPrLabel, wrapPrTitle } from "./pr-layout";
 import { candidatePrLabel, derivePrPresentation } from "./pr-status";
-import {
-  Mode,
-  type PaneInfo,
-  type PRInfo,
-  type TreeItem,
-  worktreeDisplayKey,
-} from "./types";
+import { Mode, type PaneInfo, type PRInfo, type TreeItem } from "./types";
 
 const NO_LIFECYCLE: LifecycleState = new Map();
 
@@ -41,27 +35,21 @@ export function prExpansionKey(workspaceKey: string, pr: PrFacts): string {
 
 /**
  * A Workspace under a lifecycle is presented as expanded without its key ever
- * being written into `expandedWorktreeKeys` — that would leak a transient
+ * being written into `expandedWorkspaceKeys` — that would leak a transient
  * operation into a durable user preference.
  */
 export function isWorktreeEffectivelyExpanded({
-  expandedWorktreeKeys,
-  discoveredWorkspaceKeys,
+  expandedWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
-  project,
   repoPath,
   branch,
 }: {
-  expandedWorktreeKeys?: Set<string>;
-  discoveredWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
-  project: string;
   repoPath: string;
   branch: string;
 }): boolean {
-  if (expandedWorktreeKeys?.has(worktreeDisplayKey(project, branch)))
-    return true;
-  if (discoveredWorkspaceKeys?.has(workspaceIdentityKey(repoPath, branch)))
+  if (expandedWorkspaceKeys?.has(workspaceIdentityKey(repoPath, branch)))
     return true;
   return lifecycleEntryFor(lifecycle, repoPath, branch) !== undefined;
 }
@@ -86,8 +74,7 @@ export function isWorktreeLifecycleActive(
 interface BuildTreeOptions {
   agents?: Map<string, AgentObservation>;
   repos: RepoInfo[];
-  expandedWorktreeKeys?: Set<string>;
-  discoveredWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
   associations?: Map<string, WorkspacePrEntry>;
@@ -101,8 +88,7 @@ interface BuildTreeRowsOptions {
   repos: RepoInfo[];
   /** Repos are always expanded in production; retained for test fixtures. */
   expandedRepos?: Set<string>;
-  expandedWorktreeKeys?: Set<string>;
-  discoveredWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   /** Defaults to `Infinity` so callers that don't model wrapping keep a 1:1 row-per-detail mapping. */
   maxWidth?: number;
@@ -213,7 +199,7 @@ interface ResolveSelectedPaneOptions {
 interface SelectedPaneResolution {
   pane: PaneInfo;
   label: string;
-  worktreeKey: string;
+  workspaceKey: string;
 }
 
 interface ResolveStatusBarPropsOptions {
@@ -268,7 +254,7 @@ export function resolveConfirmationAnchorItemIndex(
       return (
         repo !== undefined &&
         worktree !== undefined &&
-        worktreeDisplayKey(repo.project, worktree.branch) === mode.worktreeKey
+        workspaceIdentityKey(repo.repoPath, worktree.branch) === mode.workspaceKey
       );
     });
     return paneIndex === -1 ? null : paneIndex;
@@ -289,7 +275,7 @@ export function resolveConfirmationAnchorItemIndex(
     return (
       repo !== undefined &&
       worktree !== undefined &&
-      worktreeDisplayKey(repo.project, worktree.branch) === mode.worktreeKey
+      workspaceIdentityKey(repo.repoPath, worktree.branch) === mode.workspaceKey
     );
   });
   return worktreeIndex === -1 ? null : worktreeIndex;
@@ -299,7 +285,7 @@ type ExpandedRightArrowAction =
   | { type: "noop" }
   | {
       type: "expand-worktree";
-      worktreeKey: string;
+      workspaceKey: string;
       nextSelectedIndex: number;
     };
 
@@ -314,31 +300,7 @@ export function resolveTreeReturnMode(mode: Mode): Mode {
   return mode.type === "Expanded" ? mode : Mode.Navigate;
 }
 
-export function reconcileExpandedWorktreeKeys(
-  previous: Set<string>,
-  repos: RepoInfo[],
-): Set<string> {
-  const available = new Set(
-    repos.flatMap((repo) =>
-      repo.worktrees.map((worktree) =>
-        worktreeDisplayKey(repo.project, worktree.branch),
-      ),
-    ),
-  );
-  const uncertainRepoPrefixes = repos
-    .filter((repo) => repo.error !== undefined)
-    .map((repo) => worktreeDisplayKey(repo.project, ""));
-  const next = new Set(
-    [...previous].filter(
-      (key) =>
-        available.has(key) ||
-        uncertainRepoPrefixes.some((prefix) => key.startsWith(prefix)),
-    ),
-  );
-  return next.size === previous.size ? previous : next;
-}
-
-export function reconcileDiscoveredWorkspaceKeys(
+export function reconcileExpandedWorkspaceKeys(
   previous: Set<string>,
   repos: RepoInfo[],
 ): Set<string> {
@@ -362,25 +324,9 @@ export function reconcileDiscoveredWorkspaceKeys(
   return next.size === previous.size ? previous : next;
 }
 
-export function workspaceIdentityKeysForDisplayKey(
-  repos: RepoInfo[],
-  worktreeKey: string,
-): Set<string> {
-  const identities = new Set<string>();
-  for (const repo of repos) {
-    for (const worktree of repo.worktrees) {
-      if (worktreeDisplayKey(repo.project, worktree.branch) !== worktreeKey)
-        continue;
-      identities.add(workspaceIdentityKey(repo.repoPath, worktree.branch));
-    }
-  }
-  return identities;
-}
-
 export function buildTreeItems({
   repos,
-  expandedWorktreeKeys,
-  discoveredWorkspaceKeys,
+  expandedWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   prData,
   associations,
@@ -406,10 +352,8 @@ export function buildTreeItems({
       // change can never reshuffle detail rows under the user's cursor.
       if (lifecycleEntryFor(lifecycle, repo.repoPath, wt.branch)) continue;
       const isExpanded = isWorktreeEffectivelyExpanded({
-        expandedWorktreeKeys,
-        discoveredWorkspaceKeys,
+        expandedWorkspaceKeys,
         lifecycle,
-        project: repo.project,
         repoPath: repo.repoPath,
         branch: wt.branch,
       });
@@ -572,8 +516,7 @@ export function buildTreeRows({
   items,
   repos,
   expandedRepos = new Set(repos.map((repo) => repo.id)),
-  expandedWorktreeKeys,
-  discoveredWorkspaceKeys,
+  expandedWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   maxWidth = Number.POSITIVE_INFINITY,
 }: BuildTreeRowsOptions): TreeRow[] {
@@ -677,10 +620,8 @@ export function buildTreeRows({
       });
     } else {
       const isExpanded = isWorktreeEffectivelyExpanded({
-        expandedWorktreeKeys,
-        discoveredWorkspaceKeys,
+        expandedWorkspaceKeys,
         lifecycle,
-        project: repo.project,
         repoPath: repo.repoPath,
         branch: wt.branch,
       });
@@ -1052,7 +993,7 @@ export function resolveExpandedRightArrowAction({
 
   return {
     type: "expand-worktree",
-    worktreeKey: worktreeDisplayKey(repo.project, worktree.branch),
+    workspaceKey: workspaceIdentityKey(repo.repoPath, worktree.branch),
     nextSelectedIndex: selectedIndex,
   };
 }
@@ -1121,7 +1062,7 @@ export function resolveSelectedPane({
   return {
     pane,
     label: selected.label,
-    worktreeKey: worktreeDisplayKey(repo.project, worktree.branch),
+    workspaceKey: workspaceIdentityKey(repo.repoPath, worktree.branch),
   };
 }
 

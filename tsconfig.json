@@ -33,6 +33,9 @@
         ],
         "diagnosticSeverity": {
           "anyUnknownInErrorContext": "warning",
+          "returnEffectInGen": "warning",
+          "tryCatchInEffectGen": "warning",
+          "runEffectInsideEffect": "warning",
           "unsafeEffectTypeAssertion": "warning",
           "extendsNativeError": "warning"
         },

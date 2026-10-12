@@ -135,6 +135,10 @@ or private shutdown worker, provide application and Bun services, and call
 - `provideWctServices` supplies the live application services and default JSON
   flag value.
 - `runBunPromise` runs Effects at imperative Bun boundaries.
+- Inside an Effect, compose child Effects with `yield*`. For imperative
+  callbacks that must execute an Effect, capture the surrounding context and
+  use `Effect.runPromiseWith` or `Effect.runSyncWith` to preserve caller services
+  and settings. The `runEffectInsideEffect` diagnostic enforces this boundary.
 - The TUI uses the process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
   Command exit tears down the process; there is no explicit runtime disposal
   path.
@@ -161,6 +165,9 @@ Tagged application errors use `Data.TaggedError`.
 Yield tagged errors directly inside `Effect.gen`, for example
 `return yield* commandError("not_git_repo", "Not a git repository")`.
 Use `Effect.fail` when returning a failed Effect outside a generator.
+Inside generators, execute returned Effects with `return yield*` and handle
+failures with Effect APIs rather than JavaScript `try/catch`. The
+`returnEffectInGen` and `tryCatchInEffectGen` diagnostics enforce these patterns.
 
 Workspace reporters return Effects with no required services and `WctError`
 for typed failures. Reporter failures and defects, including synchronous

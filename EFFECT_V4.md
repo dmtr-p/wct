@@ -16,8 +16,8 @@ Lifecycle scripts are disabled in `bunfig.toml`. Run `bun run prepare` after
 `bun install` to patch TypeScript with Effect tsgo; worktree setup and CI run
 this step explicitly.
 The stop hook and CI use `bun run typecheck`, which reports TypeScript errors
-and Effect diagnostics together. Effect errors fail the check; warnings are
-advisory, and suggestions are shown only in the editor.
+and Effect diagnostics together. Effect errors and warnings fail the check;
+suggestions are shown only in the editor.
 Unstable APIs from `effect`, `@effect/platform-bun`, and `@effect/vitest` are
 allowed by the language service configuration.
 

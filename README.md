@@ -314,8 +314,8 @@ Use [Bun](https://bun.com) for development and builds. See [AGENTS.md](./AGENTS.
 [@effect/tsgo](https://github.com/Effect-TS/tsgo). Lifecycle scripts are disabled
 in `bunfig.toml`, so run it explicitly after installing dependencies. Worktree
 setup and CI include this step. The typecheck reports Effect
-diagnostics alongside TypeScript errors. Effect errors fail the check; warnings
-are advisory, and suggestions remain available in the editor.
+diagnostics alongside TypeScript errors. Effect errors and warnings fail the
+check, and suggestions remain available in the editor.
 
 For VS Code-based editors, install the TypeScript 7 extension and select the
 workspace TypeScript version when prompted. The workspace settings point to

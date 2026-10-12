@@ -40,7 +40,7 @@
           "extendsNativeError": "warning"
         },
         "includeSuggestionsInTsc": false,
-        "ignoreEffectWarningsInTscExitCode": true
+        "ignoreEffectWarningsInTscExitCode": false
       }
     ]
   }

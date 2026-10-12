@@ -1,10 +1,10 @@
 import { BunServices } from "@effect/platform-bun";
 import { Console, Effect, Layer, ManagedRuntime } from "effect";
 import { type WctServices, WctServicesLayer } from "../effect/services";
-import { AgentService, liveAgentService } from "../services/agent-service";
+import { AgentService, makeAgentService } from "../services/agent-service";
 
 const tuiLayer = Layer.mergeAll(
-  Layer.succeed(AgentService, liveAgentService),
+  Layer.effect(AgentService, makeAgentService()),
   WctServicesLayer,
 ).pipe(Layer.provideMerge(BunServices.layer));
 

@@ -111,13 +111,14 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
 - Prefer `static readonly layer` for service classes that define their own layer.
 - Keep the `live<ServiceName>Service` naming convention for existing concrete
   service implementations, such as `liveGitHubService` and `liveWorktreeService`.
-  GitHub, tmux, worktree, and workspace public methods have no service
-  requirements. Their `make<ServiceName>Service` factories capture dependencies
-  during layer construction. `makeWctServicesLayer` applies overrides before
-  constructing the workspace service. Supply `BunServices.layer` to these
-  layers with `Layer.provide` or `Layer.provideMerge`.
+  GitHub, tmux, worktree, workspace, setup, and agent public methods have no
+  service requirements. Their `make<ServiceName>Service` factories capture
+  dependencies during layer construction. `makeWctServicesLayer` applies
+  overrides before constructing the workspace service. Supply `BunServices.layer`
+  to these layers with `Layer.provide` or `Layer.provideMerge`.
   Capture only service dependencies so caller settings such as `JsonFlag` and
   `Console` remain effective when a method runs.
+  The `leakingRequirements` diagnostic enforces this service boundary.
 - Represent parameterless operations as Effect values. Read changing state
   inside `Effect.sync`, `Effect.suspend`, or `Effect.gen` so each execution
   observes current values.

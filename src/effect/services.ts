@@ -18,9 +18,10 @@ import {
   type RegistryServiceApi,
 } from "../services/registry-service";
 import {
-  liveSetupService,
+  makeSetupService,
   SetupService,
   type SetupService as SetupServiceApi,
+  type SetupServiceImplementation,
 } from "../services/setup-service";
 import {
   makeTmuxService,
@@ -56,7 +57,7 @@ export interface WctServiceOverrides {
   json?: boolean;
   prCache?: PrCacheServiceApi;
   registry?: RegistryServiceApi;
-  setup?: SetupServiceApi;
+  setup?: SetupServiceImplementation;
   tmux?: TmuxServiceImplementation;
   worktree?: WorktreeServiceImplementation;
   workspace?: WorkspaceServiceImplementation;
@@ -66,7 +67,7 @@ export function makeWctServicesLayer(overrides: WctServiceOverrides = {}) {
   const dependencies = Layer.mergeAll(
     Layer.effect(GitHubService, makeGitHubService(overrides.github)),
     Layer.succeed(PrCacheService, overrides.prCache ?? livePrCacheService),
-    Layer.succeed(SetupService, overrides.setup ?? liveSetupService),
+    Layer.effect(SetupService, makeSetupService(overrides.setup)),
     Layer.effect(TmuxService, makeTmuxService(overrides.tmux)),
     Layer.effect(WorktreeService, makeWorktreeService(overrides.worktree)),
     Layer.succeed(RegistryService, overrides.registry ?? liveRegistryService),

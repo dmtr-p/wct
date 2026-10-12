@@ -36,6 +36,7 @@
           "returnEffectInGen": "warning",
           "tryCatchInEffectGen": "warning",
           "runEffectInsideEffect": "warning",
+          "leakingRequirements": "warning",
           "unsafeEffectTypeAssertion": "warning",
           "extendsNativeError": "warning"
         },

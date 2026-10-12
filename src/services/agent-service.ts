@@ -1,5 +1,9 @@
 import type { BunServices } from "@effect/platform-bun";
 import { type Cause, Context, Effect } from "effect";
+import {
+  captureBunService,
+  type ServiceImplementation,
+} from "../effect/service-context";
 import type { WctError } from "../errors";
 import {
   type AgentObservation,
@@ -50,7 +54,7 @@ export interface AgentServiceApi {
   observe: (
     sessions: ReadonlySet<string>,
     previous: AgentSnapshot,
-  ) => Effect.Effect<AgentSnapshot, never, BunServices.BunServices>;
+  ) => Effect.Effect<AgentSnapshot>;
 }
 export const AgentService =
   Context.Service<AgentServiceApi>("wct/AgentService");
@@ -118,9 +122,9 @@ function paneAgent(
   };
 }
 
-export function makeAgentService(
+function makeAgentServiceImplementation(
   ports: AgentObservationPorts,
-): AgentServiceApi {
+): ServiceImplementation<AgentServiceApi, BunServices.BunServices> {
   // Cache only argument inspection. Foreground ownership and process generation
   // are re-read every observation and again before publishing captures.
   const argvCache = new Map<string, { argv: readonly string[]; at: number }>();
@@ -440,10 +444,16 @@ export function makeAgentService(
   };
 }
 
-export const liveAgentService = makeAgentService({
-  discover: discoverAgentPanes,
-  processes: discoverForegroundProcesses,
-  arguments: readRuntimeArguments,
-  capture: captureAgentPane,
-  now: Date.now,
-});
+export function makeAgentService(
+  ports: AgentObservationPorts = {
+    discover: discoverAgentPanes,
+    processes: discoverForegroundProcesses,
+    arguments: readRuntimeArguments,
+    capture: captureAgentPane,
+    now: Date.now,
+  },
+) {
+  return Effect.suspend(() =>
+    captureBunService<AgentServiceApi>(makeAgentServiceImplementation(ports)),
+  );
+}

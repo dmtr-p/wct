@@ -3,7 +3,7 @@
 import type { CommandDef, CommandOption } from "../commands/command-def";
 import { completionCommands } from "./command-metadata";
 import { COMPLETION_PROFILES_FLAG } from "./completion-profiles";
-import { globalOptions } from "./global-options";
+import { COMPLETION_SHELLS, globalOptions } from "./global-options";
 
 const COMMANDS = Object.values(completionCommands);
 
@@ -624,7 +624,7 @@ export function generateCompletionScript(
 
 export function getCustomCompletionShell(
   args: ReadonlyArray<string>,
-): "fish" | "bash" | "zsh" | null {
+): (typeof COMPLETION_SHELLS)[number] | null {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === undefined) {
@@ -633,10 +633,7 @@ export function getCustomCompletionShell(
 
     if (arg === "--completions") {
       const shell = args[index + 1];
-      if (shell === "fish" || shell === "bash" || shell === "zsh") {
-        return shell;
-      }
-      return null;
+      return COMPLETION_SHELLS.find((supported) => supported === shell) ?? null;
     }
 
     if (!arg.startsWith("--completions=")) {
@@ -644,10 +641,7 @@ export function getCustomCompletionShell(
     }
 
     const shell = arg.slice("--completions=".length);
-    if (shell === "fish" || shell === "bash" || shell === "zsh") {
-      return shell;
-    }
-    return null;
+    return COMPLETION_SHELLS.find((supported) => supported === shell) ?? null;
   }
 
   return null;

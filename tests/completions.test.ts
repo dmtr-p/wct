@@ -121,7 +121,7 @@ describe("Effect CLI root", () => {
 
     expect(result.exitCode).toBe(0);
     expect(output).toContain("GLOBAL FLAGS");
-    expect(output).toContain("--completions <bash|zsh|fish|sh>");
+    expect(output).toContain("--completions <bash|zsh|fish>");
     expect(output).not.toContain("powershell");
     expect(output).not.toContain("pwsh");
     expect(output).toContain("projects");
@@ -309,15 +309,7 @@ describe("Effect CLI root", () => {
     expect(output).toContain('case "$subcmd" in');
   });
 
-  test("falls back to Effect built-in completions for sh", () => {
-    const result = runCliProcess(["--completions", "sh"]);
-    const output = result.stdout.toString();
-
-    expect(result.exitCode).toBe(0);
-    expect(output).toContain("Static completion script for Bash");
-  });
-
-  test.each(["powershell", "pwsh"])(
+  test.each(["powershell", "pwsh", "sh"])(
     "rejects unsupported %s completions",
     (shell) => {
       for (const args of [
@@ -329,6 +321,9 @@ describe("Effect CLI root", () => {
         expect(result.stderr.toString()).toContain(shell);
         expect(result.stdout.toString()).not.toContain(
           "Register-ArgumentCompleter",
+        );
+        expect(result.stdout.toString()).not.toContain(
+          "Static completion script for Bash",
         );
       }
     },
@@ -479,7 +474,7 @@ describe("shared command metadata", () => {
     }
   });
 
-  test.each(["bash", "zsh", "fish", "sh"])(
+  test.each(["bash", "zsh", "fish"])(
     "%s offers supported global flags",
     (shell) => {
       const result = runCliProcess(["--completions", shell]);

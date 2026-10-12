@@ -34,9 +34,9 @@ allowed by the language service configuration.
 
 - Configure built-in actions through `CliConfig.layer` in `src/index.ts`.
 - Use `CompletionsFlag` from `src/cli/completions-flag.ts` instead of the default
-  `GlobalFlag.Completions`. The repository supports only `bash`, `zsh`, `fish`,
-  and `sh`; `sh` maps to the built-in Bash generator. Both `powershell` and
-  `pwsh` must be rejected and omitted from help and completion choices.
+  `GlobalFlag.Completions`. The repository supports only `bash`, `zsh`, and
+  `fish`. `sh`, `powershell`, and `pwsh` must be rejected and omitted from help
+  and completion choices.
 - Keep the custom Bash, Zsh, and Fish generators in `src/cli/completions.ts`
   for repository-specific branch, worktree, and profile suggestions.
 - CLI APIs are marked `@stability unstable`; review their behavior and help
@@ -316,4 +316,3 @@ Custom shell profile helpers call the private completion entry point, which
 resolves the Main Repository with the Worktree service and loads configuration
 with `loadConfig`. Config errors produce no suggestions. Bash and Fish use NUL
 records to preserve profile names; Zsh uses quoted words without evaluation.
-The supported `sh` choice maps to Effect's built-in Bash generator.

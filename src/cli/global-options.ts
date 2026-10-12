@@ -1,6 +1,6 @@
 import type { CommandOption } from "../commands/command-def";
 
-export const COMPLETION_SHELLS = ["bash", "zsh", "fish", "sh"] as const;
+export const COMPLETION_SHELLS = ["bash", "zsh", "fish"] as const;
 export const GLOBAL_LOG_LEVELS = [
   "all",
   "trace",

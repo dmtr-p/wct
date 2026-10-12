@@ -26,6 +26,7 @@ function runBashCompletion(
   words: string[],
   cwd: string,
   env: Record<string, string | undefined> = {},
+  cursor?: { line: string; point: number; cword: number },
 ) {
   const tempDir = mkdtempSync(join(tmpdir(), "wct-bash-completion-"));
   const scriptPath = join(tempDir, "wct-completion.bash");
@@ -44,7 +45,13 @@ function runBashCompletion(
           'cd "$1"',
           "shift",
           `COMP_WORDS=(${words.map(quoteShell).join(" ")})`,
-          `COMP_CWORD=${words.length - 1}`,
+          `COMP_CWORD=${cursor?.cword ?? words.length - 1}`,
+          ...(cursor
+            ? [
+                `COMP_LINE=${quoteShell(cursor.line)}`,
+                `COMP_POINT=${cursor.point}`,
+              ]
+            : []),
           "COMPREPLY=()",
           "_wct",
           `printf "%s\\n" "\${COMPREPLY[@]}"`,
@@ -772,6 +779,52 @@ describe("resolved profile completions", () => {
       }
     },
   );
+
+  test("matches profiles at a byte cursor offset after multibyte text", () => {
+    const fixture = profileFixture();
+    writeFileSync(join(fixture.repo, ".wct.yaml"), "profiles: {dev: {}}\n");
+    const beforeCursor = "wct open 日本語 --profile de";
+    try {
+      const result = runBashCompletion(
+        ["wct", "open", "日本語", "--profile", "de", "--no-attach"],
+        fixture.linked,
+        {
+          ...fixture.env,
+          LC_ALL: process.platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8",
+        },
+        {
+          line: `${beforeCursor} --no-attach`,
+          point: Buffer.byteLength(beforeCursor),
+          cword: 4,
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr.toString()).toBe("");
+      expect(result.stdout.toString()).toBe("dev\n");
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("Readline completes mid-line after multibyte text", async () => {
+    const fixture = profileFixture();
+    writeFileSync(join(fixture.repo, ".wct.yaml"), "profiles: {dev: {}}\n");
+    const suffix = " --no-attach";
+    try {
+      expect(
+        await insertBashCompletion(
+          `wct open 日本語 --profile de${suffix}${"\u0002".repeat(suffix.length)}\t`,
+          fixture.linked,
+          {
+            ...fixture.env,
+            LC_ALL: process.platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8",
+          },
+        ),
+      ).toEqual(["open", "日本語", "--profile", "dev", "--no-attach"]);
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
 
   test.each([
     undefined,

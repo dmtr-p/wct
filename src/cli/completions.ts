@@ -213,9 +213,11 @@ function generateBashCompletions(): string {
     "    git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'",
     "}",
     "",
-    // COMP_POINT counts bytes, while substring slicing otherwise follows the locale.
+    // Bash before 4.3 reports byte offsets; newer Bash reports character offsets.
     "_wct_completion_line() {",
-    "    local LC_ALL=C",
+    "    if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3))); then",
+    "        local LC_ALL=C",
+    "    fi",
     '    profile_line="${COMP_LINE:0:COMP_POINT}"',
     "}",
     "",

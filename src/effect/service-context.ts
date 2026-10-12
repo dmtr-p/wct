@@ -20,6 +20,14 @@ export type ServiceImplementation<Service, Requirements> = {
       : never;
 };
 
+type ServiceEffects<Service> = {
+  [Key in keyof Service]: Service[Key] extends (
+    ...args: never[]
+  ) => infer Result
+    ? Result
+    : Service[Key];
+}[keyof Service];
+
 export const bunServiceKeys = [
   ChildProcessSpawner.ChildProcessSpawner,
   Crypto.Crypto,
@@ -33,19 +41,24 @@ export function bindServiceContext<Service, Requirements>(
   implementation: ServiceImplementation<Service, Requirements>,
   context: Context.Context<Requirements>,
 ): Service {
-  const entries = Object.entries(implementation).map(([key, value]) => {
-    if (Effect.isEffect(value))
+  type MemberEffect = Effect.Effect<
+    Effect.Success<ServiceEffects<Service>>,
+    Effect.Error<ServiceEffects<Service>>,
+    Requirements
+  >;
+  // Object.entries erases member types; retain the service's result/error unions.
+  const members = Object.entries(implementation) as Array<
+    [string, MemberEffect | ((...args: never[]) => MemberEffect)]
+  >;
+  const entries = members.map(([key, value]) => {
+    if (typeof value !== "function")
       return [key, Effect.provideContext(value, context)];
-    const method = value as (
-      ...args: unknown[]
-    ) => Effect.Effect<unknown, unknown, Requirements>;
     return [
       key,
-      (...args: unknown[]) =>
-        Effect.provideContext(method.apply(implementation, args), context),
+      (...args: never[]) =>
+        Effect.provideContext(value.apply(implementation, args), context),
     ];
   });
-  // Each public member keeps its arguments and result, with dependencies supplied.
   return Object.fromEntries(entries) as Service;
 }
 

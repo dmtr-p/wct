@@ -32,6 +32,7 @@
           "@effect/vitest"
         ],
         "diagnosticSeverity": {
+          "anyUnknownInErrorContext": "warning",
           "unsafeEffectTypeAssertion": "warning",
           "extendsNativeError": "warning"
         },

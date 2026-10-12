@@ -172,7 +172,7 @@ export type WorkspaceReporterEvent =
     };
 
 export interface WorkspaceReporter {
-  event: (event: WorkspaceReporterEvent) => Effect.Effect<void, unknown, never>;
+  event: (event: WorkspaceReporterEvent) => Effect.Effect<void, WctError>;
 }
 
 export interface ResolveWorkspaceTargetOptions {

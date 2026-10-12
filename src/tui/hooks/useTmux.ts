@@ -1,3 +1,4 @@
+import type { Effect } from "effect";
 import { useCallback, useEffect, useState } from "react";
 import {
   type TmuxClient,
@@ -19,9 +20,7 @@ export type TmuxClientDiscovery =
   | { type: "multiple" }
   | { type: "error" };
 
-async function runPaneAction(
-  effect: Parameters<typeof tuiRuntime.runPromise>[0],
-) {
+async function runPaneAction<A, E>(effect: Effect.Effect<A, E, TmuxService>) {
   try {
     await tuiRuntime.runPromise(effect);
     return true;

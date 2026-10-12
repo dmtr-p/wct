@@ -7,6 +7,7 @@ import { PassThrough } from "node:stream";
 import { Effect } from "effect";
 import type React from "react";
 import { vi } from "vitest";
+import type { WctError } from "../../src/errors";
 import type { PrFacts } from "../../src/services/pr-model";
 import type {
   WorkspacePhase,
@@ -17,7 +18,7 @@ import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
 const runtimeMock = vi.hoisted(() => ({
-  runPromise: vi.fn((effect: Effect.Effect<unknown, unknown>) =>
+  runPromise: vi.fn((effect: Effect.Effect<unknown, WctError>) =>
     Promise.resolve(effect),
   ),
   runSync: vi.fn((effect: unknown) => effect),
@@ -29,9 +30,7 @@ const refreshHarness = vi.hoisted(() => ({
 
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await vi.importActual<typeof import("effect")>("effect");
-  const runPromise = async (
-    effect: import("effect").Effect.Effect<unknown, unknown>,
-  ) => {
+  const runPromise = async (effect: Effect.Effect<unknown, WctError>) => {
     const result = await runtimeMock.runPromise(effect);
     return Effect.isEffect(result) ? Effect.runPromise(result) : result;
   };
@@ -323,7 +322,6 @@ export function lastWorkspaceCall(
   return call;
 }
 
-/** Execute the reporter Effect so the App observes the phase update. */
 export function emitWorkspacePhase(
   call: WorkspaceCallShape,
   phase: WorkspacePhase,
@@ -341,7 +339,6 @@ export function emitWorkspacePhase(
   );
 }
 
-/** Reset every controllable fixture and runtime spy; call from `beforeEach`. */
 export function resetHarnessFixtures(): void {
   registryItems.items = [];
   worktreeFixtures.byRepoPath.clear();

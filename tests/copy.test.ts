@@ -6,6 +6,7 @@ import {
   type BunServices as BunServicesType,
   runBunPromise,
 } from "../src/effect/runtime";
+import type { WctError } from "../src/errors";
 import {
   copyEntries,
   copyFiles,
@@ -15,7 +16,7 @@ import {
 import { type IncludeRepo, makeIncludeRepo } from "./helpers/include-repo";
 
 function runEffect<A>(
-  effect: Effect.Effect<A, unknown, BunServicesType.BunServices>,
+  effect: Effect.Effect<A, WctError, BunServicesType.BunServices>,
 ): Promise<A> {
   return runBunPromise(effect);
 }

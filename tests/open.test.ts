@@ -52,8 +52,8 @@ function alreadyRegisteredResult(
   };
 }
 
-async function expectWctFailure(
-  effect: Effect.Effect<unknown, unknown, BunServices.BunServices>,
+async function expectWctFailure<A, E>(
+  effect: Effect.Effect<A, E, BunServices.BunServices>,
   code: string,
   message: string,
 ) {

@@ -141,6 +141,8 @@ printf '%s\\n' "$*" >> "$WCT_HOOK_LOG"
         });
       }
     },
+    // Each case runs three hooks with real Bun/Git snapshot subprocesses.
+    15_000,
   );
 
   test("blocks on Biome errors and emits valid JSON", async () => {

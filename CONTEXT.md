@@ -58,6 +58,46 @@ Use Start and Stop in user-facing action names, and `up` and `down` when
 referring to the CLI commands. Stopping a session uses tmux's `kill-session`
 operation; it does not suspend the processes in the session.
 
+Open copies from the Main Repository before setup. For newly created Worktrees,
+copy-source precedence is the selected profile's `copy`, the project
+`.wct.yaml`'s `copy`, the Main Repository's root `.worktreeinclude`, then the
+global `~/.wct.yaml`'s `copy`. Project/profile `copy: []` disables copying.
+An existing empty or no-match include file overrides global copying; an absent
+include file falls through. Config loading preserves project copy provenance
+alongside the merged config, and the shared Workspace service selects the source
+after profile resolution.
+
+All copy sources select only untracked, gitignored regular files discovered by
+Git, including repository, `.git/info/exclude`, and global ignore rules.
+Tracked and nonignored files, symlinks, and Git metadata are excluded.
+YAML `copy` lists expand file, directory, and Bun glob entries, then filter the
+matches against those eligible files; missing files are skipped.
+
+`.worktreeinclude` uses gitignore syntax, including comments, blank lines,
+escapes, negation, root anchoring, directory patterns, and ordered rules.
+Positive rules include, negations exclude, and later matches override earlier
+ones. Git discovery uses NUL-delimited paths; selected paths are deduplicated,
+checked for regular files, and copied directly without glob expansion.
+
+Inside a directory ignored as a whole, a leading `**/` reaches files only if
+the directory matches the pattern or the first name after `**/` occurs in the
+directory's path. For ignored `vendor/`, `**/config.json` does not reach its
+files; `vendor/**/config.json` does. `**/.claude/skills/*.md` reaches an ignored
+`.claude/` directory. Beneath an ignored `outer/`, use
+`outer/**/.claude/skills/*.md` instead. This restriction applies only to include
+rules, not YAML Bun globs. Only the root include file is read.
+
+Include copying applies when Open creates a Worktree and when retrying failed
+initial include resolution or copying. A pending marker in worktree-local Git
+metadata persists across failures and is cleared after successful copy processing,
+including an explicit YAML override or an empty selection. Retrying reads the
+current configuration and include rules before setup. After success, reopening
+skips that source. YAML copy lists run on every Open and can overwrite previously
+copied files.
+Start does not copy files.
+Unreadable include files, Git discovery failures, and copy failures are fatal
+before setup; an empty selection skips the copy phase.
+
 The JSON contract uses tmux's kill wording: down reports
 a stopped session as `status: "killed"`, and down and close expose an
 `attempts.kill` field.

@@ -3,6 +3,7 @@ import type { BunServices } from "@effect/platform-bun";
 import { Context, Effect, FileSystem } from "effect";
 import {
   loadConfig,
+  loadWorkspaceConfig,
   resolveProfile,
   resolveWorktreePath,
 } from "../config/loader";
@@ -10,12 +11,13 @@ import type { ResolvedConfig } from "../config/schema";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { type CommandResult, runShellCommands } from "./command-runner";
-import { type CopyResult, copyEntries } from "./copy";
+import { type CopyResult, copyEntries, copyFiles } from "./copy";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,
   parsePrArg,
 } from "./github-service";
+import { getIncludeCopyState } from "./include-copy-state";
 import { PrCacheService, type PrCacheServiceApi } from "./pr-cache-service";
 import {
   type SetupResult,
@@ -29,6 +31,7 @@ import {
   TmuxService,
   type TmuxService as TmuxServiceApi,
 } from "./tmux";
+import { resolveWorktreeInclude } from "./worktree-include";
 import {
   type CreateWorktreeResult,
   type RemoveWorktreeResult,
@@ -538,8 +541,9 @@ function openImpl(
       );
     }
 
-    const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
-      commandError("config_error", error.message, error),
+    const { config, projectDefinesCopy } = yield* Effect.mapError(
+      loadWorkspaceConfig(mainRepoPath),
+      (error) => commandError("config_error", error.message, error),
     );
     const { config: resolved, profileName } = yield* Effect.try({
       try: () => resolveProfile(config, branch, profile),
@@ -644,7 +648,22 @@ function openImpl(
       );
     }
 
-    if (resolved.copy && resolved.copy.length > 0) {
+    const profileDefinesCopy =
+      profileName !== undefined &&
+      config.profiles?.[profileName]?.copy !== undefined;
+    const includeState = yield* getIncludeCopyState(worktreePath);
+    const processInclude =
+      !projectDefinesCopy &&
+      !profileDefinesCopy &&
+      (worktreeResult._tag !== "AlreadyExists" || includeState.pending);
+    if (processInclude) yield* includeState.begin;
+    const includeFiles = processInclude
+      ? yield* resolveWorktreeInclude(mainRepoPath)
+      : undefined;
+    const filesToCopy = includeFiles ?? resolved.copy;
+    const copyRoutine = includeFiles === undefined ? copyEntries : copyFiles;
+
+    if (filesToCopy && filesToCopy.length > 0) {
       yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });
       yield* emitReporter(reporter, {
         operation: "open",
@@ -653,9 +672,9 @@ function openImpl(
       });
     }
     const copy =
-      resolved.copy && resolved.copy.length > 0
+      filesToCopy && filesToCopy.length > 0
         ? yield* Effect.mapError(
-            copyEntries(resolved.copy, mainRepoPath, worktreePath, {
+            copyRoutine(filesToCopy, mainRepoPath, worktreePath, {
               entrySkipped: ({ entry, reason }) =>
                 emitReporter(reporter, {
                   operation: "open",
@@ -673,7 +692,11 @@ function openImpl(
                 }),
             }),
             (error) =>
-              commandError("worktree_error", "Failed to copy files", error),
+              commandError(
+                "worktree_error",
+                `Failed to copy files: ${error instanceof Error ? error.message : String(error)}`,
+                error,
+              ),
           ).pipe(
             Effect.flatMap((results) => {
               const failed = results.find((result) => !result.success);
@@ -701,6 +724,7 @@ function openImpl(
         ok: copy.ok,
       });
     }
+    if (processInclude || includeState.pending) yield* includeState.complete;
 
     if (resolved.setup && resolved.setup.length > 0) {
       yield* emitReporter(reporter, {

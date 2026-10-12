@@ -13,6 +13,7 @@ import {
   livePrCacheService,
   type PrCacheServiceApi,
 } from "../src/services/pr-cache-service";
+import { execProcess } from "../src/services/process";
 import {
   liveSetupService,
   type SetupResult,
@@ -46,6 +47,13 @@ tmux:
     - name: "main"
 ${body}`,
   );
+}
+
+async function prepareCopyRepo(repoDir: string) {
+  await runBunPromise(
+    execProcess("git", ["init", "--quiet", "--template=", repoDir]),
+  );
+  await Bun.write(join(repoDir, ".gitignore"), "*\n");
 }
 
 describe("WorkspaceService target resolution", () => {
@@ -184,6 +192,7 @@ describe("WorkspaceService open", () => {
 
   beforeEach(async () => {
     repoDir = await mkdtemp(join(tmpdir(), "wct-workspace-open-repo-"));
+    await prepareCopyRepo(repoDir);
     worktreeRoot = join(repoDir, "..", "worktrees");
     await mkdir(worktreeRoot, { recursive: true });
     await writeConfig(repoDir);
@@ -654,7 +663,13 @@ setup:
   });
 
   test("treats path conflicts and copy failures as fatal", async () => {
-    await writeConfig(repoDir, `copy:\n  - missing.env\n`);
+    await writeConfig(repoDir, `copy:\n  - copy.env\n`);
+    await Bun.write(join(repoDir, "copy.env"), "secret");
+    for (const branch of ["copy-fails", "copy-fails-reporter"]) {
+      await mkdir(join(worktreeRoot, `myapp-${branch}`, "copy.env"), {
+        recursive: true,
+      });
+    }
     const copyEvents: WorkspaceReporterEvent[] = [];
 
     await expect(
@@ -697,13 +712,15 @@ setup:
       ),
     ).rejects.toThrow("Failed to copy files");
 
-    expect(copyEvents).toContainEqual({
-      operation: "open",
-      _tag: "CopyEntryFailed",
-      file: "missing.env",
-      reason: "source_not_found",
-      error: "File not found",
-    });
+    expect(copyEvents).toContainEqual(
+      expect.objectContaining({
+        operation: "open",
+        _tag: "CopyEntryFailed",
+        file: "copy.env",
+        reason: "copy_failed",
+        error: expect.any(String),
+      }),
+    );
 
     await expect(
       runBunPromise(
@@ -723,7 +740,7 @@ setup:
           { worktree: makeWorktreeService() },
         ),
       ),
-    ).rejects.toThrow("Failed to copy files: missing.env: File not found");
+    ).rejects.toThrow("Failed to copy files: copy.env:");
   });
 
   test("types optional setup failures as optional warnings", async () => {
@@ -1319,6 +1336,7 @@ describe("WorkspaceService semantic phases", () => {
     repoDir = join(parentDir, "repo");
     worktreeRoot = join(parentDir, "worktrees");
     await mkdir(repoDir, { recursive: true });
+    await prepareCopyRepo(repoDir);
     await mkdir(worktreeRoot, { recursive: true });
     await writeConfig(repoDir);
   });

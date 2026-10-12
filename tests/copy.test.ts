@@ -1,4 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Console, Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -8,9 +8,11 @@ import {
 } from "../src/effect/runtime";
 import {
   copyEntries,
+  copyFiles,
   detectEntryType,
   expandEntry,
 } from "../src/services/copy";
+import { type IncludeRepo, makeIncludeRepo } from "./helpers/include-repo";
 
 function runEffect<A>(
   effect: Effect.Effect<
@@ -156,17 +158,20 @@ describe("expandEntry", () => {
 });
 
 describe("copyEntries", () => {
-  const tempDir = join(import.meta.dirname, ".temp-test-copy");
-  const sourceDir = join(tempDir, "source");
-  const targetDir = join(tempDir, "target");
+  let fixture: IncludeRepo;
+  let sourceDir: string;
+  let targetDir: string;
 
   beforeEach(async () => {
-    await mkdir(sourceDir, { recursive: true });
+    fixture = await makeIncludeRepo();
+    sourceDir = fixture.repo;
+    targetDir = join(fixture.root, "target");
+    await fixture.write(".gitignore", "*\n");
     await mkdir(targetDir, { recursive: true });
   });
 
   afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
+    await fixture.cleanup();
   });
 
   test("copies single file", async () => {
@@ -236,7 +241,6 @@ describe("copyEntries", () => {
     ).text();
     expect(data).toBe('{"data": true}');
 
-    // Ensure .md file was not copied
     const mdExists = await Bun.file(
       join(targetDir, ".claude/readme.md"),
     ).exists();
@@ -275,7 +279,6 @@ describe("copyEntries", () => {
       ),
     );
 
-    // Should only copy once despite matching all three patterns
     expect(results).toHaveLength(1);
     expect(results[0]?.success).toBe(true);
   });
@@ -285,9 +288,7 @@ describe("copyEntries", () => {
       copyEntries(["missing.txt"], sourceDir, targetDir),
     );
 
-    expect(results).toHaveLength(1);
-    expect(results[0]?.success).toBe(false);
-    expect(results[0]?.error).toBe("File not found");
+    expect(results).toEqual([]);
   });
 
   test("reports source, directory-creation, and target-write failures with semantic reasons", async () => {
@@ -303,9 +304,7 @@ describe("copyEntries", () => {
         }),
     };
 
-    await runEffect(
-      copyEntries(["missing.txt"], sourceDir, targetDir, reporter),
-    );
+    await runEffect(copyFiles(["missing.txt"], sourceDir, targetDir, reporter));
 
     await mkdir(join(sourceDir, "nested"), { recursive: true });
     await Bun.write(join(sourceDir, "nested/file.txt"), "content");
@@ -345,7 +344,6 @@ describe("copyEntries", () => {
       copyEntries(["missing/"], sourceDir, targetDir),
     );
 
-    // Empty result since directory doesn't exist
     expect(results).toHaveLength(0);
   });
 
@@ -372,5 +370,88 @@ describe("copyEntries", () => {
       join(targetDir, "deep/nested/path/file.txt"),
     ).text();
     expect(content).toBe("content");
+  });
+
+  test.each(["files", "directory", "glob"])(
+    "filters %s entries to untracked gitignored regular files",
+    async (kind) => {
+      await fixture.write(".gitignore", "config/*.env\nconfig/*.txt\n");
+      await fixture.write("config/tracked.env", "tracked");
+      await fixture.git("add", "--force", "config/tracked.env");
+      await fixture.write("config/ignored.env", "ignored");
+      await fixture.write("config/nonignored.json", "nonignored");
+      await fixture.write(".git/info/metadata.env", "metadata");
+      await symlink(
+        join(sourceDir, "config/ignored.env"),
+        join(sourceDir, "config/link.env"),
+      );
+      const entries =
+        kind === "files"
+          ? [
+              "./config/ignored.env",
+              "config/tracked.env",
+              "config/nonignored.json",
+              "config/link.env",
+              ".git/info/metadata.env",
+              "config/missing.env",
+              "../global-ignore",
+            ]
+          : [kind === "directory" ? "config/" : "config/**/*"];
+      const results = await runEffect(
+        copyEntries(entries, sourceDir, targetDir),
+      );
+      expect(results).toEqual([{ file: "config/ignored.env", success: true }]);
+      expect(await Bun.file(join(targetDir, "config/ignored.env")).text()).toBe(
+        "ignored",
+      );
+      for (const file of [
+        "config/tracked.env",
+        "config/nonignored.json",
+        "config/link.env",
+        ".git/info/metadata.env",
+      ]) {
+        expect(await Bun.file(join(targetDir, file)).exists()).toBe(false);
+      }
+    },
+  );
+
+  test("includes info/exclude and global ignore rules for YAML entries", async () => {
+    await fixture.write(".gitignore", "");
+    await fixture.write(".git/info/exclude", "info.env\n");
+    await fixture.write("../global-ignore", "global.env\n");
+    await fixture.git(
+      "config",
+      "--global",
+      "core.excludesFile",
+      join(fixture.root, "global-ignore"),
+    );
+    await fixture.write("info.env");
+    await fixture.write("global.env");
+    await fixture.write("other.env");
+    const results = await runEffect(
+      copyEntries(["*.env"], sourceDir, targetDir),
+    );
+    expect(results.map((result) => result.file).sort()).toEqual([
+      "global.env",
+      "info.env",
+    ]);
+  });
+
+  test("YAML Bun globs reach wholly ignored directories", async () => {
+    await fixture.write(".gitignore", "vendor/\n");
+    await fixture.write("vendor/nested/config.json");
+    const results = await runEffect(
+      copyEntries(["**/config.json"], sourceDir, targetDir),
+    );
+    expect(results).toEqual([
+      { file: "vendor/nested/config.json", success: true },
+    ]);
+  });
+
+  test("Git discovery failures fail copying clearly", async () => {
+    await rm(join(sourceDir, ".git"), { recursive: true, force: true });
+    await expect(
+      runEffect(copyEntries([".env"], sourceDir, targetDir)),
+    ).rejects.toThrow("Failed to discover gitignored files");
   });
 });

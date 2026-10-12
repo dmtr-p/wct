@@ -7,12 +7,12 @@ worktree_dir: "../worktrees"
 # Configured project name (used for worktree and tmux session naming)
 project_name: "wct"
 
-# Files to copy to new worktree
+# Gitignored files to copy from the main repository during Open
 copy:
   - .vscode/
   - .claude/
 
-# Commands to run after worktree creation
+# Commands to run during Open, after copying and before starting tmux
 setup:
   - name: "Mise setup"
     command: "mise trust mise.toml && mise install"

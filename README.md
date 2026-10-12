@@ -118,7 +118,7 @@ project_name: "myapp"
 # Working directory for setup/down commands and tmux panes (relative to each worktree)
 work_dir: "apps/web"
 
-# Files/directories to copy from main repo into new worktrees
+# Gitignored files/directories to copy from the main repository during Open
 copy:
   - .env
   - .env.local
@@ -173,6 +173,61 @@ Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_B
 
 A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
 
+### Copying local files
+
+CLI and TUI Open copy files from the main repository before running setup. When
+creating a worktree, the first available copy source wins:
+
+1. The selected profile's `copy` list (automatic or explicit selection).
+2. The project `.wct.yaml`'s `copy` list.
+3. The main repository's root `.worktreeinclude`.
+4. The global `~/.wct.yaml`'s `copy` list.
+
+A project or selected profile `copy: []` disables copying. An existing empty,
+comments-only, or no-match `.worktreeinclude` also overrides global copying.
+A missing include file falls through to global configuration. YAML copy lists
+support file paths, directory paths ending in `/`, and Bun globs. Missing files
+and ineligible matches are skipped.
+
+All copy sources select only **untracked, gitignored regular files**. Git's
+repository ignore files, `.git/info/exclude`, and global ignore configuration
+all count. Tracked files (even those matching ignore rules), nonignored files,
+symlinks, and Git metadata are excluded. For example, if these files are
+gitignored, this root `.worktreeinclude` copies them:
+
+```gitignore
+# Local configuration
+.env
+.env.local
+config/secrets.json
+```
+
+Use gitignore pattern syntax: blank lines and `#` comments, backslash escapes
+(such as `\#name` and `\!name`), `*`, `?`, character classes, and `**`. A leading
+`/` anchors a pattern at the repository root; a trailing `/` selects a directory's
+files. Rules run in order: positive rules include files, `!` rules exclude them,
+and a later positive rule can include them again. Overlapping matches copy each
+file once. Only the root include file is read.
+
+In `.worktreeinclude`, leading `**/` has a restriction inside directories ignored
+as a whole: it reaches files only when the ignored directory matches the pattern or the first
+name after `**/` occurs in that directory's path. If `.gitignore` contains
+`vendor/`, `**/config.json` does not reach `vendor/config.json` or
+`vendor/nested/config.json`; use `vendor/**/config.json`. With `.claude/` ignored,
+`**/.claude/skills/*.md` reaches `.claude/skills/example.md` because `.claude` is
+in the ignored directory's path. If `outer/` is ignored as a whole, use
+`outer/**/.claude/skills/*.md` to reach skills beneath it. YAML copy globs do not
+have this restriction.
+
+The include source applies to newly created worktrees, including new
+checkouts of existing branches. If initial include resolution or copying fails,
+retrying Open uses the current configuration and include rules before setup.
+After successful copy processing, reopening skips the include source. YAML copy
+lists run on every Open and can overwrite previously copied files.
+`wct up` does not copy files.
+Unreadable include files, Git discovery failures, and copy failures stop Open
+before setup; empty selections skip copying.
+
 ### Down scripts
 
 Both `wct down` and `wct close` run `down` scripts after stopping the tmux session, including when no session exists. Scripts run sequentially from `work_dir`; every script is attempted. A required failure makes the operation fail and keeps the worktree, including with `close --force`. Optional failures produce warnings and allow removal.
@@ -204,6 +259,8 @@ profiles:
 ```
 
 **Auto-matching:** When you run `wct open <branch>`, `wct up`, `wct down`, or `wct close`, profiles are matched against the workspace's branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
+
+During Open, a profile without `copy` uses the [copy-source precedence](#copying-local-files).
 
 **Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open`, `wct up`, `wct down`, or `wct close` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
 

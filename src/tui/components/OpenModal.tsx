@@ -42,8 +42,6 @@ export interface OpenModalProps {
   onRefresh: (signal?: AbortSignal) => void;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────
-
 function ModeSelector({
   onSelect,
   onCancel,
@@ -146,8 +144,6 @@ function BracketInput({
     </MouseClickable>
   );
 }
-
-// ─── NewBranchForm ───────────────────────────────────────────────
 
 type NewBranchField = "branch" | "base" | "profile" | "autoSwitch" | "submit";
 
@@ -266,8 +262,6 @@ export function NewBranchForm({
   );
 }
 
-// ─── FromPRForm ──────────────────────────────────────────────────
-
 type FromPRField = "prList" | "profile" | "autoSwitch" | "submit";
 
 /** @internal */
@@ -335,7 +329,6 @@ export function FromPRForm({
     [prItems, filterQuery],
   );
 
-  // Total navigable items: filtered PRs + refresh row (always at bottom)
   const navigableCount = filteredPRItems.length + 1;
   const refreshRowIndex = filteredPRItems.length;
   const isRefreshRowSelectable = !isRefreshing;
@@ -389,7 +382,6 @@ export function FromPRForm({
         moveFocus(key.shift ? -1 : 1);
         return;
       }
-      // PR list navigation
       if (currentField === "prList") {
         if (key.upArrow) {
           setSelectedPRIndex((s) => {
@@ -419,8 +411,6 @@ export function FromPRForm({
     { isActive: true },
   );
 
-  // The display list shown in ScrollableList includes filtered PRs + refresh row.
-  // isRefreshing is the real dep for refreshItem label — biome-ignore needed below.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshItem depends on isRefreshing, listed explicitly
   const displayItems: ListItem[] = useMemo(
     () => [...filteredPRItems, refreshItem],
@@ -480,8 +470,6 @@ export function FromPRForm({
     </Box>
   );
 }
-
-// ─── ExistingBranchForm ──────────────────────────────────────────
 
 type ExistingBranchField = "branchList" | "profile" | "autoSwitch" | "submit";
 
@@ -543,7 +531,7 @@ export function ExistingBranchForm({
         setBranches(result);
       })
       .catch(() => {
-        // Ignore branch listing errors
+        // Keep the modal usable if branch discovery fails or is cancelled.
       });
     return () => {
       controller.abort();
@@ -592,7 +580,6 @@ export function ExistingBranchForm({
         moveFocus(key.shift ? -1 : 1);
         return;
       }
-      // Branch list navigation
       if (currentField === "branchList") {
         if (key.upArrow) {
           setSelectedBranchIndex((s) => Math.max(0, s - 1));
@@ -662,8 +649,6 @@ export function ExistingBranchForm({
   );
 }
 
-// ─── Main OpenModal ──────────────────────────────────────────────
-
 export function OpenModal({
   visible,
   width,
@@ -688,7 +673,6 @@ export function OpenModal({
   useEffect(() => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    // Auto-refresh on open so the PR list is fresh
     onRefresh(controller.signal);
     return () => {
       controller.abort();

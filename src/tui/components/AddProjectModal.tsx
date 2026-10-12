@@ -58,7 +58,6 @@ export function AddProjectModal({
     nameFocused,
   );
 
-  // Reset state when modal visibility changes
   useEffect(() => {
     if (visible) {
       setFocusIndex(0);
@@ -69,7 +68,6 @@ export function AddProjectModal({
     }
   }, [visible]);
 
-  // Check if path is a git repo
   useEffect(() => {
     const expanded = expandTilde(pathValue);
     if (!expanded) {
@@ -99,7 +97,6 @@ export function AddProjectModal({
     };
   }, [pathValue]);
 
-  // Auto-fill name when leaving path field
   const autoFillName = useCallback(() => {
     if (nameValue === "" || nameAutoFilled) {
       const expanded = expandTilde(pathValue);
@@ -130,7 +127,6 @@ export function AddProjectModal({
         return;
       }
       if (key.tab) {
-        // When leaving path field, auto-fill name
         if (currentField === "path") autoFillName();
         setFocusIndex(
           (prev) =>
@@ -151,7 +147,6 @@ export function AddProjectModal({
     { isActive: visible },
   );
 
-  // Name field input handling
   useGuardedInput(
     (input, key) => {
       nameEditing.handleInput(input, key);

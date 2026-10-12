@@ -8,12 +8,10 @@ export function useRefresh(onRefresh: () => void | Promise<void>) {
   refreshRef.current = onRefresh;
 
   useEffect(() => {
-    // Slow poll fallback
     const interval = setInterval(() => {
       refreshRef.current();
     }, POLL_INTERVAL_MS);
 
-    // Watch ~/.wct/ directory for DB changes
     const wctDir = `${process.env.HOME ?? "/tmp"}/.wct`;
     let watcher: ReturnType<typeof watch> | null = null;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;

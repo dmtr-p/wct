@@ -15,7 +15,6 @@ const distDir = join(import.meta.dir, "..", "dist");
 async function build(): Promise<void> {
   console.log("Building wct for all platforms...\n");
 
-  // Create dist directory
   await mkdir(distDir, { recursive: true });
 
   const checksums: string[] = [];
@@ -28,12 +27,10 @@ async function build(): Promise<void> {
     try {
       await $`bun build src/index.ts --compile --target ${target} --outfile ${outpath}`;
 
-      // Get file size
       const stat = await Bun.file(outpath).stat();
       const sizeMB = (stat.size / 1024 / 1024).toFixed(2);
       console.log(`  ✓ Built ${outfile} (${sizeMB} MB)`);
 
-      // Generate SHA256 checksum
       const file = Bun.file(outpath);
       const buffer = await file.arrayBuffer();
       const hash = new Bun.CryptoHasher("sha256");
@@ -47,7 +44,6 @@ async function build(): Promise<void> {
     }
   }
 
-  // Write checksums file
   const checksumsPath = join(distDir, "checksums.txt");
   await Bun.write(checksumsPath, `${checksums.join("\n")}\n`);
   console.log(`\n✓ Checksums written to ${checksumsPath}`);

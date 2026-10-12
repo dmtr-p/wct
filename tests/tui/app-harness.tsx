@@ -1,14 +1,7 @@
-// Shared mocking strategy + Ink render harness for suites that render the
-// real exported `App` through Ink's actual input pipeline.
-//
-// Each `XService.use(selector)` mock calls `selector` synchronously against a
-// fake service object (returning a plain value/Promise, not a real Effect),
-// so `tuiRuntime.runPromise`/`runSync` can be transparent pass-throughs.
-//
-// The `vi.mock` calls below run when a test file imports this module, before
-// that file's dynamic `import("../../src/tui/App")`, so every mock is
-// registered before any mocked service module first loads. Fixtures are
-// wrapped in `vi.hoisted` for the same reason.
+// Import this harness before dynamically importing App so service mocks are
+// registered first; their fixtures must use vi.hoisted. Service selectors return
+// either plain values/Promises or Effects, so the runtime stub executes Effects
+// and passes other results through.
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { Effect } from "effect";
@@ -74,7 +67,6 @@ vi.mock("../../src/tui/components/tree-row", async () => {
   };
 });
 
-// --- RegistryService: repos controllable per test via registryItems. ---
 const registryItems = vi.hoisted(() => ({
   items: [] as Array<{ id: string; repo_path: string; project: string }>,
 }));
@@ -88,7 +80,6 @@ vi.mock("../../src/services/registry-service", () => ({
   },
 }));
 
-// --- WorktreeService: worktrees keyed by repoPath, controllable per test. ---
 const worktreeFixtures = vi.hoisted(() => ({
   byRepoPath: new Map<string, Worktree[]>(),
 }));
@@ -116,7 +107,6 @@ vi.mock("../../src/services/worktree-service", async () => {
   };
 });
 
-// --- TmuxService: no client/sessions by default, with opt-in handoff tracing. ---
 const tmuxFixtures = vi.hoisted(() => ({
   clients: [] as Array<{ tty: string; session: string }>,
   sessions: null as Array<{
@@ -151,9 +141,7 @@ vi.mock("../../src/services/tmux", async () => {
   };
 });
 
-// --- GitHubService + PrCacheService: no PRs by default. Tests that need a
-// PR row can also drive "r" (Navigate mode's refreshRepo) to await the
-// same read path deterministically.
+// Drive "r" to await Navigate mode's PR refresh deterministically.
 const githubFixtures = vi.hoisted(() => ({
   prsByRepoPath: new Map<
     string,
@@ -222,11 +210,8 @@ vi.mock("../../src/services/pr-details", () => ({
     ),
 }));
 
-// --- WorkspaceService: every lifecycle call is deferred (the test resolves
-// or rejects it by hand), and each call records the options it was given
-// including the `reporter`. Without the deferral, a lifecycle would settle
-// inside the same microtask that started it and no intermediate progress row
-// would ever be observable.
+// Defer lifecycle completion until the test settles it so intermediate progress
+// rows remain observable. Recorded options expose the App's reporter.
 interface WorkspaceCallShape {
   operation: "open" | "up" | "down" | "close";
   options: Record<string, unknown>;
@@ -338,11 +323,7 @@ export function lastWorkspaceCall(
   return call;
 }
 
-/**
- * Deliver ONE semantic phase event to the reporter the App handed the service,
- * exactly as the real service would. The reporter returns an Effect, so it is
- * run here rather than merely constructed.
- */
+/** Execute the reporter Effect so the App observes the phase update. */
 export function emitWorkspacePhase(
   call: WorkspaceCallShape,
   phase: WorkspacePhase,

@@ -13,14 +13,13 @@ export interface ListItem {
   description?: string;
 }
 
-/** Filter items by case-insensitive substring match on label */
 export function filterItems(items: ListItem[], query: string): ListItem[] {
   if (!query) return items;
   const lower = query.toLowerCase();
   return items.filter((item) => item.label.toLowerCase().includes(lower));
 }
 
-/** Compute visible window for scrolling */
+/** Center only the initial viewport; later reveals use scrollToRevealListItem. */
 export function getVisibleWindow(
   totalItems: number,
   selectedIndex: number,
@@ -30,7 +29,6 @@ export function getVisibleWindow(
     return { start: 0, end: totalItems, hasAbove: false, hasBelow: false };
   }
 
-  // Center the window around selectedIndex
   let start = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
   let end = start + maxVisible;
 

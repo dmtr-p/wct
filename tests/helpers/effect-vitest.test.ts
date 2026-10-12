@@ -25,8 +25,6 @@ describe("WctTestLayer", () => {
     it.effect("WorktreeService.isGitRepo returns false in non-git dir", () =>
       Effect.gen(function* () {
         const wt = yield* WorktreeService;
-        // Calls into execProcess(`git rev-parse ...`); requires BunServices.
-        // Asserting the negative case rules out both wiring and behavior.
         const result = yield* wt.isGitRepo(nonGitDir);
         expect(result).toBe(false);
       }),

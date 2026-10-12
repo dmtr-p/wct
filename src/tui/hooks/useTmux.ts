@@ -49,7 +49,7 @@ export function useTmux() {
             );
             paneMap.set(session.name, result);
           } catch {
-            // Ignore pane fetch errors
+            // A failed session must not prevent refreshing other sessions' panes.
           }
         }),
       );

@@ -47,6 +47,7 @@ src/
 │   └── validator.ts      # Validation helpers and path-aware error rendering
 ├── effect/
 │   ├── runtime.ts        # Bun runtime helpers and BunServices provisioning
+│   ├── service-context.ts # Capture service dependencies while preserving caller settings
 │   ├── services.ts       # Live service bundle provided to the app
 │   └── shutdown-worker.ts # Independent shutdown execution and outcome persistence
 ├── services/
@@ -64,6 +65,9 @@ src/
 │   ├── pr-merge-service.ts # Merge eligibility, confirmation snapshots, and submission
 │   ├── project-registration.ts # Registering a repo in the multi-repo registry
 │   ├── copy.ts           # File copying utilities
+│   ├── ignored-files.ts  # Gitignored regular-file discovery and eligibility checks
+│   ├── include-copy-state.ts # Persistent retry state for initial include copying
+│   ├── worktree-include.ts # Root .worktreeinclude matching with Git ignore syntax
 │   ├── command-runner.ts # Sequential shell command execution shared by setup and down
 │   ├── process.ts        # Effect-based process spawning (execProcess, runProcess)
 │   ├── setup-service.ts  # Effect service for setup command execution
@@ -82,7 +86,12 @@ src/
 │   ├── pr-status.ts       # Compact PR status presentation
 │   ├── session-utils.ts   # Safe tmux client handoff decisions and start action messages
 │   ├── workspace-warning.ts # Shared lifecycle warning messages
-│   ├── input/             # Mode-specific keyboard and guarded mouse routing
+│   ├── input/             # Mode-specific keyboard, terminal parsing, and guarded mouse routing
+│   │   ├── confirm-kill.ts # Kill confirmation input
+│   │   ├── expanded.ts    # Expanded branch detail input
+│   │   ├── mouse.ts       # Mouse sequence parsing and tree hit-testing
+│   │   ├── navigate.ts    # Tree navigation and action input
+│   │   └── terminal-input.ts # Buffered terminal input shared with Ink
 │   ├── components/
 │   │   ├── TreeView.tsx   # Repo list with expandable worktree details
 │   │   ├── tree-row.ts    # Shared selected-row styling and width-aware fill

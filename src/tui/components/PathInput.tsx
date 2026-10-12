@@ -26,7 +26,6 @@ export function expandTilde(path: string): string {
   return path;
 }
 
-/** Split input into parent directory and prefix for filtering */
 export function getParentAndPrefix(input: string): {
   parent: string;
   prefix: string;
@@ -82,7 +81,6 @@ export function PathInput({
   const cancelledRef = useRef<{ cancelled: boolean } | null>(null);
   const maxVisible = 5;
 
-  // Debounced directory listing
   const loadCompletions = useCallback((inputValue: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (cancelledRef.current) cancelledRef.current.cancelled = true;
@@ -129,7 +127,6 @@ export function PathInput({
     };
   }, [value, isFocused, loadCompletions]);
 
-  // Filter completions by prefix
   const expanded = expandTilde(value);
   const { prefix } = getParentAndPrefix(expanded);
   const filtered = prefix
@@ -149,7 +146,6 @@ export function PathInput({
     [onChange, value, editing],
   );
 
-  // Clamp selection when filtered list shrinks
   useEffect(() => {
     if (selectedCompletionIndex >= filtered.length && filtered.length > 0) {
       setSelectedCompletionIndex(filtered.length - 1);

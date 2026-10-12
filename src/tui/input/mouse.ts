@@ -214,12 +214,8 @@ export type MouseAction =
   | { kind: "select"; itemIndex: number; rowIndex: number };
 
 /**
- * Map a 1-based SGR row to a clickable/hoverable tree item, shared by
- * `resolveMouseAction` (press) and `resolveHoverItemIndex` (move) so the two
- * can never disagree about which row a given terminal row hits. Returns
- * `null` for chrome, lifecycle rows (Pending Workspace / Lifecycle Progress Row),
- * and inert rows (pane headers) — the same predicate keyboard navigation
- * uses, so a pointer can't select/hover a row arrow keys refuse.
+ * Share row resolution for press and hover events. Exclude chrome and rows
+ * that keyboard navigation cannot select.
  */
 function hitTestTreeRow(
   row: number,
@@ -245,15 +241,8 @@ function hitTestTreeRow(
 }
 
 /**
- * Resolve a parsed mouse event into a pure description of what should happen,
- * testable without React. This tree dispatcher acts only in Navigate and
- * Expanded modes; other modes resolve to `none`. Modal components handle
- * their own mouse events through `useGuardedInput` and `MouseClickable`.
- *
- * - Wheel → scroll only; the selection is untouched and may scroll out of view.
- * - Left-click → hit-test the row under the cursor and select it. Activation
- *   is resolved separately after double-click detection. Non-left buttons and
- *   clicks on chrome, lifecycle rows or inert pane headers are `none`.
+ * Wheel scrolling preserves selection. Click activation follows separate
+ * double-click detection; modal components route their own mouse events.
  */
 export function resolveMouseAction(
   event: MouseEvent,
@@ -283,11 +272,6 @@ export function resolveMouseAction(
   return { kind: "select", itemIndex: hit.itemIndex, rowIndex: hit.rowIndex };
 }
 
-/**
- * The tree-item index currently under the pointer, for hover styling. `null`
- * for anything that isn't a `move` event over a selectable row (chrome,
- * lifecycle rows, inert pane headers, or a mode that doesn't act on mouse).
- */
 export function resolveHoverItemIndex(
   event: MouseEvent,
   ctx: MouseActionContext,

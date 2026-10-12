@@ -32,16 +32,7 @@ export interface PrListItem {
   rollupState: "success" | "failure" | "pending" | "unknown" | null;
 }
 
-/**
- * Aggregates a `statusCheckRollup` array from `gh pr list --json` into a
- * single rollup state, matching the rules GitHub's web UI uses:
- *
- * - Any FAILURE / TIMED_OUT / STARTUP_FAILURE → "failure"
- * - Else any IN_PROGRESS / QUEUED / PENDING / ACTION_REQUIRED → "pending"
- * - Else any CANCELLED / unknown → "unknown"
- * - Else all SUCCESS / SKIPPED / NEUTRAL → "success"
- * - Empty array → null
- */
+/** Cancelled or unrecognized checks prevent a successful rollup. */
 export function computeRollup(
   checks: unknown[],
 ): "success" | "failure" | "pending" | "unknown" | null {

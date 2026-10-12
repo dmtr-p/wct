@@ -17,43 +17,24 @@ const SCHEMA_VERSION_SQL = `CREATE TABLE IF NOT EXISTS schema_version (
 )`;
 
 /**
- * Append-only migrations table. Index N (0-based) is the SQL applied to
- * advance from version N to version N+1.
- *
- * Rules:
- *  - Never edit, reorder, or delete an entry — that breaks DBs already at
- *    that version.
- *  - Add each new migration by appending one SQL string.
- *  - Each statement must be idempotent against a partially-applied schema
- *    (use `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN` only
- *    after a presence check via PRAGMA, etc.) so legacy DBs that pre-date
- *    schema_version converge cleanly on first open.
- *  - The migration runner records `(version, applied_at)` in
- *    `schema_version` after each statement succeeds; the whole upgrade
- *    runs inside a single sqlite transaction, so a mid-upgrade crash
- *    rolls back to the previous version.
- *
- * `TARGET_SCHEMA_VERSION` is derived from this array's length — do not
- * hand-edit it.
+ * Append only: index N advances schema version N to N+1. Editing, reordering,
+ * or deleting entries breaks databases that have already applied them.
+ * Statements must tolerate preexisting tables in databases without schema_version.
+ * The runner records each successful version within one upgrade transaction.
  */
 export const MIGRATIONS: readonly string[] = [
-  // v1 — initial registry schema. Matches the legacy CREATE TABLE IF NOT
-  // EXISTS shape so DBs that pre-date schema_version (and therefore are
-  // recorded as v0) re-converge cleanly without a destructive migration.
   `CREATE TABLE IF NOT EXISTS registry (
     id TEXT PRIMARY KEY,
     repo_path TEXT NOT NULL UNIQUE,
     project TEXT NOT NULL,
     created_at INTEGER NOT NULL
   )`,
-  // v2 — project-keyed PR payloads and fetch metadata.
   `CREATE TABLE IF NOT EXISTS pr_cache (
     project TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     fetched_at INTEGER NOT NULL,
     last_error TEXT
   )`,
-  // v3 — Workspace Identity, never a display name, owns association state.
   `CREATE TABLE IF NOT EXISTS workspace_pr_cache (
     repo_path TEXT NOT NULL,
     branch TEXT NOT NULL,
@@ -62,7 +43,6 @@ export const MIGRATIONS: readonly string[] = [
     last_error TEXT,
     PRIMARY KEY (repo_path, branch)
   )`,
-  // v4 — a user choice or wct open --pr survives refreshes and restarts.
   `CREATE TABLE IF NOT EXISTS workspace_pr_association (
     repo_path TEXT NOT NULL,
     branch TEXT NOT NULL,
@@ -70,14 +50,12 @@ export const MIGRATIONS: readonly string[] = [
     pr_number INTEGER NOT NULL,
     PRIMARY KEY (repo_path, branch)
   )`,
-  // v5 — the Open modal has its own open-only source.
   `CREATE TABLE IF NOT EXISTS open_pr_cache (
     repo_path TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     fetched_at INTEGER NOT NULL,
     last_error TEXT
   )`,
-  // v6 — repository-keyed caches replace the unused display-name cache.
   `DROP TABLE IF EXISTS pr_cache`,
 ];
 
@@ -94,7 +72,6 @@ export function getCurrentSchemaVersion(db: Database): number {
 export function runMigrations(db: Database): void {
   db.run(SCHEMA_VERSION_SQL);
 
-  // Fast path: skip the write lock when already at target version.
   const current = getCurrentSchemaVersion(db);
   if (current >= TARGET_SCHEMA_VERSION) return;
 
@@ -117,11 +94,7 @@ export function runMigrations(db: Database): void {
   apply.immediate();
 }
 
-/**
- * Open the wct database, run migrations, execute `f`, then close the DB.
- * The `errorCode` parameter lets each consumer attach its own error tag
- * (e.g. `"registry_error"`) while sharing the migration/path logic.
- */
+/** Consumers choose the command error code for database failures. */
 export function withDb<A>(
   errorCode: ErrorCode,
   operation: string,

@@ -233,12 +233,12 @@ interface ResolveRecoveredSelectionIndexOptions {
   prevTree: TreeItem[];
   treeItems: TreeItem[];
   prevSelectionId: string | null;
-  /** Parent branch identity of the previously selected detail row (see `treeItemParentId`). */
+  /** Parent item identity of the previously selected detail row. */
   prevSelectionParentId?: string | null;
   /**
-   * Required for the `prevSelectionParentId` fallback, which only applies
-   * when that parent is under an active lifecycle — an ordinary disappearance
-   * (a killed pane, a closed PR) still clamps to the adjacent row instead.
+   * Pane recovery falls back to the worktree only during an active lifecycle;
+   * an ordinary pane disappearance clamps to the adjacent row. PR and candidate
+   * details can recover to their enclosing items without an active lifecycle.
    */
   lifecycle?: LifecycleState;
   selectedIndex: number;
@@ -565,11 +565,8 @@ function pendingWorkspacesByRepoIndex(
 }
 
 /**
- * Build the visual-row model — one entry per terminal row — from the logical
- * `items` list. Row order must replicate `TreeView`'s render exactly: repo,
- * optional no-worktrees row, worktree, optional stats row, detail rows, then
- * each repo's Pending Workspace rows after its last row-emitting item (or at
- * the very bottom of the tree for empty expanded repos).
+ * Each entry must occupy one terminal row in TreeView, including wrapped PR
+ * text and lifecycle rows, so viewport slicing and mouse hit-testing agree.
  */
 export function buildTreeRows({
   items,
@@ -759,10 +756,7 @@ export function scrollToKeepVisible(
 }
 
 /**
- * Rows carry a repo index rather than a path, so the identity is matched by
- * resolving that index back to its main repository path — two repositories
- * sharing a project display name therefore cannot borrow each other's
- * progress row.
+ * Match the main repository path: project display names can collide.
  */
 export function lifecycleProgressRowIndex(
   rows: TreeRow[],
@@ -789,11 +783,8 @@ export interface LifecycleReveal {
 }
 
 /**
- * The first active operation not yet revealed and whose progress row exists
- * wins; an operation with no row yet (filtered out by the search) is left
- * unrevealed so it still gets its one reveal once the filter clears. One-shot
- * by construction: once a key is in `revealed`, later phase events, teardown,
- * and reconciliation all find it there and never touch the offset again.
+ * Leave filtered-out operations unrevealed until their rows exist. Recording
+ * returned keys in `revealed` prevents later phase events from moving the viewport.
  */
 export function resolveLifecycleReveal({
   rows,
@@ -836,9 +827,7 @@ export function resolveLifecycleReveal({
 }
 
 /**
- * Shared by keyboard navigation and mouse hit-testing, so a click can never
- * select a row that follow-up keys treat inconsistently. Add any future inert
- * row kind here, never at the call sites.
+ * Keep inert row kinds here so keyboard and mouse selection use the same rules.
  */
 export function isInertTreeItem(item: TreeItem | undefined): boolean {
   return item?.type === "detail" && item.detailKind === "pane-header";
@@ -867,10 +856,9 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
 }
 
 /**
- * A detail row's parent branch identity (`null` for anything else). Selection
- * recovery needs this because a lifecycle suppresses a Workspace's detail
- * rows, so the selected row can vanish and the cursor must land on its
- * Workspace instead of wherever the index shift left it.
+ * Return the enclosing PR, candidate group, or worktree identity for detail
+ * rows. Recovery uses it when collapsing details or starting a lifecycle hides
+ * the selected row; other item kinds have no parent fallback.
  */
 export function treeItemParentId(
   item: TreeItem,

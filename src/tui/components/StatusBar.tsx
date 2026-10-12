@@ -91,17 +91,9 @@ function getHints(
 }
 
 /**
- * The number of terminal rows StatusBar renders for a mode — the single
- * source App.tsx's viewport budget consumes, co-located with the render
- * branches below so the two cannot drift. The count is a pure function of the
- * mode branch and repoError presence: every line renders with wrap="truncate"
- * (and the divider is width-repeated), so width never changes the row count,
- * and searchQuery/selectedPaneRow/hasClient only change text, never lines.
- *
- * Normal navigation has no shortcut footer; it only reserves a row when a
- * repository error is visible. Form modals use that same virtual count, so
- * opening one does not clamp or re-anchor the scroll position. Confirmation
- * modals are part of the tree row model and therefore reserve no footer rows.
+ * App uses this count to budget the tree viewport. Truncated lines make it
+ * independent of terminal width. Form modals retain navigation's virtual count
+ * to preserve scroll position; confirmations are counted in the tree model.
  */
 export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
   switch (mode.type) {
@@ -122,20 +114,14 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
     case "UpModal":
     case "AddProjectModal":
       return hasRepoError ? 1 : 0;
-    // The normal tree only reserves room for an error; shortcuts live in the
-    // on-demand shortcuts modal.
     default:
       return hasRepoError ? 1 : 0;
   }
 }
 
 /**
- * A single bottom-chrome line. App.tsx budgets bottomChromeRows assuming each
- * chrome line occupies EXACTLY one terminal row (see statusBarRowCount), so a
- * line wrapping in a narrow terminal would overflow the viewport and misalign
- * mouse hit-testing. Rendering every line through this wrapper — never a raw
- * <Text> — enforces wrap="truncate" structurally: the prop is applied AFTER
- * the spread, so no call site can override it.
+ * Force truncation after spreading props: wrapping would invalidate the
+ * viewport row count and misalign mouse hit-testing.
  */
 function ChromeLine(props: ComponentProps<typeof Text>) {
   return <Text {...props} wrap="truncate" />;

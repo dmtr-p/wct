@@ -72,10 +72,7 @@ export interface PrCacheServiceApi {
 export const PrCacheService =
   Context.Service<PrCacheServiceApi>("wct/PrCacheService");
 
-// ---------------------------------------------------------------------------
-// Internal SQL helpers — exported so tests can call them directly on a
-// `:memory:` Database without going through `withDb`.
-// ---------------------------------------------------------------------------
+// Export SQL helpers so tests can use an in-memory database without withDb.
 
 export function sqlInvalidate(db: Database, repoPath: string): void {
   db.transaction(() => {
@@ -274,10 +271,6 @@ export function sqlSetOpenPrs(
     ],
   );
 }
-
-// ---------------------------------------------------------------------------
-// Live service implementation
-// ---------------------------------------------------------------------------
 
 function prCacheDb<A>(
   operation: string,

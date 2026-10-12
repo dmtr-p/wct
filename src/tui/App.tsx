@@ -471,24 +471,11 @@ export function App() {
     confirmationWidth,
   ]);
 
-  // Bottom chrome: optional tmux/action error line (mutually exclusive, so at
-  // most one row) + the StatusBar's rows — counted by statusBarRowCount, the
-  // helper co-located with StatusBar's render branches so the budget cannot
-  // drift from what it renders. Every chrome line renders with wrap="truncate"
-  // AND is collapsed to a single line (toSingleLine), so each one is exactly
-  // one terminal row at any width and for any message — otherwise the budget
-  // would under-count, and the overflowing layout would misalign mouse
-  // hit-testing.
-  //
-  // Form modals replace the StatusBar but budget the SAME virtual row count
-  // as the now-hidden default shortcut footer (zero, or one repo-error row):
-  // viewportRows must not change when a modal opens, or the clamp/keep-visible
-  // effects would rewrite a wheel-scrolled offset the user expects back on
-  // cancel. Confirmation modals are anchored inside the tree's visual-row
-  // model. A form modal being taller than the budgeted chrome is
-  // absorbed by the tree box's overflowY="hidden" clipping (see the render
-  // below), which keeps the modal fully on-screen without inflating the
-  // viewport.
+  // Errors and PR outcomes each occupy one truncated terminal row. StatusBar
+  // owns its row count so viewport budgeting follows its render branches.
+  // Form modals retain the navigation footer's virtual count to preserve wheel
+  // scroll position on cancel; the tree box clips any excess modal height.
+  // Confirmation rows are counted inside the tree model instead.
   const bottomChromeRowsForRepoError = (hasRepoError: boolean) =>
     statusBarRowCount(mode, hasRepoError) +
     (tmuxError || actionError ? 1 : 0) +

@@ -5,11 +5,7 @@ interface Props {
   changedFiles: number;
 }
 
-/**
- * The secondary stats line rendered beneath an expanded worktree row (e.g.
- * `↑1 ~3`). Split out of `WorktreeItem` so the visual-row model is terminal-row
- * accurate: one React element per terminal row.
- */
+/** Keep one terminal row so tree windowing and mouse hit-testing agree. */
 export function WorktreeStatsRow({ sync, changedFiles }: Props) {
   const hasSync = sync && sync !== "✓";
   return (

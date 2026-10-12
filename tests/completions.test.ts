@@ -546,8 +546,8 @@ describe("resolved profile completions", () => {
             fixture.env,
           );
           expect(result.stdout.toString().trim().split("\n")).toEqual([
-            "project profile",
-            "123: special",
+            "project\\ profile",
+            "123:\\ special",
           ]);
           expect(result.stderr.toString()).toBe("");
         }
@@ -601,15 +601,21 @@ describe("resolved profile completions", () => {
       join(fixture.repo, ".wct.yaml"),
       `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
     );
+    mkdirSync(join(fixture.linked, "two words"));
     try {
       const result = runBashCompletion(
         ["wct", "open", "--profile", ""],
         fixture.nested,
         fixture.env,
       );
-      expect(result.stdout.toString()).toBe(
-        names.map((name) => `${name}\n`).join(""),
-      );
+      const quoted = Bun.spawnSync([
+        "bash",
+        "-c",
+        'printf "%q\n" "$@"',
+        "bash",
+        ...names,
+      ]);
+      expect(result.stdout.toString()).toBe(quoted.stdout.toString());
       expect(result.stderr.toString()).toBe("");
       expect(existsSync(join(fixture.nested, "injected"))).toBe(false);
       const prefixed = runBashCompletion(
@@ -617,7 +623,7 @@ describe("resolved profile completions", () => {
         fixture.linked,
         fixture.env,
       );
-      expect(prefixed.stdout.toString()).toBe("two words\n");
+      expect(prefixed.stdout.toString()).toBe("two\\ words\n");
     } finally {
       rmSync(fixture.dir, { recursive: true, force: true });
     }

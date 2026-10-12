@@ -292,14 +292,18 @@ function generateBashCompletions(): string {
         : option.completionValues;
       lines.push(`            if [[ ${prevCheck} ]]; then`);
       if (option.completionValues === "__wct_profiles") {
+        // Filename completion can append a slash to a profile matching a directory.
         lines.push("                COMPREPLY=()");
-        lines.push("                local profile");
+        lines.push("                local profile quoted_profile");
         lines.push("                while IFS= read -r -d '' profile; do");
         lines.push(
-          '                    [[ "$profile" == "$cur"* ]] && COMPREPLY+=("$profile")',
+          '                    [[ "$profile" == "$cur"* ]] || continue',
         );
+        lines.push(
+          '                    printf -v quoted_profile "%q" "$profile"',
+        );
+        lines.push('                    COMPREPLY+=("$quoted_profile")');
         lines.push("                done < <(_wct_profiles)");
-        lines.push("                compopt -o filenames 2>/dev/null || true");
       } else {
         lines.push(
           `                COMPREPLY=($(compgen -W "$(${bashFunc})" -- "$cur"))`,

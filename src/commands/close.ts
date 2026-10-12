@@ -84,9 +84,7 @@ export function closeCommand(
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
 
     const currentSession = yield* TmuxService.use(
@@ -104,11 +102,9 @@ export function closeCommand(
         service.findWorktreeByBranch(branch),
       );
       if (!worktree) {
-        return yield* Effect.fail(
-          commandError(
-            "worktree_not_found",
-            `No worktree found for branch '${branch}'`,
-          ),
+        return yield* commandError(
+          "worktree_not_found",
+          `No worktree found for branch '${branch}'`,
         );
       }
 
@@ -235,11 +231,9 @@ export function closeCommand(
         }
 
         if (result.status === "blocked_by_changes") {
-          return yield* Effect.fail(
-            commandError(
-              "worktree_remove_failed",
-              "Failed to force remove worktree with uncommitted changes.",
-            ),
+          return yield* commandError(
+            "worktree_remove_failed",
+            "Failed to force remove worktree with uncommitted changes.",
           );
         }
       }

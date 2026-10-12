@@ -406,37 +406,32 @@ function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
     const { branch, existing = false, base, cwd, pr, profile } = options;
 
     if (pr && branch) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Cannot use --pr together with a branch argument",
-        ),
+      return yield* commandError(
+        "invalid_options",
+        "Cannot use --pr together with a branch argument",
       );
     }
 
     if (pr && base) {
-      return yield* Effect.fail(
-        commandError("invalid_options", "Cannot use --pr together with --base"),
+      return yield* commandError(
+        "invalid_options",
+        "Cannot use --pr together with --base",
       );
     }
 
     if (pr && existing) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Cannot use --pr together with --existing",
-        ),
+      return yield* commandError(
+        "invalid_options",
+        "Cannot use --pr together with --existing",
       );
     }
 
     if (pr) {
       const prNumber = parsePrArg(pr);
       if (prNumber === null) {
-        return yield* Effect.fail(
-          commandError(
-            "pr_error",
-            `Invalid --pr value: '${pr}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
-          ),
+        return yield* commandError(
+          "pr_error",
+          `Invalid --pr value: '${pr}'\n\nExpected a PR number or GitHub URL (e.g. 123 or https://github.com/user/repo/pull/123)`,
         );
       }
 
@@ -444,11 +439,9 @@ function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
         (service) => service.isGhInstalled,
       );
       if (!ghInstalled) {
-        return yield* Effect.fail(
-          commandError(
-            "gh_not_installed",
-            "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
-          ),
+        return yield* commandError(
+          "gh_not_installed",
+          "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
         );
       }
 
@@ -493,9 +486,7 @@ function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
     }
 
     if (!branch) {
-      return yield* Effect.fail(
-        commandError("missing_branch_arg", "Missing branch name"),
-      );
+      return yield* commandError("missing_branch_arg", "Missing branch name");
     }
 
     return { branch, existing, base, cwd, profile };
@@ -524,17 +515,16 @@ function openImpl(
       service.isGitRepo(cwd),
     );
     if (!repo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
 
     const mainRepoPath = yield* WorktreeService.use((service) =>
       service.getMainRepoPath(cwd),
     );
     if (!mainRepoPath) {
-      return yield* Effect.fail(
-        commandError("worktree_error", "Could not determine repository root"),
+      return yield* commandError(
+        "worktree_error",
+        "Could not determine repository root",
       );
     }
 
@@ -556,11 +546,9 @@ function openImpl(
       ...(profileName ? { profileName } : {}),
     });
     if (existing && base) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Options --existing and --base cannot be used together",
-        ),
+      return yield* commandError(
+        "invalid_options",
+        "Options --existing and --base cannot be used together",
       );
     }
 
@@ -569,11 +557,9 @@ function openImpl(
         service.branchExists(base, cwd),
       );
       if (!baseExists) {
-        return yield* Effect.fail(
-          commandError(
-            "base_branch_not_found",
-            `Base branch '${base}' does not exist`,
-          ),
+        return yield* commandError(
+          "base_branch_not_found",
+          `Base branch '${base}' does not exist`,
         );
       }
     }
@@ -611,13 +597,11 @@ function openImpl(
       service.createWorktree(worktreePath, branch, existing, base, cwd),
     );
     if (worktreeResult._tag === "PathConflict") {
-      return yield* Effect.fail(
-        commandError(
-          "worktree_error",
-          worktreeResult.existingBranch
-            ? `Path already exists for branch '${worktreeResult.existingBranch}', not '${branch}'`
-            : `Path '${worktreePath}' already exists and is not a registered worktree for '${branch}'`,
-        ),
+      return yield* commandError(
+        "worktree_error",
+        worktreeResult.existingBranch
+          ? `Path already exists for branch '${worktreeResult.existingBranch}', not '${branch}'`
+          : `Path '${worktreePath}' already exists and is not a registered worktree for '${branch}'`,
       );
     }
     yield* emitReporter(reporter, {
@@ -861,11 +845,9 @@ function resolveTargetImpl(
     const { path, branch } = options;
 
     if (path && branch) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "--path and --branch are mutually exclusive",
-        ),
+      return yield* commandError(
+        "invalid_options",
+        "--path and --branch are mutually exclusive",
       );
     }
 
@@ -877,11 +859,9 @@ function resolveTargetImpl(
       );
 
       if (!match) {
-        return yield* Effect.fail(
-          commandError(
-            "worktree_not_found",
-            `No worktree found for branch '${branch}'`,
-          ),
+        return yield* commandError(
+          "worktree_not_found",
+          `No worktree found for branch '${branch}'`,
         );
       }
 
@@ -917,9 +897,7 @@ function upImpl(
       service.isGitRepo(targetPath),
     );
     if (!isRepo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
     const worktreePath = yield* WorktreeService.use((service) =>
       service.getWorktreeRoot(targetPath),
@@ -936,16 +914,15 @@ function upImpl(
     ]);
 
     if (!mainRepoPath) {
-      return yield* Effect.fail(
-        commandError("worktree_error", "Could not determine repository root"),
+      return yield* commandError(
+        "worktree_error",
+        "Could not determine repository root",
       );
     }
     if (!branch) {
-      return yield* Effect.fail(
-        commandError(
-          "detached_head",
-          "Could not determine current branch (detached HEAD is not supported)",
-        ),
+      return yield* commandError(
+        "detached_head",
+        "Could not determine current branch (detached HEAD is not supported)",
       );
     }
 
@@ -1041,16 +1018,18 @@ function prepareShutdown(worktreePath: string, profile?: string) {
       WorktreeService.use((service) => service.getCurrentBranch(worktreePath)),
     ]);
     if (!mainRepoPath) {
-      return yield* Effect.fail(
-        commandError("worktree_error", "Could not determine repository root"),
+      return yield* commandError(
+        "worktree_error",
+        "Could not determine repository root",
       );
     }
     const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
       commandError("config_error", error.message, error),
     );
     if (profile && !config.profiles?.[profile]) {
-      return yield* Effect.fail(
-        commandError("config_error", `Profile '${profile}' not found`),
+      return yield* commandError(
+        "config_error",
+        `Profile '${profile}' not found`,
       );
     }
     // Detached HEAD cannot select a branch-matched profile.
@@ -1168,11 +1147,9 @@ function runDownScripts(
             `${result.name}${result._tag === "OptionalFailed" ? " (optional)" : ""}: ${result.error ?? "Unknown error"}`,
         )
         .join("; ");
-      return yield* Effect.fail(
-        commandError(
-          "down_failed",
-          `Down scripts failed; tmux is stopped and the worktree is preserved: ${details}`,
-        ),
+      return yield* commandError(
+        "down_failed",
+        `Down scripts failed; tmux is stopped and the worktree is preserved: ${details}`,
       );
     }
     for (const result of results) {
@@ -1297,9 +1274,7 @@ function downImpl(
       service.isGitRepo(targetPath),
     );
     if (!isRepo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
     const worktreePath = yield* WorktreeService.use((service) =>
       service.getWorktreeRoot(targetPath),
@@ -1315,8 +1290,9 @@ function downImpl(
       reporter,
     );
     if (result.operation !== "down") {
-      return yield* Effect.fail(
-        commandError("unexpected_error", "Unexpected shutdown result"),
+      return yield* commandError(
+        "unexpected_error",
+        "Unexpected shutdown result",
       );
     }
     return result;
@@ -1364,11 +1340,9 @@ function retryCloseRemovalImpl(
       !previous.attempts.remove.ok ||
       previous.attempts.remove.value._tag !== "BlockedByChanges"
     ) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Removal retry requires a close result blocked by changes",
-        ),
+      return yield* commandError(
+        "invalid_options",
+        "Removal retry requires a close result blocked by changes",
       );
     }
     const cwd =
@@ -1377,11 +1351,9 @@ function retryCloseRemovalImpl(
         service.getMainRepoPath(previous.worktreePath),
       ));
     if (!cwd) {
-      return yield* Effect.fail(
-        commandError(
-          "worktree_error",
-          "Cannot resolve repository for removal retry",
-        ),
+      return yield* commandError(
+        "worktree_error",
+        "Cannot resolve repository for removal retry",
       );
     }
     const result = yield* removeWorkspace(
@@ -1444,9 +1416,7 @@ function closeImpl(
       }
     }
     if (!isRepo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
 
     if (!missing) {
@@ -1474,8 +1444,9 @@ function closeImpl(
       reporter,
     );
     if (result.operation !== "close") {
-      return yield* Effect.fail(
-        commandError("unexpected_error", "Unexpected shutdown result"),
+      return yield* commandError(
+        "unexpected_error",
+        "Unexpected shutdown result",
       );
     }
     return result;

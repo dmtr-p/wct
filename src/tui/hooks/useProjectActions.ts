@@ -77,8 +77,8 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         (candidate) => candidate.repoPath === repoPath,
       );
       if (!repo) {
-        return yield* Effect.fail(
-          toWctError(new Error(`Project '${project}' is no longer registered`)),
+        return yield* toWctError(
+          new Error(`Project '${project}' is no longer registered`),
         );
       }
 
@@ -94,11 +94,9 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         catch: toWctError,
       });
       if (!canProceed) {
-        return yield* Effect.fail(
-          toWctError(
-            new Error(
-              "Cannot safely remove the project because the active tmux client could not be moved away",
-            ),
+        return yield* toWctError(
+          new Error(
+            "Cannot safely remove the project because the active tmux client could not be moved away",
           ),
         );
       }
@@ -117,13 +115,11 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         { concurrency: "unbounded" },
       );
       if (failures.length > 0) {
-        return yield* Effect.fail(
-          toWctError(
-            new Error(
-              `Failed to stop all sessions for '${project}': ${failures
-                .map(({ branch, error }) => `${branch}: ${error.message}`)
-                .join("; ")}`,
-            ),
+        return yield* toWctError(
+          new Error(
+            `Failed to stop all sessions for '${project}': ${failures
+              .map(({ branch, error }) => `${branch}: ${error.message}`)
+              .join("; ")}`,
           ),
         );
       }
@@ -135,11 +131,9 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
 
       const refreshedRepos = yield* refresh;
       if (refreshedRepos === null) {
-        return yield* Effect.fail(
-          toWctError(
-            new Error(
-              "Project was removed from the registry, but validation refresh failed — showing the last known project state",
-            ),
+        return yield* toWctError(
+          new Error(
+            "Project was removed from the registry, but validation refresh failed — showing the last known project state",
           ),
         );
       }

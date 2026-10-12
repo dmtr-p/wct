@@ -145,6 +145,9 @@ services. Preserve these types when defining command and service interfaces.
 
 Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
 Tagged application errors use `Data.TaggedError`.
+Yield tagged errors directly inside `Effect.gen`, for example
+`return yield* commandError("not_git_repo", "Not a git repository")`.
+Use `Effect.fail` when returning a failed Effect outside a generator.
 
 | Purpose | API |
 | --- | --- |

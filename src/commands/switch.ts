@@ -18,20 +18,16 @@ export function switchCommand(branch: string) {
   return Effect.gen(function* () {
     const isRepo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!isRepo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
 
     const worktree = yield* WorktreeService.use((service) =>
       service.findWorktreeByBranch(branch),
     );
     if (!worktree) {
-      return yield* Effect.fail(
-        commandError(
-          "worktree_not_found",
-          `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
-        ),
+      return yield* commandError(
+        "worktree_not_found",
+        `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
       );
     }
 
@@ -40,11 +36,9 @@ export function switchCommand(branch: string) {
       service.sessionExists(sessionName),
     );
     if (!sessionPresent) {
-      return yield* Effect.fail(
-        commandError(
-          "tmux_error",
-          `No tmux session '${sessionName}' for branch '${branch}'. Try: wct up (from the worktree directory)`,
-        ),
+      return yield* commandError(
+        "tmux_error",
+        `No tmux session '${sessionName}' for branch '${branch}'. Try: wct up (from the worktree directory)`,
       );
     }
 

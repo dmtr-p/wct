@@ -19,20 +19,16 @@ export function cdCommand(
   return Effect.gen(function* () {
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", "Not a git repository"),
-      );
+      return yield* commandError("not_git_repo", "Not a git repository");
     }
 
     const worktree = yield* WorktreeService.use((service) =>
       service.findWorktreeByBranch(branch),
     );
     if (!worktree) {
-      return yield* Effect.fail(
-        commandError(
-          "worktree_not_found",
-          `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
-        ),
+      return yield* commandError(
+        "worktree_not_found",
+        `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
       );
     }
 

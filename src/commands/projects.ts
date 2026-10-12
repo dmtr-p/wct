@@ -121,11 +121,9 @@ export function projectsRemoveCommand(
     );
 
     if (!registryItem) {
-      return yield* Effect.fail(
-        commandError(
-          "registry_error",
-          `Project not found in registry: ${targetPath}`,
-        ),
+      return yield* commandError(
+        "registry_error",
+        `Project not found in registry: ${targetPath}`,
       );
     }
 

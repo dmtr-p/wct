@@ -22,11 +22,9 @@ function send(message: ShutdownMessage) {
 export function runShutdownWorker(directory: string) {
   return Effect.gen(function* () {
     if (!process.send || !directory) {
-      return yield* Effect.fail(
-        commandError(
-          "invalid_options",
-          "Shutdown worker requires a parent IPC channel",
-        ),
+      return yield* commandError(
+        "invalid_options",
+        "Shutdown worker requires a parent IPC channel",
       );
     }
     const request = yield* Effect.tryPromise({

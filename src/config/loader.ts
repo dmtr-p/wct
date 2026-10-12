@@ -151,7 +151,7 @@ export function loadWorkspaceConfig(
           (result): result is { ok: false; error: ConfigError } => !result.ok,
         )
         .map((result) => result.error.message);
-      return yield* Effect.fail(configError(loadErrors.join("\n")));
+      return yield* configError(loadErrors.join("\n"));
     }
 
     const projectConfig = projectResult.file;
@@ -166,7 +166,7 @@ export function loadWorkspaceConfig(
     const validation = validateConfig(merged);
 
     if (!validation.valid) {
-      return yield* Effect.fail(configError(validation.errors.join("\n")));
+      return yield* configError(validation.errors.join("\n"));
     }
 
     return {

@@ -418,8 +418,9 @@ export const liveGitHubService: GitHubService = GitHubService.of({
         pr.headRepo = data.headRepository?.name;
 
         if (!pr.branch) {
-          return yield* Effect.fail(
-            commandError("pr_error", `PR #${prNumber} has no head branch`),
+          return yield* commandError(
+            "pr_error",
+            `PR #${prNumber} has no head branch`,
           );
         }
 
@@ -456,11 +457,9 @@ export const liveGitHubService: GitHubService = GitHubService.of({
           return;
         }
 
-        return yield* Effect.fail(
-          commandError(
-            "pr_error",
-            `Failed to add remote '${remoteName}': Remote '${remoteName}' already exists with URL '${existingRemote}' (expected ${url})`,
-          ),
+        return yield* commandError(
+          "pr_error",
+          `Failed to add remote '${remoteName}': Remote '${remoteName}' already exists with URL '${existingRemote}' (expected ${url})`,
         );
       }
 

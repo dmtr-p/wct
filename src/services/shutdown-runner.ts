@@ -210,11 +210,9 @@ export function runDetachedShutdown(
     });
     yield* Effect.promise(() => events);
     if (!outcome.ok) {
-      return yield* Effect.fail(
-        commandError(
-          outcome.error.code,
-          `${outcome.error.message} (shutdown result: ${resultPath})`,
-        ),
+      return yield* commandError(
+        outcome.error.code,
+        `${outcome.error.message} (shutdown result: ${resultPath})`,
       );
     }
     return outcome.data;

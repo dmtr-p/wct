@@ -55,8 +55,9 @@ function resolveInputPath(
     );
 
     if (!exists) {
-      return yield* Effect.fail(
-        commandError("invalid_options", `Invalid path: ${resolvedPath}`),
+      return yield* commandError(
+        "invalid_options",
+        `Invalid path: ${resolvedPath}`,
       );
     }
 
@@ -100,8 +101,9 @@ export function registerProject(
     );
 
     if (!repoPath) {
-      return yield* Effect.fail(
-        commandError("not_git_repo", `Not a git repository: ${inputPath}`),
+      return yield* commandError(
+        "not_git_repo",
+        `Not a git repository: ${inputPath}`,
       );
     }
 

@@ -254,7 +254,8 @@ export function resolveConfirmationAnchorItemIndex(
       return (
         repo !== undefined &&
         worktree !== undefined &&
-        workspaceIdentityKey(repo.repoPath, worktree.branch) === mode.workspaceKey
+        workspaceIdentityKey(repo.repoPath, worktree.branch) ===
+          mode.workspaceKey
       );
     });
     return paneIndex === -1 ? null : paneIndex;

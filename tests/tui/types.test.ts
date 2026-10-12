@@ -1,10 +1,16 @@
-import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { describe, expect, test } from "vitest";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";
 
 describe("Mode", () => {
   test("constructs ConfirmKill mode", () => {
-    expect(Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch"))).toEqual({
+    expect(
+      Mode.ConfirmKill(
+        "%1",
+        "shell:1 vim",
+        workspaceIdentityKey("/tmp/myapp", "branch"),
+      ),
+    ).toEqual({
       type: "ConfirmKill",
       paneId: "%1",
       label: "shell:1 vim",

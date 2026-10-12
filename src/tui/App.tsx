@@ -178,9 +178,9 @@ export function App() {
   // render-time capture.
   const modeRef = useRef<Mode>(mode);
   // Manual and validated Open expansion share Workspace Identity Keys.
-  const [expandedWorkspaceKeys, setExpandedWorkspaceKeys] = useState<Set<string>>(
-    new Set(),
-  );
+  const [expandedWorkspaceKeys, setExpandedWorkspaceKeys] = useState<
+    Set<string>
+  >(new Set());
   const [expandedPrKeys, setExpandedPrKeys] = useState<Set<string>>(new Set());
   const setPrExpanded = useCallback((key: string, expanded: boolean) => {
     setExpandedPrKeys((previous) => {
@@ -424,13 +424,7 @@ export function App() {
         lifecycle,
         maxWidth: termCols,
       }),
-    [
-      treeItems,
-      filteredRepos,
-      expandedWorkspaceKeys,
-      lifecycle,
-      termCols,
-    ],
+    [treeItems, filteredRepos, expandedWorkspaceKeys, lifecycle, termCols],
   );
 
   const confirmationMode = isConfirmMode(mode) ? mode : null;
@@ -1307,7 +1301,9 @@ export function App() {
                 !isWorktreeLifecycleActive(wtItem, filteredRepos, lifecycle)
               ) {
                 selectTreeItem(owner);
-                collapseWorktree(workspaceIdentityKey(repo.repoPath, wt.branch));
+                collapseWorktree(
+                  workspaceIdentityKey(repo.repoPath, wt.branch),
+                );
               }
             }
             return;

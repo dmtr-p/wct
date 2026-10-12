@@ -222,7 +222,9 @@ describe("handleExpandedInput", () => {
     });
     handleExpandedInput(ctx, "", { ...noKey, rightArrow: true });
     expect(ctx.selectTreeItem).toHaveBeenCalledWith(0);
-    expect(ctx.expandWorktree).toHaveBeenCalledWith(workspaceIdentityKey("/tmp/repo", "feat"));
+    expect(ctx.expandWorktree).toHaveBeenCalledWith(
+      workspaceIdentityKey("/tmp/repo", "feat"),
+    );
   });
 
   test("right arrow leaves an active Workspace's expansion state unchanged", () => {

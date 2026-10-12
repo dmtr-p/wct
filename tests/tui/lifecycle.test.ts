@@ -268,7 +268,11 @@ describe("Workspace expansion preferences", () => {
   });
 
   test("an errored repository preserves only its own keys even when names collide", () => {
-    const stored = new Set([a, b, workspaceIdentityKey("/repos/a/nested", branch)]);
+    const stored = new Set([
+      a,
+      b,
+      workspaceIdentityKey("/repos/a/nested", branch),
+    ]);
     const unavailable = repos.map((repo, index) => ({
       ...repo,
       worktrees: [],

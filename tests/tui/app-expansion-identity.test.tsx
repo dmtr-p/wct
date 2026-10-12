@@ -99,7 +99,9 @@ describe("App Workspace Identity expansion", () => {
       expect(selectedLine(app.lines())).toContain(BRANCH);
       expect(selectedLine(app.lines())).toContain("▼");
       expect(
-        app.lines().filter((line) => line.includes(BRANCH) && line.includes("▼")),
+        app
+          .lines()
+          .filter((line) => line.includes(BRANCH) && line.includes("▼")),
       ).toHaveLength(1);
 
       await sendKeys(app.stdin, "u");
@@ -118,7 +120,9 @@ describe("App Workspace Identity expansion", () => {
       expect(selectedLine(app.lines())).toContain("▼");
       await sendKeys(app.stdin, LEFT);
       expect(
-        app.lines().filter((line) => line.includes(BRANCH) && line.includes("▼")),
+        app
+          .lines()
+          .filter((line) => line.includes(BRANCH) && line.includes("▼")),
       ).toHaveLength(0);
     } finally {
       app.unmount();

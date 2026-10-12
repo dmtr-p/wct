@@ -1,6 +1,6 @@
-import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
 import { Mode, type TreeItem } from "../../src/tui/types";
 
@@ -68,7 +68,11 @@ describe("resolveStatusBarProps", () => {
   });
 
   test("passes ConfirmKill mode through unchanged", () => {
-    const confirmKill = Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch"));
+    const confirmKill = Mode.ConfirmKill(
+      "%1",
+      "shell:1 vim",
+      workspaceIdentityKey("/tmp/myapp", "branch"),
+    );
 
     expect(
       resolveStatusBarProps({

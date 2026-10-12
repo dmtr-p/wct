@@ -1,4 +1,3 @@
-import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
@@ -6,6 +5,7 @@ import {
   StatusBar,
   statusBarRowCount,
 } from "../../src/tui/components/StatusBar";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
@@ -83,7 +83,11 @@ describe("StatusBar", () => {
 
   test("does not duplicate the anchored kill confirmation", async () => {
     const rendered = await renderStatusBar({
-      mode: Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch")),
+      mode: Mode.ConfirmKill(
+        "%1",
+        "shell:1 vim",
+        workspaceIdentityKey("/tmp/myapp", "branch"),
+      ),
     });
 
     expect(rendered.lastFrame()).toBe("");
@@ -175,7 +179,10 @@ describe("StatusBar", () => {
     }> = [
       { name: "Navigate", mode: Mode.Navigate },
       { name: "Navigate + repoError", mode: Mode.Navigate, repoError: "boom" },
-      { name: "Expanded", mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")) },
+      {
+        name: "Expanded",
+        mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
+      },
       {
         name: "Expanded + repoError",
         mode: Mode.Expanded(workspaceIdentityKey("/tmp/myapp", "branch")),
@@ -186,7 +193,11 @@ describe("StatusBar", () => {
       { name: "Search + repoError", mode: Mode.Search, repoError: "boom" },
       {
         name: "ConfirmKill",
-        mode: Mode.ConfirmKill("%1", "1:0 vim", workspaceIdentityKey("/tmp/myapp", "branch")),
+        mode: Mode.ConfirmKill(
+          "%1",
+          "1:0 vim",
+          workspaceIdentityKey("/tmp/myapp", "branch"),
+        ),
         repoError: "boom",
       },
       {

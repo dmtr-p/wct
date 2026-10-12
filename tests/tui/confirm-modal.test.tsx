@@ -1,10 +1,10 @@
-import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { describe, expect, test, vi } from "vitest";
 import {
   ConfirmModal,
   type ConfirmMode,
   confirmModalRowCount,
 } from "../../src/tui/components/ConfirmModal";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";
 import { renderWithInput, sendKeys } from "./keypress-harness";
 
@@ -15,7 +15,11 @@ describe("ConfirmModal", () => {
     const rendered = await renderWithInput(
       <ConfirmModal
         mode={
-          Mode.ConfirmKill("%1", "shell:1 vim", workspaceIdentityKey("/tmp/myapp", "branch")) as ConfirmMode
+          Mode.ConfirmKill(
+            "%1",
+            "shell:1 vim",
+            workspaceIdentityKey("/tmp/myapp", "branch"),
+          ) as ConfirmMode
         }
         width={60}
         onConfirm={() => {}}

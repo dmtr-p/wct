@@ -174,7 +174,9 @@ describe("handleNavigateInput", () => {
       selectedIndex: 0,
     });
     handleNavigateInput(ctx, "", { ...noKey, rightArrow: true });
-    expect(ctx.expandWorktree).toHaveBeenCalledWith(workspaceIdentityKey("/repos/myproj", "feat"));
+    expect(ctx.expandWorktree).toHaveBeenCalledWith(
+      workspaceIdentityKey("/repos/myproj", "feat"),
+    );
   });
 
   test("right arrow leaves an active Workspace's expansion preference unchanged", () => {

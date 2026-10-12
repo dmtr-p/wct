@@ -45,7 +45,12 @@ export function filterRegularFiles(
       Effect.tryPromise({
         try: async () =>
           (await lstat(join(sourceDir, file))).isFile() ? file : undefined,
-        catch: (error) => error,
+        catch: (error) =>
+          commandError(
+            "worktree_error",
+            error instanceof Error ? error.message : String(error),
+            error,
+          ),
       }),
     { concurrency: 16 },
   ).pipe(

@@ -100,17 +100,14 @@ function loadConfigFileEffect(
         configError(`Failed to read ${filePath}: ${error.message}`, error),
     );
 
-    const parsed = yield* Effect.mapError(
-      Effect.try({
-        try: () => Bun.YAML.parse(content),
-        catch: (error) => error,
-      }),
-      (error) =>
+    const parsed = yield* Effect.try({
+      try: () => Bun.YAML.parse(content),
+      catch: (error) =>
         configError(
           `Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
           error,
         ),
-    );
+    });
 
     return {
       exists: true,

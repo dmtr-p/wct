@@ -310,10 +310,7 @@ function emitReporter(
   event: WorkspaceReporterEvent,
 ) {
   if (!reporter) return Effect.void;
-  return Effect.try({
-    try: () => reporter.event(event),
-    catch: (error) => error,
-  }).pipe(Effect.flatten, Effect.ignoreCause);
+  return Effect.suspend(() => reporter.event(event)).pipe(Effect.ignoreCause);
 }
 
 function emitPhase(

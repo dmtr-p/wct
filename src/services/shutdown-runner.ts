@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import type { ResolvedConfig } from "../config/schema";
-import { commandError, type WctError } from "../errors";
+import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import type {
   WorkspaceCloseResult,
@@ -159,7 +159,7 @@ export function runDetachedShutdown(
     );
     yield* Effect.tryPromise({
       try: () => ready.promise,
-      catch: (error) => error,
+      catch: toWctError,
     }).pipe(
       Effect.timeout("30 seconds"),
       Effect.mapError((error) =>

@@ -1,5 +1,6 @@
 import { dirname, join, normalize } from "node:path";
 import { Effect, FileSystem } from "effect";
+import { commandError } from "../errors";
 import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
 
 export interface CopyResult {
@@ -58,7 +59,12 @@ function expandDirectory(dirPath: string, baseDir: string) {
 
         return files;
       },
-      catch: (error) => error,
+      catch: (error) =>
+        commandError(
+          "worktree_error",
+          error instanceof Error ? error.message : String(error),
+          error,
+        ),
     });
     return files;
   });
@@ -80,7 +86,12 @@ function expandGlob(pattern: string, baseDir: string) {
 
       return files;
     },
-    catch: (error) => error,
+    catch: (error) =>
+      commandError(
+        "worktree_error",
+        error instanceof Error ? error.message : String(error),
+        error,
+      ),
   });
 }
 

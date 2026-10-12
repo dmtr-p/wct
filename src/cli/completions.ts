@@ -60,11 +60,7 @@ function generateFishCompletions(): string {
     "",
     "# Helper: list config profile names",
     "function __wct_profiles",
-    // Fish string builtins split piped input into lines; pass NUL records as arguments.
-    `    set -l profiles (command wct ${COMPLETION_PROFILES_FLAG} fish 2>/dev/null | string split0)`,
-    "    if set -q profiles[1]",
-    "        string escape --no-quoted -- $profiles",
-    "    end",
+    `    command wct ${COMPLETION_PROFILES_FLAG} fish 2>/dev/null`,
     "end",
     "",
     "# Commands",
@@ -100,7 +96,11 @@ function generateFishCompletions(): string {
           }
           parts.push(`-d ${quoteFish(option.description)}`);
           if (option.completionValues) {
-            parts.push(`-a '(${option.completionValues})'`);
+            const completion =
+              option.completionValues === "__wct_profiles"
+                ? "__wct_profiles | string split0"
+                : option.completionValues;
+            parts.push(`-a '(${completion})'`);
           }
           lines.push(parts.join(" "));
         }
@@ -147,7 +147,11 @@ function generateFishCompletions(): string {
       }
       parts.push(`-d ${quoteFish(option.description)}`);
       if (option.completionValues) {
-        parts.push(`-a '(${option.completionValues})'`);
+        const completion =
+          option.completionValues === "__wct_profiles"
+            ? "__wct_profiles | string split0"
+            : option.completionValues;
+        parts.push(`-a '(${completion})'`);
       }
       lines.push(parts.join(" "));
     }
@@ -207,6 +211,64 @@ function generateBashCompletions(): string {
     "",
     "_wct_worktree_branches() {",
     "    git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'",
+    "}",
+    "",
+    // Decode quoting as data; never evaluate substitutions from the current word.
+    "_wct_profile_prefix() {",
+    '    local word="$1" quote="" char next ansi="" decoded',
+    "    local index",
+    '    profile_prefix=""',
+    "    for ((index = 0; index < ${#word}; index++)); do",
+    '        char="${word:index:1}"',
+    '        case "$quote" in',
+    "            single)",
+    '                if [[ "$char" == "\'" ]]; then quote=""; else profile_prefix+="$char"; fi',
+    "                ;;",
+    "            ansi)",
+    "                if [[ \"$char\" == '\\' ]]; then",
+    "                    ((index++))",
+    '                    next="${word:index:1}"',
+    '                    case "$next" in',
+    "                        \"'\"|'\"'|'?') ansi+=\"$next\" ;;",
+    "                        '') ;;",
+    '                        *) ansi+="\\\\$next" ;;',
+    "                    esac",
+    '                elif [[ "$char" == "\'" ]]; then',
+    "                    printf -v decoded '%b' \"$ansi\" 2>/dev/null",
+    '                    profile_prefix+="$decoded"',
+    '                    ansi=""',
+    '                    quote=""',
+    "                else",
+    '                    ansi+="$char"',
+    "                fi",
+    "                ;;",
+    "            *)",
+    "                if [[ \"$char\" == '\\' ]]; then",
+    "                    ((index++))",
+    '                    next="${word:index:1}"',
+    '                    if [[ "$quote" == double && "$next" != \'\\\' && "$next" != \'"\' && "$next" != \'$\' && "$next" != \'`\' && "$next" != $\'\\n\' ]]; then',
+    "                        profile_prefix+='\\'",
+    "                    fi",
+    '                    [[ "$next" == $\'\\n\' ]] || profile_prefix+="$next"',
+    '                elif [[ "$quote" == double ]]; then',
+    '                    if [[ "$char" == \'"\' ]]; then quote=""; else profile_prefix+="$char"; fi',
+    '                elif [[ "$char" == "\'" ]]; then',
+    "                    quote=single",
+    '                elif [[ "$char" == \'"\' ]]; then',
+    "                    quote=double",
+    '                elif [[ "$char" == \'$\' && "${word:index+1:1}" == "\'" ]]; then',
+    "                    quote=ansi",
+    "                    ((index++))",
+    "                else",
+    '                    profile_prefix+="$char"',
+    "                fi",
+    "                ;;",
+    "        esac",
+    "    done",
+    '    if [[ "$quote" == ansi ]]; then',
+    "        printf -v decoded '%b' \"$ansi\" 2>/dev/null",
+    '        profile_prefix+="$decoded"',
+    "    fi",
     "}",
     "",
     "_wct_profiles() {",
@@ -298,10 +360,13 @@ function generateBashCompletions(): string {
       if (option.completionValues === "__wct_profiles") {
         // Filename completion can append a slash to a profile matching a directory.
         lines.push("                COMPREPLY=()");
-        lines.push("                local profile quoted_profile");
+        lines.push(
+          "                local profile quoted_profile profile_prefix",
+        );
+        lines.push('                _wct_profile_prefix "$cur"');
         lines.push("                while IFS= read -r -d '' profile; do");
         lines.push(
-          '                    [[ "$profile" == "$cur"* ]] || continue',
+          '                    [[ "$profile" == "$profile_prefix"* ]] || continue',
         );
         lines.push(
           '                    printf -v quoted_profile "%q" "$profile"',

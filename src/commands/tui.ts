@@ -1,13 +1,8 @@
 import { Effect } from "effect";
 import type { WctServices } from "../effect/services";
 import { toWctError, type WctError } from "../errors";
-import type { CommandDef } from "./command-def";
 
-export const commandDef: CommandDef = {
-  name: "tui",
-  description:
-    "Interactive TUI sidebar for managing worktrees (mouse on by default; WCT_DISABLE_MOUSE=1 to disable)",
-};
+export { tuiCommandDef as commandDef } from "../cli/command-metadata";
 
 export const tuiCommand: Effect.Effect<void, WctError, WctServices> =
   Effect.gen(function* () {

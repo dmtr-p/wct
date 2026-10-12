@@ -1,8 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import packageJson from "../package.json";
+import { completionCommands } from "../src/cli/command-metadata";
+import { renderCompletionProfiles } from "../src/cli/completion-profiles";
+import { globalOptions } from "../src/cli/global-options";
+import { rootCommand } from "../src/cli/root-command";
 
 const VERSION = packageJson.version;
 
@@ -10,7 +20,11 @@ function runCliProcess(args: string[]) {
   return Bun.spawnSync(["bun", "run", "src/index.ts", ...args]);
 }
 
-function runBashCompletion(words: string[], cwd: string) {
+function runBashCompletion(
+  words: string[],
+  cwd: string,
+  env: Record<string, string | undefined> = {},
+) {
   const tempDir = mkdtempSync(join(tmpdir(), "wct-bash-completion-"));
   const scriptPath = join(tempDir, "wct-completion.bash");
   const completionScript = runCliProcess([
@@ -24,13 +38,13 @@ function runBashCompletion(words: string[], cwd: string) {
     return Bun.spawnSync(
       [
         "bash",
-        "-lc",
+        "-c",
         [
           'source "$1"',
           "shift",
           'cd "$1"',
           "shift",
-          `COMP_WORDS=(${words.map((word) => JSON.stringify(word)).join(" ")})`,
+          `COMP_WORDS=(${words.map(quoteShell).join(" ")})`,
           `COMP_CWORD=${words.length - 1}`,
           "COMPREPLY=()",
           "_wct",
@@ -43,12 +57,61 @@ function runBashCompletion(words: string[], cwd: string) {
       {
         env: {
           ...process.env,
+          ...completionEnvironment(tempDir),
+          ...env,
         },
       },
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+function quoteShell(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function completionEnvironment(tempDir: string) {
+  const bin = join(tempDir, "bin");
+  const home = join(tempDir, "home");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    join(bin, "wct"),
+    `#!/bin/sh\nexec ${quoteShell(process.execPath)} ${quoteShell(resolve("src/index.ts"))} "$@"\n`,
+    { mode: 0o755 },
+  );
+  return { PATH: `${bin}:${process.env.PATH}`, HOME: home };
+}
+
+function git(cwd: string, args: string[]) {
+  const result = Bun.spawnSync(["git", ...args], { cwd });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+}
+
+function profileFixture() {
+  const dir = mkdtempSync(join(tmpdir(), "wct-profile-completion-"));
+  const repo = join(dir, "repo");
+  const nested = join(repo, "nested");
+  const linked = join(dir, "linked");
+  const env = completionEnvironment(dir);
+  mkdirSync(nested, { recursive: true });
+  git(repo, ["init", "-b", "main"]);
+  git(repo, [
+    "-c",
+    "user.name=Completion Test",
+    "-c",
+    "user.email=completion@example.com",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "fixture",
+  ]);
+  git(repo, ["worktree", "add", "-b", "linked", linked]);
+  mkdirSync(join(linked, "nested"));
+  return { dir, repo, nested, linked, env };
 }
 
 describe("Effect CLI root", () => {
@@ -166,7 +229,7 @@ describe("Effect CLI root", () => {
     expect(output).toContain("local subcmd_index=$((cmd_index + 1))");
     expect(output).toContain("while [[ $subcmd_index -lt $cword ]]");
     expect(output).toContain(
-      "COMPREPLY=($(compgen -W '--help --version --completions --log-level --base -b --existing -e --no-attach --pr --profile -P' -- \"$cur\"))",
+      "COMPREPLY=($(compgen -W '--help -h --version -v --completions --log-level --json --base -b --existing -e --no-attach --pr --profile -P' -- \"$cur\"))",
     );
   });
 
@@ -174,6 +237,7 @@ describe("Effect CLI root", () => {
     "bash completes %s profile values",
     (command) => {
       const repoRoot = mkdtempSync(join(tmpdir(), "wct-shutdown-completion-"));
+      git(repoRoot, ["init", "-b", "main"]);
       writeFileSync(
         join(repoRoot, ".wct.yaml"),
         "profiles:\n  cleanup:\n    down: []\n  minimal:\n    down: []\n",
@@ -364,5 +428,287 @@ describe("Effect CLI root", () => {
     expect(stderr).toContain("Missing branch name");
     expect(stderr).not.toContain("WctCommandError");
     expect(stderr).not.toContain("at ");
+  });
+});
+
+describe("shared command metadata", () => {
+  test("native command names, aliases, and descriptions match completion metadata", () => {
+    const nativeCommands = rootCommand.subcommands.flatMap(
+      (group) => group.commands,
+    );
+    for (const definition of Object.values(completionCommands)) {
+      const native = nativeCommands.find(
+        (command) => command.name === definition.name,
+      );
+      expect(native?.description).toBe(definition.description);
+      expect(native?.alias).toBe(definition.aliases?.[0]);
+      expect(
+        native?.subcommands
+          .flatMap((group) => group.commands)
+          .map((command) => ({
+            name: command.name,
+            description: command.description,
+          })),
+      ).toEqual(
+        (definition.subcommands ?? []).map((command) => ({
+          name: command.name,
+          description: command.description,
+        })),
+      );
+    }
+  });
+
+  test.each(
+    Object.values(completionCommands).flatMap((command) => [
+      { path: [command.name], definition: command },
+      ...(command.subcommands ?? []).map((subcommand) => ({
+        path: [command.name, subcommand.name],
+        definition: subcommand,
+      })),
+    ]),
+  )("native help uses shared parameters for $path", ({ path, definition }) => {
+    const result = runCliProcess([...path, "--help"]);
+    const output = result.stdout.toString();
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain(definition.description);
+    if (definition.args) expect(output).toContain(definition.args);
+    for (const option of definition.options ?? []) {
+      expect(output).toContain(`--${option.name}`);
+      if (option.short) expect(output).toContain(`-${option.short}`);
+      expect(output).toContain(option.description);
+    }
+  });
+
+  test.each(["bash", "zsh", "fish", "sh"])(
+    "%s offers supported global flags",
+    (shell) => {
+      const result = runCliProcess(["--completions", shell]);
+      const output = result.stdout.toString();
+      expect(result.exitCode).toBe(0);
+      for (const option of globalOptions) {
+        expect(output).toContain(
+          shell === "fish" ? `-l ${option.name}` : `--${option.name}`,
+        );
+      }
+      expect(output).not.toContain("powershell");
+      expect(output).not.toContain("pwsh");
+    },
+  );
+
+  test.each([
+    "wct --",
+    "wct open --",
+    "wct projects add --",
+    "wct --json open --",
+  ])("bash offers --json in %s", (line) => {
+    const tempDir = mkdtempSync(join(tmpdir(), "wct-global-completion-"));
+    try {
+      const result = runBashCompletion(line.split(" "), tempDir);
+      expect(result.stdout.toString()).toContain("--json");
+      expect(result.stderr.toString()).toBe("");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolved profile completions", () => {
+  test("uses Main Repository profiles from nested and linked directories", () => {
+    const fixture = profileFixture();
+    writeFileSync(
+      join(fixture.env.HOME, ".wct.yaml"),
+      "profiles: {global: {}}\n",
+    );
+    writeFileSync(
+      join(fixture.repo, ".wct.yaml"),
+      'profiles: {"project profile": {}, "123: special": {}}\n',
+    );
+    writeFileSync(join(fixture.nested, ".wct.yaml"), "profiles: {wrong: {}}\n");
+    writeFileSync(join(fixture.linked, ".wct.yaml"), "profiles: {wrong: {}}\n");
+    try {
+      for (const cwd of [
+        fixture.repo,
+        fixture.nested,
+        fixture.linked,
+        join(fixture.linked, "nested"),
+      ]) {
+        for (const command of ["open", "up", "down", "close"]) {
+          for (const flag of ["--profile", "-P"]) {
+            const result = runBashCompletion(
+              ["wct", command, flag, ""],
+              cwd,
+              fixture.env,
+            );
+            expect(result.stdout.toString().trim().split("\n")).toEqual([
+              "project profile",
+              "123: special",
+            ]);
+            expect(result.stderr.toString()).toBe("");
+          }
+        }
+      }
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("falls back to global profiles, but project profiles replace the map even when empty", () => {
+    const fixture = profileFixture();
+    writeFileSync(
+      join(fixture.env.HOME, ".wct.yaml"),
+      "profiles: {global: {}}\n",
+    );
+    try {
+      for (const [config, profiles] of [
+        ["", ["global"]],
+        ["worktree_dir: ..\n", ["global"]],
+        ["profiles: {project: {}}\n", ["project"]],
+        ["profiles: {}\n", []],
+      ] as const) {
+        writeFileSync(join(fixture.repo, ".wct.yaml"), config);
+        const result = runBashCompletion(
+          ["wct", "open", "--profile", ""],
+          fixture.nested,
+          fixture.env,
+        );
+        expect(result.stdout.toString().trim()).toBe(profiles.join("\n"));
+        expect(result.stderr.toString()).toBe("");
+      }
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves YAML names and prefix matching without evaluating shell text", () => {
+    const fixture = profileFixture();
+    const names = [
+      "two words",
+      "quote'and\"double",
+      "back\\slash",
+      "$(touch injected)",
+      "semi;colon",
+      "123: colon",
+      "日本語",
+      "line\nbreak",
+      "tab\tname",
+    ];
+    writeFileSync(
+      join(fixture.repo, ".wct.yaml"),
+      `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
+    );
+    try {
+      const result = runBashCompletion(
+        ["wct", "open", "--profile", ""],
+        fixture.nested,
+        fixture.env,
+      );
+      expect(result.stdout.toString()).toBe(
+        names.map((name) => `${name}\n`).join(""),
+      );
+      expect(result.stderr.toString()).toBe("");
+      expect(existsSync(join(fixture.nested, "injected"))).toBe(false);
+      const prefixed = runBashCompletion(
+        ["wct", "open", "-P", "two "],
+        fixture.linked,
+        fixture.env,
+      );
+      expect(prefixed.stdout.toString()).toBe("two words\n");
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    undefined,
+    "profiles: [",
+    "profiles: []",
+    "profiles: {broken: {tmux: false}}",
+  ])("silently handles missing or invalid configuration: %s", (config) => {
+    const fixture = profileFixture();
+    if (config !== undefined)
+      writeFileSync(join(fixture.repo, ".wct.yaml"), config);
+    try {
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          resolve("src/index.ts"),
+          "--wct-completion-profiles",
+          "bash",
+        ],
+        { cwd: fixture.nested, env: { ...process.env, ...fixture.env } },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.toString()).toBe("");
+      expect(result.stderr.toString()).toBe("");
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("silently handles invocation outside a Git repository", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "wct-nonrepo-completion-"));
+    try {
+      const result = runBashCompletion(
+        ["wct", "open", "--profile", ""],
+        tempDir,
+      );
+      expect(result.stderr.toString()).toBe("");
+      expect(result.stdout.toString().trim()).toBe("");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test.each(["zsh", "fish"])(
+    "%s profile helpers preserve shell-sensitive names",
+    (shell) => {
+      if (!Bun.which(shell)) return;
+      const fixture = profileFixture();
+      const names = [
+        "two words",
+        "quote'and\"double",
+        "back\\slash",
+        "$(touch injected)",
+        "semi;colon",
+        "123: colon",
+        "日本語",
+        "line\nbreak",
+        "tab\tname",
+      ];
+      const scriptPath = join(fixture.dir, `completion.${shell}`);
+      writeFileSync(
+        join(fixture.repo, ".wct.yaml"),
+        `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
+      );
+      writeFileSync(scriptPath, runCliProcess(["--completions", shell]).stdout);
+      const command =
+        shell === "zsh"
+          ? 'compdef() { :; }; compadd() { printf "%s\\0" "${profiles[@]}"; }; source "$1"; _wct_profiles'
+          : 'source $argv[1]; for profile in (__wct_profiles); printf "%s\\0" (string unescape -- $profile | string collect); end';
+      try {
+        const result = Bun.spawnSync(
+          [
+            shell,
+            "-c",
+            command,
+            ...(shell === "zsh" ? [shell] : []),
+            scriptPath,
+          ],
+          { cwd: fixture.linked, env: { ...process.env, ...fixture.env } },
+        );
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr.toString()).toBe("");
+        expect(result.stdout.toString().split("\0").filter(Boolean)).toEqual(
+          names,
+        );
+        expect(existsSync(join(fixture.linked, "injected"))).toBe(false);
+      } finally {
+        rmSync(fixture.dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("unknown profile completion formats produce no output", () => {
+    expect(renderCompletionProfiles(["profile"], "powershell")).toBe("");
   });
 });

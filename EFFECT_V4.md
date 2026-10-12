@@ -303,3 +303,17 @@ concurrent tests start.
 
 Do not run tests or lint manually; the harness hooks handle those checks as
 specified in `AGENTS.md`.
+
+## Shared CLI metadata
+
+`src/cli/command-metadata.ts` defines shared command names, descriptions,
+aliases, and parameters. It builds native Effect CLI flags and arguments and
+derives the command modules' `commandDef` completion metadata from the same
+parameters. `src/cli/root-command.ts` connects these parameters to handlers.
+Global completion options live in `src/cli/global-options.ts`.
+
+Custom shell profile helpers call the private completion entry point, which
+resolves the Main Repository with the Worktree service and loads configuration
+with `loadConfig`. Config errors produce no suggestions. Bash and Fish use NUL
+records to preserve profile names; Zsh uses quoted words without evaluation.
+The supported `sh` choice maps to Effect's built-in Bash generator.

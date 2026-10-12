@@ -12,37 +12,9 @@ import { WorktreeService } from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
-import type { CommandDef } from "./command-def";
 import { createDownHumanReporter } from "./down-reporter";
 
-export const commandDef: CommandDef = {
-  name: "close",
-  description: "Stop tmux, run down scripts, and remove worktree",
-  args: "<branch...>",
-  completionType: "worktree",
-  options: [
-    {
-      name: "profile",
-      short: "P",
-      type: "string",
-      placeholder: "name",
-      description: "Use a named config profile",
-      completionValues: "__wct_profiles",
-    },
-    {
-      name: "yes",
-      short: "y",
-      type: "boolean",
-      description: "Skip confirmation prompt",
-    },
-    {
-      name: "force",
-      short: "f",
-      type: "boolean",
-      description: "Force removal even if worktree is dirty",
-    },
-  ],
-};
+export { closeCommandDef as commandDef } from "../cli/command-metadata";
 
 export interface CloseOptions {
   profile?: string;

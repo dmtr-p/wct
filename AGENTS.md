@@ -23,6 +23,9 @@ src/
 ├── index.ts              # CLI/worker entry point; completions/version shortcuts and BunRuntime.runMain
 ├── errors.ts             # Unified error types (WctCommandError) and error constructors
 ├── cli/
+│   ├── command-metadata.ts # Shared native CLI parameters and derived completion metadata
+│   ├── completion-profiles.ts # Quiet resolved Config Profile suggestions for shell helpers
+│   ├── global-options.ts # Global option metadata and supported completion choices
 │   ├── root-command.ts   # Effect CLI root command tree and command dispatch
 │   ├── completions.ts    # Custom shell completions layered on top of the Effect CLI UX
 │   ├── completions-flag.ts # Supported built-in shell completion choices

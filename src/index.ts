@@ -7,6 +7,10 @@ import {
   GlobalFlag,
 } from "effect/cli";
 import {
+  COMPLETION_PROFILES_FLAG,
+  runCompletionProfiles,
+} from "./cli/completion-profiles";
+import {
   generateCompletionScript,
   getCustomCompletionShell,
 } from "./cli/completions";
@@ -128,7 +132,9 @@ const runnableProgram = shouldSuppressCliOutputForJson
   : program;
 
 BunRuntime.runMain(
-  args[0] === SHUTDOWN_WORKER_FLAG
-    ? provideBunServices(provideWctServices(runShutdownWorker(args[1] ?? "")))
-    : runnableProgram,
+  args[0] === COMPLETION_PROFILES_FLAG
+    ? provideBunServices(runCompletionProfiles(args[1] ?? ""))
+    : args[0] === SHUTDOWN_WORKER_FLAG
+      ? provideBunServices(provideWctServices(runShutdownWorker(args[1] ?? "")))
+      : runnableProgram,
 );

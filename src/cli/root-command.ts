@@ -1,5 +1,5 @@
 import { Option } from "effect";
-import { Argument, Command, Flag } from "effect/cli";
+import { Command } from "effect/cli";
 import { cdCommand } from "../commands/cd";
 import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
@@ -14,74 +14,27 @@ import {
 import { switchCommand } from "../commands/switch";
 import { tuiCommand } from "../commands/tui";
 import { upCommand } from "../commands/up";
+import {
+  commandConfig,
+  commandDefinitions as defs,
+  commandMetadata,
+  projectDefinitions,
+} from "./command-metadata";
 import { JsonFlag } from "./json-flag";
-
-const branchArgument = Argument.String("branch").pipe(
-  Argument.withDescription("Branch name"),
-);
-
-const optionalBranchArgument = branchArgument.pipe(Argument.optional);
-
-const branchesArgument = branchArgument.pipe(Argument.variadic({ min: 1 }));
-
-function booleanFlag(name: string, description: string, alias?: string) {
-  let flag = Flag.Boolean(name).pipe(
-    Flag.withDescription(description),
-    Flag.withDefault(false),
-  );
-
-  if (alias) {
-    flag = flag.pipe(Flag.withAlias(alias));
-  }
-
-  return flag;
-}
-
-function optionalStringFlag(
-  name: string,
-  description: string,
-  alias?: string,
-  metavar?: string,
-) {
-  let flag = Flag.String(name).pipe(
-    Flag.withDescription(description),
-    Flag.optional,
-  );
-
-  if (metavar) {
-    flag = flag.pipe(Flag.withMetavar(metavar));
-  }
-
-  if (alias) {
-    flag = flag.pipe(Flag.withAlias(alias));
-  }
-
-  return flag;
-}
 
 function optionToUndefined<A>(option: Option.Option<A>): A | undefined {
   return Option.isSome(option) ? option.value : undefined;
 }
 
 const cdCliCommand = Command.make(
-  "cd",
-  { branch: branchArgument },
+  defs.cd.name,
+  commandConfig(defs.cd),
   ({ branch }) => cdCommand(branch),
-).pipe(Command.withDescription("Open a shell in a worktree directory"));
+).pipe(commandMetadata(defs.cd));
 
 const closeCliCommand = Command.make(
-  "close",
-  {
-    branches: branchesArgument,
-    profile: optionalStringFlag(
-      "profile",
-      "Use a named config profile",
-      "P",
-      "NAME",
-    ),
-    yes: booleanFlag("yes", "Skip confirmation prompt", "y"),
-    force: booleanFlag("force", "Force removal even if worktree is dirty", "f"),
-  },
+  defs.close.name,
+  commandConfig(defs.close),
   ({ branches, yes, force, profile }) =>
     closeCommand({
       branches: [...branches],
@@ -89,86 +42,40 @@ const closeCliCommand = Command.make(
       yes,
       force,
     }),
-).pipe(
-  Command.withDescription("Stop tmux, run down scripts, and remove worktree"),
-);
+).pipe(commandMetadata(defs.close));
 
 const downCliCommand = Command.make(
-  "down",
-  {
-    profile: optionalStringFlag(
-      "profile",
-      "Use a named config profile",
-      "P",
-      "NAME",
-    ),
-    path: optionalStringFlag(
-      "path",
-      "Path to worktree directory",
-      undefined,
-      "path",
-    ),
-    branch: optionalStringFlag(
-      "branch",
-      "Branch name to resolve worktree from",
-      "b",
-      "NAME",
-    ),
-  },
+  defs.down.name,
+  commandConfig(defs.down),
   ({ path, branch, profile }) =>
     downCommand({
       profile: optionToUndefined(profile),
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
     }),
-).pipe(Command.withDescription("Stop tmux session and run down scripts"));
+).pipe(commandMetadata(defs.down));
 
-const initCliCommand = Command.make("init", {}, () => initCommand).pipe(
-  Command.withDescription("Generate a starter .wct.yaml config file"),
-);
+const initCliCommand = Command.make(
+  defs.init.name,
+  commandConfig(defs.init),
+  () => initCommand,
+).pipe(commandMetadata(defs.init));
 
 const listCliCommand = Command.make(
-  "list",
-  {
-    short: booleanFlag("short", "Print branch names only", "s"),
-  },
+  defs.list.name,
+  commandConfig(defs.list),
   ({ short }) => listCommand({ short }),
-).pipe(
-  Command.withDescription("Show worktrees with tmux, changes, and sync status"),
-);
+).pipe(commandMetadata(defs.list));
 
 const switchCliCommand = Command.make(
-  "switch",
-  { branch: branchArgument },
+  defs.switch.name,
+  commandConfig(defs.switch),
   ({ branch }) => switchCommand(branch),
-).pipe(
-  Command.withAlias("sw"),
-  Command.withDescription("Switch to another worktree's tmux session"),
-);
+).pipe(commandMetadata(defs.switch));
 
 const upCliCommand = Command.make(
-  "up",
-  {
-    noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
-    path: optionalStringFlag(
-      "path",
-      "Path to worktree directory",
-      undefined,
-      "path",
-    ),
-    branch: optionalStringFlag(
-      "branch",
-      "Branch name to resolve worktree from",
-      "b",
-      "NAME",
-    ),
-    profile: optionalStringFlag(
-      "profile",
-      "Use a named config profile",
-      "P",
-      "NAME",
-    ),
-  },
+  defs.up.name,
+  commandConfig(defs.up),
   ({ noAttach, path, branch, profile }) =>
     upCommand({
       noAttach,
@@ -176,33 +83,11 @@ const upCliCommand = Command.make(
       branch: optionToUndefined(branch),
       profile: optionToUndefined(profile),
     }),
-).pipe(Command.withDescription("Start configured environment for a worktree"));
+).pipe(commandMetadata(defs.up));
 
 const openCliCommand = Command.make(
-  "open",
-  {
-    branch: optionalBranchArgument,
-    base: optionalStringFlag(
-      "base",
-      "Base branch for new worktree (default: HEAD)",
-      "b",
-      "BRANCH",
-    ),
-    existing: booleanFlag("existing", "Use existing branch", "e"),
-    noAttach: booleanFlag("no-attach", "Do not attach to tmux outside tmux"),
-    pr: optionalStringFlag(
-      "pr",
-      "Open worktree from a GitHub PR",
-      undefined,
-      "NUMBER_OR_URL",
-    ),
-    profile: optionalStringFlag(
-      "profile",
-      "Use a named config profile",
-      "P",
-      "NAME",
-    ),
-  },
+  defs.open.name,
+  commandConfig(defs.open),
   ({ branch, base, existing, noAttach, pr, profile }) =>
     openCommand({
       branch: optionToUndefined(branch),
@@ -212,52 +97,32 @@ const openCliCommand = Command.make(
       pr: optionToUndefined(pr),
       profile: optionToUndefined(profile),
     }),
-).pipe(
-  Command.withDescription(
-    "Create worktree, run setup, and start configured environment",
-  ),
-);
+).pipe(commandMetadata(defs.open));
 
 const projectsAddCliCommand = Command.make(
-  "add",
-  {
-    path: Argument.String("path").pipe(
-      Argument.withDescription("Path to repo"),
-      Argument.optional,
-    ),
-    name: optionalStringFlag(
-      "name",
-      "Override project display name",
-      "n",
-      "NAME",
-    ),
-  },
+  projectDefinitions.add.name,
+  commandConfig(projectDefinitions.add),
   ({ path, name }) =>
     projectsAddCommand({
       path: optionToUndefined(path),
       name: optionToUndefined(name),
     }),
-).pipe(Command.withDescription("Add a project to the registry"));
+).pipe(commandMetadata(projectDefinitions.add));
 
 const projectsRemoveCliCommand = Command.make(
-  "remove",
-  {
-    path: Argument.String("path").pipe(
-      Argument.withDescription("Path to repo"),
-      Argument.optional,
-    ),
-  },
+  projectDefinitions.remove.name,
+  commandConfig(projectDefinitions.remove),
   ({ path }) => projectsRemoveCommand(optionToUndefined(path)),
-).pipe(Command.withDescription("Remove a project from the registry"));
+).pipe(commandMetadata(projectDefinitions.remove));
 
 const projectsListCliCommand = Command.make(
-  "list",
-  {},
+  projectDefinitions.list.name,
+  commandConfig(projectDefinitions.list),
   () => projectsListCommand,
-).pipe(Command.withDescription("List registered projects"));
+).pipe(commandMetadata(projectDefinitions.list));
 
-const projectsCliCommand = Command.make("projects").pipe(
-  Command.withDescription("Manage the project registry"),
+const projectsCliCommand = Command.make(defs.projects.name).pipe(
+  commandMetadata(defs.projects),
   Command.withSubcommands([
     projectsAddCliCommand,
     projectsRemoveCliCommand,
@@ -265,11 +130,11 @@ const projectsCliCommand = Command.make("projects").pipe(
   ]),
 );
 
-const tuiCliCommand = Command.make("tui", {}, () => tuiCommand).pipe(
-  Command.withDescription(
-    "Interactive TUI sidebar for managing worktrees. Mouse on by default (wheel scrolls, click selects); set WCT_DISABLE_MOUSE=1 to disable.",
-  ),
-);
+const tuiCliCommand = Command.make(
+  defs.tui.name,
+  commandConfig(defs.tui),
+  () => tuiCommand,
+).pipe(commandMetadata(defs.tui));
 
 export const rootCommand = Command.make("wct").pipe(
   Command.withDescription("Git worktree workflow automation"),

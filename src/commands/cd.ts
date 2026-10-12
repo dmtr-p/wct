@@ -4,14 +4,8 @@ import { commandError, type WctError } from "../errors";
 import { spawnInteractive } from "../services/process";
 import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 
-export const commandDef: CommandDef = {
-  name: "cd",
-  description: "Open a shell in a worktree directory",
-  args: "<branch>",
-  completionType: "worktree",
-};
+export { cdCommandDef as commandDef } from "../cli/command-metadata";
 
 export function cdCommand(
   branch: string,

@@ -1,41 +1,32 @@
 /** biome-ignore-all lint/suspicious/noTemplateCurlyInString: shell variable interpolation */
 
-import { commandDef as cdCommandDef } from "../commands/cd";
-import { commandDef as closeCommandDef } from "../commands/close";
-import type { CommandDef } from "../commands/command-def";
-import { commandDef as downCommandDef } from "../commands/down";
-import { commandDef as initCommandDef } from "../commands/init";
-import { commandDef as listCommandDef } from "../commands/list";
-import { commandDef as openCommandDef } from "../commands/open";
-import { commandDef as projectsCommandDef } from "../commands/projects";
-import { commandDef as switchCommandDef } from "../commands/switch";
-import { commandDef as tuiCommandDef } from "../commands/tui";
-import { commandDef as upCommandDef } from "../commands/up";
+import type { CommandDef, CommandOption } from "../commands/command-def";
+import { completionCommands } from "./command-metadata";
+import { COMPLETION_PROFILES_FLAG } from "./completion-profiles";
+import { globalOptions } from "./global-options";
 
-const COMMANDS: ReadonlyArray<CommandDef> = [
-  cdCommandDef,
-  closeCommandDef,
-  downCommandDef,
-  initCommandDef,
-  listCommandDef,
-  openCommandDef,
-  projectsCommandDef,
-  switchCommandDef,
-  tuiCommandDef,
-  upCommandDef,
-];
+const COMMANDS = Object.values(completionCommands);
 
-const GLOBAL_LOG_LEVELS = [
-  "all",
-  "trace",
-  "debug",
-  "info",
-  "warn",
-  "warning",
-  "error",
-  "fatal",
-  "none",
-] as const;
+function flagNames(option: CommandOption): string[] {
+  return [`--${option.name}`, ...(option.short ? [`-${option.short}`] : [])];
+}
+
+function quoteShell(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function zshOption(
+  option: CommandOption & { values?: readonly string[] },
+): string {
+  const value =
+    option.type === "string"
+      ? `:${option.placeholder?.toLowerCase() || option.name}:${option.values ? `(${option.values.join(" ")})` : (option.completionValues?.replace(/^__/, "_") ?? "")}`
+      : "";
+  const description = `[${option.description}]${value}`;
+  return option.short
+    ? `${quoteShell(`(-${option.short} --${option.name})`)}{-${option.short},--${option.name}}${quoteShell(description)}`
+    : quoteShell(`--${option.name}${description}`);
+}
 
 function getAllNames(command: CommandDef): Array<string> {
   return [command.name, ...(command.aliases ?? [])];
@@ -69,9 +60,7 @@ function generateFishCompletions(): string {
     "",
     "# Helper: list config profile names",
     "function __wct_profiles",
-    "    if test -f .wct.yaml",
-    '        awk \'/^profiles:/{found=1;next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{sub(/^  /,"");sub(/:.*/,"");print}\' .wct.yaml',
-    "    end",
+    `    command wct ${COMPLETION_PROFILES_FLAG} fish 2>/dev/null | string split0 | string escape --no-quoted`,
     "end",
     "",
     "# Commands",
@@ -122,18 +111,15 @@ function generateFishCompletions(): string {
 
   lines.push("");
   lines.push("# Global options");
-  lines.push(
-    "complete -c wct -n '__fish_use_subcommand' -s h -l help -d 'Show help information'",
-  );
-  lines.push(
-    "complete -c wct -n '__fish_use_subcommand' -l version -d 'Show version information'",
-  );
-  lines.push(
-    "complete -c wct -n '__fish_use_subcommand' -l completions -r -f -a 'fish bash zsh sh' -d 'Print shell completion script'",
-  );
-  lines.push(
-    `complete -c wct -n '__fish_use_subcommand' -l log-level -r -f -a '${GLOBAL_LOG_LEVELS.join(" ")}' -d 'Sets the minimum log level'`,
-  );
+  for (const option of globalOptions) {
+    const parts = ["complete -c wct"];
+    if (option.short) parts.push(`-s ${option.short}`);
+    parts.push(`-l ${option.name}`);
+    if (option.type === "string") parts.push("-r", "-f");
+    if (option.values) parts.push(`-a ${quoteFish(option.values.join(" "))}`);
+    parts.push(`-d ${quoteFish(option.description)}`);
+    lines.push(parts.join(" "));
+  }
 
   lines.push("");
   lines.push("# Per-command options");
@@ -162,9 +148,7 @@ function generateFishCompletions(): string {
   }
 
   const branchCommands = COMMANDS.filter(
-    (command) =>
-      command.args?.includes("<branch>") &&
-      command.completionType !== "worktree",
+    (command) => command.completionType === "branch",
   )
     .flatMap((command) => getAllNames(command))
     .join(" ");
@@ -199,11 +183,9 @@ function generateBashCompletions(): string {
   const commandNames = COMMANDS.flatMap((command) => getAllNames(command)).join(
     " ",
   );
-  const globalFlags = "--help --version --completions --log-level";
+  const globalFlags = globalOptions.flatMap(flagNames).join(" ");
   const branchCommands = COMMANDS.filter(
-    (command) =>
-      command.args?.includes("<branch>") &&
-      command.completionType !== "worktree",
+    (command) => command.completionType === "branch",
   ).flatMap((command) => getAllNames(command));
   const worktreeCommands = COMMANDS.filter(
     (command) => command.completionType === "worktree",
@@ -222,9 +204,7 @@ function generateBashCompletions(): string {
     "}",
     "",
     "_wct_profiles() {",
-    "    if [[ -f .wct.yaml ]]; then",
-    '        awk \'/^profiles:/{found=1;next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{sub(/^  /,"");sub(/:.*/,"");print}\' .wct.yaml',
-    "    fi",
+    `    command wct ${COMPLETION_PROFILES_FLAG} bash 2>/dev/null`,
     "}",
     "",
     "_wct() {",
@@ -235,10 +215,21 @@ function generateBashCompletions(): string {
     "    local cmd_index=1",
     "    local scan_index=1",
     "",
+    ...globalOptions
+      .filter((option) => option.values)
+      .flatMap((option) => [
+        `    if [[ "$prev" == "--${option.name}" ]]; then`,
+        `        COMPREPLY=($(compgen -W '${option.values?.join(" ")}' -- "$cur"))`,
+        "        return",
+        "    fi",
+      ]),
     '    if [[ "$cmd" == -* ]]; then',
     "        while [[ $scan_index -lt $cword ]]; do",
     '            local scan_word="${COMP_WORDS[scan_index]}"',
-    '            if [[ "$scan_word" == "--completions" || "$scan_word" == "--log-level" ]]; then',
+    `            if [[ ${globalOptions
+      .filter((option) => option.type === "string")
+      .map((option) => `"$scan_word" == "--${option.name}"`)
+      .join(" || ")} ]]; then`,
     "                ((scan_index += 2))",
     "                continue",
     "            fi",
@@ -298,9 +289,20 @@ function generateBashCompletions(): string {
         ? option.completionValues.replace(/^__/, "_")
         : option.completionValues;
       lines.push(`            if [[ ${prevCheck} ]]; then`);
-      lines.push(
-        `                COMPREPLY=($(compgen -W "$(${bashFunc})" -- "$cur"))`,
-      );
+      if (option.completionValues === "__wct_profiles") {
+        lines.push("                COMPREPLY=()");
+        lines.push("                local profile");
+        lines.push("                while IFS= read -r -d '' profile; do");
+        lines.push(
+          '                    [[ "$profile" == "$cur"* ]] && COMPREPLY+=("$profile")',
+        );
+        lines.push("                done < <(_wct_profiles)");
+        lines.push("                compopt -o filenames 2>/dev/null || true");
+      } else {
+        lines.push(
+          `                COMPREPLY=($(compgen -W "$(${bashFunc})" -- "$cur"))`,
+        );
+      }
       lines.push("                return");
       lines.push("            fi");
     }
@@ -339,6 +341,15 @@ function generateBashCompletions(): string {
     lines.push(
       '                local subcmd_word="${COMP_WORDS[subcmd_index]}"',
     );
+    lines.push(
+      `                if [[ ${globalOptions
+        .filter((option) => option.type === "string")
+        .map((option) => `"$subcmd_word" == "--${option.name}"`)
+        .join(" || ")} ]]; then`,
+    );
+    lines.push("                    ((subcmd_index += 2))");
+    lines.push("                    continue");
+    lines.push("                fi");
     lines.push('                if [[ "$subcmd_word" == -* ]]; then');
     lines.push("                    ((subcmd_index++))");
     lines.push("                    continue");
@@ -413,9 +424,7 @@ function generateBashCompletions(): string {
 
 function generateZshCompletions(): string {
   const branchCommands = COMMANDS.filter(
-    (command) =>
-      command.args?.includes("<branch>") &&
-      command.completionType !== "worktree",
+    (command) => command.completionType === "branch",
   ).flatMap((command) => getAllNames(command));
   const worktreeCommands = COMMANDS.filter(
     (command) => command.completionType === "worktree",
@@ -439,11 +448,11 @@ function generateZshCompletions(): string {
     "}",
     "",
     "_wct_profiles() {",
-    "    local profiles",
-    "    if [[ -f .wct.yaml ]]; then",
-    '        profiles=($(awk \'/^profiles:/{found=1;next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{sub(/^  /,"");sub(/:.*/,"");print}\' .wct.yaml))',
-    "        _describe 'profile' profiles",
-    "    fi",
+    "    local -a profiles",
+    '    profiles=("${(@Q)${(z)$(command wct ' +
+      COMPLETION_PROFILES_FLAG +
+      ' zsh 2>/dev/null)}}")',
+    "    (( ${#profiles} )) && compadd -a profiles",
     "}",
     "",
     "_wct() {",
@@ -453,20 +462,15 @@ function generateZshCompletions(): string {
 
   for (const command of COMMANDS) {
     for (const name of getAllNames(command)) {
-      lines.push(`        '${name}:${command.description}'`);
+      lines.push(`        ${quoteShell(`${name}:${command.description}`)}`);
     }
   }
   lines.push("    )");
   lines.push("");
   lines.push("    _arguments -C \\");
-  lines.push("        '(-h --help)'{-h,--help}'[Show help information]' \\");
-  lines.push("        '--version[Show version information]' \\");
-  lines.push(
-    "        '--completions[Print shell completion script]:shell:(fish bash zsh sh)' \\",
-  );
-  lines.push(
-    `        '--log-level[Sets the minimum log level]:level:(${GLOBAL_LOG_LEVELS.join(" ")})' \\`,
-  );
+  for (const option of globalOptions) {
+    lines.push(`        ${zshOption(option)} \\`);
+  }
   lines.push("        '1:command:->command' \\");
   lines.push("        '*::arg:->args'");
   lines.push("");
@@ -476,7 +480,10 @@ function generateZshCompletions(): string {
   lines.push("    while (( scan_index < CURRENT )); do");
   lines.push('        local scan_word="$words[scan_index]"');
   lines.push(
-    '        if [[ "$scan_word" == "--completions" || "$scan_word" == "--log-level" ]]; then',
+    `        if [[ ${globalOptions
+      .filter((option) => option.type === "string")
+      .map((option) => `"$scan_word" == "--${option.name}"`)
+      .join(" || ")} ]]; then`,
   );
   lines.push("            (( scan_index += 2 ))");
   lines.push("            continue");
@@ -508,6 +515,15 @@ function generateZshCompletions(): string {
       lines.push(
         '                        local subcmd_word="$words[subcmd_index]"',
       );
+      lines.push(
+        `                        if [[ ${globalOptions
+          .filter((option) => option.type === "string")
+          .map((option) => `"$subcmd_word" == "--${option.name}"`)
+          .join(" || ")} ]]; then`,
+      );
+      lines.push("                            (( subcmd_index += 2 ))");
+      lines.push("                            continue");
+      lines.push("                        fi");
       lines.push('                        if [[ "$subcmd_word" == -* ]]; then');
       lines.push("                            (( subcmd_index++ ))");
       lines.push("                            continue");
@@ -520,7 +536,7 @@ function generateZshCompletions(): string {
       lines.push("                        subcmds=(");
       for (const sub of command.subcommands) {
         lines.push(
-          `                            '${sub.name}:${sub.description}'`,
+          `                            ${quoteShell(`${sub.name}:${sub.description}`)}`,
         );
       }
       lines.push("                        )");
@@ -534,33 +550,14 @@ function generateZshCompletions(): string {
         const isPathSub = sub.completionType === "path";
         if (!hasSubOptions && !isPathSub) continue;
         lines.push(`                            ${sub.name})`);
-        const argParts: Array<string> = [];
+        const argParts = globalOptions.map(
+          (option) =>
+            `                                    ${zshOption(option)}`,
+        );
         for (const option of sub.options ?? []) {
-          if (option.short) {
-            if (option.type === "string") {
-              const completionAction = option.completionValues
-                ? option.completionValues.replace(/^__/, "_")
-                : "";
-              argParts.push(
-                `                                    '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
-              );
-            } else {
-              argParts.push(
-                `                                    '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]'`,
-              );
-            }
-          } else if (option.type === "string") {
-            const completionAction = option.completionValues
-              ? option.completionValues.replace(/^__/, "_")
-              : "";
-            argParts.push(
-              `                                    '--${option.name}[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
-            );
-          } else {
-            argParts.push(
-              `                                    '--${option.name}[${option.description}]'`,
-            );
-          }
+          argParts.push(
+            `                                    ${zshOption(option)}`,
+          );
         }
         if (isPathSub) {
           argParts.push(
@@ -580,63 +577,23 @@ function generateZshCompletions(): string {
 
   for (const command of COMMANDS) {
     if (command.subcommands) continue;
-    const allNames = getAllNames(command);
-    const isBranchCommand = allNames.some((name) =>
-      branchCommands.includes(name),
-    );
-    const isWorktreeCommand = allNames.some((name) =>
+    const names = getAllNames(command);
+    const isBranchCommand = names.some((name) => branchCommands.includes(name));
+    const isWorktreeCommand = names.some((name) =>
       worktreeCommands.includes(name),
     );
-    const hasOptions = command.options && command.options.length > 0;
-    const completionFunction = isWorktreeCommand
-      ? "_wct_worktree_branches"
-      : "_wct_branches";
-
-    if (!isBranchCommand && !isWorktreeCommand && !hasOptions) continue;
-
-    lines.push(`                ${allNames.join("|")})`);
-
-    if (hasOptions && command.options) {
-      lines.push("                    _arguments \\");
-      const optionLines: Array<string> = [];
-      for (const option of command.options) {
-        if (option.short) {
-          if (option.type === "string") {
-            const completionAction = option.completionValues
-              ? option.completionValues.replace(/^__/, "_")
-              : "";
-            optionLines.push(
-              `                        '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
-            );
-          } else {
-            optionLines.push(
-              `                        '(-${option.short} --${option.name})'{-${option.short},--${option.name}}'[${option.description}]'`,
-            );
-          }
-        } else if (option.type === "string") {
-          const completionAction = option.completionValues
-            ? option.completionValues.replace(/^__/, "_")
-            : "";
-          optionLines.push(
-            `                        '--${option.name}[${option.description}]:${option.placeholder || option.name}:${completionAction}'`,
-          );
-        } else {
-          optionLines.push(
-            `                        '--${option.name}[${option.description}]'`,
-          );
-        }
-      }
-      if (isBranchCommand || isWorktreeCommand) {
-        optionLines.push(
-          `                        '*:branch:${completionFunction}'`,
-        );
-      }
-      lines.push(optionLines.join(" \\\n"));
-      lines.push("                    ;;");
-    } else if (isBranchCommand || isWorktreeCommand) {
-      lines.push(`                    ${completionFunction}`);
-      lines.push("                    ;;");
+    lines.push(`                ${names.join("|")})`);
+    lines.push("                    _arguments \\");
+    const optionLines = [...globalOptions, ...(command.options ?? [])].map(
+      (option) => `                        ${zshOption(option)}`,
+    );
+    if (isBranchCommand || isWorktreeCommand) {
+      optionLines.push(
+        `                        '*:branch:${isWorktreeCommand ? "_wct_worktree_branches" : "_wct_branches"}'`,
+      );
     }
+    lines.push(optionLines.join(" \\\n"));
+    lines.push("                    ;;");
   }
 
   lines.push("            esac");

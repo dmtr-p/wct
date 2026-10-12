@@ -5,37 +5,9 @@ import type { WctError } from "../errors";
 import { WorkspaceService } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 import { createDownHumanReporter } from "./down-reporter";
 
-export const commandDef: CommandDef = {
-  name: "down",
-  description: "Stop tmux session and run down scripts",
-  options: [
-    {
-      name: "profile",
-      short: "P",
-      type: "string",
-      placeholder: "name",
-      description: "Use a named config profile",
-      completionValues: "__wct_profiles",
-    },
-    {
-      name: "path",
-      type: "string",
-      placeholder: "path",
-      description: "Path to worktree directory",
-    },
-    {
-      name: "branch",
-      short: "b",
-      type: "string",
-      placeholder: "name",
-      description: "Branch name to resolve worktree from",
-      completionValues: "__wct_worktree_branches",
-    },
-  ],
-};
+export { downCommandDef as commandDef } from "../cli/command-metadata";
 
 export interface DownOptions {
   profile?: string;

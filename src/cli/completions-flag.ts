@@ -1,15 +1,16 @@
 import { Flag, GlobalFlag } from "effect/cli";
+import { COMPLETION_SHELLS, completionsOption } from "./global-options";
 
 export const CompletionsFlag: typeof GlobalFlag.Completions = {
   ...GlobalFlag.Completions,
-  flag: Flag.ChoiceWithValue("completions", [
-    ["bash", "bash"],
-    ["zsh", "zsh"],
-    ["fish", "fish"],
-    ["sh", "bash"],
-  ] as const).pipe(
+  flag: Flag.ChoiceWithValue(
+    completionsOption.name,
+    COMPLETION_SHELLS.map(
+      (shell) => [shell, shell === "sh" ? "bash" : shell] as const,
+    ),
+  ).pipe(
     Flag.optional,
-    Flag.withMetavar("<bash|zsh|fish|sh>"),
-    Flag.withDescription("Print shell completion script"),
+    Flag.withMetavar(`<${COMPLETION_SHELLS.join("|")}>`),
+    Flag.withDescription(completionsOption.description),
   ),
 };

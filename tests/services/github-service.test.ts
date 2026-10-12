@@ -20,7 +20,7 @@ describe("GitHub raw PR fetching", () => {
   beforeEach(() => exec.mockReset());
 
   test.each(["[]", '[{"number":34,"title":"TUI","headRefName":"feat/tui"}]'])(
-    "parses the active open-PR list %s",
+    "parses the open-PR list %s",
     async (stdout) => {
       exec.mockReturnValueOnce(
         Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
@@ -50,7 +50,7 @@ describe("GitHub raw PR fetching", () => {
     },
   );
 
-  test("retains GitHub stderr and its cause in the active list error", async () => {
+  test("retains GitHub stderr and its cause in list errors", async () => {
     const failure = new ProcessExitError({
       command: "gh",
       args: ["pr", "list"],

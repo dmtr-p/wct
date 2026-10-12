@@ -11,7 +11,6 @@ const tmuxServiceMock = vi.hoisted(() => ({
   killPane: vi.fn(),
 }));
 
-// Mock tuiRuntime before importing the hook
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
     runPromise: vi.fn(),
@@ -40,7 +39,7 @@ vi.mock("../../src/services/tmux", async () => {
   };
 });
 
-// Lazy imports so the mock is in place
+// Import after registering mocks so the hook captures the mocked runtime.
 const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useTmux } = await import("../../src/tui/hooks/useTmux");
 
@@ -113,8 +112,6 @@ describe("useTmux hook", () => {
   });
 
   test("reports an error when no tmux client is found", async () => {
-    // discoverClient: listClients returns []
-    // refreshSessions: listSessions returns null
     mockRunPromise
       .mockResolvedValueOnce([]) // listClients
       .mockResolvedValueOnce(null); // listSessions
@@ -133,8 +130,6 @@ describe("useTmux hook", () => {
   test("stores the single client when exactly one tmux client is found", async () => {
     const singleClient = { tty: "/dev/ttys001", session: "main" };
 
-    // discoverClient: listClients returns [client]
-    // refreshSessions: listSessions returns null
     mockRunPromise
       .mockResolvedValueOnce([singleClient]) // listClients
       .mockResolvedValueOnce(null); // listSessions
@@ -148,12 +143,10 @@ describe("useTmux hook", () => {
     harness.unmount();
   });
 
-  test("reports a multi-client error when more than one client exists", async () => {
+  test("leaves client selection unresolved when multiple clients exist", async () => {
     const clientA = { tty: "/dev/ttys001", session: "a" };
     const clientB = { tty: "/dev/ttys002", session: "b" };
 
-    // discoverClient: listClients returns [a, b]
-    // refreshSessions: listSessions returns null
     mockRunPromise
       .mockResolvedValueOnce([clientA, clientB]) // listClients
       .mockResolvedValueOnce(null); // listSessions
@@ -209,7 +202,6 @@ describe("useTmux hook", () => {
   });
 
   test("switchSession returns false when no active client exists", async () => {
-    // Mount with no clients so client stays null
     mockRunPromise
       .mockResolvedValueOnce([]) // listClients
       .mockResolvedValueOnce(null); // listSessions
@@ -287,7 +279,6 @@ describe("useTmux hook", () => {
   test("jumpToPane returns false when runtime navigation fails", async () => {
     const harness = await renderWithSingleClient();
 
-    // Make the next runPromise call reject (switchClientToPane failure)
     mockRunPromise.mockRejectedValueOnce(new Error("tmux switch failed"));
 
     const result = await harness.value.jumpToPane("pane-id");

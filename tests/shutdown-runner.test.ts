@@ -504,6 +504,8 @@ if (command === "display-message") {
         main,
       ]);
     },
+    // Allow for two CLI startups plus their Git and tmux subprocesses.
+    15000,
   );
 
   test.each(["current directory", "explicit path"])(

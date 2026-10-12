@@ -111,13 +111,14 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
 - Prefer `static readonly layer` for service classes that define their own layer.
 - Keep the `live<ServiceName>Service` naming convention for existing concrete
   service implementations, such as `liveGitHubService` and `liveWorktreeService`.
-  GitHub, tmux, worktree, and workspace public methods have no service
-  requirements. Their `make<ServiceName>Service` factories capture dependencies
-  during layer construction. `makeWctServicesLayer` applies overrides before
-  constructing the workspace service. Supply `BunServices.layer` to these
-  layers with `Layer.provide` or `Layer.provideMerge`.
+  GitHub, tmux, worktree, workspace, setup, and agent public methods have no
+  service requirements. Their `make<ServiceName>Service` factories capture
+  dependencies during layer construction. `makeWctServicesLayer` applies
+  overrides before constructing the workspace service. Supply `BunServices.layer`
+  to these layers with `Layer.provide` or `Layer.provideMerge`.
   Capture only service dependencies so caller settings such as `JsonFlag` and
   `Console` remain effective when a method runs.
+  The `leakingRequirements` diagnostic enforces this service boundary.
 - Represent parameterless operations as Effect values. Read changing state
   inside `Effect.sync`, `Effect.suspend`, or `Effect.gen` so each execution
   observes current values.
@@ -135,6 +136,10 @@ or private shutdown worker, provide application and Bun services, and call
 - `provideWctServices` supplies the live application services and default JSON
   flag value.
 - `runBunPromise` runs Effects at imperative Bun boundaries.
+- Inside an Effect, compose child Effects with `yield*`. For imperative
+  callbacks that must execute an Effect, capture the surrounding context and
+  use `Effect.runPromiseWith` or `Effect.runSyncWith` to preserve caller services
+  and settings. The `runEffectInsideEffect` diagnostic enforces this boundary.
 - The TUI uses the process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
   Command exit tears down the process; there is no explicit runtime disposal
   path.
@@ -161,6 +166,9 @@ Tagged application errors use `Data.TaggedError`.
 Yield tagged errors directly inside `Effect.gen`, for example
 `return yield* commandError("not_git_repo", "Not a git repository")`.
 Use `Effect.fail` when returning a failed Effect outside a generator.
+Inside generators, execute returned Effects with `return yield*` and handle
+failures with Effect APIs rather than JavaScript `try/catch`. The
+`returnEffectInGen` and `tryCatchInEffectGen` diagnostics enforce these patterns.
 
 Workspace reporters return Effects with no required services and `WctError`
 for typed failures. Reporter failures and defects, including synchronous

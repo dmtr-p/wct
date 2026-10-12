@@ -1,6 +1,10 @@
 import type { BunServices } from "@effect/platform-bun";
 import { Context, type Effect } from "effect";
 import type { SetupCommand } from "../config/schema";
+import {
+  captureBunService,
+  type ServiceImplementation,
+} from "../effect/service-context";
 import type { WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import {
@@ -18,11 +22,22 @@ export interface SetupService {
     workingDir: string,
     env: WctEnv,
     reporter?: SetupReporter,
-  ) => Effect.Effect<SetupResult[], WctError, BunServices.BunServices>;
+  ) => Effect.Effect<SetupResult[], WctError>;
 }
 
 export const SetupService = Context.Service<SetupService>("wct/SetupService");
 
-export const liveSetupService: SetupService = SetupService.of({
+export type SetupServiceImplementation = ServiceImplementation<
+  SetupService,
+  BunServices.BunServices
+>;
+
+export const liveSetupService: SetupServiceImplementation = {
   runSetupCommands: runShellCommands,
-});
+};
+
+export function makeSetupService(
+  implementation: SetupServiceImplementation = liveSetupService,
+) {
+  return captureBunService<SetupService>(implementation);
+}

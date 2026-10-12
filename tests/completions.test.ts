@@ -681,6 +681,7 @@ describe("resolved profile completions", () => {
         `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
       );
       writeFileSync(scriptPath, runCliProcess(["--completions", shell]).stdout);
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: Zsh array expansion
       const command =
         shell === "zsh"
           ? 'compdef() { :; }; compadd() { printf "%s\\0" "${profiles[@]}"; }; source "$1"; _wct_profiles'
@@ -689,6 +690,7 @@ describe("resolved profile completions", () => {
         const result = Bun.spawnSync(
           [
             shell,
+            ...(shell === "fish" ? ["--no-config"] : []),
             "-c",
             command,
             ...(shell === "zsh" ? [shell] : []),
@@ -707,6 +709,37 @@ describe("resolved profile completions", () => {
       }
     },
   );
+
+  test("fish offers quoted profile values without file suggestions", () => {
+    if (!Bun.which("fish")) return;
+    const fixture = profileFixture();
+    const scriptPath = join(fixture.dir, "completion.fish");
+    writeFileSync(
+      join(fixture.repo, ".wct.yaml"),
+      'profiles: {"two words": {}, "semi;colon": {}}\n',
+    );
+    writeFileSync(scriptPath, runCliProcess(["--completions", "fish"]).stdout);
+    try {
+      const result = Bun.spawnSync(
+        [
+          "fish",
+          "--no-config",
+          "-c",
+          'source $argv[1]; complete -C "wct open --profile "',
+          scriptPath,
+        ],
+        { cwd: fixture.linked, env: { ...process.env, ...fixture.env } },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr.toString()).toBe("");
+      expect(result.stdout.toString().trimEnd().split("\n")).toEqual([
+        "semi\\;colon\tUse a named config profile",
+        "two\\ words\tUse a named config profile",
+      ]);
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
 
   test("unknown profile completion formats produce no output", () => {
     expect(renderCompletionProfiles(["profile"], "powershell")).toBe("");

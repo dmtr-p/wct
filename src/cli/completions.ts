@@ -92,6 +92,7 @@ function generateFishCompletions(): string {
           parts.push(`-l ${option.name}`);
           if (option.type === "string") {
             parts.push("-r");
+            if (option.completionValues) parts.push("-f");
           }
           parts.push(`-d ${quoteFish(option.description)}`);
           if (option.completionValues) {
@@ -138,6 +139,7 @@ function generateFishCompletions(): string {
       parts.push(`-l ${option.name}`);
       if (option.type === "string") {
         parts.push("-r");
+        if (option.completionValues) parts.push("-f");
       }
       parts.push(`-d ${quoteFish(option.description)}`);
       if (option.completionValues) {

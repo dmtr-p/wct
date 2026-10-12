@@ -57,7 +57,10 @@ describe("PR check summary", () => {
     expect(checkSummary(null, true)).toBe("unknown");
     expect(checkSummary([], false)).toBe("unknown");
     expect(
-      checkSummary([{ name: "test", outcome: "passed", required: true }], false),
+      checkSummary(
+        [{ name: "test", outcome: "passed", required: true }],
+        false,
+      ),
     ).toBe("unknown");
   });
 });

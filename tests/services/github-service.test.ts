@@ -19,19 +19,19 @@ const { liveGitHubService } = await import("../../src/services/github-service");
 describe("GitHub raw PR fetching", () => {
   beforeEach(() => exec.mockReset());
 
-  test.each([
-    "[]",
-    '[{"number":34,"title":"TUI","headRefName":"feat/tui"}]',
-  ])("parses the active open-PR list %s", async (stdout) => {
-    exec.mockReturnValueOnce(
-      Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
-    );
-    expect(
-      await runBunPromise(
-        liveGitHubService.listRawPrs("/repo", "open", "base/repo"),
-      ),
-    ).toEqual(JSON.parse(stdout));
-  });
+  test.each(["[]", '[{"number":34,"title":"TUI","headRefName":"feat/tui"}]'])(
+    "parses the active open-PR list %s",
+    async (stdout) => {
+      exec.mockReturnValueOnce(
+        Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
+      );
+      expect(
+        await runBunPromise(
+          liveGitHubService.listRawPrs("/repo", "open", "base/repo"),
+        ),
+      ).toEqual(JSON.parse(stdout));
+    },
+  );
 
   test.each(["not json", "{}", "null"])(
     "rejects malformed open-PR output %s",
@@ -86,9 +86,7 @@ describe("GitHub raw PR fetching", () => {
       ),
     );
     await expect(
-      runBunPromise(
-        liveGitHubService.listRawPrs("/repo", "open", "base/repo"),
-      ),
+      runBunPromise(liveGitHubService.listRawPrs("/repo", "open", "base/repo")),
     ).rejects.toMatchObject({ code: "pr_error" });
   });
 });

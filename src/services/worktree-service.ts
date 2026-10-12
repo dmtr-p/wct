@@ -47,10 +47,6 @@ export interface WorktreeService {
     branch: string,
     cwd?: string,
   ) => Effect.Effect<boolean, WctError>;
-  remoteBranchExists: (
-    branch: string,
-    cwd?: string,
-  ) => Effect.Effect<boolean, WctError>;
   removeWorktree: (
     path: string,
     force?: boolean,
@@ -449,21 +445,6 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         commandError(
           "worktree_error",
           `Failed to verify branch '${branch}'`,
-          error,
-        ),
-      ),
-    ),
-  remoteBranchExists: (branch, cwd) =>
-    runProcess(
-      "git",
-      ["rev-parse", "--verify", `origin/${branch}`],
-      cwd ? { cwd } : undefined,
-    ).pipe(
-      Effect.map((result) => result.success),
-      Effect.mapError((error) =>
-        commandError(
-          "worktree_error",
-          `Failed to verify remote branch '${branch}'`,
           error,
         ),
       ),

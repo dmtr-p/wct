@@ -86,16 +86,6 @@ export function inspectForegroundAgent(
   };
 }
 
-export function foregroundAgent(
-  processes: readonly ForegroundProcess[],
-  tty: string,
-): { agent: AgentName; generation: string } | undefined {
-  const result = inspectForegroundAgent(processes, tty);
-  return result.kind === "identified"
-    ? { agent: result.agent, generation: result.generation }
-    : undefined;
-}
-
 export const discoverForegroundProcesses = execProcess(
   "ps",
   ["-ww", "-axo", "pid=,ppid=,pgid=,tpgid=,tty=,stat=,lstart=,comm="],

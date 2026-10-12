@@ -73,7 +73,7 @@ src/
 │   ├── setup-service.ts  # Effect service for setup command execution
 │   ├── shutdown-runner.ts # Detached shutdown handoff and safe result staging
 │   ├── tmux.ts           # Tmux session management
-│   ├── github-service.ts # Effect service for GitHub PR integration
+│   ├── github-service.ts # Effect service for PR resolution, raw fetching, and fork remotes
 │   └── registry-service.ts # Effect service for multi-repo registry
 ├── tui/
 │   ├── App.tsx            # Root Ink component wiring data hooks, modes, modals, and input routing

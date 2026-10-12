@@ -157,11 +157,7 @@ export type CreateSessionResult =
 
 export interface TmuxService {
   listSessions: Effect.Effect<TmuxSession[] | null, WctError>;
-  isPaneAlive: (pane: string) => Effect.Effect<boolean | null, WctError>;
   sessionExists: (name: string) => Effect.Effect<boolean, WctError>;
-  getSessionStatus: (
-    name: string,
-  ) => Effect.Effect<"attached" | "detached" | null, WctError>;
   createSession: (
     name: string,
     workingDir: string,
@@ -179,10 +175,8 @@ export interface TmuxService {
     clientTty: string,
     target: string,
   ) => Effect.Effect<void, WctError>;
-  selectPane: (pane: string) => Effect.Effect<void, WctError>;
   togglePaneZoom: (paneId: string) => Effect.Effect<void, WctError>;
   killPane: (paneId: string) => Effect.Effect<void, WctError>;
-  refreshClient: Effect.Effect<void, WctError>;
 }
 
 export const TmuxService = Context.Service<TmuxService>("wct/TmuxService");
@@ -248,56 +242,10 @@ function listSessionsImpl() {
   );
 }
 
-export function isMissingPaneError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("can't find pane") ||
-    normalized.includes("can't find window") ||
-    normalized.includes("no such pane")
-  );
-}
-
-function isPaneAliveImpl(pane: string) {
-  return Effect.gen(function* () {
-    const result = yield* runProcess("tmux", [
-      "display-message",
-      "-p",
-      "-t",
-      pane,
-      "#{pane_id}",
-    ]);
-
-    if (result.success) {
-      return true;
-    }
-
-    if (isMissingPaneError(result.stderr || result.stdout)) {
-      return false;
-    }
-
-    return null;
-  });
-}
-
 function sessionExistsImpl(name: string) {
   return runProcess("tmux", ["has-session", "-t", `=${name}`]).pipe(
     Effect.map((result) => result.success),
   );
-}
-
-function getSessionStatusImpl(name: string) {
-  return Effect.gen(function* () {
-    const sessions = yield* listSessionsImpl();
-    if (!sessions) {
-      return null;
-    }
-    const session = sessions.find((s) => s.name === name);
-    if (!session) {
-      return null;
-    }
-    return session.attached ? "attached" : "detached";
-  });
 }
 
 export interface TmuxCommand {
@@ -622,14 +570,6 @@ function switchClientToPaneImpl(clientTty: string, target: string) {
   ]).pipe(Effect.asVoid);
 }
 
-function selectPaneImpl(pane: string) {
-  return execProcess("tmux", ["select-pane", "-t", pane]).pipe(Effect.asVoid);
-}
-
-function refreshClientImpl() {
-  return execProcess("tmux", ["refresh-client", "-S"]).pipe(Effect.asVoid);
-}
-
 export type TmuxServiceImplementation = ServiceImplementation<
   TmuxService,
   BunServices.BunServices
@@ -639,27 +579,11 @@ export const liveTmuxService: TmuxServiceImplementation = {
   listSessions: Effect.mapError(listSessionsImpl(), (error) =>
     commandError("tmux_error", "Failed to list tmux sessions", error),
   ),
-  isPaneAlive: (pane) =>
-    Effect.mapError(isPaneAliveImpl(pane), (error) =>
-      commandError(
-        "tmux_error",
-        `Failed to inspect tmux pane '${pane}'`,
-        error,
-      ),
-    ),
   sessionExists: (name) =>
     Effect.mapError(sessionExistsImpl(name), (error) =>
       commandError(
         "tmux_error",
         `Failed to check tmux session '${name}'`,
-        error,
-      ),
-    ),
-  getSessionStatus: (name) =>
-    Effect.mapError(getSessionStatusImpl(name), (error) =>
-      commandError(
-        "tmux_error",
-        `Failed to get tmux session status for '${name}'`,
         error,
       ),
     ),
@@ -725,10 +649,6 @@ export const liveTmuxService: TmuxServiceImplementation = {
         error,
       ),
     ),
-  selectPane: (pane) =>
-    Effect.mapError(selectPaneImpl(pane), (error) =>
-      commandError("tmux_error", `Failed to select pane '${pane}'`, error),
-    ),
   togglePaneZoom: (paneId) =>
     Effect.mapError(togglePaneZoomImpl(paneId), (error) =>
       commandError(
@@ -745,9 +665,6 @@ export const liveTmuxService: TmuxServiceImplementation = {
         error,
       ),
     ),
-  refreshClient: Effect.mapError(refreshClientImpl(), (error) =>
-    commandError("tmux_error", "Failed to refresh tmux client", error),
-  ),
 };
 
 export function makeTmuxService(

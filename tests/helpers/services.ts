@@ -18,15 +18,10 @@ export const shutdownWorktreeService: WorktreeServiceApi = {
 
 export type ServiceOverrides = WctServiceOverrides;
 
-/**
- * No-op TmuxService that never calls real tmux.
- * Used as the default in tests to prevent side-effects on the host machine.
- */
+/** Default test double prevents tmux operations on the host. */
 export const noopTmuxService: TmuxServiceApi = {
   listSessions: Effect.succeed(null),
-  isPaneAlive: () => Effect.succeed(null),
   sessionExists: () => Effect.succeed(false),
-  getSessionStatus: () => Effect.succeed(null),
   createSession: (_name, _workingDir) =>
     Effect.succeed({ _tag: "Created", sessionName: _name }),
   killSession: () => Effect.void,
@@ -37,10 +32,8 @@ export const noopTmuxService: TmuxServiceApi = {
   listClients: Effect.succeed([]),
   detachClient: () => Effect.void,
   switchClientToPane: () => Effect.void,
-  selectPane: () => Effect.void,
   togglePaneZoom: () => Effect.void,
   killPane: () => Effect.void,
-  refreshClient: Effect.void,
 };
 
 export function withTestServices<A, E, R>(

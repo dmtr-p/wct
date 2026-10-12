@@ -299,6 +299,7 @@ To install dependencies:
 
 ```bash
 bun install
+bun run prepare
 ```
 
 To run:
@@ -309,12 +310,12 @@ bun run src/index.ts
 
 Use [Bun](https://bun.com) for development and builds. See [AGENTS.md](./AGENTS.md) for repository conventions and automated checks.
 
-`bun install` also patches the pinned TypeScript compiler with
-[@effect/tsgo](https://github.com/Effect-TS/tsgo). The typecheck reports Effect
+`bun run prepare` patches the pinned TypeScript compiler with
+[@effect/tsgo](https://github.com/Effect-TS/tsgo). Lifecycle scripts are disabled
+in `bunfig.toml`, so run it explicitly after installing dependencies. Worktree
+setup and CI include this step. The typecheck reports Effect
 diagnostics alongside TypeScript errors. Effect errors fail the check; warnings
 are advisory, and suggestions remain available in the editor.
-If dependencies are already installed and the compiler needs patching, run
-`bun run prepare`.
 
 For VS Code-based editors, install the TypeScript 7 extension and select the
 workspace TypeScript version when prompted. The workspace settings point to

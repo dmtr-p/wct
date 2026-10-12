@@ -18,6 +18,8 @@ setup:
     command: "mise trust mise.toml && mise install"
   - name: "Install dependencies"
     command: "bun install"
+  - name: "Prepare Effect tooling"
+    command: "bun run prepare"
 
 # Tmux session configuration
 tmux:

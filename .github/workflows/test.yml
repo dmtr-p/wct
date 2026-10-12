@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Prepare Effect tooling
+        run: bun run prepare
+
       - name: Run linter
         run: bun run lint
 

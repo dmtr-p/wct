@@ -12,7 +12,9 @@ Update the Effect runtime packages together. `package.json` is the source of
 truth for dependency versions. The `@effect/tsgo` development tool has its own
 version and must support the pinned `typescript` version.
 
-`bun install` runs the `prepare` script to patch TypeScript with Effect tsgo.
+Lifecycle scripts are disabled in `bunfig.toml`. Run `bun run prepare` after
+`bun install` to patch TypeScript with Effect tsgo; worktree setup and CI run
+this step explicitly.
 The stop hook and CI use `bun run typecheck`, which reports TypeScript errors
 and Effect diagnostics together. Effect errors fail the check; warnings are
 advisory, and suggestions are shown only in the editor.

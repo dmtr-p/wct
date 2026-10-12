@@ -308,12 +308,8 @@ describe("double-click actions", () => {
 });
 
 describe("isMouseSequence", () => {
-  // Bug 3 regression: a single click emits BOTH a press (`M`) and a release
-  // (`m`) SGR sequence. `parseSgrMouse` intentionally returns `null` for the
-  // release half (and extra-button events); motion parses for hover. The
-  // dispatcher guard must still swallow every mouse report by SHAPE,
-  // not by whether they parsed to an action, or the raw escape bytes fall
-  // through to mode-specific handlers (e.g. corrupting the Search query).
+  // Swallow every mouse-shaped report, including releases without an action,
+  // so raw escape bytes cannot reach text fields.
   test("matches a release sequence (trailing m)", () => {
     expect(isMouseSequence("\x1b[<0;45;12m")).toBe(true);
     expect(isMouseSequence("[<0;45;12m")).toBe(true);
@@ -351,10 +347,6 @@ describe("isMouseSequence", () => {
   });
 
   test("does NOT match a mixed string — a keystroke merged with a sequence is keyboard input", () => {
-    // Semantics (documented on isMouseSequence): input is swallowed as mouse
-    // only when it is ENTIRELY mouse sequences. Swallowing a mixed string
-    // would eat the 'a' keystroke. (Accepted trade-off, also documented
-    // there: a paste that is EXACTLY mouse-shaped tokens IS swallowed.)
     expect(isMouseSequence("a\x1b[<0;5;5M")).toBe(false);
     expect(isMouseSequence("a[<0;5;5M")).toBe(false);
     expect(isMouseSequence("\x1b[<0;5;5Mx")).toBe(false);

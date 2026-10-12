@@ -448,7 +448,6 @@ describe("buildWindowsPaneCommands", () => {
     expect(newWindowCmds[0]?.args).toContain("shell");
     expect(newWindowCmds[1]?.args).toContain("test");
 
-    // Last command should select first window
     expect(commands[commands.length - 1]).toEqual({
       type: "select-window",
       args: ["-t", "test-session:dev"],
@@ -465,11 +464,9 @@ describe("buildWindowsPaneCommands", () => {
       { name: "shell" },
     ]);
 
-    // First window should have split-window command
     const splitCmds = commands.filter((c) => c.type === "split-window");
     expect(splitCmds).toHaveLength(1);
 
-    // Second window should be created
     const newWindowCmds = commands.filter((c) => c.type === "new-window");
     expect(newWindowCmds).toHaveLength(1);
     expect(newWindowCmds[0]?.args).toContain("shell");
@@ -611,15 +608,13 @@ describe("buildWindowsPaneCommands", () => {
       },
     ]);
 
-    // Should have 3 split-window commands (first pane uses initial window)
+    // The first pane uses the window's initial pane.
     const splitCmds = commands.filter((c) => c.type === "split-window");
     expect(splitCmds).toHaveLength(3);
 
-    // Should have 3 send-keys commands (4th pane has no command)
     const sendKeysCmds = commands.filter((c) => c.type === "send-keys");
     expect(sendKeysCmds).toHaveLength(3);
 
-    // Should have layout command
     const layoutCmd = commands.find((c) => c.type === "select-layout");
     expect(layoutCmd?.args[2]).toBe("main-vertical");
   });

@@ -192,8 +192,6 @@ describe("registry-service", () => {
           );
           legacy.close();
 
-          // Now open via the service — migrations should converge without
-          // destroying the existing data.
           const registry = yield* RegistryService;
           const repos = yield* registry.listRepos;
           const legacyRow = repos.find(
@@ -202,7 +200,6 @@ describe("registry-service", () => {
           expect(legacyRow).toBeDefined();
           expect(legacyRow?.project).toBe("old-project");
 
-          // schema_version should now exist and record v1.
           const db = new Database(dbPath, { readonly: true });
           try {
             const row = db

@@ -127,8 +127,9 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
 
 ## Runtime and process boundaries
 
-Keep `src/index.ts` thin: handle completion/version shortcuts, build the root
-CLI Effect, provide application and Bun services, and call `BunRuntime.runMain`.
+Keep `src/index.ts` thin: handle completion/version shortcuts, dispatch the CLI
+or private shutdown worker, provide application and Bun services, and call
+`BunRuntime.runMain`.
 
 - `provideBunServices` supplies `BunServices.layer`.
 - `provideWctServices` supplies the live application services and default JSON

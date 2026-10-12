@@ -76,7 +76,6 @@ describe("getChangedFilesCount", () => {
     const count = await runBunPromise(getChangedFilesCount(repoDir));
     expect(count).toBe(2);
 
-    // Cleanup
     await $`rm file1.txt file2.txt`.quiet().cwd(repoDir);
   });
 
@@ -88,7 +87,6 @@ describe("getChangedFilesCount", () => {
     const count = await runBunPromise(getChangedFilesCount(repoDir));
     expect(count).toBe(2);
 
-    // Cleanup
     await $`git reset HEAD staged.txt`.quiet().cwd(repoDir);
     await $`rm staged.txt unstaged.txt`.quiet().cwd(repoDir);
   });
@@ -129,7 +127,6 @@ describe("getAheadBehind", () => {
     await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "initial commit"`.quiet().cwd(repoDir);
 
-    // Create a feature branch worktree
     const wtPath = join(worktreeDir, "feature-branch");
     await $`git worktree add -b feature-branch ${wtPath}`.quiet().cwd(repoDir);
 
@@ -256,7 +253,6 @@ describe("formatSync", () => {
   });
 });
 
-// Strip ANSI escape codes for test assertions
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes are control characters by definition
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 function stripAnsi(str: string): string {
@@ -278,7 +274,6 @@ describe("listCommand integration", () => {
     await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "initial commit"`.quiet().cwd(repoDir);
 
-    // Create a secondary worktree
     const wtPath = join(worktreeDir, "feature-test");
     await $`git worktree add -b feature-test ${wtPath}`.quiet().cwd(repoDir);
 
@@ -287,7 +282,6 @@ describe("listCommand integration", () => {
     await $`git commit --allow-empty -m "main advance 2"`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "main advance 3"`.quiet().cwd(repoDir);
 
-    // Create staged and unstaged changes in the worktree
     await $`echo "staged content" > staged.txt`.quiet().cwd(wtPath);
     await $`git add staged.txt`.quiet().cwd(wtPath);
     await $`echo "unstaged content" > unstaged.txt`.quiet().cwd(wtPath);
@@ -316,7 +310,6 @@ describe("listCommand integration", () => {
       await expect(runCommand()).resolves.toBeUndefined();
       expect(lines.length).toBeGreaterThanOrEqual(2);
 
-      // Verify header row contains all column headers
       const header = stripAnsi(lines[0] ?? "");
       expect(header).toContain("BRANCH");
       expect(header).toContain("PATH");
@@ -324,7 +317,6 @@ describe("listCommand integration", () => {
       expect(header).toContain("CHANGES");
       expect(header).toContain("SYNC");
 
-      // Verify the feature worktree row
       const dataLines = lines.slice(1).map(stripAnsi);
       const featureRow = dataLines.find((l) => l.includes("feature-test"));
       expect(featureRow).toBeDefined();
@@ -347,7 +339,6 @@ describe("listCommand integration", () => {
 
     try {
       await expect(runCommand({ short: true })).resolves.toBeUndefined();
-      // Should have branch names only, no header
       expect(lines.some((l) => l.includes("BRANCH"))).toBe(false);
       expect(lines.some((l) => l.includes("main"))).toBe(true);
       expect(lines.some((l) => l.includes("feature-test"))).toBe(true);
@@ -539,7 +530,6 @@ describe("listCommand integration", () => {
 
     try {
       await expect(runCommand()).resolves.toBeUndefined();
-      // Should show the main worktree row
       const dataLines = lines.slice(1).map(stripAnsi);
       expect(dataLines.some((l) => l.includes("main"))).toBe(true);
     } finally {

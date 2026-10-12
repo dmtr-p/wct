@@ -13,7 +13,6 @@ describe("wct-db migration runner", () => {
 
     runMigrations(db);
 
-    // schema_version table exists and has exactly one row per version
     const rows = db
       .query("SELECT version FROM schema_version ORDER BY version ASC")
       .all() as { version: number }[];
@@ -44,14 +43,12 @@ describe("wct-db migration runner", () => {
 
     runMigrations(db);
 
-    // Existing data must survive
     const legacyRow = db
       .query("SELECT * FROM registry WHERE repo_path = ?")
       .get("/tmp/legacy-repo") as { project: string } | null;
     expect(legacyRow).not.toBeNull();
     expect(legacyRow?.project).toBe("old-project");
 
-    // schema_version now reflects v1 applied (and any future versions)
     const version = getCurrentSchemaVersion(db);
     expect(version).toBe(TARGET_SCHEMA_VERSION);
 
@@ -68,7 +65,6 @@ describe("wct-db migration runner", () => {
       .query("SELECT version FROM schema_version ORDER BY version ASC")
       .all() as { version: number }[];
 
-    // Each version appears exactly once
     expect(rows.length).toBe(TARGET_SCHEMA_VERSION);
     expect(rows.map((r) => r.version)).toEqual(
       Array.from({ length: TARGET_SCHEMA_VERSION }, (_, i) => i + 1),
@@ -88,14 +84,11 @@ describe("wct-db migration runner", () => {
     }
     db.run(v1Sql);
 
-    // runMigrations should handle this cleanly because v1 uses CREATE TABLE IF NOT EXISTS
     expect(() => runMigrations(db)).not.toThrow();
 
-    // schema_version exists and records the correct version
     const version = getCurrentSchemaVersion(db);
     expect(version).toBe(TARGET_SCHEMA_VERSION);
 
-    // registry table is in good shape (no duplicate tables or errors)
     const tableCheck = db
       .query(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='registry'",

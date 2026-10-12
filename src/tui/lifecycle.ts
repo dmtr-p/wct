@@ -1,8 +1,5 @@
-// A lifecycle entry is keyed by Workspace Identity — main repository path +
-// branch — not the project display name used for expansion keys
-// (`worktreeDisplayKey`, `Mode.Expanded`, `treeItemId`). Two registered repos can
-// share a display name, so a display-name key would let one repo's `open`
-// blank out another repo's progress row.
+// Project display names can collide; lifecycle ownership uses main repo path
+// and branch so one repository's operation cannot overwrite another's progress.
 
 import { Effect } from "effect";
 import type { Dispatch, SetStateAction } from "react";
@@ -23,11 +20,9 @@ export type LifecyclePhase = WorkspacePhase | { _tag: "Validating" };
 
 export interface LifecycleEntry {
   operation: WorkspaceOperation;
-  /** Half of the Workspace Identity. */
   repoPath: string;
   /** Display name only — not part of the Workspace Identity. */
   project: string;
-  /** The other half of the Workspace Identity. */
   branch: string;
   phase: LifecyclePhase;
 }
@@ -56,19 +51,14 @@ export function lifecycleEntryFor(
 }
 
 /**
- * Synchronous claim ledger for Workspace Identities. A `setLifecycle` updater
- * doesn't apply until next render, so two starts dispatched in the same tick
- * would both read the identity as free; this ledger is mutated the instant a
- * claim is taken, so the second start is refused before either can overwrite
- * the other's state.
+ * Claim synchronously: React state updates apply on a later render, allowing
+ * two starts in the same tick to observe the same Workspace as available.
  */
 export interface LifecycleClaims {
   claim: (entry: LifecycleEntry) => boolean;
   record: (entry: LifecycleEntry) => void;
   /**
-   * Release the identity, but only when `entry` is the exact object the claim
-   * was taken with — so a finished operation's trailing teardown can never
-   * unlock a successor that claimed the same identity in the meantime.
+   * Require the original entry object so late teardown cannot unlock a successor.
    */
   release: (entry: LifecycleEntry) => void;
   active: (mainRepoPath: string, branch: string) => LifecycleEntry | undefined;
@@ -180,10 +170,7 @@ export function lifecycleValidationWarning(
 export const LIFECYCLE_ROW_PREFIX = "     └ ";
 
 /**
- * Single-line content for a Lifecycle Progress Row. Tree rows are budgeted as
- * exactly one terminal row, so a long label is truncated rather than
- * soft-wrapped — a wrapped row would desync windowing and mouse hit-testing
- * for every row below it.
+ * Keep progress to one terminal row so windowing and mouse hit-testing agree.
  */
 export function lifecycleProgressContent(
   phase: LifecyclePhase,
@@ -196,10 +183,8 @@ export function lifecycleProgressContent(
 }
 
 /**
- * Advance the phase, drive it from a `WorkspaceReporter`, and tear the
- * presentation down. Every method is a no-op once this operation has ended,
- * so a late reporter event can't resurrect this row or touch a successor's
- * entry for the same identity.
+ * Ignore updates after teardown so late events cannot resurrect progress or
+ * modify a successor's entry for the same Workspace.
  */
 export interface LifecycleController {
   setPhase: (phase: LifecyclePhase) => void;
@@ -215,11 +200,8 @@ export interface BeginLifecycleOptions {
 }
 
 /**
- * Begin a lifecycle for one Workspace Identity, or refuse it if already
- * claimed, reporting the refusal and leaving the owning operation untouched.
- * Returns `null` rather than an inert controller, so a refused caller can't
- * go on to run the service and tear down the operation that owns the
- * identity.
+ * Return null on a refused claim; callers must stop before running the service
+ * or tearing down the operation that already owns this Workspace.
  */
 export function beginLifecycle(
   options: BeginLifecycleOptions,
@@ -244,10 +226,8 @@ export function beginLifecycle(
     return new Map(previous).set(key, entry);
   });
 
-  // Teardown latch: every flow tears down twice (inline, then in `finally`),
-  // with awaits in between during which a new operation may claim the freed
-  // identity, so once this fires, later calls must no-op rather than touch a
-  // successor's entry.
+  // Inline cleanup and finally can straddle a successor's claim. Latch teardown
+  // so the second call cannot remove that successor's entry.
   let ended = false;
 
   const setPhase = (phase: LifecyclePhase) => {
@@ -282,8 +262,7 @@ export function beginLifecycle(
     setPhase,
     end,
     reporter: {
-      // Effect.sync — a progress reporter must never be able to fail the
-      // lifecycle operation it's reporting on.
+      // Reporting adds no typed failures to the lifecycle operation.
       event: (event) =>
         Effect.sync(() => {
           if (event._tag !== "PhaseStarted") return;
@@ -302,9 +281,7 @@ export interface LifecycleRunOptions<T> {
   claims: LifecycleClaims;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
   /**
-   * Snapshot this validation observed, or `null` when the refresh couldn't
-   * observe anything (previous tree kept) — the run then warns instead of
-   * silently trusting stale state.
+   * Return the observed snapshot, or null to keep the previous tree and warn.
    */
   refreshAll: () => Promise<readonly RepoInfo[] | null>;
   showActionError: (message: string) => void;
@@ -312,28 +289,20 @@ export interface LifecycleRunOptions<T> {
   run: (reporter: WorkspaceReporter) => Promise<T>;
   resultWarnings?: (result: T) => readonly string[];
   /**
-   * Reconciliation using the observed snapshot, run before the presentation
-   * comes down; never called on the `null` (warned) arm. `open` uses it to
-   * mark a Workspace found on disk as discovered.
+   * Reconcile the observed snapshot before teardown; skip failed validation.
    */
   onValidated?: (snapshot: readonly RepoInfo[]) => void;
   /**
-   * Work that must wait for both validation and teardown — e.g. the tmux
-   * hand-off that detaches this TUI's terminal. Its failure must never
-   * resurrect a progress row.
+   * Run follow-up actions after validation and teardown; report failures
+   * without restoring progress.
    */
   afterCleanup?: (result: T) => Promise<string | undefined>;
 }
 
 /**
- * Shared lifecycle shape: present → run with the reporter → validate → tear
- * down → hand off → report. Validation runs on both the success and failure
- * branch, since a failed operation may still have changed worktree or tmux
- * state that the tree needs to reflect before the error is shown.
- *
- * Expansion is intentionally not handled here: a lifecycle's forced
- * expansion is presentation-only, so removing the entry restores the user's
- * stored preference with nothing to reconcile.
+ * Validate both outcomes: failed operations may still change Git or tmux state.
+ * Teardown precedes terminal handoffs and restores the user's expansion
+ * preference by removing the temporary lifecycle entry.
  */
 export async function runLifecycleOperation<T>(
   options: LifecycleRunOptions<T>,
@@ -346,9 +315,6 @@ export async function runLifecycleOperation<T>(
     entry,
     showActionError: options.showActionError,
   });
-  // Refused: another operation owns this identity and the refusal is already
-  // reported. Returning here avoids racing that operation and having the
-  // `finally` below tear down its presentation.
   if (!lifecycle) return;
 
   const messages: LifecycleMessage[] = [];
@@ -371,17 +337,14 @@ export async function runLifecycleOperation<T>(
       for (const warning of options.resultWarnings(result)) append(warning);
     }
 
-    // The null check stays inside the try, so a throwing refresh is reported
-    // once by its own message rather than twice.
     lifecycle.setPhase({ _tag: "Validating" });
     try {
       const snapshot = await options.refreshAll();
       if (snapshot === null) {
         append(lifecycleValidationWarning(operation));
       } else {
-        // Runs before `end`, in the same React commit, using the snapshot
-        // this closure observed — a shared ref could be overwritten by a
-        // concurrently finishing operation while this one awaited.
+        // Use this operation's snapshot; a shared ref could be overwritten by
+        // another operation while this one awaits validation.
         options.onValidated?.(snapshot);
       }
     } catch (error) {
@@ -390,9 +353,7 @@ export async function runLifecycleOperation<T>(
     lifecycle.end();
 
     if (result !== undefined && options.afterCleanup) {
-      // Nothing awaits this function's returned promise, so a throw here must
-      // be caught and reported — otherwise it surfaces as a silent unhandled
-      // rejection, dropping the messages collected above.
+      // A handoff failure must not discard messages collected during the operation.
       try {
         append((await options.afterCleanup(result)) ?? "");
       } catch (error) {

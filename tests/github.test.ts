@@ -544,7 +544,6 @@ describe("liveGitHubService.listPrs error message threading", () => {
     expect(Exit.isFailure(exit)).toBe(true);
     if (!Exit.isFailure(exit)) return;
 
-    // In Effect v4, Cause has a flat `reasons` array of Fail/Die/Interrupt.
     const reason = exit.cause.reasons[0];
     expect(reason).toBeDefined();
     expect(reason?._tag).toBe("Fail");
@@ -554,7 +553,6 @@ describe("liveGitHubService.listPrs error message threading", () => {
     expect(wctErr).toBeInstanceOf(WctCommandError);
     const msg = (wctErr as WctCommandError).message;
     expect(msg).not.toBe("Failed to list PRs");
-    // The message should contain something from gh's actual output
     expect(msg.length).toBeGreaterThan(0);
   });
 });

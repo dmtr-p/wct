@@ -132,29 +132,17 @@ describe("useMouse (default-on)", () => {
   });
 
   test("registers NO per-signal handlers (preserves Ink's signal-exit invariant)", async () => {
-    // Regression guard: Ink tears down on signals via signal-exit, which only
-    // re-raises (and runs Ink.unmount) when it is the SOLE listener for a
-    // signal. Adding our own SIGINT/SIGTERM/SIGHUP listener breaks that and
-    // hangs the process (notably on SIGHUP). useMouse must add ZERO per-signal
-    // listeners.
-    //
-    // Ink itself registers one signal-exit listener per signal while mounted,
-    // so the absolute count is non-zero. We isolate our contribution by
-    // comparing a useMouse probe against a control probe that renders Ink but
-    // does NOT call useMouse: the mounted-state per-signal counts must match.
+    // Extra signal listeners prevent signal-exit from re-raising and unmounting
+    // Ink. Compare against an Ink-only control to exclude Ink's own listeners.
     delete process.env.WCT_DISABLE_MOUSE;
 
-    // Baseline before any probe mounts.
     const baseline = signals.map((s) => process.listenerCount(s));
 
-    // Control: Ink alone (no useMouse). Capture its mounted-state counts.
     const control = await renderProbe(NullProbe);
     const controlCounts = signals.map((s) => process.listenerCount(s));
     control.unmount();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // useMouse probe: mounted-state per-signal counts must EQUAL the control,
-    // i.e. useMouse contributes zero per-signal listeners on top of Ink's.
     const probe = await renderMouseProbe();
     signals.forEach((s, i) => {
       expect(process.listenerCount(s)).toBe(controlCounts[i]);
@@ -162,7 +150,6 @@ describe("useMouse (default-on)", () => {
 
     probe.unmount();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    // No leak: per-signal counts return to the pre-mount baseline.
     signals.forEach((s, i) => {
       expect(process.listenerCount(s)).toBe(baseline[i]);
     });
@@ -182,8 +169,6 @@ describe("useMouse (default-on)", () => {
 
     probe.unmount();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    // No enable on mount means the early-return path ran, so nothing to
-    // disable on unmount either.
     expect(probe.output()).not.toContain(MOUSE_DISABLE);
     expect(process.listenerCount("exit")).toBe(exitBefore);
     sigBefore.forEach((count, i) => {

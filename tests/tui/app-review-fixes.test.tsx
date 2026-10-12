@@ -45,8 +45,7 @@ describe("App.tsx review fixes (real App)", () => {
       await tick(20);
       expect(rendered.output()).toContain("main");
 
-      // Selection stays on the repo row (index 0); wheel the viewport away so
-      // the selected row is off-screen — the deliberate PRD §3 state.
+      // Scroll the selection off-screen so an unwanted reveal is observable.
       for (let i = 0; i < 15; i++) {
         await sendKeys(rendered.stdin, sgrWheel(1), 1);
       }
@@ -56,10 +55,6 @@ describe("App.tsx review fixes (real App)", () => {
       const visibleBefore = before.filter((l) => /feature\/\d+/.test(l));
       expect(visibleBefore.length).toBeGreaterThan(0);
 
-      // Open the OpenModal and cancel straight out of it. The old modal
-      // branch set viewportRows = rows.length, whose clamp effect zeroed the
-      // persistent scrollOffset — after Esc the viewport re-anchored to the
-      // selection and the reading position (visibleBefore) was gone.
       await sendKeys(rendered.stdin, "o");
       expect(rendered.output()).toContain("Select mode");
       // A lone ESC sits in Ink's pending-escape buffer for 20ms (it could be
@@ -96,15 +91,9 @@ describe("App.tsx review fixes (real App)", () => {
       ) {
         frame.pop();
       }
-      // The whole frame must fit the terminal (the overflowing tree clips
-      // inside its own box instead of painting over the modal)...
       expect(frame.length).toBeLessThanOrEqual(14);
-      // ...the header must survive (the garbled layout corrupted it to " ct")
-      // and retain the right-aligned add-project control.
       expect(frame[0]?.startsWith("wct")).toBe(true);
       expect(frame[0]).toContain("[+Add]");
-      // ...and the modal must be fully present: title on its top border and
-      // an intact bottom border, in order.
       const topBorder = frame.findIndex((l) => l.includes("Select mode"));
       const bottomBorder = frame.findIndex((l) => l.includes("╰"));
       expect(topBorder).toBeGreaterThan(-1);
@@ -261,9 +250,7 @@ describe("App.tsx review fixes (real App)", () => {
     const rawModeOffIndex = rendered.events.findIndex(
       (e) => e.kind === "rawmode" && e.mode === false,
     );
-    // Without the fix Ink's own \x03 shortcut runs handleExit first: raw mode
-    // goes off during handleExit and MOUSE_DISABLE only lands later, in the
-    // React unmount cleanup — echoing any in-flight reports onto the shell.
+    // Disable reporting before raw mode ends so in-flight mouse bytes cannot echo.
     expect(disableIndex).toBeGreaterThan(-1);
     expect(rawModeOffIndex).toBeGreaterThan(-1);
     expect(disableIndex).toBeLessThan(rawModeOffIndex);
@@ -440,8 +427,6 @@ describe("App.tsx review fixes (real App)", () => {
       await sendKeys(rendered.stdin, "\x1b[<66;1;1M\x1b[<67;1;1M\x1b[<66;1;1M");
       await tick(5);
 
-      // Before the fix these decoded as vertical wheel via bit 0 and jerked
-      // the viewport; now the frame must be unchanged.
       expect(rendered.lines()).toEqual(before);
     } finally {
       rendered.unmount();

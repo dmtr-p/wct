@@ -25,7 +25,7 @@ import {
 
 const { App } = await import("../../src/tui/App");
 
-describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
+describe("App mouse selection and viewport behavior", () => {
   let homeDir: string;
   let repoPath: string;
 
@@ -115,8 +115,6 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, sgrPress(3, sgrRow));
         await sendKeys(rendered.stdin, sgrRelease(3, sgrRow));
 
-        // Bug 1: without the fix, identity recovery snaps the cursor back to
-        // feature/a. With the fix, the clicked feature/b stays selected.
         const line = selectedLine(rendered.lines());
         expect(line).toContain("feature/b");
         expect(line).not.toContain("feature/a");
@@ -239,7 +237,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
     });
   });
 
-  describe("Bug 2: background refresh (new `rows`/`repos` ref, same selectedIndex) must not re-anchor a wheel-scrolled viewport", () => {
+  describe("background refresh preserves a wheel-scrolled viewport", () => {
     test("a background refresh (repos ref change, selectedIndex unchanged) does not move the viewport", async () => {
       setTallWorktrees(repoPath, 40);
 
@@ -249,10 +247,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(20);
         expect(rendered.output()).toContain("main");
 
-        // Selection stays on the repo row (index 0, never moved). Wheel-scroll
-        // down repeatedly so the viewport moves away from the selection —
-        // this is the intended PRD §3 behaviour (wheel scrolls independent of
-        // selection).
+        // Scroll the selection off-screen to distinguish viewport preservation
+        // from automatic selection reveal.
         for (let i = 0; i < 15; i++) {
           await sendKeys(rendered.stdin, sgrWheel(1), 1);
         }
@@ -273,11 +269,6 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(10);
 
         const afterRefresh = rendered.lines();
-        // Bug 2: without the selectionChanged gate, a background refresh
-        // that only changes object identity (not content) would re-fire the
-        // auto-scroll effect and snap the viewport back to the (unchanged)
-        // selection, discarding the wheel scroll. With the fix, the viewport
-        // must still show the same scrolled-to region.
         expect(selectedLine(afterRefresh)).toBeUndefined();
         const visibleAfter = afterRefresh.filter((l) => /feature\/\d+/.test(l));
         expect(visibleAfter).toEqual(visibleBefore);
@@ -302,12 +293,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(5);
         expect(selectedLine(rendered.lines())).toBeUndefined();
 
-        // Enter Search and type a query that still matches many rows. The
-        // cursor reset (setSelectedIndex(0)) is a no-op — selectedIndex is
-        // already 0 — so `selectionChanged` stays false and the keep-visible
-        // effect never fires; without the explicit scroll reset in the
-        // searchQueryChanged branch, Search would open with the selected
-        // first match scrolled off-screen and no visible cursor.
+        // The selection is already at index 0; changing the query must still
+        // reveal the first match.
         await sendKeys(rendered.stdin, "/");
         await sendKeys(rendered.stdin, "f");
         await tick(5);
@@ -372,7 +359,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
       }
     });
 
-    test("a wheel right after a no-nudge click is not undone (selectionChanged falling edge)", async () => {
+    test("wheel scrolling after selecting an already visible row preserves the new offset", async () => {
       setTallWorktrees(repoPath, 40);
 
       const rendered = await renderApp(<App />, 14);
@@ -380,12 +367,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(20);
         expect(rendered.output()).toContain("main");
 
-        // Wheel the viewport down so the selection (repo, row 0) is
-        // off-screen, then click the TOP visible row (feature/3, row 5 at
-        // offset 5). The click is a deliberate selection change but needs NO
-        // nudge — the row is already visible — so the keep-visible effect's
-        // functional update returns the same offset and React bails without
-        // an extra commit that would consume the selectionChanged edge.
+        // Select the top visible row at offset 5. The click changes selection
+        // without needing to move the viewport.
         for (let i = 0; i < 5; i++) {
           await sendKeys(rendered.stdin, sgrWheel(1), 1);
         }
@@ -395,12 +378,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, sgrPress(3, sgrRowFor(0)));
         expect(selectedLine(rendered.lines())).toContain("feature/3");
 
-        // The very next wheel tick scrolls the just-clicked selection off the
-        // top. This commit re-fires the keep-visible effect purely via the
-        // FALLING edge of selectionChanged (true -> false) while the
-        // visibility ref still says "was visible" — without requiring the
-        // row/viewport to have actually changed, the effect would re-anchor
-        // and snap the offset straight back, eating the wheel tick.
+        // The next wheel tick must be able to scroll the clicked row off-screen.
         await sendKeys(rendered.stdin, sgrWheel(1), 1);
         await tick(5);
 
@@ -451,21 +429,15 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(20);
         expect(rendered.output()).toContain("main");
 
-        // Walk the cursor well past the first viewport; the keep-visible
-        // effect pins it to the bottom visible row (rows are 1:1 with items
-        // here, so 12 downs land on feature/10 at row index 12).
+        // Twelve downs put feature/10 on the bottom visible row.
         for (let i = 0; i < 12; i++) {
           await sendKeys(rendered.stdin, "\x1b[B", 2);
         }
         await tick(5);
         expect(selectedLine(rendered.lines())).toContain("feature/10");
 
-        // Shrink the terminal by two rows. selectedIndex is unchanged, so
-        // the keep-visible effect's selectionChanged gate alone skips it,
-        // and the recovery effect's clamp can only DECREASE the offset (a
-        // shrink raises the max offset) — without the viewport-shrink signal
-        // the selected bottom row falls below the window and the cursor
-        // disappears until the next navigation key.
+        // Shrinking must keep a previously visible selection on-screen even
+        // when its item index has not changed.
         rendered.stdout.rows = 12;
         rendered.stdout.emit("resize");
         await tick(10);
@@ -490,8 +462,7 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(20);
         expect(rendered.output()).toContain("main");
 
-        // Selection stays on the repo row (index 0); wheel the viewport away
-        // so the selected row is off-screen — the deliberate PRD §3 state.
+        // Scroll the selection off-screen before resizing.
         for (let i = 0; i < 15; i++) {
           await sendKeys(rendered.stdin, sgrWheel(1), 1);
         }
@@ -579,13 +550,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await tick(5);
         expect(selectedLine(rendered.lines())).toContain("feature/11");
 
-        // Narrow the terminal. The PR label above the window wraps onto a
-        // second row, pushing the selection's visual row down by one while
-        // selectedIndex AND viewportRows stay unchanged — so neither the
-        // selectionChanged gate nor a viewport-shrink signal fires, and the
-        // recovery effect's clamp only ever DECREASES the offset. Without
-        // reflow handling the bottom-pinned cursor falls below the window
-        // and disappears until the next navigation key.
+        // Narrowing wraps the PR title above the viewport, shifting the selected
+        // visual row while its item index and the viewport height stay unchanged.
         rendered.stdout.columns = 60;
         rendered.stdout.emit("resize");
         await tick(10);
@@ -625,9 +591,8 @@ describe("App.tsx mouse wiring (bug 1 + bug 2 regressions, real App)", () => {
         await sendKeys(rendered.stdin, "\x1b[B"); // select PR row
         await sendKeys(rendered.stdin, "\x1b[C"); // show full title and facts
 
-        // Park the cursor below the expanded PR title so the
-        // wrap will move its visual row, then wheel the viewport away — the
-        // deliberate PRD §3 state with the selection off-screen above.
+        // Select below the PR title so reflow shifts its visual row, then scroll
+        // the selection off-screen before resizing.
         for (
           let i = 0;
           i < 10 && !selectedLine(rendered.lines())?.includes("feature/1");

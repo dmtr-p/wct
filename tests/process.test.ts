@@ -1,6 +1,7 @@
 import { Effect, Fiber } from "effect";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
+import { WctCommandError } from "../src/errors";
 import {
   execProcess,
   ProcessExitError,
@@ -129,7 +130,7 @@ describe("process", () => {
     }
   });
 
-  test("spawnInteractive preserves spawn failures in the typed error channel", async () => {
+  test("spawnInteractive wraps spawn failures with their message and cause", async () => {
     const failure = new Error("Executable unavailable");
     vi.spyOn(Bun, "spawn").mockImplementation(() => {
       throw failure;
@@ -137,6 +138,30 @@ describe("process", () => {
     const error = await Effect.runPromise(
       Effect.flip(spawnInteractive("missing-shell")),
     );
-    expect(error).toBe(failure);
+    expect(error).toBeInstanceOf(WctCommandError);
+    expect(error.code).toBe("unexpected_error");
+    expect(error.message).toBe(failure.message);
+    expect(error.cause).toBe(failure);
   });
+
+  test.each([new Error("Exit unavailable"), "Exit unavailable"])(
+    "spawnInteractive wraps exit rejection %s with its cause",
+    async (failure) => {
+      const kill = vi.fn();
+      vi.spyOn(Bun, "spawn").mockReturnValue({
+        exited: Promise.reject(failure),
+        exitCode: 1,
+        signalCode: null,
+        kill,
+      } as unknown as ReturnType<typeof Bun.spawn>);
+      const error = await Effect.runPromise(
+        Effect.flip(spawnInteractive("shell")),
+      );
+      expect(error).toBeInstanceOf(WctCommandError);
+      expect(error.code).toBe("unexpected_error");
+      expect(error.message).toBe("Exit unavailable");
+      expect(error.cause).toBe(failure);
+      expect(kill).not.toHaveBeenCalled();
+    },
+  );
 });

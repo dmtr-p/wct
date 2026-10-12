@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { commandError } from "../errors";
 import { fetchPrDetails } from "./pr-details";
 import { normalizeGhPr } from "./pr-discovery";
 import type { PrFacts } from "./pr-model";
@@ -78,7 +79,11 @@ export function fetchMergeSnapshot(
     const raw: unknown = yield* Effect.try({
       try: () => decodeJson(viewed.stdout),
       catch: (error) =>
-        new Error(`Unable to read PR #${number}: ${String(error)}`),
+        commandError(
+          "pr_error",
+          `Unable to read PR #${number}: ${String(error)}`,
+          error,
+        ),
     });
     const normalized = normalizeGhPr(raw, baseRepository, Date.now());
     if (!normalized)
@@ -118,7 +123,7 @@ export function fetchMergeSnapshot(
                   repository?: MergeSettings;
                 };
               },
-            catch: (error) => new Error(String(error)),
+            catch: (error) => commandError("pr_error", String(error), error),
           }),
         ),
       ),
@@ -294,7 +299,11 @@ export function submitPrMerge(
     const route = yield* Effect.try({
       try: () => validateSubmission(confirmed, current, method),
       catch: (error) =>
-        error instanceof Error ? error : new Error(String(error)),
+        commandError(
+          "pr_error",
+          error instanceof Error ? error.message : String(error),
+          error,
+        ),
     });
     const pr = current.pr;
     const query = buildPrMutation(pr, route, method);
@@ -311,7 +320,7 @@ export function submitPrMerge(
             mergePullRequest?: { pullRequest?: { merged?: boolean } };
           };
         },
-      catch: (error) => new Error(String(error)),
+      catch: (error) => commandError("pr_error", String(error), error),
     });
     if (route === "queue" && data.data?.enqueuePullRequest?.mergeQueueEntry?.id)
       return "queued" as const;

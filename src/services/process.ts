@@ -1,5 +1,6 @@
 import { Effect, Stream } from "effect";
 import { ChildProcess } from "effect/process";
+import { commandError } from "../errors";
 
 export interface ProcessOptions {
   cwd?: string;
@@ -206,13 +207,17 @@ export function spawnInteractive(
         });
       },
       catch: (error) =>
-        error instanceof Error ? error : new Error(String(error)),
+        commandError("unexpected_error", getProcessErrorMessage(error), error),
     }),
     (handle) =>
       Effect.tryPromise({
         try: () => handle.exited,
         catch: (error) =>
-          error instanceof Error ? error : new Error(String(error)),
+          commandError(
+            "unexpected_error",
+            getProcessErrorMessage(error),
+            error,
+          ),
       }),
     (handle) =>
       Effect.promise(async () => {

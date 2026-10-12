@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { commandError } from "../errors";
 import { checkOutcome, type PrCheck, type PrFacts } from "./pr-model";
 import { execProcess } from "./process";
 
@@ -88,7 +89,8 @@ function graphQl(cwd: string, query: string) {
             );
           return response.data;
         },
-        catch: (error) => new Error(`GitHub GraphQL: ${String(error)}`),
+        catch: (error) =>
+          commandError("pr_error", `GitHub GraphQL: ${String(error)}`, error),
       }),
   );
 }
@@ -121,7 +123,7 @@ export function fetchPrDetails(
       const initial = yield* Effect.catch(graphQl(cwd, query), (error) =>
         Effect.succeed({
           repository: null as Record<string, unknown> | null,
-          error: String(error),
+          error: error.message,
         }),
       );
       for (let index = 0; index < batch.length; index++) {
@@ -159,7 +161,7 @@ export function fetchPrDetails(
           const next = yield* Effect.catch(graphQl(cwd, nextQuery), (cause) =>
             Effect.succeed({
               repository: null as Record<string, unknown> | null,
-              error: String(cause),
+              error: cause.message,
             }),
           );
           if (!next.repository) {

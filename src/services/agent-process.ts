@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { commandError } from "../errors";
 import {
   type AgentName,
   identifyAgent,
@@ -163,7 +164,8 @@ export function readRuntimeArguments(processes: readonly ForegroundProcess[]) {
               reader.releaseLock();
             }
           },
-          catch: () => new Error("Arguments unavailable"),
+          catch: (error) =>
+            commandError("unexpected_error", "Arguments unavailable", error),
         }).pipe(Effect.orElseSucceed(() => [item.pid, []] as const)),
       { concurrency: 4 },
     ).pipe(

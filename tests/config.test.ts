@@ -270,54 +270,84 @@ describe("validateConfig", () => {
     );
   });
 
-  test("rejects tmux window name with colon", () => {
-    const result = validateConfig({
-      tmux: {
-        windows: [{ name: "dev:server" }],
-      },
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].name contains invalid characters (: . #). These characters conflict with tmux target syntax.",
-    );
-  });
+  describe.each(["base", "profile"] as const)("%s window names", (scope) => {
+    const path =
+      scope === "base" ? "tmux.windows" : "profiles.dev.tmux.windows";
+    const configWithWindows = (windows: { name: string }[]) =>
+      scope === "base"
+        ? { tmux: { windows } }
+        : { profiles: { dev: { tmux: { windows } } } };
 
-  test("rejects tmux window name with period", () => {
-    const result = validateConfig({
-      tmux: {
-        windows: [{ name: "dev.server" }],
+    test.each(["dev", "CI-logs", "test_runner", "shell123", "a"])(
+      "accepts identifier %s",
+      (name) => {
+        expect(validateConfig(configWithWindows([{ name }]))).toEqual({
+          valid: true,
+          errors: [],
+        });
       },
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].name contains invalid characters (: . #). These characters conflict with tmux target syntax.",
     );
-  });
 
-  test("rejects tmux window name with hash", () => {
-    const result = validateConfig({
-      tmux: {
-        windows: [{ name: "dev#1" }],
-      },
+    test.each([
+      "",
+      "0",
+      "123dev",
+      "-dev",
+      "_dev",
+      "dev:server",
+      "dev.server",
+      "dev#1",
+      "two words",
+      "tab\tname",
+      "line\nbreak",
+      "dev\n",
+      "dev\r",
+      "nul\0name",
+      "dev*",
+      "dev?",
+      "dev[12]",
+      "!",
+      "{last}",
+      "@1",
+      "=dev",
+      "日本語",
+    ])("rejects invalid name %j", (name) => {
+      expect(
+        validateConfig(configWithWindows([{ name: "main" }, { name }])),
+      ).toEqual({
+        valid: false,
+        errors: [`${path}[1].name must match [A-Za-z][A-Za-z0-9_-]*.`],
+      });
     });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      "tmux.windows[0].name contains invalid characters (: . #). These characters conflict with tmux target syntax.",
-    );
-  });
 
-  test("accepts valid tmux window names with hyphens and underscores", () => {
-    const result = validateConfig({
-      tmux: {
-        windows: [
-          { name: "dev-server" },
-          { name: "test_runner" },
-          { name: "shell123" },
+    test("rejects duplicate names within the list", () => {
+      expect(
+        validateConfig(
+          configWithWindows([
+            { name: "dev" },
+            { name: "shell" },
+            { name: "dev" },
+          ]),
+        ),
+      ).toEqual({
+        valid: false,
+        errors: [
+          `${path}[2].name duplicates window name "dev" within ${path}.`,
         ],
-      },
+      });
     });
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
+  });
+
+  test("allows the same window name in separate base and profile lists", () => {
+    expect(
+      validateConfig({
+        tmux: { windows: [{ name: "dev" }] },
+        profiles: {
+          frontend: { tmux: { windows: [{ name: "dev" }] } },
+          backend: { tmux: { windows: [{ name: "dev" }] } },
+        },
+      }),
+    ).toEqual({ valid: true, errors: [] });
   });
 
   test("accepts valid config with profiles", () => {
@@ -401,24 +431,6 @@ describe("validateConfig", () => {
       },
     });
     expect(result.valid).toBe(false);
-  });
-
-  test("rejects profile tmux window name with invalid characters", () => {
-    const result = validateConfig({
-      profiles: {
-        bad: {
-          tmux: {
-            windows: [{ name: "dev:server" }],
-          },
-        },
-      },
-    });
-    expect(result.valid).toBe(false);
-    expect(
-      result.errors.some((e) =>
-        e.includes("profiles.bad.tmux.windows[0].name"),
-      ),
-    ).toBe(true);
   });
 });
 

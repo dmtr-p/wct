@@ -1,6 +1,11 @@
 import { isAbsolute, win32 } from "node:path";
 import { Schema } from "effect";
-import { type ResolvedConfig, type WctConfig, WctConfigSchema } from "./schema";
+import {
+  type ResolvedConfig,
+  type TmuxWindow,
+  type WctConfig,
+  WctConfigSchema,
+} from "./schema";
 
 export interface ValidationResult {
   valid: boolean;
@@ -62,21 +67,23 @@ function formatSchemaIssues(config: unknown): string[] {
   });
 }
 
-function validateTmuxWindowNames(config: WctConfig): string[] {
-  const windows = config.tmux?.windows ?? [];
+function validateTmuxWindowNames(
+  windows: ReadonlyArray<TmuxWindow>,
+  path: string,
+): string[] {
   const errors: string[] = [];
+  const names = new Set<string>();
 
-  for (let i = 0; i < windows.length; i++) {
-    const window = windows[i];
-    if (!window) {
-      continue;
+  for (const [i, window] of windows.entries()) {
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(window.name)) {
+      errors.push(`${path}[${i}].name must match [A-Za-z][A-Za-z0-9_-]*.`);
     }
-
-    if (/[:.#]/.test(window.name)) {
+    if (names.has(window.name)) {
       errors.push(
-        `tmux.windows[${i}].name contains invalid characters (: . #). These characters conflict with tmux target syntax.`,
+        `${path}[${i}].name duplicates window name ${JSON.stringify(window.name)} within ${path}.`,
       );
     }
+    names.add(window.name);
   }
 
   return errors;
@@ -99,7 +106,9 @@ export function validateConfig(config: unknown): ValidationResult {
   const decoded = Schema.decodeUnknownSync(WctConfigSchema)(config);
   errors.push(...validateWorkDir(decoded.work_dir, "work_dir"));
   if (decoded.tmux?.windows) {
-    errors.push(...validateTmuxWindowNames(decoded));
+    errors.push(
+      ...validateTmuxWindowNames(decoded.tmux.windows, "tmux.windows"),
+    );
   }
 
   if (decoded.profiles) {
@@ -116,12 +125,10 @@ export function validateConfig(config: unknown): ValidationResult {
         ),
       );
       if (profile.tmux?.windows) {
-        const profileErrors = validateTmuxWindowNames({
-          tmux: profile.tmux,
-        } as WctConfig);
         errors.push(
-          ...profileErrors.map((e) =>
-            e.replace("tmux.", `profiles.${profileName}.tmux.`),
+          ...validateTmuxWindowNames(
+            profile.tmux.windows,
+            `profiles.${profileName}.tmux.windows`,
           ),
         );
       }

@@ -692,10 +692,9 @@ describe("resolved profile completions", () => {
         `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
       );
       writeFileSync(scriptPath, runCliProcess(["--completions", shell]).stdout);
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: Zsh array expansion
       const command =
         shell === "zsh"
-          ? 'compdef() { :; }; compadd() { printf "%s\\0" "${profiles[@]}"; }; source "$1"; _wct_profiles'
+          ? `compdef() { :; }; compadd() { printf "%s\\0" "\${profiles[@]}"; }; source "$1"; _wct_profiles`
           : 'source $argv[1]; for profile in (__wct_profiles); printf "%s\\0" (string unescape -- $profile | string collect); end';
       try {
         const result = Bun.spawnSync(

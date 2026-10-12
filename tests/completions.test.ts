@@ -633,7 +633,7 @@ describe("resolved profile completions", () => {
     }
   });
 
-  test.each(["de", '\"de', "'de", '\"de\"', "'de'"])(
+  test.each(["de", '"de', "'de", '"de"', "'de'"])(
     "matches Bash identifier prefix %s",
     (prefix) => {
       const fixture = profileFixture();

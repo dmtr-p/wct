@@ -9,8 +9,6 @@ const tmuxServiceMock = vi.hoisted(() => ({
   switchClientToPane: vi.fn(),
   togglePaneZoom: vi.fn(),
   killPane: vi.fn(),
-  selectPane: vi.fn(),
-  refreshClient: vi.fn(),
 }));
 
 // Mock tuiRuntime before importing the hook
@@ -36,9 +34,6 @@ vi.mock("../../src/services/tmux", async () => {
           },
           get listSessions() {
             return tmuxServiceMock.listSessions();
-          },
-          get refreshClient() {
-            return tmuxServiceMock.refreshClient();
           },
         }),
     },

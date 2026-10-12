@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  foregroundAgent,
   foregroundProcesses,
   inspectForegroundAgent,
   parseProcessSnapshot,
@@ -20,14 +19,20 @@ describe("foreground process identity", () => {
         (process) => process.pid,
       ),
     ).toEqual([20]);
-    expect(foregroundAgent(snapshot, "/dev/ttys001")?.agent).toBe("codex");
-    expect(foregroundAgent(snapshot, "/dev/ttys002")).toBeUndefined();
+    expect(inspectForegroundAgent(snapshot, "/dev/ttys001")).toEqual({
+      kind: "identified",
+      agent: "codex",
+      generation: "20:Thu Oct 9 12:00:01 2026:20",
+    });
+    expect(inspectForegroundAgent(snapshot, "/dev/ttys002")).toEqual({
+      kind: "unrecognized",
+    });
     expect(
-      foregroundAgent(
+      inspectForegroundAgent(
         snapshot.map((process) => ({ ...process, stat: "T" })),
         "/dev/ttys001",
       ),
-    ).toBeUndefined();
+    ).toEqual({ kind: "unrecognized" });
   });
   test("supports Linux TTY names and official runtime entrypoints", () => {
     const process = {
@@ -36,13 +41,17 @@ describe("foreground process identity", () => {
       command: "node",
       argv: ["node", "/app/node_modules/@openai/codex/bin/codex.js"],
     };
-    expect(foregroundAgent([process], "/dev/pts/4")?.agent).toBe("codex");
+    expect(inspectForegroundAgent([process], "/dev/pts/4")).toEqual({
+      kind: "identified",
+      agent: "codex",
+      generation: "20:Thu Oct 9 12:00:01 2026:20",
+    });
     expect(
-      foregroundAgent(
+      inspectForegroundAgent(
         [{ ...process, argv: ["node", "server.js", "codex"] }],
         "/dev/pts/4",
       ),
-    ).toBeUndefined();
+    ).toEqual({ kind: "unrecognized" });
   });
   test("runtime/native children count once, independent competing agents remain unresolved", () => {
     const parent = {
@@ -51,12 +60,11 @@ describe("foreground process identity", () => {
       argv: ["node", "/app/node_modules/@openai/codex/bin/codex.js"],
     };
     const child = { ...agentProcess, pid: 21, ppid: 20 };
-    expect(
-      foregroundAgent([parent, child], "/dev/ttys001")?.generation,
-    ).toContain("20:");
-    expect(
-      foregroundAgent([parent, { ...child, ppid: 10 }], "/dev/ttys001"),
-    ).toBeUndefined();
+    expect(inspectForegroundAgent([parent, child], "/dev/ttys001")).toEqual({
+      kind: "identified",
+      agent: "codex",
+      generation: "20:Thu Oct 9 12:00:01 2026:20",
+    });
     expect(
       inspectForegroundAgent([parent, { ...child, ppid: 10 }], "/dev/ttys001"),
     ).toEqual({ kind: "ambiguous" });

@@ -5,13 +5,7 @@ import {
   type ServiceImplementation,
 } from "../effect/service-context";
 import { commandError, toWctError, type WctError } from "../errors";
-import { checkOutcome } from "./pr-model";
-import {
-  execProcess,
-  getProcessErrorMessage,
-  ProcessExitError,
-  runProcess,
-} from "./process";
+import { execProcess, getProcessErrorMessage, runProcess } from "./process";
 
 const GITHUB_PR_URL_PATTERN =
   /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)\/?$/;
@@ -22,66 +16,6 @@ export interface PrInfo {
   isCrossRepository: boolean;
   headOwner?: string;
   headRepo?: string;
-}
-
-export interface PrListItem {
-  number: number;
-  title: string;
-  state: "OPEN" | "MERGED" | "CLOSED";
-  headRefName: string;
-  rollupState: "success" | "failure" | "pending" | "unknown" | null;
-}
-
-/** Cancelled or unrecognized checks prevent a successful rollup. */
-export function computeRollup(
-  checks: unknown[],
-): "success" | "failure" | "pending" | "unknown" | null {
-  if (checks.length === 0) return null;
-
-  let hasPending = false;
-  let hasUnknown = false;
-
-  for (const entry of checks) {
-    const outcome = checkOutcome(entry);
-    if (outcome === "failed") return "failure";
-    if (outcome === "pending") hasPending = true;
-    if (outcome === "unknown" || outcome === "cancelled") hasUnknown = true;
-  }
-
-  return hasPending ? "pending" : hasUnknown ? "unknown" : "success";
-}
-
-export function parseGhPrList(stdout: string): PrListItem[] {
-  try {
-    const data = JSON.parse(stdout);
-    if (!Array.isArray(data)) return [];
-    const results: PrListItem[] = [];
-    for (const pr of data) {
-      if (
-        typeof pr.number === "number" &&
-        typeof pr.title === "string" &&
-        (pr.state === "OPEN" ||
-          pr.state === "MERGED" ||
-          pr.state === "CLOSED") &&
-        typeof pr.headRefName === "string"
-      ) {
-        let rollupState: PrListItem["rollupState"] = null;
-        if (Array.isArray(pr.statusCheckRollup)) {
-          rollupState = computeRollup(pr.statusCheckRollup);
-        }
-        results.push({
-          number: pr.number,
-          title: pr.title,
-          state: pr.state as PrListItem["state"],
-          headRefName: pr.headRefName,
-          rollupState,
-        });
-      }
-    }
-    return results;
-  } catch {
-    return [];
-  }
 }
 
 export interface GitHubService {
@@ -101,7 +35,6 @@ export interface GitHubService {
     remote?: string,
     cwd?: string,
   ) => Effect.Effect<void, WctError>;
-  listPrs: (cwd: string) => Effect.Effect<PrListItem[], WctError>;
   resolveBaseRepo: (cwd: string) => Effect.Effect<string, WctError>;
   listRawPrs: (
     cwd: string,
@@ -200,40 +133,6 @@ function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
 
     return `https://github.com/${owner}/${repo}.git`;
   });
-}
-
-/**
- * Only a spawn ENOENT indicates missing gh; a nonzero exit means gh did run.
- */
-export function isGhNotInstalledError(error: unknown): boolean {
-  if (!(error instanceof ProcessExitError)) return false;
-  if (error.exitCode !== null) return false; // Non-zero exit — gh ran but failed
-  const cause = error.cause;
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause as { code: unknown }).code === "ENOENT"
-  );
-}
-
-function listPrsImpl(cwd: string) {
-  return Effect.catchIf(
-    execProcess(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--json",
-        "number,title,state,headRefName,statusCheckRollup",
-        "--limit",
-        "1000",
-      ],
-      { cwd },
-    ).pipe(Effect.map((result) => parseGhPrList(result.stdout.trim()))),
-    isGhNotInstalledError,
-    () => Effect.succeed([] as PrListItem[]),
-  );
 }
 
 const DISCOVERY_FIELDS =
@@ -481,10 +380,6 @@ export const liveGitHubService: GitHubServiceImplementation = {
           `Failed to fetch branch '${branch}': ${extractShellError(error)}`,
           error,
         ),
-    ),
-  listPrs: (cwd) =>
-    Effect.mapError(listPrsImpl(cwd), (error) =>
-      commandError("pr_error", extractShellError(error), error),
     ),
   resolveBaseRepo: (cwd) =>
     Effect.mapError(

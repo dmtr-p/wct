@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 import packageJson from "../package.json";
 import { completionCommands } from "../src/cli/command-metadata";
 import { renderCompletionProfiles } from "../src/cli/completion-profiles";
+import { generateCompletionScript } from "../src/cli/completions";
 import { globalOptions } from "../src/cli/global-options";
 import { rootCommand } from "../src/cli/root-command";
 
@@ -27,10 +28,7 @@ function runBashCompletion(
 ) {
   const tempDir = mkdtempSync(join(tmpdir(), "wct-bash-completion-"));
   const scriptPath = join(tempDir, "wct-completion.bash");
-  const completionScript = runCliProcess([
-    "--completions",
-    "bash",
-  ]).stdout.toString();
+  const completionScript = generateCompletionScript("bash");
 
   writeFileSync(scriptPath, completionScript);
 
@@ -508,9 +506,17 @@ describe("shared command metadata", () => {
 });
 
 describe("resolved profile completions", () => {
-  test.each(["repo", "nested", "linked", "linkedNested"] as const)(
-    "uses Main Repository profiles from %s",
-    (directory) => {
+  test.each(
+    (["repo", "nested", "linked", "linkedNested"] as const).flatMap(
+      (directory) =>
+        ["open", "up", "down", "close"].map((command) => ({
+          directory,
+          command,
+        })),
+    ),
+  )(
+    "uses Main Repository profiles for $command from $directory",
+    ({ directory, command }) => {
       const fixture = profileFixture();
       writeFileSync(
         join(fixture.env.HOME, ".wct.yaml"),
@@ -533,19 +539,17 @@ describe("resolved profile completions", () => {
           ? join(fixture.linked, "nested")
           : fixture[directory];
       try {
-        for (const command of ["open", "up", "down", "close"]) {
-          for (const flag of ["--profile", "-P"]) {
-            const result = runBashCompletion(
-              ["wct", command, flag, ""],
-              cwd,
-              fixture.env,
-            );
-            expect(result.stdout.toString().trim().split("\n")).toEqual([
-              "project profile",
-              "123: special",
-            ]);
-            expect(result.stderr.toString()).toBe("");
-          }
+        for (const flag of ["--profile", "-P"]) {
+          const result = runBashCompletion(
+            ["wct", command, flag, ""],
+            cwd,
+            fixture.env,
+          );
+          expect(result.stdout.toString().trim().split("\n")).toEqual([
+            "project profile",
+            "123: special",
+          ]);
+          expect(result.stderr.toString()).toBe("");
         }
       } finally {
         rmSync(fixture.dir, { recursive: true, force: true });

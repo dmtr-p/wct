@@ -31,8 +31,9 @@ function checkIgnore(
     );
     // check-ignore uses 1 for a successful query with no matches.
     if (result.exitCode !== 0 && result.exitCode !== 1) {
-      return yield* Effect.fail(
-        new Error(result.stderr || "Git include matching failed"),
+      return yield* commandError(
+        "worktree_error",
+        result.stderr || "Git include matching failed",
       );
     }
     const fields = result.stdout.split("\0");

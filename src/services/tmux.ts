@@ -119,7 +119,9 @@ export const discoverAgentPanes = execProcess(
   Effect.flatMap(({ stdout }) => {
     const panes = parseAgentPaneMetadata(stdout);
     return stdout.trim() && !panes.length
-      ? Effect.fail(new Error("Tmux observation metadata unavailable"))
+      ? Effect.fail(
+          commandError("tmux_error", "Tmux observation metadata unavailable"),
+        )
       : Effect.succeed(panes);
   }),
   Effect.timeout("1 second"),

@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Data, Effect, Stream } from "effect";
 import { ChildProcess } from "effect/process";
 import { commandError } from "../errors";
 
@@ -14,10 +14,11 @@ export interface ProcessOptions {
   maxOutputBytes?: number;
 }
 
-export class ProcessOutputLimitError extends Error {
-  constructor() {
-    super("Process output limit exceeded");
-    this.name = "ProcessOutputLimitError";
+export class ProcessOutputLimitError extends Data.TaggedError(
+  "ProcessOutputLimitError",
+) {
+  override get message(): string {
+    return "Process output limit exceeded";
   }
 }
 

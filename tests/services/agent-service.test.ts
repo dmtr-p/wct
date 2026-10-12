@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, test, vi } from "vitest";
 import { provideBunServices, runBunPromise } from "../../src/effect/runtime";
+import { commandError } from "../../src/errors";
 import type { ForegroundProcess } from "../../src/services/agent-process";
 import {
   type AgentObservationPorts,
@@ -194,7 +195,9 @@ describe("agent observations", () => {
       f.service.observe(f.sessions, emptyAgentSnapshot()),
     );
     const discover = f.ports.discover;
-    f.ports.discover = Effect.fail(new Error("unavailable"));
+    f.ports.discover = Effect.fail(
+      commandError("unexpected_error", "unavailable"),
+    );
     f.setNow(1000);
     const failed = await runBunPromise(f.service.observe(f.sessions, first));
     expect(failed.memberships).toEqual(first.memberships);
@@ -283,7 +286,9 @@ describe("agent observations", () => {
         Effect.sync(() => {
           if (id === "%1") {
             f.setPanes(change === "removed" ? [other] : [replacement, other]);
-            f.ports.processes = Effect.fail(new Error("processes unavailable"));
+            f.ports.processes = Effect.fail(
+              commandError("unexpected_error", "processes unavailable"),
+            );
           }
           return screen;
         });
@@ -317,11 +322,14 @@ describe("agent observations", () => {
     );
     expect(first.observations.size).toBe(2);
     f.setNow(1000);
-    f.ports.arguments = () => Effect.fail(new Error("arguments unavailable"));
+    f.ports.arguments = () =>
+      Effect.fail(commandError("unexpected_error", "arguments unavailable"));
     f.ports.capture = () =>
       Effect.sync(() => {
         f.setPanes([other]);
-        f.ports.processes = Effect.fail(new Error("processes unavailable"));
+        f.ports.processes = Effect.fail(
+          commandError("unexpected_error", "processes unavailable"),
+        );
         return "› prompt\n? for shortcuts";
       });
     const result = await runBunPromise(f.service.observe(f.sessions, first));
@@ -363,7 +371,9 @@ describe("agent observations", () => {
       f.ports.arguments = () => {
         if (initialArguments || change.includes("missing arguments")) {
           initialArguments = false;
-          return Effect.fail(new Error("arguments unavailable"));
+          return Effect.fail(
+            commandError("unexpected_error", "arguments unavailable"),
+          );
         }
         return Effect.succeed(args);
       };
@@ -404,7 +414,9 @@ describe("agent observations", () => {
               { ...wrapper, pid: 103, ppid: 10, command: "claude" },
             ]);
           if (change === "exit with failed discovery")
-            f.ports.discover = Effect.fail(new Error("discovery unavailable"));
+            f.ports.discover = Effect.fail(
+              commandError("unexpected_error", "discovery unavailable"),
+            );
           return "› prompt\n? for shortcuts";
         }),
       );
@@ -441,7 +453,9 @@ describe("agent observations", () => {
     f.ports.arguments = () => {
       if (initialArguments) {
         initialArguments = false;
-        return Effect.fail(new Error("arguments unavailable"));
+        return Effect.fail(
+          commandError("unexpected_error", "arguments unavailable"),
+        );
       }
       return Effect.succeed(new Map([[100, ["node", "/project/server.js"]]]));
     };
@@ -487,7 +501,9 @@ describe("agent observations", () => {
     const first = await runBunPromise(
       f.service.observe(f.sessions, emptyAgentSnapshot()),
     );
-    f.ports.processes = Effect.fail(new Error("permission denied"));
+    f.ports.processes = Effect.fail(
+      commandError("unexpected_error", "permission denied"),
+    );
     f.setNow(1000);
     const failed = await runBunPromise(f.service.observe(f.sessions, first));
     expect(failed.observations.get("%1")?.reason).toBe(
@@ -551,7 +567,9 @@ describe("agent observations", () => {
       f.ports.arguments = () => {
         if (phase === "after" && calls++ % 2 === 0) return Effect.succeed(args);
         return failure === "failure"
-          ? Effect.fail(new Error("arguments unavailable"))
+          ? Effect.fail(
+              commandError("unexpected_error", "arguments unavailable"),
+            )
           : Effect.succeed(
               failure === "empty" ? new Map([[100, []]]) : new Map(),
             );
@@ -629,7 +647,9 @@ describe("agent observations", () => {
       Effect.sync(() => {
         f.setProcesses([{ ...wrapper, started: "replacement" }, native]);
         f.ports.arguments = () =>
-          Effect.fail(new Error("arguments unavailable"));
+          Effect.fail(
+            commandError("unexpected_error", "arguments unavailable"),
+          );
         return "› prompt\n? for shortcuts";
       });
     const replaced = await runBunPromise(f.service.observe(f.sessions, first));

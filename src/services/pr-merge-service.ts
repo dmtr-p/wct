@@ -87,13 +87,15 @@ export function fetchMergeSnapshot(
     });
     const normalized = normalizeGhPr(raw, baseRepository, Date.now());
     if (!normalized)
-      return yield* Effect.fail(
-        new Error(`PR #${number} is missing required fields`),
+      return yield* commandError(
+        "pr_error",
+        `PR #${number} is missing required fields`,
       );
     const [detailed] = yield* fetchPrDetails(cwd, baseRepository, [normalized]);
     if (!detailed)
-      return yield* Effect.fail(
-        new Error(`Unable to fetch PR #${number} details`),
+      return yield* commandError(
+        "pr_error",
+        `Unable to fetch PR #${number} details`,
       );
     if (!detailed.baseRefName)
       return {
@@ -329,8 +331,9 @@ export function submitPrMerge(
       data.data?.mergePullRequest?.pullRequest?.merged === true
     )
       return "merged" as const;
-    return yield* Effect.fail(
-      new Error("GitHub did not report a merged or queued result"),
+    return yield* commandError(
+      "pr_error",
+      "GitHub did not report a merged or queued result",
     );
   });
 }

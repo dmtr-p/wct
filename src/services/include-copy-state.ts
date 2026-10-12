@@ -19,8 +19,9 @@ export function getIncludeCopyState(worktreePath: string) {
     if (info.type !== "Directory") {
       const pointer = yield* fs.readFileString(gitPath);
       if (!pointer.startsWith("gitdir: ")) {
-        return yield* Effect.fail(
-          new Error(`Invalid Git metadata pointer: ${gitPath}`),
+        return yield* commandError(
+          "worktree_error",
+          `Invalid Git metadata pointer: ${gitPath}`,
         );
       }
       gitDir = resolve(worktreePath, pointer.slice(8).replace(/\r?\n$/, ""));

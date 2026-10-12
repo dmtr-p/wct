@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../../src/effect/runtime";
+import { commandError } from "../../src/errors";
 import {
   ProcessExitError,
   ProcessOutputLimitError,
@@ -75,7 +76,9 @@ describe("tmux observation primitives", () => {
     );
   });
   test("capture failure remains an error rather than an empty screen", async () => {
-    exec.mockReturnValueOnce(Effect.fail(new Error("pane disappeared")));
+    exec.mockReturnValueOnce(
+      Effect.fail(commandError("tmux_error", "pane disappeared")),
+    );
     await expect(runBunPromise(captureAgentPane("%42"))).rejects.toThrow(
       "pane disappeared",
     );

@@ -30,6 +30,11 @@ describe("process", () => {
     expect((failure as ProcessExitError).cause).toBeInstanceOf(
       ProcessOutputLimitError,
     );
+    expect((failure as ProcessExitError).cause).toMatchObject({
+      _tag: "ProcessOutputLimitError",
+      message: "Process output limit exceeded",
+      name: "ProcessOutputLimitError",
+    });
     expect((failure as ProcessExitError).stdout).toBe("");
   });
 

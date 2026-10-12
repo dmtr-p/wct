@@ -213,16 +213,26 @@ function generateBashCompletions(): string {
     "    git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'",
     "}",
     "",
-    // Decode quoting as data; never evaluate substitutions from the current word.
+    // Decode shell words as data and track what Readline retains before insertion.
     "_wct_profile_prefix() {",
-    '    local word="$1" quote="" char next ansi="" decoded',
-    "    local index",
+    '    local word="$1" scan_line="${2:-}" quote="" char next ansi="" decoded',
+    "    local index started=0",
     '    profile_prefix=""',
+    '    profile_prev=""',
+    "    profile_retained=0",
     "    for ((index = 0; index < ${#word}; index++)); do",
     '        char="${word:index:1}"',
+    '        if [[ "$scan_line" && ! "$quote" && "$char" == [$\' \\t\\n\'] ]]; then',
+    '            if [[ $started == 1 ]]; then profile_prev="$profile_prefix"; fi',
+    '            profile_prefix=""',
+    "            profile_retained=0",
+    "            started=0",
+    "            continue",
+    "        fi",
+    "        started=1",
     '        case "$quote" in',
     "            single)",
-    '                if [[ "$char" == "\'" ]]; then quote=""; else profile_prefix+="$char"; fi',
+    '                if [[ "$char" == "\'" ]]; then quote=""; profile_retained=0; else profile_prefix+="$char"; fi',
     "                ;;",
     "            ansi)",
     "                if [[ \"$char\" == '\\' ]]; then",
@@ -238,6 +248,7 @@ function generateBashCompletions(): string {
     '                    profile_prefix+="$decoded"',
     '                    ansi=""',
     '                    quote=""',
+    "                    profile_retained=0",
     "                else",
     '                    ansi+="$char"',
     "                fi",
@@ -251,16 +262,22 @@ function generateBashCompletions(): string {
     "                    fi",
     '                    [[ "$next" == $\'\\n\' ]] || profile_prefix+="$next"',
     '                elif [[ "$quote" == double ]]; then',
-    '                    if [[ "$char" == \'"\' ]]; then quote=""; else profile_prefix+="$char"; fi',
+    '                    if [[ "$char" == \'"\' ]]; then quote=""; profile_retained=0; else profile_prefix+="$char"; fi',
     '                elif [[ "$char" == "\'" ]]; then',
     "                    quote=single",
+    "                    profile_retained=${#profile_prefix}",
     '                elif [[ "$char" == \'"\' ]]; then',
     "                    quote=double",
+    "                    profile_retained=${#profile_prefix}",
     '                elif [[ "$char" == \'$\' && "${word:index+1:1}" == "\'" ]]; then',
     "                    quote=ansi",
+    "                    profile_retained=${#profile_prefix}",
     "                    ((index++))",
     "                else",
     '                    profile_prefix+="$char"',
+    '                    if [[ "$COMP_WORDBREAKS" == *"$char"* && "$char" != [$\' \\t\\n\'] ]]; then',
+    "                        profile_retained=${#profile_prefix}",
+    "                    fi",
     "                fi",
     "                ;;",
     "        esac",
@@ -269,6 +286,32 @@ function generateBashCompletions(): string {
     "        printf -v decoded '%b' \"$ansi\" 2>/dev/null",
     '        profile_prefix+="$decoded"',
     "    fi",
+    '    profile_quote="$quote"',
+    "}",
+    "",
+    "_wct_quote_profile() {",
+    '    local value="${1:profile_retained}"',
+    '    case "$profile_quote" in',
+    "        double)",
+    '            quoted_profile="${value//\\\\/\\\\\\\\}"',
+    '            quoted_profile="${quoted_profile//\\"/\\\\\\"}"',
+    '            quoted_profile="${quoted_profile//\\$/\\\\\\$}"',
+    '            quoted_profile="${quoted_profile//\\`/\\\\\\`}"',
+    "            ;;",
+    "        single)",
+    "            quoted_profile=\"${value//\\'/\\'\\\\\\'\\'}\"",
+    "            ;;",
+    "        ansi)",
+    "            printf -v quoted_profile '%q' \"$value\"",
+    "            if [[ \"$quoted_profile\" == \\$\\'*\\' ]]; then",
+    '                quoted_profile="${quoted_profile:2:${#quoted_profile}-3}"',
+    "            else",
+    '                quoted_profile="${value//\\\\/\\\\\\\\}"',
+    "                quoted_profile=\"${quoted_profile//\\'/\\\\\\'}\"",
+    "            fi",
+    "            ;;",
+    "        *) printf -v quoted_profile '%q' \"$value\" ;;",
+    "    esac",
     "}",
     "",
     "_wct_profiles() {",
@@ -282,6 +325,15 @@ function generateBashCompletions(): string {
     '    local cmd="${COMP_WORDS[1]}"',
     "    local cmd_index=1",
     "    local scan_index=1",
+    "    local profile_prefix profile_prev profile_retained profile_quote",
+    '    if [[ -n "${COMP_LINE-}" ]]; then',
+    '        _wct_profile_prefix "${COMP_LINE:0:COMP_POINT}" line',
+    '        if [[ "$profile_prev" == --profile || "$profile_prev" == -P ]]; then',
+    '            prev="$profile_prev"',
+    "        fi",
+    "    else",
+    '        _wct_profile_prefix "$cur"',
+    "    fi",
     "",
     ...globalOptions
       .filter((option) => option.values)
@@ -360,17 +412,12 @@ function generateBashCompletions(): string {
       if (option.completionValues === "__wct_profiles") {
         // Filename completion can append a slash to a profile matching a directory.
         lines.push("                COMPREPLY=()");
-        lines.push(
-          "                local profile quoted_profile profile_prefix",
-        );
-        lines.push('                _wct_profile_prefix "$cur"');
+        lines.push("                local profile quoted_profile");
         lines.push("                while IFS= read -r -d '' profile; do");
         lines.push(
           '                    [[ "$profile" == "$profile_prefix"* ]] || continue',
         );
-        lines.push(
-          '                    printf -v quoted_profile "%q" "$profile"',
-        );
+        lines.push('                    _wct_quote_profile "$profile"');
         lines.push('                    COMPREPLY+=("$quoted_profile")');
         lines.push("                done < <(_wct_profiles)");
       } else {

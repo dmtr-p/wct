@@ -317,5 +317,6 @@ resolves the Main Repository with the Worktree service and loads configuration
 with `loadConfig`. Config errors produce no suggestions. Bash and Fish use NUL
 records to preserve profile names; Zsh uses quoted words without evaluation.
 Fish consumes raw records with `string split0` and handles insertion quoting.
-Bash decodes the current word's shell quoting before matching raw profile names,
-then quotes the candidates for insertion without evaluating shell text.
+Bash decodes the current word's shell quoting before matching raw profile names.
+It escapes candidates for the active quote context and trims prefixes retained
+by Readline at word breaks, without evaluating shell text.

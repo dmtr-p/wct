@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -67,6 +68,54 @@ function runBashCompletion(
 
 function quoteShell(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function insertBashCompletion(
+  input: string,
+  cwd: string,
+  env: Record<string, string>,
+) {
+  const dir = mkdtempSync(join(tmpdir(), "wct-readline-completion-"));
+  const scriptPath = join(dir, "completions.bash");
+  const rcPath = join(dir, "bashrc");
+  const argsPath = join(dir, "args");
+  writeFileSync(scriptPath, generateCompletionScript("bash"));
+  writeFileSync(
+    rcPath,
+    [
+      `source ${quoteShell(scriptPath)}`,
+      "set -o emacs",
+      "bind 'set enable-bracketed-paste off'",
+      "PS1='WCT_READY> '",
+      `wct() { printf '%s\\0' "$@" > ${quoteShell(argsPath)}; exit; }`,
+    ].join("\n"),
+  );
+  let sent = false;
+  let transcript = "";
+  const proc = Bun.spawn(["bash", "--noprofile", "--rcfile", rcPath, "-i"], {
+    cwd,
+    env: { ...process.env, ...env, INPUTRC: "/dev/null", TERM: "xterm" },
+    terminal: {
+      cols: 200,
+      data(terminal, data) {
+        transcript += Buffer.from(data).toString();
+        if (!sent && transcript.includes("WCT_READY> ")) {
+          sent = true;
+          terminal.write(`${input}\n`);
+        }
+      },
+    },
+  });
+  const timeout = setTimeout(() => proc.kill(), 4000);
+  try {
+    expect(await proc.exited, transcript).toBe(0);
+    return readFileSync(argsPath, "utf8").split("\0").slice(0, -1);
+  } finally {
+    clearTimeout(timeout);
+    proc.kill();
+    proc.terminal?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function completionEnvironment(tempDir: string) {
@@ -656,18 +705,18 @@ describe("resolved profile completions", () => {
   });
 
   test.each([
-    ["two\\ ", "two words"],
-    ['"two ', "two words"],
-    ["'two ", "two words"],
-    ["back\\\\", "back\\slash"],
-    ['"back\\s', "back\\slash"],
-    ["$'line\\n'", "line\nbreak"],
-    ["$'tab\\t", "tab\tname"],
-    ["\\$\\(touch\\ ", "$(touch injected)"],
-    ["$(touch ", "$(touch injected)"],
+    ["two\\ ", "two words", "two\\ words"],
+    ['"two ', "two words", "two words"],
+    ["'two ", "two words", "two words"],
+    ["back\\\\", "back\\slash", "back\\\\slash"],
+    ['"back\\s', "back\\slash", "back\\\\slash"],
+    ["$'line\\n'", "line\nbreak", "$'line\\nbreak'"],
+    ["$'tab\\t", "tab\tname", "tab\\tname"],
+    ["\\$\\(touch\\ ", "$(touch injected)", "\\$\\(touch\\ injected\\)"],
+    ["'$(touch ", "$(touch injected)", "$(touch injected)"],
   ])(
-    "matches Bash shell-quoted prefix %s without evaluation",
-    (prefix, name) => {
+    "matches and quotes Bash prefix %s without evaluation",
+    (prefix, name, candidate) => {
       const fixture = profileFixture();
       writeFileSync(
         join(fixture.repo, ".wct.yaml"),
@@ -679,17 +728,43 @@ describe("resolved profile completions", () => {
           fixture.linked,
           fixture.env,
         );
-        const quoted = Bun.spawnSync([
-          "bash",
-          "-c",
-          'printf "%q\n" "$1"',
-          "bash",
-          name,
-        ]);
         expect(result.exitCode).toBe(0);
         expect(result.stderr.toString()).toBe("");
-        expect(result.stdout.toString()).toBe(quoted.stdout.toString());
+        expect(result.stdout.toString()).toBe(`${candidate}\n`);
         expect(existsSync(join(fixture.linked, "injected"))).toBe(false);
+      } finally {
+        rmSync(fixture.dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.each([
+    ['"two \t', ["two words"], "two words"],
+    ["'two \t", ["two words"], "two words"],
+    ['"quote\t', ['quote"$back\\slash'], 'quote"$back\\slash'],
+    ["'quote\t", ["quote'and\\slash"], "quote'and\\slash"],
+    ["$'line\\n\t", ["line\nbreak"], "line\nbreak"],
+    ["dev\to\t", ["dev:one", "dev:two"], "dev:one"],
+    ["dev:region\to\t", ["dev:region:one", "dev:region:two"], "dev:region:one"],
+    ['"dev:o\t', ["dev:one", "dev:two"], "dev:one"],
+    ["dev\\:o\t", ["dev:one", "dev:two"], "dev:one"],
+    ["dev=o\t", ["dev=one", "dev=two"], "dev=one"],
+  ])(
+    "Readline inserts the configured profile for %s",
+    async (input, names, expected) => {
+      const fixture = profileFixture();
+      writeFileSync(
+        join(fixture.repo, ".wct.yaml"),
+        `profiles: ${JSON.stringify(Object.fromEntries(names.map((name) => [name, {}])))}\n`,
+      );
+      try {
+        expect(
+          await insertBashCompletion(
+            `wct open --profile ${input}`,
+            fixture.linked,
+            fixture.env,
+          ),
+        ).toEqual(["open", "--profile", expected]);
       } finally {
         rmSync(fixture.dir, { recursive: true, force: true });
       }

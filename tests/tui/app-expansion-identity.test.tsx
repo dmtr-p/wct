@@ -11,6 +11,7 @@ import {
   sendKeys,
   sgrPress,
   sgrRowFor,
+  tick,
   triggerRefresh,
   worktreeFixtures,
 } from "./app-harness";
@@ -56,6 +57,8 @@ describe("App Workspace Identity expansion", () => {
     const expanded = () =>
       app.lines().filter((line) => line.includes(BRANCH) && line.includes("▼"));
     try {
+      await tick(20);
+      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(2);
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, RIGHT);
       expect(expanded()).toHaveLength(1);
@@ -87,6 +90,8 @@ describe("App Workspace Identity expansion", () => {
   test("rename, modal cancel, and confirmation cancel retain the second Workspace target", async () => {
     const app = await renderApp(<App />);
     try {
+      await tick(20);
+      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(2);
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, DOWN);
@@ -96,6 +101,8 @@ describe("App Workspace Identity expansion", () => {
         project: "renamed/shared",
       }));
       await triggerRefresh();
+      await tick(10);
+      expect(app.lines().join("\n")).toContain("renamed/shared");
       expect(selectedLine(app.lines())).toContain(BRANCH);
       expect(selectedLine(app.lines())).toContain("▼");
       expect(
@@ -132,6 +139,8 @@ describe("App Workspace Identity expansion", () => {
   test("refresh prunes a removed Workspace without affecting the other preference", async () => {
     const app = await renderApp(<App />);
     try {
+      await tick(20);
+      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(2);
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, RIGHT);
       await sendKeys(app.stdin, DOWN);
@@ -139,11 +148,13 @@ describe("App Workspace Identity expansion", () => {
       await sendKeys(app.stdin, RIGHT);
       worktreeFixtures.byRepoPath.set(a, []);
       await triggerRefresh();
+      await tick(10);
       expect(selectedLine(app.lines())).toContain(BRANCH);
       expect(selectedLine(app.lines())).toContain("▼");
 
       worktreeFixtures.byRepoPath.set(a, [makeWorktree(a, BRANCH)]);
       await triggerRefresh();
+      await tick(10);
       const branches = app.lines().filter((line) => line.includes(BRANCH));
       expect(branches).toHaveLength(2);
       expect(branches[0]).not.toContain("▼");

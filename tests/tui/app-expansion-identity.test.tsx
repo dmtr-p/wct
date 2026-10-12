@@ -116,7 +116,11 @@ describe("App Workspace Identity expansion", () => {
       ).toHaveLength(1);
 
       await sendKeys(app.stdin, "u");
+      expect(app.lines().join("\n")).toContain("Start worktree session");
+      // Ink buffers a lone ESC briefly in case it starts a control sequence.
       await sendKeys(app.stdin, ESCAPE);
+      await tick(30);
+      expect(app.lines().join("\n")).not.toContain("Start worktree session");
       expect(selectedLine(app.lines())).toContain(BRANCH);
       expect(selectedLine(app.lines())).toContain("▼");
       await sendKeys(app.stdin, "c");
@@ -127,6 +131,8 @@ describe("App Workspace Identity expansion", () => {
       const confirmation = frame.findIndex((line) => line.includes("Close"));
       expect(confirmation).toBeGreaterThan(worktreeRows[1] ?? Infinity);
       await sendKeys(app.stdin, ESCAPE);
+      await tick(30);
+      expect(app.lines().join("\n")).not.toContain("Close Worktree");
       expect(selectedLine(app.lines())).toContain(BRANCH);
       expect(selectedLine(app.lines())).toContain("▼");
       await sendKeys(app.stdin, LEFT);

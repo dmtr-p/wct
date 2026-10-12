@@ -5,42 +5,9 @@ import type { WctError } from "../errors";
 import { WorkspaceService } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 import { maybeAttachSession } from "./session";
 
-export const commandDef: CommandDef = {
-  name: "up",
-  description: "Start configured environment for a worktree",
-  options: [
-    {
-      name: "no-attach",
-      type: "boolean",
-      description: "Do not attach to tmux outside tmux",
-    },
-    {
-      name: "profile",
-      short: "P",
-      type: "string",
-      placeholder: "name",
-      description: "Use a named config profile",
-      completionValues: "__wct_profiles",
-    },
-    {
-      name: "path",
-      type: "string",
-      placeholder: "path",
-      description: "Path to worktree directory",
-    },
-    {
-      name: "branch",
-      short: "b",
-      type: "string",
-      placeholder: "name",
-      description: "Branch name to resolve worktree from",
-      completionValues: "__wct_worktree_branches",
-    },
-  ],
-};
+export { upCommandDef as commandDef } from "../cli/command-metadata";
 
 export interface UpOptions {
   noAttach?: boolean;

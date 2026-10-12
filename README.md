@@ -81,6 +81,8 @@ wct --version
 
 ### Shell completions (manual install)
 
+Profile suggestions use the main repository's configuration, including global defaults, from nested directories and linked worktrees. Invalid configuration produces no profile suggestions.
+
 When installed via Homebrew, completions are set up automatically. For manual installs:
 
 **Bash** — add to `~/.bashrc`:
@@ -139,7 +141,6 @@ down:
     command: "./cleanup.sh"
     optional: true
 
-# Tmux session layout
 tmux:
   windows:
     - name: "dev"
@@ -168,6 +169,8 @@ profiles:
       - .env
       - .env.production
 ```
+
+Tmux window names must match `[A-Za-z][A-Za-z0-9_-]*` and be unique within each `windows` list, including lists in profiles. Names start with an ASCII letter and contain only ASCII letters, digits, underscores, or hyphens, such as `dev`, `CI-logs`, and `test_runner`.
 
 Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` and `down` commands and tmux panes. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
 
@@ -242,7 +245,9 @@ A project or profile `down` list replaces its inherited list; `down: []` disable
 
 ### Config Profiles
 
-Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
+Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`.
+
+Profile names must match `[A-Za-z0-9][A-Za-z0-9._-]*`: start with an ASCII letter or digit, followed by ASCII letters, digits, dots, underscores, or hyphens. For example, `dev`, `ci-linux`, and `team.local` are valid names.
 
 ```yaml
 profiles:

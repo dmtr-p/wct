@@ -1,8 +1,9 @@
 import { Flag, GlobalFlag } from "effect/cli";
+import { jsonOption } from "./global-options";
 
-export const JsonFlag = GlobalFlag.Setting("json")({
-  flag: Flag.Boolean("json").pipe(
-    Flag.withDescription("Output results as JSON"),
+export const JsonFlag = GlobalFlag.Setting(jsonOption.name)({
+  flag: Flag.Boolean(jsonOption.name).pipe(
+    Flag.withDescription(jsonOption.description),
     Flag.withDefault(false),
   ),
 });

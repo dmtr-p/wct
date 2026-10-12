@@ -9,36 +9,8 @@ import { RegistryService } from "../services/registry-service";
 import { WorktreeService } from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 
-export const commandDef: CommandDef = {
-  name: "projects",
-  description: "Manage the project registry",
-  subcommands: [
-    {
-      name: "add",
-      description: "Add a project to the registry",
-      completionType: "path",
-      options: [
-        {
-          name: "name",
-          short: "n",
-          type: "string",
-          description: "Override project display name",
-        },
-      ],
-    },
-    {
-      name: "remove",
-      description: "Remove a project from the registry",
-      completionType: "path",
-    },
-    {
-      name: "list",
-      description: "List registered projects",
-    },
-  ],
-};
+export { projectsCommandDef as commandDef } from "../cli/command-metadata";
 
 function changeDirectory(path: string): Effect.Effect<void, WctError> {
   return Effect.try({

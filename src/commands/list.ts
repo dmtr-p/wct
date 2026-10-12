@@ -11,20 +11,8 @@ import {
 } from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 
-export const commandDef: CommandDef = {
-  name: "list",
-  description: "Show worktrees with tmux, changes, and sync status",
-  options: [
-    {
-      name: "short",
-      short: "s",
-      type: "boolean",
-      description: "Print branch names only",
-    },
-  ],
-};
+export { listCommandDef as commandDef } from "../cli/command-metadata";
 
 export function listCommand(opts?: {
   short?: boolean;

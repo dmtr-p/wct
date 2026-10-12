@@ -4,12 +4,8 @@ import { CONFIG_FILENAME } from "../config/loader";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 
-export const commandDef: CommandDef = {
-  name: "init",
-  description: "Generate a starter .wct.yaml config file",
-};
+export { initCommandDef as commandDef } from "../cli/command-metadata";
 
 const TEMPLATE = `# wct configuration
 # See documentation at: https://github.com/dmtr-p/wct
@@ -42,7 +38,7 @@ setup:
 #   - name: "Stop containers"
 #     command: "docker compose down"
 
-# Tmux session configuration
+# Window names must match [A-Za-z][A-Za-z0-9_-]* and be unique within the list
 tmux:
   windows:
     - name: "dev"

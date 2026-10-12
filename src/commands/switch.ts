@@ -4,15 +4,8 @@ import { commandError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
 import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 
-export const commandDef: CommandDef = {
-  name: "switch",
-  aliases: ["sw"],
-  description: "Switch to another worktree's tmux session",
-  args: "<branch>",
-  completionType: "worktree",
-};
+export { switchCommandDef as commandDef } from "../cli/command-metadata";
 
 export function switchCommand(branch: string) {
   return Effect.gen(function* () {

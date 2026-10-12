@@ -11,48 +11,9 @@ import {
 } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
-import type { CommandDef } from "./command-def";
 import { maybeAttachSession } from "./session";
 
-export const commandDef: CommandDef = {
-  name: "open",
-  description: "Create worktree, run setup, and start configured environment",
-  args: "<branch>",
-  options: [
-    {
-      name: "base",
-      short: "b",
-      type: "string",
-      placeholder: "branch",
-      description: "Base branch for new worktree (default: HEAD)",
-    },
-    {
-      name: "existing",
-      short: "e",
-      type: "boolean",
-      description: "Use existing branch",
-    },
-    {
-      name: "no-attach",
-      type: "boolean",
-      description: "Do not attach to tmux outside tmux",
-    },
-    {
-      name: "pr",
-      type: "string",
-      placeholder: "number-or-url",
-      description: "Open worktree from a GitHub PR",
-    },
-    {
-      name: "profile",
-      short: "P",
-      type: "string",
-      placeholder: "name",
-      description: "Use a named config profile",
-      completionValues: "__wct_profiles",
-    },
-  ],
-};
+export { openCommandDef as commandDef } from "../cli/command-metadata";
 
 export interface OpenCommandOptions extends WorkspaceOpenOptions {
   noAttach?: boolean;

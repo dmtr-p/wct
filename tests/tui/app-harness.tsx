@@ -24,7 +24,9 @@ import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
 const runtimeMock = vi.hoisted(() => ({
-  runPromise: vi.fn((effect: unknown) => Promise.resolve(effect)),
+  runPromise: vi.fn((effect: Effect.Effect<unknown, unknown>) =>
+    Promise.resolve(effect),
+  ),
   runSync: vi.fn((effect: unknown) => effect),
 }));
 
@@ -34,13 +36,11 @@ const refreshHarness = vi.hoisted(() => ({
 
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await vi.importActual<typeof import("effect")>("effect");
-  const runPromise = async (effect: unknown) => {
+  const runPromise = async (
+    effect: import("effect").Effect.Effect<unknown, unknown>,
+  ) => {
     const result = await runtimeMock.runPromise(effect);
-    return Effect.isEffect(result)
-      ? Effect.runPromise(
-          result as import("effect").Effect.Effect<unknown, unknown>,
-        )
-      : result;
+    return Effect.isEffect(result) ? Effect.runPromise(result) : result;
   };
   return {
     tuiRuntime: { runPromise },
@@ -356,7 +356,7 @@ export function emitWorkspacePhase(
       operation: call.operation,
       _tag: "PhaseStarted",
       phase,
-    }) as Effect.Effect<void>,
+    }),
   );
 }
 

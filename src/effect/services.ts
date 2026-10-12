@@ -81,18 +81,6 @@ export function makeWctServicesLayer(overrides: WctServiceOverrides = {}) {
 // Platform services must be supplied when building the application layers.
 export const WctServicesLayer = makeWctServicesLayer();
 
-export function provideWctServices<A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E,
-  | Exclude<R, WctServices | "effect/cli/GlobalFlag/json">
-  | BunServices.BunServices
-> {
-  return Effect.provide(effect, WctServicesLayer) as Effect.Effect<
-    A,
-    E,
-    | Exclude<R, WctServices | "effect/cli/GlobalFlag/json">
-    | BunServices.BunServices
-  >;
+export function provideWctServices<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return Effect.provide(effect, WctServicesLayer);
 }

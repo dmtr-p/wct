@@ -6,6 +6,7 @@ import {
   execProcess,
   ProcessExitError,
   ProcessOutputLimitError,
+  runProcess,
   spawnInteractive,
 } from "../src/services/process";
 
@@ -36,6 +37,33 @@ describe("process", () => {
       name: "ProcessOutputLimitError",
     });
     expect((failure as ProcessExitError).stdout).toBe("");
+  });
+
+  test("nonzero exits preserve output in tagged errors and runProcess results", async () => {
+    const args = [
+      "-e",
+      'process.stdout.write("out"); process.stderr.write(" err\\n"); process.exit(7)',
+    ];
+    const failure = await runBunPromise(
+      Effect.flip(execProcess(process.execPath, args)),
+    );
+    expect(failure).toBeInstanceOf(ProcessExitError);
+    expect(failure).toMatchObject({
+      _tag: "ProcessExitError",
+      name: "ProcessExitError",
+      message: "err",
+      command: process.execPath,
+      args,
+      stdout: "out",
+      stderr: " err\n",
+      exitCode: 7,
+    });
+    expect(await runBunPromise(runProcess(process.execPath, args))).toEqual({
+      stdout: "out",
+      stderr: " err\n",
+      exitCode: 7,
+      success: false,
+    });
   });
 
   test("spawnInteractive uses Bun.spawn with inherited stdio", async () => {

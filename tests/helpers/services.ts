@@ -1,9 +1,7 @@
-import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 import {
   makeWctServicesLayer,
   type WctServiceOverrides,
-  type WctServices,
 } from "../../src/effect/services";
 import type { TmuxService as TmuxServiceApi } from "../../src/services/tmux";
 import {
@@ -17,8 +15,6 @@ export const shutdownWorktreeService: WorktreeServiceApi = {
   getMainRepoPath: () => Effect.succeed("/tmp/wct-test-main"),
   getCurrentBranch: () => Effect.succeed("feature"),
 };
-
-type JsonFlagRequirement = "effect/cli/GlobalFlag/json";
 
 export type ServiceOverrides = WctServiceOverrides;
 
@@ -50,17 +46,9 @@ export const noopTmuxService: TmuxServiceApi = {
 export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   overrides: ServiceOverrides = {},
-): Effect.Effect<
-  A,
-  E,
-  Exclude<R, WctServices | JsonFlagRequirement> | BunServices.BunServices
-> {
+) {
   return Effect.provide(
     effect,
     makeWctServicesLayer({ tmux: noopTmuxService, ...overrides }),
-  ) as Effect.Effect<
-    A,
-    E,
-    Exclude<R, WctServices | JsonFlagRequirement> | BunServices.BunServices
-  >;
+  );
 }

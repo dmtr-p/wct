@@ -22,37 +22,22 @@ export class ProcessOutputLimitError extends Data.TaggedError(
   }
 }
 
-export class ProcessExitError extends Error {
-  override readonly cause?: unknown;
-  readonly command: string;
-  readonly args: ReadonlyArray<string>;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly exitCode: number | null;
-
-  constructor(params: {
-    command: string;
-    args: ReadonlyArray<string>;
-    stdout: string;
-    stderr: string;
-    exitCode: number | null;
-    cause?: unknown;
-  }) {
-    const message =
-      params.stderr.trim() ||
-      params.stdout.trim() ||
-      (params.exitCode === null
-        ? `Failed to run ${formatCommand(params.command, params.args)}`
-        : `Command exited with code ${params.exitCode}: ${formatCommand(params.command, params.args)}`);
-
-    super(message);
-    this.name = "ProcessExitError";
-    this.command = params.command;
-    this.args = params.args;
-    this.stdout = params.stdout;
-    this.stderr = params.stderr;
-    this.exitCode = params.exitCode;
-    this.cause = params.cause;
+export class ProcessExitError extends Data.TaggedError("ProcessExitError")<{
+  command: string;
+  args: ReadonlyArray<string>;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  cause?: unknown;
+}> {
+  override get message(): string {
+    return (
+      this.stderr.trim() ||
+      this.stdout.trim() ||
+      (this.exitCode === null
+        ? `Failed to run ${formatCommand(this.command, this.args)}`
+        : `Command exited with code ${this.exitCode}: ${formatCommand(this.command, this.args)}`)
+    );
   }
 }
 

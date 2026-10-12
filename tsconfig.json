@@ -21,10 +21,11 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
 
     // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
     "plugins": [
       {
@@ -34,6 +35,10 @@
           "@effect/platform-bun",
           "@effect/vitest"
         ],
+        "diagnosticSeverity": {
+          "unsafeEffectTypeAssertion": "warning",
+          "extendsNativeError": "warning"
+        },
         "includeSuggestionsInTsc": false,
         "ignoreEffectWarningsInTscExitCode": true
       }

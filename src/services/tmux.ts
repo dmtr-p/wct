@@ -510,7 +510,7 @@ function createSessionImpl(
       (error) =>
         Effect.gen(function* () {
           yield* Effect.ignore(killSessionImpl(name));
-          return yield* Effect.fail(error);
+          return yield* error;
         }),
     );
     return { _tag: "Created" as const, sessionName: name };
@@ -568,15 +568,13 @@ function attachSessionImpl(name: string) {
     ]);
 
     if (exitCode !== 0) {
-      return yield* Effect.fail(
-        new ProcessExitError({
-          command: "tmux",
-          args: ["attach-session", "-t", `=${name}`],
-          stdout: "",
-          stderr: "",
-          exitCode,
-        }),
-      );
+      return yield* new ProcessExitError({
+        command: "tmux",
+        args: ["attach-session", "-t", `=${name}`],
+        stdout: "",
+        stderr: "",
+        exitCode,
+      });
     }
   });
 }

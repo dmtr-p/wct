@@ -1,6 +1,6 @@
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   type BunServices as BunServicesType,
@@ -15,19 +15,9 @@ import {
 import { type IncludeRepo, makeIncludeRepo } from "./helpers/include-repo";
 
 function runEffect<A>(
-  effect: Effect.Effect<
-    A,
-    unknown,
-    BunServicesType.BunServices | Console.Console | never
-  >,
+  effect: Effect.Effect<A, unknown, BunServicesType.BunServices>,
 ): Promise<A> {
-  return runBunPromise(
-    Effect.provideService(
-      effect,
-      Console.Console,
-      globalThis.console,
-    ) as Effect.Effect<A, unknown, BunServicesType.BunServices>,
-  );
+  return runBunPromise(effect);
 }
 
 describe("detectEntryType", () => {

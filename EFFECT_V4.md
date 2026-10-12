@@ -153,6 +153,9 @@ Tagged application errors use `Data.TaggedError`.
 | Handle a full cause | `Effect.catchCause` |
 | Handle defects | `Effect.catchDefect` |
 | Handle selected errors | `Effect.catchIf`, `Effect.catchFilter` |
+| Recover with a fallback value | `Effect.orElseSucceed` |
+| Discard results and typed failures | `Effect.ignore` |
+| Discard results and full causes | `Effect.ignoreCause` |
 | Convert an error | `Effect.mapError` |
 | Observe both outcomes | `Effect.match`, `Effect.matchCause` |
 

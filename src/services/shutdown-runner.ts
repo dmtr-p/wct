@@ -121,7 +121,7 @@ export function runDetachedShutdown(
               events = events.then(() =>
                 Effect.runPromise(
                   Effect.suspend(() => reporter.event(message.event)).pipe(
-                    Effect.catchCause(() => Effect.void),
+                    Effect.ignoreCause,
                   ),
                 ),
               );
@@ -182,7 +182,7 @@ export function runDetachedShutdown(
           _tag: "ShutdownDelegated",
           resultPath,
         }),
-      ).pipe(Effect.catchCause(() => Effect.void));
+      ).pipe(Effect.ignoreCause);
     }
     yield* Effect.try({
       try: () => {

@@ -333,10 +333,7 @@ function emitReporter(
   return Effect.try({
     try: () => reporter.event(event),
     catch: (error) => error,
-  }).pipe(
-    Effect.flatten,
-    Effect.catchCause(() => Effect.void),
-  );
+  }).pipe(Effect.flatten, Effect.ignoreCause);
 }
 
 function emitPhase(
@@ -632,7 +629,7 @@ function openImpl(
 
     if (resolvedOptions.prNumber !== undefined) {
       const prNumber = resolvedOptions.prNumber;
-      yield* Effect.catch(
+      yield* Effect.ignore(
         Effect.gen(function* () {
           const baseRepository = yield* GitHubService.use((service) =>
             service.resolveBaseRepo(mainRepoPath),
@@ -644,7 +641,6 @@ function openImpl(
             }),
           );
         }),
-        () => Effect.void,
       );
     }
 

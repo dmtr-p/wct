@@ -262,7 +262,7 @@ export function parseClientListOutput(output: string): TmuxClient[] {
 }
 
 function listSessionsImpl() {
-  return Effect.catch(
+  return Effect.orElseSucceed(
     execProcess("tmux", [
       "list-sessions",
       "-F",
@@ -270,7 +270,7 @@ function listSessionsImpl() {
     ]).pipe(
       Effect.map((result) => parseSessionListOutput(result.stdout.trim())),
     ),
-    () => Effect.succeed(null),
+    () => null,
   );
 }
 
@@ -535,7 +535,7 @@ function createSessionImpl(
       createSessionWithWindows(name, workingDir, windows, env),
       (error) =>
         Effect.gen(function* () {
-          yield* Effect.catch(killSessionImpl(name), () => Effect.void);
+          yield* Effect.ignore(killSessionImpl(name));
           return yield* Effect.fail(error);
         }),
     );
@@ -568,14 +568,14 @@ const getCurrentSessionImpl = Effect.suspend(() => {
     return Effect.succeed(null);
   }
 
-  return Effect.catch(
+  return Effect.orElseSucceed(
     execProcess("tmux", [
       "display-message",
       ...(process.env.TMUX_PANE ? ["-t", process.env.TMUX_PANE] : []),
       "-p",
       "#S",
     ]).pipe(Effect.map((result) => result.stdout.trim())),
-    () => Effect.succeed(null),
+    () => null,
   );
 });
 
@@ -608,7 +608,7 @@ function attachSessionImpl(name: string) {
 }
 
 function listPanesImpl(sessionName: string) {
-  return Effect.catch(
+  return Effect.orElseSucceed(
     execProcess("tmux", [
       "list-panes",
       "-s",
@@ -617,12 +617,12 @@ function listPanesImpl(sessionName: string) {
       "-F",
       "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}\t#{window_zoomed_flag}\t#{pane_active}",
     ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout.trim()))),
-    () => Effect.succeed([] as TmuxPaneInfo[]),
+    () => [] as TmuxPaneInfo[],
   );
 }
 
 function listClientsImpl() {
-  return Effect.catch(
+  return Effect.orElseSucceed(
     execProcess("tmux", [
       "list-clients",
       "-F",
@@ -630,7 +630,7 @@ function listClientsImpl() {
     ]).pipe(
       Effect.map((result) => parseClientListOutput(result.stdout.trim())),
     ),
-    () => Effect.succeed([] as TmuxClient[]),
+    () => [] as TmuxClient[],
   );
 }
 

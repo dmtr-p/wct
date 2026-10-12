@@ -250,13 +250,13 @@ function getAheadBehindImpl(
 
 function getDefaultBranchImpl(cwd: string) {
   return Effect.gen(function* () {
-    const symbolicRef = yield* Effect.catch(
+    const symbolicRef = yield* Effect.orElseSucceed(
       execProcess(
         "git",
         ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
         { cwd },
       ).pipe(Effect.map((result) => result.stdout.trim())),
-      () => Effect.succeed(""),
+      () => "",
     );
     if (symbolicRef) return symbolicRef;
 
@@ -278,11 +278,11 @@ function getDefaultBranchImpl(cwd: string) {
 }
 
 function listBranchesImpl(cwd: string) {
-  return Effect.catch(
+  return Effect.orElseSucceed(
     execProcess("git", ["branch", "--format=%(refname:short)"], { cwd }).pipe(
       Effect.map((result) => result.stdout.split("\n").filter(Boolean)),
     ),
-    () => Effect.succeed([] as string[]),
+    () => [] as string[],
   );
 }
 
@@ -300,8 +300,9 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
     ),
   getMainRepoPath: (cwd) =>
     Effect.gen(function* () {
-      const worktrees = yield* Effect.catch(listWorktreesImpl(cwd), () =>
-        Effect.succeed([]),
+      const worktrees = yield* Effect.orElseSucceed(
+        listWorktreesImpl(cwd),
+        () => [],
       );
       const mainWorktreePath = worktrees[0]?.path ?? null;
       if (mainWorktreePath) {
@@ -309,21 +310,21 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
       }
 
       const [topLevelPath, gitCommonDir] = yield* Effect.all([
-        Effect.catch(
+        Effect.orElseSucceed(
           execProcess(
             "git",
             ["rev-parse", "--show-toplevel"],
             cwd ? { cwd } : undefined,
           ).pipe(Effect.map((result) => result.stdout.trim())),
-          () => Effect.succeed(null),
+          () => null,
         ),
-        Effect.catch(
+        Effect.orElseSucceed(
           execProcess(
             "git",
             ["rev-parse", "--git-common-dir"],
             cwd ? { cwd } : undefined,
           ).pipe(Effect.map((result) => result.stdout.trim())),
-          () => Effect.succeed(null),
+          () => null,
         ),
       ]);
 
@@ -339,13 +340,13 @@ export const liveWorktreeService: WorktreeService = WorktreeService.of({
     ),
   getCurrentBranch: (cwd) =>
     Effect.gen(function* () {
-      const branch = yield* Effect.catch(
+      const branch = yield* Effect.orElseSucceed(
         execProcess(
           "git",
           ["rev-parse", "--abbrev-ref", "HEAD"],
           cwd ? { cwd } : undefined,
         ).pipe(Effect.map((result) => result.stdout.trim())),
-        () => Effect.succeed(null),
+        () => null,
       );
       if (!branch || branch === "HEAD") {
         return null;

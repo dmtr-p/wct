@@ -133,7 +133,7 @@ export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
               catch: toWctError,
             })
           : false;
-      }).pipe(Effect.catch(() => Effect.succeed(false))),
+      }).pipe(Effect.orElseSucceed(() => false)),
     );
 }
 

@@ -191,13 +191,13 @@ export function findMatchingRemote(
 
 function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
   return Effect.gen(function* () {
-    const originUrl = yield* Effect.catch(
+    const originUrl = yield* Effect.orElseSucceed(
       execProcess(
         "git",
         ["remote", "get-url", "origin"],
         cwd ? { cwd } : undefined,
       ).pipe(Effect.map((result) => result.stdout.trim())),
-      () => Effect.succeed(null),
+      () => null,
     );
 
     if (
@@ -440,13 +440,13 @@ export const liveGitHubService: GitHubService = GitHubService.of({
     Effect.gen(function* () {
       const url = yield* detectRemoteUrl(owner, repo, cwd);
 
-      const existingRemote = yield* Effect.catch(
+      const existingRemote = yield* Effect.orElseSucceed(
         execProcess(
           "git",
           ["remote", "get-url", remoteName],
           cwd ? { cwd } : undefined,
         ).pipe(Effect.map((result) => result.stdout.trim())),
-        () => Effect.succeed(null),
+        () => null,
       );
 
       if (existingRemote !== null) {
@@ -547,9 +547,9 @@ export const liveGitHubService: GitHubService = GitHubService.of({
     ),
   findRemoteForRepo: (owner, repo, cwd) =>
     Effect.gen(function* () {
-      const result = yield* Effect.catch(
+      const result = yield* Effect.orElseSucceed(
         execProcess("git", ["remote", "-v"], cwd ? { cwd } : undefined),
-        () => Effect.succeed(null),
+        () => null,
       );
       if (!result) return null;
       return findMatchingRemote(result.stdout, owner, repo);

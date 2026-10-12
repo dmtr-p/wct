@@ -13,11 +13,11 @@ export interface PushDestination {
 }
 
 function gitValue(cwd: string, args: string[]) {
-  return Effect.catch(
+  return Effect.orElseSucceed(
     execProcess("git", args, { cwd }).pipe(
       Effect.map((result) => result.stdout.trim()),
     ),
-    () => Effect.succeed(""),
+    () => "",
   );
 }
 

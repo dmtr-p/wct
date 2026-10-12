@@ -38,9 +38,7 @@ function expandDirectory(dirPath: string, baseDir: string) {
 
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const info = yield* Effect.catch(fs.stat(fullPath), () =>
-      Effect.succeed(null),
-    );
+    const info = yield* Effect.orElseSucceed(fs.stat(fullPath), () => null);
     if (info?.type !== "Directory") {
       return [];
     }

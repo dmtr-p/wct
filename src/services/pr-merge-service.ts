@@ -106,7 +106,7 @@ export function fetchMergeSnapshot(
         configurationError: "base repository unreadable",
       } satisfies MergeSnapshot;
     const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed mergeQueue(branch: ${JSON.stringify(detailed.baseRefName)}) { id } } }`;
-    const configuration = yield* Effect.catch(
+    const configuration = yield* Effect.orElseSucceed(
       execProcess("gh", ["api", "graphql", "-f", `query=${query}`], {
         cwd,
       }).pipe(
@@ -122,11 +122,11 @@ export function fetchMergeSnapshot(
           }),
         ),
       ),
-      () => Effect.succeed(null),
+      () => null,
     );
     const settings = configuration?.data?.repository;
     const path = `repos/${owner}/${repo}/rules/branches/${encodeURIComponent(detailed.baseRefName)}`;
-    const rules = yield* Effect.catch(
+    const rules = yield* Effect.orElseSucceed(
       execProcess("gh", ["api", path, "--paginate", "--jq", ".[].type"], {
         cwd,
       }).pipe(
@@ -134,7 +134,7 @@ export function fetchMergeSnapshot(
           result.stdout.trim().split("\n").filter(Boolean),
         ),
       ),
-      () => Effect.succeed(null),
+      () => null,
     );
     return {
       pr: detailed,

@@ -163,7 +163,7 @@ export function readRuntimeArguments(processes: readonly ForegroundProcess[]) {
             }
           },
           catch: () => new Error("Arguments unavailable"),
-        }).pipe(Effect.catch(() => Effect.succeed([item.pid, []] as const))),
+        }).pipe(Effect.orElseSucceed(() => [item.pid, []] as const)),
       ),
       { concurrency: 4 },
     ).pipe(

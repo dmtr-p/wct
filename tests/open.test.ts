@@ -881,24 +881,22 @@ project_name: "myapp"
                   const reporter = options.reporter;
                   expect(reporter).toBeDefined();
                   if (reporter) {
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
                         _tag: "AttemptStarted",
                         attempt: "copy",
                       }),
-                      () => Effect.void,
                     );
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
                         _tag: "CopyEntrySkipped",
                         entry: ".settings/",
                         reason: "directory_not_found_or_empty",
                       }),
-                      () => Effect.void,
                     );
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
                         _tag: "CopyEntryFailed",
@@ -906,9 +904,8 @@ project_name: "myapp"
                         reason: "source_not_found",
                         error: "File not found",
                       }),
-                      () => Effect.void,
                     );
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
                         _tag: "CopyEntryFailed",
@@ -916,9 +913,8 @@ project_name: "myapp"
                         reason: "copy_failed",
                         error: "permission denied",
                       }),
-                      () => Effect.void,
                     );
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
                         _tag: "SetupCommandStarted",
@@ -926,9 +922,8 @@ project_name: "myapp"
                         current: 1,
                         total: 2,
                       }),
-                      () => Effect.void,
                     );
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
                         _tag: "SetupCommandCompleted",
@@ -938,7 +933,6 @@ project_name: "myapp"
                           error: "offline",
                         },
                       }),
-                      () => Effect.void,
                     );
                   }
                   return workspaceResult;
@@ -1041,7 +1035,7 @@ project_name: "myapp"
               open: (options) =>
                 Effect.gen(function* () {
                   if (options.reporter) {
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       options.reporter.event({
                         operation: "open",
                         _tag: "TargetResolved",
@@ -1049,15 +1043,13 @@ project_name: "myapp"
                         branch: "pr-branch",
                         base: "alice/pr-branch",
                       }),
-                      () => Effect.void,
                     );
-                    yield* Effect.catch(
+                    yield* Effect.ignore(
                       options.reporter.event({
                         operation: "open",
                         _tag: "AttemptStarted",
                         attempt: "worktree",
                       }),
-                      () => Effect.void,
                     );
                   }
                   return workspaceResult;

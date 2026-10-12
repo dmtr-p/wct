@@ -170,7 +170,7 @@ function emitAll(
   return Effect.gen(function* () {
     if (!reporter) return;
     for (const event of events) {
-      yield* Effect.catch(reporter.event(event), () => Effect.void);
+      yield* Effect.ignore(reporter.event(event));
     }
   });
 }

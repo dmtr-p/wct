@@ -101,7 +101,7 @@ export function PathInput({
                 Effect.gen(function* () {
                   const stat = yield* fs.stat(parent + item);
                   return stat.type === "Directory" ? item : null;
-                }).pipe(Effect.catch(() => Effect.succeed(null))),
+                }).pipe(Effect.orElseSucceed(() => null)),
               ),
               { concurrency: 16 },
             );

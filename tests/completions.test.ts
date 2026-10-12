@@ -106,13 +106,14 @@ async function insertBashCompletion(
       },
     },
   });
-  const timeout = setTimeout(() => proc.kill(), 4000);
+  // Interactive Bash ignores SIGTERM while waiting for another input line.
+  const timeout = setTimeout(() => proc.kill("SIGKILL"), 3500);
   try {
     expect(await proc.exited, transcript).toBe(0);
     return readFileSync(argsPath, "utf8").split("\0").slice(0, -1);
   } finally {
     clearTimeout(timeout);
-    proc.kill();
+    proc.kill("SIGKILL");
     proc.terminal?.close();
     rmSync(dir, { recursive: true, force: true });
   }
@@ -708,6 +709,7 @@ describe("resolved profile completions", () => {
     ["two\\ ", "two words", "two\\ words"],
     ['"two ', "two words", "two words"],
     ["'two ", "two words", "two words"],
+    ["'quote", "quote'and\\slash", "quote'\\''and\\slash"],
     ["back\\\\", "back\\slash", "back\\\\slash"],
     ['"back\\s', "back\\slash", "back\\\\slash"],
     ["$'line\\n'", "line\nbreak", "$'line\\nbreak'"],

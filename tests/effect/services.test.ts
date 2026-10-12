@@ -37,7 +37,9 @@ describe("WctServicesLayer", () => {
                 const json = yield* Effect.serviceOption(JsonFlag);
                 return [
                   {
-                    name: Option.getOrElse(json, () => false) ? "json" : "human",
+                    name: Option.getOrElse(json, () => false)
+                      ? "json"
+                      : "human",
                     _tag: "Succeeded" as const,
                   },
                 ];

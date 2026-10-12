@@ -112,12 +112,16 @@ describe("agent observations", () => {
         : Effect.succeed("screen"),
     );
     f.setNow(1000);
-    const failed = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const failed = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(failed.observations.get("%1")?.reason).toBe("capture_output_limit");
     expect(failed.observations.get("%1")?.freshness).toBe("stale");
     expect(failed.observations.get("%2")?.freshness).toBe("fresh");
     f.setNow(5000);
-    const expired = await Effect.runPromise(f.service.observe(f.sessions, failed));
+    const expired = await Effect.runPromise(
+      f.service.observe(f.sessions, failed),
+    );
     expect(expired.observations.get("%1")?.state).toBe("unknown");
     expect(expired.observations.get("%1")?.lastValid?.at).toBe(0);
   });
@@ -175,7 +179,9 @@ describe("agent observations", () => {
       });
     const raced = await Effect.runPromise(f.service.observe(f.sessions, first));
     expect(raced.observations.size).toBe(0);
-    const ambiguous = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const ambiguous = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(ambiguous.observations.size).toBe(0);
   });
   test("tmux native fallback cannot override a verified unrelated runtime entrypoint", async () => {
@@ -199,12 +205,16 @@ describe("agent observations", () => {
       commandError("unexpected_error", "unavailable"),
     );
     f.setNow(1000);
-    const failed = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const failed = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(failed.memberships).toEqual(first.memberships);
     expect(failed.observations.get("%1")?.freshness).toBe("stale");
     f.ports.discover = discover;
     f.setPanes([]);
-    const removed = await Effect.runPromise(f.service.observe(f.sessions, failed));
+    const removed = await Effect.runPromise(
+      f.service.observe(f.sessions, failed),
+    );
     expect(removed.observations.size).toBe(0);
     expect(removed.memberships.size).toBe(0);
   });
@@ -215,14 +225,14 @@ describe("agent observations", () => {
     );
     f.setProcesses([{ ...processFor(pane()), stat: "T" }]);
     expect(
-      (await Effect.runPromise(f.service.observe(f.sessions, first))).observations
-        .size,
+      (await Effect.runPromise(f.service.observe(f.sessions, first)))
+        .observations.size,
     ).toBe(0);
     f.setPanes([{ ...pane(), command: "fish" }]);
     f.setProcesses([{ ...processFor(pane()), command: "fish" }]);
     expect(
-      (await Effect.runPromise(f.service.observe(f.sessions, first))).observations
-        .size,
+      (await Effect.runPromise(f.service.observe(f.sessions, first)))
+        .observations.size,
     ).toBe(0);
   });
   test("process/server replacements cannot inherit an earlier classification", async () => {
@@ -292,7 +302,9 @@ describe("agent observations", () => {
           }
           return screen;
         });
-      const result = await Effect.runPromise(f.service.observe(f.sessions, first));
+      const result = await Effect.runPromise(
+        f.service.observe(f.sessions, first),
+      );
       expect(result.observations.has("%1")).toBe(false);
       expect(result.observations.size).toBe(1);
       expect(result.observations.get("%2")).toMatchObject({
@@ -332,7 +344,9 @@ describe("agent observations", () => {
         );
         return "› prompt\n? for shortcuts";
       });
-    const result = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const result = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(result.observations.has("%1")).toBe(false);
     expect(result.observations.get("%2")?.freshness).toBe("stale");
   });
@@ -420,7 +434,9 @@ describe("agent observations", () => {
           return "› prompt\n? for shortcuts";
         }),
       );
-      const result = await Effect.runPromise(f.service.observe(f.sessions, first));
+      const result = await Effect.runPromise(
+        f.service.observe(f.sessions, first),
+      );
       expect(f.ports.capture).toHaveBeenCalledExactlyOnceWith("%2");
       if (change === "unchanged" || change === "missing arguments") {
         expect(result.observations.get("%1")).toMatchObject({
@@ -461,7 +477,9 @@ describe("agent observations", () => {
     };
     f.setNow(1000);
     f.ports.capture = vi.fn(() => Effect.succeed("› prompt\n? for shortcuts"));
-    const result = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const result = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(f.ports.capture).not.toHaveBeenCalled();
     expect(result.observations.size).toBe(0);
   });
@@ -471,7 +489,9 @@ describe("agent observations", () => {
       f.service.observe(f.sessions, emptyAgentSnapshot()),
     );
     f.setProcesses([{ ...processFor(pane()), started: "replacement" }]);
-    const restarted = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const restarted = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(restarted.observations.get("%1")?.state).toBe("unknown");
     expect(restarted.observations.get("%1")?.reason).toBe("generation_changed");
     expect(restarted.observations.get("%1")?.lastValid).toBeUndefined();
@@ -505,7 +525,9 @@ describe("agent observations", () => {
       commandError("unexpected_error", "permission denied"),
     );
     f.setNow(1000);
-    const failed = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const failed = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(failed.observations.get("%1")?.reason).toBe(
       "process_inspection_unavailable",
     );
@@ -575,7 +597,9 @@ describe("agent observations", () => {
             );
       };
       f.setNow(1000);
-      const failed = await Effect.runPromise(f.service.observe(f.sessions, first));
+      const failed = await Effect.runPromise(
+        f.service.observe(f.sessions, first),
+      );
       expect(failed.observations.get("%1")).toMatchObject({
         agent: "codex",
         generation: prior?.generation,
@@ -625,7 +649,9 @@ describe("agent observations", () => {
         args.set(100, ["node", "/project/server.js"]);
         return "› prompt\n? for shortcuts";
       });
-    const replaced = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const replaced = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(replaced.observations.size).toBe(0);
   });
   test("argument failure cannot retain a wrapper whose process changed during capture", async () => {
@@ -652,11 +678,15 @@ describe("agent observations", () => {
           );
         return "› prompt\n? for shortcuts";
       });
-    const replaced = await Effect.runPromise(f.service.observe(f.sessions, first));
+    const replaced = await Effect.runPromise(
+      f.service.observe(f.sessions, first),
+    );
     expect(replaced.observations.size).toBe(0);
   });
   test("bounds capture concurrency and interrupts pending observations", async () => {
-    const f = await fixture(Array.from({ length: 15 }, (_, i) => pane(`%${i + 1}`)));
+    const f = await fixture(
+      Array.from({ length: 15 }, (_, i) => pane(`%${i + 1}`)),
+    );
     let active = 0;
     let maximum = 0;
     f.ports.capture = () =>

@@ -24,11 +24,11 @@ src/
 ├── errors.ts             # Unified error types (WctCommandError) and error constructors
 ├── cli/
 │   ├── command-metadata.ts # Shared native CLI parameters and derived completion metadata
-│   ├── completion-profiles.ts # Quiet resolved Config Profile suggestions for shell helpers
-│   ├── global-options.ts # Global option metadata and supported completion choices
+│   ├── completion-profiles.ts # Resolved profile names for shell completions
+│   ├── global-options.ts # Global option metadata and supported completion shells
 │   ├── root-command.ts   # Effect CLI root command tree and command dispatch
 │   ├── completions.ts    # Custom shell completions layered on top of the Effect CLI UX
-│   ├── completions-flag.ts # Supported built-in shell completion choices
+│   ├── completions-flag.ts # Supported --completions shell choices
 │   └── json-flag.ts      # Global --json flag
 ├── commands/
 │   ├── command-def.ts    # Shared command option and metadata interfaces
@@ -167,7 +167,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 
 The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. Exception: `ink` and `react` are runtime dependencies used exclusively by the `wct tui` subcommand. They are lazy-imported so they are never loaded for other commands. The only dev dependencies are `@biomejs/biome`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`, and `@effect/tsgo`.
 
-This project uses **Effect v4**. Read [EFFECT_V4.md](./EFFECT_V4.md) for the current APIs and repository patterns. `src/index.ts` should stay thin: it handles completions/version shortcuts, dispatches the CLI or private shutdown worker, provides live services, and hands execution to `BunRuntime.runMain`.
+This project uses **Effect v4**. Read [EFFECT_V4.md](./EFFECT_V4.md) for the current APIs and repository patterns. `src/index.ts` should stay thin: it handles completions/version shortcuts, dispatches the CLI, private profile completion helper, or shutdown worker, provides live services, and hands execution to `BunRuntime.runMain`.
 
 ## Agent skills
 

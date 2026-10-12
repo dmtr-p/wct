@@ -17,11 +17,10 @@ export function renderCompletionProfiles(
 ): string {
   switch (shell) {
     case "bash":
-      // NUL records survive whitespace, quotes, and newlines in YAML keys.
+      // NUL records preserve whitespace and newlines in profile names.
       return profiles.map((profile) => `${profile}\0`).join("");
     case "zsh":
-      // Zsh's (z) splitter reads shell words without evaluating them; (Q)
-      // then removes this quoting before compadd handles insertion quoting.
+      // Zsh's (z)/(Q) decoding preserves names without evaluating shell text.
       return profiles
         .map((profile) => `'${profile.replaceAll("'", "'\\''")}'`)
         .join(" ");

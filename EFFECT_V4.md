@@ -32,11 +32,15 @@ allowed by the language service configuration.
 
 ## CLI and terminal output
 
+Define command names, descriptions, aliases, and parameters in
+`src/cli/command-metadata.ts`. Native Effect CLI parameters and the command
+modules' `commandDef` completion views share these definitions.
+`src/cli/root-command.ts` binds the parameters to handlers. Global option
+metadata and supported completion shells belong in `src/cli/global-options.ts`.
+
 - Configure built-in actions through `CliConfig.layer` in `src/index.ts`.
 - Use `CompletionsFlag` from `src/cli/completions-flag.ts` instead of the default
-  `GlobalFlag.Completions`. The repository supports only `bash`, `zsh`, and
-  `fish`. `sh`, `powershell`, and `pwsh` must be rejected and omitted from help
-  and completion choices.
+  `GlobalFlag.Completions` to offer only `bash`, `zsh`, and `fish`.
 - Keep the custom Bash, Zsh, and Fish generators in `src/cli/completions.ts`
   for repository-specific branch, worktree, and profile suggestions.
 - CLI APIs are marked `@stability unstable`; review their behavior and help
@@ -59,6 +63,19 @@ allowed by the language service configuration.
   or terminal detection; JSON envelopes bypass the logger entirely.
   For table cells and hints, yield `logger.stdoutStyles` inside the
   Effect and use its `bold` and `green` formatters.
+
+### Profile completions
+
+The private profile completion helper resolves the Main Repository through the
+Worktree service and uses `loadConfig`. Configuration errors produce no
+suggestions. Preserve profile names and typed prefixes as data without
+evaluating shell text.
+
+Bash and Fish consume NUL records; Zsh decodes quoted words. Fish uses
+`string split0` to preserve candidate boundaries and handles insertion quoting.
+Bash matches dequoted prefixes, escapes candidates for the active quote context,
+and trims prefixes retained by Readline at word breaks. Cursor slicing must
+respect the Bash version's byte or character offsets in UTF-8 text.
 
 ## Services and layers
 
@@ -128,9 +145,9 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
 
 ## Runtime and process boundaries
 
-Keep `src/index.ts` thin: handle completion/version shortcuts, dispatch the CLI
-or private shutdown worker, provide application and Bun services, and call
-`BunRuntime.runMain`.
+Keep `src/index.ts` thin: handle completion/version shortcuts, dispatch the CLI,
+private profile completion helper, or shutdown worker, provide application and
+Bun services, and call `BunRuntime.runMain`.
 
 - `provideBunServices` supplies `BunServices.layer`.
 - `provideWctServices` supplies the live application services and default JSON
@@ -303,21 +320,3 @@ concurrent tests start.
 
 Do not run tests or lint manually; the harness hooks handle those checks as
 specified in `AGENTS.md`.
-
-## Shared CLI metadata
-
-`src/cli/command-metadata.ts` defines shared command names, descriptions,
-aliases, and parameters. It builds native Effect CLI flags and arguments and
-derives the command modules' `commandDef` completion metadata from the same
-parameters. `src/cli/root-command.ts` connects these parameters to handlers.
-Global completion options live in `src/cli/global-options.ts`.
-
-Custom shell profile helpers call the private completion entry point, which
-resolves the Main Repository with the Worktree service and loads configuration
-with `loadConfig`. Config errors produce no suggestions. Bash and Fish use NUL
-records to preserve profile names; Zsh uses quoted words without evaluation.
-Fish consumes raw records with `string split0` and handles insertion quoting.
-Bash decodes the current word's shell quoting before matching raw profile names.
-Cursor slicing accounts for Bash's byte or character offsets before parsing UTF-8 text.
-It escapes candidates for the active quote context and trims prefixes retained
-by Readline at word breaks, without evaluating shell text.

@@ -58,7 +58,9 @@ describe("App Workspace Identity expansion", () => {
       app.lines().filter((line) => line.includes(BRANCH) && line.includes("▼"));
     try {
       await tick(20);
-      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(2);
+      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(
+        2,
+      );
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, RIGHT);
       expect(expanded()).toHaveLength(1);
@@ -91,7 +93,9 @@ describe("App Workspace Identity expansion", () => {
     const app = await renderApp(<App />);
     try {
       await tick(20);
-      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(2);
+      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(
+        2,
+      );
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, DOWN);
@@ -140,7 +144,9 @@ describe("App Workspace Identity expansion", () => {
     const app = await renderApp(<App />);
     try {
       await tick(20);
-      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(2);
+      expect(app.lines().filter((line) => line.includes(BRANCH))).toHaveLength(
+        2,
+      );
       await sendKeys(app.stdin, DOWN);
       await sendKeys(app.stdin, RIGHT);
       await sendKeys(app.stdin, DOWN);

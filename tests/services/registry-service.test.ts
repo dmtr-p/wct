@@ -41,7 +41,7 @@ describe("registry-service", () => {
         expect(result.item.repo_path).toBe("/tmp/fake-repo");
         expect(result.item.project).toBe("test-project");
 
-        const repos = yield* registry.listRepos();
+        const repos = yield* registry.listRepos;
         expect(repos.length).toBeGreaterThanOrEqual(1);
         expect(
           repos.find((r) => r.repo_path === "/tmp/fake-repo"),
@@ -49,6 +49,10 @@ describe("registry-service", () => {
 
         const removed = yield* registry.unregister("/tmp/fake-repo");
         expect(removed).toBe(true);
+        const remainingRepos = yield* registry.listRepos;
+        expect(
+          remainingRepos.find((repo) => repo.repo_path === "/tmp/fake-repo"),
+        ).toBeUndefined();
       }),
     );
 
@@ -81,7 +85,7 @@ describe("registry-service", () => {
       () =>
         Effect.gen(function* () {
           const registry = yield* RegistryService;
-          yield* registry.listRepos();
+          yield* registry.listRepos;
 
           const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
             readonly: true,
@@ -113,7 +117,7 @@ describe("registry-service", () => {
           expect(updated.status).toBe("updated");
           expect(updated.item.project).toBe("beta");
 
-          const repos = yield* registry.listRepos();
+          const repos = yield* registry.listRepos;
           const matches = repos.filter((r) => r.repo_path === "/tmp/tx-repo");
           expect(matches.length).toBe(1);
           expect(matches[0]?.project).toBe("beta");
@@ -157,7 +161,7 @@ describe("registry-service", () => {
           "registered",
         ]);
 
-        const repos = yield* registry.listRepos();
+        const repos = yield* registry.listRepos;
         const matches = repos.filter(
           (repo) => repo.repo_path === "/tmp/concurrent-repo",
         );
@@ -191,7 +195,7 @@ describe("registry-service", () => {
           // Now open via the service — migrations should converge without
           // destroying the existing data.
           const registry = yield* RegistryService;
-          const repos = yield* registry.listRepos();
+          const repos = yield* registry.listRepos;
           const legacyRow = repos.find(
             (r) => r.repo_path === "/tmp/legacy-repo",
           );
@@ -217,8 +221,8 @@ describe("registry-service", () => {
     it.effect("does not re-apply migrations on subsequent opens", () =>
       Effect.gen(function* () {
         const registry = yield* RegistryService;
-        yield* registry.listRepos();
-        yield* registry.listRepos();
+        yield* registry.listRepos;
+        yield* registry.listRepos;
 
         const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
           readonly: true,

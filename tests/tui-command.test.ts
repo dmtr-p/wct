@@ -17,7 +17,7 @@ describe("tui command failures", () => {
       throw failure;
     });
     const error = await runBunPromise(
-      Effect.flip(withTestServices(tuiCommand())),
+      Effect.flip(withTestServices(tuiCommand)),
     );
     expect(error).toBeInstanceOf(WctCommandError);
     expect(error.code).toBe("unexpected_error");
@@ -30,7 +30,7 @@ describe("tui command failures", () => {
       startTui: vi.fn().mockRejectedValue(failure),
     }));
     const error = await runBunPromise(
-      Effect.flip(withTestServices(tuiCommand())),
+      Effect.flip(withTestServices(tuiCommand)),
     );
     expect(error).toBeInstanceOf(WctCommandError);
     expect(error.code).toBe("unexpected_error");
@@ -41,7 +41,7 @@ describe("tui command failures", () => {
   test("awaits successful startup", async () => {
     const startTui = vi.fn().mockResolvedValue(undefined);
     vi.doMock("../src/tui/App", () => ({ startTui }));
-    await runBunPromise(withTestServices(tuiCommand()));
+    await runBunPromise(withTestServices(tuiCommand));
     expect(startTui).toHaveBeenCalledOnce();
   });
 });

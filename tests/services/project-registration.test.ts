@@ -30,7 +30,7 @@ function fakeRegistry(calls: Array<{ path: string; project: string }>) {
         } satisfies RegistryRegistrationResult;
       }),
     unregister: () => Effect.succeed(false),
-    listRepos: () => Effect.succeed([]),
+    listRepos: Effect.succeed([]),
     findByPath: () => Effect.succeed(null),
   } satisfies RegistryServiceApi;
 }

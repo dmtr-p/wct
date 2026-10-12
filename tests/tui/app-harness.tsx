@@ -83,7 +83,7 @@ vi.mock("../../src/services/registry-service", () => ({
   RegistryService: {
     use: (selector: (svc: unknown) => unknown) =>
       selector({
-        listRepos: () => Promise.resolve(registryItems.items),
+        listRepos: Promise.resolve(registryItems.items),
       }),
   },
 }));
@@ -137,8 +137,8 @@ vi.mock("../../src/services/tmux", async () => {
     TmuxService: {
       use: (selector: (svc: unknown) => unknown) =>
         selector({
-          listClients: () => Promise.resolve(tmuxFixtures.clients),
-          listSessions: () => Promise.resolve(tmuxFixtures.sessions),
+          listClients: Promise.resolve(tmuxFixtures.clients),
+          listSessions: Promise.resolve(tmuxFixtures.sessions),
           listPanes: () => Promise.resolve([]),
           switchClientToPane: (clientTty: string, target: string) => {
             tmuxFixtures.switchCalls.push({ clientTty, target });

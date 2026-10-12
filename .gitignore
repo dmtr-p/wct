@@ -36,8 +36,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 
-# VSCode settings
-.vscode
+# VSCode local files, except shared TypeScript settings
+.vscode/*
+!.vscode/settings.json
 .superpowers/
 .scratch
 

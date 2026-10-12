@@ -6,10 +6,18 @@ application code, services, schemas, CLI commands, and tests.
 ## Packages and imports
 
 Keep `effect`, `@effect/platform-bun`, and `@effect/vitest` on matching exact
-versions in `package.json`, without `^` or `~`. Resolved transitive `@effect/*`
+versions in `package.json`, without `^` or `~`. Resolved transitive Effect runtime
 packages in `bun.lock`, including `@effect/platform-node-shared`, must match too.
-Update the Effect packages together. `package.json` is the source of truth for
-dependency versions.
+Update the Effect runtime packages together. `package.json` is the source of
+truth for dependency versions. The `@effect/tsgo` development tool has its own
+version and must support the pinned `typescript` version.
+
+`bun install` runs the `prepare` script to patch TypeScript with Effect tsgo.
+The stop hook and CI use `bun run typecheck`, which reports TypeScript errors
+and Effect diagnostics together. Effect errors fail the check; warnings are
+advisory, and suggestions are shown only in the editor.
+Unstable APIs from `effect`, `@effect/platform-bun`, and `@effect/vitest` are
+allowed by the language service configuration.
 
 - Import core APIs, including `Context`, `Effect`, `FileSystem`, `Layer`, and
   `Schema`, from `effect`.
@@ -101,6 +109,9 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
 - Prefer `static readonly layer` for service classes that define their own layer.
 - Keep the `live<ServiceName>Service` naming convention for existing concrete
   service values, such as `liveGitHubService` and `liveWorktreeService`.
+- Represent parameterless operations as Effect values. Read changing state
+  inside `Effect.sync`, `Effect.suspend`, or `Effect.gen` so each execution
+  observes current values.
 - Use `Effect.provideService` for individual overrides.
 - Use `Context.make` and `Context.get` when manipulating a context directly.
 - Use `Layer.fresh(layer)` when a layer must be built independently.

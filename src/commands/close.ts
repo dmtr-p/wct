@@ -89,8 +89,8 @@ export function closeCommand(
       );
     }
 
-    const currentSession = yield* TmuxService.use((service) =>
-      service.getCurrentSession(),
+    const currentSession = yield* TmuxService.use(
+      (service) => service.getCurrentSession,
     );
     let processedCount = 0;
 

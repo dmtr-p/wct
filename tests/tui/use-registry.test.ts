@@ -25,7 +25,7 @@ vi.mock("../../src/tui/runtime", () => ({
 vi.mock("../../src/services/registry-service", () => ({
   RegistryService: {
     use: (selector: (service: unknown) => unknown) =>
-      selector({ listRepos: registryFixtures.listRepos }),
+      selector({ listRepos: registryFixtures.listRepos() }),
   },
 }));
 

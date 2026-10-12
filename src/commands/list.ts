@@ -53,7 +53,7 @@ export function listCommand(opts?: {
     }
 
     const [sessionsList, mainRepoPath] = yield* Effect.all([
-      TmuxService.use((service) => service.listSessions()),
+      TmuxService.use((service) => service.listSessions),
       WorktreeService.use((service) => service.getMainWorktreePath()),
     ]);
     const sessions = sessionsList ?? [];

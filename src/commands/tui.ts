@@ -9,8 +9,8 @@ export const commandDef: CommandDef = {
     "Interactive TUI sidebar for managing worktrees (mouse on by default; WCT_DISABLE_MOUSE=1 to disable)",
 };
 
-export function tuiCommand(): Effect.Effect<void, WctError, WctServices> {
-  return Effect.gen(function* () {
+export const tuiCommand: Effect.Effect<void, WctError, WctServices> =
+  Effect.gen(function* () {
     const { startTui } = yield* Effect.tryPromise({
       try: () => import("../tui/App"),
       catch: (error) => toWctError(error, "Failed to load TUI"),
@@ -22,4 +22,3 @@ export function tuiCommand(): Effect.Effect<void, WctError, WctServices> {
       catch: (error) => toWctError(error, "Failed to start TUI"),
     });
   });
-}

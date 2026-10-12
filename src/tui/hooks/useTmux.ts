@@ -63,7 +63,7 @@ export function useTmux() {
       const opts = signal ? { signal } : undefined;
       try {
         const result = await tuiRuntime.runPromise(
-          TmuxService.use((service) => service.listSessions()),
+          TmuxService.use((service) => service.listSessions),
           opts,
         );
         if (!result) {
@@ -91,7 +91,7 @@ export function useTmux() {
     const opts = signal ? { signal } : undefined;
     try {
       const clients = await tuiRuntime.runPromise(
-        TmuxService.use((service) => service.listClients()),
+        TmuxService.use((service) => service.listClients),
         opts,
       );
 

@@ -29,7 +29,18 @@ vi.mock("../../src/services/tmux", async () => {
     ...actual,
     TmuxService: {
       use: (selector: (service: typeof tmuxServiceMock) => unknown) =>
-        selector(tmuxServiceMock),
+        selector({
+          ...tmuxServiceMock,
+          get listClients() {
+            return tmuxServiceMock.listClients();
+          },
+          get listSessions() {
+            return tmuxServiceMock.listSessions();
+          },
+          get refreshClient() {
+            return tmuxServiceMock.refreshClient();
+          },
+        }),
     },
   };
 });

@@ -28,8 +28,8 @@ export interface AgentSnapshot {
 }
 type ObservationEffect<A> = Effect.Effect<A, unknown, BunServices.BunServices>;
 export interface AgentObservationPorts {
-  discover: () => ObservationEffect<AgentPaneMetadata[]>;
-  processes: () => ObservationEffect<ForegroundProcess[]>;
+  discover: ObservationEffect<AgentPaneMetadata[]>;
+  processes: ObservationEffect<ForegroundProcess[]>;
   arguments: (
     processes: readonly ForegroundProcess[],
   ) => ObservationEffect<Map<number, readonly string[]>>;
@@ -130,7 +130,7 @@ export function makeAgentService(
     observe: (sessions, previous) =>
       Effect.gen(function* () {
         const now = ports.now();
-        const discovered = yield* unavailable(ports.discover());
+        const discovered = yield* unavailable(ports.discover);
         if (!discovered) {
           const observations = new Map<string, AgentObservation>();
           for (const [id, prior] of previous.observations)
@@ -165,7 +165,7 @@ export function makeAgentService(
           argvCache.clear();
           return { observations: new Map(), memberships };
         }
-        const processes = yield* unavailable(ports.processes());
+        const processes = yield* unavailable(ports.processes);
         const relevant = processes?.filter((process) =>
           [...panes.values()].some(
             (pane) => foregroundProcesses([process], pane.tty).length,
@@ -280,7 +280,7 @@ export function makeAgentService(
         // The title and capture are not atomic; reject obsolete foreground jobs
         // and refreshed titles that disagree with the captured metadata.
         const [after, afterProcesses] = yield* Effect.all(
-          [unavailable(ports.discover()), unavailable(ports.processes())],
+          [unavailable(ports.discover), unavailable(ports.processes)],
           { concurrency: 2 },
         );
         const afterMap = new Map(after?.map((pane) => [pane.paneId, pane]));

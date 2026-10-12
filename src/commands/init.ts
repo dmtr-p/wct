@@ -54,8 +54,8 @@ tmux:
     #   command: ""
 `;
 
-export function initCommand(): Effect.Effect<void, WctError, WctServices> {
-  return Effect.gen(function* () {
+export const initCommand: Effect.Effect<void, WctError, WctServices> =
+  Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const cwd = process.cwd();
     const configPath = join(cwd, CONFIG_FILENAME);
@@ -85,4 +85,3 @@ export function initCommand(): Effect.Effect<void, WctError, WctServices> {
     yield* logger.info("Run 'wct projects add' to show this repo in the TUI");
     yield* logger.info("Edit the config file to customize your workflow");
   });
-}

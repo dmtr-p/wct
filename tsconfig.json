@@ -1,4 +1,5 @@
 {
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext"],
@@ -24,6 +25,18 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "effect",
+          "@effect/platform-bun",
+          "@effect/vitest"
+        ],
+        "includeSuggestionsInTsc": false,
+        "ignoreEffectWarningsInTscExitCode": true
+      }
+    ]
   }
 }

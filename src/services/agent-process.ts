@@ -95,16 +95,14 @@ export function foregroundAgent(
     : undefined;
 }
 
-export function discoverForegroundProcesses() {
-  return execProcess(
-    "ps",
-    ["-ww", "-axo", "pid=,ppid=,pgid=,tpgid=,tty=,stat=,lstart=,comm="],
-    { maxOutputBytes: 4 * 1024 * 1024 },
-  ).pipe(
-    Effect.map(({ stdout }) => parseProcessSnapshot(stdout)),
-    Effect.timeout("1 second"),
-  );
-}
+export const discoverForegroundProcesses = execProcess(
+  "ps",
+  ["-ww", "-axo", "pid=,ppid=,pgid=,tpgid=,tty=,stat=,lstart=,comm="],
+  { maxOutputBytes: 4 * 1024 * 1024 },
+).pipe(
+  Effect.map(({ stdout }) => parseProcessSnapshot(stdout)),
+  Effect.timeout("1 second"),
+);
 
 /** macOS ps does not preserve argv boundaries. Reject quotes/escapes rather
  * than pretending to decode them; entrypoints containing spaces are unresolved. */

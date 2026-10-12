@@ -33,7 +33,7 @@ export interface RegistryServiceApi {
     options?: RegistryRegisterOptions,
   ) => Effect.Effect<RegistryRegistrationResult, WctError>;
   unregister: (repoPath: string) => Effect.Effect<boolean, WctError>;
-  listRepos: () => Effect.Effect<RegistryItem[], WctError>;
+  listRepos: Effect.Effect<RegistryItem[], WctError>;
   findByPath: (
     repoPath: string,
   ) => Effect.Effect<RegistryItem | null, WctError>;
@@ -114,12 +114,11 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
       return result.changes > 0;
     }),
 
-  listRepos: () =>
-    registryDb("list repos", (db) => {
-      return db
-        .query("SELECT * FROM registry ORDER BY project ASC")
-        .all() as RegistryItem[];
-    }),
+  listRepos: registryDb("list repos", (db) => {
+    return db
+      .query("SELECT * FROM registry ORDER BY project ASC")
+      .all() as RegistryItem[];
+  }),
 
   findByPath: (repoPath) =>
     registryDb("find repo", (db) => {

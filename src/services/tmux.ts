@@ -102,36 +102,34 @@ export function parseAgentPaneMetadata(output: string): AgentPaneMetadata[] {
 
 // Unknown format variables expand to empty on older servers. A recognized
 // progress value is the capability check; no client-version assumption.
-export function discoverAgentPanes() {
-  return execProcess(
-    "tmux",
-    [
-      "list-panes",
-      "-a",
-      "-F",
-      "#{socket_path}\t#{pid}\t#{start_time}\t#{session_name}\t#{pane_id}\t#{pane_tty}\t#{pane_pid}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{pane_dead}\t#{pane_pb_state}\t#{pane_title}",
-    ],
-    { maxOutputBytes: 1024 * 1024 },
-  ).pipe(
-    Effect.flatMap(({ stdout }) => {
-      const panes = parseAgentPaneMetadata(stdout);
-      return stdout.trim() && !panes.length
-        ? Effect.fail(new Error("Tmux observation metadata unavailable"))
-        : Effect.succeed(panes);
-    }),
-    Effect.timeout("1 second"),
-    Effect.catch((error) =>
-      error instanceof ProcessExitError &&
-      error.exitCode === 1 &&
-      error.cause === undefined &&
-      /^(?:no server running on [^\r\n]+|error connecting to [^\r\n]+ \((?:No such file or directory|Connection refused)\))$/.test(
-        error.stderr.trim(),
-      )
-        ? Effect.succeed([] as AgentPaneMetadata[])
-        : Effect.fail(error),
-    ),
-  );
-}
+export const discoverAgentPanes = execProcess(
+  "tmux",
+  [
+    "list-panes",
+    "-a",
+    "-F",
+    "#{socket_path}\t#{pid}\t#{start_time}\t#{session_name}\t#{pane_id}\t#{pane_tty}\t#{pane_pid}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{pane_dead}\t#{pane_pb_state}\t#{pane_title}",
+  ],
+  { maxOutputBytes: 1024 * 1024 },
+).pipe(
+  Effect.flatMap(({ stdout }) => {
+    const panes = parseAgentPaneMetadata(stdout);
+    return stdout.trim() && !panes.length
+      ? Effect.fail(new Error("Tmux observation metadata unavailable"))
+      : Effect.succeed(panes);
+  }),
+  Effect.timeout("1 second"),
+  Effect.catch((error) =>
+    error instanceof ProcessExitError &&
+    error.exitCode === 1 &&
+    error.cause === undefined &&
+    /^(?:no server running on [^\r\n]+|error connecting to [^\r\n]+ \((?:No such file or directory|Connection refused)\))$/.test(
+      error.stderr.trim(),
+    )
+      ? Effect.succeed([] as AgentPaneMetadata[])
+      : Effect.fail(error),
+  ),
+);
 
 export function captureAgentPane(paneId: string) {
   return execProcess("tmux", ["capture-pane", "-p", "-t", paneId], {
@@ -152,7 +150,7 @@ export type CreateSessionResult =
   | { _tag: "AlreadyExists"; sessionName: string };
 
 export interface TmuxService {
-  listSessions: () => Effect.Effect<
+  listSessions: Effect.Effect<
     TmuxSession[] | null,
     WctError,
     BunServices.BunServices
@@ -179,7 +177,7 @@ export interface TmuxService {
   killSession: (
     name: string,
   ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  getCurrentSession: () => Effect.Effect<
+  getCurrentSession: Effect.Effect<
     string | null,
     WctError,
     BunServices.BunServices
@@ -193,11 +191,7 @@ export interface TmuxService {
   listPanes: (
     sessionName: string,
   ) => Effect.Effect<TmuxPaneInfo[], WctError, BunServices.BunServices>;
-  listClients: () => Effect.Effect<
-    TmuxClient[],
-    WctError,
-    BunServices.BunServices
-  >;
+  listClients: Effect.Effect<TmuxClient[], WctError, BunServices.BunServices>;
   detachClient: (
     clientTty: string,
   ) => Effect.Effect<void, WctError, BunServices.BunServices>;
@@ -214,7 +208,7 @@ export interface TmuxService {
   killPane: (
     paneId: string,
   ) => Effect.Effect<void, WctError, BunServices.BunServices>;
-  refreshClient: () => Effect.Effect<void, WctError, BunServices.BunServices>;
+  refreshClient: Effect.Effect<void, WctError, BunServices.BunServices>;
 }
 
 export const TmuxService = Context.Service<TmuxService>("wct/TmuxService");
@@ -569,7 +563,7 @@ function killPaneImpl(paneId: string) {
   return execProcess("tmux", ["kill-pane", "-t", paneId]).pipe(Effect.asVoid);
 }
 
-function getCurrentSessionImpl() {
+const getCurrentSessionImpl = Effect.suspend(() => {
   if (!process.env.TMUX) {
     return Effect.succeed(null);
   }
@@ -583,7 +577,7 @@ function getCurrentSessionImpl() {
     ]).pipe(Effect.map((result) => result.stdout.trim())),
     () => Effect.succeed(null),
   );
-}
+});
 
 function switchSessionImpl(name: string) {
   return execProcess("tmux", ["switch-client", "-t", `=${name}`]).pipe(
@@ -665,10 +659,9 @@ function refreshClientImpl() {
 }
 
 export const liveTmuxService: TmuxService = TmuxService.of({
-  listSessions: () =>
-    Effect.mapError(listSessionsImpl(), (error) =>
-      commandError("tmux_error", "Failed to list tmux sessions", error),
-    ),
+  listSessions: Effect.mapError(listSessionsImpl(), (error) =>
+    commandError("tmux_error", "Failed to list tmux sessions", error),
+  ),
   isPaneAlive: (pane) =>
     Effect.mapError(isPaneAliveImpl(pane), (error) =>
       commandError(
@@ -709,14 +702,13 @@ export const liveTmuxService: TmuxService = TmuxService.of({
         error,
       ),
     ),
-  getCurrentSession: () =>
-    Effect.mapError(getCurrentSessionImpl(), (error) =>
-      commandError(
-        "tmux_error",
-        "Failed to determine current tmux session",
-        error,
-      ),
+  getCurrentSession: Effect.mapError(getCurrentSessionImpl, (error) =>
+    commandError(
+      "tmux_error",
+      "Failed to determine current tmux session",
+      error,
     ),
+  ),
   switchSession: (name) =>
     Effect.mapError(switchSessionImpl(name), (error) =>
       commandError(
@@ -741,10 +733,9 @@ export const liveTmuxService: TmuxService = TmuxService.of({
         error,
       ),
     ),
-  listClients: () =>
-    Effect.mapError(listClientsImpl(), (error) =>
-      commandError("tmux_error", "Failed to list tmux clients", error),
-    ),
+  listClients: Effect.mapError(listClientsImpl(), (error) =>
+    commandError("tmux_error", "Failed to list tmux clients", error),
+  ),
   detachClient: (clientTty) =>
     Effect.mapError(detachClientImpl(clientTty), (error) =>
       commandError("tmux_error", "Failed to detach tmux client", error),
@@ -777,8 +768,7 @@ export const liveTmuxService: TmuxService = TmuxService.of({
         error,
       ),
     ),
-  refreshClient: () =>
-    Effect.mapError(refreshClientImpl(), (error) =>
-      commandError("tmux_error", "Failed to refresh tmux client", error),
-    ),
+  refreshClient: Effect.mapError(refreshClientImpl(), (error) =>
+    commandError("tmux_error", "Failed to refresh tmux client", error),
+  ),
 });

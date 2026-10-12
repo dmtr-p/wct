@@ -123,7 +123,7 @@ const downCliCommand = Command.make(
     }),
 ).pipe(Command.withDescription("Stop tmux session and run down scripts"));
 
-const initCliCommand = Command.make("init", {}, () => initCommand()).pipe(
+const initCliCommand = Command.make("init", {}, () => initCommand).pipe(
   Command.withDescription("Generate a starter .wct.yaml config file"),
 );
 
@@ -250,8 +250,10 @@ const projectsRemoveCliCommand = Command.make(
   ({ path }) => projectsRemoveCommand(optionToUndefined(path)),
 ).pipe(Command.withDescription("Remove a project from the registry"));
 
-const projectsListCliCommand = Command.make("list", {}, () =>
-  projectsListCommand(),
+const projectsListCliCommand = Command.make(
+  "list",
+  {},
+  () => projectsListCommand,
 ).pipe(Command.withDescription("List registered projects"));
 
 const projectsCliCommand = Command.make("projects").pipe(
@@ -263,7 +265,7 @@ const projectsCliCommand = Command.make("projects").pipe(
   ]),
 );
 
-const tuiCliCommand = Command.make("tui", {}, () => tuiCommand()).pipe(
+const tuiCliCommand = Command.make("tui", {}, () => tuiCommand).pipe(
   Command.withDescription(
     "Interactive TUI sidebar for managing worktrees. Mouse on by default (wheel scrolls, click selects); set WCT_DISABLE_MOUSE=1 to disable.",
   ),

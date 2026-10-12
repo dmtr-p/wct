@@ -443,8 +443,8 @@ function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
         );
       }
 
-      const ghInstalled = yield* GitHubService.use((service) =>
-        service.isGhInstalled(),
+      const ghInstalled = yield* GitHubService.use(
+        (service) => service.isGhInstalled,
       );
       if (!ghInstalled) {
         return yield* Effect.fail(
@@ -1270,8 +1270,8 @@ function finishShutdown(
 ) {
   return Effect.gen(function* () {
     if (process.env.TMUX && process.env.TMUX_PANE) {
-      const currentSession = yield* TmuxService.use((service) =>
-        service.getCurrentSession(),
+      const currentSession = yield* TmuxService.use(
+        (service) => service.getCurrentSession,
       );
       if (
         currentSession === formatSessionName(basename(request.worktreePath))

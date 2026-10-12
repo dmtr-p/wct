@@ -143,45 +143,43 @@ export function projectsRemoveCommand(
   });
 }
 
-export function projectsListCommand(): Effect.Effect<
+export const projectsListCommand: Effect.Effect<
   void,
   WctError,
   WctServices | "effect/cli/GlobalFlag/json"
-> {
-  return Effect.gen(function* () {
-    const json = yield* JsonFlag;
-    const repos = yield* RegistryService.use((service) => service.listRepos());
+> = Effect.gen(function* () {
+  const json = yield* JsonFlag;
+  const repos = yield* RegistryService.use((service) => service.listRepos);
 
-    if (json) {
-      yield* jsonSuccess(repos);
-      return;
-    }
+  if (json) {
+    yield* jsonSuccess(repos);
+    return;
+  }
 
-    if (repos.length === 0) {
-      yield* logger.info("No projects registered");
-      return;
-    }
+  if (repos.length === 0) {
+    yield* logger.info("No projects registered");
+    return;
+  }
 
-    const headers = ["PROJECT", "PATH"] as const;
-    const colWidths = [
-      Math.max(headers[0].length, ...repos.map((r) => r.project.length)),
-      Math.max(headers[1].length, ...repos.map((r) => r.repo_path.length)),
-    ] as const;
+  const headers = ["PROJECT", "PATH"] as const;
+  const colWidths = [
+    Math.max(headers[0].length, ...repos.map((r) => r.project.length)),
+    Math.max(headers[1].length, ...repos.map((r) => r.repo_path.length)),
+  ] as const;
 
-    const styles = yield* logger.stdoutStyles;
+  const styles = yield* logger.stdoutStyles;
+  yield* Console.log(
+    styles.bold(
+      headers.map((h, i) => h.padEnd(colWidths[i] as number)).join("  "),
+    ),
+  );
+
+  for (const repo of repos) {
     yield* Console.log(
-      styles.bold(
-        headers.map((h, i) => h.padEnd(colWidths[i] as number)).join("  "),
-      ),
+      [
+        repo.project.padEnd(colWidths[0]),
+        repo.repo_path.padEnd(colWidths[1]),
+      ].join("  "),
     );
-
-    for (const repo of repos) {
-      yield* Console.log(
-        [
-          repo.project.padEnd(colWidths[0]),
-          repo.repo_path.padEnd(colWidths[1]),
-        ].join("  "),
-      );
-    }
-  });
-}
+  }
+});

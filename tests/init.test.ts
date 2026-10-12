@@ -34,7 +34,7 @@ describe("init command", () => {
 
     try {
       await runBunPromise(
-        withTestServices(initCommand(), {
+        withTestServices(initCommand, {
           registry: {
             ...liveRegistryService,
             register: (path: string) =>

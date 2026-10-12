@@ -11,9 +11,11 @@ vi.mock("../../src/services/process", async () => ({
   ...(await vi.importActual<typeof import("../../src/services/process")>(
     "../../src/services/process",
   )),
-  execProcess: exec,
+  execProcess: (
+    ...args: Parameters<typeof import("../../src/services/process").execProcess>
+  ) => Effect.suspend(() => exec(...args)),
 }));
-const { captureAgentPane, discoverAgentPanes } = await import(
+const { captureAgentPane, discoverAgentPanes, liveTmuxService } = await import(
   "../../src/services/tmux"
 );
 
@@ -32,6 +34,35 @@ const processFailure = (
   });
 
 describe("tmux observation primitives", () => {
+  test("current-session lookup reads the tmux environment on each execution", async () => {
+    const lookup = liveTmuxService.getCurrentSession;
+    const previousCalls = exec.mock.calls.length;
+    try {
+      vi.stubEnv("TMUX", "");
+      expect(await runBunPromise(lookup)).toBeNull();
+      expect(exec).toHaveBeenCalledTimes(previousCalls);
+
+      vi.stubEnv("TMUX", "/socket,123,0");
+      vi.stubEnv("TMUX_PANE", "%42");
+      exec.mockReturnValueOnce(
+        Effect.succeed({ stdout: "workspace\n", stderr: "", exitCode: 0 }),
+      );
+      expect(await runBunPromise(lookup)).toBe("workspace");
+      expect(exec).toHaveBeenLastCalledWith("tmux", [
+        "display-message",
+        "-t",
+        "%42",
+        "-p",
+        "#S",
+      ]);
+
+      vi.stubEnv("TMUX", "");
+      expect(await runBunPromise(lookup)).toBeNull();
+      expect(exec).toHaveBeenCalledTimes(previousCalls + 1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   test("captures the live base grid without alternate/copy/scrollback flags", async () => {
     exec.mockReturnValueOnce(
       Effect.succeed({ stdout: "one\n\ntwo\n", stderr: "", exitCode: 0 }),
@@ -53,7 +84,7 @@ describe("tmux observation primitives", () => {
     exec.mockReturnValueOnce(
       Effect.succeed({ stdout: "", stderr: "", exitCode: 0 }),
     );
-    await runBunPromise(discoverAgentPanes());
+    await runBunPromise(discoverAgentPanes);
     const call = exec.mock.calls.at(-1);
     if (!call) throw new Error("Missing tmux metadata command");
     const [command, args] = call;
@@ -66,7 +97,7 @@ describe("tmux observation primitives", () => {
     exec.mockReturnValueOnce(
       Effect.succeed({ stdout: "unsupported fields", stderr: "", exitCode: 0 }),
     );
-    await expect(runBunPromise(discoverAgentPanes())).rejects.toThrow(
+    await expect(runBunPromise(discoverAgentPanes)).rejects.toThrow(
       "metadata unavailable",
     );
   });
@@ -76,7 +107,7 @@ describe("tmux observation primitives", () => {
     "error connecting to /tmp/tmux-501/default (Connection refused)\n",
   ])("absent-server exit returns an empty pane list: %s", async (stderr) => {
     exec.mockReturnValueOnce(Effect.fail(processFailure(stderr)));
-    expect(await runBunPromise(discoverAgentPanes())).toEqual([]);
+    expect(await runBunPromise(discoverAgentPanes)).toEqual([]);
   });
   test.each([
     [
@@ -115,7 +146,7 @@ describe("tmux observation primitives", () => {
   ])("discovery preserves %s as a failure", async (_label, error) => {
     exec.mockReturnValueOnce(Effect.fail(error));
     const result = await runBunPromise(
-      discoverAgentPanes().pipe(
+      discoverAgentPanes.pipe(
         Effect.match({
           onFailure: (failure) => failure,
           onSuccess: () => undefined,
@@ -127,7 +158,7 @@ describe("tmux observation primitives", () => {
   test("discovery timeout remains a failure", async () => {
     exec.mockReturnValueOnce(Effect.never);
     const result = await runBunPromise(
-      discoverAgentPanes().pipe(
+      discoverAgentPanes.pipe(
         Effect.match({
           onFailure: (failure) => failure,
           onSuccess: () => undefined,

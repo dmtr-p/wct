@@ -336,7 +336,7 @@ describe("WorkspaceService open", () => {
     const calls: string[] = [];
     const github: GitHubService = {
       ...liveGitHubService,
-      isGhInstalled: () => Effect.succeed(true),
+      isGhInstalled: Effect.succeed(true),
       resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: () =>
         Effect.succeed({
@@ -392,7 +392,7 @@ describe("WorkspaceService open", () => {
     const calls: string[] = [];
     const github: GitHubService = {
       ...liveGitHubService,
-      isGhInstalled: () => Effect.succeed(true),
+      isGhInstalled: Effect.succeed(true),
       resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: (prNumber) =>
         Effect.sync(() => {
@@ -450,7 +450,7 @@ describe("WorkspaceService open", () => {
     const calls: string[] = [];
     const github: GitHubService = {
       ...liveGitHubService,
-      isGhInstalled: () => Effect.succeed(true),
+      isGhInstalled: Effect.succeed(true),
       resolveBaseRepo: () => Effect.succeed("acme/wct"),
       resolvePr: () =>
         Effect.succeed({
@@ -505,7 +505,7 @@ setup:
       const calls: string[] = [];
       const github: GitHubService = {
         ...liveGitHubService,
-        isGhInstalled: () => Effect.succeed(true),
+        isGhInstalled: Effect.succeed(true),
         resolvePr: () =>
           Effect.succeed({
             branch: "metadata-failure",
@@ -574,7 +574,7 @@ setup:
           {
             github: {
               ...liveGitHubService,
-              isGhInstalled: () => Effect.succeed(false),
+              isGhInstalled: Effect.succeed(false),
             },
           },
         ),
@@ -590,7 +590,7 @@ setup:
           {
             github: {
               ...liveGitHubService,
-              isGhInstalled: () => Effect.succeed(true),
+              isGhInstalled: Effect.succeed(true),
               resolvePr: () =>
                 Effect.succeed({
                   branch: "fork-fails",
@@ -617,7 +617,7 @@ setup:
           {
             github: {
               ...liveGitHubService,
-              isGhInstalled: () => Effect.succeed(true),
+              isGhInstalled: Effect.succeed(true),
               resolvePr: () =>
                 Effect.succeed({
                   branch: "fetch-fails",
@@ -643,7 +643,7 @@ setup:
           {
             github: {
               ...liveGitHubService,
-              isGhInstalled: () => Effect.succeed(true),
+              isGhInstalled: Effect.succeed(true),
               resolvePr: () =>
                 Effect.fail(
                   commandError("pr_error", "could not resolve PR 123"),

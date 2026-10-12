@@ -45,10 +45,8 @@ function fixture(initialPanes = [pane()]) {
   ];
   let now = 0;
   const ports: AgentObservationPorts = {
-    discover: vi.fn(() => Effect.succeed(panes.map((item) => ({ ...item })))),
-    processes: vi.fn(() =>
-      Effect.succeed(processes.map((item) => ({ ...item }))),
-    ),
+    discover: Effect.sync(() => panes.map((item) => ({ ...item }))),
+    processes: Effect.sync(() => processes.map((item) => ({ ...item }))),
     arguments: vi.fn(() => Effect.succeed(new Map())),
     capture: vi.fn(() => Effect.succeed("› prompt\n? for shortcuts")),
     now: () => now,
@@ -196,7 +194,7 @@ describe("agent observations", () => {
       f.service.observe(f.sessions, emptyAgentSnapshot()),
     );
     const discover = f.ports.discover;
-    f.ports.discover = () => Effect.fail(new Error("unavailable"));
+    f.ports.discover = Effect.fail(new Error("unavailable"));
     f.setNow(1000);
     const failed = await runBunPromise(f.service.observe(f.sessions, first));
     expect(failed.memberships).toEqual(first.memberships);
@@ -285,8 +283,7 @@ describe("agent observations", () => {
         Effect.sync(() => {
           if (id === "%1") {
             f.setPanes(change === "removed" ? [other] : [replacement, other]);
-            f.ports.processes = () =>
-              Effect.fail(new Error("processes unavailable"));
+            f.ports.processes = Effect.fail(new Error("processes unavailable"));
           }
           return screen;
         });
@@ -324,8 +321,7 @@ describe("agent observations", () => {
     f.ports.capture = () =>
       Effect.sync(() => {
         f.setPanes([other]);
-        f.ports.processes = () =>
-          Effect.fail(new Error("processes unavailable"));
+        f.ports.processes = Effect.fail(new Error("processes unavailable"));
         return "› prompt\n? for shortcuts";
       });
     const result = await runBunPromise(f.service.observe(f.sessions, first));
@@ -408,8 +404,7 @@ describe("agent observations", () => {
               { ...wrapper, pid: 103, ppid: 10, command: "claude" },
             ]);
           if (change === "exit with failed discovery")
-            f.ports.discover = () =>
-              Effect.fail(new Error("discovery unavailable"));
+            f.ports.discover = Effect.fail(new Error("discovery unavailable"));
           return "› prompt\n? for shortcuts";
         }),
       );
@@ -492,7 +487,7 @@ describe("agent observations", () => {
     const first = await runBunPromise(
       f.service.observe(f.sessions, emptyAgentSnapshot()),
     );
-    f.ports.processes = () => Effect.fail(new Error("permission denied"));
+    f.ports.processes = Effect.fail(new Error("permission denied"));
     f.setNow(1000);
     const failed = await runBunPromise(f.service.observe(f.sessions, first));
     expect(failed.observations.get("%1")?.reason).toBe(

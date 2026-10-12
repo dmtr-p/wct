@@ -61,24 +61,24 @@ export interface ServiceOverrides {
  * Used as the default in tests to prevent side-effects on the host machine.
  */
 export const noopTmuxService: TmuxServiceApi = {
-  listSessions: () => Effect.succeed(null),
+  listSessions: Effect.succeed(null),
   isPaneAlive: () => Effect.succeed(null),
   sessionExists: () => Effect.succeed(false),
   getSessionStatus: () => Effect.succeed(null),
   createSession: (_name, _workingDir) =>
     Effect.succeed({ _tag: "Created", sessionName: _name }),
   killSession: () => Effect.void,
-  getCurrentSession: () => Effect.succeed(null),
+  getCurrentSession: Effect.succeed(null),
   switchSession: () => Effect.void,
   attachSession: () => Effect.void,
   listPanes: () => Effect.succeed([]),
-  listClients: () => Effect.succeed([]),
+  listClients: Effect.succeed([]),
   detachClient: () => Effect.void,
   switchClientToPane: () => Effect.void,
   selectPane: () => Effect.void,
   togglePaneZoom: () => Effect.void,
   killPane: () => Effect.void,
-  refreshClient: () => Effect.void,
+  refreshClient: Effect.void,
 };
 
 export function withTestServices<A, E, R>(

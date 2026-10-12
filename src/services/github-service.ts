@@ -90,11 +90,7 @@ export function parseGhPrList(stdout: string): PrListItem[] {
 }
 
 export interface GitHubService {
-  isGhInstalled: () => Effect.Effect<
-    boolean,
-    WctError,
-    BunServices.BunServices
-  >;
+  isGhInstalled: Effect.Effect<boolean, WctError, BunServices.BunServices>;
   resolvePr: (
     prNumber: number,
     cwd?: string,
@@ -384,12 +380,11 @@ function getRawPrImpl(cwd: string, baseRepository: string, number: number) {
 }
 
 export const liveGitHubService: GitHubService = GitHubService.of({
-  isGhInstalled: () =>
-    Effect.mapError(
-      runProcess("gh", ["--version"]).pipe(Effect.map((r) => r.success)),
-      (error) =>
-        commandError("gh_not_installed", "Failed to run GitHub CLI", error),
-    ),
+  isGhInstalled: Effect.mapError(
+    runProcess("gh", ["--version"]).pipe(Effect.map((r) => r.success)),
+    (error) =>
+      commandError("gh_not_installed", "Failed to run GitHub CLI", error),
+  ),
   resolvePr: (prNumber, cwd) =>
     Effect.catch(
       Effect.gen(function* () {

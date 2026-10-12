@@ -147,7 +147,7 @@ export function useRegistry() {
       const opts = signal ? { signal } : undefined;
       try {
         const items = await tuiRuntime.runPromise(
-          RegistryService.use((s) => s.listRepos()),
+          RegistryService.use((s) => s.listRepos),
           opts,
         );
         const repoInfos: RepoInfo[] = await Promise.all(

@@ -88,7 +88,7 @@ function setupMocks(): CloseCommandSpies {
   const worktreeCalls: string[] = [];
   const tmux = {
     ...noopTmuxService,
-    getCurrentSession: () => Effect.succeed(null),
+    getCurrentSession: Effect.succeed(null),
     sessionExists: () => Effect.succeed(true),
     killSession: (name: string) =>
       Effect.sync(() => {
@@ -554,7 +554,7 @@ describe("closeCommand", () => {
   test("skips confirmations for all branches with --yes", async () => {
     mocks.tmux = {
       ...mocks.tmux,
-      getCurrentSession: () => Effect.succeed("myapp-feature-a"),
+      getCurrentSession: Effect.succeed("myapp-feature-a"),
     };
 
     await expect(
@@ -876,7 +876,7 @@ describe("closeCommand", () => {
     });
     mocks.tmux = {
       ...mocks.tmux,
-      getCurrentSession: () => Effect.succeed("myapp-feature-a"),
+      getCurrentSession: Effect.succeed("myapp-feature-a"),
     };
 
     await expect(

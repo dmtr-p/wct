@@ -27,8 +27,8 @@ describe("WctServicesLayer", () => {
             const workspace = yield* WorkspaceService;
             const json = yield* JsonFlag;
 
-            expect(typeof github.isGhInstalled).toBe("function");
-            expect(typeof registry.listRepos).toBe("function");
+            expect(Effect.isEffect(github.isGhInstalled)).toBe(true);
+            expect(Effect.isEffect(registry.listRepos)).toBe(true);
             expect(typeof setup.runSetupCommands).toBe("function");
             expect(typeof tmux.sessionExists).toBe("function");
             expect(typeof worktree.isGitRepo).toBe("function");

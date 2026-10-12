@@ -81,6 +81,8 @@ wct --version
 
 ### Shell completions (manual install)
 
+Profile suggestions use the main repository's configuration, including global defaults, from nested directories and linked worktrees. Invalid configuration produces no profile suggestions.
+
 When installed via Homebrew, completions are set up automatically. For manual installs:
 
 **Bash** — add to `~/.bashrc`:
@@ -139,7 +141,6 @@ down:
     command: "./cleanup.sh"
     optional: true
 
-# Tmux session layout
 tmux:
   windows:
     - name: "dev"
@@ -244,7 +245,7 @@ A project or profile `down` list replaces its inherited list; `down: []` disable
 
 ### Config Profiles
 
-Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`:
+Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sections based on the branch name. Define profiles under the `profiles:` key in `.wct.yaml`.
 
 Profile names must match `[A-Za-z0-9][A-Za-z0-9._-]*`: start with an ASCII letter or digit, followed by ASCII letters, digits, dots, underscores, or hyphens. For example, `dev`, `ci-linux`, and `team.local` are valid names.
 

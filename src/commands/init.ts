@@ -38,7 +38,6 @@ setup:
 #   - name: "Stop containers"
 #     command: "docker compose down"
 
-# Tmux session configuration
 # Window names must match [A-Za-z][A-Za-z0-9_-]* and be unique within the list
 tmux:
   windows:

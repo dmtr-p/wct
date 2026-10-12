@@ -20,7 +20,7 @@ code.
 
 ```
 src/
-├── index.ts              # CLI/worker entry point; completions/version shortcuts and BunRuntime.runMain
+├── index.ts              # CLI, completion helpers, version shortcuts, and shutdown worker dispatch
 ├── errors.ts             # Unified error types (WctCommandError) and error constructors
 ├── cli/
 │   ├── command-metadata.ts # Shared native CLI parameters and derived completion metadata

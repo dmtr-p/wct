@@ -7,6 +7,7 @@ import {
   resolveSelectedPane,
 } from "../tree-helpers";
 import { Mode, type PaneInfo } from "../types";
+import { handleCommonNavigationInput } from "./common-navigation";
 import type { NavigateContext } from "./navigate";
 
 export interface ExpandedContext extends NavigateContext {
@@ -76,44 +77,10 @@ export function handleExpandedInput(
     return;
   }
 
-  if (input === " " && ctx.tmuxClient) {
-    ctx.handleSpaceSwitch();
-    return;
-  }
-
-  if (input === "o") {
-    ctx.prepareOpenModal();
-    return;
-  }
-
-  if (input === "d") {
-    ctx.handleDownSelectedWorktree();
-    return;
-  }
-
-  if (input === "u") {
-    ctx.prepareUpModal();
-    return;
-  }
-
-  if (input === "a") {
-    ctx.prepareAddProjectModal();
-    return;
-  }
-
-  if (key.delete || key.backspace) {
-    ctx.prepareRemoveProject();
-    return;
-  }
+  if (handleCommonNavigationInput(ctx, input, key)) return;
 
   if (input === "c") {
     ctx.handleCloseSelectedWorktree();
-    return;
-  }
-
-  if (input === "/") {
-    ctx.setMode(Mode.Search);
-    ctx.setSearchQuery("");
     return;
   }
 

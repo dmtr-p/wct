@@ -370,27 +370,30 @@ describe("useRegistry refresh", () => {
       global: undefined,
       expected: [],
     },
-  ])("loads validated profiles: $name", async ({ project, global, expected }) => {
-    if (project !== undefined) {
-      writeFileSync(join(repoPath, ".wct.yaml"), project);
-    }
-    if (global !== undefined) {
-      writeFileSync(join(homeDir, ".wct.yaml"), global);
-    }
+  ])(
+    "loads validated profiles: $name",
+    async ({ project, global, expected }) => {
+      if (project !== undefined) {
+        writeFileSync(join(repoPath, ".wct.yaml"), project);
+      }
+      if (global !== undefined) {
+        writeFileSync(join(homeDir, ".wct.yaml"), global);
+      }
 
-    const hook = await renderUseRegistry();
-    try {
-      const snapshot = await hook.value.refresh();
-      expect(snapshot).toHaveLength(1);
-      expect(snapshot?.[0]).toMatchObject({
-        profileNames: expected,
-        worktrees: [expect.objectContaining({ branch: "feature/x" })],
-      });
-      expect(snapshot?.[0]?.error).toBeUndefined();
-    } finally {
-      hook.unmount();
-    }
-  });
+      const hook = await renderUseRegistry();
+      try {
+        const snapshot = await hook.value.refresh();
+        expect(snapshot).toHaveLength(1);
+        expect(snapshot?.[0]).toMatchObject({
+          profileNames: expected,
+          worktrees: [expect.objectContaining({ branch: "feature/x" })],
+        });
+        expect(snapshot?.[0]?.error).toBeUndefined();
+      } finally {
+        hook.unmount();
+      }
+    },
+  );
 
   test.each(["project", "global"])(
     "keeps worktrees available when the %s config cannot be read",

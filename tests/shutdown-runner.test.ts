@@ -302,52 +302,44 @@ if (command === "display-message") {
     15000,
   );
 
-  test(
-    "required failures still preserve the worktree after terminal loss",
-    async () => {
-      await configure(true);
-      const process = start(
-        "source",
-        ["close", "feature", "--yes", "--force"],
-        true,
-      );
-      const stdout = new Response(process.stdout).text();
-      const stderr = new Response(process.stderr).text();
-      await process.exited;
-      expect(process.signalCode, await stderr).toBe("SIGHUP");
-      expect(await stdout).toContain("Shutdown continues independently");
-      expect(await savedOutcome()).toMatchObject({
-        ok: false,
-        error: { code: "down_failed" },
-      });
-      expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");
-      const listed = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
-        cwd: main,
-        env: gitEnv(),
-      }).stdout.toString();
-      expect(listed).toContain(`worktree ${worktree}\n`);
-    },
-    15000,
-  );
+  test("required failures still preserve the worktree after terminal loss", async () => {
+    await configure(true);
+    const process = start(
+      "source",
+      ["close", "feature", "--yes", "--force"],
+      true,
+    );
+    const stdout = new Response(process.stdout).text();
+    const stderr = new Response(process.stderr).text();
+    await process.exited;
+    expect(process.signalCode, await stderr).toBe("SIGHUP");
+    expect(await stdout).toContain("Shutdown continues independently");
+    expect(await savedOutcome()).toMatchObject({
+      ok: false,
+      error: { code: "down_failed" },
+    });
+    expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");
+    const listed = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
+      cwd: main,
+      env: gitEnv(),
+    }).stdout.toString();
+    expect(listed).toContain(`worktree ${worktree}\n`);
+  }, 15000);
 
-  test(
-    "close --yes retries dirty removal in the worker without repeating cleanup",
-    async () => {
-      await Bun.write(join(worktree, "dirty-file"), "untracked");
-      const child = start("source", ["close", "feature", "--yes"], true);
-      const stdout = new Response(child.stdout).text();
-      const stderr = new Response(child.stderr).text();
-      await child.exited;
-      expect(child.signalCode, await stderr).toBe("SIGHUP");
-      expect(await stdout).toContain("Shutdown continues independently");
-      expect(await savedOutcome()).toMatchObject({
-        ok: true,
-        data: { status: "removed" },
-      });
-      expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");
-    },
-    15000,
-  );
+  test("close --yes retries dirty removal in the worker without repeating cleanup", async () => {
+    await Bun.write(join(worktree, "dirty-file"), "untracked");
+    const child = start("source", ["close", "feature", "--yes"], true);
+    const stdout = new Response(child.stdout).text();
+    const stderr = new Response(child.stderr).text();
+    await child.exited;
+    expect(child.signalCode, await stderr).toBe("SIGHUP");
+    expect(await stdout).toContain("Shutdown continues independently");
+    expect(await savedOutcome()).toMatchObject({
+      ok: true,
+      data: { status: "removed" },
+    });
+    expect(await Bun.file(trace).text()).toBe("kill\ncleanup\nafter\n");
+  }, 15000);
 
   test.each([false, true])(
     "inline close retries after cleanup deletes its cwd (json=%s)",

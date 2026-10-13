@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useFieldFocus } from "../hooks/useFieldFocus";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { isSubmitShortcut } from "./form-controls";
@@ -23,11 +24,6 @@ export interface UpModalProps {
 
 type UpModalField = "profile" | "autoSwitch" | "submit";
 
-function clampFocusIndex(index: number, fields: readonly UpModalField[]) {
-  if (fields.length === 0) return 0;
-  return Math.max(0, Math.min(index, fields.length - 1));
-}
-
 export function UpModal({
   visible,
   width,
@@ -35,7 +31,6 @@ export function UpModal({
   onSubmit,
   onCancel,
 }: UpModalProps) {
-  const [focusIndex, setFocusIndex] = useState(0);
   const {
     selectedProfileValue,
     setSelectedProfileValue,
@@ -50,8 +45,10 @@ export function UpModal({
     return nextFields;
   }, [profileNames.length]);
 
-  const clampedFocusIndex = clampFocusIndex(focusIndex, fields);
-  const currentField = fields[clampedFocusIndex] ?? null;
+  const { currentField, focusField, moveFocus } = useFieldFocus(
+    fields,
+    visible,
+  );
   const submission = useMemo(
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
@@ -65,14 +62,6 @@ export function UpModal({
     });
   };
 
-  useEffect(() => {
-    setFocusIndex((prev) => clampFocusIndex(prev, fields));
-  }, [fields]);
-
-  useEffect(() => {
-    if (visible) setFocusIndex(0);
-  }, [visible]);
-
   useGuardedInput(
     (_input, key) => {
       if (key.escape) {
@@ -84,13 +73,7 @@ export function UpModal({
         return;
       }
       if (key.tab) {
-        setFocusIndex(
-          (prev) =>
-            (clampFocusIndex(prev, fields) +
-              (key.shift ? -1 : 1) +
-              fields.length) %
-            fields.length,
-        );
+        moveFocus(key.shift ? -1 : 1);
       }
     },
     { isActive: visible },
@@ -109,7 +92,7 @@ export function UpModal({
           onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
           onSubmit={doSubmit}
           onProfileChange={setSelectedProfileValue}
-          onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
+          onFocusField={focusField}
           resetKey={visible ? "visible" : "hidden"}
           width={width ? width - 2 : undefined}
         />

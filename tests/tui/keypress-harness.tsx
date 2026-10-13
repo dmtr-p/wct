@@ -76,6 +76,10 @@ export async function renderWithInput(node: React.ReactElement) {
     stdin,
     output: () => stripAnsi(chunks.join("")),
     lastFrame: () => stripAnsi(chunks.at(-1) ?? ""),
+    async rerender(next: React.ReactElement) {
+      instance.rerender(next);
+      await tick(2);
+    },
     unmount() {
       instance.unmount();
       input.dispose();

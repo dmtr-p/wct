@@ -1,11 +1,11 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
 import type { ListItem } from "../../src/tui/components/ScrollableList";
-import type { SessionOptionsSectionProps } from "../../src/tui/components/SessionOptionsSection";
 import {
   resolveSelectedProfileValue,
   resolveSessionOptionsSubmitState,
 } from "../../src/tui/components/session-options";
+import type { SessionOptionsSectionProps } from "../../src/tui/components/SessionOptionsSection";
 
 const sessionOptionsSectionMock = vi.hoisted(() => vi.fn());
 
@@ -15,10 +15,11 @@ vi.mock("../../src/tui/components/SessionOptionsSection", async () => {
   return {
     SessionOptionsSection: (props: SessionOptionsSectionProps) => {
       sessionOptionsSectionMock(props);
+      const { onProfileChange } = props;
 
       React.useEffect(() => {
-        props.onProfileChange("");
-      }, [props.onProfileChange]);
+        onProfileChange("");
+      }, [onProfileChange]);
 
       return null;
     },

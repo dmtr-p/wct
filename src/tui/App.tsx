@@ -134,20 +134,22 @@ export function App() {
   const agents = useAgents(repos);
 
   const navigation = useTreeNavigation(() => navigationSnapshot);
+  const dispatchTreeNavigation = navigation.dispatch;
   const selectedIndex = navigation.selectedIndex;
   const selectTreeItem = useCallback(
-    (itemIndex: number) => navigation.dispatch({ type: "select", itemIndex }),
-    [navigation.dispatch],
+    (itemIndex: number) =>
+      dispatchTreeNavigation({ type: "select", itemIndex }),
+    [dispatchTreeNavigation],
   );
   const captureTreeReturnPosition = useCallback(
     (slot: ReturnSlot, preserveSelection?: boolean) =>
-      navigation.dispatch({ type: "capture", slot, preserveSelection }),
-    [navigation.dispatch],
+      dispatchTreeNavigation({ type: "capture", slot, preserveSelection }),
+    [dispatchTreeNavigation],
   );
   const restoreTreeReturnPosition = useCallback(
     (slot: ReturnSlot, destination?: ReturnDestination) =>
-      navigation.dispatch({ type: "restore", slot, destination }),
-    [navigation.dispatch],
+      dispatchTreeNavigation({ type: "restore", slot, destination }),
+    [dispatchTreeNavigation],
   );
   const [openModalBase, setOpenModalBase] = useState<string | undefined>();
   const [openModalProfiles, setOpenModalProfiles] = useState<string[]>([]);
@@ -389,18 +391,18 @@ export function App() {
       : undefined;
   const canCollapse = Boolean(
     selectedWorktreeRepo &&
-      selectedWorktreeData &&
-      !isLifecycleActive(
-        lifecycle,
-        selectedWorktreeRepo.repoPath,
-        selectedWorktreeData.branch,
-      ) &&
-      isWorktreeEffectivelyExpanded({
-        expandedWorkspaceKeys,
-        lifecycle,
-        repoPath: selectedWorktreeRepo.repoPath,
-        branch: selectedWorktreeData.branch,
-      }),
+    selectedWorktreeData &&
+    !isLifecycleActive(
+      lifecycle,
+      selectedWorktreeRepo.repoPath,
+      selectedWorktreeData.branch,
+    ) &&
+    isWorktreeEffectivelyExpanded({
+      expandedWorkspaceKeys,
+      lifecycle,
+      repoPath: selectedWorktreeRepo.repoPath,
+      branch: selectedWorktreeData.branch,
+    }),
   );
 
   const repoError = statusBarProps.selectedProject

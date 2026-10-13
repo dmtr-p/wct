@@ -148,9 +148,8 @@ async function startClose(
   settled: Promise<void>;
   call: ReturnType<typeof lastWorkspaceCall>;
 }> {
-  const { createExecuteClose } = await import(
-    "../../src/tui/hooks/useSessionActions"
-  );
+  const { createExecuteClose } =
+    await import("../../src/tui/hooks/useSessionActions");
   const settled = createExecuteClose(deps)(
     "feat",
     BRANCH,

@@ -40,9 +40,7 @@ async function renderDetailRow(props: React.ComponentProps<typeof DetailRow>) {
 
   return {
     output: chunks.join(""),
-    unmount() {
-      instance.unmount();
-    },
+    unmount: () => instance.unmount(),
   };
 }
 

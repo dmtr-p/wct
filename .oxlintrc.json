@@ -1,0 +1,75 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+  "options": {
+    "typeAware": true,
+    "typeCheck": true
+  },
+  "plugins": ["typescript", "unicorn", "oxc", "react", "effecttsgo"],
+  "rules": {
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "ink",
+            "importNames": ["useInput"],
+            "message": "Use useGuardedInput (src/tui/hooks/useGuardedInput.ts) for shared keyboard and mouse routing, including the paste fallback guard."
+          }
+        ]
+      }
+    ],
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-non-null-assertion": "warn",
+    "react/globals": "off",
+    "react/immutability": "off",
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "effecttsgo/any-unknown-in-error-context": "warn",
+    "effecttsgo/class-self-mismatch": "error",
+    "effecttsgo/duplicate-package": "warn",
+    "effecttsgo/effect-fn-iife": "warn",
+    "effecttsgo/effect-fn-implicit-any": "error",
+    "effecttsgo/effect-gen-uses-adapter": "warn",
+    "effecttsgo/effect-in-failure": "warn",
+    "effecttsgo/effect-in-void-success": "warn",
+    "effecttsgo/experimental-api-usage": "warn",
+    "effecttsgo/extends-native-error": "warn",
+    "effecttsgo/floating-effect": "error",
+    "effecttsgo/floating-effect-in-vitest": "error",
+    "effecttsgo/generic-effect-services": "warn",
+    "effecttsgo/global-error-in-effect-catch": "warn",
+    "effecttsgo/global-error-in-effect-failure": "warn",
+    "effecttsgo/layer-merge-all-with-dependencies": "warn",
+    "effecttsgo/lazy-promise-in-effect-sync": "warn",
+    "effecttsgo/leaking-requirements": "warn",
+    "effecttsgo/missing-effect-context": "error",
+    "effecttsgo/missing-effect-error": "error",
+    "effecttsgo/missing-layer-context": "error",
+    "effecttsgo/missing-return-yield-star": "error",
+    "effecttsgo/missing-star-in-yield-effect-gen": "error",
+    "effecttsgo/multiple-effect-provide": "warn",
+    "effecttsgo/non-object-effect-service-type": "error",
+    "effecttsgo/obsolete-match-import": "warn",
+    "effecttsgo/obsolete-schema-import": "warn",
+    "effecttsgo/outdated-api": "warn",
+    "effecttsgo/overridden-schema-constructor": "error",
+    "effecttsgo/promise-in-effect-success": "warn",
+    "effecttsgo/return-effect-in-gen": "warn",
+    "effecttsgo/run-effect-inside-effect": "warn",
+    "effecttsgo/schema-literal-non-finite": "error",
+    "effecttsgo/schema-opaque-instance-member": "error",
+    "effecttsgo/scope-in-layer-effect": "warn",
+    "effecttsgo/try-catch-in-effect-gen": "warn",
+    "effecttsgo/unknown-in-effect-catch": "warn",
+    "effecttsgo/unsafe-effect-type-assertion": "warn",
+    "effecttsgo/unstable-api-usage": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["src/tui/hooks/useGuardedInput.ts"],
+      "rules": {
+        "eslint/no-restricted-imports": "off"
+      }
+    }
+  ]
+}

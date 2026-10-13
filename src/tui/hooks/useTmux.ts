@@ -187,8 +187,8 @@ export function useTmux() {
 
   useEffect(() => {
     const controller = new AbortController();
-    discoverClient(controller.signal);
-    refreshSessions(controller.signal);
+    void discoverClient(controller.signal);
+    void refreshSessions(controller.signal);
     return () => controller.abort();
   }, [discoverClient, refreshSessions]);
 

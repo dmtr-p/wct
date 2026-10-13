@@ -4,7 +4,7 @@ Use these labels for the canonical triage roles in the repository's issue tracke
 
 | Label             | Meaning                                  |
 | ----------------- | ---------------------------------------- |
-| `needs-triage`    | Maintainer needs to evaluate this issue   |
+| `needs-triage`    | Maintainer needs to evaluate this issue  |
 | `needs-info`      | Waiting on reporter for more information |
 | `ready-for-agent` | Fully specified, ready for an AFK agent  |
 | `ready-for-human` | Requires human implementation            |

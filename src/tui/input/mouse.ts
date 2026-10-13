@@ -12,17 +12,17 @@ export const HEADER_OFFSET = 2;
 export const ADD_PROJECT_BUTTON_LABEL = "[+Add]";
 
 /** SGR extended mouse event (DECSET ?1006), with an optional stripped ESC. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: the ESC (\x1b) byte is the literal start of an SGR mouse sequence and must be matched
+// eslint-disable-next-line no-control-regex -- the ESC (\x1b) byte is the literal start of an SGR mouse sequence and must be matched
 const SGR = /^\x1b?\[<(\d+);(\d+);(\d+)([Mm])$/;
 
 /**
  * Mouse-only strings from Ink's paste fallback, with or without ESC prefixes.
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
+// eslint-disable-next-line no-control-regex -- see SGR above
 const SGR_CHUNK = /^(?:\x1b?\[<\d+;\d+;\d+[Mm])+$/;
 
 /** Global matcher used to split a mouse-only chunk into single sequences. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
+// eslint-disable-next-line no-control-regex -- see SGR above
 const SGR_SPLIT = /\x1b?\[<\d+;\d+;\d+[Mm]/g;
 
 /**
@@ -30,7 +30,7 @@ const SGR_SPLIT = /\x1b?\[<\d+;\d+;\d+[Mm]/g;
  * row+32. Ink discards the prefix; the adapter removes the payload before
  * UTF-8 decoding. Terminals that ignore SGR encoding may send this format.
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: see SGR above
+// eslint-disable-next-line no-control-regex -- see SGR above
 const X10_PREFIX = /^\x1b?\[M$/;
 
 /** Bytes of X10 payload (button, col, row) that follow an `ESC [ M` prefix. */

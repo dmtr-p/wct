@@ -5,7 +5,7 @@ status: accepted
 # Mouse input uses the shared guarded Ink input hook
 
 All TUI input listeners use `useGuardedInput` in
-`src/tui/hooks/useGuardedInput.ts`. Biome restricts direct `useInput` imports
+`src/tui/hooks/useGuardedInput.ts`. Oxlint restricts direct `useInput` imports
 to this hook. Keyboard events use Ink's input channel; mouse events use
 `src/tui/input/terminal-input.ts` subscriptions.
 

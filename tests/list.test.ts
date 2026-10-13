@@ -253,7 +253,7 @@ describe("formatSync", () => {
   });
 });
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes are control characters by definition
+// eslint-disable-next-line no-control-regex -- ANSI escape codes are control characters by definition
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");

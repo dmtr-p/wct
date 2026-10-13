@@ -40,9 +40,7 @@ async function renderElement(node: React.ReactElement) {
 
   return {
     output: chunks.join(""),
-    unmount() {
-      instance.unmount();
-    },
+    unmount: () => instance.unmount(),
   };
 }
 

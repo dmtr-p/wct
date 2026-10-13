@@ -123,6 +123,7 @@ const runnableProgram = shouldSuppressCliOutputForJson
   ? program.pipe(
       Effect.provide(
         CliOutput.layer({
+          // eslint-disable-next-line typescript/no-misused-spread -- defaultFormatter returns a plain object with own formatter functions
           ...CliOutput.defaultFormatter(),
           formatHelpDoc: () => "",
           formatErrors: () => "",

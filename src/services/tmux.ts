@@ -297,7 +297,7 @@ export function buildWindowPaneCommands(
     return commands;
   }
 
-  // biome-ignore lint/style/noNonNullAssertion: guarded by panes.length > 0 check above
+  // eslint-disable-next-line typescript/no-non-null-assertion -- guarded by panes.length > 0 check above
   const firstPane = panes[0]!;
   if (firstPane.command) {
     commands.push({
@@ -307,7 +307,7 @@ export function buildWindowPaneCommands(
   }
 
   for (let i = 1; i < panes.length; i++) {
-    // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
+    // eslint-disable-next-line typescript/no-non-null-assertion -- index is bounded by loop condition
     const pane = panes[i]!;
     const splitFlag = split === "horizontal" ? "-h" : "-v";
 
@@ -368,7 +368,7 @@ export function buildWindowsPaneCommands(
     return commands;
   }
 
-  // biome-ignore lint/style/noNonNullAssertion: guarded by windows.length === 0 check above
+  // eslint-disable-next-line typescript/no-non-null-assertion -- guarded by windows.length === 0 check above
   const firstWindow = windows[0]!;
   commands.push({
     type: "new-session",
@@ -399,7 +399,7 @@ export function buildWindowsPaneCommands(
   );
 
   for (let i = 1; i < windows.length; i++) {
-    // biome-ignore lint/style/noNonNullAssertion: index is bounded by loop condition
+    // eslint-disable-next-line typescript/no-non-null-assertion -- index is bounded by loop condition
     const window = windows[i]!;
     commands.push({
       type: "new-window",

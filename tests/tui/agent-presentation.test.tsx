@@ -9,7 +9,6 @@ import {
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { buildTreeItems, buildTreeRows } from "../../src/tui/tree-helpers";
-
 import { displayWidth } from "../../src/tui/utils/display-width";
 import { elementText } from "./react-elements";
 

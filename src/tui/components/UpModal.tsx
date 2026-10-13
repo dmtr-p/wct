@@ -5,8 +5,8 @@ import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
 import { ModalShortcut } from "./ModalShortcut";
-import { SessionOptionsSection } from "./SessionOptionsSection";
 import { resolveSessionOptionsSubmitState } from "./session-options";
+import { SessionOptionsSection } from "./SessionOptionsSection";
 
 export interface UpModalResult {
   profile?: string;

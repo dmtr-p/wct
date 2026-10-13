@@ -30,6 +30,7 @@ function isFullwidthCodePoint(cp: number): boolean {
 const EMOJI_PRESENTATION = /^\p{Emoji_Presentation}$/u;
 
 function graphemeWidth(segment: string): number {
+  // eslint-disable-next-line typescript/no-misused-spread -- segment is already a grapheme; count its code points for the width approximation
   const codePoints = [...segment];
   if (codePoints.length > 1) return 2;
   const cp = segment.codePointAt(0) ?? 0;

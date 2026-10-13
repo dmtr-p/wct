@@ -20,7 +20,7 @@ export interface GuardedInputOptions {
 /**
  * Shared keyboard and mouse input hook (ADR 0002). Ink handles keyboard events;
  * the terminal adapter supplies mouse reports. The string guard covers Ink's
- * paste fallback when no usePaste listener is registered. Biome restricts
+ * paste fallback when no usePaste listener is registered. Oxlint restricts
  * direct useInput imports to this file.
  */
 export function useGuardedInput(

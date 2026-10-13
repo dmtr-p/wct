@@ -62,7 +62,7 @@ function runConfirmation(key: string, json = false) {
   );
 }
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: detect ANSI styling, excluding cursor/redraw controls
+// eslint-disable-next-line no-control-regex -- detect ANSI styling, excluding cursor/redraw controls
 const STYLE_ESCAPE = /\x1b\[[0-9;]*m/;
 
 describe("confirmation prompts", () => {

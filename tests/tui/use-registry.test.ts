@@ -47,9 +47,8 @@ vi.mock("../../src/services/worktree-service", async () => {
   };
 });
 
-const { loadRepoInfo, useRegistry } = await import(
-  "../../src/tui/hooks/useRegistry"
-);
+const { loadRepoInfo, useRegistry } =
+  await import("../../src/tui/hooks/useRegistry");
 
 type RegistryHookValue = ReturnType<typeof useRegistry>;
 

@@ -11,19 +11,23 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "test": "bun --bun node_modules/.bin/vitest run",
-    "lint": "bunx biome check",
+    "lint": "bun run --bun oxlint --deny-warnings .",
+    "lint:fix": "bun run --bun oxlint --fix --deny-warnings .",
     "typecheck": "bun --bun node_modules/.bin/tsc --noEmit",
-    "format": "bunx biome check --write",
+    "format": "bun run --bun oxfmt --write .",
+    "format:check": "bun run --bun oxfmt --check .",
     "build": "bun build src/index.ts --compile --outfile dist/wct",
     "build:all": "bun run scripts/build-all.ts",
-    "prepare": "bun run --bun effect-tsgo patch --typescript --no-oxlint"
+    "prepare": "bun run --bun effect-tsgo patch --typescript --oxlint"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
     "@effect/tsgo": "0.51.1",
     "@effect/vitest": "4.0.3",
     "@types/bun": "1.4.2",
     "@types/react": "19.3.0",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003",
     "react-devtools-core": "8.0.0",
     "typescript": "7.0.2",
     "vitest": "5.0.3"

@@ -1,4 +1,4 @@
-/** biome-ignore-all lint/suspicious/noTemplateCurlyInString: shell variable interpolation */
+/* eslint-disable no-template-curly-in-string -- shell variable interpolation */
 
 import type { CommandDef, CommandOption } from "../commands/command-def";
 import { completionCommands } from "./command-metadata";

@@ -214,9 +214,8 @@ describe("createPrepareOpenModal", () => {
   });
 
   test("opens a branch through WorkspaceService, refreshes, and leaves the discovered Workspace expanded without registering", async () => {
-    const { tuiRuntime, runTuiSilentPromise } = await import(
-      "../../src/tui/runtime"
-    );
+    const { tuiRuntime, runTuiSilentPromise } =
+      await import("../../src/tui/runtime");
 
     const openResult = makeOpenResult();
     (tuiRuntime.runPromise as Mock).mockResolvedValueOnce(openResult);

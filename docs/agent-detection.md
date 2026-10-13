@@ -7,9 +7,11 @@ terminal text, titles, or arguments in SQLite or logs.
 
 ## Identification and states
 
-Exact foreground executable names `claude`, `claude-code`, and `codex` establish
-identity first. Process inspection verifies foreground ownership and tracks PID,
-start time, and process group. The initial `pane_pid` is not treated as the agent.
+Tmux foreground command names `claude`, `claude-code`, and `codex` establish
+direct identity. Process inspection verifies foreground ownership and tracks PID,
+start time, and process group. Native installations can have versioned executable
+names in process listings while tmux reports a recognized command name.
+The initial `pane_pid` is not treated as the agent.
 Stopped/background jobs and shell return clear the foreground-agent observation.
 Independent recognized agents in the same foreground group remain unresolved;
 tmux's command name cannot disambiguate them.

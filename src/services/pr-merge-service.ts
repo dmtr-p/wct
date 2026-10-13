@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { commandError } from "../errors";
+import { GITHUB_PR_JSON_FIELDS } from "./github-service";
 import { fetchPrDetails } from "./pr-details";
 import { normalizeGhPr } from "./pr-discovery";
 import type { PrFacts } from "./pr-model";
@@ -47,9 +48,6 @@ interface MergeSettings {
   mergeQueue?: { id?: string } | null;
 }
 
-const TARGET_FIELDS =
-  "id,number,title,state,url,isDraft,reviewDecision,mergeable,mergeStateStatus,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,statusCheckRollup,updatedAt";
-
 function decodeJson(text: string): unknown {
   const response = JSON.parse(text) as { errors?: { message?: string }[] };
   if (response.errors?.length)
@@ -72,7 +70,7 @@ export function fetchMergeSnapshot(
         "--repo",
         baseRepository,
         "--json",
-        TARGET_FIELDS,
+        GITHUB_PR_JSON_FIELDS,
       ],
       { cwd },
     );
@@ -228,7 +226,7 @@ export function mergeEligibility(snapshot: MergeSnapshot): MergeEligibility {
   return { route: "direct", methods: snapshot.methods };
 }
 
-/** Includes all facts that can change eligibility or route without changing the head SHA. */
+/** Detect changes since confirmation; submission also rechecks current eligibility. */
 export function mergeSnapshotFingerprint(snapshot: MergeSnapshot): string {
   const p = snapshot.pr;
   return JSON.stringify({

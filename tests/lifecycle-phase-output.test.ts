@@ -1,6 +1,3 @@
-// Runs each command twice against a stubbed WorkspaceService, with and
-// without PhaseStarted events interleaved, and diffs the transcripts.
-
 import { Effect } from "effect";
 import { describe, expect, test, vi } from "vitest";
 import { closeCommand } from "../src/commands/close";

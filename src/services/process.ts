@@ -146,7 +146,7 @@ export function runProcess(
       ...output,
       success: true as const,
     })),
-    (error) => error instanceof ProcessExitError,
+    (error): error is ProcessExitError => error instanceof ProcessExitError,
     (error: ProcessExitError) =>
       Effect.succeed({
         stdout: error.stdout,

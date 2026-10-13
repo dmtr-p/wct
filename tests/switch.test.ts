@@ -27,7 +27,6 @@ describe("switchCommand", () => {
 
   test("extracts basename from full worktree path for session name", async () => {
     const switchCalls: string[] = [];
-    // Simulate being inside tmux so switchSession is called
     const origTmux = process.env.TMUX;
     process.env.TMUX = "/tmp/tmux-1000/default,12345,0";
 

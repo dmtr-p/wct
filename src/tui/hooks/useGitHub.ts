@@ -68,7 +68,6 @@ export function useGitHub(repos: RepoInfo[]) {
   const [associations, setAssociations] = useState(initial.associations);
   const [openPrs, setOpenPrs] = useState(initial.openPrs);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
-  const [loading, setLoading] = useState(false);
   const [refreshingProjects, setRefreshingProjects] = useState<Set<string>>(
     new Set(),
   );
@@ -376,14 +375,9 @@ export function useGitHub(repos: RepoInfo[]) {
       if (!targets.length) return;
       const first = firstRefresh.current;
       firstRefresh.current = false;
-      setLoading(true);
-      try {
-        await Promise.allSettled(
-          targets.map((repo) => refreshOne(repo, first, signal)),
-        );
-      } finally {
-        setLoading(false);
-      }
+      await Promise.allSettled(
+        targets.map((repo) => refreshOne(repo, first, signal)),
+      );
     },
     [refreshOne],
   );
@@ -464,7 +458,6 @@ export function useGitHub(repos: RepoInfo[]) {
     associations,
     openPrs,
     errors,
-    loading,
     refresh,
     refreshAfterCurrent,
     refreshingProjects,

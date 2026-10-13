@@ -1222,7 +1222,6 @@ describe("a Workspace under an active lifecycle", () => {
     const rows = buildTreeRows({
       items,
       repos: repoList,
-      expandedRepos: new Set(["r1"]),
       expandedWorkspaceKeys: new Set([workspaceKey]),
       lifecycle,
       maxWidth: 80,
@@ -1559,7 +1558,6 @@ describe("up and down lifecycle progress", () => {
     const rows = buildTreeRows({
       items,
       repos: repoList,
-      expandedRepos: new Set(["r1"]),
       expandedWorkspaceKeys: new Set([workspaceKey]),
       lifecycle,
       maxWidth: 80,

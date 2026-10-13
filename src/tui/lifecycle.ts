@@ -267,11 +267,6 @@ export function beginLifecycle(
   };
 }
 
-interface LifecycleMessage {
-  severity: "error" | "warning";
-  text: string;
-}
-
 export interface LifecycleRunOptions<T> {
   claims: LifecycleClaims;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
@@ -312,12 +307,9 @@ export async function runLifecycleOperation<T>(
   });
   if (!lifecycle) return;
 
-  const messages: LifecycleMessage[] = [];
-  const appendError = (message: string) => {
-    if (message) messages.push({ severity: "error", text: message });
-  };
+  const messages: string[] = [];
   const append = (message: string) => {
-    if (message) messages.push({ severity: "warning", text: message });
+    if (message) messages.push(message);
   };
 
   try {
@@ -325,7 +317,7 @@ export async function runLifecycleOperation<T>(
     try {
       result = await options.run(lifecycle.reporter);
     } catch (error) {
-      appendError(toWctError(error).message);
+      append(toWctError(error).message);
     }
 
     if (result !== undefined && options.resultWarnings) {
@@ -357,7 +349,7 @@ export async function runLifecycleOperation<T>(
     }
 
     if (messages.length > 0) {
-      options.showActionError(messages.map((entry) => entry.text).join("\n"));
+      options.showActionError(messages.join("\n"));
     }
   } finally {
     lifecycle.end();

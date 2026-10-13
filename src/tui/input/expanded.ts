@@ -15,7 +15,6 @@ export interface ExpandedContext extends NavigateContext {
   selectTreeItem: (i: number) => void;
   captureTreeReturnPosition: (slot: "kill") => void;
   zoomPane: (paneId: string) => Promise<boolean>;
-  killPane: (paneId: string) => Promise<boolean>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
   collapseWorktree: (workspaceKey: string) => void;
 }

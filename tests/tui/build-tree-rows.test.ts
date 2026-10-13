@@ -59,7 +59,7 @@ const emptyOpts = {
 };
 
 describe("buildTreeRows", () => {
-  test("a collapsed repo with one worktree maps each row 1:1 to its item", () => {
+  test("a collapsed worktree maps each row 1:1 to its item", () => {
     const repos = [
       repo({
         id: "repo-1",
@@ -75,7 +75,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
       expandedWorkspaceKeys: new Set<string>(),
@@ -84,7 +83,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set<string>(),
     });
 
@@ -110,7 +108,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const items = buildTreeItems({
       repos,
@@ -120,7 +117,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
     });
 
@@ -151,7 +147,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const items = buildTreeItems({
       repos,
@@ -161,16 +156,14 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
     });
 
     expect(rows.map((r) => r.kind)).toEqual(["repo", "worktree"]);
   });
 
-  test("an expanded repo with no worktrees emits a (no worktrees) row", () => {
+  test("a repo with no worktrees emits a (no worktrees) row", () => {
     const repos = [repo({ id: "repo-1", project: "empty", worktrees: [] })];
-    const expandedRepos = new Set(["repo-1"]);
     const items = buildTreeItems({
       repos,
       expandedWorkspaceKeys: new Set<string>(),
@@ -179,7 +172,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set<string>(),
     });
 
@@ -189,24 +181,6 @@ describe("buildTreeRows", () => {
         { itemIndex: null, kind: "repo-empty" },
       ],
     );
-  });
-
-  test("a collapsed repo with no worktrees does NOT emit a (no worktrees) row", () => {
-    const repos = [repo({ id: "repo-1", project: "empty", worktrees: [] })];
-    const expandedRepos = new Set<string>();
-    const items = buildTreeItems({
-      repos,
-      expandedWorkspaceKeys: new Set<string>(),
-      ...emptyOpts,
-    });
-    const rows = buildTreeRows({
-      items,
-      repos,
-      expandedRepos,
-      expandedWorkspaceKeys: new Set<string>(),
-    });
-
-    expect(rows.map((r) => r.kind)).toEqual(["repo"]);
   });
 
   test("pending-workspace rows for a populated repo follow its worktree block", () => {
@@ -225,7 +199,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
@@ -235,7 +208,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set<string>(),
       lifecycle,
     });
@@ -274,7 +246,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
@@ -299,7 +270,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       lifecycle,
     });
@@ -341,7 +311,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
@@ -366,7 +335,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       lifecycle,
     });
@@ -384,7 +352,7 @@ describe("buildTreeRows", () => {
     );
   });
 
-  test("pending-workspace rows for an empty expanded repo are appended at the bottom of the whole tree", () => {
+  test("pending-workspace rows for an empty repo are appended at the bottom of the whole tree", () => {
     const repos = [
       repo({
         id: "repo-1",
@@ -401,7 +369,6 @@ describe("buildTreeRows", () => {
       }),
       repo({ id: "repo-2", project: "empty", worktrees: [] }),
     ];
-    const expandedRepos = new Set(["repo-1", "repo-2"]);
     const lifecycle = openLifecycle("/tmp/repo-2", "empty", "feature/seed");
     const items = buildTreeItems({
       repos,
@@ -411,7 +378,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set<string>(),
       lifecycle,
     });
@@ -446,7 +412,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
@@ -470,7 +435,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
     });
 
@@ -508,7 +472,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
@@ -532,7 +495,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       maxWidth: 40,
     });
@@ -585,7 +547,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
@@ -609,7 +570,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       maxWidth: 80,
     });
@@ -634,7 +594,6 @@ describe("buildTreeRows", () => {
         ],
       }),
     ];
-    const expandedRepos = new Set(["repo-1"]);
     const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
@@ -660,7 +619,6 @@ describe("buildTreeRows", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
       maxWidth: 40,
     });
@@ -831,7 +789,6 @@ describe("lifecycle rows", () => {
       rows: buildTreeRows({
         items,
         repos,
-        expandedRepos: new Set(["repo-1"]),
         expandedWorkspaceKeys: new Set<string>(),
         lifecycle,
         maxWidth: 80,

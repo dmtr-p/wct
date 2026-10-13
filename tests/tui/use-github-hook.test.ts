@@ -159,6 +159,9 @@ describe("useGitHub", () => {
     const harness = await renderHook([initial]);
     await settle();
     expect(calls).toBe(1);
+    expect(harness.value.refreshingProjects).toEqual(
+      new Set([initial.repoPath]),
+    );
     harness.rerender([
       {
         ...initial,
@@ -176,6 +179,7 @@ describe("useGitHub", () => {
     await settle();
     expect(calls).toBeGreaterThanOrEqual(4);
     expect(harness.value.errors.has(initial.repoPath)).toBe(false);
+    expect(harness.value.refreshingProjects.size).toBe(0);
     harness.unmount();
   });
 

@@ -418,6 +418,7 @@ export async function renderApp(
   node: React.ReactElement,
   termRows = 32,
   termCols = 100,
+  renderOptions: { debug?: boolean; maxFps?: number } = {},
 ) {
   const stdout = new PassThrough() as unknown as TestStdout;
   stdout.columns = termCols;
@@ -465,6 +466,8 @@ export async function renderApp(
     debug: true,
     patchConsole: false,
     exitOnCtrlC: false,
+    ...(renderOptions.debug === false ? { interactive: true } : {}),
+    ...renderOptions,
   });
 
   return {
@@ -473,7 +476,18 @@ export async function renderApp(
     events,
     instance,
     // The last full frame Ink wrote, split into lines, ANSI stripped.
-    lines: () => stripAnsi(chunks[chunks.length - 1] ?? "").split("\n"),
+    lines: () => {
+      // Interactive Ink also writes cursor/synchronization controls separately
+      // from the full frame. Those writes carry no visible content.
+      const frame =
+        renderOptions.debug === false
+          ? chunks
+              .toReversed()
+              .map(stripAnsi)
+              .find((chunk) => chunk.trim().length > 0)
+          : stripAnsi(chunks[chunks.length - 1] ?? "");
+      return (frame ?? "").split("\n");
+    },
     output: () => stripAnsi(chunks.join("\n")),
     unmount() {
       instance.unmount();

@@ -16,7 +16,6 @@ import {
   createHandleCloseSelectedWorktree,
   createHandleDownSelectedWorktree,
   createHandleSpaceSwitch,
-  createSessionHandoff,
   createStartWorkspace,
   createSwitchClientAway,
 } from "../../src/tui/hooks/useSessionActions";
@@ -72,6 +71,7 @@ function makeDeps(
     setMode: vi.fn(),
     modeRef: { current: Mode.Navigate },
     setLifecycle: vi.fn(),
+    waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),
@@ -81,25 +81,6 @@ function makeDeps(
     refreshAll: vi.fn().mockResolvedValue(undefined),
     confirmDownReturnModeRef: { current: Mode.Navigate },
     confirmCloseReturnModeRef: { current: Mode.Navigate },
-    ...overrides,
-  };
-}
-
-function makeStartResult(
-  overrides: Partial<WorkspaceUpResult> = {},
-): WorkspaceUpResult {
-  return {
-    operation: "up",
-    worktreePath: "/tmp/wt",
-    mainRepoPath: "/tmp/repo",
-    branch: "feat",
-    sessionName: "wt-feat",
-    projectName: "proj",
-    env: {} as WorkspaceUpResult["env"],
-    warnings: [],
-    attempts: {
-      tmux: { attempted: false, reason: "tmux_not_configured" },
-    },
     ...overrides,
   };
 }
@@ -207,111 +188,6 @@ describe("createSwitchClientAway", () => {
       tty: "/dev/pts/0",
       session: "target",
     });
-  });
-});
-
-describe("createSessionHandoff", () => {
-  test("auto-switches when tmux succeeded and single client", async () => {
-    const deps = makeDeps({
-      discoverClient: vi.fn().mockResolvedValue({
-        type: "single",
-        client: { tty: "/dev/pts/0", session: "other" },
-      }),
-      switchSession: vi.fn().mockResolvedValue(true),
-    });
-    const handoff = createSessionHandoff(deps);
-
-    const result = makeStartResult({
-      attempts: {
-        tmux: {
-          attempted: true,
-          ok: true,
-          value: { _tag: "Created", sessionName: "wt-feat" },
-        },
-      },
-    });
-
-    await expect(handoff(result, true)).resolves.toBeUndefined();
-    expect(deps.switchSession).toHaveBeenCalledWith("wt-feat", {
-      tty: "/dev/pts/0",
-      session: "other",
-    });
-    expect(deps.refreshSessions).toHaveBeenCalled();
-  });
-
-  test("reports a failed switch as a message instead of throwing", async () => {
-    const deps = makeDeps({
-      discoverClient: vi.fn().mockResolvedValue({
-        type: "single",
-        client: { tty: "/dev/pts/0", session: "other" },
-      }),
-      switchSession: vi.fn().mockResolvedValue(false),
-    });
-    const handoff = createSessionHandoff(deps);
-
-    const result = makeStartResult({
-      attempts: {
-        tmux: {
-          attempted: true,
-          ok: true,
-          value: { _tag: "Created", sessionName: "wt-feat" },
-        },
-      },
-    });
-
-    await expect(handoff(result, true)).resolves.toEqual(
-      expect.stringContaining("failed to switch client"),
-    );
-  });
-
-  test.each([
-    ["none", "No tmux client found — start tmux in the other pane"],
-    [
-      "error",
-      "Started session 'wt-feat' but failed to query tmux clients to switch",
-    ],
-    [
-      "multiple",
-      "Cannot switch tmux client after start because multiple tmux clients are attached",
-    ],
-  ] as const)(
-    "explains why a %s client discovery cannot switch",
-    async (type, message) => {
-      const deps = makeDeps({
-        discoverClient: vi.fn().mockResolvedValue({ type }),
-      });
-      const handoff = createSessionHandoff(deps);
-      const result = makeStartResult({
-        attempts: {
-          tmux: {
-            attempted: true,
-            ok: true,
-            value: { _tag: "Created", sessionName: "wt-feat" },
-          },
-        },
-      });
-
-      await expect(handoff(result, true)).resolves.toBe(message);
-      expect(deps.switchSession).not.toHaveBeenCalled();
-    },
-  );
-
-  test("does not switch when autoSwitch is false", async () => {
-    const deps = makeDeps();
-    const handoff = createSessionHandoff(deps);
-
-    const result = makeStartResult({
-      attempts: {
-        tmux: {
-          attempted: true,
-          ok: true,
-          value: { _tag: "Created", sessionName: "wt-feat" },
-        },
-      },
-    });
-
-    await expect(handoff(result, false)).resolves.toBeUndefined();
-    expect(deps.switchSession).not.toHaveBeenCalled();
   });
 });
 
@@ -1731,8 +1607,18 @@ describe("up and down lifecycle progress", () => {
       lifecycleSizeAtSwitch = tracker.state.size;
       return false;
     });
+    let releasePresentation!: () => void;
+    const presentation = new Promise<void>((resolve) => {
+      releasePresentation = resolve;
+    });
+    const waitForLifecyclePresentationCleanup = vi.fn(() => {
+      expect(tracker.state.size).toBe(0);
+      expect(deps.lifecycleClaims.active(repoPath, branch)).toBeUndefined();
+      return presentation;
+    });
     const deps = makeDeps({
       setLifecycle: tracker.setLifecycle,
+      waitForLifecyclePresentationCleanup,
       discoverClient: vi.fn().mockResolvedValue({
         type: "single",
         client: { tty: "/dev/pts/0", session: "other" },
@@ -1761,7 +1647,17 @@ describe("up and down lifecycle progress", () => {
       ),
     );
 
-    await createStartWorkspace(deps)(target({ autoSwitch: true }));
+    const started = createStartWorkspace(deps)(target({ autoSwitch: true }));
+    await vi.waitFor(() => {
+      expect(waitForLifecyclePresentationCleanup).toHaveBeenCalledWith(
+        repoPath,
+        branch,
+      );
+    });
+    expect(deps.discoverClient).not.toHaveBeenCalled();
+    expect(switchSession).not.toHaveBeenCalled();
+    releasePresentation();
+    await started;
 
     expect(tracker.state.size).toBe(0);
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();

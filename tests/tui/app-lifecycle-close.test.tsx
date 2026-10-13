@@ -87,6 +87,7 @@ function makeDeps(overrides: Partial<SessionActionDeps> = {}) {
     setMode: vi.fn(),
     modeRef: { current: Mode.Navigate },
     setLifecycle: vi.fn(),
+    waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     showActionError: vi.fn(),
     clearActionError: vi.fn(),
     switchSession: vi.fn().mockResolvedValue(true),

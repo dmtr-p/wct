@@ -272,4 +272,127 @@ describe("TUI open lifecycle", () => {
 
     app.unmount();
   });
+
+  test.each([false, true])(
+    "Start and Open clean up only their own rendered progress (switch fails: %s)",
+    async (switchFails) => {
+      const otherRepoPath = join(repoPath, "other");
+      mkdirSync(otherRepoPath);
+      registryItems.items.push({
+        id: "repo-2",
+        repo_path: otherRepoPath,
+        project: "beta",
+      });
+      worktreeFixtures.byRepoPath.set(otherRepoPath, [
+        makeWorktree(otherRepoPath, "main"),
+      ]);
+      tmuxFixtures.clients = [{ tty: "/dev/pts/1", session: "outside" }];
+      tmuxFixtures.sessions = [{ name: "outside", attached: true, windows: 1 }];
+
+      const { App } = await import("../../src/tui/App");
+      const app = await renderApp(<App />, 32, 100, {
+        debug: false,
+        maxFps: 1,
+      });
+      try {
+        await tick(6);
+        await app.instance.waitUntilRenderFlush();
+        const framesAtSwitch: string[] = [];
+        tmuxFixtures.onSwitch = () => {
+          framesAtSwitch.push(app.lines().join("\n"));
+          if (switchFails) throw new Error("switch failed");
+        };
+
+        await sendKeys(app.stdin, "\x1b[B");
+        await app.instance.waitUntilRenderFlush();
+        expect(selectedLine(app.lines())).toContain("main");
+        await sendKeys(app.stdin, " ");
+        await tick(6);
+        const start = lastWorkspaceCall("up");
+        expect(start.options.path).toBe(join(repoPath, "main"));
+
+        await sendKeys(app.stdin, "\x1b[B");
+        await app.instance.waitUntilRenderFlush();
+        expect(selectedLine(app.lines())).toContain("beta");
+        await openBranchFromModal(app.stdin, "main");
+        await tick(6);
+        await app.instance.waitUntilRenderFlush();
+        const open = lastWorkspaceCall("open");
+        expect(open.options.cwd).toBe(otherRepoPath);
+        expect(
+          app.lines().filter((line) => line.includes("Preparing Workspace…")),
+        ).toHaveLength(2);
+
+        start.resolve({
+          operation: "up",
+          worktreePath: join(repoPath, "main"),
+          mainRepoPath: repoPath,
+          branch: "main",
+          sessionName: "alpha-main",
+          projectName: "alpha",
+          env: {},
+          warnings: [],
+          attempts: {
+            tmux: {
+              attempted: true,
+              ok: true,
+              value: { _tag: "Created", sessionName: "alpha-main" },
+            },
+          },
+        });
+        await tick(16);
+        expect(tmuxFixtures.switchCalls).toEqual([
+          { clientTty: "/dev/pts/1", target: "=alpha-main" },
+        ]);
+        expect(
+          framesAtSwitch[0]
+            ?.split("\n")
+            .filter((line) => line.includes("Preparing Workspace…")),
+        ).toHaveLength(1);
+        expect(framesAtSwitch[0]).not.toContain("Validating Workspace…");
+        await app.instance.waitUntilRenderFlush();
+        if (switchFails)
+          expect(app.lines().join("\n")).toContain("failed to switch client");
+
+        open.resolve({
+          operation: "open",
+          worktreePath: join(otherRepoPath, "main"),
+          mainRepoPath: otherRepoPath,
+          branch: "main",
+          sessionName: "beta-main",
+          projectName: "beta",
+          created: false,
+          env: {},
+          warnings: [],
+          attempts: {
+            worktree: { attempted: true, ok: true, value: {} },
+            copy: { attempted: false, reason: "not_configured" },
+            setup: { attempted: false, reason: "not_configured" },
+            tmux: {
+              attempted: true,
+              ok: true,
+              value: { _tag: "AlreadyExists", sessionName: "beta-main" },
+            },
+          },
+        });
+        await tick(16);
+        expect(tmuxFixtures.switchCalls.at(-1)).toEqual({
+          clientTty: "/dev/pts/1",
+          target: "=beta-main",
+        });
+        expect(framesAtSwitch).toHaveLength(2);
+        expect(framesAtSwitch[1]).not.toContain("Preparing Workspace…");
+        expect(framesAtSwitch[1]).not.toContain("Validating Workspace…");
+        await app.instance.waitUntilRenderFlush();
+        expect(app.lines().join("\n")).not.toContain("Preparing Workspace…");
+        expect(app.lines().join("\n")).not.toContain("Validating Workspace…");
+        if (switchFails)
+          expect(app.lines().join("\n")).toContain(
+            "Opened session 'beta-main', but failed to switch client",
+          );
+      } finally {
+        app.unmount();
+      }
+    },
+  );
 });

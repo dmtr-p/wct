@@ -338,6 +338,51 @@ function captureAttempt<A, E, R>(
   });
 }
 
+function startWorkspaceSession(options: {
+  operation: "open" | "up";
+  reporter?: WorkspaceReporter;
+  sessionName: string;
+  workingDir: string;
+  tmuxConfig: ResolvedConfig["tmux"];
+  env: WctEnv;
+}) {
+  return Effect.gen(function* () {
+    const { operation, reporter, sessionName, workingDir, tmuxConfig, env } =
+      options;
+    if (!tmuxConfig) {
+      return {
+        tmux: skippedAttempt<CreateSessionResult>("tmux_not_configured"),
+        warnings: [] as WorkspaceWarning[],
+      };
+    }
+
+    yield* emitPhase(reporter, operation, { _tag: "StartingTmuxSession" });
+    yield* emitReporter(reporter, {
+      operation,
+      _tag: "AttemptStarted",
+      attempt: "tmux",
+    });
+    const tmux = yield* captureAttempt(
+      TmuxService.use((service) =>
+        service.createSession(sessionName, workingDir, tmuxConfig, env),
+      ),
+    );
+    if (tmux.attempted) {
+      yield* emitReporter(reporter, {
+        operation,
+        _tag: "AttemptCompleted",
+        attempt: "tmux",
+        ok: tmux.ok,
+      });
+    }
+    const warnings: WorkspaceWarning[] = [];
+    if (tmux.attempted && !tmux.ok) {
+      warnings.push({ _tag: "TmuxStartFailed", operation, error: tmux.error });
+    }
+    return { tmux, warnings };
+  });
+}
+
 function setupWarning(result: SetupResult): WorkspaceWarning | undefined {
   if (result._tag === "Succeeded") return undefined;
   return {
@@ -735,33 +780,14 @@ function openImpl(
       });
     }
 
-    if (resolved.tmux) {
-      yield* emitPhase(reporter, "open", { _tag: "StartingTmuxSession" });
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptStarted",
-        attempt: "tmux",
-      });
-    }
-    const startTmux = resolved.tmux
-      ? captureAttempt(
-          TmuxService.use((service) =>
-            service.createSession(sessionName, workingDir, resolved.tmux, env),
-          ),
-        )
-      : Effect.succeed(
-          skippedAttempt<CreateSessionResult>("tmux_not_configured"),
-        );
-    const tmux = yield* startTmux;
-
-    if (tmux.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptCompleted",
-        attempt: "tmux",
-        ok: tmux.ok,
-      });
-    }
+    const { tmux, warnings: tmuxWarnings } = yield* startWorkspaceSession({
+      operation: "open",
+      reporter,
+      sessionName,
+      workingDir,
+      tmuxConfig: resolved.tmux,
+      env,
+    });
     const warnings: WorkspaceWarning[] = [];
     if (setup.attempted && setup.ok) {
       warnings.push(
@@ -779,13 +805,7 @@ function openImpl(
         error: setup.error,
       });
     }
-    if (tmux.attempted && !tmux.ok) {
-      warnings.push({
-        _tag: "TmuxStartFailed",
-        operation: "open",
-        error: tmux.error,
-      });
-    }
+    warnings.push(...tmuxWarnings);
     return {
       operation: "open",
       worktreePath,
@@ -930,44 +950,14 @@ function upImpl(
     );
     const workingDir = env.WCT_WORK_DIR;
 
-    if (resolved.tmux) {
-      yield* emitPhase(reporter, "up", { _tag: "StartingTmuxSession" });
-      yield* emitReporter(reporter, {
-        operation: "up",
-        _tag: "AttemptStarted",
-        attempt: "tmux",
-      });
-    }
-
-    const startTmux = resolved.tmux
-      ? captureAttempt(
-          TmuxService.use((service) =>
-            service.createSession(sessionName, workingDir, resolved.tmux, env),
-          ),
-        )
-      : Effect.succeed(
-          skippedAttempt<CreateSessionResult>("tmux_not_configured"),
-        );
-
-    const tmux = yield* startTmux;
-
-    if (tmux.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "up",
-        _tag: "AttemptCompleted",
-        attempt: "tmux",
-        ok: tmux.ok,
-      });
-    }
-
-    const warnings: WorkspaceWarning[] = [];
-    if (tmux.attempted && !tmux.ok) {
-      warnings.push({
-        _tag: "TmuxStartFailed",
-        operation: "up",
-        error: tmux.error,
-      });
-    }
+    const { tmux, warnings } = yield* startWorkspaceSession({
+      operation: "up",
+      reporter,
+      sessionName,
+      workingDir,
+      tmuxConfig: resolved.tmux,
+      env,
+    });
     return {
       operation: "up",
       worktreePath,

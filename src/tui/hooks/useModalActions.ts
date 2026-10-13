@@ -1,7 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
-import type { TmuxClient } from "../../services/tmux";
 import {
   type WorkspaceOpenResult,
   WorkspaceService,
@@ -18,6 +17,10 @@ import {
 } from "../lifecycle";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
+  createSessionHandoff,
+  type SessionHandoffDeps,
+} from "../session-handoff";
+import {
   resolveSelectedWorktreeIndex,
   resolveTreeReturnMode,
 } from "../tree-helpers";
@@ -26,11 +29,6 @@ import { Mode, type TreeItem } from "../types";
 import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { StartWorkspaceTarget } from "./useSessionActions";
-import type { TmuxClientDiscovery } from "./useTmux";
-
-function workspaceOpenStartedTmux(result: WorkspaceOpenResult): boolean {
-  return result.attempts.tmux.attempted && result.attempts.tmux.ok;
-}
 
 function discoveredWorkspaceIdentityKey(
   snapshot: readonly RepoInfo[],
@@ -47,7 +45,7 @@ function discoveredWorkspaceIdentityKey(
   return undefined;
 }
 
-export interface ModalActionDeps {
+export interface ModalActionDeps extends SessionHandoffDeps {
   treeItems: TreeItem[];
   filteredRepos: RepoInfo[];
   selectedIndex: number;
@@ -69,16 +67,9 @@ export interface ModalActionDeps {
   setOpenModalRepoPath: (v: string) => void;
 
   markWorkspaceDiscovered: (workspaceKey: string) => void;
-  /** Resolves only after Ink commits removal of this Workspace's progress row. */
-  waitForLifecyclePresentationCleanup: (
-    repoPath: string,
-    branch: string,
-  ) => Promise<void>;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;
-  switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
-  discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   startWorkspace: (target: StartWorkspaceTarget) => Promise<void>;
   // Lifecycle reconciliation must read the snapshot this resolves to, never
   // the render-time `filteredRepos` capture.
@@ -122,6 +113,7 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
 }
 
 export function createHandleOpen(deps: ModalActionDeps) {
+  const sessionHandoff = createSessionHandoff(deps);
   return (opts: OpenModalResult) => {
     deps.setMode(deps.modalReturnModeRef.current);
     const requestedBranch = opts.pr ? undefined : opts.branch;
@@ -165,43 +157,17 @@ export function createHandleOpen(deps: ModalActionDeps) {
         );
         if (discovered) deps.markWorkspaceDiscovered(discovered);
       },
-      afterCleanup: (result) => openSessionHandoff(deps, opts, result),
+      afterCleanup: (result) =>
+        sessionHandoff({
+          repoPath,
+          branch: opts.branch,
+          sessionName: result.sessionName,
+          tmux: result.attempts.tmux,
+          autoSwitch: !opts.noAttach,
+          wording: { action: "open", completed: "Opened" },
+        }),
     });
   };
-}
-
-// Runs after validation and teardown: switching tmux clients detaches the
-// terminal this TUI is drawn in, so a failure here must surface as a plain
-// action error rather than resurrecting a progress row.
-async function openSessionHandoff(
-  deps: ModalActionDeps,
-  opts: OpenModalResult,
-  result: WorkspaceOpenResult,
-): Promise<string | undefined> {
-  if (opts.noAttach || !workspaceOpenStartedTmux(result)) return undefined;
-
-  await deps.waitForLifecyclePresentationCleanup(
-    deps.openModalRepoPath,
-    opts.branch,
-  );
-
-  const liveClient = await deps.discoverClient();
-  if (liveClient.type === "single") {
-    const switched = await deps.switchSession(
-      result.sessionName,
-      liveClient.client,
-    );
-    return switched
-      ? undefined
-      : `Started session '${result.sessionName}', but failed to switch client`;
-  }
-  if (liveClient.type === "none") {
-    return "No tmux client found — start tmux in the other pane";
-  }
-  if (liveClient.type === "error") {
-    return `Opened session '${result.sessionName}' but failed to query tmux clients to switch`;
-  }
-  return "Cannot switch tmux client after open because multiple tmux clients are attached";
 }
 
 export function createPrepareUpModal(deps: ModalActionDeps) {

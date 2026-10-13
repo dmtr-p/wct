@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { Effect } from "effect";
 import { useCallback, useEffect, useState } from "react";
+import { loadConfig } from "../../config/loader";
 import { RegistryService } from "../../services/registry-service";
 import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
@@ -24,24 +24,6 @@ export interface RepoInfo {
   error?: string;
 }
 
-function getProfileNames(repoPath: string): string[] {
-  try {
-    const home = process.env.HOME ?? homedir();
-    const paths = [join(repoPath, ".wct.yaml"), join(home, ".wct.yaml")];
-    for (const p of paths) {
-      if (!existsSync(p)) continue;
-      const content = readFileSync(p, "utf-8");
-      const parsed = Bun.YAML.parse(content) as { profiles?: object } | null;
-      if (parsed?.profiles && typeof parsed.profiles === "object") {
-        return Object.keys(parsed.profiles);
-      }
-    }
-    return [];
-  } catch {
-    return [];
-  }
-}
-
 interface RegistryRepoItem {
   id: string;
   repo_path: string;
@@ -50,7 +32,7 @@ interface RegistryRepoItem {
 
 interface LoadRepoInfoDeps {
   pathExists: (path: string) => boolean;
-  getProfileNames: (repoPath: string) => string[];
+  getProfileNames: (repoPath: string) => Promise<string[]>;
   listWorktrees: (
     repoPath: string,
   ) => Promise<import("../../services/worktree-service").Worktree[]>;
@@ -77,9 +59,9 @@ export async function loadRepoInfo(
     };
   }
 
-  const profileNamesPromise = Promise.resolve(
-    deps.getProfileNames(item.repo_path),
-  );
+  const profileNamesPromise = deps
+    .getProfileNames(item.repo_path)
+    .catch(() => []);
 
   let worktreeList: import("../../services/worktree-service").Worktree[];
   let defaultBranch: string | null;
@@ -92,7 +74,7 @@ export async function loadRepoInfo(
       deps.getDefaultBranch(item.repo_path),
     ]);
   } catch {
-    const fallbackProfileNames = await profileNamesPromise.catch(() => []);
+    const fallbackProfileNames = await profileNamesPromise;
     return {
       id: item.id,
       repoPath: item.repo_path,
@@ -154,7 +136,13 @@ export function useRegistry() {
           items.map((item) =>
             loadRepoInfo(item, {
               pathExists: existsSync,
-              getProfileNames,
+              getProfileNames: (repoPath) =>
+                tuiRuntime.runPromise(
+                  loadConfig(repoPath).pipe(
+                    Effect.map((config) => Object.keys(config.profiles ?? {})),
+                  ),
+                  opts,
+                ),
               listWorktrees: (repoPath) =>
                 tuiRuntime.runPromise(
                   WorktreeService.use((s) => s.listWorktrees(repoPath)),

@@ -39,13 +39,11 @@ describe("TreeView maxWidth wiring", () => {
       panes: new Map(),
       jumpToPane: () => undefined,
     });
-    const expandedRepos = new Set(repos.map((repo) => repo.id));
     // TreeView renders the row model its owner built — the same contract
     // App.tsx uses (one buildTreeRows call shared with hit-testing).
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set<string>(),
       maxWidth: 15,
     });
@@ -84,7 +82,7 @@ describe("TreeView maxWidth wiring", () => {
 });
 
 describe("TreeView windowing", () => {
-  function collapsedRepos(): RepoInfo[] {
+  function emptyRepos(): RepoInfo[] {
     return Array.from({ length: 6 }, (_, i) => ({
       id: `repo-${i}`,
       repoPath: `/tmp/repo-${i}`,
@@ -97,8 +95,7 @@ describe("TreeView windowing", () => {
   async function renderTree(
     props: Partial<React.ComponentProps<typeof TreeView>>,
   ) {
-    const repos = collapsedRepos();
-    const expandedRepos = new Set<string>();
+    const repos = emptyRepos();
     const items = buildTreeItems({
       repos,
       expandedWorkspaceKeys: new Set<string>(),
@@ -109,7 +106,6 @@ describe("TreeView windowing", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set<string>(),
       maxWidth: 80,
     });
@@ -147,16 +143,17 @@ describe("TreeView windowing", () => {
   });
 
   test("renders only the windowed slice", async () => {
-    // viewportRows=3, scrollOffset=2 → rows [2,3,4] → project-2/3/4 visible
+    // Rows [2,3,4] contain project-1, its empty row, and project-2.
     const { output, unmount } = await renderTree({
       scrollOffset: 2,
       viewportRows: 3,
     });
     expect(output).not.toContain("project-0");
-    expect(output).not.toContain("project-1");
+    expect(output).toContain("project-1");
     expect(output).toContain("project-2");
-    expect(output).toContain("project-3");
-    expect(output).toContain("project-4");
+    expect(output).toContain("(no worktrees)");
+    expect(output).not.toContain("project-3");
+    expect(output).not.toContain("project-4");
     expect(output).not.toContain("project-5");
     unmount();
   });

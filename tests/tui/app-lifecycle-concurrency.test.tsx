@@ -269,18 +269,18 @@ describe("lifecycle teardown is scoped to its own operation", () => {
     await runLifecycleOperation<string>({
       claims,
       setLifecycle: tracker.setLifecycle,
-      refreshAll: () => Promise.resolve([]),
+      refreshAll: () => Promise.reject(new Error("refresh exploded")),
       showActionError,
       entry: entryFor("/repos/one", "alpha", "feature/x", "up"),
       run: () => Promise.resolve("done"),
-      resultWarnings: () => ["Optional setup failed: install"],
+      resultWarnings: () => ["", "Optional setup failed: install", ""],
       afterCleanup: () => Promise.reject(new Error("switch-client exploded")),
     });
 
     expect(tracker.state.size).toBe(0);
-    const reported = showActionError.mock.calls[0]?.[0] as string;
-    expect(reported).toContain("Optional setup failed: install");
-    expect(reported).toContain("switch-client exploded");
+    expect(showActionError).toHaveBeenCalledExactlyOnceWith(
+      "Optional setup failed: install\nRefresh failed after up: refresh exploded\nswitch-client exploded",
+    );
   });
 });
 

@@ -452,7 +452,6 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
 
 export function useSessionActions(deps: SessionActionDeps) {
   return {
-    switchClientAwayFromSession: createSwitchClientAway(deps),
     switchClientAwayFromSessions: createSwitchClientAwayFromSessions(deps),
     startWorkspace: createStartWorkspace(deps),
     handleSpaceSwitch: createHandleSpaceSwitch(deps),

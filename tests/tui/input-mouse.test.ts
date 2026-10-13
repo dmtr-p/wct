@@ -482,7 +482,6 @@ function buildCtx(
   overrides?: Partial<MouseActionContext>,
   panes: Map<string, PaneInfo[]> = new Map(),
 ): MouseActionContext {
-  const expandedRepos = new Set(["repo-1", "repo-2"]);
   const expandedWorkspaceKeys = expandedWorkspaceKey
     ? new Set([expandedWorkspaceKey])
     : new Set<string>();
@@ -496,7 +495,6 @@ function buildCtx(
   const rows = buildTreeRows({
     items: treeItems,
     repos,
-    expandedRepos,
     expandedWorkspaceKeys,
   });
   return {
@@ -698,7 +696,6 @@ describe("resolveMouseAction", () => {
         },
       ],
     ]);
-    const expandedRepos = new Set(["repo-1", "repo-2"]);
     const treeItems = buildTreeItems({
       repos,
       expandedWorkspaceKeys: new Set([key]),
@@ -709,7 +706,6 @@ describe("resolveMouseAction", () => {
     const rows = buildTreeRows({
       items: treeItems,
       repos,
-      expandedRepos,
       expandedWorkspaceKeys: new Set([key]),
       maxWidth: 40, // forces the PR title to wrap
     });

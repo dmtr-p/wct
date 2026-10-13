@@ -686,7 +686,6 @@ export function App() {
     selectTreeItem,
     captureTreeReturnPosition,
     zoomPane,
-    killPane,
     refreshSessions,
     collapseWorktree,
   };
@@ -1470,7 +1469,6 @@ export function App() {
             width={Math.min(termCols, 60)}
             defaultBase={openModalBase ?? ""}
             profileNames={openModalProfiles}
-            repoProject={openModalRepoProject}
             repoPath={openModalRepoPath}
             prList={openModalPRList}
             isRefreshing={refreshingProjects.has(openModalRepoPath)}

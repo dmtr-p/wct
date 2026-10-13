@@ -54,7 +54,6 @@ function makeCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
     selectTreeItem: vi.fn(),
     captureTreeReturnPosition: vi.fn(),
     zoomPane: vi.fn(() => Promise.resolve(true)),
-    killPane: vi.fn(() => Promise.resolve(true)),
     refreshSessions: vi.fn(() => Promise.resolve([])),
     collapseWorktree: vi.fn(),
     ...overrides,

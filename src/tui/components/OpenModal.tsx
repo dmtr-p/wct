@@ -35,7 +35,6 @@ export interface OpenModalProps {
   onCancel: () => void;
   defaultBase: string;
   profileNames: string[];
-  repoProject: string;
   repoPath: string;
   prList: PRInfo[];
   isRefreshing: boolean;
@@ -655,7 +654,6 @@ export function OpenModal({
   onCancel,
   defaultBase,
   profileNames,
-  repoProject: _repoProject,
   repoPath,
   prList,
   isRefreshing,

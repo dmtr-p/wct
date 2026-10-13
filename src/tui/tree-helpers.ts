@@ -82,8 +82,6 @@ interface BuildTreeOptions {
 interface BuildTreeRowsOptions {
   items: TreeItem[];
   repos: RepoInfo[];
-  /** Repos are always expanded in production; retained for test fixtures. */
-  expandedRepos?: Set<string>;
   expandedWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
   /** Defaults to `Infinity` so callers that don't model wrapping keep a 1:1 row-per-detail mapping. */
@@ -503,7 +501,6 @@ function pendingWorkspacesByRepoIndex(
 export function buildTreeRows({
   items,
   repos,
-  expandedRepos = new Set(repos.map((repo) => repo.id)),
   expandedWorkspaceKeys,
   lifecycle = NO_LIFECYCLE,
   maxWidth = Number.POSITIVE_INFINITY,
@@ -548,7 +545,7 @@ export function buildTreeRows({
 
     if (item.type === "repo") {
       rows.push({ itemIndex: idx, kind: "repo" });
-      if (expandedRepos.has(repo.id) && repo.worktrees.length === 0) {
+      if (repo.worktrees.length === 0) {
         rows.push({
           itemIndex: null,
           kind: "repo-empty",
@@ -626,12 +623,11 @@ export function buildTreeRows({
     emitPendingIfRepoBlockEnds(idx, item.repoIndex);
   }
 
-  // Expanded repos with no worktrees get their Pending Workspace rows at the
+  // Repos with no worktrees get their Pending Workspace rows at the
   // very bottom of the whole tree.
   for (let ri = 0; ri < repos.length; ri++) {
     const repo = repos[ri];
     if (!repo) continue;
-    if (!expandedRepos.has(repo.id)) continue;
     if (repo.worktrees.length > 0) continue;
     const repoPending = pendingWorkspaces.get(ri);
     if (!repoPending) continue;

@@ -22,10 +22,12 @@ import {
 import type { TmuxService } from "../src/services/tmux";
 import {
   liveWorkspaceService,
+  type WorkspaceOpenResult,
   type WorkspacePhase,
   type WorkspaceReporter,
   type WorkspaceReporterEvent,
   WorkspaceService,
+  type WorkspaceUpResult,
 } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
@@ -1453,15 +1455,23 @@ project_name: "myapp"
         );
         const reporter = recordingReporter(events);
         const profile = outcome === "unconfigured" ? undefined : "dev";
+        const start: Effect.Effect<
+          WorkspaceOpenResult | WorkspaceUpResult,
+          WctCommandError,
+          WorkspaceService
+        > =
+          operation === "open"
+            ? WorkspaceService.use((service) =>
+                service.open({ branch, cwd: repoDir, profile, reporter }),
+              )
+            : WorkspaceService.use((service) =>
+                service.up({ path: worktreePath, profile, reporter }),
+              );
         const result = await runBunPromise(
-          withTestServices(
-            WorkspaceService.use((service) =>
-              operation === "open"
-                ? service.open({ branch, cwd: repoDir, profile, reporter })
-                : service.up({ path: worktreePath, profile, reporter }),
-            ),
-            { worktree, tmux: { ...noopTmuxService, createSession } },
-          ),
+          withTestServices(start, {
+            worktree,
+            tmux: { ...noopTmuxService, createSession },
+          }),
         );
         if (outcome === "unconfigured") {
           expect(createSession).not.toHaveBeenCalled();

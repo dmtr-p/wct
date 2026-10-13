@@ -10,7 +10,6 @@ export const PR_SELECTOR = 0;
 export const PR_ICON = 2;
 export const PR_SUBROW_INDENT = 9;
 
-/** Label and continuation lines share this indent. */
 export function prLabelStart(hasIcon: boolean): number {
   return PR_INDENT + PR_SELECTOR + (hasIcon ? PR_ICON : 0);
 }

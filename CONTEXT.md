@@ -224,10 +224,10 @@ Workspace Identity and can differ from the Configured Project Name.
 ### Configured Project Name
 
 The Configured Project Name is the resolved `project_name` configuration
-value, defaulting to the repository directory name. It is used for naming new
-worktree directories and their tmux sessions and for `WCT_PROJECT`. It supplies
-the default Project Display Name at registration, but a registry name override
-does not change the configuration.
+value, defaulting to the repository directory name. It prefixes new worktree
+directory names, supplies `WCT_PROJECT`, and provides the default Project Display
+Name at registration. A registry name override does not change the configuration.
+Tmux session names derive from the checkout directory's basename.
 
 ### Explicit Project Registration
 

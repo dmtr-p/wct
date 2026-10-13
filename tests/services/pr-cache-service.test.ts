@@ -58,12 +58,10 @@ describe("PrCacheService SQL helpers", () => {
       db2.run("PRAGMA journal_mode=WAL");
       runMigrations(db2);
 
-      // Interleave writes from both connections
       sqlSetOpenPrs(db1, "/repos/alpha", [PR_A]);
       sqlSetOpenPrs(db2, "/repos/beta", [PR_B]);
       sqlSetOpenPrs(db1, "/repos/alpha", [PR_A, PR_B]);
 
-      // Read back from the other connection to verify WAL visibility
       const alpha = sqlGetOpenPrs(db2, "/repos/alpha");
       expect(alpha).not.toBeNull();
       expect(alpha?.payload).toEqual([PR_A, PR_B]);

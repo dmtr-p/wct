@@ -89,8 +89,6 @@ describe("add-project button mouse targeting", () => {
 
 describe("isX10MousePrefix", () => {
   test("matches the legacy X10 report prefix, with or without leading ESC", () => {
-    // Ink terminates the CSI at the `M` final byte and strips each event's
-    // leading ESC, so the prefix arrives as "[M" (or "\x1b[M" defensively).
     expect(isX10MousePrefix("[M")).toBe(true);
     expect(isX10MousePrefix("\x1b[M")).toBe(true);
   });
@@ -105,7 +103,7 @@ describe("isX10MousePrefix", () => {
 });
 
 describe("parseSgrMouse", () => {
-  test("decodes wheel up (cb=64) as wheel, NOT a click (the %4 bug is absent)", () => {
+  test("decodes wheel up (cb=64) as wheel rather than a click", () => {
     const event = parseSgrMouse("[<64;10;5M");
     expect(event).toEqual({ kind: "wheel", dir: -1 });
     // If the parser used `cb % 4`, 64 % 4 === 0 would decode as a left press.
@@ -642,9 +640,7 @@ describe("resolveMouseAction", () => {
     );
     expect(headerRowIndex).toBeGreaterThan(-1);
 
-    // createNavigateTree skips pane-header rows for the keyboard, so a mouse
-    // click on one must be a no-op — not a selection the keyboard could
-    // never reach.
+    // Pane headers are inert for both keyboard and mouse navigation.
     expect(
       resolveMouseAction(
         {

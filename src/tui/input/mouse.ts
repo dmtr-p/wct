@@ -21,7 +21,6 @@ const SGR = /^\x1b?\[<(\d+);(\d+);(\d+)([Mm])$/;
 // eslint-disable-next-line no-control-regex -- see SGR above
 const SGR_CHUNK = /^(?:\x1b?\[<\d+;\d+;\d+[Mm])+$/;
 
-/** Global matcher used to split a mouse-only chunk into single sequences. */
 // eslint-disable-next-line no-control-regex -- see SGR above
 const SGR_SPLIT = /\x1b?\[<\d+;\d+;\d+[Mm]/g;
 
@@ -154,19 +153,11 @@ export function isMouseSequence(input: string): boolean {
   return SGR_CHUNK.test(input);
 }
 
-/**
- * Split mouse-only strings into ordered reports. Mixed or non-mouse input
- * returns [] so it remains keyboard input.
- */
 export function splitMouseSequences(input: string): string[] {
   if (!isMouseSequence(input)) return [];
   return input.match(SGR_SPLIT) ?? [];
 }
 
-/**
- * Parse a single SGR mouse sequence from the read adapter or paste guard.
- * Returns `null` for non-actionable or malformed reports.
- */
 export function parseSgrMouse(input: string): MouseEvent | null {
   const m = SGR.exec(input);
   if (!m) return null;

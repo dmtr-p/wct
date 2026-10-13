@@ -1,10 +1,7 @@
-# wct configuration for this project
 version: 1
 
-# Base directory for worktrees
 worktree_dir: "../worktrees"
 
-# Configured project name (used for worktree and tmux session naming)
 project_name: "wct"
 
 # Gitignored files to copy from the main repository during Open
@@ -12,7 +9,6 @@ copy:
   - .vscode/
   - .claude/
 
-# Commands to run during Open, after copying and before starting tmux
 setup:
   - name: "Mise setup"
     command: "mise trust mise.toml && mise install"
@@ -21,7 +17,6 @@ setup:
   - name: "Prepare Effect tooling"
     command: "bun run prepare"
 
-# Tmux session configuration
 tmux:
   windows:
     - name: "ai"

@@ -88,8 +88,10 @@ src/
 │   ├── pr-layout.ts       # Terminal-width-aware PR title wrapping
 │   ├── pr-status.ts       # Compact PR status presentation
 │   ├── session-utils.ts   # Safe tmux client handoff decisions and start action messages
+│   ├── session-handoff.ts # Open/up client switching after lifecycle presentation cleanup
 │   ├── workspace-warning.ts # Shared lifecycle warning messages
 │   ├── input/             # Mode-specific keyboard, terminal parsing, and guarded mouse routing
+│   │   ├── common-navigation.ts # Shared navigation shortcuts across tree modes
 │   │   ├── confirm-kill.ts # Kill confirmation input
 │   │   ├── expanded.ts    # Expanded branch detail input
 │   │   ├── mouse.ts       # Mouse sequence parsing and tree hit-testing
@@ -165,7 +167,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 - `Bun.Glob` for copy pattern expansion
 - `Bun.which` for executable lookup
 
-The only runtime dependencies are `effect` and `@effect/platform-bun`. No other runtime dependencies should be added. Exception: `ink` and `react` are runtime dependencies used exclusively by the `wct tui` subcommand. They are lazy-imported so they are never loaded for other commands. The only dev dependencies are `oxlint`, `oxlint-tsgolint`, `oxfmt`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`, and `@effect/tsgo`.
+The runtime dependencies are `effect`, `@effect/platform-bun`, `ink`, and `react`. No other runtime dependencies should be added. `ink` and `react` are used exclusively by the `wct tui` subcommand and are lazy-imported so they are never loaded for other commands. The only dev dependencies are `oxlint`, `oxlint-tsgolint`, `oxfmt`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`, and `@effect/tsgo`.
 
 This project uses **Effect v4**. Read [EFFECT_V4.md](./EFFECT_V4.md) for the current APIs and repository patterns. `src/index.ts` should stay thin: it handles completions/version shortcuts, dispatches the CLI, private profile completion helper, or shutdown worker, provides live services, and hands execution to `BunRuntime.runMain`.
 

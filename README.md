@@ -9,7 +9,7 @@ wct open <branch>       # Create worktree, run setup, and start tmux session
 wct up                  # Start tmux session for the containing checkout
 wct down                # Stop tmux session and run down scripts
 wct close <branch...>   # Stop tmux, run down scripts, and remove worktrees
-wct list                # Show worktrees with tmux session status
+wct list                # Show worktrees with tmux, changes, and sync status
 wct switch <branch>     # Switch to another worktree's tmux session
 wct cd <branch>         # Open a shell in a worktree directory
 wct tui                 # Interactive TUI sidebar for managing worktrees
@@ -20,6 +20,10 @@ wct projects list                      # List registered projects
 ```
 
 `open`, `up`, `down`, and `close` accept `--profile <name>` / `-P <name>` to select a named config profile (see [Config Profiles](#config-profiles)).
+
+`wct open --pr <number-or-url>` opens a worktree for a GitHub PR without requiring
+a branch argument. `up` and `down` accept `--path <path>` or `--branch <name>`
+to target another checkout. `wct list --short` prints branch names only.
 
 ### JSON and terminal output
 
@@ -113,7 +117,7 @@ version: 1
 # Base directory for worktrees (relative to project root, supports ~ expansion)
 worktree_dir: ".."
 
-# Configured project name used for worktree and tmux session naming ("project-branch")
+# Prefix for new worktree directories ("project-branch")
 # Defaults to the git repo directory name
 project_name: "myapp"
 
@@ -173,6 +177,11 @@ profiles:
 Tmux window names must match `[A-Za-z][A-Za-z0-9_-]*` and be unique within each `windows` list, including lists in profiles. Names start with an ASCII letter and contain only ASCII letters, digits, underscores, or hyphens, such as `dev`, `CI-logs`, and `test_runner`.
 
 Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` and `down` commands and tmux panes. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
+
+Tmux session names come from the checkout directory's basename, with characters
+outside `[A-Za-z0-9_-]` replaced by hyphens. `project_name` determines the prefix for directories
+created by Open and the value of `WCT_PROJECT`; it does not rename existing
+checkouts or their sessions.
 
 A global config at `~/.wct.yaml` can provide defaults; project-level config takes precedence.
 
@@ -269,6 +278,8 @@ During Open, a profile without `copy` uses the [copy-source precedence](#copying
 
 **Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open`, `wct up`, `wct down`, or `wct close` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern. An unknown name returns a configuration error before lifecycle work begins, including when no profiles are configured.
 
+Use `--profile ""` to select the base configuration without automatic matching.
+
 ## TUI
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
@@ -294,7 +305,7 @@ Mouse support is **on by default**:
 - **Left-click** selects a row.
 - **Double-click** expands or collapses a branch, PR details, or PR candidates, or switches to a tmux pane.
 
-Form modals support clicking fields, options, and buttons; focused lists support wheel scrolling and row selection. Confirmation buttons are clickable. Search and the PR actions menu use the keyboard. Set `WCT_DISABLE_MOUSE=1` to disable mouse reporting.
+Form modals support clicking fields, options, and buttons; focused lists support wheel scrolling and row selection. Confirmation buttons are clickable. Search and the PR actions menu use the keyboard. Set `WCT_DISABLE_MOUSE=1` to disable mouse reporting; any nonempty value disables it.
 
 Hold **Shift** while dragging to use native terminal text selection. If tmux mouse mode conflicts with the TUI, use `WCT_DISABLE_MOUSE=1`.
 

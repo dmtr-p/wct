@@ -1,5 +1,3 @@
-// App-level tests for expansion affordances (pointer double-click, keyboard
-// collapse) while a Workspace is under a lifecycle.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

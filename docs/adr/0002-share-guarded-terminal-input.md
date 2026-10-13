@@ -2,7 +2,7 @@
 status: accepted
 ---
 
-# Mouse input uses the shared guarded Ink input hook
+# Keyboard and mouse input use the shared guarded hook
 
 All TUI input listeners use `useGuardedInput` in
 `src/tui/hooks/useGuardedInput.ts`. Oxlint restricts direct `useInput` imports

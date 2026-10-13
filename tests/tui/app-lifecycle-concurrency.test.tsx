@@ -1,5 +1,3 @@
-// Lifecycle identity concurrency (proven against `beginLifecycle`) and the
-// one-time viewport reveal (proven against the real App).
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

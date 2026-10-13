@@ -1,5 +1,3 @@
-// App-level lifecycle tests for `open`, driving the real open modal through
-// Ink's input pipeline.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -226,7 +226,7 @@ export function mergeEligibility(snapshot: MergeSnapshot): MergeEligibility {
   return { route: "direct", methods: snapshot.methods };
 }
 
-/** Includes all facts that can change eligibility or route without changing the head SHA. */
+/** Detect changes since confirmation; submission also rechecks current eligibility. */
 export function mergeSnapshotFingerprint(snapshot: MergeSnapshot): string {
   const p = snapshot.pr;
   return JSON.stringify({

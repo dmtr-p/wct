@@ -416,6 +416,21 @@ function createWctEnv(
   };
 }
 
+function resolveWorkspaceProfile(
+  config: ResolvedConfig,
+  branch: string,
+  profile?: string,
+) {
+  return Effect.try({
+    try: () => resolveProfile(config, branch, profile),
+    catch: (error) =>
+      commandError(
+        "config_error",
+        error instanceof Error ? error.message : String(error),
+      ),
+  });
+}
+
 function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
   Required<Pick<WorkspaceOpenOptions, "branch" | "existing">> &
     Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter"> & {
@@ -554,14 +569,11 @@ function openImpl(
       loadWorkspaceConfig(mainRepoPath),
       (error) => commandError("config_error", error.message, error),
     );
-    const { config: resolved, profileName } = yield* Effect.try({
-      try: () => resolveProfile(config, branch, profile),
-      catch: (error) =>
-        commandError(
-          "config_error",
-          error instanceof Error ? error.message : String(error),
-        ),
-    });
+    const { config: resolved, profileName } = yield* resolveWorkspaceProfile(
+      config,
+      branch,
+      profile,
+    );
     yield* emitReporter(reporter, {
       operation: "open",
       _tag: "ProfileResolved",
@@ -926,14 +938,11 @@ function upImpl(
     const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
       commandError("config_error", error.message, error),
     );
-    const { config: resolved, profileName } = yield* Effect.try({
-      try: () => resolveProfile(config, branch, profile),
-      catch: (error) =>
-        commandError(
-          "config_error",
-          error instanceof Error ? error.message : String(error),
-        ),
-    });
+    const { config: resolved, profileName } = yield* resolveWorkspaceProfile(
+      config,
+      branch,
+      profile,
+    );
     yield* emitReporter(reporter, {
       operation: "up",
       _tag: "ProfileResolved",
@@ -993,26 +1002,12 @@ function prepareShutdown(worktreePath: string, profile?: string) {
     const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
       commandError("config_error", error.message, error),
     );
-    if (profile && !config.profiles?.[profile]) {
-      return yield* commandError(
-        "config_error",
-        `Profile '${profile}' not found`,
-      );
-    }
     // Detached HEAD cannot select a branch-matched profile.
-    const resolved = yield* Effect.try({
-      try: () =>
-        resolveProfile(
-          config,
-          branch ?? "",
-          profile ?? (branch ? undefined : ""),
-        ),
-      catch: (error) =>
-        commandError(
-          "config_error",
-          error instanceof Error ? error.message : String(error),
-        ),
-    });
+    const resolved = yield* resolveWorkspaceProfile(
+      config,
+      branch ?? "",
+      profile ?? (branch ? undefined : ""),
+    );
     return {
       config: resolved.config,
       env: createWctEnv(
@@ -1396,6 +1391,23 @@ function closeImpl(
       _tag: "TargetResolved",
       worktreePath,
     });
+    if (missing && options.profile) {
+      // The deleted checkout cannot resolve its repository. Explicit profiles
+      // still need validation before stopping its session or Git registration.
+      const mainRepoPath = yield* WorktreeService.use((service) =>
+        service.getMainRepoPath(cwd),
+      );
+      if (!mainRepoPath) {
+        return yield* commandError(
+          "worktree_error",
+          "Could not determine repository root",
+        );
+      }
+      const config = yield* Effect.mapError(loadConfig(mainRepoPath), (error) =>
+        commandError("config_error", error.message, error),
+      );
+      yield* resolveWorkspaceProfile(config, "", options.profile);
+    }
     const shutdown = missing
       ? undefined
       : yield* prepareShutdown(worktreePath, options.profile);

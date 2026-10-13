@@ -455,31 +455,34 @@ describe("down scripts", () => {
     expect(result.attempts.down).toMatchObject({ attempted: true, ok: true });
   });
 
-  test("missing worktree directories skip scripts and still remove registrations", async () => {
-    await config({ down: [script("cleanup")] });
-    await rm(worktreePath, { recursive: true });
-    const services = overrides();
-    services.worktree.isGitRepo = () => Effect.succeed(false);
-    services.worktree.listWorktrees = () =>
-      Effect.succeed([
-        {
-          path: worktreePath,
-          branch: "feature/demo",
-          commit: "abc",
-          isBare: false,
-        },
-      ]);
-    services.worktree.getMainRepoPath = () =>
-      Effect.die("must not resolve missing worktree config");
-    const result = await runBunPromise(
-      withTestServices(operation("close"), services),
-    );
-    expect(result.attempts.down).toEqual({
-      attempted: false,
-      reason: "worktree_missing",
-    });
-    expect(await trace()).toEqual(["kill", "remove"]);
-  });
+  test.each([undefined, ""])(
+    "missing worktree directories skip scripts and config with profile %j",
+    async (profile) => {
+      await config({ down: [script("cleanup")] });
+      await rm(worktreePath, { recursive: true });
+      const services = overrides();
+      services.worktree.isGitRepo = () => Effect.succeed(false);
+      services.worktree.listWorktrees = () =>
+        Effect.succeed([
+          {
+            path: worktreePath,
+            branch: "feature/demo",
+            commit: "abc",
+            isBare: false,
+          },
+        ]);
+      services.worktree.getMainRepoPath = () =>
+        Effect.die("must not resolve missing worktree config");
+      const result = await runBunPromise(
+        withTestServices(operation("close", { profile }), services),
+      );
+      expect(result.attempts.down).toEqual({
+        attempted: false,
+        reason: "worktree_missing",
+      });
+      expect(await trace()).toEqual(["kill", "remove"]);
+    },
+  );
 
   test("global/project/profile lists replace inherited scripts and empty lists disable them", async () => {
     const global = [script("global")];

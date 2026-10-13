@@ -267,7 +267,7 @@ profiles:
 
 During Open, a profile without `copy` uses the [copy-source precedence](#copying-local-files).
 
-**Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open`, `wct up`, `wct down`, or `wct close` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern.
+**Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open`, `wct up`, `wct down`, or `wct close` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern. An unknown name returns a configuration error before lifecycle work begins, including when no profiles are configured.
 
 ## TUI
 

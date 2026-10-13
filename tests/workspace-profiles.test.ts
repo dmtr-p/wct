@@ -149,7 +149,14 @@ ${profiles}`,
         runBunPromise(
           withTestServices(
             WorkspaceService.use((service) =>
-              service[operation]({ path: worktreePath, profile: "missing" }),
+              Effect.gen(function* () {
+                const options = { path: worktreePath, profile: "missing" };
+                if (operation === "down") {
+                  yield* service.down(options);
+                } else {
+                  yield* service.close(options);
+                }
+              }),
             ),
             services,
           ),

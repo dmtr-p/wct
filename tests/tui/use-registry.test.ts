@@ -386,7 +386,7 @@ describe("useRegistry refresh", () => {
         profileNames: expected,
         worktrees: [expect.objectContaining({ branch: "feature/x" })],
       });
-      expect(snapshot?.[0].error).toBeUndefined();
+      expect(snapshot?.[0]?.error).toBeUndefined();
     } finally {
       hook.unmount();
     }
@@ -408,7 +408,7 @@ describe("useRegistry refresh", () => {
           profileNames: [],
           worktrees: [expect.objectContaining({ branch: "feature/x" })],
         });
-        expect(snapshot?.[0].error).toBeUndefined();
+        expect(snapshot?.[0]?.error).toBeUndefined();
       } finally {
         hook.unmount();
       }

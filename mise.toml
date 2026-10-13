@@ -1,2 +1,92 @@
 [tools]
 bun = "1.4.2"
+
+[settings.task]
+source_freshness_hash_contents = true
+
+[task_templates.lint]
+sources = [
+  "**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs,json}",
+  "!node_modules/**",
+  "!.git/**",
+  "!.cache/**",
+  "!dist/**",
+  "!out/**",
+  "!coverage/**",
+  "!.scratch/**",
+  "!.superpowers/**",
+  "!.claude/**",
+  "!.codex/**",
+  "!.vscode/**",
+  "!.oxfmtrc.json",
+  "bun.lock",
+  "bunfig.toml",
+  ".oxlintrc.json",
+  ".gitignore",
+]
+outputs = { auto = true }
+
+[tasks.lint]
+extends = "lint"
+description = "Check lint and types"
+run = "bun run lint"
+
+[tasks."lint:fix"]
+extends = "lint"
+description = "Fix lint and check types"
+run = "bun run lint:fix"
+
+[task_templates.format]
+sources = [
+  "**/*",
+  "!node_modules/**",
+  "!.git/**",
+  "!.cache/**",
+  "!dist/**",
+  "!out/**",
+  "!coverage/**",
+  "!logs/**",
+  "!.scratch/**",
+  "!.superpowers/**",
+  "!.idea/**",
+  "!.env*",
+  "!.DS_Store",
+  "!.claude/settings.local.json",
+  "!**/*.tsbuildinfo",
+]
+outputs = { auto = true }
+
+[tasks.format]
+extends = "format"
+description = "Format files and sort imports"
+run = "bun run format"
+
+[tasks."format:check"]
+extends = "format"
+description = "Check formatting and import order"
+run = "bun run format:check"
+
+[tasks.test]
+description = "Run the full test suite"
+run = "bun run test -- --reporter=agent"
+sources = [
+  "src/**",
+  "tests/**",
+  "scripts/**",
+  ".codex/hooks/**",
+  "vitest.config.*",
+  "tsconfig.json",
+  "package.json",
+  "bun.lock",
+  "bunfig.toml",
+  ".gitignore",
+]
+outputs = { auto = true }
+
+[tasks.pre-commit]
+description = "Check lint, formatting, and tests before committing"
+depends = ["lint", "format:check", "test"]
+
+[tasks."hooks:install"]
+description = "Install the Git pre-commit hook"
+run = "mise generate git-pre-commit --write --task=pre-commit"

@@ -1,25 +1,13 @@
 {
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; cd \"$CLAUDE_PROJECT_DIR\" && bun run --bun oxfmt --write \"$f\"; }",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bun run lint:fix && bun run format && bun run test -- --reporter=agent || exit 2",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && mise exec -- sh .codex/hooks/stop.sh || exit 2",
             "timeout": 120,
-            "statusMessage": "Running Oxlint lint/type checks and fixes, Oxfmt, and tests..."
+            "statusMessage": "Running cached mise lint/type checks and fixes, formatting, and tests..."
           }
         ]
       }

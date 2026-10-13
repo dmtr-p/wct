@@ -86,7 +86,7 @@ if ! before_fixes=$(snapshot_files 2>"${lint_log}"); then
   exit 0
 fi
 
-if ! bun run lint:fix >"${lint_log}" 2>&1; then
+if ! mise run lint:fix >"${lint_log}" 2>&1; then
   cat "${lint_log}" >&2
   emit_block_with_log \
     "Oxlint lint/type checks failed. Fix the reported issues, then rerun the relevant verification." \
@@ -94,7 +94,7 @@ if ! bun run lint:fix >"${lint_log}" 2>&1; then
   exit 0
 fi
 
-if ! bun run format >"${format_log}" 2>&1; then
+if ! mise run format >"${format_log}" 2>&1; then
   cat "${format_log}" >&2
   emit_block_with_log \
     "Oxfmt failed. Fix the reported issues, then rerun the relevant verification." \
@@ -114,7 +114,7 @@ if [ "${before_fixes}" != "${after_fixes}" ]; then
   exit 0
 fi
 
-if ! bun run test -- --reporter=agent >"${test_log}" 2>&1; then
+if ! mise run test >"${test_log}" 2>&1; then
   cat "${test_log}" >&2
   emit_block_with_log \
     "Tests failed. Investigate the failing tests, fix them, and rerun the relevant verification." \

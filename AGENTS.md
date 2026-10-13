@@ -5,9 +5,12 @@ bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
 ```
 
-**Do not run tests or linting manually.** Agent harness hooks run lint fixes
-and tests automatically when the session stops. If a check fails, the hooks
-block completion and report the failure so the agent can fix it.
+**Do not run tests or linting manually.** Codex and Claude stop hooks run
+`mise run lint:fix`, `mise run format`, and `mise run test`. Each task caches
+successful runs separately using source content hashes. If a check fails or
+the tools modify files, the hooks block completion so the agent can fix or
+review the changes. Git pre-commit runs `mise run pre-commit` to check lint,
+formatting, and tests without applying fixes.
 
 ## Documentation and comments
 

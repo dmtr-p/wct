@@ -316,6 +316,7 @@ To install dependencies:
 ```bash
 bun install
 bun run prepare
+mise run hooks:install
 ```
 
 To run:
@@ -337,9 +338,29 @@ the installed `@effect/tsgo` package.
 checks; `bun run lint:fix` runs the same checks and applies safe lint fixes.
 `bun run format` runs Oxfmt with import sorting, and
 `bun run format:check` checks formatting without writing files. CI checks
-lint, types, formatting, and tests. Agent hooks check lint and types together,
-apply lint fixes and formatting, then run tests. CI and hooks use Oxlint's
+lint, types, formatting, and tests. CI and hooks use Oxlint's
 `options.typeCheck` instead of running the TypeScript compiler separately.
+
+Mise tasks cache successful lint, format, and test runs separately using source
+content hashes and automatic output markers. Source additions, deletions, and
+content changes invalidate the relevant task; configuration and dependency
+inputs are included. A documentation edit reruns formatting while lint and tests
+can stay cached. Use `mise run --force <task>` to bypass a task's cache. The
+underlying `bun run` scripts always run their tools directly.
+
+`mise run hooks:install` installs Git's pre-commit hook with
+[`mise generate git-pre-commit`](https://mise.jdx.dev/cli/generate/git-pre-commit.html).
+It runs `mise run pre-commit`, which checks lint, formatting, and the full test
+suite against the working tree without applying fixes or staging files. The
+check tasks have separate caches from their fixing counterparts; tests share
+one cache across pre-commit and agent hooks. Mise and the pinned Bun version
+must be installed and available to the hooks.
+
+Codex and Claude use the same stop script to run `mise run lint:fix`,
+`mise run format`, and `mise run test` in order. Formatting runs on stop.
+Failures block completion with the tool output. If lint or formatting changes
+files, completion is blocked for review before tests run. The test task runs
+the full suite with Vitest's compact agent reporter.
 
 Oxlint and the TypeScript compiler enforce the same Effect error and warning
 diagnostics. Suggestions remain available in the editor. `.oxlintrc.json`

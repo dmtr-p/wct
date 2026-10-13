@@ -17,7 +17,7 @@ versions before changing any of these tools.
 Lifecycle scripts are disabled in `bunfig.toml`. Run `bun run prepare` after
 `bun install` to patch TypeScript, Oxlint, and oxlint-tsgolint with Effect tsgo;
 worktree setup and CI run this step explicitly.
-CI uses `bun run lint` and the stop hook uses `bun run lint:fix` to report
+CI uses `bun run lint` and the stop hooks use `mise run lint:fix` to report
 TypeScript errors, lint issues, and Effect diagnostics in one Oxlint run.
 Errors and warnings fail the check; suggestions are shown only in the editor.
 Oxlint uses the Effect-aware schema and `effecttsgo` plugin in `.oxlintrc.json`

@@ -46,9 +46,8 @@ describe("Codex stop hook", () => {
       expect(result.exitCode, result.stderr.toString()).toBe(0);
     }
     await Bun.write(
-      join(root, "bin", "bun"),
+      join(root, "bin", "mise"),
       `#!/bin/sh
-if [ "$1" = "-e" ]; then exec "$WCT_HOOK_BUN" "$@"; fi
 printf '%s\\n' "$*" >> "$WCT_HOOK_LOG"
 if [ "$2" = "$WCT_HOOK_STAGE" ]; then
   case "$2" in
@@ -68,9 +67,8 @@ if [ "$2" = "$WCT_HOOK_STAGE" ]; then
 fi
 `,
     );
-    await chmod(join(root, "bin", "bun"), 0o755);
+    await chmod(join(root, "bin", "mise"), 0o755);
     env.PATH = `${join(root, "bin")}:${process.env.PATH}`;
-    env.WCT_HOOK_BUN = process.execPath;
     env.WCT_HOOK_LOG = log;
   });
 
@@ -121,7 +119,7 @@ fi
       }
       expect(runHook("unchanged")).toEqual({ continue: true });
       expect(await Bun.file(log).text()).toBe(
-        "run lint:fix\nrun format\nrun test -- --reporter=agent\n",
+        "run lint:fix\nrun format\nrun test\n",
       );
     },
   );
@@ -139,7 +137,7 @@ fi
       }
       expect(runHook("unchanged")).toEqual({ continue: true });
       expect(await Bun.file(log).text()).toBe(
-        "run lint:fix\nrun format\nrun test -- --reporter=agent\n",
+        "run lint:fix\nrun format\nrun test\n",
       );
       for (const mode of ["modify", "temporary"]) {
         expect(runHook(mode)).toMatchObject({
@@ -155,11 +153,7 @@ fi
   test.each([
     ["lint:fix", "Oxlint", "run lint:fix\n"],
     ["format", "Oxfmt", "run lint:fix\nrun format\n"],
-    [
-      "test",
-      "Tests",
-      "run lint:fix\nrun format\nrun test -- --reporter=agent\n",
-    ],
+    ["test", "Tests", "run lint:fix\nrun format\nrun test\n"],
   ])(
     "blocks on %s errors and emits valid JSON",
     async (stage, tool, commands) => {

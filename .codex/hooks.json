@@ -5,9 +5,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/stop.sh\"",
+            "command": "mise exec -- sh \"$(git rev-parse --show-toplevel)/.codex/hooks/stop.sh\"",
             "timeout": 120,
-            "statusMessage": "Running Oxlint lint/type checks and fixes, Oxfmt, and tests..."
+            "statusMessage": "Running cached mise lint/type checks and fixes, formatting, and tests..."
           }
         ]
       }

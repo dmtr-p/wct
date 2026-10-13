@@ -256,6 +256,10 @@ A Config Profile is a named set of overrides for `work_dir`, `copy`, `setup`,
 with `--profile` or use the first profile whose branch glob matches. Sections
 absent from the profile retain their base configuration.
 
+Unknown nonempty explicit profile names fail with `config_error` before lifecycle
+side effects, including Close cleanup of deleted Worktree directories. An empty
+explicit profile name disables profile selection and uses the base configuration.
+
 Profile names match `[A-Za-z0-9][A-Za-z0-9._-]*` so they work as shell completion
 candidates without quoting or completion delimiter conflicts.
 

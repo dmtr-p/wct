@@ -242,21 +242,24 @@ export function resolveProfile(
     return { config: stripProfiles(config) };
   }
 
-  if (!config.profiles) {
-    return { config: stripProfiles(config) };
-  }
-
   if (explicitProfile) {
-    const profile = config.profiles[explicitProfile];
+    const profile =
+      config.profiles && Object.hasOwn(config.profiles, explicitProfile)
+        ? config.profiles[explicitProfile]
+        : undefined;
     if (!profile) {
       throw new Error(
-        `Profile '${explicitProfile}' not found. Available profiles: ${Object.keys(config.profiles).join(", ")}`,
+        `Profile '${explicitProfile}' not found. Available profiles: ${Object.keys(config.profiles ?? {}).join(", ") || "(none)"}`,
       );
     }
     return {
       config: applyProfile(config, profile),
       profileName: explicitProfile,
     };
+  }
+
+  if (!config.profiles) {
+    return { config: stripProfiles(config) };
   }
 
   for (const [name, profile] of Object.entries(config.profiles)) {

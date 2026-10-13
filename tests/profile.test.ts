@@ -121,17 +121,37 @@ describe("resolveProfile", () => {
     expect(profileName).toBe("minimal");
   });
 
-  test("explicit profile errors on unknown name", () => {
+  test.each([
+    ["absent", undefined, "(none)"],
+    ["empty", {}, "(none)"],
+    ["populated", { minimal: { match: "*" } }, "minimal"],
+  ] as const)(
+    "rejects unknown explicit names with %s profiles",
+    (_kind, profiles, available) => {
+      const config = baseConfig({ profiles });
+      expect(() => resolveProfile(config, "any-branch", "nonexistent")).toThrow(
+        `Profile 'nonexistent' not found. Available profiles: ${available}`,
+      );
+    },
+  );
+
+  test.each(["constructor", "toString", "__proto__"])(
+    "rejects inherited property %s as an explicit profile",
+    (name) => {
+      expect(() =>
+        resolveProfile(baseConfig({ profiles: {} }), "main", name),
+      ).toThrow(`Profile '${name}' not found. Available profiles: (none)`);
+    },
+  );
+
+  test("accepts a defined profile named like an inherited property", () => {
     const config = baseConfig({
-      profiles: {
-        minimal: {
-          tmux: { windows: [{ name: "shell" }] },
-        },
-      },
+      profiles: { constructor: { work_dir: "app" } },
     });
-    expect(() => resolveProfile(config, "any-branch", "nonexistent")).toThrow(
-      /nonexistent/,
-    );
+    expect(resolveProfile(config, "main", "constructor")).toMatchObject({
+      config: { work_dir: "app" },
+      profileName: "constructor",
+    });
   });
 
   test("profile replaces only sections it defines", () => {
@@ -166,16 +186,23 @@ describe("resolveProfile", () => {
     expect(result.copy).toEqual([".gitignore"]);
   });
 
-  test("empty string profile treated as no profile", () => {
-    const config = baseConfig({
-      profiles: {
-        minimal: {
-          tmux: { windows: [{ name: "shell" }] },
-        },
-      },
-    });
-    const { config: result } = resolveProfile(config, "main", "");
-    expect(result.tmux).toEqual(config.tmux);
+  test.each([
+    ["absent", undefined],
+    ["empty", {}],
+    ["matching", { minimal: { match: "*", work_dir: "app" } }],
+  ] as const)(
+    "empty explicit profile disables selection with %s profiles",
+    (_kind, profiles) => {
+      const config = baseConfig({ profiles });
+      const { profiles: _, ...base } = config;
+      expect(resolveProfile(config, "main", "")).toEqual({ config: base });
+    },
+  );
+
+  test("empty profiles fall back to the base configuration", () => {
+    const config = baseConfig({ profiles: {} });
+    const { profiles: _, ...base } = config;
+    expect(resolveProfile(config, "main")).toEqual({ config: base });
   });
 
   test("profile without match is skipped during auto-matching", () => {

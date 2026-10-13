@@ -34,7 +34,7 @@ describe("TreeView maxWidth wiring", () => {
     ];
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       prData: new Map(),
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -46,7 +46,7 @@ describe("TreeView maxWidth wiring", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       maxWidth: 15,
     });
 
@@ -66,7 +66,7 @@ describe("TreeView maxWidth wiring", () => {
         rows,
         prData: new Map(),
         panes: new Map(),
-        expandedWorktreeKeys: new Set<string>(),
+        expandedWorkspaceKeys: new Set<string>(),
         maxWidth: 15,
       }),
       { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false },
@@ -101,7 +101,7 @@ describe("TreeView windowing", () => {
     const expandedRepos = new Set<string>();
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       prData: new Map(),
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -110,7 +110,7 @@ describe("TreeView windowing", () => {
       items,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<string>(),
       maxWidth: 80,
     });
     const { stdout, stdin } = createStdoutStdin();
@@ -128,7 +128,7 @@ describe("TreeView windowing", () => {
         rows,
         prData: new Map(),
         panes: new Map(),
-        expandedWorktreeKeys: new Set<string>(),
+        expandedWorkspaceKeys: new Set<string>(),
         maxWidth: 80,
         ...props,
       }),

@@ -1,12 +1,12 @@
 import type { Key } from "ink";
 import type { TmuxSessionInfo } from "../hooks/useTmux";
-import { isLifecycleActive } from "../lifecycle";
+import { isLifecycleActive, workspaceIdentityKey } from "../lifecycle";
 import {
   findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
   resolveSelectedPane,
 } from "../tree-helpers";
-import { Mode, type PaneInfo, worktreeDisplayKey } from "../types";
+import { Mode, type PaneInfo } from "../types";
 import type { NavigateContext } from "./navigate";
 
 export interface ExpandedContext extends NavigateContext {
@@ -16,11 +16,7 @@ export interface ExpandedContext extends NavigateContext {
   zoomPane: (paneId: string) => Promise<boolean>;
   killPane: (paneId: string) => Promise<boolean>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
-  collapseWorktree: (
-    worktreeKey: string,
-    repoPath: string,
-    branch: string,
-  ) => void;
+  collapseWorktree: (workspaceKey: string) => void;
 }
 
 export function handleExpandedInput(
@@ -43,11 +39,7 @@ export function handleExpandedInput(
       return;
 
     ctx.selectTreeItem(worktreeIndex);
-    ctx.collapseWorktree(
-      worktreeDisplayKey(repo.project, worktree.branch),
-      repo.repoPath,
-      worktree.branch,
-    );
+    ctx.collapseWorktree(workspaceIdentityKey(repo.repoPath, worktree.branch));
     return;
   }
 
@@ -78,7 +70,7 @@ export function handleExpandedInput(
         return;
       }
       ctx.selectTreeItem(action.nextSelectedIndex);
-      ctx.expandWorktree(action.worktreeKey);
+      ctx.expandWorktree(action.workspaceKey);
     }
 
     return;
@@ -156,7 +148,7 @@ export function handleExpandedInput(
       Mode.ConfirmKill(
         selectedPane.pane.paneId,
         selectedPane.label,
-        selectedPane.worktreeKey,
+        selectedPane.workspaceKey,
       ),
     );
   }

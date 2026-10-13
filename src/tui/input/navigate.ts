@@ -1,8 +1,12 @@
 import type { Key } from "ink";
 import type { TmuxClient } from "../../services/tmux";
 import type { RepoInfo } from "../hooks/useRegistry";
-import { isLifecycleActive, type LifecycleState } from "../lifecycle";
-import { Mode, type TreeItem, worktreeDisplayKey } from "../types";
+import {
+  isLifecycleActive,
+  type LifecycleState,
+  workspaceIdentityKey,
+} from "../lifecycle";
+import { Mode, type TreeItem } from "../types";
 
 export interface NavigateContext {
   treeItems: TreeItem[];
@@ -13,7 +17,7 @@ export interface NavigateContext {
 
   setMode: (m: Mode) => void;
   setSearchQuery: (q: string) => void;
-  expandWorktree: (worktreeKey: string) => void;
+  expandWorktree: (workspaceKey: string) => void;
 
   navigateTree: (dir: 1 | -1) => void;
   prepareOpenModal: () => void;
@@ -105,7 +109,7 @@ export function handleNavigateInput(
         return;
       }
       ctx.expandWorktree(
-        worktreeDisplayKey(currentRepo.project, currentWorktree.branch),
+        workspaceIdentityKey(currentRepo.repoPath, currentWorktree.branch),
       );
       return;
     }

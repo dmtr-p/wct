@@ -4,6 +4,7 @@ import {
   type ConfirmMode,
   confirmModalRowCount,
 } from "../../src/tui/components/ConfirmModal";
+import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";
 import { renderWithInput, sendKeys } from "./keypress-harness";
 
@@ -14,7 +15,11 @@ describe("ConfirmModal", () => {
     const rendered = await renderWithInput(
       <ConfirmModal
         mode={
-          Mode.ConfirmKill("%1", "shell:1 vim", "proj/branch") as ConfirmMode
+          Mode.ConfirmKill(
+            "%1",
+            "shell:1 vim",
+            workspaceIdentityKey("/tmp/myapp", "branch"),
+          ) as ConfirmMode
         }
         width={60}
         onConfirm={() => {}}
@@ -41,7 +46,7 @@ describe("ConfirmModal", () => {
             sessionName: "myapp-feature",
             branch: "feature",
             worktreePath: "/tmp/myapp-feature",
-            worktreeKey: "proj/feature",
+            workspaceKey: workspaceIdentityKey("/tmp/myapp", "feature"),
             repoPath: "/tmp/myapp",
             project: "proj",
           }) as ConfirmMode
@@ -72,7 +77,7 @@ describe("ConfirmModal", () => {
             sessionName: "myapp-feature",
             branch: `feature/with-a-very-long-name-${"x".repeat(80)}`,
             worktreePath: "/tmp/myapp-feature",
-            worktreeKey: "proj/feature",
+            workspaceKey: workspaceIdentityKey("/tmp/myapp", "feature"),
             repoPath: "/tmp/myapp",
             project: "proj",
           }) as ConfirmMode
@@ -117,7 +122,7 @@ describe("ConfirmModal", () => {
       "myapp-feature",
       "feature",
       "/tmp/myapp-feature",
-      "proj/feature",
+      workspaceIdentityKey("/tmp/myapp", "feature"),
       "/tmp/myapp",
       "proj",
     ) as ConfirmMode;

@@ -1,6 +1,3 @@
-// Project display names can collide; lifecycle ownership uses main repo path
-// and branch so one repository's operation cannot overwrite another's progress.
-
 import { Effect } from "effect";
 import type { Dispatch, SetStateAction } from "react";
 import { toWctError } from "../errors";

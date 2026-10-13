@@ -5,19 +5,108 @@ import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
   findOwningWorktreeIndex,
-  reconcileExpandedWorktreeKeys,
+  reconcileExpandedWorkspaceKeys,
+  resolveConfirmationAnchorItemIndex,
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
-import {
-  type PaneInfo,
-  type TreeItem,
-  worktreeDisplayKey,
-} from "../../src/tui/types";
+import { Mode, type PaneInfo, type TreeItem } from "../../src/tui/types";
 
 describe("buildTreeItems", () => {
+  test("PR and pane details and confirmations belong to the selected Workspace when display names collide", () => {
+    const branch = "feature/shared";
+    const repos = ["a", "b"].map((name) => ({
+      id: name,
+      repoPath: `/repos/${name}`,
+      project: "org/shared",
+      worktrees: [
+        {
+          branch,
+          path: `/repos/${name}-shared`,
+          isMainWorktree: false,
+          changedFiles: 0,
+          sync: null,
+        },
+      ],
+      profileNames: [],
+    }));
+    const workspaceKey = workspaceIdentityKey("/repos/b", branch);
+    const pane: PaneInfo = {
+      paneId: "%2",
+      paneIndex: 0,
+      window: "main",
+      command: "bash",
+      zoomed: false,
+      active: true,
+    };
+    const panes = new Map([["b-shared", [pane]]]);
+    const items = buildTreeItems({
+      repos,
+      expandedWorkspaceKeys: new Set([workspaceKey]),
+      prData: new Map([
+        [
+          workspaceKey,
+          {
+            number: 2,
+            title: "Second repository PR",
+            state: "OPEN" as const,
+            headRefName: branch,
+            rollupState: null,
+          },
+        ],
+      ]),
+      panes,
+      jumpToPane: () => undefined,
+    });
+    const details = items.filter((item) => item.type === "detail");
+    expect(details.map((item) => item.repoIndex)).toEqual([1, 1, 1]);
+    expect(details[0]?.label).toContain("PR #2");
+    const paneIndex = items.findIndex(
+      (item) => item.type === "detail" && item.detailKind === "pane",
+    );
+    expect(
+      resolveSelectedPane({ repos, items, panes, selectedIndex: paneIndex }),
+    ).toMatchObject({ pane, workspaceKey });
+    expect(
+      resolveConfirmationAnchorItemIndex(
+        Mode.ConfirmKill("%2", "main:0 bash", workspaceKey),
+        items,
+        repos,
+      ),
+    ).toBe(paneIndex);
+    for (const mode of [
+      Mode.ConfirmDown({
+        sessionName: "b-shared",
+        branch,
+        worktreePath: "/repos/b-shared",
+        workspaceKey,
+        repoPath: "/repos/b",
+        project: "org/shared",
+      }),
+      Mode.ConfirmClose(
+        "b-shared",
+        branch,
+        "/repos/b-shared",
+        workspaceKey,
+        "/repos/b",
+        "org/shared",
+        0,
+      ),
+      Mode.ConfirmCloseForce(
+        "b-shared",
+        branch,
+        "/repos/b-shared",
+        workspaceKey,
+        "/repos/b",
+        "org/shared",
+      ),
+    ]) {
+      expect(resolveConfirmationAnchorItemIndex(mode, items, repos)).toBe(3);
+    }
+  });
+
   test("preserves expanded keys for errored repo snapshots", () => {
-    const alphaKey = worktreeDisplayKey("alpha", "feature/a");
-    const betaKey = worktreeDisplayKey("beta", "feature/b");
+    const alphaKey = workspaceIdentityKey("/tmp/alpha", "feature/a");
+    const betaKey = workspaceIdentityKey("/tmp/beta", "feature/b");
     const previous = new Set([alphaKey, betaKey]);
     const repos = [
       {
@@ -37,7 +126,7 @@ describe("buildTreeItems", () => {
       },
     ];
 
-    expect(reconcileExpandedWorktreeKeys(previous, repos)).toEqual(
+    expect(reconcileExpandedWorkspaceKeys(previous, repos)).toEqual(
       new Set([alphaKey]),
     );
   });
@@ -83,9 +172,9 @@ describe("buildTreeItems", () => {
 
     const items = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([
-        worktreeDisplayKey("example", "main"),
-        worktreeDisplayKey("example", "feature"),
+      expandedWorkspaceKeys: new Set([
+        workspaceIdentityKey("/tmp/example-repo", "main"),
+        workspaceIdentityKey("/tmp/example-repo", "feature"),
       ]),
       prData,
       panes: new Map(),
@@ -140,7 +229,7 @@ describe("buildTreeItems", () => {
           profileNames: [],
         },
       ],
-      expandedWorktreeKeys: new Set([worktreeDisplayKey("example", branch)]),
+      expandedWorkspaceKeys: new Set([workspaceIdentityKey(repoPath, branch)]),
       prData: new Map(),
       panes: new Map([[sessionName, panes]]),
       jumpToPane: () => undefined,
@@ -201,7 +290,7 @@ describe("buildTreeItems", () => {
           profileNames: [],
         },
       ],
-      expandedWorktreeKeys: new Set([worktreeDisplayKey("example", branch)]),
+      expandedWorkspaceKeys: new Set([workspaceIdentityKey(repoPath, branch)]),
       prData: new Map(),
       panes: new Map([[sessionName, sessionPanes]]),
       jumpToPane: () => undefined,
@@ -258,7 +347,7 @@ describe("buildTreeItems", () => {
         paneIndex: 4,
       },
       label: "editor:1 git status",
-      worktreeKey: worktreeDisplayKey("example", branch),
+      workspaceKey: workspaceIdentityKey("/tmp/example-repo", branch),
     });
   });
 

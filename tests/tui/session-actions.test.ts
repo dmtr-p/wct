@@ -34,7 +34,7 @@ import {
   buildTreeRows,
   isWorktreeEffectivelyExpanded,
 } from "../../src/tui/tree-helpers";
-import { Mode, type TreeItem, worktreeDisplayKey } from "../../src/tui/types";
+import { Mode, type TreeItem } from "../../src/tui/types";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -550,7 +550,7 @@ describe("createExecuteClose", () => {
       "target-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -584,7 +584,7 @@ describe("createExecuteClose", () => {
       "target-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -595,7 +595,7 @@ describe("createExecuteClose", () => {
       "target-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -629,7 +629,7 @@ describe("createExecuteClose", () => {
       "my-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -670,7 +670,7 @@ describe("createExecuteClose", () => {
       "wt",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -697,7 +697,7 @@ describe("createExecuteClose", () => {
       "my-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/registered/repo", "feat"),
       "/registered/repo",
       "proj",
       false,
@@ -740,7 +740,7 @@ describe("createExecuteClose", () => {
       "my-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -785,7 +785,7 @@ describe("createExecuteClose", () => {
       "my-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -800,7 +800,7 @@ describe("createExecuteClose", () => {
         "my-session",
         "feat",
         "/tmp/wt",
-        "proj/feat",
+        workspaceIdentityKey("/repo", "feat"),
         "/repo",
         "proj",
       ),
@@ -829,7 +829,7 @@ describe("createExecuteClose", () => {
       "my-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       true,
@@ -860,7 +860,7 @@ describe("createExecuteClose", () => {
       "my-session",
       "feat",
       "/tmp/wt",
-      "proj/feat",
+      workspaceIdentityKey("/repo", "feat"),
       "/repo",
       "proj",
       false,
@@ -1162,7 +1162,7 @@ describe("createHandleDownSelectedWorktree", () => {
           sessionName: "feat",
           branch: "feat",
           worktreePath: "/repo/feat",
-          worktreeKey: "proj/feat",
+          workspaceKey: workspaceIdentityKey("/repo", "feat"),
           repoPath: "/repo",
           project: "proj",
         }),
@@ -1221,7 +1221,7 @@ describe("createHandleDownSelectedWorktree", () => {
         sessionName: "feat",
         branch: "feat",
         worktreePath: "/repo/feat",
-        worktreeKey: "proj/feat",
+        workspaceKey: workspaceIdentityKey("/repo", "feat"),
         repoPath: "/repo",
         project: "proj",
       }),
@@ -1229,7 +1229,7 @@ describe("createHandleDownSelectedWorktree", () => {
   });
 
   test("preserves Expanded mode in return ref", () => {
-    const worktreeKey = worktreeDisplayKey("proj", "feat");
+    const workspaceKey = workspaceIdentityKey("/repo", "feat");
     const items: TreeItem[] = [
       { type: "worktree", repoIndex: 0, worktreeIndex: 0 },
     ];
@@ -1255,14 +1255,14 @@ describe("createHandleDownSelectedWorktree", () => {
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
-      mode: Mode.Expanded(worktreeKey),
+      mode: Mode.Expanded(workspaceKey),
       sessions: [{ name: "feat", attached: false }],
       confirmDownReturnModeRef: returnModeRef,
     });
     const handleDown = createHandleDownSelectedWorktree(deps);
 
     handleDown();
-    expect(returnModeRef.current).toEqual(Mode.Expanded(worktreeKey));
+    expect(returnModeRef.current).toEqual(Mode.Expanded(workspaceKey));
   });
 });
 
@@ -1304,12 +1304,12 @@ describe("a Workspace under an active lifecycle", () => {
   test("is presented expanded with details hidden, stays selectable, and refuses actions", () => {
     const lifecycle = lifecycleFor();
     const repoList = repos();
-    const worktreeKey = worktreeDisplayKey("proj", branch);
+    const workspaceKey = workspaceIdentityKey("/repo", branch);
 
     // Presentation: expanded, but stats/PR/pane detail rows suppressed.
     const items = buildTreeItems({
       repos: repoList,
-      expandedWorktreeKeys: new Set([worktreeKey]),
+      expandedWorkspaceKeys: new Set([workspaceKey]),
       lifecycle,
       prData: new Map([
         [
@@ -1346,7 +1346,7 @@ describe("a Workspace under an active lifecycle", () => {
       items,
       repos: repoList,
       expandedRepos: new Set(["r1"]),
-      expandedWorktreeKeys: new Set([worktreeKey]),
+      expandedWorkspaceKeys: new Set([workspaceKey]),
       lifecycle,
       maxWidth: 80,
     });
@@ -1405,7 +1405,7 @@ describe("a Workspace under an active lifecycle", () => {
 describe("up and down lifecycle progress", () => {
   const repoPath = "/repo";
   const branch = "feat";
-  const worktreeKey = worktreeDisplayKey("proj", branch);
+  const workspaceKey = workspaceIdentityKey("/repo", branch);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1646,7 +1646,7 @@ describe("up and down lifecycle progress", () => {
     ]);
     const items = buildTreeItems({
       repos: repoList,
-      expandedWorktreeKeys: new Set([worktreeKey]),
+      expandedWorkspaceKeys: new Set([workspaceKey]),
       lifecycle,
       prData: new Map([
         [
@@ -1683,7 +1683,7 @@ describe("up and down lifecycle progress", () => {
       items,
       repos: repoList,
       expandedRepos: new Set(["r1"]),
-      expandedWorktreeKeys: new Set([worktreeKey]),
+      expandedWorkspaceKeys: new Set([workspaceKey]),
       lifecycle,
       maxWidth: 80,
     });
@@ -1765,18 +1765,16 @@ describe("up and down lifecycle progress", () => {
     expect(tracker.state.size).toBe(0);
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
 
-    // With the entry gone, effective expansion reverts to the stored preference.
-    expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
-    for (const stored of [new Set<string>(), new Set([worktreeKey])]) {
+    expect(deps).not.toHaveProperty("setExpandedWorkspaceKeys");
+    for (const stored of [new Set<string>(), new Set([workspaceKey])]) {
       expect(
         isWorktreeEffectivelyExpanded({
-          expandedWorktreeKeys: stored,
+          expandedWorkspaceKeys: stored,
           lifecycle: tracker.state,
-          project: "proj",
           repoPath,
           branch,
         }),
-      ).toBe(stored.has(worktreeKey));
+      ).toBe(stored.has(workspaceKey));
     }
 
     const refreshOrder = vi.mocked(deps.refreshAll).mock

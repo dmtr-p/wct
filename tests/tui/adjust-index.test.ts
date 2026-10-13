@@ -12,7 +12,7 @@ import {
   resolveTreeReturnMode,
   treeItemId,
 } from "../../src/tui/tree-helpers";
-import { Mode, type TreeItem, worktreeDisplayKey } from "../../src/tui/types";
+import { Mode, type TreeItem } from "../../src/tui/types";
 
 function repo(repoIndex: number): TreeItem {
   return { type: "repo", repoIndex };
@@ -445,7 +445,7 @@ describe("resolveExpandedRightArrowAction", () => {
       }),
     ).toEqual({
       type: "expand-worktree",
-      worktreeKey: worktreeDisplayKey("repo-a", "feature-b"),
+      workspaceKey: workspaceIdentityKey("/tmp/repo-a", "feature-b"),
       nextSelectedIndex: 4,
     });
   });

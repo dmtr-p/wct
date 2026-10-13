@@ -18,7 +18,7 @@ import {
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import { isWorktreeEffectivelyExpanded } from "../../src/tui/tree-helpers";
-import { Mode, worktreeDisplayKey } from "../../src/tui/types";
+import { Mode } from "../../src/tui/types";
 import {
   emitWorkspacePhase,
   githubFixtures,
@@ -44,7 +44,7 @@ const REPO_PATH = "/repo";
 const BRANCH = "feat";
 const PROJECT = "proj";
 const WORKTREE_PATH = "/repo/feat";
-const WORKTREE_KEY = worktreeDisplayKey(PROJECT, BRANCH);
+const WORKTREE_KEY = workspaceIdentityKey(REPO_PATH, BRANCH);
 
 /** A live `setLifecycle` stand-in: applies updates exactly as React would. */
 function trackLifecycle() {
@@ -477,13 +477,12 @@ describe("TUI close lifecycle", () => {
     // Expansion is a presentation override, never a stored write: mid-flight
     // it's expanded regardless of the stored preference; once the entry is
     // gone, the preference alone decides.
-    expect(deps).not.toHaveProperty("setExpandedWorktreeKeys");
+    expect(deps).not.toHaveProperty("setExpandedWorkspaceKeys");
     for (const stored of [new Set<string>(), new Set([WORKTREE_KEY])]) {
       const forThisPreference = (lifecycle: LifecycleState) =>
         isWorktreeEffectivelyExpanded({
-          expandedWorktreeKeys: stored,
+          expandedWorkspaceKeys: stored,
           lifecycle,
-          project: PROJECT,
           repoPath: REPO_PATH,
           branch: BRANCH,
         });

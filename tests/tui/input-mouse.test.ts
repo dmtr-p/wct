@@ -22,7 +22,7 @@ import {
   buildTreeRows,
   type TreeRow,
 } from "../../src/tui/tree-helpers";
-import { Mode, type PaneInfo, worktreeDisplayKey } from "../../src/tui/types";
+import { Mode, type PaneInfo } from "../../src/tui/types";
 
 describe("add-project button mouse targeting", () => {
   test("matches a left click on the right-aligned header button", () => {
@@ -263,31 +263,16 @@ describe("double-click actions", () => {
       repoIndex: 0,
       worktreeIndex: 0,
     } as const;
-    const key = worktreeDisplayKey("alpha", "feature/a");
+    const key = workspaceIdentityKey(repo.repoPath, "feature/a");
     expect(resolveTreeDoubleClickAction(worktree, [repo], new Set())).toEqual({
       type: "expand-worktree",
-      worktreeKey: key,
+      workspaceKey: key,
     });
     expect(
       resolveTreeDoubleClickAction(worktree, [repo], new Set([key])),
     ).toEqual({
       type: "collapse-worktree",
-      worktreeKey: key,
-      repoPath: "/tmp/alpha",
-      branch: "feature/a",
-    });
-    expect(
-      resolveTreeDoubleClickAction(
-        worktree,
-        [repo],
-        new Set(),
-        new Set([workspaceIdentityKey("/tmp/alpha", "feature/a")]),
-      ),
-    ).toEqual({
-      type: "collapse-worktree",
-      worktreeKey: key,
-      repoPath: "/tmp/alpha",
-      branch: "feature/a",
+      workspaceKey: key,
     });
 
     const action = () => undefined;
@@ -493,17 +478,17 @@ const repos: RepoInfo[] = [
 
 function buildCtx(
   mode: Mode,
-  expandedWorktreeKey: string | null,
+  expandedWorkspaceKey: string | null,
   overrides?: Partial<MouseActionContext>,
   panes: Map<string, PaneInfo[]> = new Map(),
 ): MouseActionContext {
   const expandedRepos = new Set(["repo-1", "repo-2"]);
-  const expandedWorktreeKeys = expandedWorktreeKey
-    ? new Set([expandedWorktreeKey])
+  const expandedWorkspaceKeys = expandedWorkspaceKey
+    ? new Set([expandedWorkspaceKey])
     : new Set<string>();
   const treeItems = buildTreeItems({
     repos,
-    expandedWorktreeKeys,
+    expandedWorkspaceKeys,
     prData: new Map(),
     panes,
     jumpToPane: () => undefined,
@@ -512,7 +497,7 @@ function buildCtx(
     items: treeItems,
     repos,
     expandedRepos,
-    expandedWorktreeKeys,
+    expandedWorkspaceKeys,
   });
   return {
     mode,
@@ -598,7 +583,7 @@ describe("resolveMouseAction", () => {
   });
 
   test("Expanded: within-subtree click selects and stays", () => {
-    const key = worktreeDisplayKey("alpha", "feature/a");
+    const key = workspaceIdentityKey("/tmp/repo-1", "feature/a");
     const ctx = buildCtx(Mode.Expanded(key), key);
     // items: repo-1(0), wt-a(1), [pr detail if any], wt-b, repo-2, wt-c.
     // Clicking wt-a (the expanded worktree itself, item 1, row index 1).
@@ -612,7 +597,7 @@ describe("resolveMouseAction", () => {
   });
 
   test("Expanded: outside-subtree click selects without collapsing", () => {
-    const key = worktreeDisplayKey("alpha", "feature/a");
+    const key = workspaceIdentityKey("/tmp/repo-1", "feature/a");
     const ctx = buildCtx(Mode.Expanded(key), key);
     // Click the sibling worktree feature/b. Find its row index in rows.
     const rowIndex = ctx.rows.findIndex((r: TreeRow) => {
@@ -631,7 +616,7 @@ describe("resolveMouseAction", () => {
   });
 
   test("a click on an inert pane-header row resolves to none, but a pane row selects (keyboard parity)", () => {
-    const key = worktreeDisplayKey("alpha", "feature/a");
+    const key = workspaceIdentityKey("/tmp/repo-1", "feature/a");
     // feature/a's session name is formatSessionName(basename("/tmp/a")) = "a".
     const panes = new Map<string, PaneInfo[]>([
       [
@@ -700,7 +685,7 @@ describe("resolveMouseAction", () => {
 
   test("Expanded: a click on a wrapped PR's continuation row selects the PR", () => {
     const branch = "feature/a";
-    const key = worktreeDisplayKey("alpha", branch);
+    const key = workspaceIdentityKey("/tmp/repo-1", branch);
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
@@ -716,7 +701,7 @@ describe("resolveMouseAction", () => {
     const expandedRepos = new Set(["repo-1", "repo-2"]);
     const treeItems = buildTreeItems({
       repos,
-      expandedWorktreeKeys: new Set([key]),
+      expandedWorkspaceKeys: new Set([key]),
       prData,
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -725,7 +710,7 @@ describe("resolveMouseAction", () => {
       items: treeItems,
       repos,
       expandedRepos,
-      expandedWorktreeKeys: new Set([key]),
+      expandedWorkspaceKeys: new Set([key]),
       maxWidth: 40, // forces the PR title to wrap
     });
     const ctx: MouseActionContext = {
@@ -851,7 +836,7 @@ describe("resolveHoverItemIndex", () => {
       resolveHoverItemIndex({ kind: "move", col: 1, row: 2 }, ctx),
     ).toBeNull();
 
-    const key = worktreeDisplayKey("alpha", "feature/a");
+    const key = workspaceIdentityKey("/tmp/repo-1", "feature/a");
     const panes = new Map<string, PaneInfo[]>([
       [
         "a",

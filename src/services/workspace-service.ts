@@ -1392,8 +1392,7 @@ function closeImpl(
       worktreePath,
     });
     if (missing && options.profile) {
-      // The deleted checkout cannot resolve its repository. Explicit profiles
-      // still need validation before stopping its session or Git registration.
+      // Resolve the Main Repository from the caller because the checkout is gone.
       const mainRepoPath = yield* WorktreeService.use((service) =>
         service.getMainRepoPath(cwd),
       );

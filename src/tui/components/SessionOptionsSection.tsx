@@ -55,7 +55,7 @@ export function SessionOptionsSection({
     [profileItems, profileQuery],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resetKey is an intentional reset trigger, not read in the body
+  // resetKey is an intentional reset trigger, not read in the body.
   useEffect(() => {
     setProfileQuery("");
     setSelectedProfileIndex(0);

@@ -14,12 +14,10 @@ vi.mock("../../src/tui/hooks/useBlink", () => ({
 }));
 
 const { NewBranchForm } = await import("../../src/tui/components/OpenModal");
-const { AddProjectModal } = await import(
-  "../../src/tui/components/AddProjectModal"
-);
-const { CTRL_ENTER, renderWithInput, sendKeys } = await import(
-  "./keypress-harness"
-);
+const { AddProjectModal } =
+  await import("../../src/tui/components/AddProjectModal");
+const { CTRL_ENTER, renderWithInput, sendKeys } =
+  await import("./keypress-harness");
 
 // The first press lacks ESC to exercise reports already stripped by Ink.
 const BATCHED_CLICK = "[<0;12;38M\x1b[<0;12;38m\x1b[<0;1;1m";

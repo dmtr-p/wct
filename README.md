@@ -315,12 +315,25 @@ bun run src/index.ts
 
 Use [Bun](https://bun.com) for development and builds. See [AGENTS.md](./AGENTS.md) for repository conventions and automated checks.
 
-`bun run prepare` patches the pinned TypeScript compiler with
-[@effect/tsgo](https://github.com/Effect-TS/tsgo). Lifecycle scripts are disabled
-in `bunfig.toml`, so run it explicitly after installing dependencies. Worktree
-setup and CI include this step. The typecheck reports Effect
-diagnostics alongside TypeScript errors. Effect errors and warnings fail the
-check, and suggestions remain available in the editor.
+`bun run prepare` patches the pinned TypeScript compiler, Oxlint, and
+oxlint-tsgolint with [@effect/tsgo](https://github.com/Effect-TS/tsgo/blob/main/docs/README.md).
+Lifecycle scripts are disabled in `bunfig.toml`, so run it explicitly after
+installing dependencies. Worktree setup and CI include this step. Keep the
+Oxlint and oxlint-tsgolint versions within the supported versions listed by
+the installed `@effect/tsgo` package.
+
+`bun run lint` runs Oxlint with type-aware Effect rules and TypeScript compiler
+checks; `bun run lint:fix` runs the same checks and applies safe lint fixes.
+`bun run format` runs Oxfmt with import sorting, and
+`bun run format:check` checks formatting without writing files. CI checks
+lint, types, formatting, and tests. Agent hooks check lint and types together,
+apply lint fixes and formatting, then run tests. CI and hooks use Oxlint's
+`options.typeCheck` instead of running the TypeScript compiler separately.
+
+Oxlint and the TypeScript compiler enforce the same Effect error and warning
+diagnostics. Suggestions remain available in the editor. `.oxlintrc.json`
+configures Effect rules explicitly to keep suggestion-level refactors out of
+the lint gate; `tsconfig.json` retains compiler and editor diagnostics.
 
 For VS Code-based editors, install the TypeScript 7 extension and select the
 workspace TypeScript version when prompted. The workspace settings point to

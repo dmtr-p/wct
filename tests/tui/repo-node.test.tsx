@@ -36,9 +36,7 @@ async function renderRepoNode(props: React.ComponentProps<typeof RepoNode>) {
   await new Promise((resolve) => setTimeout(resolve, 0));
   return {
     output: chunks.join(""),
-    unmount() {
-      instance.unmount();
-    },
+    unmount: () => instance.unmount(),
   };
 }
 

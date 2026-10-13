@@ -196,9 +196,7 @@ export function closeCommand(
             }
           }
           result = yield* WorkspaceService.use((service) =>
-            service.retryCloseRemoval(result, {
-              ...(reporter ? { reporter } : {}),
-            }),
+            service.retryCloseRemoval(result, reporter ? { reporter } : {}),
           );
         }
 

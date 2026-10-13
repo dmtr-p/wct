@@ -6,12 +6,12 @@ cat >/dev/null
 
 trim_lines=100
 tmp_dir=$(cd "${TMPDIR:-/tmp}" && pwd -P)
-biome_log=$(mktemp "${tmp_dir%/}/codex-stop-biome.XXXXXX")
-typecheck_log=$(mktemp "${tmp_dir%/}/codex-stop-typecheck.XXXXXX")
+lint_log=$(mktemp "${tmp_dir%/}/codex-stop-lint.XXXXXX")
+format_log=$(mktemp "${tmp_dir%/}/codex-stop-format.XXXXXX")
 test_log=$(mktemp "${tmp_dir%/}/codex-stop-test.XXXXXX")
 
 cleanup() {
-  rm -f "${biome_log}" "${typecheck_log}" "${test_log}"
+  rm -f "${lint_log}" "${format_log}" "${test_log}"
 }
 
 emit_continue() {
@@ -49,7 +49,7 @@ for (const path of paths) {
   }
 }
 console.log(snapshot.digest("hex"));
-' "${biome_log}" "${typecheck_log}" "${test_log}"
+' "${lint_log}" "${format_log}" "${test_log}"
 }
 
 emit_block_with_log() {
@@ -81,36 +81,36 @@ cd "${repo_root}" || {
   exit 0
 }
 
-if ! before_biome=$(snapshot_files 2>"${biome_log}"); then
-  emit_block_with_log "Failed to snapshot files before Biome." "${biome_log}"
+if ! before_fixes=$(snapshot_files 2>"${lint_log}"); then
+  emit_block_with_log "Failed to snapshot files before lint/format fixes." "${lint_log}"
   exit 0
 fi
 
-if ! bunx biome check --write --error-on-warnings . >"${biome_log}" 2>&1; then
-  cat "${biome_log}" >&2
+if ! bun run lint:fix >"${lint_log}" 2>&1; then
+  cat "${lint_log}" >&2
   emit_block_with_log \
-    "Biome checks failed. Fix the reported issues, then rerun the relevant verification." \
-    "${biome_log}"
+    "Oxlint lint/type checks failed. Fix the reported issues, then rerun the relevant verification." \
+    "${lint_log}"
   exit 0
 fi
 
-if ! after_biome=$(snapshot_files 2>>"${biome_log}"); then
-  emit_block_with_log "Failed to snapshot files after Biome." "${biome_log}"
-  exit 0
-fi
-
-if [ "${before_biome}" != "${after_biome}" ]; then
+if ! bun run format >"${format_log}" 2>&1; then
+  cat "${format_log}" >&2
   emit_block_with_log \
-    "Biome modified files. Review and commit the lint/format fixes, then rerun verification." \
-    "${biome_log}"
+    "Oxfmt failed. Fix the reported issues, then rerun the relevant verification." \
+    "${format_log}"
   exit 0
 fi
 
-if ! bun run typecheck >"${typecheck_log}" 2>&1; then
-  cat "${typecheck_log}" >&2
+if ! after_fixes=$(snapshot_files 2>>"${format_log}"); then
+  emit_block_with_log "Failed to snapshot files after lint/format fixes." "${format_log}"
+  exit 0
+fi
+
+if [ "${before_fixes}" != "${after_fixes}" ]; then
   emit_block_with_log \
-    "Typecheck failed. Fix the reported TypeScript errors, then rerun the relevant verification." \
-    "${typecheck_log}"
+    "Oxlint or Oxfmt modified files. Review and commit the lint/format fixes, then rerun verification." \
+    "${format_log}"
   exit 0
 fi
 

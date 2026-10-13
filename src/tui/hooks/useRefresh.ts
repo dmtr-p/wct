@@ -9,7 +9,7 @@ export function useRefresh(onRefresh: () => void | Promise<void>) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      refreshRef.current();
+      void refreshRef.current();
     }, POLL_INTERVAL_MS);
 
     const wctDir = `${process.env.HOME ?? "/tmp"}/.wct`;

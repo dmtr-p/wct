@@ -8,13 +8,11 @@ import { describe, expect, test, vi } from "vitest";
 // the editing hold, not from a conveniently visible animation frame.
 vi.mock("../../src/tui/hooks/useBlink", () => ({ useBlink: () => false }));
 
-const { FromPRForm, NewBranchForm } = await import(
-  "../../src/tui/components/OpenModal"
-);
+const { FromPRForm, NewBranchForm } =
+  await import("../../src/tui/components/OpenModal");
 const { PathInput } = await import("../../src/tui/components/PathInput");
-const { CTRL_ENTER, renderWithInput, sendKeys, TAB } = await import(
-  "./keypress-harness"
-);
+const { CTRL_ENTER, renderWithInput, sendKeys, TAB } =
+  await import("./keypress-harness");
 
 const LEFT = "\x1b[D";
 const RIGHT = "\x1b[C";

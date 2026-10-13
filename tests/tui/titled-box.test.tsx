@@ -363,7 +363,7 @@ describe("TitledBox", () => {
       (element) => element.type === Box,
     );
 
-    // biome-ignore lint: test introspection requires any casts on React element props
+    // eslint-disable-next-line typescript/no-explicit-any -- test introspection requires any casts on React element props
     const p = (node: React.ReactElement) => node.props as any;
 
     expect(

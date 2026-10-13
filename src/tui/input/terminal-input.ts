@@ -52,6 +52,7 @@ export function createTerminalInput(source: NodeJS.ReadableStream) {
       if (mouse) {
         const event = mouse;
         mouse = null;
+        // eslint-disable-next-line unicorn/no-useless-spread -- callbacks may change subscriptions; dispatch to the original snapshot
         for (const listener of [...listeners]) listener(event);
       }
       if (pending.length === 0) {

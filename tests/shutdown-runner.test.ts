@@ -428,6 +428,8 @@ if (command === "display-message") {
         code: "ENOENT",
       });
     },
+    // CLI and worker startup need time in addition to the bounded result wait.
+    15000,
   );
 
   test.each([

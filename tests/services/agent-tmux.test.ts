@@ -28,9 +28,8 @@ vi.mock("../../src/services/process", async () => ({
   execProcess: (...args: Parameters<ExecProcess>) =>
     Effect.suspend(() => exec(...args)),
 }));
-const { captureAgentPane, discoverAgentPanes, liveTmuxService } = await import(
-  "../../src/services/tmux"
-);
+const { captureAgentPane, discoverAgentPanes, liveTmuxService } =
+  await import("../../src/services/tmux");
 
 const processFailure = (
   stderr: string,

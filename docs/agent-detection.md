@@ -64,18 +64,18 @@ not establish live blockers or corroborate a blocked title. Activity rules
 still inspect live rows above the composer; genuine dialogs remain detectable
 when their controls replace the composer or appear in its footer.
 
-| Observation | Behavior |
-| --- | --- |
-| Verified active-turn evidence | Working immediately |
-| Verified approval/question controls | Blocked according to the agent's priorities |
-| Known readiness evidence | Idle; weaker working-to-idle evidence needs two consecutive observations |
-| Startup, unmatched UI, or unsupported controls | Unknown |
-| Recognized transcript/menu view | Retain the last valid state as stale, without renewing its timestamp |
-| Failed capture/process/discovery | Explicit stale/unavailable observation; isolate pane failures |
-| Five seconds without fresh evidence | Unknown/unavailable; prior state is kept separately for diagnostics |
-| Exit, suspension, foreground replacement, pane removal, server replacement | Clear obsolete foreground state |
-| Process replacement during capture | Discard the late result |
-| Resize or conflicting title evidence during capture | Mark the sample unavailable and retry |
+| Observation                                                                | Behavior                                                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Verified active-turn evidence                                              | Working immediately                                                      |
+| Verified approval/question controls                                        | Blocked according to the agent's priorities                              |
+| Known readiness evidence                                                   | Idle; weaker working-to-idle evidence needs two consecutive observations |
+| Startup, unmatched UI, or unsupported controls                             | Unknown                                                                  |
+| Recognized transcript/menu view                                            | Retain the last valid state as stale, without renewing its timestamp     |
+| Failed capture/process/discovery                                           | Explicit stale/unavailable observation; isolate pane failures            |
+| Five seconds without fresh evidence                                        | Unknown/unavailable; prior state is kept separately for diagnostics      |
+| Exit, suspension, foreground replacement, pane removal, server replacement | Clear obsolete foreground state                                          |
+| Process replacement during capture                                         | Discard the late result                                                  |
+| Resize or conflicting title evidence during capture                        | Mark the sample unavailable and retry                                    |
 
 The expiry timer continues while a slow observation cycle is in flight. PID and
 start-time observations cannot distinguish every possible in-place exec of an
@@ -132,15 +132,15 @@ versions, expected/observed states, latency, and results without saving user
 transcripts. Synthetic tests are not substitutes for these observations.
 
 - [ ] Actual running versions of both agents: idle → working → blocked → resumed
-  → idle; approval and question variants; disabled title updates; startup/update
-  dialogs; transcript/menu views; reduced motion and supported language settings.
+      → idle; approval and question variants; disabled title updates; startup/update
+      dialogs; transcript/menu views; reduced motion and supported language settings.
 - [ ] Narrow terminals, wrapped controls, blank rows, resize during a turn, and
-  historical transcript text that resembles current controls.
+      historical transcript text that resembles current controls.
 - [ ] macOS and Linux: official runtime wrappers, denied inspection, exit/relaunch,
-  process replacement, Ctrl-Z/fg, shell return, and unrelated background jobs.
+      process replacement, Ctrl-Z/fg, shell return, and unrelated background jobs.
 - [ ] tmux 3.2 and 3.7: alternate screens, copy-mode scrolling, detached sessions,
-  linked windows, removed panes, server restart, and absent progress fields.
+      linked windows, removed panes, server restart, and absent progress fields.
 - [ ] One, fifteen, and larger numbers of real agent panes: cycle cost, semantic
-  update latency, UI responsiveness, cancellation, and timeout behavior.
+      update latency, UI responsiveness, cancellation, and timeout behavior.
 - [ ] Existing attachment/client discovery, pane jump/zoom/kill, keyboard
-  selection, viewport scrolling, and mouse hit-testing in the live TUI.
+      selection, viewport scrolling, and mouse hit-testing in the live TUI.

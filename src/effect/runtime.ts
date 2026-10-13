@@ -21,7 +21,7 @@ export function runBunPromise<A, E>(
 export function runBunPromise<A, E>(
   effect: Effect.Effect<A, E, BunServices.BunServices>,
 ): Promise<A>;
-export function runBunPromise<A, E, R extends never | BunServices.BunServices>(
+export function runBunPromise<A, E, R extends BunServices.BunServices>(
   effect: Effect.Effect<A, E, R>,
 ): Promise<A> {
   return Effect.runPromise(provideBunServices(effect));

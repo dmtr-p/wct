@@ -6,7 +6,6 @@ import {
   type WorkspaceCloseResult,
   type WorkspacePhase,
   type WorkspaceReporter,
-  WorkspaceService,
   type WorkspaceUpResult,
 } from "../../src/services/workspace-service";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
@@ -39,6 +38,11 @@ import { Mode, type TreeItem } from "../../src/tui/types";
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceClose = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
+const workspaceUse = vi.hoisted(() =>
+  vi.fn((f) =>
+    f({ up: workspaceUp, down: workspaceDown, close: workspaceClose }),
+  ),
+);
 
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: {
@@ -48,9 +52,7 @@ vi.mock("../../src/tui/runtime", () => ({
 
 vi.mock("../../src/services/workspace-service", () => ({
   WorkspaceService: {
-    use: vi.fn((f) =>
-      f({ up: workspaceUp, down: workspaceDown, close: workspaceClose }),
-    ),
+    use: workspaceUse,
   },
 }));
 
@@ -413,7 +415,7 @@ describe("createHandleSpaceSwitch", () => {
     expect(deps.clearActionError).toHaveBeenCalled();
     expect(setLifecycle).toHaveBeenCalled();
     await vi.waitFor(() => {
-      expect(WorkspaceService.use).toHaveBeenCalled();
+      expect(workspaceUse).toHaveBeenCalled();
       expect(workspaceUp).toHaveBeenCalledWith({
         path: "/repo/feat",
         reporter: expect.anything(),
@@ -634,7 +636,7 @@ describe("createExecuteClose", () => {
       "proj",
       false,
     );
-    expect(WorkspaceService.use).toHaveBeenCalled();
+    expect(workspaceUse).toHaveBeenCalled();
     expect(workspaceClose).toHaveBeenCalledWith({
       path: "/tmp/wt",
       cwd: "/repo",
@@ -966,7 +968,7 @@ describe("createExecuteDown", () => {
 
     await executeDown("wt", "feat", "/tmp/wt", "/repo", "proj");
 
-    expect(WorkspaceService.use).toHaveBeenCalled();
+    expect(workspaceUse).toHaveBeenCalled();
     expect(workspaceDown).toHaveBeenCalledWith({
       path: "/tmp/wt",
       reporter: expect.anything(),
@@ -1445,9 +1447,9 @@ describe("up and down lifecycle progress", () => {
     settle: () => Promise<unknown>,
   ) {
     return async () => {
-      const options = (serviceMock as unknown as Mock).mock.calls.at(-1)?.[0] as
-        | { reporter?: WorkspaceReporter }
-        | undefined;
+      const options = (serviceMock as unknown as Mock).mock.calls.at(
+        -1,
+      )?.[0] as { reporter?: WorkspaceReporter } | undefined;
       const reporter = options?.reporter;
       if (!reporter) {
         throw new Error("service was called without a progress reporter");

@@ -14,13 +14,11 @@ vi.mock("../../src/tui/hooks/useBlink", () => ({
   useBlink: () => false,
 }));
 
-const { NewBranchForm, FromPRForm, ExistingBranchForm } = await import(
-  "../../src/tui/components/OpenModal"
-);
+const { NewBranchForm, FromPRForm, ExistingBranchForm } =
+  await import("../../src/tui/components/OpenModal");
 const { UpModal } = await import("../../src/tui/components/UpModal");
-const { AddProjectModal } = await import(
-  "../../src/tui/components/AddProjectModal"
-);
+const { AddProjectModal } =
+  await import("../../src/tui/components/AddProjectModal");
 const { CTRL_ENTER, DOWN_ARROW, ENTER, TAB, renderWithInput, sendKeys, tick } =
   await import("./keypress-harness");
 

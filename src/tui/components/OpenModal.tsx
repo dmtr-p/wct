@@ -13,8 +13,8 @@ import { Modal } from "./Modal";
 import { ModalShortcut } from "./ModalShortcut";
 import { MouseClickable } from "./MouseClickable";
 import { filterItems, type ListItem, ScrollableList } from "./ScrollableList";
-import { SessionOptionsSection } from "./SessionOptionsSection";
 import { resolveSessionOptionsSubmitState } from "./session-options";
+import { SessionOptionsSection } from "./SessionOptionsSection";
 import { TitledBox } from "./TitledBox";
 
 export interface OpenModalResult {
@@ -411,11 +411,12 @@ export function FromPRForm({
     { isActive: true },
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshItem depends on isRefreshing, listed explicitly
+  /* eslint-disable react/exhaustive-deps -- refreshItem depends on isRefreshing, listed explicitly */
   const displayItems: ListItem[] = useMemo(
     () => [...filteredPRItems, refreshItem],
     [filteredPRItems, isRefreshing],
   );
+  /* eslint-enable react/exhaustive-deps */
 
   return (
     <Box flexDirection="column" gap={0}>

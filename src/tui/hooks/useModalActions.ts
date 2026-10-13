@@ -284,7 +284,7 @@ export function createHandleAddProject(deps: ModalActionDeps) {
   return (result: AddProjectModalResult) => {
     deps.clearActionError();
     deps.setMode(deps.modalReturnModeRef.current);
-    (async () => {
+    void (async () => {
       try {
         await runTuiSilentPromise(
           registerProject({

@@ -19,7 +19,7 @@ export function useSessionOptionsState(
   const [autoSwitch, setAutoSwitch] = useState(true);
 
   const profileKey = JSON.stringify(profileNames);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: profileKey is content-derived; default-only changes are handled below
+  /* eslint-disable react/exhaustive-deps -- profileKey tracks profileNames by content */
   useEffect(() => {
     if (!enabled) return;
     const nextSelectedProfileValue =
@@ -27,6 +27,7 @@ export function useSessionOptionsState(
     setSelectedProfileValue(nextSelectedProfileValue);
     setAutoSwitch(true);
   }, [profileKey, enabled]);
+  /* eslint-enable react/exhaustive-deps */
 
   return {
     selectedProfileValue,

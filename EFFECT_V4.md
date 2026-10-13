@@ -10,14 +10,26 @@ versions in `package.json`, without `^` or `~`. Resolved transitive Effect runti
 packages in `bun.lock`, including `@effect/platform-node-shared`, must match too.
 Update the Effect runtime packages together. `package.json` is the source of
 truth for dependency versions. The `@effect/tsgo` development tool has its own
-version and must support the pinned `typescript` version.
+version and must support the pinned `typescript`, `oxlint`, and
+`oxlint-tsgolint` versions. Check its installed `README.md` for the supported
+versions before changing any of these tools.
 
 Lifecycle scripts are disabled in `bunfig.toml`. Run `bun run prepare` after
-`bun install` to patch TypeScript with Effect tsgo; worktree setup and CI run
-this step explicitly.
-The stop hook and CI use `bun run typecheck`, which reports TypeScript errors
-and Effect diagnostics together. Effect errors and warnings fail the check;
-suggestions are shown only in the editor.
+`bun install` to patch TypeScript, Oxlint, and oxlint-tsgolint with Effect tsgo;
+worktree setup and CI run this step explicitly.
+CI uses `bun run lint` and the stop hook uses `bun run lint:fix` to report
+TypeScript errors, lint issues, and Effect diagnostics in one Oxlint run.
+Errors and warnings fail the check; suggestions are shown only in the editor.
+Oxlint uses the Effect-aware schema and `effecttsgo` plugin in `.oxlintrc.json`
+with both `options.typeAware` and `options.typeCheck` enabled. Its explicit
+Effect rules match the compiler's
+error and warning severities, including the configured diagnostics in
+`tsconfig.json`; keep these configurations aligned. Suggestion-level refactors
+are left to the editor rather than promoted to lint warnings.
+Oxfmt owns formatting and import sorting through `.oxfmtrc.json`.
+The React Compiler rules for refs, state updates in effects, globals, and
+immutability are disabled. The Ink TUI uses explicit mutable refs and Effect
+polling without React Compiler.
 Unstable APIs from `effect`, `@effect/platform-bun`, and `@effect/vitest` are
 allowed by the language service configuration.
 
@@ -191,18 +203,18 @@ for typed failures. Reporter failures and defects, including synchronous
 callback throws, are discarded with `Effect.ignoreCause` so reporting cannot
 fail a Workspace Operation.
 
-| Purpose | API |
-| --- | --- |
-| Handle typed failures | `Effect.catch` |
-| Handle failures by tag | `Effect.catchTag`, `Effect.catchTags` |
-| Handle a full cause | `Effect.catchCause` |
-| Handle defects | `Effect.catchDefect` |
-| Handle selected errors | `Effect.catchIf`, `Effect.catchFilter` |
-| Recover with a fallback value | `Effect.orElseSucceed` |
-| Discard results and typed failures | `Effect.ignore` |
-| Discard results and full causes | `Effect.ignoreCause` |
-| Convert an error | `Effect.mapError` |
-| Observe both outcomes | `Effect.match`, `Effect.matchCause` |
+| Purpose                            | API                                    |
+| ---------------------------------- | -------------------------------------- |
+| Handle typed failures              | `Effect.catch`                         |
+| Handle failures by tag             | `Effect.catchTag`, `Effect.catchTags`  |
+| Handle a full cause                | `Effect.catchCause`                    |
+| Handle defects                     | `Effect.catchDefect`                   |
+| Handle selected errors             | `Effect.catchIf`, `Effect.catchFilter` |
+| Recover with a fallback value      | `Effect.orElseSucceed`                 |
+| Discard results and typed failures | `Effect.ignore`                        |
+| Discard results and full causes    | `Effect.ignoreCause`                   |
+| Convert an error                   | `Effect.mapError`                      |
+| Observe both outcomes              | `Effect.match`, `Effect.matchCause`    |
 
 `Effect.partition` returns `[successes, failures]`. Read the second tuple
 element when aggregating failures.

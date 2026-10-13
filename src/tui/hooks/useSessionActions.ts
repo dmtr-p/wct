@@ -19,6 +19,10 @@ import {
 } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import {
+  createSessionHandoff,
+  type SessionHandoffDeps,
+} from "../session-handoff";
+import {
   resolveSessionsHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
@@ -29,7 +33,7 @@ import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
-export interface SessionActionDeps {
+export interface SessionActionDeps extends SessionHandoffDeps {
   treeItems: TreeItem[];
   filteredRepos: RepoInfo[];
   sessions: TmuxSessionInfo[];
@@ -146,41 +150,6 @@ export interface StartWorkspaceTarget {
   autoSwitch: boolean;
 }
 
-// Runs last, after validation and after the lifecycle presentation is gone:
-// switching tmux clients detaches the terminal this TUI is drawn in, so a
-// failed switch must surface as a plain action error, not a resurrected
-// progress row.
-export function createSessionHandoff(deps: SessionActionDeps) {
-  return async (
-    result: WorkspaceUpResult,
-    autoSwitch: boolean,
-  ): Promise<string | undefined> => {
-    if (!autoSwitch) return undefined;
-    if (!(result.attempts.tmux.attempted && result.attempts.tmux.ok)) {
-      return undefined;
-    }
-
-    const liveClient = await deps.discoverClient();
-    if (liveClient.type === "single") {
-      const switched = await deps.switchSession(
-        result.sessionName,
-        liveClient.client,
-      );
-      await deps.refreshSessions();
-      return switched
-        ? undefined
-        : `Started session '${result.sessionName}', but failed to switch client`;
-    }
-    if (liveClient.type === "none") {
-      return "No tmux client found — start tmux in the other pane";
-    }
-    if (liveClient.type === "error") {
-      return `Started session '${result.sessionName}' but failed to query tmux clients to switch`;
-    }
-    return "Cannot switch tmux client after start because multiple tmux clients are attached";
-  };
-}
-
 export function createStartWorkspace(deps: SessionActionDeps) {
   const sessionHandoff = createSessionHandoff(deps);
 
@@ -211,7 +180,15 @@ export function createStartWorkspace(deps: SessionActionDeps) {
         const message = resolveStartActionMessage(result);
         return message ? [message] : [];
       },
-      afterCleanup: (result) => sessionHandoff(result, target.autoSwitch),
+      afterCleanup: (result) =>
+        sessionHandoff({
+          repoPath: target.repoPath,
+          branch: target.branch,
+          sessionName: result.sessionName,
+          tmux: result.attempts.tmux,
+          autoSwitch: target.autoSwitch,
+          wording: { action: "start", completed: "Started" },
+        }),
     });
 }
 

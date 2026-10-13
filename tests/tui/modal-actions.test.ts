@@ -1227,7 +1227,16 @@ describe("open lifecycle reconciliation", () => {
       order.push(`switch(lifecycle=${tracker.state.size})`);
       return false;
     });
+    let releasePresentation!: () => void;
+    const waitForLifecyclePresentationCleanup = vi.fn(() => {
+      expect(tracker.state.size).toBe(0);
+      expect(deps.lifecycleClaims.active("/repo", "feat")).toBeUndefined();
+      return new Promise<void>((resolve) => {
+        releasePresentation = resolve;
+      });
+    });
     const deps = makeDeps({
+      waitForLifecyclePresentationCleanup,
       openModalRepoProject: "proj",
       openModalRepoPath: "/repo",
       setLifecycle: tracker.setLifecycle,
@@ -1246,6 +1255,15 @@ describe("open lifecycle reconciliation", () => {
     });
 
     await vi.waitFor(() => {
+      expect(waitForLifecyclePresentationCleanup).toHaveBeenCalledWith(
+        "/repo",
+        "feat",
+      );
+    });
+    expect(discoverClient).not.toHaveBeenCalled();
+    expect(switchSession).not.toHaveBeenCalled();
+    releasePresentation();
+    await vi.waitFor(() => {
       expect(switchSession).toHaveBeenCalled();
       expect(deps.showActionError).toHaveBeenCalled();
     });
@@ -1256,7 +1274,7 @@ describe("open lifecycle reconciliation", () => {
       "switch(lifecycle=0)",
     ]);
     expect(deps.showActionError).toHaveBeenCalledWith(
-      "Started session 'feat', but failed to switch client",
+      "Opened session 'feat', but failed to switch client",
     );
     expect(tracker.state.size).toBe(0);
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();

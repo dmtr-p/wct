@@ -22,10 +22,12 @@ import {
 import type { TmuxService } from "../src/services/tmux";
 import {
   liveWorkspaceService,
+  type WorkspaceOpenResult,
   type WorkspacePhase,
   type WorkspaceReporter,
   type WorkspaceReporterEvent,
   WorkspaceService,
+  type WorkspaceUpResult,
 } from "../src/services/workspace-service";
 import {
   liveWorktreeService,
@@ -1376,6 +1378,163 @@ describe("WorkspaceService semantic phases", () => {
       ...overrides,
     };
   }
+
+  test.each(["open", "up"] as const)(
+    "%s preserves tmux attempts, reporter order, and startup arguments",
+    async (operation) => {
+      await writeConfig(
+        repoDir,
+        `work_dir: "app"
+setup:
+  - name: bootstrap
+    command: "true"
+profiles:
+  dev:
+    tmux:
+      windows:
+        - name: dev
+`,
+      );
+      const branch = "feature";
+      const worktreePath = join(worktreeRoot, "myapp-feature");
+      await mkdir(join(worktreePath, "app"), { recursive: true });
+      const worktree = openWorktreeService({
+        getWorktreeRoot: () => Effect.succeed(worktreePath),
+        getCurrentBranch: () => Effect.succeed(branch),
+      });
+      for (const outcome of [
+        "Created",
+        "AlreadyExists",
+        "failed",
+        "unconfigured",
+      ] as const) {
+        if (outcome === "unconfigured") {
+          await Bun.write(
+            join(repoDir, ".wct.yaml"),
+            `version: 1
+worktree_dir: "../worktrees"
+project_name: "myapp"
+`,
+          );
+        }
+        const events: WorkspaceReporterEvent[] = [];
+        const createSession = vi.fn<TmuxService["createSession"]>(
+          (sessionName) => {
+            expect(events.slice(-2)).toEqual([
+              {
+                operation,
+                _tag: "PhaseStarted",
+                phase: { _tag: "StartingTmuxSession" },
+              },
+              { operation, _tag: "AttemptStarted", attempt: "tmux" },
+            ]);
+            if (operation === "open") {
+              expect(events).toContainEqual({
+                operation,
+                _tag: "AttemptCompleted",
+                attempt: "setup",
+                ok: true,
+              });
+            } else {
+              expect(
+                events.some(
+                  (event) =>
+                    event._tag === "AttemptStarted" &&
+                    event.attempt === "setup",
+                ),
+              ).toBe(false);
+            }
+            return outcome === "failed"
+              ? Effect.fail(commandError("tmux_error", "startup failed"))
+              : Effect.succeed({
+                  _tag:
+                    outcome === "AlreadyExists" ? "AlreadyExists" : "Created",
+                  sessionName,
+                });
+          },
+        );
+        const reporter = recordingReporter(events);
+        const profile = outcome === "unconfigured" ? undefined : "dev";
+        const start: Effect.Effect<
+          WorkspaceOpenResult | WorkspaceUpResult,
+          WctCommandError,
+          WorkspaceService
+        > =
+          operation === "open"
+            ? WorkspaceService.use((service) =>
+                service.open({ branch, cwd: repoDir, profile, reporter }),
+              )
+            : WorkspaceService.use((service) =>
+                service.up({ path: worktreePath, profile, reporter }),
+              );
+        const result = await runBunPromise(
+          withTestServices(start, {
+            worktree,
+            tmux: { ...noopTmuxService, createSession },
+          }),
+        );
+        if (outcome === "unconfigured") {
+          expect(createSession).not.toHaveBeenCalled();
+          expect(result.attempts.tmux).toEqual({
+            attempted: false,
+            reason: "tmux_not_configured",
+          });
+          expect(
+            events.some(
+              (event) =>
+                event._tag === "PhaseStarted" &&
+                event.phase._tag === "StartingTmuxSession",
+            ),
+          ).toBe(false);
+          expect(
+            events.some(
+              (event) =>
+                (event._tag === "AttemptStarted" ||
+                  event._tag === "AttemptCompleted") &&
+                event.attempt === "tmux",
+            ),
+          ).toBe(false);
+          expect(result.warnings).toEqual([]);
+        } else {
+          expect(createSession).toHaveBeenCalledExactlyOnceWith(
+            "myapp-feature",
+            join(worktreePath, "app"),
+            { windows: [{ name: "dev" }] },
+            result.env,
+          );
+          expect(result.env).toMatchObject({
+            WCT_BRANCH: branch,
+            WCT_MAIN_DIR: repoDir,
+            WCT_WORK_DIR: join(worktreePath, "app"),
+          });
+          expect(events.at(-1)).toEqual({
+            operation,
+            _tag: "AttemptCompleted",
+            attempt: "tmux",
+            ok: outcome !== "failed",
+          });
+          if (outcome === "failed") {
+            const error = { code: "tmux_error", message: "startup failed" };
+            expect(result.attempts.tmux).toEqual({
+              attempted: true,
+              ok: false,
+              error,
+            });
+            expect(result.warnings).toEqual([
+              { _tag: "TmuxStartFailed", operation, error },
+            ]);
+          } else {
+            expect(result.attempts.tmux).toEqual({
+              attempted: true,
+              ok: true,
+              value: { _tag: outcome, sessionName: "myapp-feature" },
+            });
+            expect(result.warnings).toEqual([]);
+          }
+        }
+      }
+    },
+  );
 
   test("open emits preparing first, then a phase per attempted step in execution order", async () => {
     await writeConfig(

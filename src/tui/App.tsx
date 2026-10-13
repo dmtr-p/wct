@@ -101,7 +101,7 @@ interface ConfirmationReturnContext {
 }
 
 export function App() {
-  const { exit } = useApp();
+  const { exit, waitUntilRenderFlush } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
   const { disableMouse } = useMouse();
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
@@ -213,19 +213,22 @@ export function App() {
     new Map(),
   );
   const waitForLifecyclePresentationCleanup = useCallback(
-    (repoPath: string, branch: string): Promise<void> => {
+    async (repoPath: string, branch: string): Promise<void> => {
       const key = workspaceIdentityKey(repoPath, branch);
-      if (!lifecycleRef.current.has(key)) return Promise.resolve();
-      return new Promise((resolve) => {
-        const waiters = lifecycleCleanupWaitersRef.current.get(key);
-        if (waiters) {
-          waiters.add(resolve);
-        } else {
-          lifecycleCleanupWaitersRef.current.set(key, new Set([resolve]));
-        }
-      });
+      if (lifecycleRef.current.has(key)) {
+        await new Promise<void>((resolve) => {
+          const waiters = lifecycleCleanupWaitersRef.current.get(key);
+          if (waiters) {
+            waiters.add(resolve);
+          } else {
+            lifecycleCleanupWaitersRef.current.set(key, new Set([resolve]));
+          }
+        });
+      }
+      // A React commit can precede Ink's throttled stdout write.
+      await waitUntilRenderFlush();
     },
-    [],
+    [waitUntilRenderFlush],
   );
   // Created once per App and shared by every verb: it decides, synchronously
   // and before any state is written, whether an identity is already in flight.
@@ -588,6 +591,7 @@ export function App() {
     setMode,
     modeRef,
     setLifecycle,
+    waitForLifecyclePresentationCleanup,
     showActionError,
     clearActionError,
     switchSession,

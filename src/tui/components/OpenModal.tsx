@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorktreeService } from "../../services/worktree-service";
 import { useCursorBlink } from "../hooks/useCursorBlink";
+import { useFieldFocus } from "../hooks/useFieldFocus";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { useTextEditing } from "../hooks/useTextEditing";
@@ -175,20 +176,12 @@ export function NewBranchForm({
     return f;
   }, [profileNames.length]);
 
-  const [focusIndex, setFocusIndex] = useState(0);
-  const currentField = fields[focusIndex];
+  const { currentField, focusField, moveFocus } = useFieldFocus(fields);
 
   const submission = useMemo(
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
-
-  const moveFocus = (delta: number) => {
-    setFocusIndex((prev) => {
-      const next = (prev + delta + fields.length) % fields.length;
-      return next;
-    });
-  };
 
   const doSubmit = () => {
     if (!branch.trim() || !submission.canSubmit) return;
@@ -228,7 +221,7 @@ export function NewBranchForm({
         value={branch}
         isFocused={currentField === "branch"}
         onChange={setBranch}
-        onFocus={() => setFocusIndex(fields.indexOf("branch"))}
+        onFocus={() => focusField("branch")}
         width={width}
       />
       <BracketInput
@@ -236,7 +229,7 @@ export function NewBranchForm({
         value={base}
         isFocused={currentField === "base"}
         onChange={setBase}
-        onFocus={() => setFocusIndex(fields.indexOf("base"))}
+        onFocus={() => focusField("base")}
         width={width}
       />
       <SessionOptionsSection
@@ -253,7 +246,7 @@ export function NewBranchForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
-        onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
+        onFocusField={focusField}
         resetKey="new-branch"
         width={width}
       />
@@ -296,8 +289,7 @@ export function FromPRForm({
     return f;
   }, [profileNames.length]);
 
-  const [focusIndex, setFocusIndex] = useState(0);
-  const currentField = fields[focusIndex];
+  const { currentField, focusField, moveFocus } = useFieldFocus(fields);
   const filterEditing = useTextEditing(
     filterQuery,
     (next) => {
@@ -342,13 +334,6 @@ export function FromPRForm({
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
-
-  const moveFocus = (delta: number) => {
-    setFocusIndex((prev) => {
-      const next = (prev + delta + fields.length) % fields.length;
-      return next;
-    });
-  };
 
   const doSubmit = () => {
     if (isRefreshRowSelected) return;
@@ -433,7 +418,7 @@ export function FromPRForm({
           maxVisible={5}
           isFocused={currentField === "prList"}
           onSelect={(index) => {
-            setFocusIndex(fields.indexOf("prList"));
+            focusField("prList");
             setSelectedPRIndex(index);
           }}
           onDoubleSelect={(index) => {
@@ -461,7 +446,7 @@ export function FromPRForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
-        onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
+        onFocusField={focusField}
         resetKey="from-pr"
         width={width}
       />
@@ -505,8 +490,7 @@ export function ExistingBranchForm({
     () => resolveSessionOptionsSubmitState(profileNames, selectedProfileValue),
     [profileNames, selectedProfileValue],
   );
-  const [focusIndex, setFocusIndex] = useState(0);
-  const currentField = fields[focusIndex];
+  const { currentField, focusField, moveFocus } = useFieldFocus(fields);
   const filterEditing = useTextEditing(
     filterQuery,
     (next) => {
@@ -545,13 +529,6 @@ export function ExistingBranchForm({
     () => filterItems(branchItems, filterQuery),
     [branchItems, filterQuery],
   );
-
-  const moveFocus = (delta: number) => {
-    setFocusIndex((prev) => {
-      const next = (prev + delta + fields.length) % fields.length;
-      return next;
-    });
-  };
 
   const doSubmit = () => {
     const selectedBranch = filteredBranchItems[selectedBranchIndex];
@@ -617,7 +594,7 @@ export function ExistingBranchForm({
           maxVisible={5}
           isFocused={currentField === "branchList"}
           onSelect={(index) => {
-            setFocusIndex(fields.indexOf("branchList"));
+            focusField("branchList");
             setSelectedBranchIndex(index);
           }}
         />
@@ -639,7 +616,7 @@ export function ExistingBranchForm({
         onAutoSwitchToggle={() => setAutoSwitch((prev) => !prev)}
         onSubmit={doSubmit}
         onProfileChange={setSelectedProfileValue}
-        onFocusField={(field) => setFocusIndex(fields.indexOf(field))}
+        onFocusField={focusField}
         resetKey="existing-branch"
         width={width}
       />

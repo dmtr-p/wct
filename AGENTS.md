@@ -131,6 +131,7 @@ src/
 │   │   ├── useTreeNavigation.ts # React binding for the tree navigation state machine
 │   │   ├── useMouse.ts    # Terminal mouse reporting lifecycle
 │   │   ├── useGuardedInput.ts # Keyboard/mouse input routing
+│   │   ├── useFieldFocus.ts # Shared modal field identity, cycling, and focus selection
 │   │   ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
 │   │   ├── useModalActions.ts # Open/up/add modal orchestration
 │   │   ├── useProjectActions.ts # Project removal and safe session handoff

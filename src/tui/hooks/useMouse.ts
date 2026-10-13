@@ -12,9 +12,8 @@ interface MouseWriter {
 }
 
 /**
- * Stateful, idempotent enable/disable of mouse reporting on a single stdout
- * stream. The `enabled` flag makes `disable()` safe to call repeatedly (React
- * unmount, the `q` path, and any signal handler can all fire it harmlessly).
+ * Quit, process exit, and unmount can all disable reporting; repeated calls
+ * must be harmless.
  */
 export function createMouseController(stdout: MouseWriter) {
   let enabled = false;

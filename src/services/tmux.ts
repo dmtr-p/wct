@@ -316,7 +316,7 @@ export function buildWindowPaneCommands(
       args: [splitFlag, "-t", windowTarget, ...envOptionArgs, "-c", workingDir],
     });
 
-    // After split, the new pane is active, so send-keys goes to the right pane
+    // split-window makes the new pane active; send-keys targets it implicitly.
     if (pane.command) {
       commands.push({
         type: "send-keys",

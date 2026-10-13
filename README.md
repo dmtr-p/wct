@@ -105,7 +105,7 @@ wct --completions fish > ~/.config/fish/completions/wct.fish
 
 ## Configuration
 
-Run `wct init` to generate a starter `.wct.yaml` in your project root. Here's an annotated example:
+Run `wct init` from your project root to generate a starter `.wct.yaml` in the current directory. Here's an annotated example:
 
 ```yaml
 version: 1

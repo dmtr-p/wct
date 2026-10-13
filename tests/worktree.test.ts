@@ -146,7 +146,6 @@ describe("createWorktree with base branch", () => {
   const originalDir = process.cwd();
 
   beforeAll(async () => {
-    // Create a temporary git repo with two branches at different commits
     repoDir = await mkdtemp(join(tmpdir(), "wct-test-repo-"));
     worktreeDir = await mkdtemp(join(tmpdir(), "wct-test-wt-"));
 
@@ -156,14 +155,11 @@ describe("createWorktree with base branch", () => {
     await $`git config user.name "Test"`.quiet().cwd(repoDir);
     await $`git config commit.gpgSign false`.quiet().cwd(repoDir);
 
-    // Initial commit on main
     await $`git commit --allow-empty -m "initial commit"`.quiet().cwd(repoDir);
 
-    // Create a "develop" branch with an extra commit
     await $`git checkout -b develop`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "develop commit"`.quiet().cwd(repoDir);
 
-    // Go back to main
     await $`git checkout main`.quiet().cwd(repoDir);
   });
 
@@ -240,7 +236,6 @@ describe("createWorktree with base branch", () => {
     expect(result._tag).toBe("Created");
     expect(result.path).toBe(wtPath);
 
-    // Verify the new branch is based on develop (has develop's commit)
     const log = await $`git log --oneline feature-from-develop`
       .quiet()
       .cwd(repoDir);
@@ -261,7 +256,6 @@ describe("createWorktree with base branch", () => {
 
     expect(result._tag).toBe("Created");
 
-    // Should be based on current HEAD (main), which does not have develop's commit
     const log = await $`git log --oneline feature-from-head`
       .quiet()
       .cwd(repoDir);
@@ -317,8 +311,6 @@ describe("createWorktree with base branch", () => {
   test("ignores base when using existing branch", async () => {
     process.chdir(repoDir);
     const wtPath = join(worktreeDir, "existing-branch-wt");
-    // Pass base="main" but useExisting=true — base should be ignored,
-    // and the worktree should check out develop (which has "develop commit")
     const result = await runBunPromise(
       withWorktreeService(
         WorktreeService.use((service) =>
@@ -330,7 +322,6 @@ describe("createWorktree with base branch", () => {
     expect(result._tag).toBe("Created");
     expect(result.path).toBe(wtPath);
 
-    // Verify it checked out the existing develop branch, not main
     const log = await $`git log --oneline develop`.quiet().cwd(repoDir);
     expect(log.text()).toContain("develop commit");
   });

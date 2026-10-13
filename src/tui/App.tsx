@@ -92,9 +92,7 @@ import type {
 import { Mode } from "./types";
 import { toSingleLine } from "./utils/truncate";
 
-// Top chrome above the tree: the `wct` header line + a blank spacer line. Same
-// 2 rows the mouse hit-test skips, so it is sourced from a single constant to
-// keep windowing and hit-testing aligned.
+// Share the chrome height with mouse hit-testing so viewport rows align.
 const TOP_CHROME_ROWS = HEADER_OFFSET;
 
 interface ConfirmationReturnContext {
@@ -1309,13 +1307,8 @@ export function App() {
         }
       }
 
-      // Ctrl+C exits from EVERY mode (parity with Ink's default), but through
-      // the same disable-mouse-first sequence as `q`: startTui renders with
-      // exitOnCtrlC: false precisely so Ctrl+C reaches this handler instead
-      // of Ink's own \x03 shortcut, whose handleExit turns off raw mode
-      // before React unmount — too late for the unmount-cleanup disable, so
-      // mouse reports emitted in that window would echo as escape garbage on
-      // the shell prompt after exit.
+      // Disable mouse before Ink releases raw mode, or reports can echo at
+      // the shell prompt. exitOnCtrlC: false routes Ctrl+C through this handler.
       if (key.ctrl && input === "c") {
         disableMouse();
         exit();
@@ -1391,10 +1384,7 @@ export function App() {
 
   return (
     <Box flexDirection="column" height={termRows}>
-      {/* Every sibling of the tree box is flexShrink={0}: when the content
-          exceeds termRows, the tree box must be the ONLY thing Yoga shrinks —
-          otherwise the header/spacer lines get squeezed to zero height and
-          later rows paint over them. */}
+      {/* Only the tree may shrink; otherwise rows can overwrite the header. */}
       <Box flexDirection="column" flexShrink={0}>
         <Box justifyContent="space-between">
           <Text bold>wct</Text>
@@ -1404,14 +1394,8 @@ export function App() {
         </Box>
         <Text> </Text>
       </Box>
-      {/* overflowY="hidden" + flexShrink is what lets a true modal exceed the
-          budgeted bottom-chrome rows: Yoga shrinks THIS box and the excess
-          tree rows clip cleanly at its bottom edge, instead of the
-          overflowing frame painting over the modal. The inner flexShrink={0}
-          wrapper keeps the rows at their natural height so they overflow (and
-          clip) rather than being squeezed into interleaved garbage. In the
-          interactive layout the tree content equals the budget exactly, so
-          nothing is ever clipped there. */}
+      {/* Clip excess tree rows when a modal exceeds the footer budget. The
+          inner wrapper preserves row heights instead of squeezing them. */}
       <Box
         flexDirection="column"
         flexGrow={1}
@@ -1450,9 +1434,7 @@ export function App() {
           />
         </Box>
       </Box>
-      {/* flexShrink={0} pins the bottom area (form modal or status chrome) to
-          its natural height so the tree box above is the only child Yoga
-          shrinks. Confirmations render inside the tree instead. */}
+      {/* Keep footer and form heights fixed while the tree shrinks. */}
       <Box flexDirection="column" flexShrink={0}>
         {mode.type === "Shortcuts" ? (
           <ShortcutsModal

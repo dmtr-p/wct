@@ -488,7 +488,6 @@ describe("buildWindowsPaneCommands", () => {
       { name: "shell", panes: [] },
     ]);
 
-    // Empty panes array means no pane commands, just create window
     expect(commands).toEqual([
       {
         type: "new-session",
@@ -509,7 +508,6 @@ describe("buildWindowsPaneCommands", () => {
       },
     ]);
 
-    // First pane has no command, second does
     const sendKeysCmds = commands.filter((c) => c.type === "send-keys");
     expect(sendKeysCmds).toHaveLength(1);
     expect(sendKeysCmds[0]?.args).toContain("bun run watch");

@@ -34,9 +34,6 @@ describe("truncateBranch", () => {
   });
 
   test("budgets CJK glyphs at two display columns each", () => {
-    // "日本語ブランチ" is 7 glyphs = 14 columns. At 9 columns, only four
-    // glyphs (8) fit before the 1-column ellipsis. Counting code points would
-    // keep 8 of them and render 17 columns wide — soft-wrapping the tree row.
     expect(truncateBranch("日本語ブランチ", 9)).toBe("日本語ブ…");
     expect(truncateBranch("日本語ブランチ", 14)).toBe("日本語ブランチ");
   });
@@ -53,28 +50,20 @@ describe("truncateWithPrefix", () => {
   });
 
   test("returns prefix+rest at exact limit", () => {
-    // "1:0 vim" is 7 chars
     expect(truncateWithPrefix("1:0 ", "vim", 7)).toBe("1:0 vim");
   });
 
   test("preserves prefix and truncates rest when too long", () => {
-    // prefix "1:0 " (4), rest "bun run dev --watch" (19), available 15
-    // → "1:0 " + truncateBranch("bun run dev --watch", 11)
-    // → "1:0 " + "bun run de…"
     expect(truncateWithPrefix("1:0 ", "bun run dev --watch", 15)).toBe(
       "1:0 bun run de…",
     );
   });
 
   test("preserves prefix when available is wider than prefix plus ellipsis", () => {
-    // prefix "1:0 " (4), available 7 (> 4+1)
-    // "1:0 " + truncateBranch("vim this is long", 3) → "1:0 vi…"
     expect(truncateWithPrefix("1:0 ", "vim this is long", 7)).toBe("1:0 vi…");
   });
 
   test("falls back to truncateBranch when available <= prefix.length + ellipsis", () => {
-    // prefix "1:0 " (4), available 5 (= 4+1) — fallback
-    // truncateBranch("1:0 vim this is long", 5) → "1:0 …"
     expect(truncateWithPrefix("1:0 ", "vim this is long", 5)).toBe("1:0 …");
   });
 
@@ -84,8 +73,6 @@ describe("truncateWithPrefix", () => {
   });
 
   test("measures the rest by display width", () => {
-    // prefix "1:0 " (4 cols), rest "🎉🎉🎉" (6 cols), available 8 → rest gets
-    // 4 columns: one 2-column emoji + the ellipsis.
     expect(truncateWithPrefix("1:0 ", "🎉🎉🎉", 8)).toBe("1:0 🎉…");
   });
 });

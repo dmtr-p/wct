@@ -18,11 +18,8 @@ describe("displayWidth", () => {
   });
 
   test("overcounts a combining-mark cluster rather than undercount", () => {
-    // "e" + U+0301 renders 1 column; the deliberate safety bias counts every
-    // multi-code-point grapheme as 2 so wrapping can never emit a line Ink
-    // measures as wider than budgeted.
+    // Combining-mark clusters deliberately overcount width; measurements remain approximate.
     expect(displayWidth("e\u0301")).toBe(2);
-    // The precomposed single code point stays 1 column.
     expect(displayWidth("\u00e9")).toBe(1);
   });
 });
@@ -55,7 +52,6 @@ describe("wrapPrLabel", () => {
     for (const line of lines) {
       expect(displayWidth(line)).toBeLessThanOrEqual(budget);
     }
-    // No content is lost: joining the lines reproduces the label.
     expect(lines.join(" ")).toBe(
       "PR #1: a very long pull request title that certainly wraps (OPEN)",
     );
@@ -76,7 +72,6 @@ describe("wrapPrLabel", () => {
   });
 
   test("wraps by display width, not code points, for a CJK title", () => {
-    // budget = 15 columns; each glyph is 2 columns, so seven fit per line.
     const lines = wrapPrLabel("日本語のタイトル", 20, false);
     expect(lines).toEqual(["日本語のタイト", "ル"]);
     for (const line of lines) {
@@ -85,14 +80,12 @@ describe("wrapPrLabel", () => {
   });
 
   test("wraps emoji words by their two-column width", () => {
-    // budget = 13 columns; the emoji word cannot share a line with "fix".
     const lines = wrapPrLabel("fix 🎉🎉🎉🎉🎉", 18, false);
     expect(lines).toEqual(["fix", "🎉🎉🎉🎉🎉"]);
   });
 
   test("never splits an emoji ZWJ sequence when hard-breaking", () => {
     const family = "👨‍👩‍👧‍👦"; // one grapheme (4 code points + ZWJs), 2 columns
-    // budget = 7 columns; the unbroken word splits on grapheme boundaries.
     const lines = wrapPrLabel(family.repeat(4), 12, false);
     expect(lines).toEqual([family.repeat(3), family]);
   });

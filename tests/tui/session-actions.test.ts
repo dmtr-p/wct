@@ -521,7 +521,6 @@ describe("createHandleSpaceSwitch", () => {
 
     handleSpace();
 
-    // Wait for the async error handling to complete
     await vi.waitFor(() => {
       expect(deps.showActionError).toHaveBeenCalled();
     });

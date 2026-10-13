@@ -23,16 +23,9 @@ interface Props {
   sessions: Array<{ name: string; attached: boolean }>;
   selectedIndex: number;
   items: TreeItem[];
-  /**
-   * The visual-row model to render, built ONCE by the owner (App.tsx) with
-   * `buildTreeRows` and shared with windowing and mouse hit-testing — TreeView
-   * never rebuilds it, so the rendered rows and the hit-test rows cannot
-   * diverge.
-   */
+  /** Share App's row model so rendering and mouse hit-testing agree. */
   rows: TreeRow[];
-  /** Tree-item index currently under the pointer, for hover styling. */
   hoveredItemIndex?: number | null;
-  /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle?: LifecycleState;
   prData: Map<string, PRInfo>;
   associations?: Map<string, WorkspacePrEntry>;
@@ -41,9 +34,7 @@ interface Props {
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
-  /** First visual row to render. Defaults to 0 (no scrolling). */
   scrollOffset?: number;
-  /** Number of visual rows to render. Defaults to rendering all rows. */
   viewportRows?: number;
   confirmation?: {
     mode: ConfirmMode;

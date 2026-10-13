@@ -1,8 +1,5 @@
 // Adapted from Herdr, Apache-2.0, commit 2563803dca97c040beaf3dc3acdcb5a3221b4238.
-// Claude rules 2026.09.11.1; Codex rules 2026.10.01.1.
-// Adaptations: conservative idle/weak-blocker exclusions, JS regex translation
-// in agent-model.ts, composer exclusion, corroborated activity, live-screen-only
-// regions. See THIRD_PARTY_NOTICES.md.
+// See THIRD_PARTY_NOTICES.md for attribution and adaptations.
 export interface AgentGate {
   contains?: readonly string[];
   regex?: readonly string[];

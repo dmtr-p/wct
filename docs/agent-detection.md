@@ -44,13 +44,13 @@ requires corroborating live controls. Composer-only screens do not prove idle;
 Claude uses its prompt box and Codex also requires a readiness footer. A populated
 Codex composer also supports the passive status line with a known GPT/o-series
 model and usage/context percentage, separated from the draft by a blank row.
-Codex 0.162.0 suppresses its shortcuts hint for drafts and only shows that passive
-status line when the draft has no running task; see its
+The supported Codex footer suppresses its shortcuts hint for drafts and only
+shows that passive status line when the draft has no running task; see the pinned
 [footer implementation](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/tui/src/bottom_pane/footer.rs).
 Active-turn and approval evidence retain priority. Other custom footer layouts
-remain unknown. English
-controls and known spinner glyphs are covered; unrecognized localized UIs remain
-unknown. See `THIRD_PARTY_NOTICES.md` for upstream attribution and adaptations.
+remain unknown. English controls and known spinner glyphs are covered;
+unrecognized localized UIs remain unknown. See `THIRD_PARTY_NOTICES.md` for
+upstream attribution and adaptations.
 Codex screen activity requires the timer row's live interrupt control; elapsed
 time in a response alone does not prove activity. Known composer footers bound
 the entire editable draft, including blank paragraphs, so quoted approval and
@@ -113,8 +113,8 @@ emulator or control-mode client.
 The implementation targets tmux 3.2 core metadata/capture on macOS and Linux.
 Optional `pane_pb_state` values are capability-checked against the connected
 server: missing fields leave title/screen rules operational. Progress is not
-used alone to classify state. Live compatibility validation for Linux and
-tmux 3.2 and 3.7 remains pending.
+used alone to classify state. Live compatibility on Linux and with tmux 3.2
+and 3.7 is unverified.
 
 Pane rows support jump, zoom, and kill actions. Workspace counts use Workspace
 Identity and include collapsed/detached sessions. Counts appear in blocked,
@@ -123,24 +123,25 @@ pane counts once per Workspace. Rows remain single-line with width-aware
 truncation. Only semantic/membership/freshness changes update presentation.
 Registry, Git, and tmux refreshes run separately on a five-second interval
 and respond to registry database changes. GitHub PR data refreshes every two
-minutes, when the repository set changes, and on explicit refresh actions.
+minutes, when repositories or their worktrees change, and on explicit refresh
+actions.
 
 ## Compatibility validation
 
-The following checks must pass before calling the feature release-ready. Record
-versions, expected/observed states, latency, and results without saving user
-transcripts. Synthetic tests are not substitutes for these observations.
+Validate detection against live agents and terminals as well as synthetic tests.
+Record versions, expected/observed states, latency, and results in the relevant
+GitHub issue without saving user transcripts. Cover:
 
-- [ ] Actual running versions of both agents: idle → working → blocked → resumed
-      → idle; approval and question variants; disabled title updates; startup/update
-      dialogs; transcript/menu views; reduced motion and supported language settings.
-- [ ] Narrow terminals, wrapped controls, blank rows, resize during a turn, and
-      historical transcript text that resembles current controls.
-- [ ] macOS and Linux: official runtime wrappers, denied inspection, exit/relaunch,
-      process replacement, Ctrl-Z/fg, shell return, and unrelated background jobs.
-- [ ] tmux 3.2 and 3.7: alternate screens, copy-mode scrolling, detached sessions,
-      linked windows, removed panes, server restart, and absent progress fields.
-- [ ] One, fifteen, and larger numbers of real agent panes: cycle cost, semantic
-      update latency, UI responsiveness, cancellation, and timeout behavior.
-- [ ] Existing attachment/client discovery, pane jump/zoom/kill, keyboard
-      selection, viewport scrolling, and mouse hit-testing in the live TUI.
+- Actual running versions of both agents: idle → working → blocked → resumed
+  → idle; approval and question variants; disabled title updates; startup/update
+  dialogs; transcript/menu views; reduced motion and supported language settings.
+- Narrow terminals, wrapped controls, blank rows, resize during a turn, and
+  historical transcript text that resembles current controls.
+- macOS and Linux: official runtime wrappers, denied inspection, exit/relaunch,
+  process replacement, Ctrl-Z/fg, shell return, and unrelated background jobs.
+- tmux 3.2 and 3.7: alternate screens, copy-mode scrolling, detached sessions,
+  linked windows, removed panes, server restart, and absent progress fields.
+- One, fifteen, and larger numbers of real agent panes: cycle cost, semantic
+  update latency, UI responsiveness, cancellation, and timeout behavior.
+- Attachment/client discovery, pane jump/zoom/kill, keyboard selection, viewport
+  scrolling, and mouse hit-testing in the live TUI.

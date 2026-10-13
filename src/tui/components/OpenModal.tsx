@@ -318,7 +318,6 @@ export function FromPRForm({
     [prList],
   );
 
-  // Refresh row pinned at the bottom — non-selectable while refreshing
   const refreshItem: ListItem = {
     label: isRefreshing ? "↻ Loading..." : "↻ Refresh PRs",
     value: "__refresh__",
@@ -334,7 +333,6 @@ export function FromPRForm({
   const isRefreshRowSelectable = !isRefreshing;
   const isRefreshRowSelected = selectedPRIndex === refreshRowIndex;
 
-  // When isRefreshing flips to true, move cursor off the Refresh row
   useEffect(() => {
     if (isRefreshing && selectedPRIndex === refreshRowIndex) {
       setSelectedPRIndex(Math.max(0, refreshRowIndex - 1));
@@ -669,7 +667,6 @@ export function OpenModal({
     if (visible) setStep("selector");
   }, [visible]);
 
-  // One AbortController per modal mount — aborted on unmount or explicit cancel.
   const abortControllerRef = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();

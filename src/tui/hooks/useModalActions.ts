@@ -54,7 +54,6 @@ export interface ModalActionDeps {
   mode: Mode;
   openModalRepoProject: string;
   openModalRepoPath: string;
-  /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle: LifecycleState;
   // Shared with `useSessionActions` so an `open` and an `up`/`down`/`close`
   // can't both claim the same Workspace.
@@ -69,7 +68,6 @@ export interface ModalActionDeps {
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
 
-  // Records persistent expansion for a Workspace found by Open validation.
   markWorkspaceDiscovered: (workspaceKey: string) => void;
   /** Resolves only after Ink commits removal of this Workspace's progress row. */
   waitForLifecyclePresentationCleanup: (

@@ -9,7 +9,6 @@ import { MouseClickable } from "./MouseClickable";
 export interface ListItem {
   label: string;
   value: string;
-  /** Optional secondary text (e.g., PR title) */
   description?: string;
 }
 
@@ -65,7 +64,6 @@ export function ListPadding({ count }: { count: number }) {
   return <Box height={count} />;
 }
 
-/** Move a viewport only as far as needed to reveal the selected item. */
 export function scrollToRevealListItem(
   offset: number,
   selectedIndex: number,

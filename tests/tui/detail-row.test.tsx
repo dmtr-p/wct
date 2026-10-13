@@ -156,7 +156,6 @@ describe("DetailRow", () => {
   });
 
   test("renders full pane label when width is sufficient", async () => {
-    // overhead=10, available=70, "1:0 vim" (7) fits
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
@@ -181,10 +180,6 @@ describe("DetailRow", () => {
   });
 
   test("preserves window:index prefix when command is long", async () => {
-    // overhead=7, maxWidth=17 → available=10
-    // prefix "1:0 " (4), rest "bun run dev" (11)
-    // 15 > 10, available(10) > prefix+1(5) → "1:0 " + truncateBranch("bun run dev", 6)
-    // → "1:0 bun r…"
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
@@ -211,8 +206,6 @@ describe("DetailRow", () => {
   });
 
   test("truncates pane-header label when width is tight", async () => {
-    // overhead=5, maxWidth=12 → available=7
-    // "Panes (3)" (9) → "Panes …"
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
@@ -308,9 +301,6 @@ describe("DetailRow", () => {
   });
 
   test("wraps a long pr label instead of truncating it", async () => {
-    // maxWidth=30, hasIcon → budget=20. Word-wrap yields
-    // ["PR #7: fix the login", "flow (OPEN)"]: piece 0 is the primary line,
-    // piece 1 the continuation. The full title survives, no ellipsis.
     const label = "PR #7: fix the login flow (OPEN)";
     const item = {
       type: "detail",
@@ -334,13 +324,10 @@ describe("DetailRow", () => {
       pieceIndex: 1,
     });
 
-    // The primary line shows the icon and the start of the title; the
-    // continuation line shows a later part. Nothing is replaced by an ellipsis.
     expect(primary.output).toContain("✓");
     expect(primary.output).toContain("PR #7: fix the login");
     expect(primary.output).not.toContain("…");
     expect(continuation.output).not.toContain("…");
-    // The tail of the title lands on the continuation line, not the primary.
     expect(continuation.output).toContain("flow (OPEN)");
     expect(primary.output).not.toContain("(OPEN)");
 

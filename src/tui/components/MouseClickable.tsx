@@ -10,7 +10,6 @@ interface Props {
   isActive?: boolean;
 }
 
-/** Hit-test a left mouse press against the rendered bounds of its children. */
 export function MouseClickable({
   children,
   onClick,

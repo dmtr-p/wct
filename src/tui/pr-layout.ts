@@ -3,13 +3,11 @@
 
 import { wrapText } from "./utils/wrap-text";
 
-/** Leading indent columns of a PR detail line. */
 export const PR_INDENT = 5;
 /** Selected rows use a background, so no selector glyph reserves columns. */
 export const PR_SELECTOR = 0;
 /** Rollup-icon columns ("✓ ") when a rollup state is present. */
 export const PR_ICON = 2;
-/** Leading columns for nested title, fact, and candidate rows. */
 export const PR_SUBROW_INDENT = 9;
 
 /** Label and continuation lines share this indent. */

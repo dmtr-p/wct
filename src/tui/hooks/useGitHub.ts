@@ -119,7 +119,7 @@ export function useGitHub(repos: RepoInfo[]) {
           )
             return;
         } catch {
-          /* fetch */
+          // An unreadable cache must fall through to a fresh fetch.
         }
       }
       let promise!: Promise<void>;

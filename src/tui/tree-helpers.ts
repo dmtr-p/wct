@@ -34,9 +34,7 @@ export function prExpansionKey(workspaceKey: string, pr: PrFacts): string {
 }
 
 /**
- * A Workspace under a lifecycle is presented as expanded without its key ever
- * being written into `expandedWorkspaceKeys` — that would leak a transient
- * operation into a durable user preference.
+ * Lifecycle expansion must not change the user's stored expansion preference.
  */
 export function isWorktreeEffectivelyExpanded({
   expandedWorkspaceKeys,
@@ -55,9 +53,7 @@ export function isWorktreeEffectivelyExpanded({
 }
 
 /**
- * True when a `worktree` tree item's Workspace is under an active lifecycle —
- * its expansion affordances (collapse key, double-click) are refused, since
- * `isWorktreeEffectivelyExpanded` already forces it expanded.
+ * Active lifecycles force expansion, so collapse and double-click are refused.
  */
 export function isWorktreeLifecycleActive(
   item: TreeItem,
@@ -95,12 +91,8 @@ interface BuildTreeRowsOptions {
 }
 
 /**
- * A single visual terminal row. Logical tree items are not 1:1 with terminal
- * rows — a stats row, a `(no worktrees)` row, and the lifecycle rows all have
- * no entry in `items`, so their `itemIndex` is `null` and neither keyboard
- * navigation nor mouse hit-testing can land on them. A wrapped PR's
- * continuation rows carry the PR's own `itemIndex` so a click on any wrapped
- * line still selects the PR.
+ * Null item indices make visual-only rows unselectable. Wrapped PR lines
+ * share their PR's item index so clicking any continuation selects the PR.
  */
 export type TreeRow =
   | { itemIndex: number; kind: "repo" }
@@ -126,7 +118,6 @@ export type TreeRow =
       repoIndex: number;
       branch: string;
     }
-  /** The Lifecycle Progress Row for one Workspace under an active lifecycle. */
   | {
       itemIndex: null;
       kind: "lifecycle-progress";
@@ -293,7 +284,6 @@ type ExpandedRightArrowAction =
 export interface ResolvedStatusBarProps {
   mode: Mode;
   selectedPaneRow?: boolean;
-  /** Project Display Name of the selected item's repository. */
   selectedProject?: string;
 }
 
@@ -482,10 +472,7 @@ export function buildTreeItems({
 }
 
 /**
- * Pending Workspaces, grouped by repo index. These are `open` lifecycles
- * whose branch is not (yet) a worktree in `repos`, matched on the main
- * repository path rather than the project display name so two repos sharing
- * a display name cannot borrow each other's pending rows.
+ * Match pending Open operations by repository path; display names can collide.
  */
 function pendingWorkspacesByRepoIndex(
   repos: RepoInfo[],
@@ -572,9 +559,7 @@ export function buildTreeRows({
     }
 
     if (item.type === "detail") {
-      // Each wrapped PR line becomes its own row carrying the wrapped text
-      // (`prLine`), so the render consumes exactly the lines counted here and
-      // DetailRow never re-wraps. pane/pane-header labels never wrap.
+      // Share wrapped text with DetailRow so rendering cannot change the row count.
       if (
         (item.detailKind === "pr" && !item.meta.presentation) ||
         item.detailKind === "pr-title"
@@ -720,7 +705,6 @@ export function lifecycleProgressRowIndex(
 export interface LifecycleReveal {
   /** The `workspaceIdentityKey` to mark revealed, so this happens exactly once. */
   key: string;
-  /** The offset that makes the progress row visible — minimally adjusted. */
   scrollOffset: number;
 }
 

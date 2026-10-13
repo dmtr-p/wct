@@ -42,7 +42,6 @@ async function renderRepoNode(props: React.ComponentProps<typeof RepoNode>) {
 
 describe("RepoNode", () => {
   test("renders full project name when maxWidth is wide", async () => {
-    // overhead=4, project="my-project" (10), available=36 → no truncation
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
       isSelected: false,
@@ -54,7 +53,6 @@ describe("RepoNode", () => {
   });
 
   test("truncates project name when maxWidth is tight", async () => {
-    // One-column inset leaves 9 columns for the project name.
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
       isSelected: false,
@@ -67,7 +65,6 @@ describe("RepoNode", () => {
   });
 
   test("renders full name at exact available width", async () => {
-    // One-column inset + ten-column project name fits exactly.
     const { output, unmount } = await renderRepoNode({
       project: "my-project",
       isSelected: false,

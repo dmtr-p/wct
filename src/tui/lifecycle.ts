@@ -24,7 +24,6 @@ export interface LifecycleEntry {
   phase: LifecyclePhase;
 }
 
-/** Active lifecycle operations, keyed by `workspaceIdentityKey`. */
 export type LifecycleState = ReadonlyMap<string, LifecycleEntry>;
 
 // NUL cannot appear in a filesystem path or a git ref, unlike `#` or `/`, so
@@ -163,7 +162,6 @@ export function lifecycleValidationWarning(
   return `Validation after ${operation} failed — showing the last known Workspace state`;
 }
 
-/** Static child connector: the progress row hangs under its Workspace. */
 export const LIFECYCLE_ROW_PREFIX = "     └ ";
 
 /**

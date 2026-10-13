@@ -130,11 +130,9 @@ describe("getAheadBehind", () => {
     const wtPath = join(worktreeDir, "feature-branch");
     await $`git worktree add -b feature-branch ${wtPath}`.quiet().cwd(repoDir);
 
-    // Add commits to main after the branch was created
     await $`git commit --allow-empty -m "main commit 1"`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "main commit 2"`.quiet().cwd(repoDir);
 
-    // Add a commit on the feature branch (ahead of main)
     await $`git commit --allow-empty -m "feature commit 1"`.quiet().cwd(wtPath);
   });
 
@@ -277,7 +275,6 @@ describe("listCommand integration", () => {
     const wtPath = join(worktreeDir, "feature-test");
     await $`git worktree add -b feature-test ${wtPath}`.quiet().cwd(repoDir);
 
-    // Add commits to main so the worktree is behind
     await $`git commit --allow-empty -m "main advance 1"`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "main advance 2"`.quiet().cwd(repoDir);
     await $`git commit --allow-empty -m "main advance 3"`.quiet().cwd(repoDir);

@@ -171,7 +171,7 @@ function codexComposer(screen: string) {
   if (footerIndex < 0) return undefined;
   const footer = lines.slice(footerIndex).join("\n");
   // A configured status line with a draft is passive only without a running
-  // task (Codex 0.162.0). Usage alone and queue hints are not readiness evidence.
+  // task. Usage alone and queue hints are not readiness evidence.
   const hasDraft = lines
     .slice(prompt, footerIndex)
     .some((line, index) => !!(index === 0 ? line.slice(1) : line).trim());

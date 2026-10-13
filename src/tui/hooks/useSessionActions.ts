@@ -35,7 +35,6 @@ export interface SessionActionDeps {
   sessions: TmuxSessionInfo[];
   selectedIndex: number;
   mode: Mode;
-  /** Active lifecycle operations, keyed by Workspace Identity. */
   lifecycle: LifecycleState;
   // Shared across every lifecycle-driving hook, so a second operation for
   // the same identity is impossible, not just unlikely.
@@ -140,7 +139,6 @@ export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
 
 export interface StartWorkspaceTarget {
   worktreePath: string;
-  /** Main repository path — one half of the Workspace Identity. */
   repoPath: string;
   project: string;
   branch: string;
@@ -183,7 +181,6 @@ export function createSessionHandoff(deps: SessionActionDeps) {
   };
 }
 
-// Shared by the space-bar start and the up modal.
 export function createStartWorkspace(deps: SessionActionDeps) {
   const sessionHandoff = createSessionHandoff(deps);
 

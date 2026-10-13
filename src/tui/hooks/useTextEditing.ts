@@ -11,7 +11,6 @@ export function normalizePastedText(value: string): string {
   return value.replace(/\r\n|\r|\n/g, " ");
 }
 
-/** Editing state for a controlled, single-line Ink field. */
 export function useTextEditing(
   value: string,
   onChange: (value: string) => void,

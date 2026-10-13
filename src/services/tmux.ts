@@ -256,8 +256,7 @@ export interface TmuxCommand {
     | "set-environment"
     | "send-keys"
     | "select-layout"
-    | "select-window"
-    | "set-option";
+    | "select-window";
   args: string[];
 }
 
@@ -576,17 +575,8 @@ export type TmuxServiceImplementation = ServiceImplementation<
 >;
 
 export const liveTmuxService: TmuxServiceImplementation = {
-  listSessions: Effect.mapError(listSessionsImpl(), (error) =>
-    commandError("tmux_error", "Failed to list tmux sessions", error),
-  ),
-  sessionExists: (name) =>
-    Effect.mapError(sessionExistsImpl(name), (error) =>
-      commandError(
-        "tmux_error",
-        `Failed to check tmux session '${name}'`,
-        error,
-      ),
-    ),
+  listSessions: listSessionsImpl(),
+  sessionExists: sessionExistsImpl,
   createSession: (name, workingDir, config, env) =>
     Effect.mapError(createSessionImpl(name, workingDir, config, env), (error) =>
       commandError(
@@ -603,13 +593,7 @@ export const liveTmuxService: TmuxServiceImplementation = {
         error,
       ),
     ),
-  getCurrentSession: Effect.mapError(getCurrentSessionImpl, (error) =>
-    commandError(
-      "tmux_error",
-      "Failed to determine current tmux session",
-      error,
-    ),
-  ),
+  getCurrentSession: getCurrentSessionImpl,
   switchSession: (name) =>
     Effect.mapError(switchSessionImpl(name), (error) =>
       commandError(
@@ -626,17 +610,8 @@ export const liveTmuxService: TmuxServiceImplementation = {
         error,
       ),
     ),
-  listPanes: (sessionName) =>
-    Effect.mapError(listPanesImpl(sessionName), (error) =>
-      commandError(
-        "tmux_error",
-        `Failed to list panes for session '${sessionName}'`,
-        error,
-      ),
-    ),
-  listClients: Effect.mapError(listClientsImpl(), (error) =>
-    commandError("tmux_error", "Failed to list tmux clients", error),
-  ),
+  listPanes: listPanesImpl,
+  listClients: listClientsImpl(),
   detachClient: (clientTty) =>
     Effect.mapError(detachClientImpl(clientTty), (error) =>
       commandError("tmux_error", "Failed to detach tmux client", error),

@@ -135,7 +135,7 @@ function detectRemoteUrl(owner: string, repo: string, cwd?: string) {
   });
 }
 
-const DISCOVERY_FIELDS =
+export const GITHUB_PR_JSON_FIELDS =
   "id,number,title,state,url,isDraft,reviewDecision,mergeable,mergeStateStatus,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,statusCheckRollup,updatedAt";
 
 const DISCOVERY_GRAPHQL_FIELDS =
@@ -209,7 +209,7 @@ function listRawPrsImpl(
         "--limit",
         "100000",
         "--json",
-        DISCOVERY_FIELDS,
+        GITHUB_PR_JSON_FIELDS,
       ],
       { cwd },
     ),
@@ -270,10 +270,8 @@ export type GitHubServiceImplementation = ServiceImplementation<
 >;
 
 export const liveGitHubService: GitHubServiceImplementation = {
-  isGhInstalled: Effect.mapError(
-    runProcess("gh", ["--version"]).pipe(Effect.map((r) => r.success)),
-    (error) =>
-      commandError("gh_not_installed", "Failed to run GitHub CLI", error),
+  isGhInstalled: runProcess("gh", ["--version"]).pipe(
+    Effect.map((r) => r.success),
   ),
   resolvePr: (prNumber, cwd) =>
     Effect.mapError(

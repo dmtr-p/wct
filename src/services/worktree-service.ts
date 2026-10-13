@@ -314,15 +314,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       ]);
 
       return resolveMainRepoPathFromGitDirs(topLevelPath, gitCommonDir);
-    }).pipe(
-      Effect.mapError((error) =>
-        commandError(
-          "worktree_error",
-          "Failed to determine main repository path",
-          error,
-        ),
-      ),
-    ),
+    }),
   getCurrentBranch: (cwd) =>
     Effect.gen(function* () {
       const branch = yield* Effect.orElseSucceed(
@@ -337,15 +329,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         return null;
       }
       return branch;
-    }).pipe(
-      Effect.mapError((error) =>
-        commandError(
-          "worktree_error",
-          "Failed to determine current branch",
-          error,
-        ),
-      ),
-    ),
+    }),
   getMainWorktreePath: (cwd) =>
     Effect.gen(function* () {
       const worktrees = yield* listWorktreesImpl(cwd);
@@ -360,12 +344,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       "git",
       ["rev-parse", "--git-dir"],
       cwd ? { cwd } : undefined,
-    ).pipe(
-      Effect.map((result) => result.success),
-      Effect.mapError((error) =>
-        commandError("not_git_repo", "Failed to inspect git repository", error),
-      ),
-    ),
+    ).pipe(Effect.map((result) => result.success)),
   listWorktrees: (cwd) =>
     listWorktreesImpl(cwd).pipe(
       Effect.mapError((error) =>
@@ -439,16 +418,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       "git",
       ["rev-parse", "--verify", branch],
       cwd ? { cwd } : undefined,
-    ).pipe(
-      Effect.map((result) => result.success),
-      Effect.mapError((error) =>
-        commandError(
-          "worktree_error",
-          `Failed to verify branch '${branch}'`,
-          error,
-        ),
-      ),
-    ),
+    ).pipe(Effect.map((result) => result.success)),
   removeWorktree: (path, force = false, cwd) =>
     Effect.gen(function* () {
       const args = force
@@ -487,30 +457,10 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         ),
       ),
     ),
-  getChangedFileCount: (cwd, options) =>
-    Effect.mapError(getChangedFileCountImpl(cwd, options), (error) =>
-      commandError("worktree_error", "Failed to get changed file count", error),
-    ),
-  getAheadBehind: (cwd, ref, options) =>
-    Effect.mapError(getAheadBehindImpl(cwd, ref, options), (error) =>
-      commandError(
-        "worktree_error",
-        "Failed to get ahead/behind counts",
-        error,
-      ),
-    ),
-  getDefaultBranch: (cwd) =>
-    Effect.mapError(getDefaultBranchImpl(cwd), (error) =>
-      commandError(
-        "worktree_error",
-        "Failed to determine default branch",
-        error,
-      ),
-    ),
-  listBranches: (cwd) =>
-    Effect.mapError(listBranchesImpl(cwd), (error) =>
-      commandError("worktree_error", "Failed to list branches", error),
-    ),
+  getChangedFileCount: getChangedFileCountImpl,
+  getAheadBehind: getAheadBehindImpl,
+  getDefaultBranch: getDefaultBranchImpl,
+  listBranches: listBranchesImpl,
 };
 
 export function makeWorktreeService(

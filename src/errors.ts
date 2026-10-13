@@ -3,9 +3,7 @@ import { Data } from "effect";
 export type ErrorCode =
   | "not_git_repo"
   | "config_error"
-  | "config_not_found"
   | "invalid_options"
-  | "branch_not_found"
   | "base_branch_not_found"
   | "worktree_error"
   | "worktree_not_found"
@@ -15,8 +13,6 @@ export type ErrorCode =
   | "detached_head"
   | "missing_main_worktree"
   | "missing_branch_arg"
-  | "missing_shell_arg"
-  | "unsupported_shell"
   | "unknown_command"
   | "init_error"
   | "pr_error"

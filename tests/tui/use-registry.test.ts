@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import type { Effect, FileSystem } from "effect";
+import { Effect, type FileSystem } from "effect";
 import React, { type FC } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConfigError } from "../../src/config/loader";
@@ -18,19 +18,24 @@ const worktreeFixtures = vi.hoisted(() => ({
   listWorktrees: vi.fn(),
 }));
 
+const runtimeFixtures = vi.hoisted(() => ({
+  runPromise: vi.fn(),
+}));
+
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await import("effect");
-  const { runBunPromise } = await import("../../src/effect/runtime");
+  const { provideBunServices } = await import("../../src/effect/runtime");
   return {
     tuiRuntime: {
-      runPromise: vi.fn(
+      runPromise: runtimeFixtures.runPromise.mockImplementation(
         (
           effect:
             | Effect.Effect<unknown, ConfigError, FileSystem.FileSystem>
             | Promise<unknown>,
+          options?: { signal?: AbortSignal },
         ) =>
           Effect.isEffect(effect)
-            ? runBunPromise(effect)
+            ? Effect.runPromise(provideBunServices(effect), options)
             : Promise.resolve(effect),
       ),
     },
@@ -233,6 +238,28 @@ describe("loadRepoInfo", () => {
       expect(result.worktrees).toHaveLength(inspectionFails ? 0 : 1);
     },
   );
+
+  test("propagates cancellation during profile loading", async () => {
+    const controller = new AbortController();
+    const reason = new Error("cancelled");
+    await expect(
+      loadRepoInfo(
+        { id: "1", repo_path: "/repo", project: "demo" },
+        {
+          pathExists: () => true,
+          getProfileNames: async () => {
+            controller.abort(reason);
+            throw reason;
+          },
+          listWorktrees: async () => [worktreeOf("/repo", "main")],
+          getDefaultBranch: async () => "main",
+          getChangedFileCount: async () => 0,
+          getAheadBehind: async () => null,
+        },
+        controller.signal,
+      ),
+    ).rejects.toBe(reason);
+  });
 });
 
 describe("useRegistry refresh", () => {
@@ -460,5 +487,57 @@ describe("useRegistry refresh", () => {
     expect(failed).toBeNull();
     expect(hook.value.repos).toEqual(loaded);
     hook.unmount();
+  });
+
+  test("resolves null and keeps previous profiles when profile loading is aborted", async () => {
+    writeFileSync(join(repoPath, ".wct.yaml"), "profiles:\n  local: {}\n");
+    const hook = await renderUseRegistry();
+    try {
+      const loaded = await hook.value.refresh();
+      expect(loaded?.[0]?.profileNames).toEqual(["local"]);
+
+      const started = Promise.withResolvers<void>();
+      const controller = new AbortController();
+      runtimeFixtures.runPromise
+        .mockImplementationOnce((effect: Promise<unknown>) => effect)
+        .mockImplementationOnce(
+          (_effect: unknown, options?: { signal?: AbortSignal }) => {
+            expect(options?.signal).toBe(controller.signal);
+            started.resolve();
+            return Effect.runPromise(Effect.never, options);
+          },
+        );
+
+      const refreshing = hook.value.refresh(controller.signal);
+      await started.promise;
+      controller.abort();
+
+      expect(await refreshing).toBeNull();
+      expect(hook.value.repos).toEqual(loaded);
+    } finally {
+      hook.unmount();
+    }
+  });
+
+  test("does not publish a snapshot aborted after profile loading succeeds", async () => {
+    const hook = await renderUseRegistry();
+    try {
+      const loaded = await hook.value.refresh();
+      expect(loaded).toHaveLength(1);
+
+      const controller = new AbortController();
+      runtimeFixtures.runPromise
+        .mockImplementationOnce((effect: Promise<unknown>) => effect)
+        .mockImplementationOnce(() => Promise.resolve([]));
+      worktreeFixtures.listWorktrees.mockImplementationOnce(async () => {
+        controller.abort();
+        return [worktreeOf(repoPath, "other")];
+      });
+
+      expect(await hook.value.refresh(controller.signal)).toBeNull();
+      expect(hook.value.repos).toEqual(loaded);
+    } finally {
+      hook.unmount();
+    }
   });
 });

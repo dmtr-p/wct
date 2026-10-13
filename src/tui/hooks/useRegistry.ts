@@ -47,6 +47,7 @@ interface LoadRepoInfoDeps {
 export async function loadRepoInfo(
   item: RegistryRepoItem,
   deps: LoadRepoInfoDeps,
+  signal?: AbortSignal,
 ): Promise<RepoInfo> {
   if (!deps.pathExists(item.repo_path)) {
     return {
@@ -59,9 +60,10 @@ export async function loadRepoInfo(
     };
   }
 
-  const profileNamesPromise = deps
-    .getProfileNames(item.repo_path)
-    .catch(() => []);
+  const profileNamesPromise = deps.getProfileNames(item.repo_path).catch(() => {
+    signal?.throwIfAborted();
+    return [];
+  });
 
   let worktreeList: import("../../services/worktree-service").Worktree[];
   let defaultBranch: string | null;
@@ -74,6 +76,7 @@ export async function loadRepoInfo(
       deps.getDefaultBranch(item.repo_path),
     ]);
   } catch {
+    signal?.throwIfAborted();
     const fallbackProfileNames = await profileNamesPromise;
     return {
       id: item.id,
@@ -134,42 +137,49 @@ export function useRegistry() {
         );
         const repoInfos: RepoInfo[] = await Promise.all(
           items.map((item) =>
-            loadRepoInfo(item, {
-              pathExists: existsSync,
-              getProfileNames: (repoPath) =>
-                tuiRuntime.runPromise(
-                  loadConfig(repoPath).pipe(
-                    Effect.map((config) => Object.keys(config.profiles ?? {})),
+            loadRepoInfo(
+              item,
+              {
+                pathExists: existsSync,
+                getProfileNames: (repoPath) =>
+                  tuiRuntime.runPromise(
+                    loadConfig(repoPath).pipe(
+                      Effect.map((config) =>
+                        Object.keys(config.profiles ?? {}),
+                      ),
+                    ),
+                    opts,
                   ),
-                  opts,
-                ),
-              listWorktrees: (repoPath) =>
-                tuiRuntime.runPromise(
-                  WorktreeService.use((s) => s.listWorktrees(repoPath)),
-                  opts,
-                ),
-              getDefaultBranch: (repoPath) =>
-                tuiRuntime.runPromise(
-                  WorktreeService.use((s) => s.getDefaultBranch(repoPath)),
-                  opts,
-                ),
-              getChangedFileCount: (worktreePath) =>
-                tuiRuntime.runPromise(
-                  WorktreeService.use((s) =>
-                    s.getChangedFileCount(worktreePath),
+                listWorktrees: (repoPath) =>
+                  tuiRuntime.runPromise(
+                    WorktreeService.use((s) => s.listWorktrees(repoPath)),
+                    opts,
                   ),
-                  opts,
-                ),
-              getAheadBehind: (worktreePath, ref) =>
-                tuiRuntime.runPromise(
-                  WorktreeService.use((s) =>
-                    s.getAheadBehind(worktreePath, ref),
+                getDefaultBranch: (repoPath) =>
+                  tuiRuntime.runPromise(
+                    WorktreeService.use((s) => s.getDefaultBranch(repoPath)),
+                    opts,
                   ),
-                  opts,
-                ),
-            }),
+                getChangedFileCount: (worktreePath) =>
+                  tuiRuntime.runPromise(
+                    WorktreeService.use((s) =>
+                      s.getChangedFileCount(worktreePath),
+                    ),
+                    opts,
+                  ),
+                getAheadBehind: (worktreePath, ref) =>
+                  tuiRuntime.runPromise(
+                    WorktreeService.use((s) =>
+                      s.getAheadBehind(worktreePath, ref),
+                    ),
+                    opts,
+                  ),
+              },
+              signal,
+            ),
           ),
         );
+        if (signal?.aborted) return null;
         setRepos(repoInfos);
         return repoInfos;
       } catch {

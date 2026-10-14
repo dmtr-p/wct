@@ -24,6 +24,7 @@ import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
 const GITHUB_POLL_INTERVAL = 120_000;
+const DISCOVERY_RETRY_DELAY = 600_000;
 
 function worktreeSignature(repo: RepoInfo) {
   return JSON.stringify([
@@ -89,6 +90,9 @@ export function useGitHub(repos: RepoInfo[]) {
     ]),
   );
   const discovery = useRef(new Map<string, PrDiscoverySnapshot>());
+  const discoveryRetries = useRef(
+    new Map<string, { baseRepository: string; retryAfter: number }>(),
+  );
   const inFlight = useRef<
     Map<
       string,
@@ -133,6 +137,7 @@ export function useGitHub(repos: RepoInfo[]) {
         );
       };
       if (!isCurrent()) return;
+      let attemptedHistory: string | undefined;
       let promise!: Promise<void>;
       promise = (async () => {
         setRefreshingProjects((previous) =>
@@ -144,6 +149,20 @@ export function useGitHub(repos: RepoInfo[]) {
             GitHubService.use((s) => s.resolveBaseRepo(repo.repoPath)),
             opts,
           );
+          const previous = full
+            ? null
+            : (discovery.current.get(repo.repoPath) ?? null);
+          const needsHistory =
+            previous?.baseRepository.toLowerCase() !== base.toLowerCase();
+          const retry = discoveryRetries.current.get(repo.repoPath);
+          if (
+            needsHistory &&
+            !full &&
+            retry?.baseRepository.toLowerCase() === base.toLowerCase() &&
+            Date.now() < retry.retryAfter
+          )
+            return;
+          if (needsHistory) attemptedHistory = base;
           const workspaces = await Promise.all(
             repo.worktrees
               .filter((wt) => !wt.isMainWorktree)
@@ -168,12 +187,7 @@ export function useGitHub(repos: RepoInfo[]) {
             explicitPrs,
             fetchedAt: now,
           } = await tuiRuntime.runPromise(
-            refreshPrDiscovery(
-              repo.repoPath,
-              base,
-              workspaces,
-              full ? null : (discovery.current.get(repo.repoPath) ?? null),
-            ),
+            refreshPrDiscovery(repo.repoPath, base, workspaces, previous),
             opts,
           );
           const found = new Map<string, WorkspacePrEntry>();
@@ -300,6 +314,7 @@ export function useGitHub(repos: RepoInfo[]) {
           ]);
           if (!isCurrent()) return;
           discovery.current.set(repo.repoPath, snapshot);
+          discoveryRetries.current.delete(repo.repoPath);
           setAssociations((previous) => {
             const next = new Map(
               [...previous].filter(
@@ -323,6 +338,11 @@ export function useGitHub(repos: RepoInfo[]) {
           });
         } catch (cause) {
           if (!isCurrent()) return;
+          if (attemptedHistory)
+            discoveryRetries.current.set(repo.repoPath, {
+              baseRepository: attemptedHistory,
+              retryAfter: Date.now() + DISCOVERY_RETRY_DELAY,
+            });
           const message =
             cause instanceof Error ? cause.message : String(cause);
           setErrors((previous) =>
@@ -442,6 +462,8 @@ export function useGitHub(repos: RepoInfo[]) {
     const present = new Set(reposRef.current.map((repo) => repo.repoPath));
     for (const path of discovery.current.keys())
       if (!present.has(path)) discovery.current.delete(path);
+    for (const path of discoveryRetries.current.keys())
+      if (!present.has(path)) discoveryRetries.current.delete(path);
     if (repoSignature !== "[]")
       void refreshTargets(undefined, controller.signal);
     return () => controller.abort();

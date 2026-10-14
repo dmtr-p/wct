@@ -1,6 +1,8 @@
-import { Effect } from "effect";
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { runBunPromise } from "../../src/effect/runtime";
+import { provideBunServices, runBunPromise } from "../../src/effect/runtime";
 import { WctCommandError } from "../../src/errors";
 import { ProcessExitError } from "../../src/services/process";
 
@@ -72,7 +74,55 @@ describe("GitHub raw PR fetching", () => {
       expect(query.includes("states: [OPEN]")).toBe(state === "open");
       expect(query).not.toContain("statusCheckRollup");
       expect(query).not.toContain("commits(");
+      for (const field of ["mergeable", "mergeStateStatus", "reviewDecision"])
+        expect(query).toContain(field);
     },
+  );
+
+  it.effect(
+    "allows complete paginated history to take longer than a poll interval",
+    () =>
+      Effect.gen(function* () {
+        exec.mockReturnValueOnce(
+          Effect.sleep("3 minutes").pipe(
+            Effect.as({
+              stdout: JSON.stringify([page([])]),
+              stderr: "",
+              exitCode: 0,
+            }),
+          ),
+        );
+        const fiber = yield* Effect.forkChild(
+          provideBunServices(
+            liveGitHubService.listRawPrs("/repo", "all", "base/repo"),
+          ),
+        );
+        yield* TestClock.adjust("3 minutes");
+        expect(yield* Fiber.join(fiber)).toEqual([]);
+        expect(exec).toHaveBeenCalledTimes(1);
+      }),
+  );
+
+  it.effect.each([
+    ["all", "10 minutes"],
+    ["open", "2 minutes"],
+  ] as const)("bounds %s pagination at %s", ([state, duration]) =>
+    Effect.gen(function* () {
+      exec.mockReturnValueOnce(Effect.never);
+      const fiber = yield* Effect.forkChild(
+        provideBunServices(
+          Effect.flip(
+            liveGitHubService.listRawPrs("/repo", state, "base/repo"),
+          ),
+        ),
+      );
+      yield* TestClock.adjust(duration);
+      expect(yield* Fiber.join(fiber)).toMatchObject({
+        code: "pr_error",
+        cause: { _tag: "TimeoutError" },
+      });
+      expect(exec).toHaveBeenCalledTimes(1);
+    }),
   );
 
   test.each([

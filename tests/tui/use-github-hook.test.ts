@@ -259,6 +259,71 @@ describe("useGitHub", () => {
     }
   });
 
+  test("failed initial discovery delays automatic retries without caching failure", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    listError = "discovery timed out";
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      listError = null;
+      await poll();
+      await harness.value.refreshCurrent("/tmp/repo");
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(harness.value.errors.get("/tmp/repo")).toContain(
+        "discovery timed out",
+      );
+      now.mockReturnValue(600_000);
+      await poll();
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "all",
+        "open",
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+      now.mockRestore();
+    }
+  });
+
+  test("manual refresh bypasses the discovery retry delay", async () => {
+    listError = "offline";
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      listError = null;
+      await harness.value.refresh();
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "all",
+        "open",
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("discovery retry delay does not suppress discovery for a changed base repository", async () => {
+    listError = "offline";
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      listError = null;
+      base = "new/repo";
+      await poll();
+      expect(list.mock.calls.map((call) => call.slice(1))).toEqual([
+        ["all", "base/repo"],
+        ["all", "new/repo"],
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
   test("refreshes closed associations and known open PRs that disappear without fetching unrelated history", async () => {
     history = [
       rawPr(1, "OPEN"),

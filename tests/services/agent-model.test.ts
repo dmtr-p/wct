@@ -297,11 +297,73 @@ describe("agent classifier", () => {
       rule: "live_prompt_box",
     });
   });
+  test.each([
+    ["1 dynamic workflow", ""],
+    ["2 dynamic workflows", ""],
+    ["1 dynamic workflow", "     new task? /clear to save 170.2k tokens"],
+  ])(
+    "Claude remains working while waiting for %s below a completed response",
+    (workflows, hint) => {
+      const screen = [
+        "● Both issues are now being worked on in the background.",
+        "When each one finishes, I'll open the PR, wait for CI and merge it.",
+        "",
+        `* Waiting for ${workflows} to finish`,
+        "",
+        hint,
+        "────────────────────────────────────────",
+        "❯",
+        "────────────────────────────────────────",
+        "Opus 5.5 | 93.8k | Session: 3.0% | project",
+        "Enter to view · x to stop",
+        "",
+        "❯ ○ impl-loop ▱▱▱▱▱▱▱▱ 0/1 · 4m42s · ↓ 49.3k tokens",
+        "  ○ impl-loop ▱▱▱▱▱▱▱▱ 0/1 · 4m42s · ↓ 103.7k tokens",
+      ].join("\n");
+      const classified = classifyAgent("claude", screen);
+      expect(classified).toMatchObject({
+        state: "working",
+        rule: "dynamic_workflows_working",
+        source: "screen",
+        strong: true,
+      });
+      const observation = reconcileAgent(
+        undefined,
+        "claude",
+        "job",
+        classified,
+        0,
+      );
+      expect(observation.freshness).toBe("fresh");
+      expect(agentSummary([observation])).toBe("1 working");
+    },
+  );
+  test("Claude ignores completed or historical workflow waits and keeps live approvals blocked", () => {
+    const composer = "──────\n❯\n──────\n? for shortcuts";
+    const waiting = "* Waiting for 2 dynamic workflows to finish";
+    for (const response of [
+      "* Waiting for 0 dynamic workflows to finish",
+      `${waiting}\n● Both workflows finished.`,
+      `${waiting}\n● Both workflows finished.\nnew task? /clear to save 170.2k tokens`,
+      `${waiting}\n● new task? /clear to save 170.2k tokens`,
+      `● The status says: ${waiting}`,
+    ])
+      expect(classifyAgent("claude", `${response}\n\n${composer}`).state).toBe(
+        "idle",
+      );
+    expect(
+      classifyAgent(
+        "claude",
+        `${waiting}\nRun a dynamic workflow?\nEsc to cancel`,
+      ).state,
+    ).toBe("blocked");
+  });
   test("Claude editable draft cannot become activity, blockers, or a menu view", () => {
     for (const draft of [
       "✻ Thinking… (2s · tokens)",
       "⏸ esc to interrupt",
       "✻ Waiting for 2 background agents to finish",
+      "* Waiting for 2 dynamic workflows to finish",
       "✻ Reading · 2 MCP tasks still running",
       "run a dynamic workflow?\n  esc to cancel",
       'MCP server "example" requests your input\n  Accept\n  esc to cancel',

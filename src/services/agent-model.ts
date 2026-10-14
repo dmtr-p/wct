@@ -85,8 +85,13 @@ export function agentRegion(
         : lines.slice(top + 1, borders.at(-1)).join("\n");
     case "last_non_empty_above_prompt_box":
       return (
-        (top === undefined ? lines : lines.slice(0, top)).findLast((line) =>
-          line.trim(),
+        (top === undefined ? lines : lines.slice(0, top)).findLast(
+          (line) =>
+            line.trim() &&
+            // Claude can place its context-saving hint below live activity.
+            !/^\s*new task\?\s+\/clear to save \d+(?:\.\d+)?[km]? tokens\s*$/iu.test(
+              line,
+            ),
         ) ?? ""
       );
     case "after_last_horizontal_rule":

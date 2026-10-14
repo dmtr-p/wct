@@ -7,6 +7,7 @@ import { GitHubService } from "../../src/services/github-service";
 import {
   livePrCacheService,
   PrCacheService,
+  type PrDiscoverySnapshot,
   type PrCacheServiceApi,
   type ExplicitPrAssociation,
   type WorkspacePrEntry,
@@ -28,14 +29,15 @@ vi.mock("../../src/services/pr-discovery", async () => ({
 }));
 vi.mock("../../src/services/pr-details", () => ({
   fetchPrDetails: (_cwd: string, _base: string, prs: PrFacts[]) =>
-    Effect.sync(() =>
-      prs.map((pr) => ({
+    Effect.sync(() => {
+      detailCalls.push(prs.map((pr) => pr.number));
+      return prs.map((pr) => ({
         ...pr,
         checks: [],
-        checksComplete: !detailError,
-        lastError: detailError,
-      })),
-    ),
+        checksComplete: !(detailError ?? detailErrors.get(pr.number)),
+        lastError: detailError ?? detailErrors.get(pr.number) ?? null,
+      }));
+    }),
 }));
 const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useGitHub } = await import("../../src/tui/hooks/useGitHub");
@@ -62,9 +64,25 @@ let detailError: string | null;
 let getError: string | null;
 let base: string;
 let holdList: Promise<void> | null;
+let heldRepo: string | null;
+const detailErrors = new Map<number, string>();
+const detailCalls: number[][] = [];
+const discoveryCache = new Map<string, PrDiscoverySnapshot>();
+const baseRead = vi.fn(() => Effect.sync(() => base));
+const batchGet = vi.fn(
+  (cwd: string, repository: string, numbers: readonly number[]) =>
+    Effect.forEach(numbers, (number) =>
+      get(cwd, repository, number).pipe(
+        Effect.map((raw) => ({ number, raw, error: null as string | null })),
+        Effect.catch((error) =>
+          Effect.succeed({ number, raw: null, error: error.message }),
+        ),
+      ),
+    ),
+);
 const list = vi.fn((_cwd: string, state: "all" | "open", _base: string) =>
   Effect.promise(async () => {
-    if (holdList) await holdList;
+    if (holdList && (!heldRepo || heldRepo === _cwd)) await holdList;
   }).pipe(
     Effect.flatMap(() =>
       listError
@@ -95,15 +113,21 @@ const github = GitHubService.of({
   addForkRemote: () => Effect.void,
   fetchBranch: () => Effect.void,
   findRemoteForRepo: () => Effect.succeed(null),
-  resolveBaseRepo: () => Effect.sync(() => base),
+  resolveBaseRepo: baseRead,
   listRawPrs: list,
   getRawPr: get,
+  getRawPrs: batchGet,
 });
 const workspaceCache = new Map<string, WorkspacePrEntry>();
 const explicitCache = new Map<string, ExplicitPrAssociation>();
 const key = (path: string, branch: string) => `${path}\0${branch}`;
 const cache = PrCacheService.of({
   ...livePrCacheService,
+  getDiscovery: (path) => Effect.sync(() => discoveryCache.get(path) ?? null),
+  setDiscovery: (path, snapshot) =>
+    Effect.sync(() => {
+      discoveryCache.set(path, snapshot);
+    }),
   getWorkspace: (path, branch) =>
     Effect.sync(() => workspaceCache.get(key(path, branch)) ?? null),
   setWorkspace: (path, branch, entry) =>
@@ -201,11 +225,17 @@ async function poll() {
 
 describe("useGitHub", () => {
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     history = [];
     listError = detailError = getError = null;
     base = "base/repo";
     holdList = null;
+    heldRepo = null;
+    detailErrors.clear();
+    detailCalls.length = 0;
+    discoveryCache.clear();
+    baseRead.mockClear();
+    batchGet.mockClear();
     workspaceCache.clear();
     explicitCache.clear();
     list.mockClear();
@@ -242,6 +272,8 @@ describe("useGitHub", () => {
     try {
       await settle();
       expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(baseRead).toHaveBeenCalledTimes(1);
+      expect(harness.value.refreshingProjects.size).toBe(0);
       expect(
         harness.value.openPrs.get("/tmp/repo")?.map((pr) => pr.number),
       ).toEqual([1]);
@@ -254,6 +286,214 @@ describe("useGitHub", () => {
         "open",
       ]);
       expect(get).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("routine polls make no summary or check calls for dozens of terminal candidates", async () => {
+    history = Array.from({ length: 60 }, (_, i) => rawPr(i + 1, "MERGED"));
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      const initiallyDetailed = detailCalls.flat();
+      expect(initiallyDetailed).toHaveLength(1);
+      detailCalls.length = 0;
+      await poll();
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "open",
+        "open",
+      ]);
+      expect(batchGet).not.toHaveBeenCalled();
+      expect(detailCalls).toEqual([]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(initiallyDetailed[0]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a failed explicit identity leaves healthy associations and persisted discovery available", async () => {
+    history = [rawPr(1)];
+    explicitCache.set(key("/tmp/repo", "second"), {
+      baseRepository: "external/repo",
+      number: 8,
+    });
+    getError = "fork unavailable";
+    const harness = await renderHook([
+      repo("/tmp/repo", ["feature", "second"]),
+    ]);
+    try {
+      await settle();
+      expect(
+        discoveryCache.get("/tmp/repo")?.prs.map((pr) => pr.number),
+      ).toEqual([1]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
+      ).toBeNull();
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "second"))?.lastError,
+      ).toContain(getError);
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a healthy explicit association does not inherit sibling check errors", async () => {
+    history = [rawPr(1), rawPr(2)];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "base/repo",
+      number: 1,
+    });
+    detailErrors.set(2, "incomplete sibling checks");
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      await poll();
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.facts?.lastError,
+      ).toBeNull();
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
+      ).toBeNull();
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("new TUI sessions reuse persistent discovery, skip fresh reads, then poll only open PRs", async () => {
+    history = [rawPr(1, "MERGED")];
+    const first = await renderHook([repo("/tmp/repo", ["feature"])]);
+    await settle();
+    first.unmount();
+    list.mockClear();
+    baseRead.mockClear();
+    batchGet.mockClear();
+    detailCalls.length = 0;
+    const second = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(list).not.toHaveBeenCalled();
+      expect(baseRead).not.toHaveBeenCalled();
+      expect(detailCalls).toEqual([]);
+      expect(second.value.prData.get(key("/tmp/repo", "feature"))?.number).toBe(
+        1,
+      );
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["open"]);
+    } finally {
+      second.unmount();
+    }
+  });
+
+  test.each(["post-merge", "set explicit", "clear explicit"])(
+    "%s refresh bypasses automatic discovery backoff",
+    async (action) => {
+      listError = "offline";
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      try {
+        await settle();
+        listError = null;
+        if (action === "post-merge")
+          await harness.value.refreshAfterCurrent("/tmp/repo");
+        else if (action === "set explicit")
+          await harness.value.setExplicit("/tmp/repo", "feature", {
+            baseRepository: "base/repo",
+            number: 1,
+          } as PrFacts);
+        else await harness.value.clearExplicit("/tmp/repo", "feature");
+        await settle();
+        expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("a poll joining a modal refresh still receives fresh data when the modal closes", async () => {
+    history = [rawPr(1)];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      vi.advanceTimersByTime(31_000);
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      const controller = new AbortController();
+      const modal = harness.value.refreshCurrent(
+        "/tmp/repo",
+        controller.signal,
+      );
+      await settle();
+      const waitingPoll = harness.value.refreshCurrent("/tmp/repo");
+      controller.abort();
+      history[0] = rawPr(1, "MERGED");
+      holdList = null;
+      release();
+      await Promise.all([modal, waitingPoll]);
+      await settle();
+      expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
+        "MERGED",
+      );
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("worktree changes in one repository do not restart another repository's discovery", async () => {
+    let release!: () => void;
+    heldRepo = "/tmp/a";
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo("/tmp/a"), repo("/tmp/b")]);
+    try {
+      await settle();
+      harness.rerender([repo("/tmp/a"), repo("/tmp/b", ["feature"])]);
+      await settle();
+      expect(
+        list.mock.calls.filter((call) => call[0] === "/tmp/a"),
+      ).toHaveLength(1);
+      expect(
+        list.mock.calls.filter((call) => call[0] === "/tmp/b"),
+      ).toHaveLength(1);
+      holdList = null;
+      release();
+      await settle();
+      expect(discoveryCache.has("/tmp/a")).toBe(true);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("concurrent manual refresh shares a full discovery already in progress", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      const manual = harness.value.refresh();
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
     } finally {
       harness.unmount();
     }
@@ -274,6 +514,7 @@ describe("useGitHub", () => {
       );
       now.mockReturnValue(600_000);
       await poll();
+      now.mockReturnValue(720_000);
       await poll();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
@@ -306,7 +547,7 @@ describe("useGitHub", () => {
     }
   });
 
-  test("discovery retry delay does not suppress discovery for a changed base repository", async () => {
+  test("manual refresh can discover a changed base repository during discovery backoff", async () => {
     listError = "offline";
     const harness = await renderHook([repo()]);
     try {
@@ -314,6 +555,9 @@ describe("useGitHub", () => {
       listError = null;
       base = "new/repo";
       await poll();
+      expect(baseRead).toHaveBeenCalledTimes(1);
+      await harness.value.refresh();
+      await settle();
       expect(list.mock.calls.map((call) => call.slice(1))).toEqual([
         ["all", "base/repo"],
         ["all", "new/repo"],
@@ -341,7 +585,7 @@ describe("useGitHub", () => {
       expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
       expect(
         get.mock.calls.map((call) => call[2]).sort((a, b) => a - b),
-      ).toEqual([1, 2]);
+      ).toEqual([1]);
       expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
         "MERGED",
       );
@@ -375,7 +619,7 @@ describe("useGitHub", () => {
       );
       expect(unknown?.pr).toBeNull();
       expect(unknown?.candidates.map((pr) => pr.number)).toEqual([4]);
-      expect(get.mock.calls.map((call) => call[2])).toEqual([4]);
+      expect(get).not.toHaveBeenCalled();
     } finally {
       harness.unmount();
     }
@@ -394,7 +638,7 @@ describe("useGitHub", () => {
       expect(get).toHaveBeenCalledTimes(1);
       expect(get).toHaveBeenLastCalledWith("/tmp/repo", "external/repo", 8);
       await poll();
-      expect(get.mock.calls.filter((call) => call[2] === 8)).toHaveLength(2);
+      expect(get.mock.calls.filter((call) => call[2] === 8)).toHaveLength(1);
       const entry = harness.value.associations.get(key("/tmp/repo", "feature"));
       expect(entry?.pr).toMatchObject({
         number: 8,
@@ -425,7 +669,7 @@ describe("useGitHub", () => {
       await settle();
       harness.rerender([repo("/tmp/repo", ["old", "feature"])]);
       await settle();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
       expect(harness.value.prData.get(key("/tmp/repo", "old"))?.number).toBe(1);
       history.push(rawPr(2, "CLOSED"));
       await poll();
@@ -434,7 +678,6 @@ describe("useGitHub", () => {
       await settle();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
-        "open",
         "open",
         "all",
       ]);
@@ -447,7 +690,7 @@ describe("useGitHub", () => {
   });
 
   test("manual failure retains associations as stale and a later refresh clears the error", async () => {
-    history = [rawPr(1, "MERGED")];
+    history = [rawPr(1, "OPEN")];
     const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
     try {
       await settle();
@@ -475,11 +718,12 @@ describe("useGitHub", () => {
   });
 
   test("focused identity errors and incomplete details propagate instead of looking fresh", async () => {
-    history = [rawPr(1, "MERGED")];
+    history = [rawPr(1, "OPEN")];
     const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
     try {
       await settle();
       getError = "identity unavailable";
+      history[0] = rawPr(1, "MERGED");
       await poll();
       expect(harness.value.errors.get("/tmp/repo")).toContain(getError);
       getError = null;
@@ -658,7 +902,7 @@ describe("useGitHub", () => {
     }
   });
 
-  test("repository changes abort old requests before updating the discovery snapshot", async () => {
+  test("worktree changes share completed discovery instead of cancelling and restarting it", async () => {
     let release!: () => void;
     holdList = new Promise((resolve) => {
       release = resolve;
@@ -669,17 +913,13 @@ describe("useGitHub", () => {
       expect(list).toHaveBeenCalledTimes(1);
       harness.rerender([repo("/tmp/repo", ["feature"])]);
       await settle();
-      expect(list).toHaveBeenCalledTimes(2);
+      expect(list).toHaveBeenCalledTimes(1);
       holdList = null;
       release();
       await settle();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
       await poll();
-      expect(list.mock.calls.map((call) => call[1])).toEqual([
-        "all",
-        "all",
-        "open",
-      ]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
       expect(harness.value.errors.size).toBe(0);
       expect(harness.value.refreshingProjects.size).toBe(0);
     } finally {

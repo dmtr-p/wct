@@ -74,7 +74,7 @@ describe("App.tsx review fixes (real App)", () => {
     }
   });
 
-  test("reopening the Open modal refreshes only open PRs", async () => {
+  test("reopening the Open modal reuses fresh PR discovery", async () => {
     setTallWorktrees(repoPath, 2);
     const rendered = await renderApp(<App />);
     try {
@@ -89,7 +89,7 @@ describe("App.tsx review fixes (real App)", () => {
       }
       expect(
         githubFixtures.listRequests.map((request) => request.state),
-      ).toEqual(["all", "open", "open"]);
+      ).toEqual(["all"]);
     } finally {
       rendered.unmount();
     }

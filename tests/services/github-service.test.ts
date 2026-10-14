@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { provideBunServices, runBunPromise } from "../../src/effect/runtime";
 import { WctCommandError } from "../../src/errors";
+import { normalizeGhPr } from "../../src/services/pr-discovery";
 import { ProcessExitError } from "../../src/services/process";
 
 type ExecProcess = typeof import("../../src/services/process").execProcess;
@@ -17,6 +18,7 @@ vi.mock("../../src/services/process", async () => ({
     Effect.suspend(() => exec(...args)),
 }));
 const { liveGitHubService } = await import("../../src/services/github-service");
+const { fetchPrDetails } = await import("../../src/services/pr-details");
 
 function page(nodes: unknown[], hasNextPage = false) {
   return {
@@ -174,6 +176,165 @@ describe("GitHub raw PR fetching", () => {
       cause: failure,
     });
   });
+
+  test("batches live identities and isolates partial GraphQL errors even on a nonzero gh exit", async () => {
+    const raw = { number: 1, baseRepository: { nameWithOwner: "base/repo" } };
+    exec.mockReturnValueOnce(
+      Effect.fail(
+        new ProcessExitError({
+          command: "gh",
+          args: ["api", "graphql"],
+          exitCode: 1,
+          stderr: "unavailable",
+          stdout: JSON.stringify({
+            data: { repository: { p0: raw, p1: null } },
+            errors: [{ message: "PR unavailable", path: ["repository", "p1"] }],
+          }),
+        }),
+      ),
+    );
+    const results = await runBunPromise(
+      liveGitHubService.getRawPrs("/repo", "base/repo", [1, 2]),
+    );
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(results).toEqual([
+      { number: 1, raw, error: null },
+      { number: 2, raw: null, error: "PR unavailable" },
+    ]);
+    const query =
+      exec.mock.calls[0]?.[1]?.find((arg) => arg.startsWith("query=")) ?? "";
+    expect(query).toContain("p0: pullRequest(number: 1)");
+    expect(query).toContain("p1: pullRequest(number: 2)");
+  });
+
+  test("bounds PR summary batches while retaining every identity", async () => {
+    const numbers = Array.from({ length: 45 }, (_, i) => i + 1);
+    for (let start = 0; start < numbers.length; start += 20) {
+      const repository = Object.fromEntries(
+        numbers
+          .slice(start, start + 20)
+          .map((number, i) => [
+            `p${i}`,
+            { number, baseRepository: { nameWithOwner: "base/repo" } },
+          ]),
+      );
+      exec.mockReturnValueOnce(
+        Effect.succeed({
+          stdout: JSON.stringify({ data: { repository } }),
+          stderr: "",
+          exitCode: 0,
+        }),
+      );
+    }
+    const result = await runBunPromise(
+      liveGitHubService.getRawPrs("/repo", "base/repo", numbers),
+    );
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(result.map((pr) => pr.number)).toEqual(numbers);
+    expect(result.every((pr) => pr.error === null)).toBe(true);
+  });
+
+  test.each(["transport", "invalid JSON"])(
+    "preserves successful summary batches around a %s failure",
+    async (failure) => {
+      const numbers = Array.from({ length: 45 }, (_, i) => i + 1);
+      for (let start = 0; start < numbers.length; start += 20) {
+        if (start === 20) {
+          exec.mockReturnValueOnce(
+            failure === "transport"
+              ? Effect.fail(
+                  new ProcessExitError({
+                    command: "gh",
+                    args: ["api"],
+                    stdout: "",
+                    stderr: "offline",
+                    exitCode: 1,
+                  }),
+                )
+              : Effect.succeed({ stdout: "not JSON", stderr: "", exitCode: 0 }),
+          );
+          continue;
+        }
+        const repository = Object.fromEntries(
+          numbers
+            .slice(start, start + 20)
+            .map((number, i) => [
+              `p${i}`,
+              { number, baseRepository: { nameWithOwner: "base/repo" } },
+            ]),
+        );
+        exec.mockReturnValueOnce(
+          Effect.succeed({
+            stdout: JSON.stringify({ data: { repository } }),
+            stderr: "",
+            exitCode: 0,
+          }),
+        );
+      }
+      const result = await runBunPromise(
+        liveGitHubService.getRawPrs("/repo", "base/repo", numbers),
+      );
+      expect(exec).toHaveBeenCalledTimes(3);
+      expect(
+        result.filter((pr) => pr.error === null).map((pr) => pr.number),
+      ).toEqual([...numbers.slice(0, 20), ...numbers.slice(40)]);
+      expect(
+        result.filter((pr) => pr.error !== null).map((pr) => pr.number),
+      ).toEqual(numbers.slice(20, 40));
+    },
+  );
+
+  test.each([0, 1])(
+    "isolates sibling detail errors with gh exit code %s",
+    async (exitCode) => {
+      const prs = [1, 2].map((number) =>
+        normalizeGhPr(
+          { number, title: "PR", headRefName: "feature", state: "OPEN" },
+          "base/repo",
+          1,
+        ),
+      );
+      if (!prs[0] || !prs[1]) throw new Error("Invalid fixture");
+      const healthy = {
+        id: "PR-1",
+        isMergeQueueEnabled: false,
+        mergeQueueEntry: null,
+        commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+      };
+      const stdout = JSON.stringify({
+        data: { repository: { p0: healthy, p1: null } },
+        errors: [
+          { message: "sibling unavailable", path: ["repository", "p1"] },
+        ],
+      });
+      exec.mockReturnValueOnce(
+        exitCode === 0
+          ? Effect.succeed({ stdout, stderr: "", exitCode })
+          : Effect.fail(
+              new ProcessExitError({
+                command: "gh",
+                args: ["api", "graphql"],
+                stdout,
+                stderr: "sibling unavailable",
+                exitCode,
+              }),
+            ),
+      );
+      const result = await runBunPromise(
+        fetchPrDetails("/repo", "base/repo", [prs[0], prs[1]]),
+      );
+      expect(result[0]).toMatchObject({
+        number: 1,
+        checksComplete: true,
+        lastError: null,
+      });
+      expect(result[1]).toMatchObject({
+        number: 2,
+        checksComplete: false,
+        lastError: "sibling unavailable",
+      });
+    },
+  );
 
   test("a missing gh executable remains a fetch error", async () => {
     exec.mockReturnValueOnce(

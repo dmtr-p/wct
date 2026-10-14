@@ -11,6 +11,14 @@ export interface CachedPrEntry {
   lastError: string | null;
 }
 
+export interface PrDiscoverySnapshot {
+  baseRepository: string;
+  prs: PrFacts[];
+  explicitPrs: PrFacts[];
+  openNumbers: number[];
+  fetchedAt: number;
+}
+
 export interface WorkspacePrEntry {
   pr: PrFacts | null;
   candidates: PrFacts[];
@@ -27,6 +35,13 @@ export interface ExplicitPrAssociation {
 }
 
 export interface PrCacheServiceApi {
+  getDiscovery: (
+    repoPath: string,
+  ) => Effect.Effect<PrDiscoverySnapshot | null, WctError>;
+  setDiscovery: (
+    repoPath: string,
+    snapshot: PrDiscoverySnapshot,
+  ) => Effect.Effect<void, WctError>;
   /** Clear a repository's cached PR payloads, retaining Explicit PR Associations. */
   invalidate: (repoPath: string) => Effect.Effect<void, WctError>;
   getWorkspace: (
@@ -78,7 +93,68 @@ export function sqlInvalidate(db: Database, repoPath: string): void {
   db.transaction(() => {
     db.run("DELETE FROM workspace_pr_cache WHERE repo_path = ?", [repoPath]);
     db.run("DELETE FROM open_pr_cache WHERE repo_path = ?", [repoPath]);
+    db.run("DELETE FROM pr_discovery_cache WHERE repo_path = ?", [repoPath]);
   }).immediate();
+}
+
+export function sqlGetDiscovery(
+  db: Database,
+  repoPath: string,
+): PrDiscoverySnapshot | null {
+  const row = db
+    .query("SELECT payload FROM pr_discovery_cache WHERE repo_path = ?")
+    .get(repoPath) as { payload: string } | null;
+  if (!row) return null;
+  try {
+    const value = JSON.parse(
+      row.payload,
+    ) as Partial<PrDiscoverySnapshot> | null;
+    if (
+      !value ||
+      typeof value.baseRepository !== "string" ||
+      typeof value.fetchedAt !== "number" ||
+      !Array.isArray(value.prs) ||
+      !Array.isArray(value.explicitPrs) ||
+      !Array.isArray(value.openNumbers)
+    )
+      return null;
+    const prs = value.prs.map(hydratePrFacts);
+    const explicitPrs = value.explicitPrs.map(hydratePrFacts);
+    if (
+      prs.some(
+        (pr) =>
+          !pr ||
+          pr.baseRepository.toLowerCase() !==
+            value.baseRepository?.toLowerCase(),
+      ) ||
+      explicitPrs.some((pr) => !pr) ||
+      value.openNumbers.some(
+        (number) => !Number.isSafeInteger(number) || number < 1,
+      )
+    )
+      return null;
+    return {
+      baseRepository: value.baseRepository,
+      fetchedAt: value.fetchedAt,
+      prs: prs.filter((pr): pr is PrFacts => pr !== null),
+      explicitPrs: explicitPrs.filter((pr): pr is PrFacts => pr !== null),
+      openNumbers: value.openNumbers,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function sqlSetDiscovery(
+  db: Database,
+  repoPath: string,
+  snapshot: PrDiscoverySnapshot,
+): void {
+  db.run(
+    `INSERT INTO pr_discovery_cache (repo_path, payload) VALUES (?, ?)
+    ON CONFLICT(repo_path) DO UPDATE SET payload = excluded.payload`,
+    [repoPath, JSON.stringify(snapshot)],
+  );
 }
 
 export function sqlGetWorkspace(
@@ -280,6 +356,10 @@ function prCacheDb<A>(
 }
 
 export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
+  getDiscovery: (repoPath) =>
+    prCacheDb("getDiscovery", (db) => sqlGetDiscovery(db, repoPath)),
+  setDiscovery: (repoPath, snapshot) =>
+    prCacheDb("setDiscovery", (db) => sqlSetDiscovery(db, repoPath, snapshot)),
   invalidate: (repoPath) =>
     prCacheDb("invalidate", (db) => sqlInvalidate(db, repoPath)),
   getWorkspace: (repoPath, branch) =>

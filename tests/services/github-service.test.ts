@@ -20,10 +20,12 @@ vi.mock("../../src/services/process", async () => ({
 const { liveGitHubService } = await import("../../src/services/github-service");
 const { fetchPrDetails } = await import("../../src/services/pr-details");
 
-function page(nodes: unknown[], hasNextPage = false) {
+function page(nodes: unknown[], hasNextPage = false, endCursor?: string) {
   return {
     data: {
-      repository: { pullRequests: { nodes, pageInfo: { hasNextPage } } },
+      repository: {
+        pullRequests: { nodes, pageInfo: { hasNextPage, endCursor } },
+      },
     },
   };
 }
@@ -32,7 +34,7 @@ describe("GitHub raw PR fetching", () => {
   beforeEach(() => exec.mockReset());
 
   test.each(["[]", '[{"number":34,"title":"TUI","headRefName":"feat/tui"}]'])(
-    "parses the open-PR list %s",
+    "parses the complete-PR list %s",
     async (stdout) => {
       exec.mockReturnValueOnce(
         Effect.succeed({
@@ -43,37 +45,48 @@ describe("GitHub raw PR fetching", () => {
       );
       expect(
         await runBunPromise(
-          liveGitHubService.listRawPrs("/repo", "open", "base/repo"),
+          liveGitHubService.listRawPrs("/repo", "all", "base/repo"),
         ),
       ).toEqual(JSON.parse(stdout));
     },
   );
 
-  test.each(["all", "open"] as const)(
+  test.each(["all", "updated"] as const)(
     "paginates %s PR discovery against the resolved base without check payloads",
     async (state) => {
-      const first = { number: 1 };
-      const second = { number: 200 };
+      const first = { number: 1, updatedAt: "2026-10-15T00:01:00Z" };
+      const second = { number: 200, updatedAt: "2026-10-15T00:00:00Z" };
       exec.mockReturnValueOnce(
         Effect.succeed({
-          stdout: JSON.stringify([page([first], true), page([second])]),
+          stdout: JSON.stringify(
+            state === "all"
+              ? [page([first], true), page([second])]
+              : page([first, second]),
+          ),
           stderr: "",
           exitCode: 0,
         }),
       );
       expect(
         await runBunPromise(
-          liveGitHubService.listRawPrs("/repo", state, "base/repo"),
+          liveGitHubService.listRawPrs("/repo", state, "base/repo", 0),
         ),
       ).toEqual([first, second]);
       expect(exec).toHaveBeenCalledTimes(1);
       const args = exec.mock.calls[0]?.[1] ?? [];
       expect(args).toEqual(
-        expect.arrayContaining(["api", "graphql", "--paginate", "--slurp"]),
+        expect.arrayContaining(
+          state === "all"
+            ? ["api", "graphql", "--paginate", "--slurp"]
+            : ["api", "graphql"],
+        ),
       );
       const query = args.find((arg) => arg.startsWith("query=")) ?? "";
       expect(query).toContain('repository(owner: "base", name: "repo")');
-      expect(query.includes("states: [OPEN]")).toBe(state === "open");
+      expect(query).not.toContain("states: [OPEN]");
+      expect(query).toContain(
+        "orderBy: { field: UPDATED_AT, direction: DESC }",
+      );
       expect(query).not.toContain("statusCheckRollup");
       expect(query).not.toContain("commits(");
       for (const field of ["mergeable", "mergeStateStatus", "reviewDecision"])
@@ -105,16 +118,105 @@ describe("GitHub raw PR fetching", () => {
       }),
   );
 
+  test("incremental discovery includes every state and stops after the inclusive checkpoint", async () => {
+    const recent = {
+      number: 3,
+      state: "MERGED",
+      updatedAt: "2026-10-15T00:03:00Z",
+    };
+    const boundary = {
+      number: 2,
+      state: "CLOSED",
+      updatedAt: "2026-10-15T00:02:00Z",
+    };
+    const old = { number: 1, state: "OPEN", updatedAt: "2026-10-15T00:01:00Z" };
+    for (const response of [
+      page([recent], true, "next"),
+      page([boundary, old], true, "unused"),
+    ])
+      exec.mockReturnValueOnce(
+        Effect.succeed({
+          stdout: JSON.stringify(response),
+          stderr: "",
+          exitCode: 0,
+        }),
+      );
+    expect(
+      await runBunPromise(
+        liveGitHubService.listRawPrs(
+          "/repo",
+          "updated",
+          "base/repo",
+          Date.parse(boundary.updatedAt),
+        ),
+      ),
+    ).toEqual([recent, boundary]);
+    expect(exec).toHaveBeenCalledTimes(2);
+    expect(exec.mock.calls[1]?.[1]).toContain("endCursor=next");
+    expect(exec.mock.calls[0]?.[1]).not.toContain("--paginate");
+  });
+
+  test.each([
+    page([{ updatedAt: "invalid" }]),
+    page([{ updatedAt: "2026-10-15T00:00:00Z" }], true),
+    { ...page([]), errors: [{ message: "rate limited" }] },
+  ])("rejects incomplete incremental discovery %j", async (response) => {
+    exec.mockReturnValueOnce(
+      Effect.succeed({
+        stdout: JSON.stringify(response),
+        stderr: "",
+        exitCode: 0,
+      }),
+    );
+    await expect(
+      runBunPromise(
+        liveGitHubService.listRawPrs("/repo", "updated", "base/repo", 0),
+      ),
+    ).rejects.toMatchObject({ code: "pr_error" });
+  });
+
+  test.each(["{}", "null", "not JSON"])(
+    "preserves gh authentication errors for both summary and detail queries with stdout %s",
+    async (stdout) => {
+      const message = "HTTP 401: Bad credentials";
+      exec.mockReturnValue(
+        Effect.fail(
+          new ProcessExitError({
+            command: "gh",
+            args: ["api", "graphql"],
+            stdout,
+            stderr: message,
+            exitCode: 1,
+          }),
+        ),
+      );
+      const result = await runBunPromise(
+        liveGitHubService.getRawPrs("/repo", "base/repo", [1]),
+      );
+      expect(result[0]?.error).toContain(message);
+      const pr = normalizeGhPr(
+        { number: 1, title: "PR", state: "OPEN", headRefName: "feature" },
+        "base/repo",
+        1,
+      );
+      if (!pr) throw new Error("Invalid fixture");
+      expect(
+        (await runBunPromise(fetchPrDetails("/repo", "base/repo", [pr])))[0]
+          ?.lastError,
+      ).toContain(message);
+    },
+  );
+
   it.effect.each([
     ["all", "10 minutes"],
-    ["open", "2 minutes"],
+    ["updated", "10 minutes"],
   ] as const)("bounds %s pagination at %s", ([state, duration]) =>
     Effect.gen(function* () {
       exec.mockReturnValueOnce(Effect.never);
       const fiber = yield* Effect.forkChild(
         provideBunServices(
           Effect.flip(
-            liveGitHubService.listRawPrs("/repo", state, "base/repo"),
+            liveGitHubService.listRawPrs("/repo", state, "base/repo", 0),
           ),
         ),
       );
@@ -136,23 +238,23 @@ describe("GitHub raw PR fetching", () => {
       Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
     );
     await expect(
-      runBunPromise(liveGitHubService.listRawPrs("/repo", "open", "base/repo")),
+      runBunPromise(liveGitHubService.listRawPrs("/repo", "all", "base/repo")),
     ).rejects.toMatchObject({ code: "pr_error" });
   });
 
   test.each(["not json", "{}", "null"])(
-    "rejects malformed open-PR output %s",
+    "rejects malformed complete-PR output %s",
     async (stdout) => {
       exec.mockReturnValueOnce(
         Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
       );
       await expect(
         runBunPromise(
-          liveGitHubService.listRawPrs("/repo", "open", "base/repo"),
+          liveGitHubService.listRawPrs("/repo", "all", "base/repo"),
         ),
       ).rejects.toMatchObject({
         code: "pr_error",
-        message: expect.stringContaining("Failed to list open PRs:"),
+        message: expect.stringContaining("Failed to list all PRs:"),
       });
     },
   );
@@ -167,12 +269,12 @@ describe("GitHub raw PR fetching", () => {
     });
     exec.mockReturnValueOnce(Effect.fail(failure));
     const error = await runBunPromise(
-      Effect.flip(liveGitHubService.listRawPrs("/repo", "open", "base/repo")),
+      Effect.flip(liveGitHubService.listRawPrs("/repo", "all", "base/repo")),
     );
     expect(error).toBeInstanceOf(WctCommandError);
     expect(error).toMatchObject({
       code: "pr_error",
-      message: "Failed to list open PRs: authentication required",
+      message: "Failed to list all PRs: authentication required",
       cause: failure,
     });
   });
@@ -297,6 +399,9 @@ describe("GitHub raw PR fetching", () => {
       if (!prs[0] || !prs[1]) throw new Error("Invalid fixture");
       const healthy = {
         id: "PR-1",
+        mergeable: "MERGEABLE",
+        mergeStateStatus: "CLEAN",
+        reviewDecision: "APPROVED",
         isMergeQueueEnabled: false,
         mergeQueueEntry: null,
         commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
@@ -326,6 +431,9 @@ describe("GitHub raw PR fetching", () => {
       expect(result[0]).toMatchObject({
         number: 1,
         checksComplete: true,
+        mergeable: "MERGEABLE",
+        mergeStateStatus: "CLEAN",
+        reviewDecision: "APPROVED",
         lastError: null,
       });
       expect(result[1]).toMatchObject({
@@ -352,7 +460,7 @@ describe("GitHub raw PR fetching", () => {
       ),
     );
     await expect(
-      runBunPromise(liveGitHubService.listRawPrs("/repo", "open", "base/repo")),
+      runBunPromise(liveGitHubService.listRawPrs("/repo", "all", "base/repo")),
     ).rejects.toMatchObject({ code: "pr_error" });
   });
 });

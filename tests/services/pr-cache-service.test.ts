@@ -10,6 +10,7 @@ import {
   sqlSetOpenPrs,
   sqlGetDiscovery,
   sqlSetDiscovery,
+  sqlOwnedWrite,
 } from "../../src/services/pr-cache-service";
 import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { PRInfo } from "../../src/tui/types";
@@ -57,6 +58,7 @@ describe("PrCacheService SQL helpers", () => {
         explicitPrs: [],
         openNumbers: [],
         fetchedAt: 1,
+        discoveredThrough: 1,
       };
       sqlSetDiscovery(first, "/a", snapshot);
       sqlSetDiscovery(first, "/b", snapshot);
@@ -71,6 +73,129 @@ describe("PrCacheService SQL helpers", () => {
       first?.close();
       second?.close();
       rmSync(path, { force: true });
+    }
+  });
+
+  it("writes only changed PR facts and skips unchanged snapshots", () => {
+    const db = makeDb();
+    try {
+      const pr = normalizeGhPr(
+        { number: 1, title: "old", state: "MERGED", headRefName: "feature" },
+        "base/repo",
+        1,
+      );
+      if (!pr) throw new Error("Invalid fixture");
+      const first = {
+        baseRepository: "base/repo",
+        prs: [pr],
+        explicitPrs: [],
+        openNumbers: [],
+        fetchedAt: 1,
+        discoveredThrough: 1,
+      };
+      sqlSetDiscovery(db, "/a", first);
+      const changes = () =>
+        (db.query("SELECT total_changes() AS count").get() as { count: number })
+          .count;
+      const before = changes();
+      sqlSetDiscovery(db, "/a", first, first);
+      expect(changes()).toBe(before);
+      const checkpoint = { ...first, fetchedAt: 2 };
+      sqlSetDiscovery(db, "/a", checkpoint, first);
+      expect(changes() - before).toBe(1);
+      const next = { ...checkpoint, prs: [{ ...pr, title: "changed" }] };
+      sqlSetDiscovery(db, "/a", next, checkpoint);
+      expect(changes() - before).toBe(3);
+      expect(sqlGetDiscovery(db, "/a")?.prs[0]?.title).toBe("changed");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rebuilds facts when another connection replaced the previous snapshot", () => {
+    const path = join(tmpdir(), `wct-discovery-revision-${Date.now()}.db`);
+    const first = new Database(path);
+    const second = new Database(path);
+    try {
+      runMigrations(first);
+      const pr = normalizeGhPr(
+        { number: 1, title: "old", state: "MERGED", headRefName: "feature" },
+        "base/repo",
+        1,
+      );
+      if (!pr) throw new Error("Invalid fixture");
+      const original = {
+        baseRepository: "base/repo",
+        prs: [pr],
+        explicitPrs: [],
+        openNumbers: [],
+        fetchedAt: 1,
+        discoveredThrough: 1,
+      };
+      sqlSetDiscovery(first, "/a", original);
+      const previous = sqlGetDiscovery(first, "/a");
+      if (!previous) throw new Error("Missing fixture snapshot");
+      sqlSetDiscovery(second, "/a", {
+        ...original,
+        baseRepository: "new/repo",
+        prs: [{ ...pr, baseRepository: "new/repo", number: 2 }],
+      });
+      const next = { ...previous, fetchedAt: 2 };
+      sqlSetDiscovery(first, "/a", next, previous);
+      expect(sqlGetDiscovery(second, "/a")).toEqual(next);
+      // Equal timestamps still need a new revision when another writer changes facts.
+      const loaded = sqlGetDiscovery(first, "/a");
+      if (!loaded) throw new Error("Missing fixture snapshot");
+      sqlSetDiscovery(second, "/a", {
+        ...next,
+        prs: [{ ...pr, title: "changed" }],
+      });
+      sqlSetDiscovery(first, "/a", loaded, loaded);
+      expect(sqlGetDiscovery(second, "/a")).toEqual(loaded);
+    } finally {
+      first.close();
+      second.close();
+      rmSync(path, { force: true });
+    }
+  });
+
+  it("fences stale refresh writes after project removal and re-registration", () => {
+    const db = makeDb();
+    try {
+      const snapshot = {
+        baseRepository: "base/repo",
+        prs: [],
+        explicitPrs: [],
+        openNumbers: [],
+        fetchedAt: 1,
+        discoveredThrough: 1,
+      };
+      db.run("INSERT INTO registry VALUES (?, ?, ?, ?)", [
+        "original",
+        "/a",
+        "repo",
+        1,
+      ]);
+      expect(sqlSetDiscovery(db, "/a", snapshot, null, "original")).toBe(true);
+      db.run("DELETE FROM registry WHERE repo_path = ?", ["/a"]);
+      sqlInvalidate(db, "/a");
+      expect(sqlSetDiscovery(db, "/a", snapshot, null, "original")).toBe(false);
+      expect(
+        sqlOwnedWrite(db, "/a", "original", () =>
+          sqlSetOpenPrs(db, "/a", [PR_A]),
+        ),
+      ).toBe(false);
+      expect(sqlGetOpenPrs(db, "/a")).toBeNull();
+      db.run("INSERT INTO registry VALUES (?, ?, ?, ?)", [
+        "new",
+        "/a",
+        "repo",
+        2,
+      ]);
+      expect(sqlSetDiscovery(db, "/a", snapshot, null, "original")).toBe(false);
+      expect(sqlSetDiscovery(db, "/a", snapshot, null, "new")).toBe(true);
+    } finally {
+      db.close();
     }
   });
 

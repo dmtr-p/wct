@@ -61,6 +61,12 @@ export const MIGRATIONS: readonly string[] = [
     repo_path TEXT PRIMARY KEY,
     payload TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS pr_discovery_facts (
+    repo_path TEXT NOT NULL,
+    pr_identity TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (repo_path, pr_identity)
+  )`,
 ];
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;

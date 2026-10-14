@@ -23,8 +23,12 @@ vi.mock("../../src/services/pr-discovery", async () => ({
     "../../src/services/pr-discovery",
   )),
   resolvePushDestination: (_cwd: string, branch: string) =>
-    Effect.succeed(
-      branch === "unknown" ? null : { repository: "fork/repo", branch },
+    Effect.suspend(() =>
+      failWorkspaceReads
+        ? Effect.fail(commandError("pr_error", "workspace unavailable"))
+        : Effect.succeed(
+            branch === "unknown" ? null : { repository: "fork/repo", branch },
+          ),
     ),
 }));
 vi.mock("../../src/services/pr-details", () => ({
@@ -55,7 +59,7 @@ function rawPr(
     title: `PR ${number}`,
     headRefName: branch,
     headRepository: { nameWithOwner: head },
-    updatedAt: `2026-10-${String(number).padStart(2, "0")}`,
+    updatedAt: new Date(Date.now() + number).toISOString(),
   };
 }
 let history: ReturnType<typeof rawPr>[];
@@ -64,6 +68,10 @@ let detailError: string | null;
 let getError: string | null;
 let base: string;
 let holdList: Promise<void> | null;
+let failDiscoveryWrites: boolean;
+let removedRegistration: boolean;
+let failWorkspaceReads: boolean;
+let discoveryWrites: number;
 let heldRepo: string | null;
 const detailErrors = new Map<number, string>();
 const detailCalls: number[][] = [];
@@ -80,18 +88,24 @@ const batchGet = vi.fn(
       ),
     ),
 );
-const list = vi.fn((_cwd: string, state: "all" | "open", _base: string) =>
-  Effect.promise(async () => {
-    if (holdList && (!heldRepo || heldRepo === _cwd)) await holdList;
-  }).pipe(
-    Effect.flatMap(() =>
-      listError
-        ? Effect.fail(commandError("pr_error", listError))
-        : Effect.succeed(
-            history.filter((pr) => state === "all" || pr.state === "OPEN"),
-          ),
+const list = vi.fn(
+  (_cwd: string, state: "all" | "updated", _base: string, since?: number) =>
+    Effect.promise(async () => {
+      if (holdList && (!heldRepo || heldRepo === _cwd)) await holdList;
+    }).pipe(
+      Effect.flatMap(() =>
+        listError
+          ? Effect.fail(commandError("pr_error", listError))
+          : Effect.succeed(
+              history
+                .filter(
+                  (pr) =>
+                    state === "all" || Date.parse(pr.updatedAt) >= (since ?? 0),
+                )
+                .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+            ),
+      ),
     ),
-  ),
 );
 const get = vi.fn((_cwd: string, _base: string, number: number) =>
   Effect.suspend(() =>
@@ -115,7 +129,6 @@ const github = GitHubService.of({
   findRemoteForRepo: () => Effect.succeed(null),
   resolveBaseRepo: baseRead,
   listRawPrs: list,
-  getRawPr: get,
   getRawPrs: batchGet,
 });
 const workspaceCache = new Map<string, WorkspacePrEntry>();
@@ -126,7 +139,11 @@ const cache = PrCacheService.of({
   getDiscovery: (path) => Effect.sync(() => discoveryCache.get(path) ?? null),
   setDiscovery: (path, snapshot) =>
     Effect.sync(() => {
+      discoveryWrites++;
+      if (failDiscoveryWrites) throw new Error("cache write failed");
+      if (removedRegistration) return false;
       discoveryCache.set(path, snapshot);
+      return true;
     }),
   getWorkspace: (path, branch) =>
     Effect.sync(() => workspaceCache.get(key(path, branch)) ?? null),
@@ -231,6 +248,9 @@ describe("useGitHub", () => {
     base = "base/repo";
     holdList = null;
     heldRepo = null;
+    failDiscoveryWrites = removedRegistration = false;
+    failWorkspaceReads = false;
+    discoveryWrites = 0;
     detailErrors.clear();
     detailCalls.length = 0;
     discoveryCache.clear();
@@ -282,8 +302,8 @@ describe("useGitHub", () => {
       await poll();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
-        "open",
-        "open",
+        "updated",
+        "updated",
       ]);
       expect(get).not.toHaveBeenCalled();
     } finally {
@@ -303,8 +323,8 @@ describe("useGitHub", () => {
       await poll();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
-        "open",
-        "open",
+        "updated",
+        "updated",
       ]);
       expect(batchGet).not.toHaveBeenCalled();
       expect(detailCalls).toEqual([]);
@@ -341,7 +361,10 @@ describe("useGitHub", () => {
         harness.value.associations.get(key("/tmp/repo", "second"))?.lastError,
       ).toContain(getError);
       await poll();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
       expect(
         harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
       ).toBe(1);
@@ -392,7 +415,7 @@ describe("useGitHub", () => {
         1,
       );
       await poll();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["open"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["updated"]);
     } finally {
       second.unmount();
     }
@@ -448,7 +471,10 @@ describe("useGitHub", () => {
       expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
         "MERGED",
       );
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
     } finally {
       harness.unmount();
     }
@@ -499,6 +525,212 @@ describe("useGitHub", () => {
     }
   });
 
+  test("a PR merged between polls is discovered without manual refresh", async () => {
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      history.push(rawPr(1, "MERGED"));
+      await poll();
+      expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
+        "MERGED",
+      );
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(batchGet).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("saved history discovers PRs closed while the TUI was not running", async () => {
+    const first = await renderHook([repo("/tmp/repo", ["feature"])]);
+    await settle();
+    first.unmount();
+    vi.advanceTimersByTime(120_000);
+    history = [rawPr(2, "CLOSED")];
+    const second = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(second.value.prData.get(key("/tmp/repo", "feature"))?.number).toBe(
+        2,
+      );
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+    } finally {
+      second.unmount();
+    }
+  });
+
+  test("a shared full scan still performs forced external and terminal reads for a manual request", async () => {
+    history = [rawPr(1, "MERGED")];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "external/repo",
+      number: 8,
+    });
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      const manual = harness.value.refresh();
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(batchGet).toHaveBeenCalledTimes(2);
+      expect(detailCalls.flat().filter((number) => number === 8)).toHaveLength(
+        2,
+      );
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test.each(["history", "workspace"])(
+    "queued polls and manual refresh share a failed %s request without retrying it",
+    async (failure) => {
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      if (failure === "history") listError = "offline";
+      else failWorkspaceReads = true;
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      try {
+        await settle();
+        const waiting = [
+          harness.value.refresh(),
+          harness.value.refreshCurrent(),
+        ];
+        holdList = null;
+        release();
+        await Promise.all(waiting);
+        await settle();
+        expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+        expect(harness.value.errors.size).toBe(1);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("a cache write failure retains fetched history without a discovery retry delay", async () => {
+    history = [rawPr(1, "MERGED")];
+    failDiscoveryWrites = true;
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+      expect(harness.value.errors.get("/tmp/repo")).toContain(
+        "cache write failed",
+      );
+      failDiscoveryWrites = false;
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(discoveryCache.get("/tmp/repo")?.prs[0]?.number).toBe(1);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("discovery is persisted once per refresh and not rewritten for a fresh read", async () => {
+    history = [rawPr(1, "MERGED")];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(discoveryWrites).toBe(1);
+      await poll();
+      expect(discoveryWrites).toBe(2);
+      await harness.value.refreshCurrent();
+      await settle();
+      expect(discoveryWrites).toBe(2);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("in-flight discovery cannot recreate a removed project's cache before the registry view updates", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      removedRegistration = true;
+      discoveryCache.clear();
+      holdList = null;
+      release();
+      await settle();
+      expect(discoveryCache.size).toBe(0);
+      harness.rerender([]);
+      await settle();
+      removedRegistration = false;
+      harness.rerender([{ ...repo(), id: "new-registration" }]);
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("re-registration while idle rebuilds history even when the UI never observed removal", async () => {
+    history = [rawPr(1, "MERGED")];
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      discoveryCache.clear();
+      workspaceCache.clear();
+      history.push(rawPr(2, "MERGED"));
+      harness.rerender([{ ...repo(), id: "new-registration" }]);
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+      expect(
+        discoveryCache
+          .get("/tmp/repo")
+          ?.prs.map((pr) => pr.number)
+          .toSorted(),
+      ).toEqual([1, 2]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("mixed-case repository identities share a detail batch and use canonical spelling", async () => {
+    base = "Owner/Repo";
+    history = [rawPr(1)];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "OWNER/REPO",
+      number: 2,
+    });
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(detailCalls).toHaveLength(1);
+      expect(detailCalls[0]?.toSorted((a, b) => a - b)).toEqual([1, 2]);
+      expect(
+        new Set(
+          discoveryCache.get("/tmp/repo")?.prs.map((pr) => pr.baseRepository),
+        ),
+      ).toEqual(new Set(["owner/repo"]));
+    } finally {
+      harness.unmount();
+    }
+  });
+
   test("failed initial discovery delays automatic retries without caching failure", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(0);
     listError = "discovery timed out";
@@ -519,7 +751,7 @@ describe("useGitHub", () => {
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
         "all",
-        "open",
+        "updated",
       ]);
       expect(harness.value.errors.size).toBe(0);
     } finally {
@@ -539,7 +771,7 @@ describe("useGitHub", () => {
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
         "all",
-        "open",
+        "updated",
       ]);
       expect(harness.value.errors.size).toBe(0);
     } finally {
@@ -558,7 +790,7 @@ describe("useGitHub", () => {
       expect(baseRead).toHaveBeenCalledTimes(1);
       await harness.value.refresh();
       await settle();
-      expect(list.mock.calls.map((call) => call.slice(1))).toEqual([
+      expect(list.mock.calls.map((call) => call.slice(1, 3))).toEqual([
         ["all", "base/repo"],
         ["all", "new/repo"],
       ]);
@@ -582,10 +814,11 @@ describe("useGitHub", () => {
       ).toBe(1);
       history[0] = rawPr(1, "MERGED");
       await poll();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
-      expect(
-        get.mock.calls.map((call) => call[2]).sort((a, b) => a - b),
-      ).toEqual([1]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(get).not.toHaveBeenCalled();
       expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
         "MERGED",
       );
@@ -673,12 +906,14 @@ describe("useGitHub", () => {
       expect(harness.value.prData.get(key("/tmp/repo", "old"))?.number).toBe(1);
       history.push(rawPr(2, "CLOSED"));
       await poll();
-      expect(harness.value.prData.has(key("/tmp/repo", "feature"))).toBe(false);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(2);
       await harness.value.refresh("/tmp/repo");
       await settle();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
-        "open",
+        "updated",
         "all",
       ]);
       expect(
@@ -709,7 +944,7 @@ describe("useGitHub", () => {
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
         "all",
-        "open",
+        "updated",
       ]);
       expect(harness.value.errors.size).toBe(0);
     } finally {
@@ -719,6 +954,11 @@ describe("useGitHub", () => {
 
   test("focused identity errors and incomplete details propagate instead of looking fresh", async () => {
     history = [rawPr(1, "OPEN")];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "external/repo",
+      number: 8,
+    });
+    get.mockReturnValueOnce(Effect.succeed(rawPr(8, "OPEN")));
     const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
     try {
       await settle();
@@ -773,14 +1013,17 @@ describe("useGitHub", () => {
       await poll();
       const manual = harness.value.refresh();
       await settle();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
       holdList = null;
       release();
       await manual;
       await settle();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
-        "open",
+        "updated",
         "all",
       ]);
     } finally {
@@ -816,9 +1059,9 @@ describe("useGitHub", () => {
       await settle();
       expect(list.mock.calls.map((call) => call[1])).toEqual([
         "all",
-        "open",
-        "open",
-        "open",
+        "updated",
+        "updated",
+        "updated",
       ]);
       expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
         "MERGED",
@@ -834,7 +1077,7 @@ describe("useGitHub", () => {
       await settle();
       base = "new/repo";
       await poll();
-      expect(list.mock.calls.map((call) => call.slice(1))).toEqual([
+      expect(list.mock.calls.map((call) => call.slice(1, 3))).toEqual([
         ["all", "base/repo"],
         ["all", "new/repo"],
       ]);
@@ -919,7 +1162,10 @@ describe("useGitHub", () => {
       await settle();
       expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
       await poll();
-      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "open"]);
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
       expect(harness.value.errors.size).toBe(0);
       expect(harness.value.refreshingProjects.size).toBe(0);
     } finally {

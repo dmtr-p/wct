@@ -142,7 +142,7 @@ vi.mock("../../src/services/tmux", async () => {
 
 // Drive "r" to await Navigate mode's PR refresh deterministically.
 const githubFixtures = vi.hoisted(() => ({
-  listRequests: [] as Array<{ repoPath: string; state: "all" | "open" }>,
+  listRequests: [] as Array<{ repoPath: string; state: "all" | "updated" }>,
   prsByRepoPath: new Map<
     string,
     Array<{
@@ -183,43 +183,28 @@ vi.mock("../../src/services/github-service", () => ({
               };
             }),
           ),
-        getRawPr: (repoPath: string, _base: string, number: number) => {
-          const pr = githubFixtures.prsByRepoPath
-            .get(repoPath)
-            ?.find((pr) => pr.number === number);
-          return Effect.succeed(
-            pr
-              ? {
-                  ...pr,
-                  id: `PR-${pr.number}`,
-                  headRepository: { nameWithOwner: "test/repo" },
-                }
-              : null,
-          );
-        },
-        listRawPrs: (repoPath: string, state: "all" | "open") => {
+        listRawPrs: (repoPath: string, state: "all" | "updated") => {
           githubFixtures.listRequests.push({ repoPath, state });
           return Effect.succeed(
-            (githubFixtures.prsByRepoPath.get(repoPath) ?? [])
-              .filter((pr) => state === "all" || pr.state === "OPEN")
-              .map((pr) => ({
-                ...pr,
-                id: `PR-${pr.number}`,
-                headRepositoryOwner: { login: "test" },
-                headRepository: { name: "repo" },
-                headRefOid: `oid-${pr.number}`,
-                baseRefName: "main",
-                isDraft: false,
-                statusCheckRollup:
-                  pr.rollupState === null
-                    ? []
-                    : [
-                        {
-                          name: "test",
-                          conclusion: pr.rollupState.toUpperCase(),
-                        },
-                      ],
-              })),
+            (githubFixtures.prsByRepoPath.get(repoPath) ?? []).map((pr) => ({
+              ...pr,
+              id: `PR-${pr.number}`,
+              headRepositoryOwner: { login: "test" },
+              headRepository: { name: "repo" },
+              headRefOid: `oid-${pr.number}`,
+              baseRefName: "main",
+              updatedAt: new Date().toISOString(),
+              isDraft: false,
+              statusCheckRollup:
+                pr.rollupState === null
+                  ? []
+                  : [
+                      {
+                        name: "test",
+                        conclusion: pr.rollupState.toUpperCase(),
+                      },
+                    ],
+            })),
           );
         },
       }),
@@ -321,7 +306,7 @@ vi.mock("../../src/services/pr-cache-service", () => ({
     use: (selector: (svc: unknown) => unknown) =>
       selector({
         getDiscovery: () => Promise.resolve(null),
-        setDiscovery: () => Promise.resolve(),
+        setDiscovery: () => Promise.resolve(true),
         getWorkspace: () => null,
         getOpenPrs: () => null,
         getExplicit: () => Promise.resolve(null),

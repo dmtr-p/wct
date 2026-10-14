@@ -147,7 +147,15 @@ truncation. Only semantic/membership/freshness changes update presentation.
 Registry, Git, and tmux refreshes run separately on a five-second interval
 and respond to registry database changes. GitHub PR data refreshes every two
 minutes, when repositories or their worktrees change, and on explicit refresh
-actions.
+actions. The first GitHub refresh for a repository in each TUI session discovers
+its complete PR history and derives the Open modal list from that response.
+Ordinary polls and worktree changes reuse that discovery, fetch the current open
+PR list, and refresh known PR identities relevant to active Workspaces, including
+closed or merged associations. Check details are fetched only for associated PRs
+and PR Candidates. Manual refresh rebuilds complete historical discovery; use it
+to discover closed or merged PRs created outside the cached history. Failed or
+incomplete reads retain prior associations with a stale marker and report a
+repository error. Changing the base GitHub repository also rebuilds discovery.
 
 ## Compatibility validation
 

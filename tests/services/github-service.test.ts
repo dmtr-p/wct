@@ -16,6 +16,14 @@ vi.mock("../../src/services/process", async () => ({
 }));
 const { liveGitHubService } = await import("../../src/services/github-service");
 
+function page(nodes: unknown[], hasNextPage = false) {
+  return {
+    data: {
+      repository: { pullRequests: { nodes, pageInfo: { hasNextPage } } },
+    },
+  };
+}
+
 describe("GitHub raw PR fetching", () => {
   beforeEach(() => exec.mockReset());
 
@@ -23,7 +31,11 @@ describe("GitHub raw PR fetching", () => {
     "parses the open-PR list %s",
     async (stdout) => {
       exec.mockReturnValueOnce(
-        Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
+        Effect.succeed({
+          stdout: JSON.stringify([page(JSON.parse(stdout))]),
+          stderr: "",
+          exitCode: 0,
+        }),
       );
       expect(
         await runBunPromise(
@@ -32,6 +44,49 @@ describe("GitHub raw PR fetching", () => {
       ).toEqual(JSON.parse(stdout));
     },
   );
+
+  test.each(["all", "open"] as const)(
+    "paginates %s PR discovery against the resolved base without check payloads",
+    async (state) => {
+      const first = { number: 1 };
+      const second = { number: 200 };
+      exec.mockReturnValueOnce(
+        Effect.succeed({
+          stdout: JSON.stringify([page([first], true), page([second])]),
+          stderr: "",
+          exitCode: 0,
+        }),
+      );
+      expect(
+        await runBunPromise(
+          liveGitHubService.listRawPrs("/repo", state, "base/repo"),
+        ),
+      ).toEqual([first, second]);
+      expect(exec).toHaveBeenCalledTimes(1);
+      const args = exec.mock.calls[0]?.[1] ?? [];
+      expect(args).toEqual(
+        expect.arrayContaining(["api", "graphql", "--paginate", "--slurp"]),
+      );
+      const query = args.find((arg) => arg.startsWith("query=")) ?? "";
+      expect(query).toContain('repository(owner: "base", name: "repo")');
+      expect(query.includes("states: [OPEN]")).toBe(state === "open");
+      expect(query).not.toContain("statusCheckRollup");
+      expect(query).not.toContain("commits(");
+    },
+  );
+
+  test.each([
+    JSON.stringify([page([], true)]),
+    JSON.stringify([{ errors: [{ message: "rate limited" }], ...page([]) }]),
+    JSON.stringify([{ data: { repository: null } }]),
+  ])("rejects incomplete/error pagination %s", async (stdout) => {
+    exec.mockReturnValueOnce(
+      Effect.succeed({ stdout, stderr: "", exitCode: 0 }),
+    );
+    await expect(
+      runBunPromise(liveGitHubService.listRawPrs("/repo", "open", "base/repo")),
+    ).rejects.toMatchObject({ code: "pr_error" });
+  });
 
   test.each(["not json", "{}", "null"])(
     "rejects malformed open-PR output %s",

@@ -6,7 +6,6 @@ import {
 } from "../../services/pr-cache-service";
 import { fetchPrDetails } from "../../services/pr-details";
 import {
-  normalizeGhPr,
   resolvePushDestination,
   resolveWorkspacePr,
 } from "../../services/pr-discovery";
@@ -15,13 +14,23 @@ import {
   type PrFacts,
   prIdentity,
 } from "../../services/pr-model";
+import {
+  type PrDiscoverySnapshot,
+  refreshPrDiscovery,
+} from "../../services/pr-refresh";
 import { workspaceIdentityKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
 const GITHUB_POLL_INTERVAL = 120_000;
-const CACHE_FRESH_WINDOW = 30_000;
+
+function worktreeSignature(repo: RepoInfo) {
+  return JSON.stringify([
+    repo.error,
+    repo.worktrees.map((wt) => [wt.branch, wt.path, wt.isMainWorktree]),
+  ]);
+}
 export function displayPr(pr: PrFacts): PRInfo {
   return {
     number: pr.number,
@@ -79,9 +88,12 @@ export function useGitHub(repos: RepoInfo[]) {
       repo.worktrees.map((wt) => [wt.branch, wt.path]),
     ]),
   );
-  const firstRefresh = useRef(true);
+  const discovery = useRef(new Map<string, PrDiscoverySnapshot>());
   const inFlight = useRef<
-    Map<string, { promise: Promise<void>; signal?: AbortSignal }>
+    Map<
+      string,
+      { promise: Promise<void>; signal?: AbortSignal; signature: string }
+    >
   >(new Map());
 
   useEffect(() => {
@@ -101,26 +113,26 @@ export function useGitHub(repos: RepoInfo[]) {
   }, [repos]);
 
   const refreshOne = useCallback(
-    async (repo: RepoInfo, first: boolean, signal?: AbortSignal) => {
-      const running = inFlight.current.get(repo.repoPath);
-      if (running && !running.signal?.aborted) return running.promise;
-      if (first && repo.worktrees.length) {
-        try {
-          const cached = tuiRuntime.runSync(
-            PrCacheService.use((s) =>
-              s.getWorkspace(repo.repoPath, repo.worktrees[0]?.branch ?? ""),
-            ),
-          );
-          if (
-            cached &&
-            !cached.lastError &&
-            Date.now() - cached.fetchedAt < CACHE_FRESH_WINDOW
-          )
-            return;
-        } catch {
-          // An unreadable cache must fall through to a fresh fetch.
-        }
+    async (repo: RepoInfo, full: boolean, signal?: AbortSignal) => {
+      let running = inFlight.current.get(repo.repoPath);
+      const signature = worktreeSignature(repo);
+      while (running && !running.signal?.aborted) {
+        await running.promise;
+        if (signal?.aborted) return;
+        if (running.signature === signature) return;
+        running = inFlight.current.get(repo.repoPath);
       }
+      const isCurrent = () => {
+        const current = reposRef.current.find(
+          (target) => target.repoPath === repo.repoPath,
+        );
+        return (
+          !signal?.aborted &&
+          current !== undefined &&
+          worktreeSignature(current) === signature
+        );
+      };
+      if (!isCurrent()) return;
       let promise!: Promise<void>;
       promise = (async () => {
         setRefreshingProjects((previous) =>
@@ -132,77 +144,51 @@ export function useGitHub(repos: RepoInfo[]) {
             GitHubService.use((s) => s.resolveBaseRepo(repo.repoPath)),
             opts,
           );
-          const [rawAll, rawOpen] = await Promise.all([
-            tuiRuntime.runPromise(
-              GitHubService.use((s) =>
-                s.listRawPrs(repo.repoPath, "all", base),
-              ),
-              opts,
-            ),
-            tuiRuntime.runPromise(
-              GitHubService.use((s) =>
-                s.listRawPrs(repo.repoPath, "open", base),
-              ),
-              opts,
-            ),
-          ]);
-          const now = Date.now();
-          const all = rawAll
-            .map((raw) => normalizeGhPr(raw, base, now))
-            .filter((pr): pr is PrFacts => pr !== null);
-          const open = rawOpen
-            .map((raw) => normalizeGhPr(raw, base, now))
-            .filter((pr): pr is PrFacts => pr !== null && pr.state === "OPEN");
-          const found = new Map<string, WorkspacePrEntry>();
-          const explicitFetched = new Map<string, PrFacts | null>();
-          for (const wt of repo.worktrees) {
-            if (wt.isMainWorktree) continue;
-            const [destination, explicit] = await Promise.all([
-              tuiRuntime.runPromise(
-                resolvePushDestination(wt.path, wt.branch),
-                opts,
-              ),
-              tuiRuntime.runPromise(
-                PrCacheService.use((s) =>
-                  s.getExplicit(repo.repoPath, wt.branch),
-                ),
-              ),
-            ]);
-            let explicitCandidate: PrFacts | null = null;
-            if (
-              explicit &&
-              !all.some((pr) => prIdentity(pr) === prIdentity(explicit))
-            ) {
-              const key = prIdentity(explicit);
-              if (!explicitFetched.has(key)) {
-                const fetched = await tuiRuntime
-                  .runPromise(
-                    GitHubService.use((s) =>
-                      s.getRawPr(
-                        repo.repoPath,
-                        explicit.baseRepository,
-                        explicit.number,
-                      ),
-                    ),
+          const workspaces = await Promise.all(
+            repo.worktrees
+              .filter((wt) => !wt.isMainWorktree)
+              .map(async (wt) => {
+                const [destination, explicit] = await Promise.all([
+                  tuiRuntime.runPromise(
+                    resolvePushDestination(wt.path, wt.branch),
                     opts,
-                  )
-                  .then((raw) =>
-                    normalizeGhPr(raw, explicit.baseRepository, now),
-                  )
-                  .catch(() => null);
-                explicitFetched.set(key, fetched);
-              }
-              explicitCandidate = explicitFetched.get(key) ?? null;
-            }
+                  ),
+                  tuiRuntime.runPromise(
+                    PrCacheService.use((s) =>
+                      s.getExplicit(repo.repoPath, wt.branch),
+                    ),
+                  ),
+                ]);
+                return { branch: wt.branch, destination, explicit };
+              }),
+          );
+          const {
+            snapshot,
+            open,
+            explicitPrs,
+            fetchedAt: now,
+          } = await tuiRuntime.runPromise(
+            refreshPrDiscovery(
+              repo.repoPath,
+              base,
+              workspaces,
+              full ? null : (discovery.current.get(repo.repoPath) ?? null),
+            ),
+            opts,
+          );
+          const found = new Map<string, WorkspacePrEntry>();
+          for (const wt of workspaces) {
             found.set(
               workspaceIdentityKey(repo.repoPath, wt.branch),
               resolveWorkspacePr(
-                all,
+                snapshot.prs,
                 wt.branch,
-                destination,
-                explicit,
+                wt.destination,
+                wt.explicit,
                 now,
-                explicitCandidate,
+                wt.explicit
+                  ? (explicitPrs.get(prIdentity(wt.explicit)) ?? null)
+                  : null,
               ),
             );
           }
@@ -268,8 +254,15 @@ export function useGitHub(repos: RepoInfo[]) {
               entry.candidates.some((candidate) => !candidate.checksComplete)
             )
               entry.uncertain = true;
+            entry.lastError ??=
+              entry.candidates.find(
+                (candidate) => candidate.lastError || !candidate.checksComplete,
+              )?.lastError ??
+              (entry.candidates.some((candidate) => !candidate.checksComplete)
+                ? "Incomplete PR data"
+                : null);
           }
-          if (signal?.aborted) return;
+          if (!isCurrent()) return;
           await Promise.all([
             ...repo.worktrees
               .filter((wt) => !wt.isMainWorktree)
@@ -305,6 +298,8 @@ export function useGitHub(repos: RepoInfo[]) {
                 ]
               : []),
           ]);
+          if (!isCurrent()) return;
+          discovery.current.set(repo.repoPath, snapshot);
           setAssociations((previous) => {
             const next = new Map(
               [...previous].filter(
@@ -319,11 +314,15 @@ export function useGitHub(repos: RepoInfo[]) {
           );
           setErrors((previous) => {
             const next = new Map(previous);
-            next.delete(repo.repoPath);
+            const error = [...found.values()].find(
+              (entry) => entry.lastError,
+            )?.lastError;
+            if (error) next.set(repo.repoPath, error);
+            else next.delete(repo.repoPath);
             return next;
           });
         } catch (cause) {
-          if (signal?.aborted) return;
+          if (!isCurrent()) return;
           const message =
             cause instanceof Error ? cause.message : String(cause);
           setErrors((previous) =>
@@ -360,26 +359,44 @@ export function useGitHub(repos: RepoInfo[]) {
           }
         }
       })();
-      inFlight.current.set(repo.repoPath, { promise, signal });
+      inFlight.current.set(repo.repoPath, { promise, signal, signature });
       return promise;
     },
     [],
   );
 
-  const refresh = useCallback(
-    async (repoPath?: string, signal?: AbortSignal) => {
+  const refreshTargets = useCallback(
+    async (repoPath?: string, signal?: AbortSignal, full = false) => {
       const targets =
         repoPath !== undefined
           ? reposRef.current.filter((repo) => repo.repoPath === repoPath)
           : reposRef.current;
       if (!targets.length) return;
-      const first = firstRefresh.current;
-      firstRefresh.current = false;
       await Promise.allSettled(
-        targets.map((repo) => refreshOne(repo, first, signal)),
+        targets.map(async (repo) => {
+          // Manual discovery must run even when a poll is already in flight.
+          if (full) {
+            let running = inFlight.current.get(repo.repoPath);
+            while (running) {
+              await running.promise;
+              signal?.throwIfAborted();
+              running = inFlight.current.get(repo.repoPath);
+            }
+          }
+          const current = reposRef.current.find(
+            (target) => target.repoPath === repo.repoPath,
+          );
+          if (current) await refreshOne(current, full, signal);
+        }),
       );
     },
     [refreshOne],
+  );
+
+  const refresh = useCallback(
+    (repoPath?: string, signal?: AbortSignal) =>
+      refreshTargets(repoPath, signal, true),
+    [refreshTargets],
   );
 
   const refreshAfterCurrent = useCallback(
@@ -391,9 +408,9 @@ export function useGitHub(repos: RepoInfo[]) {
         await running.promise;
         running = inFlight.current.get(repoPath);
       }
-      await refresh(repoPath);
+      await refreshTargets(repoPath);
     },
-    [refresh],
+    [refreshTargets],
   );
 
   const setExplicit = useCallback(
@@ -406,39 +423,41 @@ export function useGitHub(repos: RepoInfo[]) {
           }),
         ),
       );
-      await inFlight.current.get(repoPath)?.promise;
-      await refresh(repoPath);
+      await refreshAfterCurrent(repoPath);
     },
-    [refresh],
+    [refreshAfterCurrent],
   );
   const clearExplicit = useCallback(
     async (repoPath: string, branch: string) => {
       await tuiRuntime.runPromise(
         PrCacheService.use((s) => s.clearExplicit(repoPath, branch)),
       );
-      await inFlight.current.get(repoPath)?.promise;
-      await refresh(repoPath);
+      await refreshAfterCurrent(repoPath);
     },
-    [refresh],
+    [refreshAfterCurrent],
   );
 
   useEffect(() => {
     const controller = new AbortController();
-    if (repoSignature !== "[]") void refresh(undefined, controller.signal);
+    const present = new Set(reposRef.current.map((repo) => repo.repoPath));
+    for (const path of discovery.current.keys())
+      if (!present.has(path)) discovery.current.delete(path);
+    if (repoSignature !== "[]")
+      void refreshTargets(undefined, controller.signal);
     return () => controller.abort();
-  }, [repoSignature, refresh]);
+  }, [repoSignature, refreshTargets]);
 
   useEffect(() => {
     const controller = new AbortController();
     const timer = setInterval(
-      () => void refresh(undefined, controller.signal),
+      () => void refreshTargets(undefined, controller.signal),
       GITHUB_POLL_INTERVAL,
     );
     return () => {
       controller.abort();
       clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refreshTargets]);
 
   const prData = useMemo(() => {
     const data = new Map<string, PRInfo>();
@@ -459,6 +478,7 @@ export function useGitHub(repos: RepoInfo[]) {
     openPrs,
     errors,
     refresh,
+    refreshCurrent: refreshTargets,
     refreshAfterCurrent,
     refreshingProjects,
     setExplicit,

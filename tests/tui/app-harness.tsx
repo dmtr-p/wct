@@ -142,6 +142,7 @@ vi.mock("../../src/services/tmux", async () => {
 
 // Drive "r" to await Navigate mode's PR refresh deterministically.
 const githubFixtures = vi.hoisted(() => ({
+  listRequests: [] as Array<{ repoPath: string; state: "all" | "open" }>,
   prsByRepoPath: new Map<
     string,
     Array<{
@@ -159,8 +160,23 @@ vi.mock("../../src/services/github-service", () => ({
     use: (selector: (svc: unknown) => unknown) =>
       selector({
         resolveBaseRepo: () => Promise.resolve("test/repo"),
-        listRawPrs: (repoPath: string, state: "all" | "open") =>
-          Promise.resolve(
+        getRawPr: (repoPath: string, _base: string, number: number) => {
+          const pr = githubFixtures.prsByRepoPath
+            .get(repoPath)
+            ?.find((pr) => pr.number === number);
+          return Effect.succeed(
+            pr
+              ? {
+                  ...pr,
+                  id: `PR-${pr.number}`,
+                  headRepository: { nameWithOwner: "test/repo" },
+                }
+              : null,
+          );
+        },
+        listRawPrs: (repoPath: string, state: "all" | "open") => {
+          githubFixtures.listRequests.push({ repoPath, state });
+          return Effect.succeed(
             (githubFixtures.prsByRepoPath.get(repoPath) ?? [])
               .filter((pr) => state === "all" || pr.state === "OPEN")
               .map((pr) => ({
@@ -181,7 +197,8 @@ vi.mock("../../src/services/github-service", () => ({
                         },
                       ],
               })),
-          ),
+          );
+        },
       }),
   },
 }));
@@ -343,6 +360,7 @@ export function resetHarnessFixtures(): void {
   registryItems.items = [];
   worktreeFixtures.byRepoPath.clear();
   githubFixtures.prsByRepoPath.clear();
+  githubFixtures.listRequests.length = 0;
   tmuxFixtures.clients = [];
   tmuxFixtures.sessions = null;
   tmuxFixtures.switchCalls.length = 0;

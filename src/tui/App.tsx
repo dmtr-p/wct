@@ -113,6 +113,7 @@ export function App() {
     openPrs,
     errors: githubErrors,
     refresh: refreshGitHub,
+    refreshCurrent: refreshGitHubCurrent,
     refreshAfterCurrent: refreshGitHubAfterCurrent,
     refreshingProjects,
   } = useGitHub(repos);
@@ -572,10 +573,13 @@ export function App() {
   }, [openPrs, openModalRepoPath]);
 
   const openModalOnRefresh = useCallback(
-    (signal?: AbortSignal) => {
-      void refreshGitHub(openModalRepoPath, signal);
+    (signal?: AbortSignal, full = false) => {
+      void (full ? refreshGitHub : refreshGitHubCurrent)(
+        openModalRepoPath,
+        signal,
+      );
     },
-    [refreshGitHub, openModalRepoPath],
+    [refreshGitHub, refreshGitHubCurrent, openModalRepoPath],
   );
 
   const sessionActions = useSessionActions({

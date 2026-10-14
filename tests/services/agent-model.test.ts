@@ -266,6 +266,51 @@ describe("agent classifier", () => {
     ).toBe("blocked");
     expect(classifyAgent("claude", "Initializing...").state).toBe("unknown");
   });
+  test.each([
+    ["● Flummoxing…", "50s"],
+    ["● Flummoxing…", "1m 2s"],
+    ["● Flummoxing…", "1h 2m 3s"],
+    ["⏺ Flummoxing…", "50s"],
+    ["• Flummoxing...", "50s"],
+  ])(
+    "Claude recognizes %s with %s of live token progress",
+    (spinner, elapsed) => {
+      const screen = [
+        "Should I start the fix PR?",
+        "* Cooked for 1h 57m 48s · done 12:52 PM",
+        "❯ yes",
+        "● Creating worktree for Jira live fixes",
+        "  └ /private/tmp/claude/scratchpad/jlive/spec.md",
+        "",
+        `${spinner} (${elapsed} · ↓ 3.7k tokens)`,
+        "",
+        "────────────────────────────────────────",
+        "❯",
+        "────────────────────────────────────────",
+        "Opus 5.5 | 196.7k | Session: 10.0% | project",
+        "⏵⏵ auto mode on (shift+tab to cycle)",
+      ].join("\n");
+      expect(classifyAgent("claude", screen)).toMatchObject({
+        state: "working",
+        rule: "live_turn_dot_working",
+        strong: true,
+      });
+    },
+  );
+  test("Claude response bullets and completed timers do not establish live dot activity", () => {
+    const composer = "──────\n❯\n──────\n? for shortcuts";
+    for (const response of [
+      "● Creating worktree for Jira live fixes",
+      "● Flummoxing…",
+      "● Flummoxing… (50s)",
+      "● Flummoxing (50s · ↓ 3.7k tokens)",
+      "* Cooked for 1h 57m 48s · done 12:52 PM",
+      "● Flummoxing… (50s · ↓ 3.7k tokens)\n● Finished creating the worktree.",
+    ])
+      expect(classifyAgent("claude", `${response}\n\n${composer}`).state).toBe(
+        "idle",
+      );
+  });
   test("Claude bordered approval menus cannot establish prompt-box readiness", () => {
     const menu = "──────\n❯ 1. Yes\n2. No\n──────";
     for (const footer of [
@@ -372,6 +417,7 @@ describe("agent classifier", () => {
   test("Claude editable draft cannot become activity, blockers, or a menu view", () => {
     for (const draft of [
       "✻ Thinking… (2s · tokens)",
+      "● Flummoxing… (50s · ↓ 3.7k tokens)",
       "⏸ esc to interrupt",
       "✻ Waiting for 2 background agents to finish",
       "* Waiting for 2 dynamic workflows to finish",

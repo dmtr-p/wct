@@ -46,6 +46,17 @@ export const agentRules: Record<"claude" | "codex", readonly AgentRule[]> = {
       ],
     },
     {
+      id: "live_turn_dot_working",
+      state: "working",
+      priority: 970,
+      region: "last_non_empty_above_prompt_box",
+      visible_working: true,
+      // The dot also marks responses; require live elapsed/token progress.
+      line_regex: [
+        "^\\s*[●⏺•]\\s+\\S.*(?:…|\\.{3})\\s+\\((?:\\d+[hm]\\s+)*\\d+s\\s+·\\s+[↑↓]\\s+\\d+(?:\\.\\d+)?[km]?\\s+tokens?\\)\\s*$",
+      ],
+    },
+    {
       id: "background_agents_working",
       state: "working",
       priority: 965,

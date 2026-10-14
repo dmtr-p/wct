@@ -148,6 +148,9 @@ and PR Candidates. Manual refresh rebuilds complete historical discovery; use it
 to discover closed or merged PRs created outside the cached history. Failed or
 incomplete reads retain prior associations with a stale marker and report a
 repository error. Changing the base GitHub repository also rebuilds discovery.
+Complete historical discovery has a ten-minute timeout. Failed discovery without
+a usable snapshot delays automatic retries for ten minutes; manual refresh can
+retry immediately. Successful discovery replaces the cached snapshot.
 
 ## Compatibility validation
 

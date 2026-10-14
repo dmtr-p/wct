@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { commandError } from "../errors";
 import { checkOutcome, type PrCheck, type PrFacts } from "./pr-model";
-import { execProcess } from "./process";
+import { execProcess, ProcessExitError } from "./process";
 
 const INITIAL_BATCH = 20;
 const MAX_FOLLOW_UPS = 20;
@@ -69,9 +69,33 @@ function unwrapPage(raw: unknown): {
   };
 }
 
+interface GraphQlError {
+  message?: string;
+  path?: (string | number)[];
+}
+
+function aliasError(errors: readonly GraphQlError[], alias: string) {
+  return (
+    errors
+      .filter((error) => !error.path || error.path.includes(alias))
+      .map((error) => error.message ?? "PR detail fetch failed")
+      .join("; ") || null
+  );
+}
+
 function graphQl(cwd: string, query: string) {
   return Effect.flatMap(
-    execProcess("gh", ["api", "graphql", "-f", `query=${query}`], { cwd }),
+    execProcess("gh", ["api", "graphql", "-f", `query=${query}`], { cwd }).pipe(
+      Effect.catch((error) =>
+        error instanceof ProcessExitError && error.stdout.trim()
+          ? Effect.succeed({
+              stdout: error.stdout,
+              stderr: error.stderr,
+              exitCode: error.exitCode ?? 1,
+            })
+          : Effect.fail(error),
+      ),
+    ),
     (result) =>
       Effect.try({
         try: () => {
@@ -80,14 +104,14 @@ function graphQl(cwd: string, query: string) {
               repository?: Record<string, unknown>;
               rateLimit?: { cost?: number };
             };
-            errors?: { message?: string }[];
+            errors?: GraphQlError[];
           };
-          if (response.errors?.length || !response.data?.repository)
+          if (!response?.data?.repository)
             throw new Error(
-              response.errors?.map((e) => e.message).join("; ") ||
+              response?.errors?.map((e) => e.message).join("; ") ||
                 "Missing repository",
             );
-          return response.data;
+          return { ...response.data, errors: response.errors ?? [] };
         },
         catch: (error) =>
           commandError("pr_error", `GitHub GraphQL: ${String(error)}`, error),
@@ -124,13 +148,16 @@ export function fetchPrDetails(
         Effect.succeed({
           repository: null as Record<string, unknown> | null,
           error: error.message,
+          errors: [] as GraphQlError[],
         }),
       );
       for (let index = 0; index < batch.length; index++) {
         const pr = batch[index];
         if (!pr) continue;
-        const failed = (initial as { error?: string }).error;
-        if (!initial.repository) {
+        const failed =
+          (initial as { error?: string }).error ??
+          aliasError(initial.errors, `p${index}`);
+        if (!initial.repository || failed) {
           result.push({
             ...pr,
             checksComplete: false,
@@ -162,11 +189,13 @@ export function fetchPrDetails(
             Effect.succeed({
               repository: null as Record<string, unknown> | null,
               error: cause.message,
+              errors: [] as GraphQlError[],
             }),
           );
-          if (!next.repository) {
-            error =
-              (next as { error?: string }).error ?? "Check page fetch failed";
+          const failedPage =
+            (next as { error?: string }).error ?? aliasError(next.errors, "p");
+          if (!next.repository || failedPage) {
+            error = failedPage ?? "Check page fetch failed";
             break;
           }
           const page = unwrapPage(next.repository.p).page;

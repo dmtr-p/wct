@@ -160,6 +160,29 @@ vi.mock("../../src/services/github-service", () => ({
     use: (selector: (svc: unknown) => unknown) =>
       selector({
         resolveBaseRepo: () => Promise.resolve("test/repo"),
+        getRawPrs: (
+          repoPath: string,
+          _base: string,
+          numbers: readonly number[],
+        ) =>
+          Effect.succeed(
+            numbers.map((number) => {
+              const pr = githubFixtures.prsByRepoPath
+                .get(repoPath)
+                ?.find((pr) => pr.number === number);
+              return {
+                number,
+                error: pr ? null : "PR unavailable",
+                raw: pr
+                  ? {
+                      ...pr,
+                      id: `PR-${pr.number}`,
+                      headRepository: { nameWithOwner: "test/repo" },
+                    }
+                  : null,
+              };
+            }),
+          ),
         getRawPr: (repoPath: string, _base: string, number: number) => {
           const pr = githubFixtures.prsByRepoPath
             .get(repoPath)
@@ -297,6 +320,8 @@ vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: {
     use: (selector: (svc: unknown) => unknown) =>
       selector({
+        getDiscovery: () => Promise.resolve(null),
+        setDiscovery: () => Promise.resolve(),
         getWorkspace: () => null,
         getOpenPrs: () => null,
         getExplicit: () => Promise.resolve(null),

@@ -5,7 +5,12 @@ import {
   type ServiceImplementation,
 } from "../effect/service-context";
 import { commandError, toWctError, type WctError } from "../errors";
-import { execProcess, getProcessErrorMessage, runProcess } from "./process";
+import {
+  execProcess,
+  getProcessErrorMessage,
+  ProcessExitError,
+  runProcess,
+} from "./process";
 
 const GITHUB_PR_URL_PATTERN =
   /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)\/?$/;
@@ -16,6 +21,12 @@ export interface PrInfo {
   isCrossRepository: boolean;
   headOwner?: string;
   headRepo?: string;
+}
+
+export interface RawPrResult {
+  number: number;
+  raw: unknown;
+  error: string | null;
 }
 
 export interface GitHubService {
@@ -46,6 +57,11 @@ export interface GitHubService {
     baseRepository: string,
     number: number,
   ) => Effect.Effect<unknown, WctError>;
+  getRawPrs: (
+    cwd: string,
+    baseRepository: string,
+    numbers: readonly number[],
+  ) => Effect.Effect<RawPrResult[], WctError>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
@@ -238,6 +254,96 @@ function getRawPrImpl(cwd: string, baseRepository: string, number: number) {
   );
 }
 
+function getRawPrsImpl(
+  cwd: string,
+  baseRepository: string,
+  numbers: readonly number[],
+) {
+  return Effect.gen(function* () {
+    const [owner, repo] = baseRepository.split("/");
+    if (
+      !owner ||
+      !repo ||
+      numbers.some((number) => !Number.isSafeInteger(number) || number < 1)
+    )
+      return yield* commandError("pr_error", "Invalid PR identities");
+    const result: RawPrResult[] = [];
+    for (let start = 0; start < numbers.length; start += 20) {
+      const batch = numbers.slice(start, start + 20);
+      const aliases = batch
+        .map(
+          (number, index) =>
+            `p${index}: pullRequest(number: ${number}) { ${DISCOVERY_GRAPHQL_FIELDS} baseRepository { nameWithOwner } }`,
+        )
+        .join(" ");
+      const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { ${aliases} } }`;
+      const fetched = yield* Effect.gen(function* () {
+        const batchResult: RawPrResult[] = [];
+        const output = yield* execProcess(
+          "gh",
+          ["api", "graphql", "-f", `query=${query}`],
+          { cwd },
+        ).pipe(
+          Effect.catch((error) =>
+            error instanceof ProcessExitError && error.stdout.trim()
+              ? Effect.succeed({
+                  stdout: error.stdout,
+                  stderr: error.stderr,
+                  exitCode: error.exitCode ?? 1,
+                })
+              : Effect.fail(error),
+          ),
+          Effect.timeout("2 minutes"),
+        );
+        const parsed = yield* Effect.try({
+          try: () =>
+            JSON.parse(output.stdout) as {
+              data?: { repository?: Record<string, unknown> };
+              errors?: { message?: string; path?: (string | number)[] }[];
+            },
+          catch: (cause) =>
+            commandError("pr_error", "Invalid PR batch response", cause),
+        });
+        if (!parsed || typeof parsed !== "object")
+          return yield* commandError("pr_error", "Invalid PR batch response");
+        for (const [index, number] of batch.entries()) {
+          const alias = `p${index}`;
+          const errors = parsed.errors?.filter(
+            (error) => !error.path || error.path.includes(alias),
+          );
+          const raw = parsed.data?.repository?.[alias] as
+            | { number?: number; baseRepository?: { nameWithOwner?: string } }
+            | null
+            | undefined;
+          const error = errors?.length
+            ? errors
+                .map((error) => error.message ?? "PR fetch failed")
+                .join("; ")
+            : raw?.number !== number ||
+                raw.baseRepository?.nameWithOwner?.toLowerCase() !==
+                  baseRepository.toLowerCase()
+              ? "Incomplete PR batch response"
+              : null;
+          batchResult.push({ number, raw, error });
+        }
+        return batchResult;
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.succeed(
+            batch.map((number) => ({
+              number,
+              raw: null,
+              error: extractShellError(error),
+            })),
+          ),
+        ),
+      );
+      result.push(...fetched);
+    }
+    return result;
+  });
+}
+
 export type GitHubServiceImplementation = ServiceImplementation<
   GitHubService,
   BunServices.BunServices
@@ -398,6 +504,16 @@ export const liveGitHubService: GitHubServiceImplementation = {
         "pr_error",
         `Failed to read PR #${number}: ${extractShellError(error)}`,
         error,
+      ),
+    ),
+  getRawPrs: (cwd, baseRepository, numbers) =>
+    getRawPrsImpl(cwd, baseRepository, numbers).pipe(
+      Effect.mapError((error) =>
+        commandError(
+          "pr_error",
+          `Failed to fetch PRs: ${extractShellError(error)}`,
+          error,
+        ),
       ),
     ),
   findRemoteForRepo: (owner, repo, cwd) =>

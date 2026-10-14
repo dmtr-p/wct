@@ -57,6 +57,10 @@ export const MIGRATIONS: readonly string[] = [
     last_error TEXT
   )`,
   `DROP TABLE IF EXISTS pr_cache`,
+  `CREATE TABLE IF NOT EXISTS pr_discovery_cache (
+    repo_path TEXT PRIMARY KEY,
+    payload TEXT NOT NULL
+  )`,
 ];
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;

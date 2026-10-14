@@ -139,18 +139,27 @@ truncation. Only semantic/membership/freshness changes update presentation.
 Registry, Git, and tmux refreshes run separately on a five-second interval
 and respond to registry database changes. GitHub PR data refreshes every two
 minutes, when repositories or their worktrees change, and on explicit refresh
-actions. The first GitHub refresh for a repository in each TUI session discovers
-its complete PR history and derives the Open modal list from that response.
-Ordinary polls and worktree changes reuse that discovery, fetch the current open
-PR list, and refresh known PR identities relevant to active Workspaces, including
-closed or merged associations. Check details are fetched only for associated PRs
-and PR Candidates. Manual refresh rebuilds complete historical discovery; use it
-to discover closed or merged PRs created outside the cached history. Failed or
-incomplete reads retain prior associations with a stale marker and report a
-repository error. Changing the base GitHub repository also rebuilds discovery.
-Complete historical discovery has a ten-minute timeout. Failed discovery without
-a usable snapshot delays automatic retries for ten minutes; manual refresh can
-retry immediately. Successful discovery replaces the cached snapshot.
+actions. Complete PR discovery is cached in SQLite by Main Repository path;
+repositories without a usable snapshot scan their complete history. Fresh cache
+reads within thirty seconds avoid GitHub requests. Ordinary polls fetch the open
+PR list and batch updates for known open PRs that disappeared and unresolved or
+live external Explicit PR Associations. Historical candidates and merged PRs use
+cached facts. Check details are fetched for live associated PRs and open PR
+Candidates; terminal associations reuse complete checks for the same PR and head.
+Manual refresh rebuilds complete historical discovery and refreshes selected
+terminal facts; use it to discover older closed or merged matches outside the
+cached history. A failed associated PR retains stale data or an unresolved
+association without discarding discovery or blocking healthy Workspaces. Sibling
+candidate errors do not mark a healthy associated PR as stale.
+
+Discovery belongs to the repository: modal cancellation and worktree changes do
+not cancel it. Concurrent manual refreshes share a running complete scan.
+Worktree changes reconcile against its completed results. Repository removal and
+TUI shutdown cancel that repository's active requests. Complete historical
+discovery has a ten-minute timeout. Failed discovery without a usable snapshot
+delays automatic requests for ten minutes without flashing a refresh indicator;
+manual refresh, post-merge reads, and explicit association changes bypass the
+delay. A changed base repository rebuilds discovery on the next actual refresh.
 
 ## Compatibility validation
 

@@ -8,7 +8,10 @@ import {
   sqlGetOpenPrs,
   sqlInvalidate,
   sqlSetOpenPrs,
+  sqlGetDiscovery,
+  sqlSetDiscovery,
 } from "../../src/services/pr-cache-service";
+import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { PRInfo } from "../../src/tui/types";
 
 function makeDb(): Database {
@@ -35,6 +38,67 @@ const PR_B: PRInfo = {
 };
 
 describe("PrCacheService SQL helpers", () => {
+  it("persists complete discovery across connections and invalidates it by repository", () => {
+    const path = join(tmpdir(), `wct-discovery-${Date.now()}.db`);
+    let first: Database | null = null;
+    let second: Database | null = null;
+    try {
+      first = new Database(path);
+      runMigrations(first);
+      const pr = normalizeGhPr(
+        { number: 1, title: "old", state: "MERGED", headRefName: "feature" },
+        "base/repo",
+        1,
+      );
+      if (!pr) throw new Error("Invalid fixture");
+      const snapshot = {
+        baseRepository: "base/repo",
+        prs: [pr],
+        explicitPrs: [],
+        openNumbers: [],
+        fetchedAt: 1,
+      };
+      sqlSetDiscovery(first, "/a", snapshot);
+      sqlSetDiscovery(first, "/b", snapshot);
+      first.close();
+      first = null;
+      second = new Database(path);
+      expect(sqlGetDiscovery(second, "/a")).toEqual(snapshot);
+      sqlInvalidate(second, "/a");
+      expect(sqlGetDiscovery(second, "/a")).toBeNull();
+      expect(sqlGetDiscovery(second, "/b")).toEqual(snapshot);
+    } finally {
+      first?.close();
+      second?.close();
+      rmSync(path, { force: true });
+    }
+  });
+
+  it("rejects corrupt discovery rather than treating partial history as complete", () => {
+    const db = makeDb();
+    try {
+      for (const payload of [
+        "null",
+        "{}",
+        JSON.stringify({
+          baseRepository: "base/repo",
+          prs: [null],
+          explicitPrs: [],
+          openNumbers: [],
+          fetchedAt: 1,
+        }),
+      ]) {
+        db.run("INSERT OR REPLACE INTO pr_discovery_cache VALUES (?, ?)", [
+          "/a",
+          payload,
+        ]);
+        expect(sqlGetDiscovery(db, "/a")).toBeNull();
+      }
+    } finally {
+      db.close();
+    }
+  });
+
   it("invalidate removes the repository's Open-modal cache", () => {
     const db = makeDb();
     sqlSetOpenPrs(db, "/to-remove", [PR_A]);

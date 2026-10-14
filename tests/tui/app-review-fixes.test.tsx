@@ -74,6 +74,27 @@ describe("App.tsx review fixes (real App)", () => {
     }
   });
 
+  test("reopening the Open modal refreshes only open PRs", async () => {
+    setTallWorktrees(repoPath, 2);
+    const rendered = await renderApp(<App />);
+    try {
+      await tick(25);
+      for (let i = 0; i < 2; i++) {
+        await sendKeys(rendered.stdin, "o");
+        await tick(15);
+        expect(rendered.output()).toContain("Select mode");
+        await sendKeys(rendered.stdin, "\x1b");
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        await tick(5);
+      }
+      expect(
+        githubFixtures.listRequests.map((request) => request.state),
+      ).toEqual(["all", "open", "open"]);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
   test("a modal over a tree taller than the terminal renders intact (no garble)", async () => {
     setTallWorktrees(repoPath, 40);
 

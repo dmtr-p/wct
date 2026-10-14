@@ -180,46 +180,20 @@ function listRawPrsImpl(
   state: "open" | "all",
   baseRepository: string,
 ) {
-  if (state === "all") {
-    const [owner, repo] = baseRepository.split("/");
-    if (!owner || !repo)
-      return Effect.fail(commandError("pr_error", "Invalid base repository"));
-    const query = `query($endCursor: String) { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequests(first: 100, after: $endCursor) { nodes { ${DISCOVERY_GRAPHQL_FIELDS} } pageInfo { hasNextPage endCursor } } } }`;
-    return Effect.flatMap(
-      execProcess(
-        "gh",
-        ["api", "graphql", "--paginate", "--slurp", "-f", `query=${query}`],
-        { cwd },
-      ).pipe(Effect.timeout("2 minutes")),
-      (result) =>
-        Effect.try({
-          try: () => parseAllPrPages(result.stdout),
-          catch: (error) => commandError("pr_error", String(error), error),
-        }),
-    );
-  }
+  const [owner, repo] = baseRepository.split("/");
+  if (!owner || !repo)
+    return Effect.fail(commandError("pr_error", "Invalid base repository"));
+  const states = state === "open" ? ", states: [OPEN]" : "";
+  const query = `query($endCursor: String) { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequests(first: 100, after: $endCursor${states}) { nodes { ${DISCOVERY_GRAPHQL_FIELDS} } pageInfo { hasNextPage endCursor } } } }`;
   return Effect.flatMap(
     execProcess(
       "gh",
-      [
-        "pr",
-        "list",
-        "--state",
-        state,
-        "--limit",
-        "100000",
-        "--json",
-        GITHUB_PR_JSON_FIELDS,
-      ],
+      ["api", "graphql", "--paginate", "--slurp", "-f", `query=${query}`],
       { cwd },
-    ),
+    ).pipe(Effect.timeout("2 minutes")),
     (result) =>
       Effect.try({
-        try: () => {
-          const value: unknown = JSON.parse(result.stdout);
-          if (!Array.isArray(value)) throw new Error("Expected PR array");
-          return value;
-        },
+        try: () => parseAllPrPages(result.stdout),
         catch: (error) => commandError("pr_error", String(error), error),
       }),
   );

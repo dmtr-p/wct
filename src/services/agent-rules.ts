@@ -63,7 +63,7 @@ export const agentRules: Record<"claude" | "codex", readonly AgentRule[]> = {
       region: "last_non_empty_above_prompt_box",
       visible_working: true,
       line_regex: [
-        "^\\s*[\\x{002A}\\x{00B7}\\x{2722}\\x{2736}\\x{273B}\\x{273D}]\\s+Waiting for [1-9]\\d* background agents? to finish\\s*$",
+        "^\\s*[\\x{002A}\\x{00B7}\\x{2722}\\x{2736}\\x{273B}\\x{273D}]\\s+Waiting for [1-9]\\d* background agents?(?: and [1-9]\\d* dynamic workflows?)? to finish\\s*$",
       ],
     },
     {

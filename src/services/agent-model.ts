@@ -237,7 +237,7 @@ function claudeComposer(screen: string) {
 function hasRunningClaudeWorkflow(footer: string): boolean {
   return footer.split("\n").some((line) => {
     const progress =
-      /^\s*(?:❯\s+)?○\s+\S.*?\s+[▰▱]+\s+(\d+)\/(\d+)\s+·\s+\d+[hms](?:\s*\d+[hms])*\s+·\s+[↑↓]\s+\d+(?:\.\d+)?[km]?\s+tokens?\s*$/u.exec(
+      /^\s*(?:❯\s+)?[○◯]\s+\S.*?\s+[▰▱]+\s+(\d+)\/(\d+)\s+·\s+\d+[hms](?:\s*\d+[hms])*\s+·\s+[↑↓]\s+\d+(?:\.\d+)?[km]?\s+tokens?\s*$/u.exec(
         line,
       );
     return !!progress && Number(progress[1]) < Number(progress[2]);

@@ -386,8 +386,38 @@ describe("agent classifier", () => {
     },
   );
   test.each([
+    "1 background agent and 1 dynamic workflow",
+    "2 background agents and 1 dynamic workflow",
+    "1 background agent and 2 dynamic workflows",
+    "2 background agents and 3 dynamic workflows",
+  ])("Claude recognizes a combined wait for %s", (tasks) => {
+    const screen = [
+      "⏺ I've sent an Opus agent to find out where pnpm verify's time goes.",
+      "#136's loop is running at the same time.",
+      "",
+      `✻ Waiting for ${tasks} to finish`,
+      "",
+      "────────────────────────────────────────",
+      "❯\u00a0after 136 let's do 135",
+      "────────────────────────────────────────",
+      "  Opus\u00a05.5\u00a0|\u00a0263.7k\u00a0|\u00a0Session:\u00a01.0%",
+      "  ↑/↓ to select",
+      "",
+      "❯ ⏺ main",
+      "  ◯ general-purpose  Reading bundleWorkflow in bundle.ts  10m 58s · ↓ 59.1k tokens",
+      "  ◯ impl-loop        ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/1 · 30m22s · ↓ 133.9k tokens",
+    ].join("\n");
+    expect(classifyAgent("claude", screen)).toMatchObject({
+      state: "working",
+      rule: "background_agents_working",
+      strong: true,
+    });
+  });
+  test.each([
     "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
     "❯ ○ impl-loop ▱▱▱▱▱▱ 0/1 · 4m42s · ↓ 49.3k tokens",
+    "  ◯ impl-loop        ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/1 · 30m22s · ↓ 133.9k tokens",
+    "❯ ◯ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
   ])("Claude keeps a compacted session working with footer row %s", (row) => {
     const screen = [
       "  └ Skills restored (gh-stack, workflow-authoring)",
@@ -430,6 +460,7 @@ describe("agent classifier", () => {
     const row = "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens";
     for (const footer of [
       row.replace("5/6", "6/6"),
+      row.replace("○", "◯").replace("5/6", "6/6"),
       row.replace("5/6", "7/6"),
       row.replace("5/6", "0/0"),
       row.replace("○", "✓"),
@@ -461,6 +492,8 @@ describe("agent classifier", () => {
     const waiting = "* Waiting for 2 dynamic workflows to finish";
     for (const response of [
       "* Waiting for 0 dynamic workflows to finish",
+      "✻ Waiting for 0 background agents and 0 dynamic workflows to finish",
+      "✻ Waiting for 1 background agent and 1 dynamic workflow to finish\n⏺ Both tasks finished.",
       `${waiting}\n● Both workflows finished.`,
       `${waiting}\n● Both workflows finished.\nnew task? /clear to save 170.2k tokens`,
       `${waiting}\n● new task? /clear to save 170.2k tokens`,
@@ -492,7 +525,9 @@ describe("agent classifier", () => {
       "⏸ esc to interrupt",
       "✻ Waiting for 2 background agents to finish",
       "* Waiting for 2 dynamic workflows to finish",
+      "✻ Waiting for 1 background agent and 1 dynamic workflow to finish",
       "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
+      "◯ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
       "✻ Reading · 2 MCP tasks still running",
       "run a dynamic workflow?\n  esc to cancel",
       'MCP server "example" requests your input\n  Accept\n  esc to cancel',

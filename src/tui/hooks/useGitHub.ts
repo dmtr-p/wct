@@ -26,10 +26,13 @@ interface RefreshFlight {
   history: boolean;
   discovered: boolean;
   succeeded: boolean;
+  failed: boolean;
+  registrationId: string;
   signature: string;
 }
 function worktreeSignature(repo: RepoInfo) {
   return JSON.stringify([
+    repo.id,
     repo.error,
     repo.worktrees.map((wt) => [wt.branch, wt.path, wt.isMainWorktree]),
   ]);
@@ -90,7 +93,9 @@ export function useGitHub(repos: RepoInfo[]) {
     repos.map((repo) => [repo.repoPath, worktreeSignature(repo)]),
   );
   const observed = useRef(new Map<string, string>());
+  const registrations = useRef(new Map<string, string>());
   const discovery = useRef(new Map<string, PrDiscoverySnapshot>());
+  const persisted = useRef(new Map<string, PrDiscoverySnapshot>());
   const loaded = useRef(new Set<string>());
   const discoveryRetries = useRef(new Map<string, number>());
   const inFlight = useRef(new Map<string, RefreshFlight>());
@@ -117,7 +122,8 @@ export function useGitHub(repos: RepoInfo[]) {
 
   const refreshOne = useCallback(
     async (repoPath: string, kind: RefreshKind, signal?: AbortSignal) => {
-      let requested = kind;
+      const requested = kind;
+      let shareDiscovery = false;
       let running = inFlight.current.get(repoPath);
       while (running) {
         await running.promise;
@@ -125,10 +131,19 @@ export function useGitHub(repos: RepoInfo[]) {
         const current = currentRepo(repoPath);
         if (!current) return;
         // A completed full discovery satisfies a concurrent manual request.
-        if (requested === "manual" && running.history && running.discovered)
-          requested = "poll";
+        const sameRegistration = running.registrationId === current.id;
+        if (sameRegistration && running.failed && requested !== "action")
+          return;
+        if (
+          sameRegistration &&
+          requested === "manual" &&
+          running.history &&
+          running.discovered
+        )
+          shareDiscovery = true;
         if (
           requested === "poll" &&
+          sameRegistration &&
           running.succeeded &&
           running.signature === worktreeSignature(current)
         )
@@ -136,30 +151,47 @@ export function useGitHub(repos: RepoInfo[]) {
         running = inFlight.current.get(repoPath);
       }
       if (signal?.aborted || !mounted.current || !currentRepo(repoPath)) return;
+      const registrationId = currentRepo(repoPath)?.id;
+      if (!registrationId) return;
       const flight: RefreshFlight = {
         promise: Promise.resolve(),
         controller: new AbortController(),
         history: false,
         discovered: false,
         succeeded: false,
+        failed: false,
+        registrationId,
         signature: "",
       };
       inFlight.current.set(repoPath, flight);
       const active = () =>
         mounted.current &&
         !flight.controller.signal.aborted &&
-        currentRepo(repoPath) !== undefined;
+        currentRepo(repoPath)?.id === registrationId;
       flight.promise = (async () => {
         let historyPending = false;
         let historyBase: string | undefined;
         let showingRefresh = false;
+        let cacheError: string | null = null;
+        const cacheWrite = async <A>(
+          promise: Promise<A>,
+          fallback: A,
+        ): Promise<A> =>
+          promise.catch((cause) => {
+            cacheError ??=
+              cause instanceof Error ? cause.message : String(cause);
+            return fallback;
+          });
         try {
           if (!loaded.current.has(repoPath)) {
             const cached = await tuiRuntime.runPromise(
               PrCacheService.use((s) => s.getDiscovery(repoPath)),
             );
             if (!active()) return;
-            if (cached) discovery.current.set(repoPath, cached);
+            if (cached) {
+              discovery.current.set(repoPath, cached);
+              persisted.current.set(repoPath, cached);
+            }
             loaded.current.add(repoPath);
           }
           // Backoff belongs to automatic discovery, not user actions or live data.
@@ -174,7 +206,7 @@ export function useGitHub(repos: RepoInfo[]) {
             requested === "poll" &&
             snapshot !== null &&
             Date.now() - snapshot.fetchedAt < CACHE_FRESH_WINDOW;
-          if (!reuseFresh) {
+          if (!reuseFresh && !shareDiscovery) {
             showingRefresh = true;
             setRefreshingProjects((previous) =>
               new Set(previous).add(repoPath),
@@ -193,11 +225,6 @@ export function useGitHub(repos: RepoInfo[]) {
               opts,
             );
             if (!active()) return;
-            // Persist repository discovery before workspace matching or detail reads.
-            await tuiRuntime.runPromise(
-              PrCacheService.use((s) => s.setDiscovery(repoPath, fetched)),
-            );
-            if (!active()) return;
             snapshot = fetched;
             discovery.current.set(repoPath, fetched);
             discoveryRetries.current.delete(repoPath);
@@ -209,10 +236,13 @@ export function useGitHub(repos: RepoInfo[]) {
           const open = snapshot.prs.filter(
             (pr) => openNumbers.has(pr.number) && pr.state === "OPEN",
           );
-          await tuiRuntime.runPromise(
-            PrCacheService.use((s) =>
-              s.setOpenPrs(repoPath, open.map(displayPr)),
+          await cacheWrite(
+            tuiRuntime.runPromise(
+              PrCacheService.use((s) =>
+                s.setOpenPrs(repoPath, open.map(displayPr), registrationId),
+              ),
             ),
+            undefined,
           );
           if (!active()) return;
           setOpenPrs((previous) =>
@@ -268,16 +298,34 @@ export function useGitHub(repos: RepoInfo[]) {
             );
             if (!active()) return;
             currentSnapshot = refreshed.snapshot;
-            await tuiRuntime.runPromise(
-              PrCacheService.use((s) =>
-                s.setDiscovery(repoPath, refreshed.snapshot),
-              ),
-            );
-            if (!active()) return;
             discovery.current.set(repoPath, refreshed.snapshot);
             const latest = currentRepo(repoPath);
             if (!latest) return;
             if (worktreeSignature(latest) !== signature) continue;
+            if (persisted.current.get(repoPath) !== refreshed.snapshot) {
+              const saved = await cacheWrite<boolean | null>(
+                tuiRuntime.runPromise(
+                  PrCacheService.use((s) =>
+                    s.setDiscovery(
+                      repoPath,
+                      refreshed.snapshot,
+                      persisted.current.get(repoPath),
+                      registrationId,
+                    ),
+                  ),
+                ),
+                null,
+              );
+              if (saved === false) {
+                discovery.current.delete(repoPath);
+                persisted.current.delete(repoPath);
+                loaded.current.delete(repoPath);
+                flight.controller.abort();
+                return;
+              }
+              if (saved) persisted.current.set(repoPath, refreshed.snapshot);
+            }
+            if (!isCurrent()) continue;
             const found = new Map(
               [...refreshed.entries].map(([branch, entry]) => [
                 workspaceIdentityKey(repoPath, branch),
@@ -286,22 +334,29 @@ export function useGitHub(repos: RepoInfo[]) {
             );
             await Promise.all(
               [...refreshed.entries].map(([branch, entry]) =>
-                tuiRuntime.runPromise(
-                  PrCacheService.use((s) =>
-                    s.setWorkspace(repoPath, branch, entry),
+                cacheWrite(
+                  tuiRuntime.runPromise(
+                    PrCacheService.use((s) =>
+                      s.setWorkspace(repoPath, branch, entry, registrationId),
+                    ),
                   ),
+                  undefined,
                 ),
               ),
             );
             if (!isCurrent()) continue;
             if (!repo.error)
-              await tuiRuntime.runPromise(
-                PrCacheService.use((s) =>
-                  s.pruneWorkspaces(
-                    repoPath,
-                    workspaces.map((wt) => wt.branch),
+              await cacheWrite(
+                tuiRuntime.runPromise(
+                  PrCacheService.use((s) =>
+                    s.pruneWorkspaces(
+                      repoPath,
+                      workspaces.map((wt) => wt.branch),
+                      registrationId,
+                    ),
                   ),
                 ),
+                undefined,
               );
             if (!isCurrent()) continue;
             setAssociations(
@@ -312,9 +367,9 @@ export function useGitHub(repos: RepoInfo[]) {
                     .concat([...found]),
                 ),
             );
-            const error = [...found.values()].find(
-              (entry) => entry.lastError,
-            )?.lastError;
+            const error =
+              cacheError ??
+              [...found.values()].find((entry) => entry.lastError)?.lastError;
             setErrors((previous) => {
               const next = new Map(previous);
               if (error) next.set(repoPath, error);
@@ -327,6 +382,7 @@ export function useGitHub(repos: RepoInfo[]) {
           }
         } catch (cause) {
           if (!active()) return;
+          flight.failed = true;
           // A failed associated PR cannot invalidate a completed history scan.
           if (
             historyPending &&
@@ -346,7 +402,12 @@ export function useGitHub(repos: RepoInfo[]) {
             void tuiRuntime
               .runPromise(
                 PrCacheService.use((s) =>
-                  s.setWorkspaceError(repoPath, wt.branch, message),
+                  s.setWorkspaceError(
+                    repoPath,
+                    wt.branch,
+                    message,
+                    registrationId,
+                  ),
                 ),
               )
               .catch(() => {});
@@ -432,13 +493,43 @@ export function useGitHub(repos: RepoInfo[]) {
       if (present.has(path)) continue;
       inFlight.current.get(path)?.controller.abort();
       observed.current.delete(path);
+      registrations.current.delete(path);
       discovery.current.delete(path);
+      persisted.current.delete(path);
       loaded.current.delete(path);
       discoveryRetries.current.delete(path);
     }
     for (const repo of reposRef.current) {
       const signature = worktreeSignature(repo);
       if (observed.current.get(repo.repoPath) === signature) continue;
+      const running = inFlight.current.get(repo.repoPath);
+      const registration = registrations.current.get(repo.repoPath);
+      if (registration !== undefined && registration !== repo.id) {
+        running?.controller.abort();
+        discovery.current.delete(repo.repoPath);
+        persisted.current.delete(repo.repoPath);
+        loaded.current.delete(repo.repoPath);
+        discoveryRetries.current.delete(repo.repoPath);
+        setAssociations(
+          (previous) =>
+            new Map(
+              [...previous].filter(
+                ([key]) => !key.startsWith(`${repo.repoPath}\0`),
+              ),
+            ),
+        );
+        setOpenPrs((previous) => {
+          const next = new Map(previous);
+          next.delete(repo.repoPath);
+          return next;
+        });
+        setErrors((previous) => {
+          const next = new Map(previous);
+          next.delete(repo.repoPath);
+          return next;
+        });
+      }
+      registrations.current.set(repo.repoPath, repo.id);
       observed.current.set(repo.repoPath, signature);
       void refreshOne(repo.repoPath, "poll");
     }

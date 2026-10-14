@@ -141,22 +141,30 @@ and respond to registry database changes. GitHub PR data refreshes every two
 minutes, when repositories or their worktrees change, and on explicit refresh
 actions. Complete PR discovery is cached in SQLite by Main Repository path;
 repositories without a usable snapshot scan their complete history. Fresh cache
-reads within thirty seconds avoid GitHub requests. Ordinary polls fetch the open
-PR list and batch updates for known open PRs that disappeared and unresolved or
-live external Explicit PR Associations. Historical candidates and merged PRs use
+reads within thirty seconds avoid GitHub requests. Ordinary polls read PRs in
+every state, newest-updated first, stopping after an inclusive server-timestamp
+checkpoint with a one-second overlap. This discovers PRs that closed or merged
+between polls or while the TUI was closed. Unresolved or live external Explicit
+PR Associations use batched updates. Historical candidates and merged PRs use
 cached facts. Check details are fetched for live associated PRs and open PR
 Candidates; terminal associations reuse complete checks for the same PR and head.
 Manual refresh rebuilds complete historical discovery and refreshes selected
-terminal facts; use it to discover older closed or merged matches outside the
-cached history. A failed associated PR retains stale data or an unresolved
+terminal facts. A failed associated PR retains stale data or an unresolved
 association without discarding discovery or blocking healthy Workspaces. Sibling
 candidate errors do not mark a healthy associated PR as stale.
 
 Discovery belongs to the repository: modal cancellation and worktree changes do
-not cancel it. Concurrent manual refreshes share a running complete scan.
+not cancel it. Concurrent manual refreshes share a running complete scan while
+still forcing terminal and external fact reads. Waiters share a failed request's
+error rather than immediately restarting it.
 Worktree changes reconcile against its completed results. Repository removal and
-TUI shutdown cancel that repository's active requests. Complete historical
-discovery has a ten-minute timeout. Failed discovery without a usable snapshot
+TUI shutdown cancel that repository's active requests. Cache writes are fenced
+by the project registration identity so removed projects cannot regain cached
+rows from old refreshes. Discovery stores changed PR records and a small
+checkpoint separately, once per refresh; unchanged records are retained.
+Database write errors leave fetched discovery available in memory and report a
+storage error without applying GitHub discovery backoff. Discovery has a
+ten-minute timeout. Failed discovery without a usable snapshot
 delays automatic requests for ten minutes without flashing a refresh indicator;
 manual refresh, post-merge reads, and explicit association changes bypass the
 delay. A changed base repository rebuilds discovery on the next actual refresh.

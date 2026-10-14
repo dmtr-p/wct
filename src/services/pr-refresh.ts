@@ -35,13 +35,14 @@ export function refreshPrDiscovery(
           : null;
       const raw = yield* github.listRawPrs(
         cwd,
-        cached ? "open" : "all",
+        cached ? "updated" : "all",
         baseRepository,
+        cached ? cached.discoveredThrough - 1000 : undefined,
       );
       const now = Date.now();
       const fresh: PrFacts[] = [];
       for (const value of raw) {
-        const pr = normalizeGhPr(value, baseRepository, now);
+        const pr = normalizeGhPr(value, baseRepository.toLowerCase(), now);
         if (!pr)
           return yield* commandError(
             "pr_error",
@@ -52,15 +53,34 @@ export function refreshPrDiscovery(
       const pool = new Map(
         (cached?.prs ?? []).map((pr) => [prIdentity(pr), pr]),
       );
-      for (const pr of fresh) pool.set(prIdentity(pr), pr);
+      for (const pr of fresh) {
+        const existing = pool.get(prIdentity(pr));
+        // Inclusive checkpoint reads repeat terminal rows without changing facts.
+        const unchanged =
+          pr.state !== "OPEN" &&
+          existing?.state === pr.state &&
+          existing.updatedAt === pr.updatedAt &&
+          existing.headOid === pr.headOid;
+        pool.set(prIdentity(pr), unchanged ? existing : pr);
+      }
+      const newestUpdate = fresh.length
+        ? Date.parse(fresh[0]?.updatedAt ?? "")
+        : (cached?.discoveredThrough ?? 0);
+      if (!Number.isFinite(newestUpdate))
+        return yield* commandError("pr_error", "Missing discovery checkpoint");
       return {
-        baseRepository,
+        baseRepository: baseRepository.toLowerCase(),
         prs: [...pool.values()],
         explicitPrs: cached?.explicitPrs ?? [],
-        openNumbers: fresh
+        openNumbers: [...pool.values()]
           .filter((pr) => pr.state === "OPEN")
           .map((pr) => pr.number),
         fetchedAt: now,
+        // The first page's newest server timestamp predates later-page updates.
+        discoveredThrough: Math.max(
+          cached?.discoveredThrough ?? 0,
+          newestUpdate,
+        ),
       } satisfies PrDiscoverySnapshot;
     }),
   );
@@ -104,14 +124,9 @@ export function refreshWorkspacePrs(
       const external = new Map(
         snapshot.explicitPrs.map((pr) => [prIdentity(pr), pr]),
       );
-      const index = branchIndex(pool.values());
-      const open = new Set(snapshot.openNumbers);
       const needed = new Map<string, ExplicitPrAssociation>();
       const failed = new Map<string, string>();
       for (const workspace of workspaces) {
-        for (const pr of matching(index, workspace))
-          if (pr.state === "OPEN" && !open.has(pr.number))
-            needed.set(prIdentity(pr), pr);
         if (workspace.explicit) {
           const identity = prIdentity(workspace.explicit);
           const known = pool.get(identity) ?? external.get(identity);
@@ -120,8 +135,7 @@ export function refreshWorkspacePrs(
             snapshot.baseRepository.toLowerCase();
           if (
             !known ||
-            (!local && (force || (!reuseFresh && known.state !== "MERGED"))) ||
-            (known.state === "OPEN" && local && !open.has(known.number))
+            (!local && (force || (!reuseFresh && known.state !== "MERGED")))
           )
             needed.set(identity, workspace.explicit);
         }
@@ -235,9 +249,10 @@ export function refreshWorkspacePrs(
       }
       const byBase = new Map<string, PrFacts[]>();
       for (const pr of detailTargets.values()) {
-        const group = byBase.get(pr.baseRepository) ?? [];
+        const repository = pr.baseRepository.toLowerCase();
+        const group = byBase.get(repository) ?? [];
         group.push(pr);
-        byBase.set(pr.baseRepository, group);
+        byBase.set(repository, group);
       }
       const details = new Map(
         (yield* Effect.forEach(
@@ -285,11 +300,14 @@ export function refreshWorkspacePrs(
       }
       return {
         entries,
-        snapshot: {
-          ...snapshot,
-          prs: [...pool.values()],
-          explicitPrs: [...external.values()],
-        },
+        snapshot:
+          needed.size || details.size
+            ? {
+                ...snapshot,
+                prs: [...pool.values()],
+                explicitPrs: [...external.values()],
+              }
+            : snapshot,
       };
     }),
   );

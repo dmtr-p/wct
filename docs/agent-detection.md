@@ -62,7 +62,8 @@ its borders and readiness marker remain available. Live activity outside the
 box, title spinners, and approval-dialog controls retain their priorities.
 Claude's waiting indicator for background agents or dynamic workflows establishes
 working when it is the last nonempty row above the prompt box, ignoring the
-`new task? /clear to save … tokens` hint.
+`new task? /clear to save … tokens` and `Image in clipboard · ctrl+v to paste`
+hints.
 A recognized composer also excludes preceding completed-response text from
 blocker rules, so quoted workflow, permission, and directory-trust dialogs do
 not establish live blockers or corroborate a blocked title. Activity rules

@@ -301,8 +301,10 @@ describe("agent classifier", () => {
     ["1 dynamic workflow", ""],
     ["2 dynamic workflows", ""],
     ["1 dynamic workflow", "     new task? /clear to save 170.2k tokens"],
+    ["1 dynamic workflow", "     Image in clipboard · ctrl+v to paste"],
+    ["2 dynamic workflows", "     Image in clipboard · ctrl+v to paste"],
   ])(
-    "Claude remains working while waiting for %s below a completed response",
+    "Claude remains working while waiting for %s with composer hint '%s'",
     (workflows, hint) => {
       const screen = [
         "● Both issues are now being worked on in the background.",
@@ -346,6 +348,9 @@ describe("agent classifier", () => {
       `${waiting}\n● Both workflows finished.`,
       `${waiting}\n● Both workflows finished.\nnew task? /clear to save 170.2k tokens`,
       `${waiting}\n● new task? /clear to save 170.2k tokens`,
+      `${waiting}\n● Both workflows finished.\nImage in clipboard · ctrl+v to paste`,
+      `${waiting}\n● Image in clipboard · ctrl+v to paste`,
+      "Image in clipboard · ctrl+v to paste",
       `● The status says: ${waiting}`,
     ])
       expect(classifyAgent("claude", `${response}\n\n${composer}`).state).toBe(
@@ -355,6 +360,12 @@ describe("agent classifier", () => {
       classifyAgent(
         "claude",
         `${waiting}\nRun a dynamic workflow?\nEsc to cancel`,
+      ).state,
+    ).toBe("blocked");
+    expect(
+      classifyAgent(
+        "claude",
+        `${waiting}\nRun a dynamic workflow?\nEsc to cancel\nImage in clipboard · ctrl+v to paste`,
       ).state,
     ).toBe("blocked");
   });

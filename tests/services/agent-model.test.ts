@@ -385,6 +385,77 @@ describe("agent classifier", () => {
       expect(agentSummary([observation])).toBe("1 working");
     },
   );
+  test.each([
+    "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
+    "❯ ○ impl-loop ▱▱▱▱▱▱ 0/1 · 4m42s · ↓ 49.3k tokens",
+  ])("Claude keeps a compacted session working with footer row %s", (row) => {
+    const screen = [
+      "  └ Skills restored (gh-stack, workflow-authoring)",
+      "",
+      "● Compacted while idle, before the prompt cache expired",
+      "",
+      "────────────────────────────────────────",
+      "❯",
+      "────────────────────────────────────────",
+      "Opus 5.5 | 0 | Session: 23.0% | project | Reset: 43m",
+      "⏵⏵ auto mode on · 1 shell, 1 monitor",
+      "",
+      row,
+    ].join("\n");
+    const classified = classifyAgent("claude", screen);
+    expect(classified).toMatchObject({
+      state: "working",
+      rule: "live_workflow_footer",
+      strong: true,
+    });
+    const observation = reconcileAgent(
+      undefined,
+      "claude",
+      "job",
+      classified,
+      0,
+    );
+    const refreshed = reconcileAgent(
+      observation,
+      "claude",
+      "job",
+      classifyAgent("claude", screen),
+      6000,
+    );
+    expect(refreshed.freshness).toBe("fresh");
+    expect(agentSummary([refreshed])).toBe("1 working");
+  });
+  test("Claude workflow footers require live, incomplete progress", () => {
+    const composer = "──────\n❯\n──────\n? for shortcuts";
+    const row = "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens";
+    for (const footer of [
+      row.replace("5/6", "6/6"),
+      row.replace("5/6", "7/6"),
+      row.replace("5/6", "0/0"),
+      row.replace("○", "✓"),
+      row.replace("○", "✗"),
+      row.replace("○", "⏸"),
+      row.replace(" · ↓ 1.0m tokens", ""),
+      "⏵⏵ auto mode on · 1 shell, 1 monitor",
+    ])
+      expect(classifyAgent("claude", `${composer}\n${footer}`).state).toBe(
+        "idle",
+      );
+    expect(classifyAgent("claude", `${row}\n${composer}`).state).toBe("idle");
+    expect(classifyAgent("claude", row).state).toBe("unknown");
+    expect(
+      classifyAgent(
+        "claude",
+        `${composer}\n${row.replace("5/6", "6/6")}\n${row}`,
+      ).state,
+    ).toBe("working");
+    expect(
+      classifyAgent(
+        "claude",
+        `──────\nQuestion\nEnter to select · arrows to navigate · esc to cancel\n${row}`,
+      ).state,
+    ).toBe("blocked");
+  });
   test("Claude ignores completed or historical workflow waits and keeps live approvals blocked", () => {
     const composer = "──────\n❯\n──────\n? for shortcuts";
     const waiting = "* Waiting for 2 dynamic workflows to finish";
@@ -421,6 +492,7 @@ describe("agent classifier", () => {
       "⏸ esc to interrupt",
       "✻ Waiting for 2 background agents to finish",
       "* Waiting for 2 dynamic workflows to finish",
+      "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
       "✻ Reading · 2 MCP tasks still running",
       "run a dynamic workflow?\n  esc to cancel",
       'MCP server "example" requests your input\n  Accept\n  esc to cancel',

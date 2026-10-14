@@ -226,11 +226,22 @@ function claudeComposer(screen: string) {
     index > top && index < bottom ? (index === prompt ? "❯" : "") : line,
   );
   return {
+    footer,
     screen: controlLines.join("\n"),
     blockerScreen: controlLines
       .map((line, index) => (index < top ? "" : line))
       .join("\n"),
   };
+}
+
+function hasRunningClaudeWorkflow(footer: string): boolean {
+  return footer.split("\n").some((line) => {
+    const progress =
+      /^\s*(?:❯\s+)?○\s+\S.*?\s+[▰▱]+\s+(\d+)\/(\d+)\s+·\s+\d+[hms](?:\s*\d+[hms])*\s+·\s+[↑↓]\s+\d+(?:\.\d+)?[km]?\s+tokens?\s*$/u.exec(
+        line,
+      );
+    return !!progress && Number(progress[1]) < Number(progress[2]);
+  });
 }
 
 export function classifyAgent(
@@ -269,6 +280,19 @@ export function classifyAgent(
         ),
     )
     .sort((a, b) => b.priority - a.priority)[0];
+  // Compaction can remove the waiting indicator while footer work continues.
+  // Override readiness only, preserving live blocker and viewer priorities.
+  if (
+    matched?.state === "idle" &&
+    promptBox &&
+    hasRunningClaudeWorkflow(promptBox.footer)
+  )
+    return {
+      state: "working",
+      rule: "live_workflow_footer",
+      source: "screen",
+      strong: true,
+    };
   if (matched)
     return {
       state: matched.state,

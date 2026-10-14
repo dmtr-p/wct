@@ -67,6 +67,12 @@ Claude's waiting indicator for background agents or dynamic workflows establishe
 working when it is the last nonempty row above the prompt box, ignoring the
 `new task? /clear to save … tokens` and `Image in clipboard · ctrl+v to paste`
 hints.
+An incomplete workflow progress row in the footer below a recognized Claude
+prompt box also establishes working, including after compaction removes the
+waiting indicator. It requires the running marker, progress bar, incomplete
+step count, elapsed time, and token usage. Completed, paused, or failed rows,
+shell/monitor counts alone, and rows quoted in the transcript or draft do not
+establish workflow activity. Live blocker and viewer rules retain priority.
 A recognized composer also excludes preceding completed-response text from
 blocker rules, so quoted workflow, permission, and directory-trust dialogs do
 not establish live blockers or corroborate a blocked title. Activity rules

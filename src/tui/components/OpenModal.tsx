@@ -39,7 +39,7 @@ export interface OpenModalProps {
   repoPath: string;
   prList: PRInfo[];
   isRefreshing: boolean;
-  onRefresh: (signal?: AbortSignal) => void;
+  onRefresh: (signal?: AbortSignal, full?: boolean) => void;
 }
 
 function ModeSelector({
@@ -693,7 +693,7 @@ export function OpenModal({
           prList={prList}
           profileNames={profileNames}
           isRefreshing={isRefreshing}
-          onRefresh={() => onRefresh(abortControllerRef.current?.signal)}
+          onRefresh={() => onRefresh(abortControllerRef.current?.signal, true)}
           onSubmit={onSubmit}
           onBack={handleBack}
           width={innerWidth}

@@ -1,23 +1,232 @@
 import { PassThrough } from "node:stream";
+import { Effect } from "effect";
 import React from "react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { commandError } from "../../src/errors";
+import { GitHubService } from "../../src/services/github-service";
+import {
+  livePrCacheService,
+  PrCacheService,
+  type PrDiscoverySnapshot,
+  type PrCacheServiceApi,
+  type ExplicitPrAssociation,
+  type WorkspacePrEntry,
+} from "../../src/services/pr-cache-service";
+import type { PrFacts } from "../../src/services/pr-model";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: { runPromise: vi.fn(), runSync: vi.fn(() => null) },
 }));
+vi.mock("../../src/services/pr-discovery", async () => ({
+  ...(await vi.importActual<typeof import("../../src/services/pr-discovery")>(
+    "../../src/services/pr-discovery",
+  )),
+  resolvePushDestination: (_cwd: string, branch: string) =>
+    Effect.promise(async () => {
+      activeDestinations++;
+      peakDestinations = Math.max(peakDestinations, activeDestinations);
+      try {
+        if (destinationGate) await destinationGate;
+      } finally {
+        activeDestinations--;
+      }
+    }).pipe(
+      Effect.flatMap(() =>
+        failWorkspaceReads
+          ? Effect.fail(commandError("pr_error", "workspace unavailable"))
+          : Effect.succeed(
+              branch === "unknown" ? null : { repository: "fork/repo", branch },
+            ),
+      ),
+    ),
+}));
+vi.mock("../../src/services/pr-details", () => ({
+  fetchPrDetails: (_cwd: string, _base: string, prs: PrFacts[]) =>
+    Effect.sync(() => {
+      detailCalls.push(prs.map((pr) => pr.number));
+      return prs.map((pr) => ({
+        ...pr,
+        checks: [],
+        checksComplete: !(detailError ?? detailErrors.get(pr.number)),
+        lastError: detailError ?? detailErrors.get(pr.number) ?? null,
+      }));
+    }),
+}));
 const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useGitHub } = await import("../../src/tui/hooks/useGitHub");
 const runPromise = vi.mocked(tuiRuntime.runPromise);
-const runSync = vi.mocked(tuiRuntime.runSync);
 
-function repo(path = "/tmp/repo"): RepoInfo {
+function rawPr(
+  number: number,
+  state = "OPEN",
+  branch = "feature",
+  head = "fork/repo",
+  headOid: string | null = `oid-${number}`,
+) {
+  return {
+    number,
+    state,
+    title: `PR ${number}`,
+    headRefName: branch,
+    headRepository: { nameWithOwner: head },
+    headRefOid: headOid,
+    updatedAt: new Date(Date.now() + number).toISOString(),
+  };
+}
+let history: ReturnType<typeof rawPr>[];
+let listError: string | null;
+let detailError: string | null;
+let getError: string | null;
+let base: string;
+let holdList: Promise<void> | null;
+let failDiscoveryWrites: boolean;
+let removedRegistration: boolean;
+let failWorkspaceReads: boolean;
+let discoveryWrites: number;
+let baseError: string | null;
+let destinationGate: Promise<void> | null;
+let activeDestinations: number;
+let peakDestinations: number;
+let heldRepo: string | null;
+const detailErrors = new Map<number, string>();
+const detailCalls: number[][] = [];
+const discoveryCache = new Map<string, PrDiscoverySnapshot>();
+const openCache = new Map<string, { number: number }[]>();
+const baseRead = vi.fn(() =>
+  Effect.suspend(() =>
+    baseError
+      ? Effect.fail(commandError("pr_error", baseError))
+      : Effect.succeed(base),
+  ),
+);
+const batchGet = vi.fn(
+  (cwd: string, repository: string, numbers: readonly number[]) =>
+    Effect.forEach(numbers, (number) =>
+      get(cwd, repository, number).pipe(
+        Effect.map((raw) => ({ number, raw, error: null as string | null })),
+        Effect.catch((error) =>
+          Effect.succeed({ number, raw: null, error: error.message }),
+        ),
+      ),
+    ),
+);
+const list = vi.fn(
+  (_cwd: string, state: "all" | "updated", _base: string, since?: number) =>
+    Effect.promise(async () => {
+      if (holdList && (!heldRepo || heldRepo === _cwd)) await holdList;
+    }).pipe(
+      Effect.flatMap(() =>
+        listError
+          ? Effect.fail(commandError("pr_error", listError))
+          : Effect.succeed(
+              history
+                .filter(
+                  (pr) =>
+                    state === "all" || Date.parse(pr.updatedAt) >= (since ?? 0),
+                )
+                .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+            ),
+      ),
+    ),
+);
+const get = vi.fn((_cwd: string, _base: string, number: number) =>
+  Effect.suspend(() =>
+    getError
+      ? Effect.fail(commandError("pr_error", getError))
+      : Effect.succeed(
+          history.find((pr) => pr.number === number) ?? rawPr(number, "MERGED"),
+        ),
+  ),
+);
+const github = GitHubService.of({
+  isGhInstalled: Effect.succeed(true),
+  resolvePr: () =>
+    Effect.succeed({
+      branch: "feature",
+      prNumber: 1,
+      isCrossRepository: false,
+    }),
+  addForkRemote: () => Effect.void,
+  fetchBranch: () => Effect.void,
+  findRemoteForRepo: () => Effect.succeed(null),
+  resolveBaseRepo: baseRead,
+  listRawPrs: list,
+  getRawPrs: batchGet,
+});
+const workspaceCache = new Map<string, WorkspacePrEntry>();
+const explicitCache = new Map<string, ExplicitPrAssociation>();
+const key = (path: string, branch: string) => `${path}\0${branch}`;
+const cache = PrCacheService.of({
+  ...livePrCacheService,
+  getWorkspaceInputs: (path, branches) =>
+    Effect.sync(() =>
+      branches.map((branch) => ({
+        branch,
+        explicit: explicitCache.get(key(path, branch)) ?? null,
+        cached: workspaceCache.get(key(path, branch)) ?? null,
+      })),
+    ),
+  getDiscovery: (path) => Effect.sync(() => discoveryCache.get(path) ?? null),
+  setDiscovery: (path, snapshot) =>
+    Effect.sync(() => {
+      discoveryWrites++;
+      if (failDiscoveryWrites) throw new Error("cache write failed");
+      if (removedRegistration) return false;
+      discoveryCache.set(path, snapshot);
+      return true;
+    }),
+  getWorkspace: (path, branch) =>
+    Effect.sync(() => workspaceCache.get(key(path, branch)) ?? null),
+  setWorkspace: (path, branch, entry) =>
+    Effect.sync(() => {
+      workspaceCache.set(key(path, branch), entry);
+    }),
+  setWorkspaceError: (path, branch, message) =>
+    Effect.sync(() => {
+      const entry = workspaceCache.get(key(path, branch));
+      if (entry)
+        workspaceCache.set(key(path, branch), { ...entry, lastError: message });
+    }),
+  getExplicit: (path, branch) =>
+    Effect.sync(() => explicitCache.get(key(path, branch)) ?? null),
+  setExplicit: (path, branch, association) =>
+    Effect.sync(() => {
+      explicitCache.set(key(path, branch), association);
+    }),
+  clearExplicit: (path, branch) =>
+    Effect.sync(() => {
+      explicitCache.delete(key(path, branch));
+    }),
+  getOpenPrs: () => Effect.succeed(null),
+  setOpenPrs: (path, prs) =>
+    Effect.sync(() => {
+      openCache.set(path, prs);
+    }),
+  pruneWorkspaces: (path, branches) =>
+    Effect.sync(() => {
+      for (const identity of explicitCache.keys())
+        if (
+          identity.startsWith(`${path}\0`) &&
+          !branches.includes(identity.slice(path.length + 1))
+        )
+          explicitCache.delete(identity);
+    }),
+});
+
+function repo(path = "/tmp/repo", branches: string[] = []): RepoInfo {
   return {
     id: path,
     repoPath: path,
     project: "same-name",
-    worktrees: [],
     profileNames: [],
+    worktrees: branches.map((branch) => ({
+      branch,
+      path: `${path}/${branch}`,
+      isMainWorktree: false,
+      changedFiles: 0,
+      sync: null,
+    })),
   };
 }
 
@@ -56,181 +265,1112 @@ async function renderHook(repos: RepoInfo[]) {
     unmount: () => instance.unmount(),
   };
 }
-
 async function settle() {
-  for (let i = 0; i < 8; i++)
+  for (let i = 0; i < 12; i++)
     await new Promise((resolve) => setTimeout(resolve, 0));
+}
+async function poll() {
+  vi.advanceTimersByTime(120_000);
+  await settle();
 }
 
 describe("useGitHub", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    history = [];
+    listError = detailError = getError = null;
+    baseError = null;
+    destinationGate = null;
+    activeDestinations = peakDestinations = 0;
+    base = "base/repo";
+    holdList = null;
+    heldRepo = null;
+    failDiscoveryWrites = removedRegistration = false;
+    failWorkspaceReads = false;
+    discoveryWrites = 0;
+    detailErrors.clear();
+    detailCalls.length = 0;
+    discoveryCache.clear();
+    openCache.clear();
+    baseRead.mockClear();
+    batchGet.mockClear();
+    workspaceCache.clear();
+    explicitCache.clear();
+    list.mockClear();
+    get.mockClear();
     runPromise.mockReset();
-    runSync.mockReset();
-    runSync.mockReturnValue(null as never);
+    runPromise.mockImplementation((<A, E>(
+      effect: Effect.Effect<A, E, GitHubService | PrCacheServiceApi>,
+      options?: { signal?: AbortSignal },
+    ) =>
+      Effect.runPromise(
+        effect.pipe(
+          Effect.provideService(GitHubService, github),
+          Effect.provideService(PrCacheService, cache),
+        ),
+        options,
+      )) as typeof tuiRuntime.runPromise);
   });
+  afterEach(() => vi.useRealTimers());
 
   test("does not fetch an empty registry", async () => {
     const harness = await renderHook([]);
-    await settle();
-    expect(runPromise).not.toHaveBeenCalled();
-    expect(harness.value.prData.size).toBe(0);
-    harness.unmount();
-  });
-
-  test("keeps the Open-modal list separate from Workspace associations", async () => {
-    const raw = {
-      number: 42,
-      title: "Open PR",
-      state: "OPEN",
-      headRefName: "feature",
-    };
-    let call = 0;
-    runPromise.mockImplementation((() => {
-      call++;
-      return Promise.resolve(
-        call === 1
-          ? "base/repo"
-          : call === 2
-            ? []
-            : call === 3
-              ? [raw]
-              : call === 4
-                ? []
-                : undefined,
-      );
-    }) as typeof tuiRuntime.runPromise);
-    const harness = await renderHook([repo()]);
-    await settle();
-    expect(
-      harness.value.openPrs.get("/tmp/repo")?.map((pr) => pr.number),
-    ).toEqual([42]);
-    expect(harness.value.prData.size).toBe(0);
-    harness.unmount();
-  });
-
-  test("a fetch failure is scoped by repository path", async () => {
-    runPromise.mockRejectedValue(new Error("offline"));
-    const harness = await renderHook([repo("/tmp/a")]);
-    await settle();
-    expect(harness.value.errors.get("/tmp/a")).toContain("offline");
-    expect(harness.value.errors.has("/tmp/b")).toBe(false);
-    harness.unmount();
-  });
-
-  test("targeted refresh isolates repositories with the same display name", async () => {
-    runPromise.mockRejectedValue(new Error("offline"));
-    const harness = await renderHook([repo("/tmp/a"), repo("/tmp/b")]);
     try {
       await settle();
-      expect(harness.value.errors.get("/tmp/a")).toBe("offline");
-      expect(harness.value.errors.get("/tmp/b")).toBe("offline");
-
-      runPromise.mockClear();
-      runPromise.mockRejectedValue(new Error("retry failed"));
-      await harness.value.refresh("/tmp/a");
-      await settle();
-      expect(runPromise).toHaveBeenCalledTimes(1);
-      expect(harness.value.errors.get("/tmp/a")).toBe("retry failed");
-      expect(harness.value.errors.get("/tmp/b")).toBe("offline");
-
-      runPromise.mockClear();
-      await harness.value.refresh("same-name");
       expect(runPromise).not.toHaveBeenCalled();
+      expect(harness.value.prData.size).toBe(0);
     } finally {
       harness.unmount();
     }
   });
 
-  test("a repository change starts a fresh request after aborting the old one", async () => {
-    let rejectFirst: (error: Error) => void = () => {};
-    let calls = 0;
-    runPromise.mockImplementation(((_effect, options) => {
-      calls++;
-      if (calls === 1)
-        return new Promise((_, reject) => {
-          rejectFirst = reject;
-          options?.signal?.addEventListener("abort", () =>
-            rejectFirst(new Error("aborted")),
-          );
-        });
-      return Promise.resolve(calls === 2 ? "base/repo" : []);
-    }) as typeof tuiRuntime.runPromise);
-    const initial = repo();
-    const harness = await renderHook([initial]);
-    await settle();
-    expect(calls).toBe(1);
-    expect(harness.value.refreshingProjects).toEqual(
-      new Set([initial.repoPath]),
-    );
-    harness.rerender([
-      {
-        ...initial,
-        worktrees: [
-          {
-            branch: "main",
-            path: initial.repoPath,
-            isMainWorktree: true,
-            changedFiles: 0,
-            sync: null,
-          },
-        ],
-      },
+  test("derives the modal list from complete discovery then polls updates with a cached base", async () => {
+    history = [rawPr(1), rawPr(2, "MERGED")];
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(baseRead).toHaveBeenCalledTimes(1);
+      expect(harness.value.refreshingProjects.size).toBe(0);
+      expect(
+        harness.value.openPrs.get("/tmp/repo")?.map((pr) => pr.number),
+      ).toEqual([1]);
+      expect(harness.value.prData.size).toBe(0);
+      await poll();
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+        "updated",
+      ]);
+      expect(get).not.toHaveBeenCalled();
+      expect(baseRead).toHaveBeenCalledTimes(1);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("routine polls make no summary or check calls for dozens of terminal candidates", async () => {
+    history = Array.from({ length: 60 }, (_, i) => rawPr(i + 1, "MERGED"));
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      const initiallyDetailed = detailCalls.flat();
+      expect(initiallyDetailed).toHaveLength(1);
+      detailCalls.length = 0;
+      await poll();
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+        "updated",
+      ]);
+      expect(batchGet).not.toHaveBeenCalled();
+      expect(detailCalls).toEqual([]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(initiallyDetailed[0]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("bounds push-destination work for large worktree lists", async () => {
+    let release!: () => void;
+    destinationGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([
+      repo(
+        "/tmp/repo",
+        Array.from({ length: 40 }, (_, index) => `feature-${index}`),
+      ),
     ]);
-    await settle();
-    expect(calls).toBeGreaterThanOrEqual(4);
-    expect(harness.value.errors.has(initial.repoPath)).toBe(false);
-    expect(harness.value.refreshingProjects.size).toBe(0);
-    harness.unmount();
+    try {
+      await settle();
+      expect(activeDestinations).toBe(4);
+      release();
+      destinationGate = null;
+      await settle();
+      expect(peakDestinations).toBe(4);
+      expect(harness.value.refreshingProjects.size).toBe(0);
+    } finally {
+      release();
+      harness.unmount();
+    }
   });
 
-  test("an Explicit PR Association refreshes after an in-flight request", async () => {
-    let releaseFirst: (repository: string) => void = () => {};
-    let calls = 0;
-    runPromise.mockImplementation((() => {
-      calls++;
-      if (calls === 1)
-        return new Promise<string>((resolve) => {
-          releaseFirst = resolve;
-        });
-      if (calls === 3 || calls === 4 || calls === 8 || calls === 9)
-        return Promise.resolve([]);
-      return Promise.resolve(calls === 7 ? "base/repo" : undefined);
-    }) as typeof tuiRuntime.runPromise);
+  test.each(["MERGED", "CLOSED"])(
+    "failed details cannot replace newly discovered %s facts with cached OPEN facts",
+    async (state) => {
+      history = [
+        { ...rawPr(1), headRefOid: "old-head" } as ReturnType<typeof rawPr>,
+      ];
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      try {
+        await settle();
+        detailError = "details unavailable";
+        history = [rawPr(1, state)];
+        await poll();
+        const pr = harness.value.prData.get(key("/tmp/repo", "feature"));
+        expect(pr?.state).toBe(state);
+        expect(pr?.facts?.checksComplete).toBe(false);
+        expect(pr?.facts?.lastError).toBe(detailError);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("terminal associations with unknown heads do not reuse complete checks on later polls", async () => {
+    history = [
+      {
+        ...rawPr(1, "MERGED", "feature", "fork/repo", null),
+        updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      },
+      rawPr(2, "MERGED", "other"),
+    ];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(detailCalls).toEqual([[1]]);
+      await poll();
+      expect(detailCalls).toEqual([[1], [1]]);
+      harness.unmount();
+      const reopened = await renderHook([repo("/tmp/repo", ["feature"])]);
+      try {
+        await settle();
+        expect(list.mock.calls.map((call) => call[1])).toEqual([
+          "all",
+          "updated",
+        ]);
+        expect(detailCalls).toEqual([[1], [1], [1]]);
+      } finally {
+        reopened.unmount();
+      }
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a newly linked local OPEN PR reaches the Open list and snapshot immediately", async () => {
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      get.mockReturnValueOnce(Effect.succeed(rawPr(99)));
+      await harness.value.setExplicit("/tmp/repo", "feature", {
+        baseRepository: "base/repo",
+        number: 99,
+      } as PrFacts);
+      await settle();
+      expect(
+        harness.value.openPrs.get("/tmp/repo")?.map((pr) => pr.number),
+      ).toEqual([99]);
+      expect(discoveryCache.get("/tmp/repo")?.openNumbers).toEqual([99]);
+      expect(openCache.get("/tmp/repo")?.map((pr) => pr.number)).toEqual([99]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("cleared external Explicit PR Associations are pruned from discovery", async () => {
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "external/repo",
+      number: 99,
+    });
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(discoveryCache.get("/tmp/repo")?.explicitPrs).toHaveLength(1);
+      await harness.value.clearExplicit("/tmp/repo", "feature");
+      await settle();
+      expect(discoveryCache.get("/tmp/repo")?.explicitPrs).toEqual([]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("failed base resolution backs off automatic requests but manual refresh retries", async () => {
+    baseError = "not authenticated";
     const harness = await renderHook([repo()]);
-    await settle();
-    expect(calls).toBe(1);
-    const update = harness.value.setExplicit("/tmp/repo", "feature", {
+    try {
+      await settle();
+      await poll();
+      await poll();
+      expect(baseRead).toHaveBeenCalledTimes(1);
+      expect(list).not.toHaveBeenCalled();
+      expect(harness.value.refreshingProjects.size).toBe(0);
+      baseError = null;
+      await harness.value.refresh();
+      await settle();
+      expect(baseRead).toHaveBeenCalledTimes(2);
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a queued manual refresh runs after a failed automatic discovery", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    list.mockImplementationOnce(() =>
+      Effect.promise(() => gate).pipe(
+        Effect.andThen(Effect.fail(commandError("pr_error", "offline"))),
+      ),
+    );
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      const manual = harness.value.refresh();
+      release();
+      await manual;
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      release();
+      harness.unmount();
+    }
+  });
+
+  test("a failed explicit identity leaves healthy associations and persisted discovery available", async () => {
+    history = [rawPr(1)];
+    explicitCache.set(key("/tmp/repo", "second"), {
+      baseRepository: "external/repo",
+      number: 8,
+    });
+    getError = "fork unavailable";
+    const harness = await renderHook([
+      repo("/tmp/repo", ["feature", "second"]),
+    ]);
+    try {
+      await settle();
+      expect(
+        discoveryCache.get("/tmp/repo")?.prs.map((pr) => pr.number),
+      ).toEqual([1]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
+      ).toBeNull();
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "second"))?.lastError,
+      ).toContain(getError);
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a healthy explicit association does not inherit sibling check errors", async () => {
+    history = [rawPr(1), rawPr(2)];
+    explicitCache.set(key("/tmp/repo", "feature"), {
       baseRepository: "base/repo",
-      number: 42,
-    } as Parameters<ReturnType<typeof useGitHub>["setExplicit"]>[2]);
-    await settle();
-    expect(calls).toBe(2);
-    releaseFirst("base/repo");
-    await update;
-    expect(calls).toBe(11);
-    harness.unmount();
+      number: 1,
+    });
+    detailErrors.set(2, "incomplete sibling checks");
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      await poll();
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.facts?.lastError,
+      ).toBeNull();
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
+      ).toBeNull();
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
   });
 
-  test("a post-submission refresh waits for an older request", async () => {
-    let releaseFirst: (repository: string) => void = () => {};
-    let calls = 0;
-    runPromise.mockImplementation((() => {
-      calls++;
-      if (calls === 1)
-        return new Promise<string>((resolve) => {
-          releaseFirst = resolve;
-        });
-      return Promise.resolve(calls === 6 ? "base/repo" : []);
-    }) as typeof tuiRuntime.runPromise);
+  test("new TUI sessions reuse persistent discovery, skip fresh reads, then poll only open PRs", async () => {
+    history = [rawPr(1, "MERGED")];
+    const first = await renderHook([repo("/tmp/repo", ["feature"])]);
+    await settle();
+    first.unmount();
+    list.mockClear();
+    baseRead.mockClear();
+    batchGet.mockClear();
+    detailCalls.length = 0;
+    const second = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(list).not.toHaveBeenCalled();
+      expect(baseRead).not.toHaveBeenCalled();
+      expect(detailCalls).toEqual([]);
+      expect(second.value.prData.get(key("/tmp/repo", "feature"))?.number).toBe(
+        1,
+      );
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["updated"]);
+    } finally {
+      second.unmount();
+    }
+  });
+
+  test.each(["post-merge", "set explicit", "clear explicit"])(
+    "%s refresh bypasses automatic discovery backoff",
+    async (action) => {
+      listError = "offline";
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      try {
+        await settle();
+        listError = null;
+        if (action === "post-merge")
+          await harness.value.refreshAfterCurrent("/tmp/repo");
+        else if (action === "set explicit")
+          await harness.value.setExplicit("/tmp/repo", "feature", {
+            baseRepository: "base/repo",
+            number: 1,
+          } as PrFacts);
+        else await harness.value.clearExplicit("/tmp/repo", "feature");
+        await settle();
+        expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("a poll joining a modal refresh still receives fresh data when the modal closes", async () => {
+    history = [rawPr(1)];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      vi.advanceTimersByTime(31_000);
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      const controller = new AbortController();
+      const modal = harness.value.refreshCurrent(
+        "/tmp/repo",
+        controller.signal,
+      );
+      await settle();
+      const waitingPoll = harness.value.refreshCurrent("/tmp/repo");
+      controller.abort();
+      history[0] = rawPr(1, "MERGED");
+      holdList = null;
+      release();
+      await Promise.all([modal, waitingPoll]);
+      await settle();
+      expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
+        "MERGED",
+      );
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("worktree changes in one repository do not restart another repository's discovery", async () => {
+    let release!: () => void;
+    heldRepo = "/tmp/a";
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo("/tmp/a"), repo("/tmp/b")]);
+    try {
+      await settle();
+      harness.rerender([repo("/tmp/a"), repo("/tmp/b", ["feature"])]);
+      await settle();
+      expect(
+        list.mock.calls.filter((call) => call[0] === "/tmp/a"),
+      ).toHaveLength(1);
+      expect(
+        list.mock.calls.filter((call) => call[0] === "/tmp/b"),
+      ).toHaveLength(1);
+      holdList = null;
+      release();
+      await settle();
+      expect(discoveryCache.has("/tmp/a")).toBe(true);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("concurrent manual refresh shares a full discovery already in progress", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
     const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      const manual = harness.value.refresh();
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a PR merged between polls is discovered without manual refresh", async () => {
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      history.push(rawPr(1, "MERGED"));
+      await poll();
+      expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
+        "MERGED",
+      );
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(batchGet).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("saved history discovers PRs closed while the TUI was not running", async () => {
+    const first = await renderHook([repo("/tmp/repo", ["feature"])]);
     await settle();
-    expect(calls).toBe(1);
-    const fresh = harness.value.refreshAfterCurrent("/tmp/repo");
-    await settle();
-    expect(calls).toBe(1);
-    releaseFirst("base/repo");
-    await fresh;
-    expect(calls).toBe(10);
-    harness.unmount();
+    first.unmount();
+    vi.advanceTimersByTime(120_000);
+    history = [rawPr(2, "CLOSED")];
+    const second = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(second.value.prData.get(key("/tmp/repo", "feature"))?.number).toBe(
+        2,
+      );
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+    } finally {
+      second.unmount();
+    }
+  });
+
+  test("a shared full scan still performs forced external and terminal reads for a manual request", async () => {
+    history = [rawPr(1, "MERGED")];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "external/repo",
+      number: 8,
+    });
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      const manual = harness.value.refresh();
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(batchGet).toHaveBeenCalledTimes(2);
+      expect(detailCalls.flat().filter((number) => number === 8)).toHaveLength(
+        2,
+      );
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test.each(["history", "workspace"])(
+    "queued polls share a failed %s request without retrying it",
+    async (failure) => {
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      if (failure === "history") listError = "offline";
+      else failWorkspaceReads = true;
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      try {
+        await settle();
+        const waiting = [
+          harness.value.refreshCurrent(),
+          harness.value.refreshCurrent(),
+        ];
+        holdList = null;
+        release();
+        await Promise.all(waiting);
+        await settle();
+        expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+        expect(harness.value.errors.size).toBe(1);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("a cache write failure retains fetched history without a discovery retry delay", async () => {
+    history = [rawPr(1, "MERGED")];
+    failDiscoveryWrites = true;
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+      expect(harness.value.errors.get("/tmp/repo")).toContain(
+        "cache write failed",
+      );
+      failDiscoveryWrites = false;
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(discoveryCache.get("/tmp/repo")?.prs[0]?.number).toBe(1);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("discovery is persisted once per refresh and not rewritten for a fresh read", async () => {
+    history = [rawPr(1, "MERGED")];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(discoveryWrites).toBe(1);
+      await poll();
+      expect(discoveryWrites).toBe(2);
+      await harness.value.refreshCurrent();
+      await settle();
+      expect(discoveryWrites).toBe(2);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("in-flight discovery cannot recreate a removed project's cache before the registry view updates", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      removedRegistration = true;
+      discoveryCache.clear();
+      holdList = null;
+      release();
+      await settle();
+      expect(discoveryCache.size).toBe(0);
+      harness.rerender([]);
+      await settle();
+      removedRegistration = false;
+      harness.rerender([{ ...repo(), id: "new-registration" }]);
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("re-registration while idle rebuilds history even when the UI never observed removal", async () => {
+    history = [rawPr(1, "MERGED")];
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      discoveryCache.clear();
+      workspaceCache.clear();
+      history.push(rawPr(2, "MERGED"));
+      harness.rerender([{ ...repo(), id: "new-registration" }]);
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
+      expect(
+        discoveryCache
+          .get("/tmp/repo")
+          ?.prs.map((pr) => pr.number)
+          .toSorted(),
+      ).toEqual([1, 2]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("mixed-case repository identities share a detail batch and use canonical spelling", async () => {
+    base = "Owner/Repo";
+    history = [rawPr(1)];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "OWNER/REPO",
+      number: 2,
+    });
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(detailCalls).toHaveLength(1);
+      expect(detailCalls[0]?.toSorted((a, b) => a - b)).toEqual([1, 2]);
+      expect(
+        new Set(
+          discoveryCache.get("/tmp/repo")?.prs.map((pr) => pr.baseRepository),
+        ),
+      ).toEqual(new Set(["owner/repo"]));
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("failed initial discovery delays automatic retries without caching failure", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    listError = "discovery timed out";
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      listError = null;
+      await poll();
+      await harness.value.refreshCurrent("/tmp/repo");
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(harness.value.errors.get("/tmp/repo")).toContain(
+        "discovery timed out",
+      );
+      now.mockReturnValue(600_000);
+      await poll();
+      now.mockReturnValue(720_000);
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "all",
+        "updated",
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+      now.mockRestore();
+    }
+  });
+
+  test("manual refresh bypasses the discovery retry delay", async () => {
+    listError = "offline";
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      listError = null;
+      await harness.value.refresh();
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "all",
+        "updated",
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("manual refresh can discover a changed base repository during discovery backoff", async () => {
+    listError = "offline";
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      listError = null;
+      base = "new/repo";
+      await poll();
+      expect(baseRead).toHaveBeenCalledTimes(1);
+      await harness.value.refresh();
+      await settle();
+      expect(list.mock.calls.map((call) => call.slice(1, 3))).toEqual([
+        ["all", "base/repo"],
+        ["all", "new/repo"],
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("refreshes closed associations and known open PRs that disappear without fetching unrelated history", async () => {
+    history = [
+      rawPr(1, "OPEN"),
+      rawPr(2, "MERGED"),
+      rawPr(3, "CLOSED", "other"),
+    ];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+      history[0] = rawPr(1, "MERGED");
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(get).not.toHaveBeenCalled();
+      expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
+        "MERGED",
+      );
+      expect(harness.value.openPrs.get("/tmp/repo")).toEqual([]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("keeps fork identities and ambiguous candidates, including an unknown Push Destination", async () => {
+    history = [
+      rawPr(1),
+      rawPr(2, "OPEN", "feature", "other/repo"),
+      rawPr(3),
+      rawPr(4, "CLOSED", "unknown", "other/repo"),
+    ];
+    const harness = await renderHook([
+      repo("/tmp/repo", ["feature", "unknown"]),
+    ]);
+    try {
+      await settle();
+      await poll();
+      const entry = harness.value.associations.get(key("/tmp/repo", "feature"));
+      expect(entry?.pr).toBeNull();
+      expect(entry?.uncertain).toBe(true);
+      expect(
+        entry?.candidates.map((pr) => pr.number).sort((a, b) => a - b),
+      ).toEqual([1, 3]);
+      const unknown = harness.value.associations.get(
+        key("/tmp/repo", "unknown"),
+      );
+      expect(unknown?.pr).toBeNull();
+      expect(unknown?.candidates.map((pr) => pr.number)).toEqual([4]);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("fetches an external Explicit PR Association once for shared Workspaces and retains it after closure", async () => {
+    history = [rawPr(1), rawPr(2, "MERGED")];
+    const association = { baseRepository: "external/repo", number: 8 };
+    explicitCache.set(key("/tmp/repo", "feature"), association);
+    explicitCache.set(key("/tmp/repo", "second"), association);
+    const harness = await renderHook([
+      repo("/tmp/repo", ["feature", "second"]),
+    ]);
+    try {
+      await settle();
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(get).toHaveBeenLastCalledWith("/tmp/repo", "external/repo", 8);
+      await poll();
+      expect(get.mock.calls.filter((call) => call[2] === 8)).toHaveLength(1);
+      const entry = harness.value.associations.get(key("/tmp/repo", "feature"));
+      expect(entry?.pr).toMatchObject({
+        number: 8,
+        state: "MERGED",
+        baseRepository: "external/repo",
+      });
+      expect(entry?.explicit).toBe(true);
+      expect(entry?.newerOpenPr).toBe(1);
+      await harness.value.clearExplicit("/tmp/repo", "feature");
+      await settle();
+      expect(
+        harness.value.associations
+          .get(key("/tmp/repo", "feature"))
+          ?.candidates.map((pr) => pr.baseRepository),
+      ).toEqual(["base/repo", "base/repo"]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("new Workspaces use cached complete history and manual refresh discovers older missing matches", async () => {
+    history = [rawPr(1, "MERGED", "old")];
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      harness.rerender([repo("/tmp/repo", ["old", "feature"])]);
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      expect(harness.value.prData.get(key("/tmp/repo", "old"))?.number).toBe(1);
+      history.push(rawPr(2, "CLOSED"));
+      await poll();
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(2);
+      await harness.value.refresh("/tmp/repo");
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+        "all",
+      ]);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(2);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("manual failure retains associations as stale and a later refresh clears the error", async () => {
+    history = [rawPr(1, "OPEN")];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      listError = "incomplete pagination";
+      await harness.value.refresh();
+      await settle();
+      expect(harness.value.errors.get("/tmp/repo")).toContain(listError);
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
+      ).toContain(listError);
+      expect(
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+      ).toBe(1);
+      listError = null;
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "all",
+        "updated",
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("focused identity errors and incomplete details propagate instead of looking fresh", async () => {
+    history = [rawPr(1, "OPEN")];
+    explicitCache.set(key("/tmp/repo", "feature"), {
+      baseRepository: "external/repo",
+      number: 8,
+    });
+    get.mockReturnValueOnce(Effect.succeed(rawPr(8, "OPEN")));
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      getError = "identity unavailable";
+      history[0] = rawPr(1, "MERGED");
+      await poll();
+      expect(harness.value.errors.get("/tmp/repo")).toContain(getError);
+      getError = null;
+      detailError = "incomplete checks";
+      await harness.value.refresh();
+      await settle();
+      expect(harness.value.errors.get("/tmp/repo")).toBe(detailError);
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
+      ).toBe(detailError);
+      detailError = null;
+      await poll();
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("targeted refresh isolates repositories with the same display name", async () => {
+    listError = "offline";
+    const harness = await renderHook([repo("/tmp/a"), repo("/tmp/b")]);
+    try {
+      await settle();
+      list.mockClear();
+      listError = "retry failed";
+      await harness.value.refresh("/tmp/a");
+      await settle();
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(harness.value.errors.get("/tmp/a")).toContain("retry failed");
+      expect(harness.value.errors.get("/tmp/b")).toContain("offline");
+      list.mockClear();
+      await harness.value.refresh("same-name");
+      expect(list).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("manual discovery waits for an in-flight poll then performs a complete request", async () => {
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      await poll();
+      const manual = harness.value.refresh();
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+        "all",
+      ]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("explicit changes and post-submission reads wait for older requests and use focused refresh", async () => {
+    history = [rawPr(1)];
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      await poll();
+      const update = harness.value.setExplicit("/tmp/repo", "feature", {
+        baseRepository: "base/repo",
+        number: 1,
+      } as PrFacts);
+      await settle();
+      expect(list).toHaveBeenCalledTimes(2);
+      holdList = null;
+      release();
+      await update;
+      await settle();
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "feature"))?.explicit,
+      ).toBe(true);
+      history[0] = rawPr(1, "MERGED");
+      await harness.value.refreshAfterCurrent("/tmp/repo");
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+        "updated",
+        "updated",
+      ]);
+      expect(harness.value.prData.get(key("/tmp/repo", "feature"))?.state).toBe(
+        "MERGED",
+      );
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("an expired base repository resolution detects changes and triggers complete discovery", async () => {
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      base = "new/repo";
+      vi.setSystemTime(Date.now() + 600_000);
+      await poll();
+      expect(list.mock.calls.map((call) => call.slice(1, 3))).toEqual([
+        ["all", "base/repo"],
+        ["all", "new/repo"],
+      ]);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("queued manual discovery uses current Workspaces and preserves their Explicit PR Associations", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      const manual = harness.value.refresh();
+      explicitCache.set(key("/tmp/repo", "second"), {
+        baseRepository: "base/repo",
+        number: 2,
+      });
+      history = [rawPr(2, "MERGED", "second")];
+      harness.rerender([repo("/tmp/repo", ["feature", "second"])]);
+      await settle();
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(explicitCache.get(key("/tmp/repo", "second"))?.number).toBe(2);
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "second")),
+      ).toMatchObject({ explicit: true, pr: { number: 2 } });
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a topology change during manual discovery cannot prune new explicit choices", async () => {
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await settle();
+      let release!: () => void;
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      const manual = harness.value.refresh();
+      await settle();
+      explicitCache.set(key("/tmp/repo", "second"), {
+        baseRepository: "base/repo",
+        number: 2,
+      });
+      history = [rawPr(2, "MERGED", "second")];
+      harness.rerender([repo("/tmp/repo", ["feature", "second"])]);
+      await settle();
+      holdList = null;
+      release();
+      await manual;
+      await settle();
+      expect(explicitCache.get(key("/tmp/repo", "second"))?.number).toBe(2);
+      expect(
+        harness.value.associations.get(key("/tmp/repo", "second")),
+      ).toMatchObject({ explicit: true, pr: { number: 2 } });
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("worktree changes share completed discovery instead of cancelling and restarting it", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = await renderHook([repo()]);
+    try {
+      await settle();
+      expect(list).toHaveBeenCalledTimes(1);
+      harness.rerender([repo("/tmp/repo", ["feature"])]);
+      await settle();
+      expect(list).toHaveBeenCalledTimes(1);
+      holdList = null;
+      release();
+      await settle();
+      expect(list.mock.calls.map((call) => call[1])).toEqual(["all"]);
+      await poll();
+      expect(list.mock.calls.map((call) => call[1])).toEqual([
+        "all",
+        "updated",
+      ]);
+      expect(harness.value.errors.size).toBe(0);
+      expect(harness.value.refreshingProjects.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
   });
 });

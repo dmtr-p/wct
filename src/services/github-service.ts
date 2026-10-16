@@ -5,6 +5,7 @@ import {
   type ServiceImplementation,
 } from "../effect/service-context";
 import { commandError, toWctError, type WctError } from "../errors";
+import { graphQlAliasError, queryGitHub } from "./github-graphql";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
 
 const GITHUB_PR_URL_PATTERN =
@@ -16,6 +17,12 @@ export interface PrInfo {
   isCrossRepository: boolean;
   headOwner?: string;
   headRepo?: string;
+}
+
+export interface RawPrResult {
+  number: number;
+  raw: unknown;
+  error: string | null;
 }
 
 export interface GitHubService {
@@ -38,14 +45,15 @@ export interface GitHubService {
   resolveBaseRepo: (cwd: string) => Effect.Effect<string, WctError>;
   listRawPrs: (
     cwd: string,
-    state: "open" | "all",
+    state: "all" | "updated",
     baseRepository: string,
+    updatedSince?: number,
   ) => Effect.Effect<unknown[], WctError>;
-  getRawPr: (
+  getRawPrs: (
     cwd: string,
     baseRepository: string,
-    number: number,
-  ) => Effect.Effect<unknown, WctError>;
+    numbers: readonly number[],
+  ) => Effect.Effect<RawPrResult[], WctError>;
   findRemoteForRepo: (
     owner: string,
     repo: string,
@@ -177,91 +185,142 @@ export function parseAllPrPages(stdout: string): unknown[] {
 
 function listRawPrsImpl(
   cwd: string,
-  state: "open" | "all",
+  state: "all" | "updated",
   baseRepository: string,
+  updatedSince?: number,
 ) {
-  if (state === "all") {
-    const [owner, repo] = baseRepository.split("/");
-    if (!owner || !repo)
-      return Effect.fail(commandError("pr_error", "Invalid base repository"));
-    const query = `query($endCursor: String) { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequests(first: 100, after: $endCursor) { nodes { ${DISCOVERY_GRAPHQL_FIELDS} } pageInfo { hasNextPage endCursor } } } }`;
+  const [owner, repo] = baseRepository.split("/");
+  if (!owner || !repo)
+    return Effect.fail(commandError("pr_error", "Invalid base repository"));
+  const query = `query($endCursor: String) { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequests(first: 100, after: $endCursor, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${DISCOVERY_GRAPHQL_FIELDS} } pageInfo { hasNextPage endCursor } } } }`;
+  if (state === "all")
     return Effect.flatMap(
       execProcess(
         "gh",
         ["api", "graphql", "--paginate", "--slurp", "-f", `query=${query}`],
         { cwd },
-      ).pipe(Effect.timeout("2 minutes")),
+      ).pipe(Effect.timeout("10 minutes")),
       (result) =>
         Effect.try({
           try: () => parseAllPrPages(result.stdout),
           catch: (error) => commandError("pr_error", String(error), error),
         }),
     );
-  }
-  return Effect.flatMap(
-    execProcess(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--state",
-        state,
-        "--limit",
-        "100000",
-        "--json",
-        GITHUB_PR_JSON_FIELDS,
-      ],
-      { cwd },
-    ),
-    (result) =>
-      Effect.try({
-        try: () => {
-          const value: unknown = JSON.parse(result.stdout);
-          if (!Array.isArray(value)) throw new Error("Expected PR array");
-          return value;
-        },
-        catch: (error) => commandError("pr_error", String(error), error),
-      }),
-  );
+  if (updatedSince === undefined || !Number.isFinite(updatedSince))
+    return Effect.fail(
+      commandError("pr_error", "Missing PR discovery checkpoint"),
+    );
+  return Effect.gen(function* () {
+    const result: unknown[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    while (true) {
+      const response = yield* queryGitHub(
+        cwd,
+        query,
+        cursor ? { endCursor: cursor } : {},
+      );
+      const failed = graphQlAliasError(response, "pullRequests");
+      if (failed) return yield* commandError("pr_error", failed);
+      const connection = response.repository.pullRequests as
+        | {
+            nodes?: unknown[];
+            pageInfo?: { hasNextPage?: boolean; endCursor?: string };
+          }
+        | undefined;
+      if (
+        !Array.isArray(connection?.nodes) ||
+        typeof connection.pageInfo?.hasNextPage !== "boolean"
+      )
+        return yield* commandError(
+          "pr_error",
+          response.transportError ?? "Incomplete updated PR page",
+        );
+      let reachedCheckpoint = false;
+      for (const value of connection.nodes) {
+        const updatedAt =
+          value && typeof value === "object"
+            ? (value as { updatedAt?: string }).updatedAt
+            : undefined;
+        const updated =
+          typeof updatedAt === "string" ? Date.parse(updatedAt) : NaN;
+        if (!Number.isFinite(updated))
+          return yield* commandError("pr_error", "Missing PR update timestamp");
+        if (updated < updatedSince) reachedCheckpoint = true;
+        else result.push(value);
+      }
+      if (reachedCheckpoint || !connection.pageInfo.hasNextPage) return result;
+      cursor = connection.pageInfo.endCursor;
+      if (!cursor || cursors.has(cursor))
+        return yield* commandError(
+          "pr_error",
+          "Incomplete updated PR pagination",
+        );
+      cursors.add(cursor);
+    }
+  }).pipe(Effect.timeout("10 minutes"));
 }
 
-function getRawPrImpl(cwd: string, baseRepository: string, number: number) {
-  const [owner, repo] = baseRepository.split("/");
-  if (!owner || !repo || !Number.isSafeInteger(number) || number < 1)
-    return Effect.fail(commandError("pr_error", "Invalid PR identity"));
-  const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { pullRequest(number: ${number}) { ${DISCOVERY_GRAPHQL_FIELDS} baseRepository { nameWithOwner } } } }`;
-  return Effect.flatMap(
-    execProcess("gh", ["api", "graphql", "-f", `query=${query}`], { cwd }),
-    (result) =>
-      Effect.try({
-        try: () => {
-          const response = JSON.parse(result.stdout) as {
-            errors?: { message?: string }[];
-            data?: {
-              repository?: {
-                pullRequest?: {
-                  number?: number;
-                  baseRepository?: { nameWithOwner?: string };
-                };
-              };
-            };
-          };
-          if (response.errors?.length)
-            throw new Error(
-              response.errors.map((error) => error.message).join("; "),
-            );
-          const pr = response.data?.repository?.pullRequest;
-          if (
-            pr?.number !== number ||
-            pr.baseRepository?.nameWithOwner?.toLowerCase() !==
+function getRawPrsImpl(
+  cwd: string,
+  baseRepository: string,
+  numbers: readonly number[],
+) {
+  return Effect.gen(function* () {
+    const [owner, repo] = baseRepository.split("/");
+    if (
+      !owner ||
+      !repo ||
+      numbers.some((number) => !Number.isSafeInteger(number) || number < 1)
+    )
+      return yield* commandError("pr_error", "Invalid PR identities");
+    const result: RawPrResult[] = [];
+    for (let start = 0; start < numbers.length; start += 20) {
+      const batch = numbers.slice(start, start + 20);
+      const aliases = batch
+        .map(
+          (number, index) =>
+            `p${index}: pullRequest(number: ${number}) { ${DISCOVERY_GRAPHQL_FIELDS} baseRepository { nameWithOwner } }`,
+        )
+        .join(" ");
+      const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { ${aliases} } }`;
+      const fetched = yield* Effect.gen(function* () {
+        const batchResult: RawPrResult[] = [];
+        const parsed = yield* queryGitHub(cwd, query).pipe(
+          Effect.timeout("2 minutes"),
+        );
+        for (const [index, number] of batch.entries()) {
+          const alias = `p${index}`;
+          const failure = graphQlAliasError(parsed, alias);
+          const raw = parsed.repository[alias] as
+            | { number?: number; baseRepository?: { nameWithOwner?: string } }
+            | null
+            | undefined;
+          const error =
+            failure ??
+            (raw?.number !== number ||
+            raw.baseRepository?.nameWithOwner?.toLowerCase() !==
               baseRepository.toLowerCase()
-          )
-            throw new Error("Fetched PR identity does not match association");
-          return pr;
-        },
-        catch: (error) => commandError("pr_error", String(error), error),
-      }),
-  );
+              ? (parsed.transportError ?? "Incomplete PR batch response")
+              : null);
+          batchResult.push({ number, raw, error });
+        }
+        return batchResult;
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.succeed(
+            batch.map((number) => ({
+              number,
+              raw: null,
+              error: extractShellError(error),
+            })),
+          ),
+        ),
+      );
+      result.push(...fetched);
+    }
+    return result;
+  });
 }
 
 export type GitHubServiceImplementation = ServiceImplementation<
@@ -410,20 +469,24 @@ export const liveGitHubService: GitHubServiceImplementation = {
           error,
         ),
     ),
-  listRawPrs: (cwd, state, baseRepository) =>
-    Effect.mapError(listRawPrsImpl(cwd, state, baseRepository), (error) =>
-      commandError(
-        "pr_error",
-        `Failed to list ${state} PRs: ${extractShellError(error)}`,
-        error,
-      ),
+  listRawPrs: (cwd, state, baseRepository, updatedSince) =>
+    Effect.mapError(
+      listRawPrsImpl(cwd, state, baseRepository, updatedSince),
+      (error) =>
+        commandError(
+          "pr_error",
+          `Failed to list ${state} PRs: ${extractShellError(error)}`,
+          error,
+        ),
     ),
-  getRawPr: (cwd, baseRepository, number) =>
-    Effect.mapError(getRawPrImpl(cwd, baseRepository, number), (error) =>
-      commandError(
-        "pr_error",
-        `Failed to read PR #${number}: ${extractShellError(error)}`,
-        error,
+  getRawPrs: (cwd, baseRepository, numbers) =>
+    getRawPrsImpl(cwd, baseRepository, numbers).pipe(
+      Effect.mapError((error) =>
+        commandError(
+          "pr_error",
+          `Failed to fetch PRs: ${extractShellError(error)}`,
+          error,
+        ),
       ),
     ),
   findRemoteForRepo: (owner, repo, cwd) =>

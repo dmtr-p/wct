@@ -1,8 +1,8 @@
 import type { Database } from "bun:sqlite";
-import { Context, type Effect } from "effect";
+import { Context, Effect } from "effect";
 import type { WctError } from "../errors";
 import type { PRInfo } from "../tui/types";
-import { withDb } from "./db";
+import { withDb, withDbEffect } from "./db";
 import { hydratePrFacts, type PrFacts, prIdentity } from "./pr-model";
 
 export interface CachedPrEntry {
@@ -35,7 +35,17 @@ export interface ExplicitPrAssociation {
   number: number;
 }
 
+export interface WorkspacePrInput {
+  branch: string;
+  explicit: ExplicitPrAssociation | null;
+  cached: WorkspacePrEntry | null;
+}
+
 export interface PrCacheServiceApi {
+  getWorkspaceInputs: (
+    repoPath: string,
+    branches: readonly string[],
+  ) => Effect.Effect<WorkspacePrInput[], WctError>;
   getDiscovery: (
     repoPath: string,
   ) => Effect.Effect<PrDiscoverySnapshot | null, WctError>;
@@ -132,13 +142,20 @@ export function sqlGetDiscovery(
   db: Database,
   repoPath: string,
 ): PrDiscoverySnapshot | null {
-  return db.transaction(() => readDiscovery(db, repoPath)).deferred();
+  return db
+    .transaction(() => {
+      const reader = readDiscovery(db, repoPath);
+      let next = reader.next();
+      while (!next.done) next = reader.next();
+      return next.value;
+    })
+    .deferred();
 }
 
-function readDiscovery(
+function* readDiscovery(
   db: Database,
   repoPath: string,
-): PrDiscoverySnapshot | null {
+): Generator<void, PrDiscoverySnapshot | null> {
   const row = db
     .query("SELECT payload FROM pr_discovery_cache WHERE repo_path = ?")
     .get(repoPath) as { payload: string } | null;
@@ -161,16 +178,18 @@ function readDiscovery(
       .query(
         "SELECT payload FROM pr_discovery_facts WHERE repo_path = ? ORDER BY pr_identity",
       )
-      .all(repoPath) as { payload: string }[];
+      .iterate(repoPath) as IterableIterator<{ payload: string }>;
     const baseRepository = metadata.baseRepository.toLowerCase();
     const prs: PrFacts[] = [];
     const explicitPrs: PrFacts[] = [];
+    let count = 0;
     for (const row of rows) {
       const pr = hydratePrFacts(JSON.parse(row.payload));
       if (!pr) return null;
       pr.baseRepository = pr.baseRepository.toLowerCase();
       if (pr.baseRepository === baseRepository) prs.push(pr);
       else explicitPrs.push(pr);
+      if (++count % 128 === 0) yield;
     }
     const snapshot: PrDiscoverySnapshot = {
       baseRepository,
@@ -187,6 +206,30 @@ function readDiscovery(
   } catch {
     return null;
   }
+}
+
+/** A single read transaction keeps metadata and streamed facts at one revision. */
+export function sqlGetDiscoveryEffect(db: Database, repoPath: string) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      db.run("BEGIN DEFERRED");
+      return readDiscovery(db, repoPath);
+    }),
+    (reader) =>
+      Effect.gen(function* () {
+        let next = reader.next();
+        while (!next.done) {
+          yield* Effect.sleep("1 millis");
+          next = reader.next();
+        }
+        return next.value;
+      }),
+    (reader) =>
+      Effect.sync(() => {
+        reader.return(null);
+        db.run("ROLLBACK");
+      }),
+  );
 }
 
 export function sqlSetDiscovery(
@@ -469,8 +512,22 @@ function prCacheDb<A>(
 }
 
 export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
+  getWorkspaceInputs: (repoPath, branches) =>
+    prCacheDb("getWorkspaceInputs", (db) =>
+      db
+        .transaction(() =>
+          branches.map((branch) => ({
+            branch,
+            explicit: sqlGetExplicit(db, repoPath, branch),
+            cached: sqlGetWorkspace(db, repoPath, branch),
+          })),
+        )
+        .deferred(),
+    ),
   getDiscovery: (repoPath) =>
-    prCacheDb("getDiscovery", (db) => sqlGetDiscovery(db, repoPath)),
+    withDbEffect("pr_cache_error", "getDiscovery", (db) =>
+      sqlGetDiscoveryEffect(db, repoPath),
+    ),
   setDiscovery: (repoPath, snapshot, previous, registrationId) =>
     prCacheDb("setDiscovery", (db) =>
       sqlSetDiscovery(db, repoPath, snapshot, previous, registrationId),

@@ -33,6 +33,20 @@ function page(nodes: unknown[], hasNextPage = false, endCursor?: string) {
 describe("GitHub raw PR fetching", () => {
   beforeEach(() => exec.mockReset());
 
+  test("an empty GraphQL errors array still reports a missing repository", async () => {
+    exec.mockReturnValueOnce(
+      Effect.succeed({
+        stdout: JSON.stringify({ data: { repository: null }, errors: [] }),
+        stderr: "",
+        exitCode: 0,
+      }),
+    );
+    const result = await runBunPromise(
+      liveGitHubService.getRawPrs("/repo", "base/repo", [1]),
+    );
+    expect(result[0]?.error).toContain("Missing repository");
+  });
+
   test.each(["[]", '[{"number":34,"title":"TUI","headRefName":"feat/tui"}]'])(
     "parses the complete-PR list %s",
     async (stdout) => {

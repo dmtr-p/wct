@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { runMigrations } from "../../src/services/db";
 import {
@@ -9,6 +10,7 @@ import {
   sqlInvalidate,
   sqlSetOpenPrs,
   sqlGetDiscovery,
+  sqlGetDiscoveryEffect,
   sqlSetDiscovery,
   sqlOwnedWrite,
 } from "../../src/services/pr-cache-service";
@@ -39,6 +41,64 @@ const PR_B: PRInfo = {
 };
 
 describe("PrCacheService SQL helpers", () => {
+  it("yields while hydrating history without mixing concurrent cache revisions", async () => {
+    const path = join(tmpdir(), `wct-discovery-yield-${Date.now()}.db`);
+    const first = new Database(path);
+    const second = new Database(path);
+    try {
+      first.run("PRAGMA journal_mode=WAL");
+      runMigrations(first);
+      const prs = Array.from({ length: 300 }, (_, index) =>
+        normalizeGhPr(
+          {
+            number: index + 1,
+            title: "original",
+            headRefName: "feature",
+            state: "MERGED",
+          },
+          "base/repo",
+          1,
+        ),
+      ).filter((pr) => pr !== null);
+      const snapshot = {
+        baseRepository: "base/repo",
+        prs,
+        explicitPrs: [],
+        openNumbers: [],
+        fetchedAt: 1,
+        discoveredThrough: 1,
+      };
+      sqlSetDiscovery(first, "/a", snapshot);
+      let yielded = false;
+      const pending = Effect.runPromise(sqlGetDiscoveryEffect(first, "/a"));
+      const otherWrite = new Promise<void>((resolve) =>
+        setTimeout(() => {
+          yielded = true;
+          sqlSetDiscovery(second, "/a", {
+            ...snapshot,
+            prs: prs.map((pr) => ({ ...pr, title: "new revision" })),
+          });
+          resolve();
+        }, 0),
+      );
+      const loaded = await pending;
+      const yieldedWhileLoading = yielded;
+      await otherWrite;
+      expect(yieldedWhileLoading).toBe(true);
+      expect(loaded?.prs).toHaveLength(300);
+      expect(loaded?.prs.every((pr) => pr.title === "original")).toBe(true);
+      expect(
+        sqlGetDiscovery(first, "/a")?.prs.every(
+          (pr) => pr.title === "new revision",
+        ),
+      ).toBe(true);
+    } finally {
+      first.close();
+      second.close();
+      rmSync(path, { force: true });
+    }
+  });
+
   it("persists complete discovery across connections and invalidates it by repository", () => {
     const path = join(tmpdir(), `wct-discovery-${Date.now()}.db`);
     let first: Database | null = null;

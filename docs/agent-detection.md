@@ -156,6 +156,11 @@ between polls or while the TUI was closed. Unresolved or live external Explicit
 PR Associations use batched updates. Historical candidates and merged PRs use
 cached facts. Check details are fetched for live associated PRs and open PR
 Candidates; terminal associations reuse complete checks for the same PR and head.
+Failed detail reads retain the latest discovered lifecycle and head facts;
+cached checks are reused only for the same PR, lifecycle state, and known head.
+External facts are retained only while a Workspace explicitly references them.
+Push Destination reads run with at most four concurrent Workspaces, and each
+repository loads its Workspace cache inputs through one database connection.
 Manual refresh rebuilds complete historical discovery and refreshes selected
 terminal facts. A failed associated PR retains stale data or an unresolved
 association without discarding discovery or blocking healthy Workspaces. Sibling
@@ -163,19 +168,26 @@ candidate errors do not mark a healthy associated PR as stale.
 
 Discovery belongs to the repository: modal cancellation and worktree changes do
 not cancel it. Concurrent manual refreshes share a running complete scan while
-still forcing terminal and external fact reads. Waiters share a failed request's
-error rather than immediately restarting it.
+still forcing terminal and external fact reads. Automatic waiters share a failed
+request's error; a manual refresh queued behind a failed automatic request still
+runs. Concurrent manual waiters share a failed manual attempt.
 Worktree changes reconcile against its completed results. Repository removal and
 TUI shutdown cancel that repository's active requests. Cache writes are fenced
 by the project registration identity so removed projects cannot regain cached
 rows from old refreshes. Discovery stores changed PR records and a small
 checkpoint separately, once per refresh; unchanged records are retained.
+History hydration streams records and yields every 128 records within one read
+transaction, allowing the TUI to process input during large cache loads.
 Database write errors leave fetched discovery available in memory and report a
 storage error without applying GitHub discovery backoff. Discovery has a
 ten-minute timeout. Failed discovery without a usable snapshot
 delays automatic requests for ten minutes without flashing a refresh indicator;
 manual refresh, post-merge reads, and explicit association changes bypass the
-delay. A changed base repository rebuilds discovery on the next actual refresh.
+delay. Base-repository resolution failures also delay automatic requests.
+Successful base-repository resolution is cached for ten minutes; manual refresh
+always resolves it again. A changed base repository rebuilds discovery when
+resolution next runs. Malformed discovery records fail the scan rather than
+advancing a checkpoint that could permanently skip a PR.
 
 ## Compatibility validation
 

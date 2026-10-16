@@ -130,3 +130,39 @@ export function withDb<A>(
       ),
   });
 }
+
+/** Keep a connection alive across cooperative, interruptible database reads. */
+export function withDbEffect<A>(
+  errorCode: ErrorCode,
+  operation: string,
+  f: (db: Database) => Effect.Effect<A, WctError>,
+): Effect.Effect<A, WctError> {
+  const failure = (error: unknown) =>
+    commandError(
+      errorCode,
+      `Database operation failed during ${operation}`,
+      error,
+    );
+  return Effect.acquireUseRelease(
+    Effect.try({
+      try: () => {
+        mkdirSync(getWctDir(), { recursive: true });
+        const db = new Database(getDbPath(), { create: true });
+        try {
+          db.run("PRAGMA journal_mode=WAL");
+          runMigrations(db);
+          return db;
+        } catch (error) {
+          db.close();
+          throw error;
+        }
+      },
+      catch: failure,
+    }),
+    (db) =>
+      Effect.suspend(() => f(db)).pipe(
+        Effect.catchDefect((error) => Effect.fail(failure(error))),
+      ),
+    (db) => Effect.sync(() => db.close()),
+  );
+}

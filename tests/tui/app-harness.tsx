@@ -308,6 +308,14 @@ vi.mock("../../src/services/pr-cache-service", () => ({
         getDiscovery: () => Promise.resolve(null),
         setDiscovery: () => Promise.resolve(true),
         getWorkspace: () => null,
+        getWorkspaceInputs: (_path: string, branches: string[]) =>
+          Promise.resolve(
+            branches.map((branch) => ({
+              branch,
+              explicit: null,
+              cached: null,
+            })),
+          ),
         getOpenPrs: () => null,
         getExplicit: () => Promise.resolve(null),
         setWorkspace: () => Promise.resolve(),

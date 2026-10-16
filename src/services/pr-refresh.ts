@@ -60,6 +60,7 @@ export function refreshPrDiscovery(
           pr.state !== "OPEN" &&
           existing?.state === pr.state &&
           existing.updatedAt === pr.updatedAt &&
+          pr.headOid !== null &&
           existing.headOid === pr.headOid;
         pool.set(prIdentity(pr), unchanged ? existing : pr);
       }
@@ -121,8 +122,15 @@ export function refreshWorkspacePrs(
   return GitHubService.use((github) =>
     Effect.gen(function* () {
       const pool = new Map(snapshot.prs.map((pr) => [prIdentity(pr), pr]));
+      const explicitIdentities = new Set(
+        workspaces.flatMap((workspace) =>
+          workspace.explicit ? [prIdentity(workspace.explicit)] : [],
+        ),
+      );
       const external = new Map(
-        snapshot.explicitPrs.map((pr) => [prIdentity(pr), pr]),
+        snapshot.explicitPrs
+          .filter((pr) => explicitIdentities.has(prIdentity(pr)))
+          .map((pr) => [prIdentity(pr), pr]),
       );
       const needed = new Map<string, ExplicitPrAssociation>();
       const failed = new Map<string, string>();
@@ -224,6 +232,7 @@ export function refreshWorkspacePrs(
           cachedPr &&
           prIdentity(entry.pr) === prIdentity(cachedPr) &&
           entry.pr.state === cachedPr.state &&
+          entry.pr.headOid !== null &&
           entry.pr.headOid === cachedPr.headOid &&
           cachedPr.checksComplete
         )
@@ -243,7 +252,8 @@ export function refreshWorkspacePrs(
             pr &&
             !failed.has(prIdentity(pr)) &&
             ((pr.state === "OPEN" && (!reuseFresh || !pr.checksComplete)) ||
-              (pr === entry.pr && (force || !pr.checksComplete)))
+              (pr === entry.pr &&
+                (force || !pr.checksComplete || pr.headOid === null)))
           )
             detailTargets.set(prIdentity(pr), pr);
       }
@@ -284,10 +294,12 @@ export function refreshWorkspacePrs(
             entry.pr =
               cachedPr &&
               prIdentity(cachedPr) === prIdentity(fresh) &&
+              cachedPr.state === fresh.state &&
+              fresh.headOid !== null &&
+              cachedPr.headOid === fresh.headOid &&
               cachedPr.checksComplete
-                ? cachedPr
-                : null;
-            if (!entry.pr) entry.uncertain = true;
+                ? { ...fresh, checks: cachedPr.checks, checksComplete: true }
+                : fresh;
           } else entry.pr = fresh;
         }
         entry.candidates = entry.candidates.map(
@@ -301,11 +313,16 @@ export function refreshWorkspacePrs(
       return {
         entries,
         snapshot:
-          needed.size || details.size
+          needed.size ||
+          details.size ||
+          external.size !== snapshot.explicitPrs.length
             ? {
                 ...snapshot,
                 prs: [...pool.values()],
                 explicitPrs: [...external.values()],
+                openNumbers: [...pool.values()]
+                  .filter((pr) => pr.state === "OPEN")
+                  .map((pr) => pr.number),
               }
             : snapshot,
       };

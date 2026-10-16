@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GitHubService } from "../../services/github-service";
 import {
@@ -19,8 +20,10 @@ import type { RepoInfo } from "./useRegistry";
 const GITHUB_POLL_INTERVAL = 120_000;
 const DISCOVERY_RETRY_DELAY = 600_000;
 const CACHE_FRESH_WINDOW = 30_000;
+const BASE_REPO_CACHE_WINDOW = 600_000;
 type RefreshKind = "poll" | "manual" | "action";
 interface RefreshFlight {
+  kind: RefreshKind;
   promise: Promise<void>;
   controller: AbortController;
   history: boolean;
@@ -98,6 +101,9 @@ export function useGitHub(repos: RepoInfo[]) {
   const persisted = useRef(new Map<string, PrDiscoverySnapshot>());
   const loaded = useRef(new Set<string>());
   const discoveryRetries = useRef(new Map<string, number>());
+  const baseRepositories = useRef(
+    new Map<string, { name: string; resolvedAt: number }>(),
+  );
   const inFlight = useRef(new Map<string, RefreshFlight>());
   const currentRepo = useCallback(
     (path: string) => reposRef.current.find((repo) => repo.repoPath === path),
@@ -132,7 +138,12 @@ export function useGitHub(repos: RepoInfo[]) {
         if (!current) return;
         // A completed full discovery satisfies a concurrent manual request.
         const sameRegistration = running.registrationId === current.id;
-        if (sameRegistration && running.failed && requested !== "action")
+        if (
+          sameRegistration &&
+          running.failed &&
+          (requested === "poll" ||
+            (requested === "manual" && running.kind === "manual"))
+        )
           return;
         if (
           sameRegistration &&
@@ -154,6 +165,7 @@ export function useGitHub(repos: RepoInfo[]) {
       const registrationId = currentRepo(repoPath)?.id;
       if (!registrationId) return;
       const flight: RefreshFlight = {
+        kind: requested,
         promise: Promise.resolve(),
         controller: new AbortController(),
         history: false,
@@ -170,6 +182,7 @@ export function useGitHub(repos: RepoInfo[]) {
         currentRepo(repoPath)?.id === registrationId;
       flight.promise = (async () => {
         let historyPending = false;
+        let resolvingBase = false;
         let historyBase: string | undefined;
         let showingRefresh = false;
         let cacheError: string | null = null;
@@ -186,6 +199,7 @@ export function useGitHub(repos: RepoInfo[]) {
           if (!loaded.current.has(repoPath)) {
             const cached = await tuiRuntime.runPromise(
               PrCacheService.use((s) => s.getDiscovery(repoPath)),
+              { signal: flight.controller.signal },
             );
             if (!active()) return;
             if (cached) {
@@ -211,10 +225,27 @@ export function useGitHub(repos: RepoInfo[]) {
             setRefreshingProjects((previous) =>
               new Set(previous).add(repoPath),
             );
-            const base = await tuiRuntime.runPromise(
-              GitHubService.use((s) => s.resolveBaseRepo(repoPath)),
-              opts,
-            );
+            const cachedBase = baseRepositories.current.get(repoPath);
+            let base: string;
+            if (
+              requested !== "manual" &&
+              cachedBase &&
+              Date.now() - cachedBase.resolvedAt < BASE_REPO_CACHE_WINDOW
+            ) {
+              base = cachedBase.name;
+            } else {
+              resolvingBase = true;
+              base = await tuiRuntime.runPromise(
+                GitHubService.use((s) => s.resolveBaseRepo(repoPath)),
+                opts,
+              );
+              resolvingBase = false;
+              if (!active()) return;
+              baseRepositories.current.set(repoPath, {
+                name: base,
+                resolvedAt: Date.now(),
+              });
+            }
             const previous = requested === "manual" ? null : snapshot;
             flight.history =
               previous?.baseRepository.toLowerCase() !== base.toLowerCase();
@@ -236,15 +267,6 @@ export function useGitHub(repos: RepoInfo[]) {
           const open = snapshot.prs.filter(
             (pr) => openNumbers.has(pr.number) && pr.state === "OPEN",
           );
-          await cacheWrite(
-            tuiRuntime.runPromise(
-              PrCacheService.use((s) =>
-                s.setOpenPrs(repoPath, open.map(displayPr), registrationId),
-              ),
-            ),
-            undefined,
-          );
-          if (!active()) return;
           setOpenPrs((previous) =>
             new Map(previous).set(repoPath, open.map(displayPr)),
           );
@@ -262,28 +284,34 @@ export function useGitHub(repos: RepoInfo[]) {
                 worktreeSignature(latest) === signature
               );
             };
-            const workspaces = await Promise.all(
-              repo.worktrees
-                .filter((wt) => !wt.isMainWorktree)
-                .map(async (wt) => {
-                  const [destination, explicit, cached] = await Promise.all([
-                    tuiRuntime.runPromise(
-                      resolvePushDestination(wt.path, wt.branch),
-                      opts,
-                    ),
-                    tuiRuntime.runPromise(
-                      PrCacheService.use((s) =>
-                        s.getExplicit(repoPath, wt.branch),
-                      ),
-                    ),
-                    tuiRuntime.runPromise(
-                      PrCacheService.use((s) =>
-                        s.getWorkspace(repoPath, wt.branch),
-                      ),
-                    ),
-                  ]);
-                  return { branch: wt.branch, destination, explicit, cached };
-                }),
+            const trees = repo.worktrees.filter((wt) => !wt.isMainWorktree);
+            const inputs = await tuiRuntime.runPromise(
+              PrCacheService.use((s) =>
+                s.getWorkspaceInputs(
+                  repoPath,
+                  trees.map((wt) => wt.branch),
+                ),
+              ),
+            );
+            const byBranch = new Map(
+              inputs.map((input) => [input.branch, input]),
+            );
+            const workspaces = await tuiRuntime.runPromise(
+              Effect.forEach(
+                trees,
+                (wt) =>
+                  Effect.map(
+                    resolvePushDestination(wt.path, wt.branch),
+                    (destination) => ({
+                      branch: wt.branch,
+                      destination,
+                      explicit: byBranch.get(wt.branch)?.explicit ?? null,
+                      cached: byBranch.get(wt.branch)?.cached ?? null,
+                    }),
+                  ),
+                { concurrency: 4 },
+              ),
+              opts,
             );
             if (!active()) return;
             const refreshed = await tuiRuntime.runPromise(
@@ -326,6 +354,21 @@ export function useGitHub(repos: RepoInfo[]) {
               if (saved) persisted.current.set(repoPath, refreshed.snapshot);
             }
             if (!isCurrent()) continue;
+            const refreshedOpen = refreshed.snapshot.prs
+              .filter((pr) => pr.state === "OPEN")
+              .map(displayPr);
+            await cacheWrite(
+              tuiRuntime.runPromise(
+                PrCacheService.use((s) =>
+                  s.setOpenPrs(repoPath, refreshedOpen, registrationId),
+                ),
+              ),
+              undefined,
+            );
+            if (!isCurrent()) continue;
+            setOpenPrs((previous) =>
+              new Map(previous).set(repoPath, refreshedOpen),
+            );
             const found = new Map(
               [...refreshed.entries].map(([branch, entry]) => [
                 workspaceIdentityKey(repoPath, branch),
@@ -385,9 +428,10 @@ export function useGitHub(repos: RepoInfo[]) {
           flight.failed = true;
           // A failed associated PR cannot invalidate a completed history scan.
           if (
-            historyPending &&
-            discovery.current.get(repoPath)?.baseRepository.toLowerCase() !==
-              historyBase?.toLowerCase()
+            resolvingBase ||
+            (historyPending &&
+              discovery.current.get(repoPath)?.baseRepository.toLowerCase() !==
+                historyBase?.toLowerCase())
           )
             discoveryRetries.current.set(
               repoPath,
@@ -498,6 +542,7 @@ export function useGitHub(repos: RepoInfo[]) {
       persisted.current.delete(path);
       loaded.current.delete(path);
       discoveryRetries.current.delete(path);
+      baseRepositories.current.delete(path);
     }
     for (const repo of reposRef.current) {
       const signature = worktreeSignature(repo);
@@ -510,6 +555,7 @@ export function useGitHub(repos: RepoInfo[]) {
         persisted.current.delete(repo.repoPath);
         loaded.current.delete(repo.repoPath);
         discoveryRetries.current.delete(repo.repoPath);
+        baseRepositories.current.delete(repo.repoPath);
         setAssociations(
           (previous) =>
             new Map(

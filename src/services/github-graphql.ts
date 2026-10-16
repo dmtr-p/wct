@@ -31,8 +31,8 @@ function decode(
     !Object.values(repository).some((value) => value !== null)
   )
     throw new Error(
-      transportError ??
-        response?.errors?.map((error) => error.message).join("; ") ??
+      transportError ||
+        response?.errors?.map((error) => error.message).join("; ") ||
         "Missing repository",
     );
   return { repository, errors: response?.errors ?? [], transportError };

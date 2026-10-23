@@ -142,6 +142,7 @@ vi.mock("../../src/services/tmux", async () => {
 
 // Drive "r" to await Navigate mode's PR refresh deterministically.
 const githubFixtures = vi.hoisted(() => ({
+  listRequests: [] as Array<{ repoPath: string; state: "all" | "updated" }>,
   prsByRepoPath: new Map<
     string,
     Array<{
@@ -159,29 +160,53 @@ vi.mock("../../src/services/github-service", () => ({
     use: (selector: (svc: unknown) => unknown) =>
       selector({
         resolveBaseRepo: () => Promise.resolve("test/repo"),
-        listRawPrs: (repoPath: string, state: "all" | "open") =>
-          Promise.resolve(
-            (githubFixtures.prsByRepoPath.get(repoPath) ?? [])
-              .filter((pr) => state === "all" || pr.state === "OPEN")
-              .map((pr) => ({
-                ...pr,
-                id: `PR-${pr.number}`,
-                headRepositoryOwner: { login: "test" },
-                headRepository: { name: "repo" },
-                headRefOid: `oid-${pr.number}`,
-                baseRefName: "main",
-                isDraft: false,
-                statusCheckRollup:
-                  pr.rollupState === null
-                    ? []
-                    : [
-                        {
-                          name: "test",
-                          conclusion: pr.rollupState.toUpperCase(),
-                        },
-                      ],
-              })),
+        getRawPrs: (
+          repoPath: string,
+          _base: string,
+          numbers: readonly number[],
+        ) =>
+          Effect.succeed(
+            numbers.map((number) => {
+              const pr = githubFixtures.prsByRepoPath
+                .get(repoPath)
+                ?.find((pr) => pr.number === number);
+              return {
+                number,
+                error: pr ? null : "PR unavailable",
+                raw: pr
+                  ? {
+                      ...pr,
+                      id: `PR-${pr.number}`,
+                      headRepository: { nameWithOwner: "test/repo" },
+                    }
+                  : null,
+              };
+            }),
           ),
+        listRawPrs: (repoPath: string, state: "all" | "updated") => {
+          githubFixtures.listRequests.push({ repoPath, state });
+          return Effect.succeed(
+            (githubFixtures.prsByRepoPath.get(repoPath) ?? []).map((pr) => ({
+              ...pr,
+              id: `PR-${pr.number}`,
+              headRepositoryOwner: { login: "test" },
+              headRepository: { name: "repo" },
+              headRefOid: `oid-${pr.number}`,
+              baseRefName: "main",
+              updatedAt: new Date().toISOString(),
+              isDraft: false,
+              statusCheckRollup:
+                pr.rollupState === null
+                  ? []
+                  : [
+                      {
+                        name: "test",
+                        conclusion: pr.rollupState.toUpperCase(),
+                      },
+                    ],
+            })),
+          );
+        },
       }),
   },
 }));
@@ -280,7 +305,17 @@ vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: {
     use: (selector: (svc: unknown) => unknown) =>
       selector({
+        getDiscovery: () => Promise.resolve(null),
+        setDiscovery: () => Promise.resolve(true),
         getWorkspace: () => null,
+        getWorkspaceInputs: (_path: string, branches: string[]) =>
+          Promise.resolve(
+            branches.map((branch) => ({
+              branch,
+              explicit: null,
+              cached: null,
+            })),
+          ),
         getOpenPrs: () => null,
         getExplicit: () => Promise.resolve(null),
         setWorkspace: () => Promise.resolve(),
@@ -343,6 +378,7 @@ export function resetHarnessFixtures(): void {
   registryItems.items = [];
   worktreeFixtures.byRepoPath.clear();
   githubFixtures.prsByRepoPath.clear();
+  githubFixtures.listRequests.length = 0;
   tmuxFixtures.clients = [];
   tmuxFixtures.sessions = null;
   tmuxFixtures.switchCalls.length = 0;

@@ -1,7 +1,6 @@
 import { Effect } from "effect";
-import { commandError } from "../errors";
+import { graphQlAliasError, queryGitHub } from "./github-graphql";
 import { checkOutcome, type PrCheck, type PrFacts } from "./pr-model";
-import { execProcess } from "./process";
 
 const INITIAL_BATCH = 20;
 const MAX_FOLLOW_UPS = 20;
@@ -30,7 +29,7 @@ function parseChecks(page: ContextPage): PrCheck[] {
 
 function prFragment(number: number, cursor?: string): string {
   const after = cursor ? `, after: ${JSON.stringify(cursor)}` : "";
-  return `id isMergeQueueEnabled mergeQueueEntry { id } commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100${after}) { pageInfo { hasNextPage endCursor } nodes { __typename ... on CheckRun { name status conclusion isRequired(pullRequestNumber: ${number}) } ... on StatusContext { context state isRequired(pullRequestNumber: ${number}) } } } } } } }`;
+  return `id mergeable mergeStateStatus reviewDecision isMergeQueueEnabled mergeQueueEntry { id } commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100${after}) { pageInfo { hasNextPage endCursor } nodes { __typename ... on CheckRun { name status conclusion isRequired(pullRequestNumber: ${number}) } ... on StatusContext { context state isRequired(pullRequestNumber: ${number}) } } } } } } }`;
 }
 
 function unwrapPage(raw: unknown): {
@@ -38,9 +37,20 @@ function unwrapPage(raw: unknown): {
   id: string;
   queued: boolean | null;
   queueEnabled: boolean | null;
+  mergeable: PrFacts["mergeable"];
+  mergeStateStatus: string | null;
+  reviewDecision: PrFacts["reviewDecision"];
 } {
   if (!raw || typeof raw !== "object")
-    return { page: null, id: "", queued: null, queueEnabled: null };
+    return {
+      page: null,
+      id: "",
+      queued: null,
+      queueEnabled: null,
+      mergeable: null,
+      mergeStateStatus: null,
+      reviewDecision: null,
+    };
   const pr = raw as Record<string, unknown>;
   const commit = ((
     pr.commits as
@@ -58,6 +68,20 @@ function unwrapPage(raw: unknown): {
         ? { nodes: [], pageInfo: { hasNextPage: false } }
         : null),
     id: typeof pr.id === "string" ? pr.id : "",
+    mergeable:
+      pr.mergeable === "MERGEABLE" ||
+      pr.mergeable === "CONFLICTING" ||
+      pr.mergeable === "UNKNOWN"
+        ? pr.mergeable
+        : null,
+    mergeStateStatus:
+      typeof pr.mergeStateStatus === "string" ? pr.mergeStateStatus : null,
+    reviewDecision:
+      pr.reviewDecision === "APPROVED" ||
+      pr.reviewDecision === "CHANGES_REQUESTED" ||
+      pr.reviewDecision === "REVIEW_REQUIRED"
+        ? pr.reviewDecision
+        : null,
     queued:
       pr.mergeQueueEntry === null
         ? false
@@ -67,32 +91,6 @@ function unwrapPage(raw: unknown): {
         ? pr.isMergeQueueEnabled
         : null,
   };
-}
-
-function graphQl(cwd: string, query: string) {
-  return Effect.flatMap(
-    execProcess("gh", ["api", "graphql", "-f", `query=${query}`], { cwd }),
-    (result) =>
-      Effect.try({
-        try: () => {
-          const response = JSON.parse(result.stdout) as {
-            data?: {
-              repository?: Record<string, unknown>;
-              rateLimit?: { cost?: number };
-            };
-            errors?: { message?: string }[];
-          };
-          if (response.errors?.length || !response.data?.repository)
-            throw new Error(
-              response.errors?.map((e) => e.message).join("; ") ||
-                "Missing repository",
-            );
-          return response.data;
-        },
-        catch: (error) =>
-          commandError("pr_error", `GitHub GraphQL: ${String(error)}`, error),
-      }),
-  );
 }
 
 /** Batch detail fetches; a failed or capped connection never looks complete. */
@@ -120,17 +118,21 @@ export function fetchPrDetails(
         )
         .join(" ");
       const query = `query { rateLimit { cost remaining } repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { ${aliases} } }`;
-      const initial = yield* Effect.catch(graphQl(cwd, query), (error) =>
+      const initial = yield* Effect.catch(queryGitHub(cwd, query), (error) =>
         Effect.succeed({
           repository: null as Record<string, unknown> | null,
           error: error.message,
+          errors: [],
+          transportError: null,
         }),
       );
       for (let index = 0; index < batch.length; index++) {
         const pr = batch[index];
         if (!pr) continue;
-        const failed = (initial as { error?: string }).error;
-        if (!initial.repository) {
+        const failed =
+          (initial as { error?: string }).error ??
+          graphQlAliasError(initial, `p${index}`);
+        if (!initial.repository || failed) {
           result.push({
             ...pr,
             checksComplete: false,
@@ -143,7 +145,8 @@ export function fetchPrDetails(
           result.push({
             ...pr,
             checksComplete: false,
-            lastError: "Incomplete PR detail response",
+            lastError:
+              initial.transportError ?? "Incomplete PR detail response",
           });
           continue;
         }
@@ -158,15 +161,20 @@ export function fetchPrDetails(
           }
           followUps++;
           const nextQuery = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { p: pullRequest(number: ${pr.number}) { ${prFragment(pr.number, cursor)} } } }`;
-          const next = yield* Effect.catch(graphQl(cwd, nextQuery), (cause) =>
-            Effect.succeed({
-              repository: null as Record<string, unknown> | null,
-              error: cause.message,
-            }),
+          const next = yield* Effect.catch(
+            queryGitHub(cwd, nextQuery),
+            (cause) =>
+              Effect.succeed({
+                repository: null as Record<string, unknown> | null,
+                error: cause.message,
+                errors: [],
+                transportError: null,
+              }),
           );
-          if (!next.repository) {
-            error =
-              (next as { error?: string }).error ?? "Check page fetch failed";
+          const failedPage =
+            (next as { error?: string }).error ?? graphQlAliasError(next, "p");
+          if (!next.repository || failedPage) {
+            error = failedPage ?? "Check page fetch failed";
             break;
           }
           const page = unwrapPage(next.repository.p).page;
@@ -181,6 +189,9 @@ export function fetchPrDetails(
         result.push({
           ...pr,
           id: first.id,
+          mergeable: first.mergeable,
+          mergeStateStatus: first.mergeStateStatus,
+          reviewDecision: first.reviewDecision,
           isMergeQueueEnabled: first.queueEnabled,
           isQueued: first.queued,
           checks: error ? null : checks,

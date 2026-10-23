@@ -73,6 +73,7 @@ sources = [
   "src/**",
   "tests/**",
   "scripts/**",
+  ".githooks/**",
   ".codex/hooks/**",
   "vitest.config.*",
   "tsconfig.json",
@@ -89,4 +90,4 @@ depends = ["lint", "format:check", "test"]
 
 [tasks."hooks:install"]
 description = "Install the Git pre-commit hook"
-run = "mise generate git-pre-commit --write --task=pre-commit"
+run = "git config --local core.hooksPath .githooks"

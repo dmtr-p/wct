@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -eu
+
+# Checks create other repositories; Git's hook environment must not follow them.
+git_local_env=$(git rev-parse --local-env-vars)
+unset $git_local_env
+
+exec mise run pre-commit

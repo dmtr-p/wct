@@ -348,8 +348,9 @@ inputs are included. A documentation edit reruns formatting while lint and tests
 can stay cached. Use `mise run --force <task>` to bypass a task's cache. The
 underlying `bun run` scripts always run their tools directly.
 
-`mise run hooks:install` installs Git's pre-commit hook with
-[`mise generate git-pre-commit`](https://mise.jdx.dev/cli/generate/git-pre-commit.html).
+`mise run hooks:install` configures Git to use the versioned `.githooks` directory.
+The pre-commit hook clears Git's repository-specific environment variables so
+checks can create independent temporary repositories and worktrees.
 It runs `mise run pre-commit`, which checks lint, formatting, and the full test
 suite against the working tree without applying fixes or staging files. The
 check tasks have separate caches from their fixing counterparts; tests share

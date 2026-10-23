@@ -18,6 +18,8 @@ describe.skipIf(!mise)("mise task freshness", () => {
     repo = join(root, "repo");
     log = join(root, "tasks.log");
     await mkdir(join(repo, "src"), { recursive: true });
+    await mkdir(join(repo, ".githooks"));
+    await Bun.write(join(repo, ".githooks", "pre-commit"), "#!/bin/sh\n");
     await mkdir(join(root, "bin"));
     const toml = (await Bun.file(config).text()).replace(
       /^bun = "[^"]+"$/m,
@@ -125,6 +127,16 @@ fi
     expect(await calls()).toEqual(["test", "test", "test"]);
   });
 
+  test("hook changes invalidate successful tests", async () => {
+    succeed("test");
+    await Bun.write(
+      join(repo, ".githooks", "pre-commit"),
+      "#!/bin/sh\nexit 1\n",
+    );
+    succeed("test");
+    expect(await calls()).toEqual(["test", "test"]);
+  });
+
   test("records formatted contents after a successful fix", async () => {
     env.WCT_TASK_MODIFY = "1";
     succeed("format");
@@ -150,5 +162,20 @@ fi
     succeed("pre-commit");
     succeed("pre-commit");
     expect((await calls()).sort()).toEqual(["format:check", "lint", "test"]);
+  });
+
+  test("hook installation selects the versioned hooks directory", () => {
+    const initialized = Bun.spawnSync(["git", "init", "-q"], {
+      cwd: repo,
+      env,
+    });
+    expect(initialized.exitCode, initialized.stderr.toString()).toBe(0);
+    succeed("hooks:install");
+    const configured = Bun.spawnSync(
+      ["git", "config", "--local", "--get", "core.hooksPath"],
+      { cwd: repo, env },
+    );
+    expect(configured.exitCode, configured.stderr.toString()).toBe(0);
+    expect(configured.stdout.toString().trim()).toBe(".githooks");
   });
 });

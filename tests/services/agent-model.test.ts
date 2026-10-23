@@ -455,6 +455,68 @@ describe("agent classifier", () => {
     expect(refreshed.freshness).toBe("fresh");
     expect(agentSummary([refreshed])).toBe("1 working");
   });
+  test.each([
+    "○ general-purpose  Finding callers and tests  4m 40s · ↓ 216.4k tokens",
+    "  ◯ general-purpose  Reading sources  10m 58s · ↓ 59.1k tokens",
+    "❯ ○ custom-agent  Reviewing changes  1h2m3s · ↑ 1.0m tokens",
+  ])("Claude recognizes running background agent footer %s", (row) => {
+    const screen = [
+      "* Waiting for 1 background agent to finish",
+      "",
+      '● Background command "Watch main CI" completed (exit code 0)',
+      "Read 1 file",
+      "● Main's CI passed. The agent is still running.",
+      "",
+      "────────────────────────────────────────",
+      "❯",
+      "────────────────────────────────────────",
+      "Opus 5.5 | 157.2k | Session: 7.0% | main | Reset: 3hr 57m",
+      "⏵⏵ auto mode on (shift+tab to cycle)",
+      "",
+      "● main",
+      row,
+    ].join("\n");
+    const classified = classifyAgent("claude", screen);
+    expect(classified).toMatchObject({
+      state: "working",
+      rule: "live_background_agent_footer",
+      source: "screen",
+      strong: true,
+    });
+    expect(
+      agentSummary([reconcileAgent(undefined, "claude", "job", classified, 0)]),
+    ).toBe("1 working");
+  });
+  test("Claude background agent footers require live progress outside the draft", () => {
+    const composer = "──────\n❯\n──────\n? for shortcuts";
+    const row = "○ general-purpose  Finding callers  4m 40s · ↓ 216.4k tokens";
+    for (const footer of [
+      row.replace("○", "✓"),
+      row.replace("○", "✗"),
+      row.replace("○", "⏸"),
+      row.replace("4m 40s · ", ""),
+      row.replace(" · ↓ 216.4k tokens", ""),
+      "○ general-purpose  Finding callers",
+      "● main",
+    ])
+      expect(classifyAgent("claude", `${composer}\n${footer}`).state).toBe(
+        "idle",
+      );
+    expect(classifyAgent("claude", `${row}\n${composer}`).state).toBe("idle");
+    expect(classifyAgent("claude", row).state).toBe("unknown");
+    expect(
+      classifyAgent(
+        "claude",
+        `${composer}\nEnter to confirm · esc to cancel\n${row}`,
+      ).state,
+    ).toBe("blocked");
+    expect(
+      classifyAgent(
+        "claude",
+        `${composer}\nshowing detailed transcript\nctrl+o to toggle\n${row}`,
+      ).skip,
+    ).toBe(true);
+  });
   test("Claude workflow footers require live, incomplete progress", () => {
     const composer = "──────\n❯\n──────\n? for shortcuts";
     const row = "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens";
@@ -528,6 +590,7 @@ describe("agent classifier", () => {
       "✻ Waiting for 1 background agent and 1 dynamic workflow to finish",
       "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
       "◯ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
+      "○ general-purpose  Finding callers  4m 40s · ↓ 216.4k tokens",
       "✻ Reading · 2 MCP tasks still running",
       "run a dynamic workflow?\n  esc to cancel",
       'MCP server "example" requests your input\n  Accept\n  esc to cancel',

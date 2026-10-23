@@ -244,6 +244,15 @@ function hasRunningClaudeWorkflow(footer: string): boolean {
   });
 }
 
+function hasRunningClaudeBackgroundAgent(footer: string): boolean {
+  return footer.split("\n").some((line) =>
+    // Workflow bars belong to the step-count check, including completed rows.
+    /^\s*(?:❯\s+)?[○◯]\s+[^▰▱\n]+?\s+\d+[hms](?:\s*\d+[hms])*\s+·\s+[↑↓]\s+\d+(?:\.\d+)?[km]?\s+tokens?\s*$/u.test(
+      line,
+    ),
+  );
+}
+
 export function classifyAgent(
   agent: AgentName,
   screen: string,
@@ -280,19 +289,22 @@ export function classifyAgent(
         ),
     )
     .sort((a, b) => b.priority - a.priority)[0];
-  // Compaction can remove the waiting indicator while footer work continues.
+  // New responses or compaction can displace the waiting indicator.
   // Override readiness only, preserving live blocker and viewer priorities.
-  if (
-    matched?.state === "idle" &&
-    promptBox &&
-    hasRunningClaudeWorkflow(promptBox.footer)
-  )
-    return {
-      state: "working",
-      rule: "live_workflow_footer",
-      source: "screen",
-      strong: true,
-    };
+  if (matched?.state === "idle" && promptBox) {
+    const rule = hasRunningClaudeWorkflow(promptBox.footer)
+      ? "live_workflow_footer"
+      : hasRunningClaudeBackgroundAgent(promptBox.footer)
+        ? "live_background_agent_footer"
+        : undefined;
+    if (rule)
+      return {
+        state: "working",
+        rule,
+        source: "screen",
+        strong: true,
+      };
+  }
   if (matched)
     return {
       state: matched.state,

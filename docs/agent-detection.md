@@ -73,6 +73,11 @@ waiting indicator. It requires the running marker, progress bar, incomplete
 step count, elapsed time, and token usage. Both `○` and `◯` running markers are
 recognized. Completed, paused, or failed rows, shell/monitor counts alone, and
 rows quoted in the transcript or draft do not establish workflow activity.
+Background agent footer rows also establish working when a `○` or `◯` running
+marker is followed by the agent label, elapsed time, and token usage. This
+remains evidence of activity when newer responses displace the waiting indicator
+above the prompt box. Completed, paused, or failed markers and rows without
+elapsed time or token usage do not establish background agent activity.
 Live blocker and viewer rules retain priority.
 A recognized composer also excludes preceding completed-response text from
 blocker rules, so quoted workflow, permission, and directory-trust dialogs do

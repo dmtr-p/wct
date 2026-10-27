@@ -311,6 +311,53 @@ describe("agent classifier", () => {
         "idle",
       );
   });
+  test.each([1, 2, 3])(
+    "Claude plan approval is blocked with option %s selected",
+    (selected) => {
+      const header =
+        "Claude has written up a plan and is ready to execute. Would you like to proceed?";
+      const options = [
+        "1. Yes, and use auto mode",
+        "2. Yes, manually approve edits",
+        "3. Tell Claude what to change",
+      ]
+        .map(
+          (option, index) => `${selected === index + 1 ? "❯" : " "} ${option}`,
+        )
+        .join("\n");
+      const dialog = `${header}\n\n${options}\n  shift+tab to approve with this feedback\n\nctrl+g to edit in VS Code · ~/.claude/plans/example.md`;
+      for (const screen of [
+        dialog,
+        `Plan contents\n──────\n${dialog}`,
+        `Plan contents\n──────\n${dialog.replace("execute. Would", "execute.\nWould")}`,
+      ]) {
+        const classified = classifyAgent("claude", screen);
+        expect(classified).toMatchObject({
+          state: "blocked",
+          rule: "plan_approval_prompt",
+          source: "screen",
+          strong: true,
+        });
+        expect(
+          agentSummary([
+            reconcileAgent(undefined, "claude", "job", classified, 0),
+          ]),
+        ).toBe("1 blocked");
+      }
+      for (const screen of [header, options])
+        expect(classifyAgent("claude", screen).state).toBe("unknown");
+      const composer = "──────\n❯\n──────\n? for shortcuts";
+      expect(classifyAgent("claude", `${dialog}\n${composer}`).state).toBe(
+        "idle",
+      );
+      expect(
+        classifyAgent(
+          "claude",
+          `──────\n❯ Explain this dialog:\n${dialog}\n──────\n? for shortcuts`,
+        ).state,
+      ).toBe("idle");
+    },
+  );
   test("Claude bordered approval menus cannot establish prompt-box readiness", () => {
     const menu = "──────\n❯ 1. Yes\n2. No\n──────";
     for (const footer of [

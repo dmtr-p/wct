@@ -173,6 +173,17 @@ export const agentRules: Record<"claude" | "codex", readonly AgentRule[]> = {
       ],
     },
     {
+      id: "plan_approval_prompt",
+      state: "blocked",
+      priority: 980,
+      region: "after_last_horizontal_rule",
+      visible_blocker: true,
+      regex: [
+        "(?i)Claude has written up a plan and is ready to execute\\.\\s+Would you like to proceed\\?",
+      ],
+      line_regex: ["(?i)^\\s*❯?\\s*\\d+\\.\\s*Yes\\b"],
+    },
+    {
       id: "dynamic_workflow_prompt",
       state: "blocked",
       priority: 980,

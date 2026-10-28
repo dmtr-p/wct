@@ -23,7 +23,7 @@
   "devDependencies": {
     "@effect/tsgo": "0.51.1",
     "@effect/vitest": "4.0.3",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.3",
     "@types/react": "19.3.0",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",

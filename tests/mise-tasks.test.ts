@@ -36,7 +36,7 @@ describe.skipIf(!mise)("mise task freshness", () => {
     await Bun.write(
       join(root, "bin", "bun"),
       `#!/bin/sh
-if [ "$1" = "--version" ]; then printf '1.4.2\\n'; exit 0; fi
+if [ "$1" = "--version" ]; then printf '1.4.3\\n'; exit 0; fi
 printf '%s\\n' "$2" >> "$WCT_TASK_LOG"
 if [ "$2" = "$WCT_TASK_FAIL" ]; then exit 1; fi
 if [ "$2" = "format" ] && [ "$WCT_TASK_MODIFY" = "1" ]; then

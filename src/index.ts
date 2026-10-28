@@ -58,6 +58,7 @@ function toJsonModeWctError(
     case "MissingArgument":
     case "UnexpectedArgument":
     case "InvalidValue":
+    case "ValidationError":
       return commandError("invalid_options", error.message, error);
     case "UserError":
       return toWctError(error.cause);

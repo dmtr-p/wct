@@ -9,8 +9,8 @@ import {
   type LifecycleController,
   type LifecycleEntry,
   type LifecyclePhase,
-  type LifecycleState,
   lifecyclePhaseLabel,
+  type LifecycleState,
   runLifecycleOperation,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";

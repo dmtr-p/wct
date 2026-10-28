@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   ConfirmModal,
-  type ConfirmMode,
   confirmModalRowCount,
+  type ConfirmMode,
 } from "../../src/tui/components/ConfirmModal";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";

@@ -8,9 +8,9 @@ import type { RepoInfo } from "./hooks/useRegistry";
 import {
   isLifecycleActive,
   type LifecycleEntry,
+  lifecycleEntryFor,
   type LifecyclePhase,
   type LifecycleState,
-  lifecycleEntryFor,
   workspaceIdentityKey,
 } from "./lifecycle";
 import { wrapPrLabel, wrapPrTitle } from "./pr-layout";

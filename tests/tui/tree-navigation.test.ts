@@ -8,9 +8,9 @@ import type { TreeRow } from "../../src/tui/tree-helpers";
 import {
   effectiveTreeScrollOffset,
   initialTreeNavigationState,
+  transitionTreeNavigation,
   type TreeNavigationSnapshot,
   type TreeNavigationState,
-  transitionTreeNavigation,
 } from "../../src/tui/tree-navigation";
 import type { TreeItem } from "../../src/tui/types";
 

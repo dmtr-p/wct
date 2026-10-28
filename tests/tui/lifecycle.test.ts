@@ -6,9 +6,9 @@ import {
   LIFECYCLE_ROW_PREFIX,
   type LifecycleEntry,
   type LifecyclePhase,
-  type LifecycleState,
   lifecyclePhaseLabel,
   lifecycleProgressContent,
+  type LifecycleState,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import {

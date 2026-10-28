@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   buildPrMutation,
   MERGE_METHODS,
-  type MergeSnapshot,
   mergeEligibility,
+  type MergeSnapshot,
   mergeSnapshotFingerprint,
   resolveMergeConfiguration,
   validateSubmission,

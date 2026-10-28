@@ -11,3 +11,29 @@ linker = "isolated"
 # Prevent dynamic runtime auto-installation
 auto = "disable"
 
+[fmt]
+printWidth = 80
+tabWidth = 2
+useTabs = false
+semi = true
+singleQuote = false
+sortPackageJson = false
+ignorePatterns = ["bun.lock"]
+
+[fmt.sortImports]
+newlinesBetween = false
+groups = [
+  ["value-builtin", "type-builtin"],
+  ["value-external", "type-external"],
+  ["value-internal", "type-internal"],
+  [
+    "value-parent",
+    "type-parent",
+    "value-sibling",
+    "type-sibling",
+    "value-index",
+    "type-index",
+  ],
+  "unknown",
+]
+

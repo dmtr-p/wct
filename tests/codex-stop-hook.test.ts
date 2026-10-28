@@ -52,7 +52,7 @@ printf '%s\\n' "$*" >> "$WCT_HOOK_LOG"
 if [ "$2" = "$WCT_HOOK_STAGE" ]; then
   case "$2" in
     lint:fix) tool=Oxlint ;;
-    format) tool=Oxfmt ;;
+    format) tool='Bun formatter' ;;
     test) tool=Tests ;;
   esac
   case "$WCT_HOOK_MODE" in
@@ -105,7 +105,7 @@ fi
       await Bun.write(join(repo, "new file.txt"), "unformatted\n");
     expect(runHook(mode, stage)).toMatchObject({
       decision: "block",
-      reason: expect.stringContaining("Oxlint or Oxfmt modified files"),
+      reason: expect.stringContaining("Oxlint or Bun formatter modified files"),
     });
     expect(await Bun.file(log).text()).toBe("run lint:fix\nrun format\n");
   });
@@ -142,7 +142,9 @@ fi
       for (const mode of ["modify", "temporary"]) {
         expect(runHook(mode)).toMatchObject({
           decision: "block",
-          reason: expect.stringContaining("Oxlint or Oxfmt modified files"),
+          reason: expect.stringContaining(
+            "Oxlint or Bun formatter modified files",
+          ),
         });
       }
     },
@@ -152,7 +154,7 @@ fi
 
   test.each([
     ["lint:fix", "Oxlint", "run lint:fix\n"],
-    ["format", "Oxfmt", "run lint:fix\nrun format\n"],
+    ["format", "Bun formatter", "run lint:fix\nrun format\n"],
     ["test", "Tests", "run lint:fix\nrun format\nrun test\n"],
   ])(
     "blocks on %s errors and emits valid JSON",

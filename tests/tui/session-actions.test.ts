@@ -23,8 +23,8 @@ import {
   createLifecycleClaims,
   type LifecycleEntry,
   type LifecyclePhase,
-  type LifecycleState,
   lifecyclePhaseLabel,
+  type LifecycleState,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import {

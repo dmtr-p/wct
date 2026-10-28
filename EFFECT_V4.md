@@ -26,7 +26,8 @@ Effect rules match the compiler's
 error and warning severities, including the configured diagnostics in
 `tsconfig.json`; keep these configurations aligned. Suggestion-level refactors
 are left to the editor rather than promoted to lint warnings.
-Oxfmt owns formatting and import sorting through `.oxfmtrc.json`.
+Bun's built-in formatter owns formatting and import sorting through the
+`[fmt]` and `[fmt.sortImports]` sections in `bunfig.toml`.
 The React Compiler rules for refs, state updates in effects, globals, and
 immutability are disabled. The Ink TUI uses explicit mutable refs and Effect
 polling without React Compiler.

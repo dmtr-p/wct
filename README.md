@@ -336,8 +336,9 @@ the installed `@effect/tsgo` package.
 
 `bun run lint` runs Oxlint with type-aware Effect rules and TypeScript compiler
 checks; `bun run lint:fix` runs the same checks and applies safe lint fixes.
-`bun run format` runs Oxfmt with import sorting, and
-`bun run format:check` checks formatting without writing files. CI checks
+`bun run format` runs Bun's built-in formatter with import sorting, and
+`bun run format:check` checks formatting without writing files. Formatting
+rules live in the `[fmt]` and `[fmt.sortImports]` sections of `bunfig.toml`. CI checks
 lint, types, formatting, and tests. CI and hooks use Oxlint's
 `options.typeCheck` instead of running the TypeScript compiler separately.
 

@@ -16,8 +16,8 @@ import { tuiCommand } from "../commands/tui";
 import { upCommand } from "../commands/up";
 import {
   commandConfig,
-  commandMetadata,
   commandDefinitions as defs,
+  commandMetadata,
   projectDefinitions,
 } from "./command-metadata";
 import { JsonFlag } from "./json-flag";

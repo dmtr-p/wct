@@ -32,10 +32,7 @@ export interface AgentSnapshot {
   memberships: Map<string, Set<string>>;
 }
 type ObservationError =
-  | WctError
-  | ProcessExitError
-  | ProcessOutputLimitError
-  | Cause.TimeoutError;
+  WctError | ProcessExitError | ProcessOutputLimitError | Cause.TimeoutError;
 type ObservationEffect<A> = Effect.Effect<
   A,
   ObservationError,

@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 import { rootCommand } from "../src/cli/root-command";
-import { type DownOptions, downCommand } from "../src/commands/down";
+import { downCommand, type DownOptions } from "../src/commands/down";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";

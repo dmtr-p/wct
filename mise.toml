@@ -1,5 +1,5 @@
 [tools]
-bun = "1.4.3"
+bun = "1.4.4"
 
 [settings.task]
 source_freshness_hash_contents = true
@@ -18,7 +18,6 @@ sources = [
   "!.claude/**",
   "!.codex/**",
   "!.vscode/**",
-  "!.oxfmtrc.json",
   "bun.lock",
   "bunfig.toml",
   ".oxlintrc.json",

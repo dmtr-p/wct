@@ -16,7 +16,7 @@ import {
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { type CommandResult, runShellCommands } from "./command-runner";
-import { type CopyResult, copyEntries, copyFiles } from "./copy";
+import { copyEntries, copyFiles, type CopyResult } from "./copy";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,

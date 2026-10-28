@@ -97,7 +97,7 @@ fi
 if ! mise run format >"${format_log}" 2>&1; then
   cat "${format_log}" >&2
   emit_block_with_log \
-    "Oxfmt failed. Fix the reported issues, then rerun the relevant verification." \
+    "Bun formatter failed. Fix the reported issues, then rerun the relevant verification." \
     "${format_log}"
   exit 0
 fi
@@ -109,7 +109,7 @@ fi
 
 if [ "${before_fixes}" != "${after_fixes}" ]; then
   emit_block_with_log \
-    "Oxlint or Oxfmt modified files. Review and commit the lint/format fixes, then rerun verification." \
+    "Oxlint or Bun formatter modified files. Review and commit the lint/format fixes, then rerun verification." \
     "${format_log}"
   exit 0
 fi

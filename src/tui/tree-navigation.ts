@@ -10,9 +10,9 @@ import {
   resolveSelectedWorktreeIndex,
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
-  type TreeRow,
   treeItemId,
   treeItemParentId,
+  type TreeRow,
 } from "./tree-helpers";
 import type { TreeItem } from "./types";
 

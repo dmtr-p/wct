@@ -6,7 +6,7 @@ import { PrCacheService } from "../../services/pr-cache-service";
 import { RegistryService } from "../../services/registry-service";
 import { formatSessionName } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
-import { type LifecycleState, lifecycleBusyMessage } from "../lifecycle";
+import { lifecycleBusyMessage, type LifecycleState } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";

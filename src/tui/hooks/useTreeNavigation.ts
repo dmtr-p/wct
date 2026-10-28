@@ -2,9 +2,9 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   effectiveTreeScrollOffset,
   initialTreeNavigationState,
+  transitionTreeNavigation,
   type TreeNavigationIntent,
   type TreeNavigationSnapshot,
-  transitionTreeNavigation,
 } from "../tree-navigation";
 
 /** The getter closes over the committed layout, including the footer height

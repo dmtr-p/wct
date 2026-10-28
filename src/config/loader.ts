@@ -77,8 +77,7 @@ interface LoadedConfigFile {
 }
 
 type LoadConfigFileResult =
-  | { ok: true; file: LoadedConfigFile }
-  | { ok: false; error: ConfigError };
+  { ok: true; file: LoadedConfigFile } | { ok: false; error: ConfigError };
 
 function loadConfigFileEffect(
   filePath: string,

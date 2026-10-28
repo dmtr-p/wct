@@ -8,8 +8,8 @@ import {
 import {
   type LifecycleEntry,
   type LifecyclePhase,
-  type LifecycleState,
   lifecyclePhaseLabel,
+  type LifecycleState,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
 import { wrapPrLabel } from "../../src/tui/pr-layout";

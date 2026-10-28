@@ -10,17 +10,17 @@ import {
 import {
   fetchMergeSnapshot,
   MERGE_METHODS,
+  mergeEligibility,
   type MergeMethod,
   type MergeSnapshot,
-  mergeEligibility,
   mergeSnapshotFingerprint,
   submitPrMerge,
 } from "../services/pr-merge-service";
 import type { PrFacts } from "../services/pr-model";
 import { AddProjectModal } from "./components/AddProjectModal";
 import {
-  type ConfirmMode,
   confirmModalRowCount,
+  type ConfirmMode,
   isConfirmMode,
 } from "./components/ConfirmModal";
 import { OpenModal } from "./components/OpenModal";
@@ -53,8 +53,8 @@ import {
   isAddProjectButtonPress,
   isAddProjectButtonTarget,
   type MouseClickHistory,
-  type MouseEvent,
   mouseClickTargetId,
+  type MouseEvent,
   resolveHoverItemIndex,
   resolveMouseAction,
   resolveTreeDoubleClickAction,

@@ -30,13 +30,13 @@ describe.skipIf(!mise)("mise task freshness", () => {
     await Bun.write(join(repo, "README.md"), "documentation\n");
     await Bun.write(join(repo, "package.json"), "{}\n");
     await Bun.write(join(repo, "bun.lock"), "dependencies\n");
-    await Bun.write(join(repo, ".oxfmtrc.json"), "{}\n");
+    await Bun.write(join(repo, "bunfig.toml"), "[fmt]\nprintWidth = 80\n");
     await Bun.write(join(root, "global.toml"), "");
     await Bun.write(log, "");
     await Bun.write(
       join(root, "bin", "bun"),
       `#!/bin/sh
-if [ "$1" = "--version" ]; then printf '1.4.3\\n'; exit 0; fi
+if [ "$1" = "--version" ]; then printf '1.4.4\\n'; exit 0; fi
 printf '%s\\n' "$2" >> "$WCT_TASK_LOG"
 if [ "$2" = "$WCT_TASK_FAIL" ]; then exit 1; fi
 if [ "$2" = "format" ] && [ "$WCT_TASK_MODIFY" = "1" ]; then
@@ -103,11 +103,11 @@ fi
     expect(await calls()).toEqual([...tasks, "format"]);
   });
 
-  test("formatter configuration does not invalidate lint or tests", async () => {
+  test("Bun configuration changes invalidate all three tasks", async () => {
     for (const task of tasks) succeed(task);
-    await Bun.write(join(repo, ".oxfmtrc.json"), '{"printWidth":100}\n');
+    await Bun.write(join(repo, "bunfig.toml"), "[fmt]\nprintWidth = 100\n");
     for (const task of tasks) succeed(task);
-    expect(await calls()).toEqual([...tasks, "format"]);
+    expect(await calls()).toEqual([...tasks, ...tasks]);
   });
 
   test("dependency changes invalidate all three tasks", async () => {

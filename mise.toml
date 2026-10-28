@@ -1,5 +1,5 @@
 [tools]
-bun = "1.4.2"
+bun = "1.4.3"
 
 [settings.task]
 source_freshness_hash_contents = true

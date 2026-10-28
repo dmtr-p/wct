@@ -149,6 +149,7 @@ describe("WctServicesLayer", () => {
             const tmux = yield* TmuxService;
             const worktree = yield* WorktreeService;
             const workspace = yield* WorkspaceService;
+            const filesystem = yield* FileSystem.FileSystem;
             const json = yield* JsonFlag;
 
             expect(Effect.isEffect(github.isGhInstalled)).toBe(true);
@@ -158,6 +159,7 @@ describe("WctServicesLayer", () => {
             expect(typeof worktree.isGitRepo).toBe("function");
             expect(typeof workspace.up).toBe("function");
             expect(typeof workspace.down).toBe("function");
+            expect(typeof filesystem.lstat).toBe("function");
             expect(json).toBe(false);
           }),
       );

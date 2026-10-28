@@ -2,9 +2,9 @@ import { Effect, Option } from "effect";
 import {
   CliConfig,
   CliError,
-  CliOutput,
   Command,
   GlobalFlag,
+  TerminalCapabilities,
 } from "effect/cli";
 import {
   COMPLETION_PROFILES_FLAG,
@@ -16,6 +16,7 @@ import {
 } from "./cli/completions";
 import { CompletionsFlag } from "./cli/completions-flag";
 import { JsonFlag } from "./cli/json-flag";
+import { installCliOutputHandlers, provideCliOutput } from "./cli/output";
 import { rootCommand } from "./cli/root-command";
 import { BunRuntime, provideBunServices } from "./effect/runtime";
 import { provideWctServices } from "./effect/services";
@@ -25,6 +26,7 @@ import { SHUTDOWN_WORKER_FLAG } from "./services/shutdown-runner";
 import { jsonError } from "./utils/json-output";
 
 const { version: VERSION } = require("../package.json");
+installCliOutputHandlers();
 const args = process.argv.slice(2);
 const customCompletionShell = getCustomCompletionShell(args);
 const helpRequested = args.includes("--help") || args.includes("-h");
@@ -82,7 +84,7 @@ if (customCompletionShell) {
 const commandProgram = Command.run(rootCommand, {
   version: VERSION,
   renderErrors: !jsonRequested,
-}).pipe(Effect.provide(cliConfigLayer));
+}).pipe(Effect.provide([cliConfigLayer, TerminalCapabilities.layer]));
 
 const program = provideBunServices(
   provideWctServices(
@@ -94,9 +96,9 @@ const program = provideBunServices(
         if (
           CliError.isCliError(error) &&
           error._tag === "ShowHelp" &&
-          error.errors.length === 0
+          (error.errors.length === 0 || !json)
         ) {
-          process.exitCode = 0;
+          process.exitCode = error.errors.length === 0 ? 0 : 1;
           return;
         }
 
@@ -120,18 +122,9 @@ const shouldSuppressCliOutputForJson =
   !builtInActionRequested &&
   args.some((arg) => arg !== "--json");
 
-const runnableProgram = shouldSuppressCliOutputForJson
-  ? program.pipe(
-      Effect.provide(
-        CliOutput.layer({
-          // eslint-disable-next-line typescript/no-misused-spread -- defaultFormatter returns a plain object with own formatter functions
-          ...CliOutput.defaultFormatter(),
-          formatHelpDoc: () => "",
-          formatErrors: () => "",
-        }),
-      ),
-    )
-  : program;
+const runnableProgram = provideCliOutput(program, {
+  suppressHelp: shouldSuppressCliOutputForJson,
+});
 
 BunRuntime.runMain(
   args[0] === COMPLETION_PROFILES_FLAG

@@ -1,6 +1,5 @@
-import { lstat } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { commandError } from "../errors";
 import { execProcess } from "./process";
 
@@ -39,23 +38,22 @@ export function filterRegularFiles(
   files: ReadonlyArray<string>,
   sourceDir: string,
 ) {
-  return Effect.forEach(
-    files,
-    (file) =>
-      Effect.tryPromise({
-        try: async () =>
-          (await lstat(join(sourceDir, file))).isFile() ? file : undefined,
-        catch: (error) =>
-          commandError(
-            "worktree_error",
-            error instanceof Error ? error.message : String(error),
-            error,
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const paths = yield* Effect.forEach(
+      files,
+      (file) =>
+        fs
+          .lstat(join(sourceDir, file))
+          .pipe(
+            Effect.map((info) => (info.type === "File" ? file : undefined)),
           ),
-      }),
-    { concurrency: 16 },
-  ).pipe(
-    Effect.map((paths) =>
-      paths.filter((path): path is string => path !== undefined),
+      { concurrency: 16 },
+    );
+    return paths.filter((path): path is string => path !== undefined);
+  }).pipe(
+    Effect.mapError((error) =>
+      commandError("worktree_error", error.message, error),
     ),
   );
 }

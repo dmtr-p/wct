@@ -18,6 +18,7 @@ interface CommandDefinition {
 
 function booleanOption(name: string, description: string, short?: string) {
   let param = Flag.Boolean(name).pipe(
+    Flag.withoutNegation,
     Flag.withDescription(description),
     Flag.withDefault(false),
   );

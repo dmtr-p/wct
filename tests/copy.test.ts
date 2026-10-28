@@ -1,6 +1,6 @@
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Cause, Effect, Exit, FileSystem, PlatformError } from "effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   type BunServices as BunServicesType,
@@ -96,6 +96,47 @@ describe("expandEntry", () => {
       expandEntry("nonexistent/", tempDir),
     );
     expect(files).toEqual([]);
+  });
+
+  test("recovers stat failures while preserving mixed failure defects", async () => {
+    const failure = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "stat",
+    });
+    const expand = expandEntry("missing/", tempDir);
+    expect(
+      await runBunPromise(
+        expand.pipe(
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.makeNoop({
+              stat: () => Effect.fail(failure),
+            }),
+          ),
+        ),
+      ),
+    ).toEqual([]);
+
+    const exit = await runBunPromise(
+      expand.pipe(
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.makeNoop({
+            stat: () =>
+              Effect.failCause(
+                Cause.combine(
+                  Cause.fail(failure),
+                  Cause.die(new Error("filesystem defect")),
+                ),
+              ),
+          }),
+        ),
+        Effect.exit,
+      ),
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) expect(Cause.hasDies(exit.cause)).toBe(true);
   });
 
   test("expands glob pattern to matching files", async () => {

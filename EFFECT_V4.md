@@ -51,6 +51,14 @@ modules' `commandDef` completion views share these definitions.
 `src/cli/root-command.ts` binds the parameters to handlers. Global option
 metadata and supported completion shells belong in `src/cli/global-options.ts`.
 
+- Use `Command.validate` with `CliError.ValidationError` for input-only
+  constraints before handlers run. Keep service-level validation for callers
+  such as the TUI. Optional empty strings retain the service's truthiness
+  semantics; report conflicting PR options before `--existing`/`--base`.
+- Application boolean switches use `Flag.withoutNegation`, including `--json`
+  and `--no-attach`. Only the declared spellings and aliases are accepted and
+  offered by custom completions.
+
 - Configure built-in actions through `CliConfig.layer` in `src/index.ts`.
 - Use `CompletionsFlag` from `src/cli/completions-flag.ts` instead of the default
   `GlobalFlag.Completions` to offer only `bash`, `zsh`, and `fish`.
@@ -67,13 +75,29 @@ metadata and supported completion shells belong in `src/cli/global-options.ts`.
   The shared helper returns its safe default (`false`) without terminal access
   in JSON mode. Use `close --json --yes` to explicitly authorize closing;
   without `--yes`, close emits a structured aborted result.
-- The `Stdio` service exposes `stderrIsTerminal` as an Effect, allowing terminal
+- Use `TerminalCapabilities.layer` for CLI color detection through the current
+  `ConfigProvider` and `Stdio`. The default reference caches process detection
+  on its first read. The logger builds the layer when output runs, substituting
+  stderr's terminal detection for stdout's when styling errors.
+  It preserves an explicit config provider and otherwise creates an environment
+  provider per execution, since the default config reference also caches its
+  environment snapshot.
+  `TERM=dumb` disables color; nonempty `NO_COLOR` wins over `FORCE_COLOR`.
+  Nonempty `FORCE_COLOR` forces styling on redirected streams except for `0`
+  and case-insensitive `false`, which retain normal TTY detection.
+  The `Stdio` service exposes `stderrIsTerminal` as an Effect, allowing terminal
   detection to be overridden in service implementations. Bun's platform layer
   supplies runtime detection; the default implementation returns false.
   `src/utils/logger.ts` uses `stdoutIsTerminal` for normal output and
   `stderrIsTerminal` for errors. A nonempty `NO_COLOR` disables styling on both
   streams. JSON mode always disables logger styling, regardless of `NO_COLOR`
   or terminal detection; JSON envelopes bypass the logger entirely.
+  The CLI output boundary writes formatted strings directly to the streams so
+  Bun's console styling cannot add color. Suppressed help emits no blank line
+  in JSON mode.
+  When a downstream pipe closes, stdout exits successfully and stderr exits
+  with failure without printing an EPIPE stack trace. Other stream errors
+  remain visible.
   For table cells and hints, yield `logger.stdoutStyles` inside the
   Effect and use its `bold` and `green` formatters.
 
@@ -154,6 +178,10 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
 - Use `Effect.provideService` for individual overrides.
 - Use `Context.make` and `Context.get` when manipulating a context directly.
 - Use `Layer.fresh(layer)` when a layer must be built independently.
+  Composed layers share their inner dependencies; wrap the complete composition
+  in `Layer.fresh` only when independent instances are required. The CLI, TUI,
+  and test service bundles intentionally share platform dependencies within
+  each construction.
 
 ## Runtime and process boundaries
 
@@ -179,6 +207,10 @@ Bun services, and call `BunRuntime.runMain`.
   its outcome outside the target checkout before exiting.
 - Use `Bun.YAML.parse`, `Bun.Glob`, and `Bun.which` for their respective runtime
   primitives.
+- Use `FileSystem.lstat` when selecting regular files without following
+  symlinks. Keep filesystem dependencies available during service construction;
+  use `FileSystem.makeNoop` for partial test implementations. Stat metadata uses
+  `bigint` for 64-bit identifiers and `ByteSize` for sizes.
 
 `Effect.Effect<A, E, R>` records the result type, typed error, and required
 services. Preserve these types when defining command and service interfaces.

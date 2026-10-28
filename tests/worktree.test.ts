@@ -568,6 +568,89 @@ profiles: {}
 });
 
 describe("push remote setup recovery", () => {
+  test.each(["restore", "discard"])(
+    "explains how to recover a missing pending remote (%s)",
+    async (recovery) => {
+      const fixture = await makeIncludeRepo();
+      const branch = "retry-missing-remote";
+      const path = join(fixture.root, branch);
+      const pendingKey = `branch.${branch}.wctPushRemotePending`;
+      const remoteKey = `branch.${branch}.pushRemote`;
+      const reopen = () =>
+        runBunPromise(
+          withTestServices(
+            WorktreeService.use((service) =>
+              service.createWorktree(
+                path,
+                branch,
+                false,
+                undefined,
+                fixture.repo,
+              ),
+            ),
+          ),
+        );
+      try {
+        await fixture.git("worktree", "add", "-b", branch, path);
+        await fixture.git("config", "--local", pendingKey, "missing-remote");
+        await fixture.git("config", "--local", remoteKey, "preserved");
+
+        await expect(reopen()).rejects.toMatchObject({
+          code: "worktree_error",
+          message: expect.stringContaining(
+            `Failed to create worktree '${branch}' at '${path}':`,
+          ),
+          details: expect.stringMatching(
+            /Pending push remote 'missing-remote'.*git remote add -- 'missing-remote' <url>.*git config --local --unset-all 'branch\.retry-missing-remote\.wctPushRemotePending'/,
+          ),
+        });
+        const pending = await fixture.git(
+          "config",
+          "--local",
+          "--get",
+          pendingKey,
+        );
+        expect(pending.stdout.trim()).toBe("missing-remote");
+        const unchanged = await fixture.git(
+          "config",
+          "--local",
+          "--get",
+          remoteKey,
+        );
+        expect(unchanged.stdout.trim()).toBe("preserved");
+
+        if (recovery === "restore") {
+          await fixture.git(
+            "remote",
+            "add",
+            "--",
+            "missing-remote",
+            fixture.repo,
+          );
+        } else {
+          await fixture.git("config", "--local", "--unset-all", pendingKey);
+        }
+        expect((await reopen())._tag).toBe("AlreadyExists");
+        const remote = await fixture.git(
+          "config",
+          "--local",
+          "--get",
+          remoteKey,
+        );
+        expect(remote.stdout.trim()).toBe(
+          recovery === "restore" ? "missing-remote" : "preserved",
+        );
+        const cleared = await $`git config --local --get ${pendingKey}`
+          .quiet()
+          .nothrow()
+          .cwd(fixture.repo);
+        expect(cleared.exitCode).toBe(1);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   test.each([false, true])(
     "retries failed setup when reopening (existing: %s)",
     async (existing) => {

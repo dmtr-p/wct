@@ -117,7 +117,21 @@ function finishPendingPushRemote(branch: string, cwd?: string) {
     }
 
     const remote = pending.stdout.trim();
-    yield* execProcess("git", ["remote", "get-url", "--", remote], options);
+    const remoteArg = `'${remote.replaceAll("'", "'\\''")}'`;
+    const pendingKeyArg = `'${pendingPushRemoteKey(branch).replaceAll("'", "'\\''")}'`;
+    yield* execProcess(
+      "git",
+      ["remote", "get-url", "--", remote],
+      options,
+    ).pipe(
+      Effect.mapError((error) =>
+        commandError(
+          "worktree_error",
+          `Pending push remote '${remote}' for branch '${branch}' is unavailable. In this repository, add it with "git remote add -- ${remoteArg} <url>" and retry, or discard the pending setup with "git config --local --unset-all ${pendingKeyArg}".`,
+          error,
+        ),
+      ),
+    );
     yield* execProcess(
       "git",
       ["config", "--local", `branch.${branch}.pushRemote`, remote],
@@ -505,7 +519,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       Effect.mapError((error) =>
         commandError(
           "worktree_error",
-          `Failed to create worktree '${branch}' at '${path}'`,
+          `Failed to create worktree '${branch}' at '${path}': ${error.message}`,
           error,
         ),
       ),

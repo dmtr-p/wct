@@ -46,6 +46,8 @@ export const ProfileSchema = Schema.Struct({
 
 export const WctConfigSchema = Schema.Struct({
   version: Schema.optional(Schema.Finite),
+  base_branch: Schema.optional(Schema.String),
+  push_remote: Schema.optional(Schema.String),
   worktree_dir: Schema.optional(Schema.String),
   project_name: Schema.optional(Schema.String),
   work_dir: Schema.optional(Schema.String),
@@ -58,6 +60,8 @@ export const WctConfigSchema = Schema.Struct({
 
 export const ResolvedConfigSchema = Schema.Struct({
   version: Schema.optional(Schema.Finite),
+  base_branch: Schema.optional(Schema.String),
+  push_remote: Schema.optional(Schema.String),
   worktree_dir: Schema.String,
   project_name: Schema.String,
   work_dir: Schema.String,

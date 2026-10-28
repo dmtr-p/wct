@@ -546,7 +546,8 @@ function openImpl(
     const reporter = options.reporter;
     yield* emitPhase(reporter, "open", { _tag: "Preparing" });
     const resolvedOptions = yield* resolveOpenIntent(options);
-    const { branch, existing, base, cwd, profile } = resolvedOptions;
+    const { branch, existing, cwd, profile } = resolvedOptions;
+    const explicitBase = resolvedOptions.base;
 
     const repo = yield* WorktreeService.use((service) =>
       service.isGitRepo(cwd),
@@ -579,10 +580,38 @@ function openImpl(
       _tag: "ProfileResolved",
       ...(profileName ? { profileName } : {}),
     });
-    if (existing && base) {
+    if (existing && explicitBase) {
       return yield* commandError(
         "invalid_options",
         "Options --existing and --base cannot be used together",
+      );
+    }
+
+    const worktreePath = resolveWorktreePath(
+      config.worktree_dir,
+      branch,
+      mainRepoPath,
+      config.project_name,
+    );
+    const fs = yield* FileSystem.FileSystem;
+    const pathExists = yield* Effect.mapError(
+      fs.exists(worktreePath),
+      (error) =>
+        commandError(
+          "worktree_error",
+          `Failed to inspect worktree path '${worktreePath}'`,
+          error,
+        ),
+    );
+    const creatingBranch =
+      !existing && resolvedOptions.prNumber === undefined && !pathExists;
+    const base =
+      explicitBase || (creatingBranch ? config.base_branch : undefined);
+    const pushRemote = creatingBranch ? config.push_remote : undefined;
+
+    if (creatingBranch) {
+      yield* WorktreeService.use((service) =>
+        service.fetchRemotes(mainRepoPath),
       );
     }
 
@@ -598,12 +627,6 @@ function openImpl(
       }
     }
 
-    const worktreePath = resolveWorktreePath(
-      config.worktree_dir,
-      branch,
-      mainRepoPath,
-      config.project_name,
-    );
     yield* emitReporter(reporter, {
       operation: "open",
       _tag: "TargetResolved",
@@ -628,7 +651,14 @@ function openImpl(
       attempt: "worktree",
     });
     const worktreeResult = yield* WorktreeService.use((service) =>
-      service.createWorktree(worktreePath, branch, existing, base, cwd),
+      service.createWorktree(
+        worktreePath,
+        branch,
+        existing,
+        base,
+        cwd,
+        pushRemote,
+      ),
     );
     if (worktreeResult._tag === "PathConflict") {
       return yield* commandError(

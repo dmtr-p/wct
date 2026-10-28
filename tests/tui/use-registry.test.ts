@@ -125,7 +125,7 @@ describe("loadRepoInfo", () => {
       { id: "1", repo_path: "/repo", project: "demo" },
       {
         pathExists: (path) => path !== missing.path,
-        getProfileNames: async () => [],
+        getConfig: async () => ({}),
         listWorktrees: async () => [worktreeOf("/repo", "main"), missing],
         getDefaultBranch: async () => "origin/main",
         getChangedFileCount,
@@ -154,7 +154,7 @@ describe("loadRepoInfo", () => {
     await expect(
       loadRepoInfo(repo, {
         pathExists: () => true,
-        getProfileNames: async () => ["default"],
+        getConfig: async () => ({ profiles: { default: {} } }),
         listWorktrees: () => Promise.reject(new Error("bad repo")),
         getDefaultBranch: () => Promise.resolve("origin/main"),
         getChangedFileCount: vi.fn(),
@@ -180,7 +180,7 @@ describe("loadRepoInfo", () => {
     await expect(
       loadRepoInfo(repo, {
         pathExists: () => true,
-        getProfileNames: async () => [],
+        getConfig: async () => ({}),
         listWorktrees: () =>
           Promise.resolve([
             {
@@ -218,7 +218,7 @@ describe("loadRepoInfo", () => {
         { id: "1", repo_path: "/repo", project: "demo" },
         {
           pathExists: () => true,
-          getProfileNames: async () => {
+          getConfig: async () => {
             throw new Error("invalid config");
           },
           listWorktrees: async () => {
@@ -247,7 +247,7 @@ describe("loadRepoInfo", () => {
         { id: "1", repo_path: "/repo", project: "demo" },
         {
           pathExists: () => true,
-          getProfileNames: async () => {
+          getConfig: async () => {
             controller.abort(reason);
             throw reason;
           },
@@ -468,6 +468,25 @@ describe("useRegistry refresh", () => {
     expect(hook.value.loading).toBe(false);
     hook.unmount();
   });
+
+  test.each([undefined, "develop"])(
+    "loads the merged base branch for the Open modal (project: %s)",
+    async (projectBase) => {
+      writeFileSync(join(homeDir, ".wct.yaml"), "base_branch: upstream/main\n");
+      if (projectBase)
+        writeFileSync(
+          join(repoPath, ".wct.yaml"),
+          `base_branch: ${projectBase}\n`,
+        );
+      const hook = await renderUseRegistry();
+      try {
+        const snapshot = await hook.value.refresh();
+        expect(snapshot?.[0]?.baseBranch).toBe(projectBase ?? "upstream/main");
+      } finally {
+        hook.unmount();
+      }
+    },
+  );
 
   test("resolves null and keeps the previous repos when the load fails", async () => {
     registryFixtures.listRepos.mockResolvedValue([

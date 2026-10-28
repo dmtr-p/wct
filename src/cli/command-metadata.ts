@@ -169,7 +169,7 @@ export const commandDefinitions = {
       branch: optionalArgument("branch", "Branch name"),
       base: stringOption(
         "base",
-        "Base branch for new worktree (default: HEAD)",
+        "Base branch for new worktree (default: base_branch config or HEAD)",
         "BRANCH",
         "b",
       ),

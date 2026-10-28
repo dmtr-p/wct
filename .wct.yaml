@@ -4,6 +4,9 @@ worktree_dir: "../worktrees"
 
 project_name: "wct"
 
+base_branch: origin/main
+push_remote: origin
+
 # Gitignored files to copy from the main repository during Open
 copy:
   - .vscode/

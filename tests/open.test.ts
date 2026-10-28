@@ -156,6 +156,7 @@ describe("WorkspaceService open validation", () => {
       withTestServices(workspaceOpen({}), {
         worktree: {
           ...liveWorktreeService,
+          fetchRemotes: () => Effect.void,
           isGitRepo: () => Effect.die("repository should not be checked"),
         },
       }),
@@ -225,6 +226,7 @@ describe("open workflow", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            fetchRemotes: () => Effect.void,
             isGitRepo: (cwd?: string) =>
               Effect.sync(() => {
                 repoCalls.push({ method: "isGitRepo", cwd });
@@ -289,6 +291,7 @@ describe("open workflow", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            fetchRemotes: () => Effect.void,
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(fixture.repoDir),
             branchExists: () => Effect.succeed(false),
@@ -314,6 +317,7 @@ describe("open workflow", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            fetchRemotes: () => Effect.void,
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(fixture.repoDir),
           },
@@ -333,6 +337,7 @@ describe("open workflow", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            fetchRemotes: () => Effect.void,
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(fixture.repoDir),
             branchExists: (branch) => Effect.succeed(branch !== "missing-base"),
@@ -370,6 +375,7 @@ describe("open workflow", () => {
             {
               worktree: {
                 ...liveWorktreeService,
+                fetchRemotes: () => Effect.void,
                 isGitRepo: () => Effect.succeed(true),
                 getMainRepoPath: () => Effect.succeed(fixture.repoDir),
                 branchExists: () => Effect.succeed(false),
@@ -422,6 +428,7 @@ describe("open workflow", () => {
             {
               worktree: {
                 ...liveWorktreeService,
+                fetchRemotes: () => Effect.void,
                 isGitRepo: () => Effect.succeed(true),
                 getMainRepoPath: () => Effect.succeed(fixture.repoDir),
                 branchExists: () => Effect.succeed(false),
@@ -464,6 +471,7 @@ describe("open workflow", () => {
         {
           worktree: {
             ...liveWorktreeService,
+            fetchRemotes: () => Effect.void,
             isGitRepo: () => Effect.succeed(true),
             getMainRepoPath: () => Effect.succeed(fixture.repoDir),
             branchExists: () => Effect.succeed(false),
@@ -680,6 +688,7 @@ setup:
             json: true,
             worktree: {
               ...liveWorktreeService,
+              fetchRemotes: () => Effect.void,
               isGitRepo: () => Effect.succeed(true),
               getMainRepoPath: () => Effect.succeed(fixture.repoDir),
               branchExists: () => Effect.succeed(false),
@@ -754,6 +763,7 @@ copy:
               json: true,
               worktree: {
                 ...liveWorktreeService,
+                fetchRemotes: () => Effect.void,
                 isGitRepo: () => Effect.succeed(true),
                 getMainRepoPath: () => Effect.succeed(fixture.repoDir),
                 branchExists: () => Effect.succeed(false),
@@ -807,6 +817,7 @@ copy:
             {
               worktree: {
                 ...liveWorktreeService,
+                fetchRemotes: () => Effect.void,
                 isGitRepo: () => Effect.succeed(true),
                 getMainRepoPath: () => Effect.succeed(fixture.repoDir),
                 branchExists: () => Effect.succeed(false),

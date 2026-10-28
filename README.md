@@ -121,6 +121,10 @@ worktree_dir: ".."
 # Defaults to the git repo directory name
 project_name: "myapp"
 
+# Defaults for newly created branches
+base_branch: "upstream/main"
+push_remote: "origin"
+
 # Working directory for setup/down commands and tmux panes (relative to each worktree)
 work_dir: "apps/web"
 
@@ -173,6 +177,12 @@ profiles:
       - .env
       - .env.production
 ```
+
+`base_branch` supplies the starting ref for new branches when `wct open` has no `--base`; without it, new branches start at HEAD. The TUI prefills its new-branch base field with this value when configured. Before creating a branch, Open runs `git fetch --all` and then validates the base ref, so remote-tracking bases such as `upstream/main` use the fetched commit. A fetch failure stops creation. Fetching leaves local branches and HEAD at their current commits. Reopening a worktree or using `--existing` skips this fetch; PR checkouts fetch their PR branch separately.
+
+`push_remote` must name an existing Git remote and sets `branch.<name>.pushRemote` in the repository's local Git config for each new branch. It selects the remote for pushes; Git's usual push and upstream rules still apply. These defaults do not apply to `--existing`, PR checkouts, or branches in reused worktrees. Both keys are optional and can also be set in `~/.wct.yaml`; project values take precedence.
+
+If initial push-remote setup fails after creating the worktree, reopening it retries the originally requested setting before setup commands run. Successful setup clears the pending state, so later opens preserve manual changes to the branch's push remote.
 
 Tmux window names must match `[A-Za-z][A-Za-z0-9_-]*` and be unique within each `windows` list, including lists in profiles. Names start with an ASCII letter and contain only ASCII letters, digits, underscores, or hyphens, such as `dev`, `CI-logs`, and `test_runner`.
 

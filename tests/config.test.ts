@@ -1,7 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   ConfigError,
   DEFAULT_CONFIG,
@@ -30,6 +30,8 @@ describe("validateConfig", () => {
       worktree_dir: "../worktrees",
       work_dir: "apps/web",
       project_name: "myapp",
+      base_branch: "upstream/main",
+      push_remote: "origin",
       copy: [".env", ".env.local"],
       setup: [
         { name: "Install", command: "bun install" },
@@ -73,6 +75,14 @@ describe("validateConfig", () => {
       profiles: { api: { work_dir: "apps/api" } },
     });
     expect(result.valid).toBe(true);
+  });
+
+  test.each(["base_branch", "push_remote"])("validates %s", (key) => {
+    for (const value of [123, null, [], "", "   "]) {
+      const result = validateConfig({ [key]: value });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((error) => error.startsWith(key))).toBe(true);
+    }
   });
 
   test("rejects absolute work_dir in base and profile configs", () => {
@@ -440,6 +450,8 @@ describe("resolveConfig", () => {
     expect(result.project_name).toBe("myapp");
     expect(result.worktree_dir).toBe("../worktrees");
     expect(result.work_dir).toBe(".");
+    expect(result.base_branch).toBeUndefined();
+    expect(result.push_remote).toBeUndefined();
   });
 
   test("preserves specified values", () => {
@@ -448,12 +460,16 @@ describe("resolveConfig", () => {
         project_name: "custom",
         worktree_dir: "~/worktrees",
         work_dir: "packages/app",
+        base_branch: "upstream/main",
+        push_remote: "origin",
       },
       "/home/user/projects/myapp",
     );
     expect(result.project_name).toBe("custom");
     expect(result.worktree_dir).toBe("~/worktrees");
     expect(result.work_dir).toBe("packages/app");
+    expect(result.base_branch).toBe("upstream/main");
+    expect(result.push_remote).toBe("origin");
   });
 });
 
@@ -557,6 +573,37 @@ describe("DEFAULT_CONFIG", () => {
       ),
     });
   });
+});
+
+describe("branch defaults config loading", () => {
+  test.each([
+    ["project_name: app\n", "upstream/main", "fork"],
+    ["base_branch: develop\n", "develop", "fork"],
+    ["push_remote: origin\n", "upstream/main", "origin"],
+  ])(
+    "merges project config %s over global defaults",
+    async (project, base, remote) => {
+      const home = mkdtempSync(join(tmpdir(), "wct-branch-config-home-"));
+      const projectDir = mkdtempSync(
+        join(tmpdir(), "wct-branch-config-project-"),
+      );
+      vi.stubEnv("HOME", home);
+      try {
+        await Bun.write(
+          join(home, ".wct.yaml"),
+          "base_branch: upstream/main\npush_remote: fork\n",
+        );
+        await Bun.write(join(projectDir, ".wct.yaml"), project);
+        const config = await runBunPromise(loadConfig(projectDir));
+        expect(config.base_branch).toBe(base);
+        expect(config.push_remote).toBe(remote);
+      } finally {
+        vi.unstubAllEnvs();
+        rmSync(home, { recursive: true, force: true });
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("resolveWorktreePath", () => {

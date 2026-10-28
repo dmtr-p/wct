@@ -58,6 +58,22 @@ Use Start and Stop in user-facing action names, and `up` and `down` when
 referring to the CLI commands. Stopping a session uses tmux's `kill-session`
 operation; it does not suspend the processes in the session.
 
+Open uses optional `base_branch` and `push_remote` configuration for new branches.
+An explicit `--base` overrides `base_branch`; without either, the starting ref is
+HEAD. `push_remote` sets the new branch's local Git `pushRemote` configuration
+without changing its upstream. Existing branches, reused Worktrees, and PR
+checkouts retain their Git configuration and do not use these defaults.
+Initial push-remote setup records its intended remote in branch-specific keys
+in local Git configuration before creating the branch. A later failure leaves
+that intent pending; reopening the Worktree resumes it, even if the YAML default
+has changed.
+Success clears the pending intent so later opens preserve manual Git changes.
+If creation fails before the branch exists, the pending intent is removed.
+Before creating a new branch, Open fetches all remotes and then validates the
+base ref. Fetch failures stop creation. Remote-tracking bases use the fetched
+commit; fetching does not advance local branches or HEAD. Reused Worktrees and
+existing-branch checkouts skip this fetch; PR checkouts fetch their head branch.
+
 Open copies from the Main Repository before setup. For newly created Worktrees,
 copy-source precedence is the selected profile's `copy`, the project
 `.wct.yaml`'s `copy`, the Main Repository's root `.worktreeinclude`, then the

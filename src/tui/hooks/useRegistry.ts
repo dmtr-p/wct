@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { Effect } from "effect";
 import { useCallback, useEffect, useState } from "react";
 import { loadConfig } from "../../config/loader";
+import type { ResolvedConfig } from "../../config/schema";
 import { RegistryService } from "../../services/registry-service";
 import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
@@ -21,6 +21,7 @@ export interface RepoInfo {
   project: string;
   worktrees: WorktreeInfo[];
   profileNames: string[];
+  baseBranch?: string;
   error?: string;
 }
 
@@ -32,7 +33,9 @@ interface RegistryRepoItem {
 
 interface LoadRepoInfoDeps {
   pathExists: (path: string) => boolean;
-  getProfileNames: (repoPath: string) => Promise<string[]>;
+  getConfig: (
+    repoPath: string,
+  ) => Promise<Pick<ResolvedConfig, "profiles" | "base_branch">>;
   listWorktrees: (
     repoPath: string,
   ) => Promise<import("../../services/worktree-service").Worktree[]>;
@@ -60,30 +63,35 @@ export async function loadRepoInfo(
     };
   }
 
-  const profileNamesPromise = deps.getProfileNames(item.repo_path).catch(() => {
-    signal?.throwIfAborted();
-    return [];
-  });
+  const configPromise = deps
+    .getConfig(item.repo_path)
+    .catch((): Pick<ResolvedConfig, "profiles" | "base_branch"> => {
+      signal?.throwIfAborted();
+      return {};
+    });
 
   let worktreeList: import("../../services/worktree-service").Worktree[];
   let defaultBranch: string | null;
-  let profileNames: string[];
+  let config: Pick<ResolvedConfig, "profiles" | "base_branch">;
 
   try {
-    [profileNames, worktreeList, defaultBranch] = await Promise.all([
-      profileNamesPromise,
+    [config, worktreeList, defaultBranch] = await Promise.all([
+      configPromise,
       deps.listWorktrees(item.repo_path),
       deps.getDefaultBranch(item.repo_path),
     ]);
   } catch {
     signal?.throwIfAborted();
-    const fallbackProfileNames = await profileNamesPromise;
+    const fallbackConfig = await configPromise;
     return {
       id: item.id,
       repoPath: item.repo_path,
       project: item.project,
       worktrees: [],
-      profileNames: fallbackProfileNames,
+      profileNames: Object.keys(fallbackConfig.profiles ?? {}),
+      ...(fallbackConfig.base_branch
+        ? { baseBranch: fallbackConfig.base_branch }
+        : {}),
       error: "Failed to inspect repository",
     };
   }
@@ -116,7 +124,8 @@ export async function loadRepoInfo(
     repoPath: item.repo_path,
     project: item.project,
     worktrees,
-    profileNames,
+    profileNames: Object.keys(config.profiles ?? {}),
+    ...(config.base_branch ? { baseBranch: config.base_branch } : {}),
   };
 }
 
@@ -141,15 +150,8 @@ export function useRegistry() {
               item,
               {
                 pathExists: existsSync,
-                getProfileNames: (repoPath) =>
-                  tuiRuntime.runPromise(
-                    loadConfig(repoPath).pipe(
-                      Effect.map((config) =>
-                        Object.keys(config.profiles ?? {}),
-                      ),
-                    ),
-                    opts,
-                  ),
+                getConfig: (repoPath) =>
+                  tuiRuntime.runPromise(loadConfig(repoPath), opts),
                 listWorktrees: (repoPath) =>
                   tuiRuntime.runPromise(
                     WorktreeService.use((s) => s.listWorktrees(repoPath)),

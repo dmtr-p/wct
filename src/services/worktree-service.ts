@@ -36,12 +36,14 @@ export interface WorktreeService {
   getMainWorktreePath: (cwd?: string) => Effect.Effect<string | null, WctError>;
   isGitRepo: (cwd?: string) => Effect.Effect<boolean, WctError>;
   listWorktrees: (cwd?: string) => Effect.Effect<Worktree[], WctError>;
+  fetchRemotes: (cwd: string) => Effect.Effect<void, WctError>;
   createWorktree: (
     path: string,
     branch: string,
     useExisting: boolean,
     base?: string,
     cwd?: string,
+    pushRemote?: string,
   ) => Effect.Effect<CreateWorktreeResult, WctError>;
   branchExists: (
     branch: string,
@@ -92,6 +94,41 @@ function listWorktreesImpl(cwd?: string) {
     ["worktree", "list", "--porcelain"],
     cwd ? { cwd } : undefined,
   ).pipe(Effect.map((result) => parseWorktreeListOutput(result.stdout)));
+}
+
+function pendingPushRemoteKey(branch: string): string {
+  return `branch.${branch}.wctPushRemotePending`;
+}
+
+function finishPendingPushRemote(branch: string, cwd?: string) {
+  return Effect.gen(function* () {
+    const options = cwd ? { cwd } : undefined;
+    const pending = yield* runProcess(
+      "git",
+      ["config", "--local", "--get", pendingPushRemoteKey(branch)],
+      options,
+    );
+    if (!pending.success) {
+      if (pending.exitCode === 1) return;
+      return yield* commandError(
+        "worktree_error",
+        `Failed to read pending push remote for '${branch}': ${pending.stderr.trim()}`,
+      );
+    }
+
+    const remote = pending.stdout.trim();
+    yield* execProcess("git", ["remote", "get-url", "--", remote], options);
+    yield* execProcess(
+      "git",
+      ["config", "--local", `branch.${branch}.pushRemote`, remote],
+      options,
+    );
+    yield* execProcess(
+      "git",
+      ["config", "--local", "--unset-all", pendingPushRemoteKey(branch)],
+      options,
+    );
+  });
 }
 
 function resolveMainRepoPathFromGitDirs(
@@ -351,7 +388,18 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         commandError("worktree_error", "Failed to list worktrees", error),
       ),
     ),
-  createWorktree: (path, branch, useExisting, base, cwd) =>
+  fetchRemotes: (cwd) =>
+    execProcess("git", ["fetch", "--all"], { cwd }).pipe(
+      Effect.asVoid,
+      Effect.mapError((error) =>
+        commandError(
+          "worktree_error",
+          `Failed to fetch remotes: ${extractShellError(error)}`,
+          error,
+        ),
+      ),
+    ),
+  createWorktree: (path, branch, useExisting, base, cwd, pushRemote) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const exists = yield* fs.exists(path);
@@ -360,6 +408,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         const worktrees = yield* listWorktreesImpl(cwd);
         const existing = worktrees.find((worktree) => worktree.path === path);
         if (existing?.branch === branch) {
+          yield* finishPendingPushRemote(branch, cwd);
           return {
             _tag: "AlreadyExists" as const,
             path,
@@ -380,25 +429,73 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         };
       }
 
-      if (useExisting) {
+      if (!useExisting && pushRemote) {
         yield* execProcess(
           "git",
-          ["worktree", "add", path, branch],
+          ["remote", "get-url", "--", pushRemote],
           cwd ? { cwd } : undefined,
         );
-      } else if (base) {
         yield* execProcess(
           "git",
-          ["worktree", "add", "-b", branch, path, base],
+          ["check-ref-format", "--branch", branch],
           cwd ? { cwd } : undefined,
         );
-      } else {
+        const localBranch = yield* runProcess(
+          "git",
+          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+          cwd ? { cwd } : undefined,
+        );
+        if (localBranch.success) {
+          return yield* commandError(
+            "worktree_error",
+            `A branch named '${branch}' already exists`,
+          );
+        }
+        if (localBranch.exitCode !== 1) {
+          return yield* commandError(
+            "worktree_error",
+            `Failed to check branch '${branch}': ${localBranch.stderr.trim()}`,
+          );
+        }
+        // Record the intent before creation so a later config-write failure can resume.
         yield* execProcess(
           "git",
-          ["worktree", "add", "-b", branch, path],
+          ["config", "--local", pendingPushRemoteKey(branch), pushRemote],
           cwd ? { cwd } : undefined,
         );
       }
+
+      const args = useExisting
+        ? ["worktree", "add", path, branch]
+        : ["worktree", "add", "-b", branch, path, ...(base ? [base] : [])];
+      yield* execProcess("git", args, cwd ? { cwd } : undefined).pipe(
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            if (!useExisting && pushRemote) {
+              const localBranch = yield* runProcess(
+                "git",
+                ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+                cwd ? { cwd } : undefined,
+              );
+              if (!localBranch.success && localBranch.exitCode === 1) {
+                yield* execProcess(
+                  "git",
+                  [
+                    "config",
+                    "--local",
+                    "--unset-all",
+                    pendingPushRemoteKey(branch),
+                  ],
+                  cwd ? { cwd } : undefined,
+                );
+              }
+            }
+            return yield* Effect.fail(error);
+          }),
+        ),
+      );
+
+      yield* finishPendingPushRemote(branch, cwd);
 
       return { _tag: "Created" as const, path };
     }).pipe(

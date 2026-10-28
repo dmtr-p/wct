@@ -1,5 +1,5 @@
-import { Option } from "effect";
-import { Command } from "effect/cli";
+import { Effect, Option } from "effect";
+import { CliError, Command } from "effect/cli";
 import { cdCommand } from "../commands/cd";
 import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
@@ -24,6 +24,22 @@ import { JsonFlag } from "./json-flag";
 
 function optionToUndefined<A>(option: Option.Option<A>): A | undefined {
   return Option.isSome(option) ? option.value : undefined;
+}
+
+function validateWorkspaceTarget({
+  path,
+  branch,
+}: {
+  path: Option.Option<string>;
+  branch: Option.Option<string>;
+}) {
+  return optionToUndefined(path) && optionToUndefined(branch)
+    ? Effect.fail(
+        new CliError.ValidationError({
+          message: "--path and --branch are mutually exclusive",
+        }),
+      )
+    : Effect.void;
 }
 
 const cdCliCommand = Command.make(
@@ -53,7 +69,10 @@ const downCliCommand = Command.make(
       path: optionToUndefined(path),
       branch: optionToUndefined(branch),
     }),
-).pipe(commandMetadata(defs.down));
+).pipe(
+  commandMetadata(defs.down),
+  Command.validate((input) => validateWorkspaceTarget(input)),
+);
 
 const initCliCommand = Command.make(
   defs.init.name,
@@ -83,7 +102,10 @@ const upCliCommand = Command.make(
       branch: optionToUndefined(branch),
       profile: optionToUndefined(profile),
     }),
-).pipe(commandMetadata(defs.up));
+).pipe(
+  commandMetadata(defs.up),
+  Command.validate((input) => validateWorkspaceTarget(input)),
+);
 
 const openCliCommand = Command.make(
   defs.open.name,
@@ -97,7 +119,26 @@ const openCliCommand = Command.make(
       pr: optionToUndefined(pr),
       profile: optionToUndefined(profile),
     }),
-).pipe(commandMetadata(defs.open));
+).pipe(
+  commandMetadata(defs.open),
+  Command.validate(({ branch, base, existing, pr }) => {
+    const prValue = optionToUndefined(pr);
+    const baseValue = optionToUndefined(base);
+    const message =
+      prValue && optionToUndefined(branch)
+        ? "Cannot use --pr together with a branch argument"
+        : prValue && baseValue
+          ? "Cannot use --pr together with --base"
+          : prValue && existing
+            ? "Cannot use --pr together with --existing"
+            : existing && baseValue
+              ? "Options --existing and --base cannot be used together"
+              : undefined;
+    return message
+      ? Effect.fail(new CliError.ValidationError({ message }))
+      : Effect.void;
+  }),
+);
 
 const projectsAddCliCommand = Command.make(
   projectDefinitions.add.name,

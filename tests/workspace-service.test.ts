@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError, WctCommandError } from "../src/errors";
@@ -1885,8 +1885,20 @@ setup:
       },
       "reporter-throwing",
     );
+    const mixed = await runOpen(
+      {
+        event: () =>
+          Effect.failCause(
+            Cause.combine(
+              Cause.fail(commandError("unexpected_error", "reporter failed")),
+              Cause.die(new Error("reporter defect")),
+            ),
+          ),
+      },
+      "reporter-mixed",
+    );
 
-    for (const result of [failing, defective, throwing]) {
+    for (const result of [failing, defective, throwing, mixed]) {
       expect(result.operation).toBe("open");
       expect(result.warnings).toEqual(baseline.warnings);
       expect(result.attempts.copy.attempted).toBe(

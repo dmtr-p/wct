@@ -1,4 +1,12 @@
-import { Console, Effect, Option, Stdio } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  Context,
+  Effect,
+  Option,
+  Stdio,
+} from "effect";
+import { TerminalCapabilities } from "effect/cli";
 import { JsonFlag } from "../cli/json-flag";
 
 const colors = {
@@ -14,13 +22,34 @@ const colors = {
 function colorsEnabled(stream: "stdout" | "stderr") {
   return Effect.gen(function* () {
     const json = yield* Effect.serviceOption(JsonFlag);
-    if (Option.getOrElse(json, () => false) || process.env.NO_COLOR) {
+    if (Option.getOrElse(json, () => false)) {
       return false;
     }
     const stdio = yield* Stdio.Stdio;
-    return yield* stream === "stdout"
-      ? stdio.stdoutIsTerminal
-      : stdio.stderrIsTerminal;
+    const context = yield* Effect.context<never>();
+    // Both capability and config references cache their defaults. Retain an
+    // explicit provider, otherwise read the environment for this execution.
+    const provider =
+      Context.getOrUndefined(context, ConfigProvider.ConfigProvider) ??
+      ConfigProvider.fromEnv();
+    // The capability layer detects color from stdout. Substitute the target
+    // stream so redirected stdout does not disable terminal stderr styling.
+    return yield* Effect.map(
+      TerminalCapabilities.TerminalCapabilities,
+      (capabilities) => capabilities.canColor,
+    ).pipe(
+      Effect.provide(TerminalCapabilities.layer),
+      Effect.provideService(ConfigProvider.ConfigProvider, provider),
+      Effect.provideService(
+        Stdio.Stdio,
+        stream === "stdout"
+          ? stdio
+          : {
+              ...stdio,
+              stdoutIsTerminal: stdio.stderrIsTerminal,
+            },
+      ),
+    );
   });
 }
 

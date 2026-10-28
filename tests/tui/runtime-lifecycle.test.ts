@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { describe, expect, test } from "vitest";
 import { WorkspaceService } from "../../src/services/workspace-service";
 import { tuiRuntime } from "../../src/tui/runtime";
@@ -38,5 +38,7 @@ describe("tui runtime lifecycle", () => {
       up: "function",
       down: "function",
     });
+    const filesystem = await tuiRuntime.runPromise(FileSystem.FileSystem);
+    expect(typeof filesystem.lstat).toBe("function");
   });
 });

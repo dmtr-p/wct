@@ -615,7 +615,7 @@ function openImpl(
       );
     }
 
-    if (base) {
+    if (base && !pathExists) {
       const baseExists = yield* WorktreeService.use((service) =>
         service.branchExists(base, cwd),
       );

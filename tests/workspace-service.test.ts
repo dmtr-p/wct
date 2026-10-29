@@ -451,29 +451,32 @@ describe("WorkspaceService open", () => {
     },
   );
 
-  test("reopens a worktree even when the configured base no longer exists", async () => {
-    await writeConfig(repoDir, "base_branch: missing-base\ncopy: []\n");
-    const path = join(worktreeRoot, "myapp-feature");
-    await mkdir(path, { recursive: true });
-    const branchExists = vi.fn(() => Effect.succeed(false));
-    const result = await runBunPromise(
-      withTestServices(
-        WorkspaceService.use((service) =>
-          service.open({ branch: "feature", cwd: repoDir }),
+  test.each([undefined, "missing-base"])(
+    "reopens a worktree with a missing base (explicit override: %s)",
+    async (base) => {
+      await writeConfig(repoDir, "base_branch: missing-base\ncopy: []\n");
+      const path = join(worktreeRoot, "myapp-feature");
+      await mkdir(path, { recursive: true });
+      const branchExists = vi.fn(() => Effect.succeed(false));
+      const result = await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "feature", base, cwd: repoDir }),
+          ),
+          {
+            worktree: makeWorktreeService({
+              branchExists,
+              createWorktree: () =>
+                Effect.succeed({ _tag: "AlreadyExists", path }),
+            }),
+            tmux: noopTmuxService,
+          },
         ),
-        {
-          worktree: makeWorktreeService({
-            branchExists,
-            createWorktree: () =>
-              Effect.succeed({ _tag: "AlreadyExists", path }),
-          }),
-          tmux: noopTmuxService,
-        },
-      ),
-    );
-    expect(result.created).toBe(false);
-    expect(branchExists).not.toHaveBeenCalled();
-  });
+      );
+      expect(result.created).toBe(false);
+      expect(branchExists).not.toHaveBeenCalled();
+    },
+  );
 
   test("keeps profile lifecycle overrides out of path naming", async () => {
     await writeConfig(

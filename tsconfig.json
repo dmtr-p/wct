@@ -33,6 +33,10 @@
         ],
         "diagnosticSeverity": {
           "anyUnknownInErrorContext": "warning",
+          "catchUnfailableEffect": "warning",
+          "errorPayloadShadowsName": "warning",
+          "schemaClassObjectLiteral": "warning",
+          "schemaSyncInEffect": "warning",
           "returnEffectInGen": "warning",
           "tryCatchInEffectGen": "warning",
           "runEffectInsideEffect": "warning",

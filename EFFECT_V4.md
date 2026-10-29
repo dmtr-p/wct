@@ -224,6 +224,9 @@ for external payloads and nested error causes.
 
 Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
 Tagged application errors use `Data.TaggedError`.
+Keep payload fields distinct from the error's `name` so they do not overwrite
+its identity. Only attach typed error handlers to Effects that can fail;
+use cause or defect handlers when those are the intended recovery targets.
 Yield tagged errors directly inside `Effect.gen`, for example
 `return yield* commandError("not_git_repo", "Not a git repository")`.
 Use `Effect.fail` when returning a failed Effect outside a generator.
@@ -279,6 +282,9 @@ within an existing scope.
 
 Define configuration schemas in `src/config/schema.ts` and use the validation
 helpers in `src/config/validator.ts`.
+Inside Effect generators, use Effect-based Schema decoders and encoders to
+preserve typed failures. Construct Schema class instances with their constructor
+or `make` method; object literals and spreads do not preserve the prototype.
 
 ```ts
 import { Schema } from "effect";

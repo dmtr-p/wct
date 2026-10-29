@@ -210,14 +210,12 @@ describe("cursor editing through Ink stdin", () => {
             title: "First",
             state: "OPEN",
             headRefName: "feat-one",
-            rollupState: null,
           },
           {
             number: 2,
             title: "Second",
             state: "OPEN",
             headRefName: "feat-two",
-            rollupState: null,
           },
         ]}
         profileNames={[]}

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { getDetailRowKey } from "../../src/tui/components/TreeView";
 import type { TreeItem } from "../../src/tui/types";
+import { prRowMeta } from "../helpers/pr";
 
 describe("getDetailRowKey", () => {
   test("uses pane identity instead of label so duplicate pane labels do not collide", () => {
@@ -49,6 +50,7 @@ describe("getDetailRowKey", () => {
       worktreeIndex: 2,
       detailKind: "pr",
       label: "PR #42",
+      meta: prRowMeta(),
     } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>;
 
     expect(getDetailRowKey("repo-1", prItem)).toBe("detail-repo-1-2-pr-PR #42");

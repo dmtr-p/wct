@@ -15,7 +15,7 @@ import {
   sqlSetOpenPrs,
   sqlSetWorkspace,
 } from "../src/services/pr-cache-service";
-import type { PRInfo } from "../src/tui/types";
+import type { OpenPrChoice } from "../src/services/pr-model";
 import { withTestServices } from "./helpers/services";
 
 const CLI_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
@@ -581,12 +581,11 @@ describe("projects command", () => {
 
     const dbPath = `${tempDir}/.wct/wct.db`;
     const db = new Database(dbPath);
-    const prA: PRInfo = {
+    const prA: OpenPrChoice = {
       number: 42,
       title: "feat: cached pr",
       state: "OPEN",
       headRefName: "feat/cached",
-      rollupState: "success",
     };
     try {
       for (const path of [resolvedRepoDir, siblingPath]) {

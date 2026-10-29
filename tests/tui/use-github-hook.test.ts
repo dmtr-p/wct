@@ -335,6 +335,12 @@ describe("useGitHub", () => {
       expect(
         harness.value.openPrs.get("/tmp/repo")?.map((pr) => pr.number),
       ).toEqual([1]);
+      expect(harness.value.openPrs.get("/tmp/repo")).toEqual([
+        { number: 1, title: "PR 1", state: "OPEN", headRefName: "feature" },
+      ]);
+      expect(openCache.get("/tmp/repo")).toEqual(
+        harness.value.openPrs.get("/tmp/repo"),
+      );
       expect(harness.value.prData.size).toBe(0);
       await poll();
       await poll();
@@ -414,8 +420,8 @@ describe("useGitHub", () => {
         await poll();
         const pr = harness.value.prData.get(key("/tmp/repo", "feature"));
         expect(pr?.state).toBe(state);
-        expect(pr?.facts?.checksComplete).toBe(false);
-        expect(pr?.facts?.lastError).toBe(detailError);
+        expect(pr?.checksComplete).toBe(false);
+        expect(pr?.lastError).toBe(detailError);
       } finally {
         harness.unmount();
       }
@@ -585,7 +591,7 @@ describe("useGitHub", () => {
       await settle();
       await poll();
       expect(
-        harness.value.prData.get(key("/tmp/repo", "feature"))?.facts?.lastError,
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.lastError,
       ).toBeNull();
       expect(
         harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,

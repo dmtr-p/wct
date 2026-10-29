@@ -13,9 +13,9 @@ import {
   type LifecycleState,
   workspaceIdentityKey,
 } from "./lifecycle";
-import { wrapPrLabel, wrapPrTitle } from "./pr-layout";
+import { wrapPrTitle } from "./pr-layout";
 import { candidatePrLabel, derivePrPresentation } from "./pr-status";
-import { Mode, type PaneInfo, type PRInfo, type TreeItem } from "./types";
+import { Mode, type PaneInfo, type TreeItem } from "./types";
 
 const NO_LIFECYCLE: LifecycleState = new Map();
 
@@ -72,7 +72,7 @@ interface BuildTreeOptions {
   repos: RepoInfo[];
   expandedWorkspaceKeys?: Set<string>;
   lifecycle?: LifecycleState;
-  prData: Map<string, PRInfo>;
+  prData: Map<string, PrFacts>;
   associations?: Map<string, WorkspacePrEntry>;
   expandedPrKeys?: Set<string>;
   panes: Map<string, PaneInfo[]>;
@@ -354,30 +354,25 @@ export function buildTreeItems({
       const association = associations?.get(workspaceKey);
       const pr = prData.get(workspaceKey);
       if (pr) {
-        const facts = pr.facts;
-        const prKey = facts ? prExpansionKey(workspaceKey, facts) : undefined;
-        const presentation = facts ? derivePrPresentation(facts) : undefined;
-        const expanded = prKey ? (expandedPrKeys?.has(prKey) ?? false) : false;
-        const openUrl = () =>
-          openPrInBrowser(repo.repoPath, pr.number, facts?.url);
+        const prKey = prExpansionKey(workspaceKey, pr);
+        const presentation = derivePrPresentation(pr);
+        const expanded = expandedPrKeys?.has(prKey) ?? false;
+        const openUrl = () => openPrInBrowser(repo.repoPath, pr.number, pr.url);
         items.push({
           type: "detail",
           repoIndex: ri,
           worktreeIndex: wi,
           detailKind: "pr",
-          label: facts
-            ? `#${pr.number} ${presentation?.primary ?? "unknown"}`
-            : `PR #${pr.number}: ${pr.title} (${pr.state})`,
+          label: `#${pr.number} ${presentation.primary}`,
           meta: {
-            rollupState: pr.rollupState,
             prKey,
             presentation,
-            pr: facts,
+            pr,
             expanded,
           },
           action: openUrl,
         });
-        if (facts && presentation && expanded && prKey) {
+        if (expanded) {
           for (const detail of presentation.details) {
             items.push({
               type: "detail",
@@ -557,14 +552,8 @@ export function buildTreeRows({
 
     if (item.type === "detail") {
       // Share wrapped text with DetailRow so rendering cannot change the row count.
-      if (
-        (item.detailKind === "pr" && !item.meta.presentation) ||
-        item.detailKind === "pr-title"
-      ) {
-        const lines =
-          item.detailKind === "pr-title"
-            ? wrapPrTitle(item.label, maxWidth)
-            : wrapPrLabel(item.label, maxWidth, item.meta.rollupState !== null);
+      if (item.detailKind === "pr-title") {
+        const lines = wrapPrTitle(item.label, maxWidth);
         rows.push({ itemIndex: idx, kind: "detail", prLine: lines[0] ?? "" });
         for (let piece = 1; piece < lines.length; piece++) {
           rows.push({
@@ -755,6 +744,10 @@ export function isInertTreeItem(item: TreeItem | undefined): boolean {
   return item?.type === "detail" && item.detailKind === "pane-header";
 }
 
+function prTreeItemId(repoId: string, branch: string, prKey: string): string {
+  return `detail:${repoId}/${branch}/pr/${prKey}`;
+}
+
 /** Stable identity string so selection can be recovered after a refresh shifts indices. */
 export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   const repo = repos[item.repoIndex];
@@ -764,8 +757,8 @@ export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   if (!wt) return null;
   if (item.type === "worktree") return `wt:${repo.id}/${wt.branch}`;
   const base = `detail:${repo.id}/${wt.branch}/${item.detailKind}`;
-  if (item.detailKind === "pr" && item.meta.prKey)
-    return `${base}/${item.meta.prKey}`;
+  if (item.detailKind === "pr")
+    return prTreeItemId(repo.id, wt.branch, item.meta.prKey);
   if (item.detailKind === "pr-title" || item.detailKind === "pr-fact")
     return `${base}/${item.meta.prKey}${item.detailKind === "pr-fact" ? `/${item.meta.factKey}` : ""}`;
   if (item.detailKind === "candidate-group")
@@ -788,17 +781,11 @@ export function treeItemParentId(
 ): string | null {
   if (item.type !== "detail") return null;
   if (item.detailKind === "pr-title" || item.detailKind === "pr-fact") {
-    return treeItemId(
-      {
-        type: "detail",
-        repoIndex: item.repoIndex,
-        worktreeIndex: item.worktreeIndex,
-        detailKind: "pr",
-        label: "",
-        meta: { rollupState: null, prKey: item.meta.prKey },
-      },
-      repos,
-    );
+    const repo = repos[item.repoIndex];
+    const wt = repo?.worktrees[item.worktreeIndex];
+    return repo && wt
+      ? prTreeItemId(repo.id, wt.branch, item.meta.prKey)
+      : null;
   }
   if (item.detailKind === "candidate") {
     return treeItemId(
@@ -867,9 +854,7 @@ export function resolveRecoveredSelectionIndex({
     )
       return parentIndex;
     if (
-      (previousItem?.type === "detail" &&
-        previousItem.detailKind === "pr" &&
-        Boolean(previousItem.meta.prKey)) ||
+      previousDetailKind === "pr" ||
       previousDetailKind === "candidate-group" ||
       previousDetailKind === "candidate" ||
       previousDetailKind === "pr-title" ||

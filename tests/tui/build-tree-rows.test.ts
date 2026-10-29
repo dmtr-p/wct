@@ -12,7 +12,7 @@ import {
   type LifecycleState,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
-import { wrapPrLabel } from "../../src/tui/pr-layout";
+import { wrapPrTitle } from "../../src/tui/pr-layout";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -20,11 +20,13 @@ import {
   confirmationRowRange,
   firstRowForItem,
   insertConfirmationRows,
+  prExpansionKey,
   resolveConfirmationAnchorItemIndex,
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
 } from "../../src/tui/tree-helpers";
 import { Mode } from "../../src/tui/types";
+import { prFacts } from "../helpers/pr";
 
 function openLifecycle(
   repoPath: string,
@@ -250,13 +252,13 @@ describe("buildTreeRows", () => {
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
-        {
+        prFacts({
           number: 1,
           title: "Add thing",
           state: "OPEN" as const,
           headRefName: branch,
-          rollupState: "success" as const,
-        },
+          checks: [{ name: "test", outcome: "passed", required: true }],
+        }),
       ],
     ]);
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
@@ -315,13 +317,13 @@ describe("buildTreeRows", () => {
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
-        {
+        prFacts({
           number: 1,
           title: "Add thing",
           state: "OPEN" as const,
           headRefName: branch,
-          rollupState: "success" as const,
-        },
+          checks: [{ name: "test", outcome: "passed", required: true }],
+        }),
       ],
     ]);
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
@@ -416,13 +418,13 @@ describe("buildTreeRows", () => {
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/repo-1", branch),
-        {
+        prFacts({
           number: 1,
           title: "Add thing",
           state: "OPEN" as const,
           headRefName: branch,
-          rollupState: "success" as const,
-        },
+          checks: [{ name: "test", outcome: "passed", required: true }],
+        }),
       ],
     ]);
     const items = buildTreeItems({
@@ -448,184 +450,90 @@ describe("buildTreeRows", () => {
     );
   });
 
-  test("a PR label that wraps emits continuation rows so rows below stay aligned", () => {
-    const branch = "feature/pr";
+  test.each([12, 40, 80])(
+    "a compact PR stays one row at width %s regardless of title length",
+    (maxWidth) => {
+      const repos = [
+        repo({
+          id: "repo-1",
+          worktrees: [
+            {
+              branch: "feature",
+              path: "/tmp/feature",
+              isMainWorktree: false,
+              changedFiles: 0,
+              sync: null,
+            },
+          ],
+        }),
+      ];
+      const key = workspaceIdentityKey("/tmp/repo-1", "feature");
+      const items = buildTreeItems({
+        repos,
+        expandedWorkspaceKeys: new Set([key]),
+        prData: new Map([
+          [
+            key,
+            prFacts({ title: "long title ".repeat(20), lastError: "offline" }),
+          ],
+        ]),
+        panes: new Map(),
+        jumpToPane: () => undefined,
+      });
+      const rows = buildTreeRows({ items, repos, maxWidth });
+      expect(rows.map((row) => row.kind)).toEqual([
+        "repo",
+        "worktree",
+        "detail",
+      ]);
+    },
+  );
+
+  test("an expanded PR title wraps before the following worktree with shared item identity", () => {
     const repos = [
       repo({
         id: "repo-1",
-        project: "alpha",
-        worktrees: [
-          {
-            branch,
-            path: "/tmp/alpha-pr",
-            isMainWorktree: false,
-            changedFiles: 0,
-            sync: { ahead: 0, behind: 0 },
-          },
-          {
-            branch: "main",
-            path: "/tmp/alpha-main",
-            isMainWorktree: true,
-            changedFiles: 0,
-            sync: { ahead: 0, behind: 0 },
-          },
-        ],
+        worktrees: ["feature", "main"].map((branch) => ({
+          branch,
+          path: "/tmp/" + branch,
+          isMainWorktree: branch === "main",
+          changedFiles: 0,
+          sync: null,
+        })),
       }),
     ];
-    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
-    const prData = new Map([
-      [
-        workspaceIdentityKey("/tmp/repo-1", branch),
-        {
-          number: 1,
-          title: "a very long pull request title that certainly wraps",
-          state: "OPEN" as const,
-          headRefName: branch,
-          rollupState: "success" as const,
-        },
-      ],
-    ]);
+    const key = workspaceIdentityKey("/tmp/repo-1", "feature");
+    const pr = prFacts({ title: "修正 session cleanup 🧪 ".repeat(6) });
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
-      prData,
+      expandedWorkspaceKeys: new Set([key]),
+      expandedPrKeys: new Set([prExpansionKey(key, pr)]),
+      prData: new Map([[key, pr]]),
       panes: new Map(),
       jumpToPane: () => undefined,
     });
-    const rows = buildTreeRows({
-      items,
-      repos,
-      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
-      maxWidth: 40,
-    });
-
-    // items: [repo(0), wt feature/pr(1), pr-detail(2), wt main(3)].
-    // The PR line wraps at width 40, so the row model inserts continuation
-    // row(s) — all carrying the PR's own itemIndex (2) — before the next
-    // worktree row (item 3), which must remain a distinct terminal row.
-    const shape = rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }));
-    expect(shape[0]).toEqual({ itemIndex: 0, kind: "repo" });
-    expect(shape[1]).toEqual({ itemIndex: 1, kind: "worktree" });
-    expect(shape[2]).toEqual({ itemIndex: 2, kind: "detail" });
-
-    const contRows = shape.filter((r) => r.kind === "detail-pr-cont");
-    expect(contRows.length).toBeGreaterThan(0);
-    expect(contRows.every((r) => r.itemIndex === 2)).toBe(true);
-
-    // The following worktree is still its own row, right after the PR block.
-    expect(shape[3 + contRows.length]).toEqual({
-      itemIndex: 3,
+    const titleIndex = items.findIndex(
+      (item) => item.type === "detail" && item.detailKind === "pr-title",
+    );
+    const rows = buildTreeRows({ items, repos, maxWidth: 40 });
+    const titleRows = rows.filter((row) => row.itemIndex === titleIndex);
+    expect(titleRows.length).toBeGreaterThan(1);
+    expect(titleRows[0]?.kind).toBe("detail");
+    expect(
+      titleRows.slice(1).every((row) => row.kind === "detail-pr-cont"),
+    ).toBe(true);
+    expect(
+      titleRows.map((row) => ("prLine" in row ? row.prLine : undefined)),
+    ).toEqual(wrapPrTitle(pr.title, 40));
+    expect(rows.slice(0, 3).map((row) => row.kind)).toEqual([
+      "repo",
+      "worktree",
+      "detail",
+    ]);
+    expect(rows.at(-1)).toEqual({
+      itemIndex: items.length - 1,
       kind: "worktree",
     });
-
-    // Every PR row carries its own wrapped line text so the render consumes
-    // exactly the lines this model counted (DetailRow never re-wraps): the
-    // detail row holds line 0 and each continuation row holds its piece.
-    const prItem = items[2];
-    if (prItem?.type !== "detail") throw new Error("expected detail item");
-    const expectedLines = wrapPrLabel(prItem.label, 40, true);
-    const prRows = rows.filter(
-      (r) => r.kind === "detail" || r.kind === "detail-pr-cont",
-    );
-    expect(prRows.map((r) => r.prLine)).toEqual(expectedLines);
-  });
-
-  test("a PR label that fits on one line emits no continuation rows", () => {
-    const branch = "feature/pr";
-    const repos = [
-      repo({
-        id: "repo-1",
-        project: "alpha",
-        worktrees: [
-          {
-            branch,
-            path: "/tmp/alpha-pr",
-            isMainWorktree: false,
-            changedFiles: 0,
-            sync: { ahead: 0, behind: 0 },
-          },
-        ],
-      }),
-    ];
-    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
-    const prData = new Map([
-      [
-        workspaceIdentityKey("/tmp/repo-1", branch),
-        {
-          number: 1,
-          title: "short",
-          state: "OPEN" as const,
-          headRefName: branch,
-          rollupState: "success" as const,
-        },
-      ],
-    ]);
-    const items = buildTreeItems({
-      repos,
-      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
-      prData,
-      panes: new Map(),
-      jumpToPane: () => undefined,
-    });
-    const rows = buildTreeRows({
-      items,
-      repos,
-      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
-      maxWidth: 80,
-    });
-
-    expect(rows.map((r) => r.kind)).toEqual(["repo", "worktree", "detail"]);
-  });
-
-  test("a PR with no rollup icon still emits continuation rows when it wraps", () => {
-    const branch = "feature/pr";
-    const repos = [
-      repo({
-        id: "repo-1",
-        project: "alpha",
-        worktrees: [
-          {
-            branch,
-            path: "/tmp/alpha-pr",
-            isMainWorktree: false,
-            changedFiles: 0,
-            sync: { ahead: 0, behind: 0 },
-          },
-        ],
-      }),
-    ];
-    const expandedWorkspaceKey = workspaceIdentityKey("/tmp/repo-1", branch);
-    const prData = new Map([
-      [
-        workspaceIdentityKey("/tmp/repo-1", branch),
-        {
-          number: 1,
-          title: "a very long pull request title that certainly wraps",
-          state: "OPEN" as const,
-          headRefName: branch,
-          // No rollup icon → wrap budget uses prLabelStart(false), a different
-          // code path than the icon case.
-          rollupState: null,
-        },
-      ],
-    ]);
-    const items = buildTreeItems({
-      repos,
-      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
-      prData,
-      panes: new Map(),
-      jumpToPane: () => undefined,
-    });
-    const rows = buildTreeRows({
-      items,
-      repos,
-      expandedWorkspaceKeys: new Set([expandedWorkspaceKey]),
-      maxWidth: 40,
-    });
-
-    const contRows = rows.filter((r) => r.kind === "detail-pr-cont");
-    expect(contRows.length).toBeGreaterThan(0);
-    expect(contRows.every((r) => r.itemIndex === 2)).toBe(true);
   });
 });
 

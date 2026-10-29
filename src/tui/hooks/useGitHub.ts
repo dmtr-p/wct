@@ -7,14 +7,13 @@ import {
   type WorkspacePrEntry,
 } from "../../services/pr-cache-service";
 import { resolvePushDestination } from "../../services/pr-discovery";
-import { checkSummary, type PrFacts } from "../../services/pr-model";
+import type { OpenPrChoice, PrFacts } from "../../services/pr-model";
 import {
   refreshPrDiscovery,
   refreshWorkspacePrs,
 } from "../../services/pr-refresh";
 import { workspaceIdentityKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
-import type { PRInfo } from "../types";
 import type { RepoInfo } from "./useRegistry";
 
 const GITHUB_POLL_INTERVAL = 120_000;
@@ -40,20 +39,18 @@ function worktreeSignature(repo: RepoInfo) {
     repo.worktrees.map((wt) => [wt.branch, wt.path, wt.isMainWorktree]),
   ]);
 }
-export function displayPr(pr: PrFacts): PRInfo {
+function openPrChoice(pr: PrFacts): OpenPrChoice {
   return {
     number: pr.number,
     title: pr.title,
     state: pr.state,
     headRefName: pr.headRefName,
-    rollupState: checkSummary(pr.checks, pr.checksComplete),
-    facts: pr,
   };
 }
 
 function hydrate(repos: RepoInfo[]) {
   const associations = new Map<string, WorkspacePrEntry>();
-  const openPrs = new Map<string, PRInfo[]>();
+  const openPrs = new Map<string, OpenPrChoice[]>();
   for (const repo of repos) {
     try {
       const open = tuiRuntime.runSync(
@@ -268,7 +265,7 @@ export function useGitHub(repos: RepoInfo[]) {
             (pr) => openNumbers.has(pr.number) && pr.state === "OPEN",
           );
           setOpenPrs((previous) =>
-            new Map(previous).set(repoPath, open.map(displayPr)),
+            new Map(previous).set(repoPath, open.map(openPrChoice)),
           );
           let currentSnapshot: PrDiscoverySnapshot = snapshot;
           // Worktree changes reconcile against the completed scan without restarting it.
@@ -356,7 +353,7 @@ export function useGitHub(repos: RepoInfo[]) {
             if (!isCurrent()) continue;
             const refreshedOpen = refreshed.snapshot.prs
               .filter((pr) => pr.state === "OPEN")
-              .map(displayPr);
+              .map(openPrChoice);
             await cacheWrite(
               tuiRuntime.runPromise(
                 PrCacheService.use((s) =>
@@ -594,16 +591,13 @@ export function useGitHub(repos: RepoInfo[]) {
     };
   }, [refreshTargets]);
   const prData = useMemo(() => {
-    const data = new Map<string, PRInfo>();
+    const data = new Map<string, PrFacts>();
     for (const [key, entry] of associations)
       if (entry.pr)
-        data.set(
-          key,
-          displayPr({
-            ...entry.pr,
-            lastError: entry.lastError ?? entry.pr.lastError,
-          }),
-        );
+        data.set(key, {
+          ...entry.pr,
+          lastError: entry.lastError ?? entry.pr.lastError,
+        });
     return data;
   }, [associations]);
   return {

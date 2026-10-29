@@ -1,11 +1,6 @@
 import { Box, Text } from "ink";
 import { agentPaneLabel } from "../../services/agent-model";
-import {
-  PR_INDENT,
-  PR_SUBROW_INDENT,
-  prLabelStart,
-  wrapPrLabel,
-} from "../pr-layout";
+import { PR_SUBROW_INDENT } from "../pr-layout";
 import { compactPrSegments, PR_COLORS } from "../pr-status";
 import type { TreeItem } from "../types";
 import { displayWidth } from "../utils/display-width";
@@ -21,40 +16,7 @@ interface Props {
   isSelected: boolean;
   isHovered?: boolean;
   maxWidth: number;
-  pieceIndex?: number;
   prLine?: string;
-}
-
-function rollupIcon(
-  rollupState: "success" | "failure" | "pending" | "unknown" | null,
-): string {
-  switch (rollupState) {
-    case "success":
-      return "✓";
-    case "failure":
-      return "✗";
-    case "pending":
-      return "◌";
-    case "unknown":
-      return "?";
-    default:
-      return "";
-  }
-}
-
-function rollupColor(
-  rollupState: "success" | "failure" | "pending" | "unknown" | null,
-): "green" | "red" | "yellow" | undefined {
-  switch (rollupState) {
-    case "success":
-      return "green";
-    case "failure":
-      return "red";
-    case "pending":
-      return "yellow";
-    default:
-      return undefined;
-  }
 }
 
 export function DetailRow({
@@ -62,7 +24,6 @@ export function DetailRow({
   isSelected,
   isHovered,
   maxWidth,
-  pieceIndex = 0,
   prLine,
 }: Props) {
   const highlighted = isSelected || !!isHovered;
@@ -92,91 +53,52 @@ export function DetailRow({
     }
 
     case "pr": {
-      if (item.meta.presentation && item.meta.pr) {
-        const { presentation, pr, expanded } = item.meta;
-        const segments = compactPrSegments(
-          pr.number,
-          presentation,
-          maxWidth,
-          expanded,
-        );
-        const line = segments.map((segment) => segment.text).join("");
-        const checkTone =
-          presentation.checks === "success"
-            ? PR_COLORS.green
-            : presentation.checks === "failure"
-              ? PR_COLORS.red
-              : presentation.checks === "pending"
-                ? PR_COLORS.yellow
-                : PR_COLORS.muted;
-        return (
-          <Box>
-            <Text {...selectedProps} wrap="truncate">
-              {segments.map((segment) => (
-                <Text
-                  key={`${segment.kind}:${segment.text}`}
-                  bold={
-                    segment.kind === "number" ||
-                    (segment.kind === "status" && presentation.bold)
-                  }
-                  color={
-                    isSelected
-                      ? undefined
-                      : segment.kind === "status"
-                        ? PR_COLORS[
-                            presentation.stale ? "muted" : presentation.tone
-                          ]
-                        : segment.kind === "checks"
-                          ? presentation.stale
-                            ? PR_COLORS.muted
-                            : checkTone
-                          : segment.kind === "stale"
-                            ? PR_COLORS.muted
-                            : undefined
-                  }
-                >
-                  {segment.text}
-                </Text>
-              ))}
-              {selectedRowFill(isSelected, maxWidth, line)}
-            </Text>
-          </Box>
-        );
-      }
-      const { rollupState } = item.meta;
-      const icon = rollupIcon(rollupState);
-      const iconText = icon ? `${icon} ` : "";
-      const line =
-        prLine ??
-        wrapPrLabel(item.label, maxWidth, icon !== "")[pieceIndex] ??
-        "";
-      const indent = " ".repeat(prLabelStart(icon !== ""));
-
-      if (pieceIndex > 0) {
-        const content = indent + line;
-        return (
-          <Box>
-            <Text {...selectedProps} bold={highlighted} wrap="truncate-end">
-              {content}
-              {selectedRowFill(isSelected, maxWidth, content)}
-            </Text>
-          </Box>
-        );
-      }
-
-      const leading = " ".repeat(PR_INDENT);
-      const content = leading + iconText + line;
+      const { presentation, pr, expanded } = item.meta;
+      const segments = compactPrSegments(
+        pr.number,
+        presentation,
+        maxWidth,
+        expanded,
+      );
+      const line = segments.map((segment) => segment.text).join("");
+      const checkTone =
+        presentation.checks === "success"
+          ? PR_COLORS.green
+          : presentation.checks === "failure"
+            ? PR_COLORS.red
+            : presentation.checks === "pending"
+              ? PR_COLORS.yellow
+              : PR_COLORS.muted;
       return (
         <Box>
-          <Text {...selectedProps} bold={highlighted} wrap="truncate-end">
-            {leading}
-            {icon ? (
-              <Text color={isSelected ? undefined : rollupColor(rollupState)}>
-                {iconText}
+          <Text {...selectedProps} wrap="truncate">
+            {segments.map((segment) => (
+              <Text
+                key={`${segment.kind}:${segment.text}`}
+                bold={
+                  segment.kind === "number" ||
+                  (segment.kind === "status" && presentation.bold)
+                }
+                color={
+                  isSelected
+                    ? undefined
+                    : segment.kind === "status"
+                      ? PR_COLORS[
+                          presentation.stale ? "muted" : presentation.tone
+                        ]
+                      : segment.kind === "checks"
+                        ? presentation.stale
+                          ? PR_COLORS.muted
+                          : checkTone
+                        : segment.kind === "stale"
+                          ? PR_COLORS.muted
+                          : undefined
+                }
+              >
+                {segment.text}
               </Text>
-            ) : null}
-            {line}
-            {selectedRowFill(isSelected, maxWidth, content)}
+            ))}
+            {selectedRowFill(isSelected, maxWidth, line)}
           </Text>
         </Box>
       );

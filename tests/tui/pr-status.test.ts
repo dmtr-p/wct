@@ -1,6 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
 import type { PrFacts } from "../../src/services/pr-model";
-import { displayPr } from "../../src/tui/hooks/useGitHub";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
@@ -221,7 +220,7 @@ describe("PR tree rows", () => {
       expandedWorkspaceKeys: new Set([
         workspaceIdentityKey("/repo", "feature"),
       ]),
-      prData: new Map([[identity, displayPr(pr)]]),
+      prData: new Map([[identity, pr]]),
       expandedPrKeys: new Set([prKey]),
       panes: new Map(),
       jumpToPane: () => {},
@@ -249,6 +248,45 @@ describe("PR tree rows", () => {
       ),
     ).toEqual(new Set([titleIndex]));
   });
+
+  test.each(["pr-title", "pr-fact"] as const)(
+    "collapsing a PR recovers a selected %s to its compact row",
+    (detailKind) => {
+      const pr = facts();
+      const identity = workspaceIdentityKey("/repo", "feature");
+      const build = (expanded: boolean) =>
+        buildTreeItems({
+          repos: [repo()],
+          expandedWorkspaceKeys: new Set([identity]),
+          expandedPrKeys: expanded
+            ? new Set([prExpansionKey(identity, pr)])
+            : new Set(),
+          prData: new Map([[identity, pr]]),
+          panes: new Map(),
+          jumpToPane: () => {},
+        });
+      const before = build(true);
+      const selectedIndex = before.findIndex(
+        (item) => item.type === "detail" && item.detailKind === detailKind,
+      );
+      const selected = before[selectedIndex];
+      if (!selected) throw new Error("Missing PR detail");
+      const after = build(false);
+      const recovered = resolveRecoveredSelectionIndex({
+        prevTree: before,
+        treeItems: after,
+        prevSelectionId: treeItemId(selected, [repo()]),
+        prevSelectionParentId: treeItemParentId(selected, [repo()]),
+        selectedIndex,
+        repos: [repo()],
+      });
+      expect(after[recovered ?? -1]).toMatchObject({
+        type: "detail",
+        detailKind: "pr",
+        meta: { prKey: prExpansionKey(identity, pr), expanded: false },
+      });
+    },
+  );
 
   test("candidate group has Workspace identity and removal recovers to group", () => {
     const candidate = facts();
@@ -321,8 +359,8 @@ describe("PR tree rows", () => {
         workspaceIdentityKey("/repo", "other"),
       ]),
       prData: new Map([
-        [first, displayPr(sharedPr)],
-        [second, displayPr(sharedPr)],
+        [first, sharedPr],
+        [second, sharedPr],
       ]),
       expandedPrKeys: new Set([prExpansionKey(first, sharedPr)]),
       panes: new Map(),

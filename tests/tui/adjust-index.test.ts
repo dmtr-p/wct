@@ -13,6 +13,7 @@ import {
   treeItemId,
 } from "../../src/tui/tree-helpers";
 import { Mode, type TreeItem } from "../../src/tui/types";
+import { prRowMeta } from "../helpers/pr";
 
 function repo(repoIndex: number): TreeItem {
   return { type: "repo", repoIndex };
@@ -25,16 +26,25 @@ function worktree(repoIndex: number, worktreeIndex: number): TreeItem {
 function detail(
   repoIndex: number,
   worktreeIndex: number,
-  kind: "pr" | "pane-header" = "pr",
+  kind: "pr" | "pane-header" | "pane" = "pr",
 ): TreeItem {
-  return {
-    type: "detail",
+  const base = {
+    type: "detail" as const,
     repoIndex,
     worktreeIndex,
-    detailKind: kind,
     label: `detail-${kind}`,
-    ...(kind === "pr" ? { meta: { rollupState: null } } : {}),
-  } as TreeItem;
+  };
+  if (kind === "pr") return { ...base, detailKind: kind, meta: prRowMeta() };
+  if (kind === "pane")
+    return {
+      ...base,
+      detailKind: kind,
+      meta: { paneId: "%1", window: "main", paneIndex: 0, command: "bash" },
+    };
+  return {
+    ...base,
+    detailKind: kind,
+  };
 }
 
 function fakeRepo(id: string, branches: string[]): RepoInfo {
@@ -102,7 +112,9 @@ describe("treeItemId", () => {
   });
 
   test("returns stable id for detail items", () => {
-    expect(treeItemId(detail(0, 0, "pr"), repos)).toBe("detail:repo-a/main/pr");
+    expect(treeItemId(detail(0, 0, "pr"), repos)).toBe(
+      "detail:repo-a/main/pr/owner/repo#42",
+    );
   });
 
   test("pr detail id is stable", () => {
@@ -112,9 +124,11 @@ describe("treeItemId", () => {
       worktreeIndex: 0,
       detailKind: "pr",
       label: "PR #42",
-      meta: { rollupState: null },
+      meta: prRowMeta(),
     } as TreeItem;
-    expect(treeItemId(prItem, repos)).toBe("detail:repo-a/main/pr");
+    expect(treeItemId(prItem, repos)).toBe(
+      "detail:repo-a/main/pr/owner/repo#42",
+    );
   });
 
   test("pane details include paneId for uniqueness", () => {
@@ -350,7 +364,7 @@ describe("resolveRecoveredSelectionIndex", () => {
       resolveRecoveredSelectionIndex({
         prevTree: withDetails,
         treeItems: withoutDetails,
-        prevSelectionId: "detail:repo-a/feat-new/pr",
+        prevSelectionId: "detail:repo-a/feat-new/pr/owner/repo#42",
         prevSelectionParentId: "wt:repo-a/feat-new",
         lifecycle: lifecycleFor("/tmp/repo-a", "feat-new"),
         selectedIndex: 3,
@@ -359,7 +373,7 @@ describe("resolveRecoveredSelectionIndex", () => {
     ).toBe(2);
   });
 
-  test("clamps, not snaps to the parent, when no lifecycle suppressed the detail row", () => {
+  test("clamps a vanished pane when no lifecycle suppressed its row", () => {
     const repos: RepoInfo[] = [
       fakeRepo("repo-a", ["main", "feat-new"]),
       fakeRepo("repo-b", ["main"]),
@@ -368,7 +382,7 @@ describe("resolveRecoveredSelectionIndex", () => {
       repo(0),
       worktree(0, 0),
       worktree(0, 1),
-      detail(0, 1, "pr"),
+      detail(0, 1, "pane"),
       repo(1),
       worktree(1, 0),
     ];
@@ -380,13 +394,12 @@ describe("resolveRecoveredSelectionIndex", () => {
       worktree(1, 0),
     ];
 
-    // An ordinary disappearance (a PR that closed, a killed pane) keeps the
-    // plain clamp behaviour instead of snapping up to the branch row.
+    // A killed pane keeps the plain clamp behaviour when no lifecycle owns it.
     expect(
       resolveRecoveredSelectionIndex({
         prevTree: withDetails,
         treeItems: withoutDetails,
-        prevSelectionId: "detail:repo-a/feat-new/pr",
+        prevSelectionId: "detail:repo-a/feat-new/pane/%1",
         prevSelectionParentId: "wt:repo-a/feat-new",
         selectedIndex: 3,
         repos,
@@ -399,7 +412,7 @@ describe("resolveRecoveredSelectionIndex", () => {
       resolveRecoveredSelectionIndex({
         prevTree: withDetails,
         treeItems: withoutDetails,
-        prevSelectionId: "detail:repo-a/feat-new/pr",
+        prevSelectionId: "detail:repo-a/feat-new/pane/%1",
         prevSelectionParentId: "wt:repo-a/feat-new",
         lifecycle: lifecycleFor("/tmp/repo-a", "main"),
         selectedIndex: 3,

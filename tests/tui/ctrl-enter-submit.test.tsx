@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { PRInfo } from "../../src/tui/types";
+import type { OpenPrChoice } from "../../src/services/pr-model";
 
 const runPromiseMock = vi.hoisted(() => vi.fn());
 
@@ -34,18 +34,17 @@ function renderForm(onSubmit: () => void) {
   );
 }
 
-const singlePR: PRInfo = {
+const singlePR: OpenPrChoice = {
   number: 123,
   title: "Feature",
   state: "OPEN",
   headRefName: "feature-from-pr",
-  rollupState: null,
 };
 
 function renderFromPRForm(
   onSubmit: () => void,
   onRefresh: () => void = () => {},
-  prList: PRInfo[] = [singlePR],
+  prList: OpenPrChoice[] = [singlePR],
 ) {
   return renderWithInput(
     <FromPRForm

@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { OpenPrChoice } from "../../services/pr-model";
 import { WorktreeService } from "../../services/worktree-service";
 import { useCursorBlink } from "../hooks/useCursorBlink";
 import { useFieldFocus } from "../hooks/useFieldFocus";
@@ -7,7 +8,6 @@ import { useGuardedInput } from "../hooks/useGuardedInput";
 import { useSessionOptionsState } from "../hooks/useSessionOptionsState";
 import { useTextEditing } from "../hooks/useTextEditing";
 import { tuiRuntime } from "../runtime";
-import type { PRInfo } from "../types";
 import { EditableText } from "./EditableText";
 import { isSubmitShortcut } from "./form-controls";
 import { Modal } from "./Modal";
@@ -37,7 +37,7 @@ export interface OpenModalProps {
   defaultBase: string;
   profileNames: string[];
   repoPath: string;
-  prList: PRInfo[];
+  prList: OpenPrChoice[];
   isRefreshing: boolean;
   onRefresh: (signal?: AbortSignal, full?: boolean) => void;
 }
@@ -266,7 +266,7 @@ export function FromPRForm({
   onBack,
   width,
 }: {
-  prList: PRInfo[];
+  prList: OpenPrChoice[];
   profileNames: string[];
   isRefreshing: boolean;
   onRefresh: () => void;

@@ -3,6 +3,7 @@ import React from "react";
 import { describe, expect, test } from "vitest";
 import { DetailRow } from "../../src/tui/components/DetailRow";
 import type { TreeItem } from "../../src/tui/types";
+import { prFacts, prRowMeta } from "../helpers/pr";
 import { elementText, hasElementProp } from "./react-elements";
 
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
@@ -222,136 +223,103 @@ describe("DetailRow", () => {
     unmount();
   });
 
-  test("renders rollup success icon for pr row", async () => {
-    const { output, unmount } = await renderDetailRow({
+  test.each([
+    ["passed", "✓"],
+    ["failed", "✗"],
+    ["pending", "◌"],
+    ["unknown", "?"],
+  ] as const)(
+    "renders %s checks in the compact PR row",
+    async (outcome, icon) => {
+      const pr = prFacts({
+        checks: [{ name: "test", outcome, required: true }],
+      });
+      const { output, unmount } = await renderDetailRow({
+        item: {
+          type: "detail",
+          repoIndex: 0,
+          worktreeIndex: 0,
+          detailKind: "pr",
+          label: "#42",
+          meta: prRowMeta(pr),
+        },
+        isSelected: false,
+        maxWidth: 80,
+      });
+      expect(output).toContain("#42");
+      expect(output).toContain("checks " + icon);
+      expect(output).not.toContain(pr.title);
+      expect(output.trim().split("\n")).toHaveLength(1);
+      unmount();
+    },
+  );
+
+  test("renders one wrapped title piece as one physical row", async () => {
+    const props = {
       item: {
         type: "detail",
         repoIndex: 0,
         worktreeIndex: 0,
-        detailKind: "pr",
-        label: "PR #42: fix login (OPEN)",
-        meta: { rollupState: "success" as const },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
+        detailKind: "pr-title",
+        label: "this pull request title is much wider than the terminal",
+        meta: { prKey: "owner/repo#42" },
+      },
       isSelected: false,
-      maxWidth: 80,
-    });
-    expect(output).toContain("✓");
-    expect(output).toContain("PR #42: fix login (OPEN)");
+      maxWidth: 24,
+      prLine: "this pull",
+    } satisfies React.ComponentProps<typeof DetailRow>;
+    const { output, unmount } = await renderDetailRow(props);
+    const text = elementText(DetailRow(props));
+    expect(text).toBe("         this pull");
+    expect(output.trim().split("\n")).toHaveLength(1);
     unmount();
   });
 
-  test("renders one wrapped PR piece as one physical row", async () => {
-    const label =
-      "PR #99: this pull request title is much wider than the terminal (OPEN)";
+  test("renders stale unknown PR facts with a full-width selection highlight", async () => {
     const props = {
       item: {
         type: "detail",
         repoIndex: 0,
         worktreeIndex: 0,
         detailKind: "pr",
-        label,
-        meta: { rollupState: "success" as const },
+        label: "#42 unknown",
+        meta: prRowMeta(
+          prFacts({
+            checks: null,
+            checksComplete: false,
+            lastError: "offline",
+          }),
+        ),
       },
-      isSelected: false,
-      maxWidth: 24,
-      prLine: "PR #99: this pull",
+      isSelected: true,
+      maxWidth: 50,
     } satisfies React.ComponentProps<typeof DetailRow>;
     const { output, unmount } = await renderDetailRow(props);
-    const text = elementText(DetailRow(props));
-
-    expect(text.length).toBeLessThanOrEqual(24);
-    expect(text).not.toContain("…");
-    expect(text).not.toContain(label);
-    expect(output.trim().split("\n")).toHaveLength(1);
+    expect(output).toContain("unknown");
+    expect(output).toContain("stale");
+    expect(elementText(DetailRow(props))).toHaveLength(50);
+    expect(hasElementProp(DetailRow(props), "backgroundColor", "cyan")).toBe(
+      true,
+    );
     unmount();
   });
 
-  test("renders rollup failure icon for pr row", async () => {
+  test("renders a compact PR without a check icon when it has no checks", async () => {
     const { output, unmount } = await renderDetailRow({
       item: {
         type: "detail",
         repoIndex: 0,
         worktreeIndex: 0,
         detailKind: "pr",
-        label: "PR #43: broken build (OPEN)",
-        meta: { rollupState: "failure" as const },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
+        label: "#42 ready",
+        meta: prRowMeta(prFacts({ checks: [] })),
+      },
       isSelected: false,
       maxWidth: 80,
     });
-    expect(output).toContain("✗");
-    unmount();
-  });
-
-  test("renders rollup pending icon for pr row", async () => {
-    const { output, unmount } = await renderDetailRow({
-      item: {
-        type: "detail",
-        repoIndex: 0,
-        worktreeIndex: 0,
-        detailKind: "pr",
-        label: "PR #44: in progress (OPEN)",
-        meta: { rollupState: "pending" as const },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
-      isSelected: false,
-      maxWidth: 80,
-    });
-    expect(output).toContain("◌");
-    unmount();
-  });
-
-  test("wraps a long pr label instead of truncating it", async () => {
-    const label = "PR #7: fix the login flow (OPEN)";
-    const item = {
-      type: "detail",
-      repoIndex: 0,
-      worktreeIndex: 0,
-      detailKind: "pr",
-      label,
-      meta: { rollupState: "success" as const },
-    } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>;
-
-    const primary = await renderDetailRow({
-      item,
-      isSelected: false,
-      maxWidth: 30,
-      pieceIndex: 0,
-    });
-    const continuation = await renderDetailRow({
-      item,
-      isSelected: false,
-      maxWidth: 30,
-      pieceIndex: 1,
-    });
-
-    expect(primary.output).toContain("✓");
-    expect(primary.output).toContain("PR #7: fix the login");
-    expect(primary.output).not.toContain("…");
-    expect(continuation.output).not.toContain("…");
-    expect(continuation.output).toContain("flow (OPEN)");
-    expect(primary.output).not.toContain("(OPEN)");
-
-    primary.unmount();
-    continuation.unmount();
-  });
-
-  test("renders no rollup icon for pr row when rollupState is null", async () => {
-    const { output, unmount } = await renderDetailRow({
-      item: {
-        type: "detail",
-        repoIndex: 0,
-        worktreeIndex: 0,
-        detailKind: "pr",
-        label: "PR #45: no checks (OPEN)",
-        meta: { rollupState: null },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pr" }>,
-      isSelected: false,
-      maxWidth: 80,
-    });
-    expect(output).not.toContain("✓");
-    expect(output).not.toContain("✗");
-    expect(output).not.toContain("◌");
-    expect(output).toContain("PR #45: no checks (OPEN)");
+    expect(output).toContain("#42");
+    expect(output).toContain("ready");
+    expect(output).not.toContain("checks");
     unmount();
   });
 });

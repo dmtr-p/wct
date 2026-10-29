@@ -213,6 +213,25 @@ describe("createPrepareOpenModal", () => {
     expect(deps.setOpenModalProfiles).toHaveBeenCalledWith(["dev"]);
   });
 
+  test.each(["repo", "worktree"] as const)(
+    "prefills the configured base from a selected %s",
+    (type) => {
+      const deps = makeDeps({
+        treeItems: [
+          type === "repo"
+            ? { type, repoIndex: 0 }
+            : { type, repoIndex: 0, worktreeIndex: 0 },
+        ],
+        filteredRepos: snapshotWithFeat().map((repo) => ({
+          ...repo,
+          baseBranch: "upstream/main",
+        })),
+      });
+      createPrepareOpenModal(deps)();
+      expect(deps.setOpenModalBase).toHaveBeenCalledWith("upstream/main");
+    },
+  );
+
   test("opens a branch through WorkspaceService, refreshes, and leaves the discovered Workspace expanded without registering", async () => {
     const { tuiRuntime, runTuiSilentPromise } =
       await import("../../src/tui/runtime");

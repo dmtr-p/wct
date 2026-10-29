@@ -93,13 +93,14 @@ export function createPrepareOpenModal(deps: ModalActionDeps) {
         profiles = repo.profileNames;
         project = repo.project;
         repoPath = repo.repoPath;
+        base = repo.baseBranch;
       }
       if (
         repo &&
         (selected.type === "worktree" || selected.type === "detail")
       ) {
         const wt = repo.worktrees[selected.worktreeIndex];
-        if (wt) {
+        if (wt && !base) {
           base = wt.branch;
         }
       }

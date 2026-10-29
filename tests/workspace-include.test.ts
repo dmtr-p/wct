@@ -522,10 +522,7 @@ describe("WorkspaceService .worktreeinclude", () => {
       ...liveWorktreeService,
       createWorktree: () =>
         Effect.promise(async () => {
-          await rm(join(fixture.repo, ".git"), {
-            recursive: true,
-            force: true,
-          });
+          await Bun.write(join(fixture.repo, ".git", "index"), "invalid index");
           return {
             _tag: "Created" as const,
             path: join(fixture.root, "target"),

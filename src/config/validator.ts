@@ -104,6 +104,12 @@ export function validateConfig(config: unknown): ValidationResult {
   }
 
   const decoded = Schema.decodeUnknownSync(WctConfigSchema)(config);
+  for (const key of ["base_branch", "push_remote"] as const) {
+    const value = decoded[key];
+    if (value !== undefined && value.trim() === "") {
+      errors.push(`${key} must be a nonempty string.`);
+    }
+  }
   errors.push(...validateWorkDir(decoded.work_dir, "work_dir"));
   if (decoded.tmux?.windows) {
     errors.push(

@@ -17,6 +17,10 @@ worktree_dir: ".."
 # Prefix for worktree directory names created by wct open
 # project_name: "myapp"
 
+# Defaults for newly created branches
+# base_branch: "upstream/main"
+# push_remote: "origin"
+
 # Directory used for setup/down commands and tmux panes (relative to each worktree)
 # work_dir: "apps/web"
 

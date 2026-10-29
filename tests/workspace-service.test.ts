@@ -213,6 +213,7 @@ describe("WorkspaceService open", () => {
       ...liveWorktreeService,
       isGitRepo: () => Effect.succeed(true),
       getMainRepoPath: () => Effect.succeed(repoDir),
+      fetchRemotes: () => Effect.void,
       branchExists: () => Effect.succeed(true),
       createWorktree: (path, branch, existing, base) =>
         Effect.succeed({
@@ -283,6 +284,200 @@ describe("WorkspaceService open", () => {
     ]);
   });
 
+  test.each([
+    { options: {}, base: "upstream/main", remote: "origin" },
+    { options: { base: "develop" }, base: "develop", remote: "origin" },
+    { options: { existing: true }, base: undefined, remote: undefined },
+  ])(
+    "applies branch defaults with options $options",
+    async ({ options, base, remote }) => {
+      await writeConfig(
+        repoDir,
+        "base_branch: upstream/main\npush_remote: origin\ncopy: []\n",
+      );
+      const createWorktree = vi.fn((path: string) =>
+        Effect.succeed({ _tag: "Created" as const, path }),
+      );
+      const branchExists = vi.fn(() => Effect.succeed(true));
+      const events: WorkspaceReporterEvent[] = [];
+      await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch: "feature-defaults",
+              cwd: repoDir,
+              ...options,
+              reporter: {
+                event: (event) =>
+                  Effect.sync(() => {
+                    events.push(event);
+                  }),
+              },
+            }),
+          ),
+          {
+            worktree: makeWorktreeService({ createWorktree, branchExists }),
+            tmux: noopTmuxService,
+          },
+        ),
+      );
+      expect(createWorktree).toHaveBeenCalledWith(
+        join(worktreeRoot, "myapp-feature-defaults"),
+        "feature-defaults",
+        options.existing ?? false,
+        base,
+        repoDir,
+        remote,
+      );
+      if (base) expect(branchExists).toHaveBeenCalledWith(base, repoDir);
+      else expect(branchExists).not.toHaveBeenCalled();
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          _tag: "TargetResolved",
+          ...(base ? { base } : {}),
+        }),
+      );
+    },
+  );
+
+  test("rejects a missing configured base before creating a worktree", async () => {
+    await writeConfig(repoDir, "base_branch: missing-base\n");
+    const createWorktree = vi.fn(() => Effect.die("must not create worktree"));
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "feature", cwd: repoDir }),
+          ),
+          {
+            worktree: makeWorktreeService({
+              createWorktree,
+              branchExists: () => Effect.succeed(false),
+            }),
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "base_branch_not_found" });
+    expect(createWorktree).not.toHaveBeenCalled();
+  });
+
+  test("fetches remotes before validating the base and creating the branch", async () => {
+    await writeConfig(repoDir, "base_branch: upstream/main\ncopy: []\n");
+    const calls: string[] = [];
+    await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) =>
+          service.open({ branch: "fresh-base", cwd: repoDir }),
+        ),
+        {
+          worktree: makeWorktreeService({
+            fetchRemotes: (cwd) =>
+              Effect.sync(() => {
+                expect(cwd).toBe(repoDir);
+                calls.push("fetch");
+              }),
+            branchExists: (base) =>
+              Effect.sync(() => {
+                calls.push(`validate:${base}`);
+                return true;
+              }),
+            createWorktree: (path) =>
+              Effect.sync(() => {
+                calls.push("create");
+                return { _tag: "Created" as const, path };
+              }),
+          }),
+        },
+      ),
+    );
+    expect(calls).toEqual(["fetch", "validate:upstream/main", "create"]);
+  });
+
+  test("stops before base validation and branch creation when fetching fails", async () => {
+    await writeConfig(repoDir, "base_branch: upstream/main\n");
+    const branchExists = vi.fn(() => Effect.succeed(true));
+    const createWorktree = vi.fn(() => Effect.die("must not create worktree"));
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "fetch-failure", cwd: repoDir }),
+          ),
+          {
+            worktree: makeWorktreeService({
+              fetchRemotes: () =>
+                Effect.fail(
+                  commandError("worktree_error", "Failed to fetch remotes"),
+                ),
+              branchExists,
+              createWorktree,
+            }),
+          },
+        ),
+      ),
+    ).rejects.toThrow("Failed to fetch remotes");
+    expect(branchExists).not.toHaveBeenCalled();
+    expect(createWorktree).not.toHaveBeenCalled();
+  });
+
+  test.each([false, true])(
+    "skips fetching for an existing branch checkout (reused worktree: %s)",
+    async (reused) => {
+      const path = join(worktreeRoot, "myapp-existing");
+      if (reused) await mkdir(path, { recursive: true });
+      const fetchRemotes = vi.fn(() => Effect.die("must not fetch"));
+      await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch: "existing",
+              cwd: repoDir,
+              existing: !reused,
+            }),
+          ),
+          {
+            worktree: makeWorktreeService({
+              fetchRemotes,
+              createWorktree: () =>
+                Effect.succeed({
+                  _tag: reused ? "AlreadyExists" : "Created",
+                  path,
+                } as const),
+            }),
+          },
+        ),
+      );
+      expect(fetchRemotes).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([undefined, "missing-base"])(
+    "reopens a worktree with a missing base (explicit override: %s)",
+    async (base) => {
+      await writeConfig(repoDir, "base_branch: missing-base\ncopy: []\n");
+      const path = join(worktreeRoot, "myapp-feature");
+      await mkdir(path, { recursive: true });
+      const branchExists = vi.fn(() => Effect.succeed(false));
+      const result = await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({ branch: "feature", base, cwd: repoDir }),
+          ),
+          {
+            worktree: makeWorktreeService({
+              branchExists,
+              createWorktree: () =>
+                Effect.succeed({ _tag: "AlreadyExists", path }),
+            }),
+            tmux: noopTmuxService,
+          },
+        ),
+      );
+      expect(result.created).toBe(false);
+      expect(branchExists).not.toHaveBeenCalled();
+    },
+  );
+
   test("keeps profile lifecycle overrides out of path naming", async () => {
     await writeConfig(
       repoDir,
@@ -336,6 +531,10 @@ describe("WorkspaceService open", () => {
   });
 
   test("resolves PR branches and adds fork remotes before creating the worktree", async () => {
+    await writeConfig(
+      repoDir,
+      "base_branch: missing-base\npush_remote: origin\n",
+    );
     const calls: string[] = [];
     const github: GitHubService = {
       ...liveGitHubService,
@@ -360,13 +559,16 @@ describe("WorkspaceService open", () => {
         }),
     };
     const worktree = makeWorktreeService({
+      fetchRemotes: () =>
+        Effect.die("PR checkouts must only fetch their PR branch"),
       branchExists: (branch) =>
         Effect.sync(() => {
           calls.push(`exists:${branch}`);
           return branch === "alice/contrib-feature";
         }),
-      createWorktree: (_path, branch, existing, base) =>
+      createWorktree: (_path, branch, existing, base, _cwd, pushRemote) =>
         Effect.sync(() => {
+          expect(pushRemote).toBeUndefined();
           calls.push(`create:${branch}:${existing}:${base}`);
           return { _tag: "Created" as const, path: "created" };
         }),
@@ -1372,6 +1574,7 @@ describe("WorkspaceService semantic phases", () => {
       ...liveWorktreeService,
       isGitRepo: () => Effect.succeed(true),
       getMainRepoPath: () => Effect.succeed(repoDir),
+      fetchRemotes: () => Effect.void,
       branchExists: () => Effect.succeed(true),
       createWorktree: (path) =>
         Effect.succeed({ _tag: "Created" as const, path }),

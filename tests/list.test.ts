@@ -1,29 +1,29 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { JsonFlag } from "../src/cli/json-flag";
 import { listCommand } from "../src/commands/list";
 import { runBunPromise } from "../src/effect/runtime";
-import { provideWctServices } from "../src/effect/services";
 import {
   formatSync,
   liveWorktreeService,
   makeWorktreeService,
   WorktreeService,
 } from "../src/services/worktree-service";
+import { noopTmuxService, withTestServices } from "./helpers/services";
 
 async function runCommand(options?: { short?: boolean }) {
-  await runBunPromise(provideWctServices(listCommand(options)));
+  await runBunPromise(withTestServices(listCommand(options)));
 }
 
 function getChangedFilesCount(
   worktreePath: string,
   options?: { logWarnings?: boolean },
 ) {
-  return provideWctServices(
+  return withTestServices(
     WorktreeService.use((service) =>
       service.getChangedFileCount(worktreePath, options),
     ),
@@ -35,7 +35,7 @@ function getAheadBehind(
   defaultBranch: string,
   options?: { logWarnings?: boolean },
 ) {
-  return provideWctServices(
+  return withTestServices(
     WorktreeService.use((service) =>
       service.getAheadBehind(worktreePath, defaultBranch, options),
     ),
@@ -43,12 +43,12 @@ function getAheadBehind(
 }
 
 function getDefaultBranch(repoPath: string) {
-  return provideWctServices(
+  return withTestServices(
     WorktreeService.use((service) => service.getDefaultBranch(repoPath)),
   );
 }
 
-describe("getChangedFilesCount", () => {
+describe("getChangedFilesCount", { concurrent: false }, () => {
   let repoDir: string;
 
   beforeAll(async () => {
@@ -113,7 +113,7 @@ describe("getChangedFilesCount", () => {
   });
 });
 
-describe("getAheadBehind", () => {
+describe("getAheadBehind", { concurrent: false }, () => {
   let repoDir: string;
   let worktreeDir: string;
 
@@ -257,7 +257,7 @@ function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");
 }
 
-describe("listCommand integration", () => {
+describe("listCommand integration", { concurrent: false }, () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
@@ -356,7 +356,7 @@ describe("listCommand integration", () => {
 
     try {
       await runBunPromise(
-        provideWctServices(
+        withTestServices(
           Effect.provideService(listCommand({ short: false }), JsonFlag, true),
         ),
       );
@@ -382,6 +382,50 @@ describe("listCommand integration", () => {
     }
   });
 
+  test.each([false, true])(
+    "reports fake attached sessions (JSON: %s)",
+    async (json) => {
+      process.chdir(repoDir);
+      const sessionName = basename(join(worktreeDir, "feature-test"));
+      const lines: string[] = [];
+      const spy = vi.spyOn(console, "log").mockImplementation((message) => {
+        lines.push(String(message));
+      });
+      try {
+        await runBunPromise(
+          withTestServices(listCommand(), {
+            json,
+            tmux: {
+              ...noopTmuxService,
+              listSessions: Effect.succeed([
+                { name: sessionName, attached: true, windows: 1 },
+              ]),
+            },
+          }),
+        );
+        if (json) {
+          const output = JSON.parse(lines[0] ?? "");
+          expect(
+            output.data.find(
+              (row: { branch: string }) => row.branch === "feature-test",
+            ).tmux,
+          ).toEqual({
+            session: sessionName,
+            attached: true,
+          });
+        } else {
+          const row = lines
+            .map(stripAnsi)
+            .find((line) => line.includes("feature-test"));
+          expect(row).toContain(`* ${sessionName}`);
+        }
+      } finally {
+        spy.mockRestore();
+        process.chdir(originalDir);
+      }
+    },
+  );
+
   test("--json outputs exact empty success envelope when no non-bare worktrees exist", async () => {
     const lines: string[] = [];
     const spy = vi
@@ -392,7 +436,7 @@ describe("listCommand integration", () => {
 
     try {
       await runBunPromise(
-        provideWctServices(
+        withTestServices(
           Effect.provideServiceEffect(
             Effect.provideService(
               listCommand({ short: false }),
@@ -435,7 +479,7 @@ describe("listCommand integration", () => {
 
     try {
       await runBunPromise(
-        provideWctServices(
+        withTestServices(
           Effect.provideService(listCommand({ short: true }), JsonFlag, true),
         ),
       );
@@ -470,7 +514,7 @@ describe("listCommand integration", () => {
 
     try {
       await runBunPromise(
-        provideWctServices(
+        withTestServices(
           Effect.provideServiceEffect(
             Effect.provideService(
               listCommand({ short: false }),

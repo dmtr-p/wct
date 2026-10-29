@@ -1,11 +1,82 @@
+import { it } from "@effect/vitest";
+import { Arbitrary, Schema } from "effect";
 import { describe, expect, test } from "vitest";
+import { displayWidth } from "../../src/tui/utils/display-width";
 import {
   toSingleLine,
   truncateBranch,
   truncateWithPrefix,
 } from "../../src/tui/utils/truncate";
 
+const unicodeText = Arbitrary.array(
+  Arbitrary.schema(
+    Schema.Literals([
+      "a",
+      "Z",
+      "0",
+      "/",
+      " ",
+      "日",
+      "界",
+      "é",
+      "e\u0301",
+      "\u0301",
+      "👨‍👩‍👧‍👦",
+      "🇺🇦",
+      "👍🏽",
+      "…",
+      "\u200d",
+      "\ufe0f",
+      "\u0000",
+    ]),
+  ),
+  { maxLength: 32 },
+).pipe(Arbitrary.map((parts) => parts.join("")));
+const columnBudget = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: 64 }),
+);
+const segmenter = new Intl.Segmenter();
+
+function expectCompleteTruncation(
+  text: string,
+  output: string,
+  available: number,
+) {
+  expect(displayWidth(output)).toBeLessThanOrEqual(available);
+  if (output === text || output === "") return;
+  const original = Array.from(
+    segmenter.segment(text),
+    ({ segment }) => segment,
+  );
+  const truncated = Array.from(
+    segmenter.segment(output),
+    ({ segment }) => segment,
+  );
+  expect(truncated.at(-1)).toBe("…");
+  expect(truncated.slice(0, -1)).toEqual(
+    original.slice(0, truncated.length - 1),
+  );
+}
+
 describe("truncateBranch", () => {
+  it.prop(
+    "respects column budgets and complete Unicode graphemes",
+    {
+      text: unicodeText,
+      available: columnBudget,
+    },
+    ({ text, available }) => {
+      expectCompleteTruncation(
+        text,
+        truncateBranch(text, available),
+        available,
+      );
+      if (displayWidth(text) <= available)
+        expect(truncateBranch(text, available)).toBe(text);
+    },
+    { arbitrary: { runs: 100, maxShrinks: 200 } },
+  );
+
   test("returns text unchanged when it fits", () => {
     expect(truncateBranch("feat/auth", 20)).toBe("feat/auth");
   });
@@ -45,6 +116,25 @@ describe("truncateBranch", () => {
 });
 
 describe("truncateWithPrefix", () => {
+  it.prop(
+    "keeps pane prefixes and Unicode text within the column budget",
+    {
+      paneIndex: Schema.Int.check(
+        Schema.isBetween({ minimum: 0, maximum: 99 }),
+      ),
+      text: unicodeText,
+      available: columnBudget,
+    },
+    ({ paneIndex, text, available }) => {
+      const prefix = `${paneIndex}:0 `;
+      const output = truncateWithPrefix(prefix, text, available);
+      expectCompleteTruncation(prefix + text, output, available);
+      if (available > displayWidth(prefix) + 1)
+        expect(output.startsWith(prefix)).toBe(true);
+    },
+    { arbitrary: { runs: 100, maxShrinks: 200 } },
+  );
+
   test("returns prefix+rest when both fit", () => {
     expect(truncateWithPrefix("1:0 ", "vim", 20)).toBe("1:0 vim");
   });
@@ -74,6 +164,12 @@ describe("truncateWithPrefix", () => {
 
   test("measures the rest by display width", () => {
     expect(truncateWithPrefix("1:0 ", "🎉🎉🎉", 8)).toBe("1:0 🎉…");
+  });
+
+  test("preserves a grapheme spanning the prefix boundary", () => {
+    expect(truncateWithPrefix("1:0 ", "\u0301\u0301abc", 6)).toBe(
+      "1:0 \u0301\u0301…",
+    );
   });
 });
 

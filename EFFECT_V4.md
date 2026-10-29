@@ -346,6 +346,36 @@ describe("getCurrentBranch", () => {
 
 Adjust relative imports for the test's location. For service overrides, use
 `wctTestLayer({ tmux: fakeTmux })`; its options match `withTestServices`.
+`WctTestLayer`, `wctTestLayer()`, and `withTestServices` all default to
+`noopTmuxService` to prevent host tmux operations. Defined tmux overrides take
+precedence; an omitted or `undefined` override keeps the no-op default. Other
+services keep their live defaults.
+
+Application tests use these test helpers instead of `provideWctServices`.
+The Vitest setup rejects bare `tmux` commands through the application's process
+helpers. Supply a fake tmux service for command behavior or mock process results
+for tmux primitives. Shutdown integration tests use a fixture executable on the
+child CLI's `PATH`; no installed tmux or running tmux server is required.
+
+`it.effect` supplies a fresh test scope, `TestClock`, and `TestConsole`.
+`it.live` supplies a fresh scope with live services. Do not wrap a whole test
+body in `Effect.scoped`; acquire scoped resources directly. Use child fibers
+for work owned by the test so assertion failures and timeouts interrupt and
+settle pending work. Synchronize concurrent tests with `Deferred` instead of
+wall-clock polling. At imperative runner boundaries, put cancellation and
+settlement in `finally` so failed assertions cannot skip cleanup.
+
+Assert Effect console output with `TestConsole.logLines` and
+`TestConsole.errorLines` from `effect/testing`, rather than spying on the global
+console. Tests of terminal styling should still provide explicit `Stdio`
+terminal flags and capture the relevant output streams.
+
+`it.layer` shares a layer for its block; mutable services are not rebuilt for
+each test. The installed `@effect/vitest` layer options do not include
+`buildPerTest`. Use per-test acquisition or provide a layer inside the test when
+independent instances are needed. Explicitly declare `{ concurrent: false }`
+on suites that mutate process-wide environment, working directory, or shared
+mocks, including suites with nested named layer blocks.
 
 Keep `runBunPromise` with `withTestServices` when an existing test mixes
 imperative mocks with Effect execution or mutates state between separate Effect
@@ -356,6 +386,17 @@ For Vitest fixtures, create Effect test methods with
 `it.effect.each` receives the test context as its second argument.
 `Arbitrary.configureGlobal` can configure shared property-test defaults before
 concurrent tests start.
+
+Use `it.prop` for synchronous invariants and `it.effect.prop` for Effectful ones.
+Derive generators with `Arbitrary.schema` or pass schemas directly; compose
+bounded collections with `Arbitrary.array`. Set local `arbitrary` options such
+as `runs`, `size`, and `maxShrinks` to bound work while retaining shrinking and
+the reported replay token. Keep regression examples alongside properties.
+Generate supported inputs and meaningful positive cases: navigation bounds
+apply after reconciliation with the destination layout, with selection `0`
+for an empty tree; wheel scrolling may leave the selection offscreen. Merge
+properties start from eligible snapshots and introduce individual disqualifying
+facts, so always denying a merge cannot satisfy the properties.
 
 Reusable imperative resources use typed, test-scoped fixtures in `tests/helpers`.
 Declare resource dependencies through destructured fixture parameters. Guard

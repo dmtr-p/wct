@@ -29,9 +29,6 @@ export function truncateWithPrefix(
   rest: string,
   available: number,
 ): string {
-  const prefixWidth = displayWidth(prefix);
-  if (prefixWidth + displayWidth(rest) <= available) return prefix + rest;
-  if (available <= prefixWidth + 1)
-    return truncateBranch(prefix + rest, available);
-  return prefix + truncateBranch(rest, available - prefixWidth);
+  // A leading combining mark in rest can extend the prefix's final grapheme.
+  return truncateBranch(prefix + rest, available);
 }

@@ -9,7 +9,7 @@ import { TARGET_SCHEMA_VERSION } from "../../src/services/db";
 import { RegistryService } from "../../src/services/registry-service";
 import { WctTestLayer } from "../helpers/effect-vitest";
 
-describe("registry-service", () => {
+describe("registry-service", { concurrent: false }, () => {
   let tempDir: string;
   let originalHome: string | undefined;
 

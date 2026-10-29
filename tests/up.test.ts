@@ -6,7 +6,6 @@ import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { commandDef, upCommand } from "../src/commands/up";
 import { runBunPromise } from "../src/effect/runtime";
-import { provideWctServices } from "../src/effect/services";
 import { commandError } from "../src/errors";
 import {
   liveRegistryService,
@@ -20,7 +19,7 @@ import {
 import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return provideWctServices(effect);
+  return withTestServices(effect);
 }
 
 interface LinkedWorktreeFixture {
@@ -62,7 +61,7 @@ async function cleanupLinkedWorktreeFixture(
   await rm(fixture.worktreeDir, { recursive: true, force: true });
 }
 
-describe("getCurrentBranch", () => {
+describe("getCurrentBranch", { concurrent: false }, () => {
   test("returns current branch name in a git repo", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "wct-test-branch-"));
     const originalDir = process.cwd();
@@ -114,7 +113,7 @@ describe("getCurrentBranch", () => {
   });
 });
 
-describe("getMainWorktreePath", () => {
+describe("getMainWorktreePath", { concurrent: false }, () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
@@ -154,7 +153,7 @@ describe("getMainWorktreePath", () => {
   });
 });
 
-describe("getMainRepoPath", () => {
+describe("getMainRepoPath", { concurrent: false }, () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
@@ -245,7 +244,7 @@ exec "${realGit}" "$@"
   });
 });
 
-describe("upCommand", () => {
+describe("upCommand", { concurrent: false }, () => {
   test("is exported as a function", () => {
     expect(typeof upCommand).toBe("function");
   });

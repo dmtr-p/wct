@@ -42,6 +42,9 @@ export function withTestServices<A, E, R>(
 ) {
   return Effect.provide(
     effect,
-    makeWctServicesLayer({ tmux: noopTmuxService, ...overrides }),
+    makeWctServicesLayer({
+      ...overrides,
+      tmux: overrides.tmux ?? noopTmuxService,
+    }),
   );
 }

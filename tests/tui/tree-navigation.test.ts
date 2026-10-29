@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Arbitrary, Schema } from "effect";
 import { describe, expect, test } from "vitest";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
@@ -97,7 +99,99 @@ function settled(layout: TreeNavigationSnapshot) {
   return step(initialTreeNavigationState(), layout, { type: "reconcile" });
 }
 
+const returnSlot = Schema.Literals([
+  "down",
+  "close",
+  "remove-project",
+  "kill",
+  "up",
+]);
+const navigationActions = Arbitrary.array(
+  Arbitrary.schema(
+    Schema.Union([
+      Schema.Struct({
+        type: Schema.Literal("move"),
+        direction: Schema.Literals([-1, 1]),
+      }),
+      Schema.Struct({
+        type: Schema.Literal("select"),
+        itemIndex: Schema.Int.check(
+          Schema.isBetween({ minimum: -2, maximum: 8 }),
+        ),
+      }),
+      Schema.Struct({
+        type: Schema.Literal("wheel"),
+        delta: Schema.Int.check(
+          Schema.isBetween({ minimum: -10, maximum: 10 }),
+        ),
+      }),
+      Schema.Struct({
+        type: Schema.Literal("capture"),
+        slot: returnSlot,
+        preserveSelection: Schema.Boolean,
+      }),
+      Schema.Struct({
+        type: Schema.Literal("restore"),
+        slot: returnSlot,
+        destination: Schema.Literals(["saved", "owning-worktree"]),
+      }),
+      Schema.Struct({
+        type: Schema.Literal("layout"),
+        itemCount: Schema.Int.check(
+          Schema.isBetween({ minimum: 0, maximum: baseItems.length }),
+        ),
+        viewportRows: Schema.Int.check(
+          Schema.isBetween({ minimum: 0, maximum: 8 }),
+        ),
+        searchQuery: Schema.Literals(["", "main", "feature"]),
+      }),
+    ]),
+  ),
+  { maxLength: 60 },
+);
+
 describe("tree navigation sequences", () => {
+  it.prop(
+    "settled selection and viewport remain bounded across navigation and layout changes",
+    {
+      actions: navigationActions,
+    },
+    ({ actions }) => {
+      let layout = snapshot();
+      let state = settled(layout);
+      for (const action of actions) {
+        if (action.type === "layout") {
+          const items = baseItems.slice(0, action.itemCount);
+          layout = snapshot({
+            items,
+            rows: rowsFor(items),
+            viewportRows: action.viewportRows,
+            searchQuery: action.searchQuery,
+          });
+        } else {
+          state = step(state, layout, action);
+        }
+        // Restore may retain an obsolete index/offset until the destination layout commits.
+        state = step(state, layout, { type: "reconcile" });
+        expect(Number.isInteger(state.selectedIndex)).toBe(true);
+        expect(state.selectedIndex).toBeGreaterThanOrEqual(0);
+        expect(state.selectedIndex).toBeLessThanOrEqual(
+          Math.max(0, layout.items.length - 1),
+        );
+        expect(Number.isInteger(state.scrollOffset)).toBe(true);
+        expect(state.scrollOffset).toBeGreaterThanOrEqual(0);
+        expect(state.scrollOffset).toBeLessThanOrEqual(
+          Math.max(0, layout.rows.length - layout.viewportRows),
+        );
+        expect(effectiveTreeScrollOffset(state, layout)).toBe(
+          state.scrollOffset,
+        );
+        expect(step(state, layout, { type: "reconcile" })).toBe(state);
+      }
+    },
+    { arbitrary: { runs: 100, size: 60, maxShrinks: 200 } },
+  );
+
   test("selection uses the destination footer height for a minimal reveal", () => {
     const layout = snapshot({
       viewportRows: 2,

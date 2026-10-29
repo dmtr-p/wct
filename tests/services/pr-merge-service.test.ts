@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Arbitrary, Schema } from "effect";
 import { describe, expect, test } from "vitest";
 import {
   buildPrMutation,
@@ -47,7 +49,141 @@ function snapshot(
   };
 }
 
+const mergeMethods = ["SQUASH", "REBASE", "MERGE"] as const;
+const eligibleSnapshots = Arbitrary.all({
+  number: Arbitrary.schema(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10000 })),
+  ),
+  mergeStateStatus: Arbitrary.schema(
+    Schema.Literals(["CLEAN", "UNSTABLE", "HAS_HOOKS"]),
+  ),
+  reviewDecision: Arbitrary.schema(Schema.NullOr(Schema.Literal("APPROVED"))),
+  methodMask: Arbitrary.schema(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 })),
+  ),
+  checks: Arbitrary.array(
+    Arbitrary.schema(
+      Schema.Struct({
+        required: Schema.NullOr(Schema.Boolean),
+        outcome: Schema.Literals([
+          "passed",
+          "failed",
+          "pending",
+          "cancelled",
+          "unknown",
+        ]),
+      }),
+    ),
+    { maxLength: 8 },
+  ),
+}).pipe(
+  Arbitrary.map(
+    ({ number, mergeStateStatus, reviewDecision, methodMask, checks }) =>
+      snapshot(
+        {
+          number,
+          id: `PR-${number}`,
+          headOid: `head-${number}`,
+          mergeStateStatus,
+          reviewDecision,
+          checks: checks.map((check, index) => ({
+            name: `check-${index}`,
+            required: check.required,
+            outcome: check.required === true ? "passed" : check.outcome,
+          })),
+        },
+        {
+          methods: mergeMethods.filter(
+            (_method, index) => (methodMask & (1 << index)) !== 0,
+          ),
+        },
+      ),
+  ),
+);
+
+const disqualifyingFacts: Array<[string, Partial<PrFacts>]> = [
+  ["fetch error", { lastError: "offline" }],
+  ["incomplete checks", { checksComplete: false }],
+  ["missing checks", { checks: null }],
+  ["closed PR", { state: "CLOSED" }],
+  ["merged PR", { state: "MERGED" }],
+  ["draft", { isDraft: true }],
+  ["unknown draft status", { isDraft: null }],
+  ["missing PR identity", { id: "" }],
+  ["missing head", { headOid: null }],
+  ["empty head", { headOid: "" }],
+  ["conflicts", { mergeable: "CONFLICTING" }],
+  ["unknown mergeability", { mergeable: "UNKNOWN" }],
+  ["missing mergeability", { mergeable: null }],
+  ["blocked merge state", { mergeStateStatus: "BLOCKED" }],
+  ["unknown merge state", { mergeStateStatus: "UNKNOWN" }],
+  ["missing merge state", { mergeStateStatus: null }],
+  ["requested changes", { reviewDecision: "CHANGES_REQUESTED" }],
+  ["required review", { reviewDecision: "REVIEW_REQUIRED" }],
+  ["already queued", { isQueued: true }],
+  ...(["failed", "pending", "cancelled", "unknown"] as const).map(
+    (outcome): [string, Partial<PrFacts>] => [
+      `required check ${outcome}`,
+      { checks: [{ name: "required", outcome, required: true }] },
+    ],
+  ),
+];
+
 describe("merge eligibility and routing", () => {
+  it.prop(
+    "offers enabled direct methods only while the eligible snapshot permits them",
+    {
+      baseline: eligibleSnapshots,
+    },
+    ({ baseline }) => {
+      expect(mergeEligibility(baseline)).toEqual({
+        route: "direct",
+        methods: baseline.methods,
+      });
+      expect(
+        mergeEligibility({ ...baseline, queueRequired: true, methods: null }),
+      ).toEqual({ route: "queue" });
+      expect(mergeEligibility({ ...baseline, queueRequired: null }).route).toBe(
+        "unavailable",
+      );
+      expect(
+        mergeEligibility({
+          ...baseline,
+          configurationError: "settings unreadable",
+        }).route,
+      ).toBe("unavailable");
+      for (const methods of [null, []]) {
+        expect(mergeEligibility({ ...baseline, methods }).route).toBe(
+          "unavailable",
+        );
+      }
+    },
+    { arbitrary: { runs: 100, maxShrinks: 200 } },
+  );
+
+  it.prop(
+    "each disqualifying fact blocks otherwise eligible direct and queue snapshots",
+    {
+      baseline: eligibleSnapshots,
+    },
+    ({ baseline }) => {
+      expect(mergeEligibility(baseline).route).toBe("direct");
+      for (const [fact, change] of disqualifyingFacts) {
+        for (const queueRequired of [false, true]) {
+          expect(
+            mergeEligibility({
+              ...baseline,
+              queueRequired,
+              pr: { ...baseline.pr, ...change },
+            }),
+            fact,
+          ).toEqual({ route: "ineligible" });
+        }
+      }
+    },
+    { arbitrary: { runs: 100, maxShrinks: 200 } },
+  );
+
   test("positive queue signals survive unrelated settings failures", () => {
     expect(resolveMergeConfiguration(true, undefined, null)).toEqual({
       queueRequired: true,

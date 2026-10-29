@@ -19,6 +19,12 @@ migration narratives, and dated work logs out of documentation. Comments should
 explain constraints or non-obvious reasoning; omit descriptions that repeat the
 code.
 
+Keep each document focused on its named topic. Put current subsystem behavior
+in a dedicated `docs/<topic>.md`; use `docs/adr/` for architectural decisions
+and their rationale. Link across topics instead of appending unrelated details
+or duplicating them. Check the document's scope before adding a section.
+See [documentation placement](docs/agents/domain.md) for ownership and discovery.
+
 ## Architecture
 
 ```
@@ -187,4 +193,5 @@ Default canonical role names (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 ### Domain docs
 
-Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Shared vocabulary lives in `CONTEXT.md`, subsystem behavior in `docs/<topic>.md`,
+and architectural decisions in `docs/adr/`. See `docs/agents/domain.md`.

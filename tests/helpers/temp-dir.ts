@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test as base } from "vitest";
 
-export async function tempDirFixture(
+async function tempDirFixture(
   // oxlint-disable-next-line eslint/no-empty-pattern -- Vitest requires destructuring even without dependencies.
   {}: object,
   use: (directory: string) => Promise<void>,

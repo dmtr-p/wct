@@ -17,7 +17,7 @@ export interface IncludeRepo {
   write: (path: string, content?: string) => Promise<void>;
 }
 
-export async function includeRepoFixture(
+async function includeRepoFixture(
   { tempDir: root }: { tempDir: string },
   use: (repo: IncludeRepo) => Promise<void>,
 ) {

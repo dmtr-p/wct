@@ -1,11 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, vi } from "vitest";
 import * as processService from "../../src/services/process";
-import { databaseFixture } from "./database";
-import { includeRepoFixture } from "./include-repo";
-import { tempDirFixture } from "./temp-dir";
+import { test as databaseTest } from "./database";
+import { test as repoTest } from "./include-repo";
 
 function environment() {
   return {
@@ -16,109 +15,130 @@ function environment() {
   };
 }
 
+interface FinishedTest {
+  name: string;
+  environmentBefore: ReturnType<typeof environment>;
+  environmentAfter: ReturnType<typeof environment>;
+  errors: (string | undefined)[];
+  expectedErrors: string[];
+}
+
 describe("resource fixture cleanup", { concurrent: false }, () => {
-  test.each([false, true])(
-    "removes repository files and restores environment (assertion failure: %s)",
-    async (fail) => {
-      const originalEnvironment = environment();
-      let directory = "";
-      const lifetime = tempDirFixture({}, async (tempDir) => {
-        directory = tempDir;
-        await includeRepoFixture({ tempDir }, async (repo) => {
-          expect(environment()).toEqual({
-            HOME: repo.home,
-            XDG_CONFIG_HOME: join(repo.home, ".config"),
-            GIT_CONFIG_GLOBAL: join(repo.home, ".gitconfig"),
-            GIT_CONFIG_NOSYSTEM: "1",
-          });
-          expect(await Bun.file(join(repo.repo, "tracked.txt")).text()).toBe(
-            "tracked.txt",
-          );
-          await repo.git(
-            "worktree",
-            "add",
-            "-b",
-            "linked",
-            join(repo.root, "linked"),
-          );
-          if (fail) expect.fail("fixture consumer assertion failed");
-        });
-      });
+  const directories: string[] = [];
+  const databases: Database[] = [];
+  const finishedTests: FinishedTest[] = [];
+  const setupFailureName =
+    "releases resources when Git setup fails before the test body";
 
-      if (fail) {
-        await expect(lifetime).rejects.toThrow(
-          "fixture consumer assertion failed",
-        );
-      } else {
-        await lifetime;
-      }
-
-      expect(directory).not.toBe("");
-      await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
-      expect(environment()).toEqual(originalEnvironment);
-    },
-  );
-
-  test("releases the directory and environment when Git setup fails before use", async ({
-    onTestFinished,
-  }) => {
-    const originalEnvironment = environment();
-    const failure = new Error("Git setup failed");
-    const git = vi
-      .spyOn(processService, "execProcess")
-      .mockImplementation(() => {
-        expect(process.env.HOME).not.toBe(originalEnvironment.HOME);
-        throw failure;
-      });
+  beforeEach(({ task, onTestFinished }) => {
+    const environmentBefore = environment();
     onTestFinished(() => {
-      git.mockRestore();
+      finishedTests.push({
+        name: task.name,
+        environmentBefore,
+        environmentAfter: environment(),
+        errors: task.result?.errors?.map((error) => error.message) ?? [],
+        expectedErrors: task.fails
+          ? [
+              task.name === setupFailureName
+                ? "Git setup failed"
+                : "fixture consumer assertion failed",
+            ]
+          : [],
+      });
     });
-    const use = vi.fn();
-    let directory = "";
-
-    await expect(
-      tempDirFixture({}, async (tempDir) => {
-        directory = tempDir;
-        await includeRepoFixture({ tempDir }, use);
-      }),
-    ).rejects.toBe(failure);
-
-    expect(git).toHaveBeenCalledExactlyOnceWith(
-      "git",
-      ["init", "--quiet", "--template=", "--initial-branch=main"],
-      { cwd: join(directory, "repo") },
-    );
-    expect(use).not.toHaveBeenCalled();
-    expect(directory).not.toBe("");
-    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(environment()).toEqual(originalEnvironment);
   });
 
-  test.each([false, true])(
-    "closes fresh empty databases (assertion failure: %s)",
-    async (fail) => {
-      const databases: Database[] = [];
-      for (let index = 0; index < 2; index++) {
-        const lifetime = databaseFixture({}, async (db) => {
-          databases.push(db);
-          expect(db.query("SELECT name FROM sqlite_master").all()).toEqual([]);
-          db.run("CREATE TABLE scenario (value TEXT)");
-          if (fail) expect.fail("fixture consumer assertion failed");
-        });
-        if (fail) {
-          await expect(lifetime).rejects.toThrow(
-            "fixture consumer assertion failed",
-          );
-        } else {
-          await lifetime;
-        }
-      }
+  // Expected-failure tests also accept teardown errors. Check cleanup and the
+  // original failure separately so a cleanup error cannot make these tests pass.
+  afterAll(async () => {
+    for (const result of finishedTests) {
+      expect(result.errors, result.name).toEqual(result.expectedErrors);
+      expect(result.environmentAfter, result.name).toEqual(
+        result.environmentBefore,
+      );
+    }
+    expect(new Set(directories).size).toBe(directories.length);
+    for (const directory of directories) {
+      await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect(new Set(databases).size).toBe(databases.length);
+    for (const db of databases) {
+      expect(() => db.query("SELECT 1").get()).toThrow();
+    }
+  });
 
-      expect(databases).toHaveLength(2);
-      expect(databases[0]).not.toBe(databases[1]);
-      for (const db of databases) {
-        expect(() => db.query("SELECT 1").get()).toThrow();
+  for (const fail of [false, true]) {
+    repoTest(
+      `removes repository files and restores environment (assertion failure: ${fail})`,
+      { fails: fail },
+      async ({ includeRepo }) => {
+        directories.push(includeRepo.root);
+        expect(environment()).toEqual({
+          HOME: includeRepo.home,
+          XDG_CONFIG_HOME: join(includeRepo.home, ".config"),
+          GIT_CONFIG_GLOBAL: join(includeRepo.home, ".gitconfig"),
+          GIT_CONFIG_NOSYSTEM: "1",
+        });
+        expect(
+          await Bun.file(join(includeRepo.repo, "tracked.txt")).text(),
+        ).toBe("tracked.txt");
+        await includeRepo.git(
+          "worktree",
+          "add",
+          "-b",
+          "linked",
+          join(includeRepo.root, "linked"),
+        );
+        if (fail) expect.fail("fixture consumer assertion failed");
+      },
+    );
+
+    databaseTest(
+      `closes a fresh empty database (assertion failure: ${fail})`,
+      { fails: fail },
+      ({ db }) => {
+        databases.push(db);
+        expect(db.query("SELECT name FROM sqlite_master").all()).toEqual([]);
+        db.run("CREATE TABLE scenario (value TEXT)");
+        if (fail) expect.fail("fixture consumer assertion failed");
+      },
+    );
+  }
+
+  const setupFailureTest = repoTest.extend<{ tempDir: string }>({
+    tempDir: async ({ tempDir }, use) => {
+      directories.push(tempDir);
+      const git = vi
+        .spyOn(processService, "execProcess")
+        .mockImplementation((command, args, options) => {
+          expect(command).toBe("git");
+          expect(args).toEqual([
+            "init",
+            "--quiet",
+            "--template=",
+            "--initial-branch=main",
+          ]);
+          expect(options?.cwd).toBe(join(tempDir, "repo"));
+          expect(environment()).toEqual({
+            HOME: join(tempDir, "home"),
+            XDG_CONFIG_HOME: join(tempDir, "home", ".config"),
+            GIT_CONFIG_GLOBAL: join(tempDir, "home", ".gitconfig"),
+            GIT_CONFIG_NOSYSTEM: "1",
+          });
+          throw new Error("Git setup failed");
+        });
+      try {
+        await use(tempDir);
+      } finally {
+        git.mockRestore();
       }
     },
-  );
+  });
+
+  setupFailureTest(setupFailureName, { fails: true }, ({ includeRepo }) => {
+    expect.fail(
+      `Test body must not run after Git setup fails: ${includeRepo.repo}`,
+    );
+  });
 });

@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { test as base } from "vitest";
 
-export async function databaseFixture(
+async function databaseFixture(
   // oxlint-disable-next-line eslint/no-empty-pattern -- Vitest requires destructuring even without dependencies.
   {}: object,
   use: (database: Database) => Promise<void>,

@@ -357,5 +357,13 @@ For Vitest fixtures, create Effect test methods with
 `Arbitrary.configureGlobal` can configure shared property-test defaults before
 concurrent tests start.
 
+Reusable imperative resources use typed, test-scoped fixtures in `tests/helpers`.
+Declare resource dependencies through destructured fixture parameters. Guard
+setup and `use` with `try/finally` immediately after acquiring a resource so
+setup failures also release it. Use `test.for` for parameterized imperative
+tests that need fixture context as their second argument. Keep tests that stub
+process-wide environment variables or change the working directory sequential;
+fixtures do not isolate that state.
+
 Do not run tests or lint manually; the harness hooks handle those checks as
 specified in `AGENTS.md`.

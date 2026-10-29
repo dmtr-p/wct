@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { loadConfig, loadWorkspaceConfig } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
 import { liveSetupService } from "../src/services/setup-service";
@@ -11,7 +11,7 @@ import {
   WorkspaceService,
 } from "../src/services/workspace-service";
 import { liveWorktreeService } from "../src/services/worktree-service";
-import { type IncludeRepo, makeIncludeRepo } from "./helpers/include-repo";
+import { type IncludeRepo, test as repoTest } from "./helpers/include-repo";
 import { type ServiceOverrides, withTestServices } from "./helpers/services";
 
 interface CopyScenario {
@@ -156,25 +156,24 @@ const scenarios: CopyScenario[] = [
   },
 ];
 
-describe("WorkspaceService .worktreeinclude", () => {
-  let fixture: IncludeRepo;
-  beforeEach(async () => {
-    fixture = await makeIncludeRepo();
-    await fixture.write(".gitignore", "*.env\n");
-    for (const file of [
-      ".global.env",
-      ".project.env",
-      ".profile.env",
-      ".include.env",
-    ])
-      await fixture.write(file);
-    await Bun.write(join(fixture.home, ".wct.yaml"), "copy: [.global.env]\n");
-  });
-  afterEach(async () => {
-    await fixture.cleanup();
+describe("WorkspaceService .worktreeinclude", { concurrent: false }, () => {
+  const test = repoTest.extend<{ workspaceRepo: IncludeRepo }>({
+    workspaceRepo: async ({ includeRepo: fixture }, use) => {
+      await fixture.write(".gitignore", "*.env\n");
+      for (const file of [
+        ".global.env",
+        ".project.env",
+        ".profile.env",
+        ".include.env",
+      ])
+        await fixture.write(file);
+      await Bun.write(join(fixture.home, ".wct.yaml"), "copy: [.global.env]\n");
+      await use(fixture);
+    },
   });
 
   const open = (
+    fixture: IncludeRepo,
     options: Partial<WorkspaceOpenOptions> = {},
     overrides: ServiceOverrides = {},
   ) =>
@@ -191,14 +190,14 @@ describe("WorkspaceService .worktreeinclude", () => {
       ),
     );
 
-  test.each(scenarios)("$name", async (scenario) => {
+  test.for(scenarios)("$name", async (scenario, { workspaceRepo: fixture }) => {
     if (scenario.project !== undefined)
       await fixture.write(".wct.yaml", scenario.project);
     if (scenario.global !== undefined)
       await Bun.write(join(fixture.home, ".wct.yaml"), scenario.global);
     if (scenario.include !== undefined)
       await fixture.write(".worktreeinclude", scenario.include);
-    const result = await open({ profile: scenario.profile });
+    const result = await open(fixture, { profile: scenario.profile });
     expect(result.created).toBe(true);
     const copied = result.attempts.copy;
     if (scenario.expected) {
@@ -225,7 +224,9 @@ describe("WorkspaceService .worktreeinclude", () => {
     }
   });
 
-  test("retains project copy provenance without changing loadConfig results", async () => {
+  test("retains project copy provenance without changing loadConfig results", async ({
+    workspaceRepo: fixture,
+  }) => {
     for (const project of [
       undefined,
       "setup: []\n",
@@ -244,10 +245,12 @@ describe("WorkspaceService .worktreeinclude", () => {
     }
   });
 
-  test("works without either YAML config", async () => {
+  test("works without either YAML config", async ({
+    workspaceRepo: fixture,
+  }) => {
     await rm(join(fixture.home, ".wct.yaml"));
     await fixture.write(".worktreeinclude", ".include.env\n");
-    const result = await open();
+    const result = await open(fixture);
     expect(result.attempts.copy).toMatchObject({
       attempted: true,
       ok: true,
@@ -255,7 +258,9 @@ describe("WorkspaceService .worktreeinclude", () => {
     });
   });
 
-  test("uses the main repository's root include when invoked from a linked worktree subdirectory", async () => {
+  test("uses the main repository's root include when invoked from a linked worktree subdirectory", async ({
+    workspaceRepo: fixture,
+  }) => {
     await fixture.git(
       "worktree",
       "add",
@@ -270,7 +275,7 @@ describe("WorkspaceService .worktreeinclude", () => {
       ".global.env\n",
     );
     await fixture.write(".worktreeinclude", ".include.env\n");
-    const result = await open({ cwd });
+    const result = await open(fixture, { cwd });
     expect(result.mainRepoPath).toBe(fixture.repo);
     expect(result.attempts.copy).toMatchObject({
       attempted: true,
@@ -278,19 +283,21 @@ describe("WorkspaceService .worktreeinclude", () => {
     });
   });
 
-  test("ignores nested include files", async () => {
+  test("ignores nested include files", async ({ workspaceRepo: fixture }) => {
     await fixture.write("nested/.worktreeinclude", ".include.env\n");
-    const result = await open();
+    const result = await open(fixture);
     expect(result.attempts.copy).toMatchObject({
       attempted: true,
       value: [{ file: ".global.env" }],
     });
   });
 
-  test("empty include selections skip copy progress", async () => {
+  test("empty include selections skip copy progress", async ({
+    workspaceRepo: fixture,
+  }) => {
     await fixture.write(".worktreeinclude", "*.missing\n");
     const events: WorkspaceReporterEvent[] = [];
-    const result = await open({
+    const result = await open(fixture, {
       reporter: {
         event: (event) =>
           Effect.sync(() => {
@@ -307,9 +314,9 @@ describe("WorkspaceService .worktreeinclude", () => {
     ).toBe(false);
   });
 
-  test.each(["project", "profile", "global"])(
+  test.for(["project", "profile", "global"])(
     "%s YAML copying filters tracked and nonignored matches",
-    async (source) => {
+    async (source, { workspaceRepo: fixture }) => {
       await fixture.write(".gitignore", "*.env\ntracked.txt\n");
       await fixture.write("nonignored.json");
       const copy = "copy: ['*']\n";
@@ -321,7 +328,7 @@ describe("WorkspaceService .worktreeinclude", () => {
         );
       if (source === "global")
         await Bun.write(join(fixture.home, ".wct.yaml"), copy);
-      const result = await open();
+      const result = await open(fixture);
       const copied = result.attempts.copy;
       expect(copied).toMatchObject({ attempted: true, ok: true });
       if (!copied.attempted || !copied.ok)
@@ -341,7 +348,9 @@ describe("WorkspaceService .worktreeinclude", () => {
     },
   );
 
-  test("copies before real setup commands and reports copy progress", async () => {
+  test("copies before real setup commands and reports copy progress", async ({
+    workspaceRepo: fixture,
+  }) => {
     await fixture.write(".worktreeinclude", ".include.env\n");
     await fixture.write(
       ".wct.yaml",
@@ -351,7 +360,7 @@ describe("WorkspaceService .worktreeinclude", () => {
 `,
     );
     const events: WorkspaceReporterEvent[] = [];
-    const result = await open({
+    const result = await open(fixture, {
       reporter: {
         event: (event) =>
           Effect.sync(() => {
@@ -382,10 +391,12 @@ describe("WorkspaceService .worktreeinclude", () => {
     });
   });
 
-  test("reopening and up skip include copying and preserve existing files", async () => {
+  test("reopening and up skip include copying and preserve existing files", async ({
+    workspaceRepo: fixture,
+  }) => {
     await Bun.write(join(fixture.home, ".wct.yaml"), "copy: []\n");
     await fixture.write(".worktreeinclude", ".include.env\n");
-    const first = await open();
+    const first = await open(fixture);
     await Bun.write(
       join(first.worktreePath, ".include.env"),
       "local worktree edit",
@@ -394,7 +405,7 @@ describe("WorkspaceService .worktreeinclude", () => {
     // Reopening must not even try to read the include file.
     await rm(join(fixture.repo, ".worktreeinclude"));
     await mkdir(join(fixture.repo, ".worktreeinclude"));
-    const reopened = await open();
+    const reopened = await open(fixture);
     expect(reopened.created).toBe(false);
     expect(reopened.attempts.copy.attempted).toBe(false);
     await runBunPromise(
@@ -409,14 +420,16 @@ describe("WorkspaceService .worktreeinclude", () => {
     ).toBe("local worktree edit");
   });
 
-  test("retries failed initial include resolution on the registered worktree", async () => {
+  test("retries failed initial include resolution on the registered worktree", async ({
+    workspaceRepo: fixture,
+  }) => {
     await Bun.write(join(fixture.home, ".wct.yaml"), "copy: []\n");
     await fixture.write(
       ".wct.yaml",
       "setup:\n  - name: Read copied file\n    command: 'cat .include.env > setup-result'\n",
     );
     await mkdir(join(fixture.repo, ".worktreeinclude"));
-    await expect(open()).rejects.toThrow("Failed to resolve");
+    await expect(open(fixture)).rejects.toThrow("Failed to resolve");
     const registered = await runBunPromise(
       liveWorktreeService.findWorktreeByBranch("feature/copy", fixture.repo),
     );
@@ -429,7 +442,7 @@ describe("WorkspaceService .worktreeinclude", () => {
 
     await rm(join(fixture.repo, ".worktreeinclude"), { recursive: true });
     await fixture.write(".worktreeinclude", ".include.env\n");
-    const recovered = await open();
+    const recovered = await open(fixture);
     expect(recovered.created).toBe(false);
     expect(recovered.worktreePath).toBe(registered.path);
     expect(recovered.attempts.copy).toMatchObject({
@@ -441,37 +454,39 @@ describe("WorkspaceService .worktreeinclude", () => {
     );
 
     await fixture.write(".include.env", "changed after successful recovery");
-    expect((await open()).attempts.copy.attempted).toBe(false);
+    expect((await open(fixture)).attempts.copy.attempted).toBe(false);
     expect(await Bun.file(join(registered.path, ".include.env")).text()).toBe(
       ".include.env",
     );
   });
 
-  test("successful YAML override clears failed initial include processing", async () => {
+  test("successful YAML override clears failed initial include processing", async ({
+    workspaceRepo: fixture,
+  }) => {
     await mkdir(join(fixture.repo, ".worktreeinclude"));
-    await expect(open()).rejects.toThrow("Failed to resolve");
+    await expect(open(fixture)).rejects.toThrow("Failed to resolve");
     await fixture.write(".wct.yaml", "copy: []\n");
-    expect((await open()).attempts.copy.attempted).toBe(false);
+    expect((await open(fixture)).attempts.copy.attempted).toBe(false);
     await fixture.write(".wct.yaml", "setup: []\n");
     await rm(join(fixture.repo, ".worktreeinclude"), { recursive: true });
     await fixture.write(".worktreeinclude", ".include.env\n");
-    const reopened = await open();
+    const reopened = await open(fixture);
     expect(
       await Bun.file(join(reopened.worktreePath, ".include.env")).exists(),
     ).toBe(false);
   });
 
-  test.each(["project", "profile", "global"])(
+  test.for(["project", "profile", "global"])(
     "reopening preserves %s YAML copying",
-    async (source) => {
+    async (source, { workspaceRepo: fixture }) => {
       if (source === "project")
         await fixture.write(".wct.yaml", "copy: [.project.env]\n");
       if (source === "profile") await fixture.write(".wct.yaml", profileCopy);
-      const first = await open();
+      const first = await open(fixture);
       const file = `.${source}.env`;
       await fixture.write(file, "updated yaml source");
       await mkdir(join(fixture.repo, ".worktreeinclude"));
-      const reopened = await open();
+      const reopened = await open(fixture);
       expect(reopened.created).toBe(false);
       expect(reopened.attempts.copy).toMatchObject({
         attempted: true,
@@ -483,9 +498,9 @@ describe("WorkspaceService .worktreeinclude", () => {
     },
   );
 
-  test.each(["project", "profile"])(
+  test.for(["project", "profile"])(
     "explicit %s copy skips an unreadable include",
-    async (source) => {
+    async (source, { workspaceRepo: fixture }) => {
       await fixture.write(
         ".wct.yaml",
         source === "project"
@@ -493,11 +508,13 @@ describe("WorkspaceService .worktreeinclude", () => {
           : profileCopy.replace("[.profile.env]", "[]"),
       );
       await mkdir(join(fixture.repo, ".worktreeinclude"));
-      expect((await open()).attempts.copy.attempted).toBe(false);
+      expect((await open(fixture)).attempts.copy.attempted).toBe(false);
     },
   );
 
-  test("include read and discovery failures are fatal before setup", async () => {
+  test("include read and discovery failures are fatal before setup", async ({
+    workspaceRepo: fixture,
+  }) => {
     let setupRan = false;
     const overrides: ServiceOverrides = {
       setup: {
@@ -514,7 +531,9 @@ describe("WorkspaceService .worktreeinclude", () => {
       "setup:\n  - name: setup\n    command: 'true'\n",
     );
     await mkdir(join(fixture.repo, ".worktreeinclude"));
-    await expect(open({}, overrides)).rejects.toThrow("Failed to resolve");
+    await expect(open(fixture, {}, overrides)).rejects.toThrow(
+      "Failed to resolve",
+    );
     expect(setupRan).toBe(false);
     await rm(join(fixture.repo, ".worktreeinclude"), { recursive: true });
     await fixture.write(".worktreeinclude", ".include.env\n");
@@ -530,12 +549,14 @@ describe("WorkspaceService .worktreeinclude", () => {
         }),
     };
     await expect(
-      open({ branch: "discovery-fails" }, overrides),
+      open(fixture, { branch: "discovery-fails" }, overrides),
     ).rejects.toThrow("Failed to resolve");
     expect(setupRan).toBe(false);
   });
 
-  test("copy failures use existing fatal errors and file failure reporting", async () => {
+  test("copy failures use existing fatal errors and file failure reporting", async ({
+    workspaceRepo: fixture,
+  }) => {
     await fixture.git("switch", "--quiet", "-c", "collision");
     await rm(join(fixture.repo, ".include.env"));
     await fixture.write(".include.env/tracked.txt");
@@ -551,7 +572,7 @@ describe("WorkspaceService .worktreeinclude", () => {
     );
     const events: WorkspaceReporterEvent[] = [];
     await expect(
-      open({
+      open(fixture, {
         branch: "collision",
         existing: true,
         reporter: {
@@ -584,7 +605,10 @@ describe("WorkspaceService .worktreeinclude", () => {
     );
     await rm(join(registered.path, ".include.env"), { recursive: true });
     await fixture.write(".first.env", "updated before retry");
-    const recovered = await open({ branch: "collision", existing: true });
+    const recovered = await open(fixture, {
+      branch: "collision",
+      existing: true,
+    });
     expect(recovered.created).toBe(false);
     expect(recovered.attempts.copy).toMatchObject({
       attempted: true,
@@ -601,7 +625,7 @@ describe("WorkspaceService .worktreeinclude", () => {
     );
 
     await fixture.write(".include.env", "updated after recovery");
-    await open({ branch: "collision", existing: true });
+    await open(fixture, { branch: "collision", existing: true });
     expect(await Bun.file(join(registered.path, ".include.env")).text()).toBe(
       ".include.env",
     );

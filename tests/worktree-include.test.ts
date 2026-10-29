@@ -1,34 +1,31 @@
 import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { copyFiles } from "../src/services/copy";
 import * as ignoredFiles from "../src/services/ignored-files";
 import * as processService from "../src/services/process";
 import { resolveWorktreeInclude } from "../src/services/worktree-include";
-import { type IncludeRepo, makeIncludeRepo } from "./helpers/include-repo";
+import { type IncludeRepo, test } from "./helpers/include-repo";
 
-describe(".worktreeinclude resolver", () => {
-  let fixture: IncludeRepo;
-  beforeEach(async () => {
-    fixture = await makeIncludeRepo();
-  });
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
+describe(".worktreeinclude resolver", { concurrent: false }, () => {
+  const resolve = (fixture: IncludeRepo) =>
+    runBunPromise(resolveWorktreeInclude(fixture.repo));
 
-  const resolve = () => runBunPromise(resolveWorktreeInclude(fixture.repo));
-
-  test("distinguishes missing, empty, comments-only, and no-match files", async () => {
-    expect(await resolve()).toBeUndefined();
+  test("distinguishes missing, empty, comments-only, and no-match files", async ({
+    includeRepo: fixture,
+  }) => {
+    expect(await resolve(fixture)).toBeUndefined();
     for (const content of ["", "# A comment\n\n", "*.missing\n"]) {
       await fixture.write(".worktreeinclude", content);
-      expect(await resolve()).toEqual([]);
+      expect(await resolve(fixture)).toEqual([]);
     }
   });
 
-  test("copies the .env, .env.local, and config/secrets.json example", async () => {
+  test("copies the .env, .env.local, and config/secrets.json example", async ({
+    includeRepo: fixture,
+  }) => {
     const files = [".env", ".env.local", "config/secrets.json"];
     await fixture.write(
       ".gitignore",
@@ -39,10 +36,12 @@ describe(".worktreeinclude resolver", () => {
       "# Local configuration\n.env\n.env.local\nconfig/secrets.json\n",
     );
     for (const file of files) await fixture.write(file);
-    expect((await resolve())?.sort()).toEqual(files.sort());
+    expect((await resolve(fixture))?.sort()).toEqual(files.sort());
   });
 
-  test("excludes tracked files even when ignored, nonignored files, symlinks, and Git metadata", async () => {
+  test("excludes tracked files even when ignored, nonignored files, symlinks, and Git metadata", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", "*.txt\nlinks/\n.git/\n");
     await fixture.write(".worktreeinclude", "*\n");
     await fixture.write("ignored.txt");
@@ -62,10 +61,12 @@ describe(".worktreeinclude resolver", () => {
       join(fixture.repo, ".git"),
       join(fixture.repo, "links/directory"),
     );
-    expect(await resolve()).toEqual(["ignored.txt"]);
+    expect(await resolve(fixture)).toEqual(["ignored.txt"]);
   });
 
-  test("includes repository, nested, info/exclude, and global Git ignore rules", async () => {
+  test("includes repository, nested, info/exclude, and global Git ignore rules", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", ".env\n");
     await fixture.write("nested/.gitignore", "secret\n");
     await fixture.write(".git/info/exclude", "info-secret\n");
@@ -79,10 +80,12 @@ describe(".worktreeinclude resolver", () => {
     const files = [".env", "nested/secret", "info-secret", "global-secret"];
     for (const file of files) await fixture.write(file);
     await fixture.write(".worktreeinclude", "*\n");
-    expect((await resolve())?.sort()).toEqual(files.sort());
+    expect((await resolve(fixture))?.sort()).toEqual(files.sort());
   });
 
-  test("applies ordered negation and re-inclusion, deduplicating overlaps", async () => {
+  test("applies ordered negation and re-inclusion, deduplicating overlaps", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", "*.json\n");
     for (const file of ["a.json", "b.json", "nested/a.json", "nested/b.json"])
       await fixture.write(file);
@@ -90,12 +93,17 @@ describe(".worktreeinclude resolver", () => {
       ".worktreeinclude",
       "*.json\n!b.json\n!nested/\nnested/a.json\na.json\n",
     );
-    expect((await resolve())?.sort()).toEqual(["a.json", "nested/a.json"]);
+    expect((await resolve(fixture))?.sort()).toEqual([
+      "a.json",
+      "nested/a.json",
+    ]);
     await fixture.write(".worktreeinclude", "*.json\n!*.json\n");
-    expect(await resolve()).toEqual([]);
+    expect(await resolve(fixture)).toEqual([]);
   });
 
-  test("negated rules preserve literal leading # and ! markers", async () => {
+  test("negated rules preserve literal leading # and ! markers", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", "*\n");
     for (const file of ["#secret", "!secret", "keep.env"])
       await fixture.write(file);
@@ -104,20 +112,22 @@ describe(".worktreeinclude resolver", () => {
       "*\n!\\#secret\n!\\!secret\n",
     ]) {
       await fixture.write(".worktreeinclude", rules);
-      expect(await resolve()).not.toContain("#secret");
-      expect(await resolve()).not.toContain("!secret");
-      expect(await resolve()).toContain("keep.env");
+      expect(await resolve(fixture)).not.toContain("#secret");
+      expect(await resolve(fixture)).not.toContain("!secret");
+      expect(await resolve(fixture)).toContain("keep.env");
     }
     await fixture.write(
       ".worktreeinclude",
       "*\n!#secret\n!!secret\n\\!secret\n\\#secret\n",
     );
-    expect(await resolve()).toEqual(
+    expect(await resolve(fixture)).toEqual(
       expect.arrayContaining(["#secret", "!secret", "keep.env"]),
     );
   });
 
-  test("checks only selected files, ignoring unrelated files removed after discovery", async () => {
+  test("checks only selected files, ignoring unrelated files removed after discovery", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".env");
     await fixture.write(".worktreeinclude", ".env\n");
     const discoveredPaths = [
@@ -138,7 +148,7 @@ describe(".worktreeinclude resolver", () => {
       );
     const regularFilesSpy = vi.spyOn(ignoredFiles, "filterRegularFiles");
     try {
-      expect(await resolve()).toEqual([".env"]);
+      expect(await resolve(fixture)).toEqual([".env"]);
       expect(regularFilesSpy).toHaveBeenCalledExactlyOnceWith(
         [".env"],
         fixture.repo,
@@ -154,7 +164,9 @@ describe(".worktreeinclude resolver", () => {
     }
   });
 
-  test("supports root anchoring, nested patterns, directory patterns, and dotfiles", async () => {
+  test("supports root anchoring, nested patterns, directory patterns, and dotfiles", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", "*.env\n*.json\n.settings/\n");
     const selected = [
       "root.env",
@@ -169,10 +181,12 @@ describe(".worktreeinclude resolver", () => {
       ".worktreeinclude",
       "/root.env\nnested/**/secret.json\n/.settings/\n",
     );
-    expect((await resolve())?.sort()).toEqual(selected.sort());
+    expect((await resolve(fixture))?.sort()).toEqual(selected.sort());
   });
 
-  test("supports escapes, CRLF, character classes, and unusual filenames without glob reinterpretation", async () => {
+  test("supports escapes, CRLF, character classes, and unusual filenames without glob reinterpretation", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", "*\n");
     const files = [
       "#secret",
@@ -194,7 +208,7 @@ describe(".worktreeinclude resolver", () => {
       ".worktreeinclude",
       "\\#secret\r\n\\!secret\r\nliteral\\[1].env\nstar\\*.env\nquestion\\?.env\nspace name.env\ntrailing\\ \nback\\\\slash.env\ntab*name.env\nline*break.env\n-dash.env\né.env\na[0-9].env\n",
     );
-    const resolved = await resolve();
+    const resolved = await resolve(fixture);
     expect(resolved?.sort()).toEqual(files.sort());
     const target = join(fixture.root, "copy");
     const results = await runBunPromise(
@@ -206,7 +220,9 @@ describe(".worktreeinclude resolver", () => {
       expect(await Bun.file(join(target, file)).text()).toBe(file);
   });
 
-  test("restricts leading **/ inside wholly ignored directories, allowing explicit traversal", async () => {
+  test("restricts leading **/ inside wholly ignored directories, allowing explicit traversal", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(
       ".gitignore",
       "vendor/\n.claude/\nouter/\nconfig.json\n",
@@ -221,12 +237,12 @@ describe(".worktreeinclude resolver", () => {
     ];
     for (const file of files) await fixture.write(file);
     await fixture.write(".worktreeinclude", "**/config.json\n");
-    expect((await resolve())?.sort()).toEqual([
+    expect((await resolve(fixture))?.sort()).toEqual([
       "config.json",
       "normal/config.json",
     ]);
     await fixture.write(".worktreeinclude", "vendor/**/config.json\n");
-    expect((await resolve())?.sort()).toEqual([
+    expect((await resolve(fixture))?.sort()).toEqual([
       "vendor/config.json",
       "vendor/nested/config.json",
     ]);
@@ -234,27 +250,29 @@ describe(".worktreeinclude resolver", () => {
       ".worktreeinclude",
       "vendor/**/config.json\n!**/config.json\n",
     );
-    expect((await resolve())?.sort()).toEqual([
+    expect((await resolve(fixture))?.sort()).toEqual([
       "vendor/config.json",
       "vendor/nested/config.json",
     ]);
     await fixture.write(".worktreeinclude", "**/.claude/skills/*.md\n");
-    expect(await resolve()).toEqual([".claude/skills/one.md"]);
+    expect(await resolve(fixture)).toEqual([".claude/skills/one.md"]);
     // The first name is inside outer/, not in that ignored directory's path.
     await fixture.write(".worktreeinclude", "outer/**/.claude/skills/*.md\n");
-    expect(await resolve()).toEqual(["outer/.claude/skills/two.md"]);
+    expect(await resolve(fixture)).toEqual(["outer/.claude/skills/two.md"]);
   });
 
-  test("allows leading **/ when the ignored directory itself matches", async () => {
+  test("allows leading **/ when the ignored directory itself matches", async ({
+    includeRepo: fixture,
+  }) => {
     await fixture.write(".gitignore", "cache/config.json/\n");
     await fixture.write("cache/config.json/secret");
     await fixture.write(".worktreeinclude", "**/config.json\n");
-    expect(await resolve()).toEqual(["cache/config.json/secret"]);
+    expect(await resolve(fixture)).toEqual(["cache/config.json/secret"]);
   });
 
-  test.each(["#cache", "!cache"])(
+  test.for(["#cache", "!cache"])(
     "reaches ignored %s directories without interpreting name markers",
-    async (directory) => {
+    async (directory, { includeRepo: fixture }) => {
       await fixture.write(".gitignore", `\\${directory}/\n`);
       const selected = [
         `${directory}/local.env`,
@@ -268,14 +286,16 @@ describe(".worktreeinclude resolver", () => {
           ".worktreeinclude",
           `**/${name}/*.env\n!**/${name}/excluded.env\n`,
         );
-        expect((await resolve())?.sort()).toEqual([...selected].sort());
+        expect((await resolve(fixture))?.sort()).toEqual([...selected].sort());
       }
     },
   );
 
-  test("fails clearly on unreadable include files and Git discovery failures", async () => {
+  test("fails clearly on unreadable include files and Git discovery failures", async ({
+    includeRepo: fixture,
+  }) => {
     await mkdir(join(fixture.repo, ".worktreeinclude"));
-    await expect(resolve()).rejects.toThrow("Failed to resolve");
+    await expect(resolve(fixture)).rejects.toThrow("Failed to resolve");
     await fixture.write("../.worktreeinclude", ".env\n");
     await expect(
       runBunPromise(resolveWorktreeInclude(fixture.root)),

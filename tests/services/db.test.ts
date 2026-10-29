@@ -1,16 +1,16 @@
-import { Database } from "bun:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import {
   getCurrentSchemaVersion,
   MIGRATIONS,
   runMigrations,
   TARGET_SCHEMA_VERSION,
 } from "../../src/services/db";
+import { test as it } from "../helpers/database";
 
 describe("wct-db migration runner", () => {
-  it("fresh DB: applies all migrations and records schema_version rows", () => {
-    const db = new Database(":memory:");
-
+  it("fresh DB: applies all migrations and records schema_version rows", ({
+    db,
+  }) => {
     runMigrations(db);
 
     const rows = db
@@ -22,13 +22,11 @@ describe("wct-db migration runner", () => {
       Array.from({ length: TARGET_SCHEMA_VERSION }, (_, i) => i + 1),
     );
     expect(getCurrentSchemaVersion(db)).toBe(MIGRATIONS.length);
-
-    db.close();
   });
 
-  it("legacy v1 DB: existing rows survive and schema_version reflects v1 applied", () => {
-    const db = new Database(":memory:");
-
+  it("legacy v1 DB: existing rows survive and schema_version reflects v1 applied", ({
+    db,
+  }) => {
     // Simulate legacy DB: registry table with data, no schema_version
     db.run(`CREATE TABLE registry (
       id TEXT PRIMARY KEY,
@@ -51,13 +49,11 @@ describe("wct-db migration runner", () => {
 
     const version = getCurrentSchemaVersion(db);
     expect(version).toBe(TARGET_SCHEMA_VERSION);
-
-    db.close();
   });
 
-  it("running migrations twice is a no-op: no duplicate schema_version rows", () => {
-    const db = new Database(":memory:");
-
+  it("running migrations twice is a no-op: no duplicate schema_version rows", ({
+    db,
+  }) => {
     runMigrations(db);
     runMigrations(db);
 
@@ -69,13 +65,11 @@ describe("wct-db migration runner", () => {
     expect(rows.map((r) => r.version)).toEqual(
       Array.from({ length: TARGET_SCHEMA_VERSION }, (_, i) => i + 1),
     );
-
-    db.close();
   });
 
-  it("v1 migration statement is idempotent: applying manually then running migrations produces clean state", () => {
-    const db = new Database(":memory:");
-
+  it("v1 migration statement is idempotent: applying manually then running migrations produces clean state", ({
+    db,
+  }) => {
     // Apply the v1 SQL directly (simulating partial state)
     const v1Sql = MIGRATIONS[0];
     expect(v1Sql).toBeDefined();
@@ -95,94 +89,89 @@ describe("wct-db migration runner", () => {
       )
       .get() as { name: string } | null;
     expect(tableCheck).not.toBeNull();
-
-    db.close();
   });
 
-  it("upgrading v5 retires the legacy cache while preserving repository data", () => {
-    const db = new Database(":memory:");
-    try {
-      db.run(`CREATE TABLE schema_version (
-        version INTEGER PRIMARY KEY,
-        applied_at INTEGER NOT NULL
-      )`);
-      for (const [index, sql] of MIGRATIONS.slice(0, 5).entries()) {
-        db.run(sql);
-        db.run(
-          "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-          [index + 1, 1],
-        );
-      }
-      db.run("INSERT INTO pr_cache VALUES (?, ?, ?, ?)", [
-        "same-name",
-        "[]",
-        1,
-        null,
-      ]);
-      db.run("INSERT INTO registry VALUES (?, ?, ?, ?)", [
-        "repo-id",
-        "/repo",
-        "same-name",
+  it("upgrading v5 retires the legacy cache while preserving repository data", ({
+    db,
+  }) => {
+    db.run(`CREATE TABLE schema_version (
+      version INTEGER PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    )`);
+    for (const [index, sql] of MIGRATIONS.slice(0, 5).entries()) {
+      db.run(sql);
+      db.run("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)", [
+        index + 1,
         1,
       ]);
-      db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
-        "/repo",
-        "feature",
-        "{}",
-        2,
-        null,
-      ]);
-      db.run("INSERT INTO open_pr_cache VALUES (?, ?, ?, ?)", [
-        "/repo",
-        "[]",
-        3,
-        null,
-      ]);
-      db.run("INSERT INTO workspace_pr_association VALUES (?, ?, ?, ?)", [
-        "/repo",
-        "feature",
-        "base/repo",
-        42,
-      ]);
-
-      runMigrations(db);
-      runMigrations(db);
-
-      expect(
-        db
-          .query(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pr_cache'",
-          )
-          .get(),
-      ).toBeNull();
-      expect(db.query("SELECT repo_path, project FROM registry").all()).toEqual(
-        [{ repo_path: "/repo", project: "same-name" }],
-      );
-      expect(
-        db
-          .query(
-            "SELECT repo_path, branch, payload, fetched_at FROM workspace_pr_cache",
-          )
-          .all(),
-      ).toEqual([
-        { repo_path: "/repo", branch: "feature", payload: "{}", fetched_at: 2 },
-      ]);
-      expect(
-        db
-          .query("SELECT repo_path, payload, fetched_at FROM open_pr_cache")
-          .all(),
-      ).toEqual([{ repo_path: "/repo", payload: "[]", fetched_at: 3 }]);
-      expect(db.query("SELECT * FROM workspace_pr_association").all()).toEqual([
-        {
-          repo_path: "/repo",
-          branch: "feature",
-          base_repository: "base/repo",
-          pr_number: 42,
-        },
-      ]);
-      expect(getCurrentSchemaVersion(db)).toBe(TARGET_SCHEMA_VERSION);
-    } finally {
-      db.close();
     }
+    db.run("INSERT INTO pr_cache VALUES (?, ?, ?, ?)", [
+      "same-name",
+      "[]",
+      1,
+      null,
+    ]);
+    db.run("INSERT INTO registry VALUES (?, ?, ?, ?)", [
+      "repo-id",
+      "/repo",
+      "same-name",
+      1,
+    ]);
+    db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
+      "/repo",
+      "feature",
+      "{}",
+      2,
+      null,
+    ]);
+    db.run("INSERT INTO open_pr_cache VALUES (?, ?, ?, ?)", [
+      "/repo",
+      "[]",
+      3,
+      null,
+    ]);
+    db.run("INSERT INTO workspace_pr_association VALUES (?, ?, ?, ?)", [
+      "/repo",
+      "feature",
+      "base/repo",
+      42,
+    ]);
+
+    runMigrations(db);
+    runMigrations(db);
+
+    expect(
+      db
+        .query(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pr_cache'",
+        )
+        .get(),
+    ).toBeNull();
+    expect(db.query("SELECT repo_path, project FROM registry").all()).toEqual([
+      { repo_path: "/repo", project: "same-name" },
+    ]);
+    expect(
+      db
+        .query(
+          "SELECT repo_path, branch, payload, fetched_at FROM workspace_pr_cache",
+        )
+        .all(),
+    ).toEqual([
+      { repo_path: "/repo", branch: "feature", payload: "{}", fetched_at: 2 },
+    ]);
+    expect(
+      db
+        .query("SELECT repo_path, payload, fetched_at FROM open_pr_cache")
+        .all(),
+    ).toEqual([{ repo_path: "/repo", payload: "[]", fetched_at: 3 }]);
+    expect(db.query("SELECT * FROM workspace_pr_association").all()).toEqual([
+      {
+        repo_path: "/repo",
+        branch: "feature",
+        base_repository: "base/repo",
+        pr_number: 42,
+      },
+    ]);
+    expect(getCurrentSchemaVersion(db)).toBe(TARGET_SCHEMA_VERSION);
   });
 });

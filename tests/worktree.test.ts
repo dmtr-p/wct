@@ -16,7 +16,7 @@ import {
   parseWorktreeListOutput,
   WorktreeService,
 } from "../src/services/worktree-service";
-import { makeIncludeRepo } from "./helpers/include-repo";
+import { test as repoTest } from "./helpers/include-repo";
 import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
@@ -567,11 +567,10 @@ profiles: {}
   );
 });
 
-describe("push remote setup recovery", () => {
-  test.each(["restore", "discard"])(
+describe("push remote setup recovery", { concurrent: false }, () => {
+  repoTest.for(["restore", "discard"])(
     "explains how to recover a missing pending remote (%s)",
-    async (recovery) => {
-      const fixture = await makeIncludeRepo();
+    async (recovery, { includeRepo: fixture }) => {
       const branch = "retry-missing-remote";
       const path = join(fixture.root, branch);
       const pendingKey = `branch.${branch}.wctPushRemotePending`;
@@ -590,71 +589,61 @@ describe("push remote setup recovery", () => {
             ),
           ),
         );
-      try {
-        await fixture.git("worktree", "add", "-b", branch, path);
-        await fixture.git("config", "--local", pendingKey, "missing-remote");
-        await fixture.git("config", "--local", remoteKey, "preserved");
+      await fixture.git("worktree", "add", "-b", branch, path);
+      await fixture.git("config", "--local", pendingKey, "missing-remote");
+      await fixture.git("config", "--local", remoteKey, "preserved");
 
-        await expect(reopen()).rejects.toMatchObject({
-          code: "worktree_error",
-          message: expect.stringContaining(
-            `Failed to create worktree '${branch}' at '${path}':`,
-          ),
-          details: expect.stringMatching(
-            /Pending push remote 'missing-remote'.*git remote add -- 'missing-remote' <url>.*git config --local --unset-all 'branch\.retry-missing-remote\.wctPushRemotePending'/,
-          ),
-        });
-        const pending = await fixture.git(
-          "config",
-          "--local",
-          "--get",
-          pendingKey,
-        );
-        expect(pending.stdout.trim()).toBe("missing-remote");
-        const unchanged = await fixture.git(
-          "config",
-          "--local",
-          "--get",
-          remoteKey,
-        );
-        expect(unchanged.stdout.trim()).toBe("preserved");
+      await expect(reopen()).rejects.toMatchObject({
+        code: "worktree_error",
+        message: expect.stringContaining(
+          `Failed to create worktree '${branch}' at '${path}':`,
+        ),
+        details: expect.stringMatching(
+          /Pending push remote 'missing-remote'.*git remote add -- 'missing-remote' <url>.*git config --local --unset-all 'branch\.retry-missing-remote\.wctPushRemotePending'/,
+        ),
+      });
+      const pending = await fixture.git(
+        "config",
+        "--local",
+        "--get",
+        pendingKey,
+      );
+      expect(pending.stdout.trim()).toBe("missing-remote");
+      const unchanged = await fixture.git(
+        "config",
+        "--local",
+        "--get",
+        remoteKey,
+      );
+      expect(unchanged.stdout.trim()).toBe("preserved");
 
-        if (recovery === "restore") {
-          await fixture.git(
-            "remote",
-            "add",
-            "--",
-            "missing-remote",
-            fixture.repo,
-          );
-        } else {
-          await fixture.git("config", "--local", "--unset-all", pendingKey);
-        }
-        expect((await reopen())._tag).toBe("AlreadyExists");
-        const remote = await fixture.git(
-          "config",
-          "--local",
-          "--get",
-          remoteKey,
+      if (recovery === "restore") {
+        await fixture.git(
+          "remote",
+          "add",
+          "--",
+          "missing-remote",
+          fixture.repo,
         );
-        expect(remote.stdout.trim()).toBe(
-          recovery === "restore" ? "missing-remote" : "preserved",
-        );
-        const cleared = await $`git config --local --get ${pendingKey}`
-          .quiet()
-          .nothrow()
-          .cwd(fixture.repo);
-        expect(cleared.exitCode).toBe(1);
-      } finally {
-        await fixture.cleanup();
+      } else {
+        await fixture.git("config", "--local", "--unset-all", pendingKey);
       }
+      expect((await reopen())._tag).toBe("AlreadyExists");
+      const remote = await fixture.git("config", "--local", "--get", remoteKey);
+      expect(remote.stdout.trim()).toBe(
+        recovery === "restore" ? "missing-remote" : "preserved",
+      );
+      const cleared = await $`git config --local --get ${pendingKey}`
+        .quiet()
+        .nothrow()
+        .cwd(fixture.repo);
+      expect(cleared.exitCode).toBe(1);
     },
   );
 
-  test.each([false, true])(
+  repoTest.for([false, true])(
     "retries failed setup when reopening (existing: %s)",
-    async (existing) => {
-      const fixture = await makeIncludeRepo();
+    async (existing, { includeRepo: fixture }) => {
       const branch = "retry-push-remote";
       const worktreePath = join(fixture.root, "worktrees", `demo-${branch}`);
       const hookPath = join(fixture.repo, ".git/hooks/post-checkout");
@@ -674,91 +663,82 @@ tmux: { windows: [] }
 profiles: {}
 `,
         );
-      try {
-        await fixture.git("remote", "add", "origin", fixture.repo);
-        await writeConfig("origin");
-        await fixture.write(
-          ".git/hooks/post-checkout",
-          `#!/bin/sh
+      await fixture.git("remote", "add", "origin", fixture.repo);
+      await writeConfig("origin");
+      await fixture.write(
+        ".git/hooks/post-checkout",
+        `#!/bin/sh
 common_dir=$(git rev-parse --git-common-dir) || exit 1
 : > "$common_dir/config.lock"
 `,
-        );
-        await chmod(hookPath, 0o755);
+      );
+      await chmod(hookPath, 0o755);
 
-        await expect(
-          runBunPromise(
-            withTestServices(
-              WorkspaceService.use((service) =>
-                service.open({ branch, cwd: fixture.repo }),
-              ),
+      await expect(
+        runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              service.open({ branch, cwd: fixture.repo }),
             ),
           ),
-        ).rejects.toMatchObject({ code: "worktree_error" });
-        expect(await Bun.file(join(worktreePath, ".git")).exists()).toBe(true);
-        const missingRemote = await $`git config --local --get ${remoteKey}`
-          .quiet()
-          .nothrow()
-          .cwd(fixture.repo);
-        expect(missingRemote.exitCode).toBe(1);
-        const pending = await fixture.git(
-          "config",
-          "--local",
-          "--get",
-          pendingKey,
-        );
-        expect(pending.stdout.trim()).toBe("origin");
+        ),
+      ).rejects.toMatchObject({ code: "worktree_error" });
+      expect(await Bun.file(join(worktreePath, ".git")).exists()).toBe(true);
+      const missingRemote = await $`git config --local --get ${remoteKey}`
+        .quiet()
+        .nothrow()
+        .cwd(fixture.repo);
+      expect(missingRemote.exitCode).toBe(1);
+      const pending = await fixture.git(
+        "config",
+        "--local",
+        "--get",
+        pendingKey,
+      );
+      expect(pending.stdout.trim()).toBe("origin");
 
-        await rm(lockPath);
-        await rm(hookPath);
-        await writeConfig("changed-default");
-        const reopen = () =>
-          runBunPromise(
-            withTestServices(
-              WorkspaceService.use((service) =>
-                service.open({ branch, existing, cwd: fixture.repo }),
-              ),
-              {
-                worktree: {
-                  ...liveWorktreeService,
-                  fetchRemotes: () => Effect.die("reopening must not fetch"),
-                },
-              },
+      await rm(lockPath);
+      await rm(hookPath);
+      await writeConfig("changed-default");
+      const reopen = () =>
+        runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              service.open({ branch, existing, cwd: fixture.repo }),
             ),
-          );
-        const result = await reopen();
-        expect(result.created).toBe(false);
-        const remote = await fixture.git(
-          "config",
-          "--local",
-          "--get",
-          remoteKey,
+            {
+              worktree: {
+                ...liveWorktreeService,
+                fetchRemotes: () => Effect.die("reopening must not fetch"),
+              },
+            },
+          ),
         );
-        expect(remote.stdout.trim()).toBe("origin");
-        const cleared = await $`git config --local --get ${pendingKey}`
-          .quiet()
-          .nothrow()
-          .cwd(fixture.repo);
-        expect(cleared.exitCode).toBe(1);
+      const result = await reopen();
+      expect(result.created).toBe(false);
+      const remote = await fixture.git("config", "--local", "--get", remoteKey);
+      expect(remote.stdout.trim()).toBe("origin");
+      const cleared = await $`git config --local --get ${pendingKey}`
+        .quiet()
+        .nothrow()
+        .cwd(fixture.repo);
+      expect(cleared.exitCode).toBe(1);
 
-        await fixture.git("config", "--local", remoteKey, "preserved");
-        await reopen();
-        const preserved = await fixture.git(
-          "config",
-          "--local",
-          "--get",
-          remoteKey,
-        );
-        expect(preserved.stdout.trim()).toBe("preserved");
-      } finally {
-        await fixture.cleanup();
-      }
+      await fixture.git("config", "--local", remoteKey, "preserved");
+      await reopen();
+      const preserved = await fixture.git(
+        "config",
+        "--local",
+        "--get",
+        remoteKey,
+      );
+      expect(preserved.stdout.trim()).toBe("preserved");
     },
   );
 
-  test("does not leave pending setup for an already-existing branch", async () => {
-    const fixture = await makeIncludeRepo();
-    try {
+  repoTest(
+    "does not leave pending setup for an already-existing branch",
+    async ({ includeRepo: fixture }) => {
       await fixture.git("remote", "add", "origin", fixture.repo);
       await fixture.git("branch", "existing-feature");
       await expect(
@@ -789,16 +769,14 @@ common_dir=$(git rev-parse --git-common-dir) || exit 1
           .nothrow()
           .cwd(fixture.repo);
       expect(remote.exitCode).toBe(1);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+    },
+  );
 
-  test("clears pending intent when creation fails before the branch exists", async () => {
-    const fixture = await makeIncludeRepo();
-    const branch = "abandoned-creation";
-    const path = join(fixture.root, branch);
-    try {
+  repoTest(
+    "clears pending intent when creation fails before the branch exists",
+    async ({ includeRepo: fixture }) => {
+      const branch = "abandoned-creation";
+      const path = join(fixture.root, branch);
       await fixture.git("remote", "add", "origin", fixture.repo);
       await expect(
         runBunPromise(
@@ -839,8 +817,6 @@ common_dir=$(git rev-parse --git-common-dir) || exit 1
         `branch.${branch}.pushRemote`,
       );
       expect(remote.stdout.trim()).toBe("preserved");
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+    },
+  );
 });

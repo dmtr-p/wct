@@ -6,13 +6,13 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { runMigrations } from "../../src/services/db";
 import {
-  sqlGetOpenPrs,
-  sqlInvalidate,
-  sqlSetOpenPrs,
   sqlGetDiscovery,
   sqlGetDiscoveryEffect,
-  sqlSetDiscovery,
+  sqlGetOpenPrs,
+  sqlInvalidate,
   sqlOwnedWrite,
+  sqlSetDiscovery,
+  sqlSetOpenPrs,
 } from "../../src/services/pr-cache-service";
 import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { PRInfo } from "../../src/tui/types";

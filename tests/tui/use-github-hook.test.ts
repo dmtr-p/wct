@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
 import { GitHubService } from "../../src/services/github-service";
 import {
+  type ExplicitPrAssociation,
   livePrCacheService,
   PrCacheService,
-  type PrDiscoverySnapshot,
   type PrCacheServiceApi,
-  type ExplicitPrAssociation,
+  type PrDiscoverySnapshot,
   type WorkspacePrEntry,
 } from "../../src/services/pr-cache-service";
 import type { PrFacts } from "../../src/services/pr-model";

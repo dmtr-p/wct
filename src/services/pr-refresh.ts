@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { commandError } from "../errors";
 import { GitHubService } from "./github-service";
 import type {
@@ -39,7 +39,7 @@ export function refreshPrDiscovery(
         baseRepository,
         cached ? cached.discoveredThrough - 1000 : undefined,
       );
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
       const fresh: PrFacts[] = [];
       for (const value of raw) {
         const pr = normalizeGhPr(value, baseRepository.toLowerCase(), now);
@@ -180,7 +180,11 @@ export function refreshWorkspacePrs(
               const result = results.find(
                 (result) => result.number === identity.number,
               );
-              const pr = normalizeGhPr(result?.raw, repository, Date.now());
+              const pr = normalizeGhPr(
+                result?.raw,
+                repository,
+                yield* Clock.currentTimeMillis,
+              );
               if (
                 result?.error ||
                 !pr ||
@@ -212,7 +216,7 @@ export function refreshWorkspacePrs(
           workspace.branch,
           workspace.destination,
           workspace.explicit,
-          Date.now(),
+          yield* Clock.currentTimeMillis,
           explicitPr,
         );
         if (workspace.explicit && failed.has(prIdentity(workspace.explicit)))

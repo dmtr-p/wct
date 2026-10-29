@@ -2,6 +2,9 @@ import { Data, Effect, Stream } from "effect";
 import { ChildProcess } from "effect/process";
 import { commandError } from "../errors";
 
+// Child processes inherit the full environment, independent of Config overrides.
+export const processEnvironment = Effect.sync(() => ({ ...process.env }));
+
 export interface ProcessOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;

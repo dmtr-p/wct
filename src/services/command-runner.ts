@@ -2,7 +2,11 @@ import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 import type { SetupCommand } from "../config/schema";
 import type { WctEnv } from "../types/env";
-import { execShell, getProcessErrorMessage } from "./process";
+import {
+  execShell,
+  getProcessErrorMessage,
+  processEnvironment,
+} from "./process";
 
 export interface CommandResult {
   name: string;
@@ -27,7 +31,7 @@ export function runShellCommands(
 ): Effect.Effect<CommandResult[], never, BunServices.BunServices> {
   return Effect.gen(function* () {
     const results: CommandResult[] = [];
-    const fullEnv = { ...process.env, ...env };
+    const fullEnv = { ...(yield* processEnvironment), ...env };
 
     for (const [index, command] of commands.entries()) {
       if (reporter) {

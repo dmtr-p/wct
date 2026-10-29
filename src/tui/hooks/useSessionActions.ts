@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName } from "../../services/tmux";
@@ -55,7 +55,7 @@ export interface SessionActionDeps extends SessionHandoffDeps {
   setMode: (m: Mode) => void;
   // The live mode, readable from async continuations: `mode` above is a
   // render-time capture, stale by the time a lifecycle settles.
-  modeRef: MutableRefObject<Mode>;
+  modeRef: RefObject<Mode>;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
 
   showActionError: (msg: string) => void;
@@ -69,8 +69,8 @@ export interface SessionActionDeps extends SessionHandoffDeps {
   // Resolves the registry snapshot the refresh observed, or `null` when it
   // failed (previous repos kept).
   refreshAll: () => Promise<RepoInfo[] | null>;
-  confirmDownReturnModeRef: MutableRefObject<Mode>;
-  confirmCloseReturnModeRef: MutableRefObject<Mode>;
+  confirmDownReturnModeRef: RefObject<Mode>;
+  confirmCloseReturnModeRef: RefObject<Mode>;
 }
 
 function rejectIfLifecycleActive(

@@ -2,7 +2,6 @@ import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
 import { DetailRow } from "../../src/tui/components/DetailRow";
-import type { TreeItem } from "../../src/tui/types";
 import { prFacts, prRowMeta } from "../helpers/pr";
 import { elementText, hasElementProp } from "./react-elements";
 
@@ -104,7 +103,7 @@ describe("DetailRow", () => {
           paneIndex: 0,
           command: "bash",
         },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      },
       isSelected: false,
       maxWidth: 80,
     });
@@ -123,7 +122,7 @@ describe("DetailRow", () => {
           paneIndex: 1,
           command: "node",
         },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      },
       isSelected: false,
       maxWidth: 80,
     });
@@ -142,7 +141,7 @@ describe("DetailRow", () => {
           paneIndex: 2,
           command: "zsh",
         },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      },
       isSelected: false,
       maxWidth: 80,
     });
@@ -172,7 +171,7 @@ describe("DetailRow", () => {
           paneIndex: 0,
           command: "vim",
         },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      },
       isSelected: false,
       maxWidth: 80,
     });
@@ -196,7 +195,7 @@ describe("DetailRow", () => {
           paneIndex: 0,
           command: "bun run dev",
         },
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pane" }>,
+      },
       isSelected: false,
       maxWidth: 17,
     });
@@ -214,7 +213,7 @@ describe("DetailRow", () => {
         worktreeIndex: 0,
         detailKind: "pane-header",
         label: "Panes (3)",
-      } as Extract<TreeItem, { type: "detail"; detailKind: "pane-header" }>,
+      },
       isSelected: false,
       maxWidth: 12,
     });

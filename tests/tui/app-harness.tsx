@@ -474,14 +474,14 @@ export async function renderApp(
   const originalWrite = stdout.write.bind(stdout) as (
     ...args: unknown[]
   ) => boolean;
-  stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+  stdout.write = (chunk: string | Uint8Array, ...rest: unknown[]) => {
     events.push({
       kind: "write",
       data:
         typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"),
     });
     return originalWrite(chunk, ...rest);
-  }) as typeof stdout.write;
+  };
   stdin.setRawMode = (mode: boolean) => {
     events.push({ kind: "rawmode", mode });
     return stdin;

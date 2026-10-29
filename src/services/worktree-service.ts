@@ -504,7 +504,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
                 );
               }
             }
-            return yield* Effect.fail(error);
+            return yield* error;
           }),
         ),
       );

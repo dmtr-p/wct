@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { commandError } from "../errors";
 import { GITHUB_PR_JSON_FIELDS } from "./github-service";
 import { fetchPrDetails } from "./pr-details";
@@ -83,7 +83,11 @@ export function fetchMergeSnapshot(
           error,
         ),
     });
-    const normalized = normalizeGhPr(raw, baseRepository, Date.now());
+    const normalized = normalizeGhPr(
+      raw,
+      baseRepository,
+      yield* Clock.currentTimeMillis,
+    );
     if (!normalized)
       return yield* commandError(
         "pr_error",

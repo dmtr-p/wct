@@ -1,6 +1,6 @@
 import { basename, resolve } from "node:path";
 import type { BunServices } from "@effect/platform-bun";
-import { Context, Effect, FileSystem } from "effect";
+import { Config, Context, Effect, FileSystem } from "effect";
 import {
   loadConfig,
   loadWorkspaceConfig,
@@ -8,6 +8,7 @@ import {
   resolveWorktreePath,
 } from "../config/loader";
 import type { ResolvedConfig } from "../config/schema";
+import { loadRuntimeConfig } from "../effect/config";
 import {
   bindServiceContext,
   bunServiceKeys,
@@ -1234,7 +1235,13 @@ function finishShutdown(
   reporter?: WorkspaceReporter,
 ) {
   return Effect.gen(function* () {
-    if (process.env.TMUX && process.env.TMUX_PANE) {
+    const { tmux, pane } = yield* loadRuntimeConfig(
+      Config.all({
+        tmux: Config.String("TMUX").pipe(Config.withDefault("")),
+        pane: Config.String("TMUX_PANE").pipe(Config.withDefault("")),
+      }),
+    );
+    if (tmux && pane) {
       const currentSession = yield* TmuxService.use(
         (service) => service.getCurrentSession,
       );

@@ -1,4 +1,5 @@
-import { Console, Effect } from "effect";
+import { Config, Console, Effect } from "effect";
+import { loadRuntimeConfig } from "../effect/config";
 import type { WctServices } from "../effect/services";
 import { toWctError, type WctError } from "../errors";
 import { TmuxService } from "../services/tmux";
@@ -21,7 +22,10 @@ export function maybeAttachSession(
       return;
     }
 
-    if (process.env.TMUX) {
+    const tmux = yield* loadRuntimeConfig(
+      Config.String("TMUX").pipe(Config.withDefault("")),
+    );
+    if (tmux) {
       yield* Effect.catch(
         TmuxService.use((service) => service.switchSession(sessionName)).pipe(
           Effect.tap(() =>

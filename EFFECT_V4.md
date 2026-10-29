@@ -20,12 +20,10 @@ worktree setup and CI run this step explicitly.
 CI uses `bun run lint` and the stop hooks use `mise run lint:fix` to report
 TypeScript errors, lint issues, and Effect diagnostics in one Oxlint run.
 Errors and warnings fail the check; suggestions are shown only in the editor.
-Oxlint uses the Effect-aware schema and `effecttsgo` plugin in `.oxlintrc.json`
-with both `options.typeAware` and `options.typeCheck` enabled. Its explicit
-Effect rules match the compiler's
-error and warning severities, including the configured diagnostics in
-`tsconfig.json`; keep these configurations aligned. Suggestion-level refactors
-are left to the editor rather than promoted to lint warnings.
+Oxlint's strict Effect preset and repository overrides in
+[.oxlintrc.json](.oxlintrc.json) enforce Effect and TypeScript conventions.
+Language service diagnostics in `tsconfig.json` configure editor feedback
+independently of Oxlint's severities.
 Bun's built-in formatter owns formatting and import sorting through the
 `[fmt]` and `[fmt.sortImports]` sections in `bunfig.toml`.
 The React Compiler rules for refs, state updates in effects, globals, and
@@ -171,10 +169,8 @@ const LogLevel = Context.Reference<"info" | "warn" | "error">("wct/LogLevel", {
   to these layers with `Layer.provide` or `Layer.provideMerge`.
   Capture only service dependencies so caller settings such as `JsonFlag` and
   `Console` remain effective when a method runs.
-  The `leakingRequirements` diagnostic enforces this service boundary.
-- Represent parameterless operations as Effect values. Read changing state
-  inside `Effect.sync`, `Effect.suspend`, or `Effect.gen` so each execution
-  observes current values.
+- Read changing state inside `Effect.sync`, `Effect.suspend`, or `Effect.gen`
+  so each execution observes current values.
 - Use `Effect.provideService` for individual overrides.
 - Use `Context.make` and `Context.get` when manipulating a context directly.
 - Use `Layer.fresh(layer)` when a layer must be built independently.
@@ -196,7 +192,7 @@ Bun services, and call `BunRuntime.runMain`.
 - Inside an Effect, compose child Effects with `yield*`. For imperative
   callbacks that must execute an Effect, capture the surrounding context and
   use `Effect.runPromiseWith` or `Effect.runSyncWith` to preserve caller services
-  and settings. The `runEffectInsideEffect` diagnostic enforces this boundary.
+  and settings.
 - The TUI uses the process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
   Command exit tears down the process; there is no explicit runtime disposal
   path.
@@ -207,6 +203,13 @@ Bun services, and call `BunRuntime.runMain`.
   its outcome outside the target checkout before exiting.
 - Use `Bun.YAML.parse`, `Bun.Glob`, and `Bun.which` for their respective runtime
   primitives.
+- Read runtime settings with `loadRuntimeConfig` from `src/effect/config.ts`.
+  It preserves an explicit Config provider and otherwise reads a fresh
+  environment snapshot on each execution, preserving empty strings. Subprocess
+  inheritance uses `processEnvironment` from `src/services/process.ts` to copy the complete
+  environment independently of Config overrides.
+- Wrap IPC listeners in `Effect.callback` with interruption cleanup. The
+  shutdown worker's handoff uses a 30-second Effect timeout.
 - Use `FileSystem.lstat` when selecting regular files without following
   symlinks. Keep filesystem dependencies available during service construction;
   use `FileSystem.makeNoop` for partial test implementations. Stat metadata uses
@@ -215,24 +218,13 @@ Bun services, and call `BunRuntime.runMain`.
 `Effect.Effect<A, E, R>` records the result type, typed error, and required
 services. Preserve these types when defining command and service interfaces.
 
-The `anyUnknownInErrorContext` diagnostic rejects `any` and `unknown` in error
-and requirement channels. Use concrete error unions for application interfaces
-and generic error parameters in reusable helpers. `unknown` remains appropriate
+Use generic error parameters in reusable helpers. `unknown` remains appropriate
 for external payloads and nested error causes.
 
 ## Errors and cleanup
 
 Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
 Tagged application errors use `Data.TaggedError`.
-Keep payload fields distinct from the error's `name` so they do not overwrite
-its identity. Only attach typed error handlers to Effects that can fail;
-use cause or defect handlers when those are the intended recovery targets.
-Yield tagged errors directly inside `Effect.gen`, for example
-`return yield* commandError("not_git_repo", "Not a git repository")`.
-Use `Effect.fail` when returning a failed Effect outside a generator.
-Inside generators, execute returned Effects with `return yield*` and handle
-failures with Effect APIs rather than JavaScript `try/catch`. The
-`returnEffectInGen` and `tryCatchInEffectGen` diagnostics enforce these patterns.
 
 Workspace reporters return Effects with no required services and `WctError`
 for typed failures. Reporter failures and defects, including synchronous
@@ -282,9 +274,6 @@ within an existing scope.
 
 Define configuration schemas in `src/config/schema.ts` and use the validation
 helpers in `src/config/validator.ts`.
-Inside Effect generators, use Effect-based Schema decoders and encoders to
-preserve typed failures. Construct Schema class instances with their constructor
-or `make` method; object literals and spreads do not preserve the prototype.
 
 ```ts
 import { Schema } from "effect";

@@ -22,7 +22,9 @@ export function useRefresh(onRefresh: () => void | Promise<void>) {
           (filename.endsWith(".db") || filename.endsWith("-wal"))
         ) {
           if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => refreshRef.current(), 150);
+          debounceTimer = setTimeout(() => {
+            void refreshRef.current();
+          }, 150);
         }
       });
     } catch {

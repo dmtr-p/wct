@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import {
   CliConfig,
   CliError,
@@ -49,7 +49,7 @@ function toJsonModeWctError(
     return toWctError(error);
   }
 
-  if (error instanceof CliError.UnknownSubcommand) {
+  if (Schema.is(CliError.UnknownSubcommand)(error)) {
     return commandError("unknown_command", error.message, error);
   }
 

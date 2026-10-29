@@ -38,10 +38,6 @@ export function runTuiSilentPromise<A, E>(
   effect: Effect.Effect<A, E, WctServices>,
 ): Promise<A> {
   return tuiRuntime.runPromise(
-    Effect.provideService(
-      effect,
-      Console.Console,
-      silentConsole,
-    ) as Effect.Effect<A, E, WctServices>,
+    Effect.provideService(effect, Console.Console, silentConsole),
   );
 }

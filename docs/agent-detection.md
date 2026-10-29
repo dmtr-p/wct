@@ -145,9 +145,7 @@ working, idle, unknown order; retained counts explicitly say stale. Each linked
 pane counts once per Workspace. Rows remain single-line with width-aware
 truncation. Only semantic/membership/freshness changes update presentation.
 Registry, Git, and tmux refreshes run separately on a five-second interval
-and respond to registry database changes. GitHub PR data refreshes every two
-minutes, when repositories or their worktrees change, and on explicit refresh
-actions.
+and respond to registry database changes.
 
 ## Compatibility validation
 

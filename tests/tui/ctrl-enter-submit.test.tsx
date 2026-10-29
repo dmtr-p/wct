@@ -342,7 +342,7 @@ describe("Ctrl+Enter submit", () => {
         await sendKeys(rendered.stdin, "\x1b[D");
         await sendKeys(rendered.stdin, "\x1b[D");
         await sendKeys(rendered.stdin, "p");
-        expect(rendered.lastFrame()).toContain("filter: alpha");
+        expect(rendered.lastFrame()).toContain("╭ alpha ");
         await sendKeys(rendered.stdin, CTRL_ENTER);
 
         expect(onSubmitMock).toHaveBeenCalledWith(

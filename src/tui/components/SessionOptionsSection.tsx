@@ -1,5 +1,6 @@
 import { Box } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { useCursorBlink } from "../hooks/useCursorBlink";
 import { useGuardedInput } from "../hooks/useGuardedInput";
 import { useTextEditing } from "../hooks/useTextEditing";
 import { SubmitButton, ToggleRow } from "./form-controls";
@@ -43,6 +44,11 @@ export function SessionOptionsSection({
   const filterEditing = useTextEditing(
     profileQuery,
     setProfileQuery,
+    focusedField === "profile",
+  );
+  const cursorVisible = useCursorBlink(
+    profileQuery,
+    filterEditing.cursor,
     focusedField === "profile",
   );
 
@@ -100,7 +106,16 @@ export function SessionOptionsSection({
     <Box flexDirection="column">
       {profileNames.length > 0 ? (
         <TitledBox
-          title={profileQuery ? `Profile filter: ${profileQuery}` : "Profile"}
+          title="Profile"
+          titleInput={
+            profileQuery
+              ? {
+                  value: profileQuery,
+                  cursor: filterEditing.cursor,
+                  cursorVisible,
+                }
+              : undefined
+          }
           footer={
             filteredProfiles.length > 0
               ? `${selectedProfileIndex + 1} of ${filteredProfiles.length}`
@@ -115,6 +130,7 @@ export function SessionOptionsSection({
             filterQuery={profileQuery}
             filterCursor={filterEditing.cursor}
             isFocused={focusedField === "profile"}
+            showFilter={false}
             maxVisible={5}
             onSelect={(index) => {
               onFocusField("profile");

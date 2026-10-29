@@ -129,6 +129,7 @@ interface Props {
   filterCursor?: number;
   maxVisible?: number;
   isFocused: boolean;
+  showFilter?: boolean;
   onSelect?: (index: number) => void;
   onDoubleSelect?: (index: number) => void;
 }
@@ -140,6 +141,7 @@ export function ScrollableList({
   filterCursor = graphemes(filterQuery).length,
   maxVisible = 5,
   isFocused,
+  showFilter = isFocused,
   onSelect,
   onDoubleSelect,
 }: Props) {
@@ -150,7 +152,6 @@ export function ScrollableList({
     filtered.map((item) => item.value),
   ]);
   const previousFilterStateKeyRef = useRef(filterStateKey);
-  const showFilter = isFocused;
   const visibleCapacity = Math.max(0, maxVisible - (showFilter ? 1 : 0));
   const [scrollOffset, setScrollOffset] = useState(
     () =>

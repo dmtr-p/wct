@@ -146,11 +146,16 @@ describe("PR merge confirmation", () => {
       await tick(5);
       expect(mergeFixture.fetches).toBe(2);
       expect(rendered.lines().join("\n")).toContain("Confirm: Merge now");
-      await sendKeys(rendered.stdin, "\r");
-      await sendKeys(rendered.stdin, "\r");
+      rendered.stdin.write("\r");
+      rendered.stdin.write("\r");
+      rendered.stdin.write("\x1b");
+      await tick(5);
       expect(mergeFixture.submissions).toBe(1);
+      expect(rendered.lines().join("\n")).toContain("Submitting…");
       finish("merged");
       await tick(5);
+      expect(rendered.lines().join("\n")).toContain("PR #7 merged");
+      expect(selectedLine(rendered.lines())).toContain("#7");
     } finally {
       rendered.unmount();
     }

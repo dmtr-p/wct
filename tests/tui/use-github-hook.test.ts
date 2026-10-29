@@ -16,8 +16,11 @@ import {
   sqlSetOpenPrs,
   type WorkspacePrEntry,
 } from "../../src/services/pr-cache-service";
+import type { MergeSnapshot } from "../../src/services/pr-merge-service";
 import type { OpenPrChoice, PrFacts } from "../../src/services/pr-model";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { createPrActionsController } from "../../src/tui/pr-actions";
+import { Mode } from "../../src/tui/types";
 
 vi.mock("../../src/tui/runtime", () => ({
   tuiRuntime: { runPromise: vi.fn(), runSync: vi.fn(() => null) },
@@ -1359,6 +1362,120 @@ describe("useGitHub", () => {
       harness.unmount();
     }
   });
+
+  test.each(["success", "failure"])(
+    "controller refresh after submission %s waits for an older poll before fetching current facts",
+    async (outcome) => {
+      history = [rawPr(1)];
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      let release!: () => void;
+      try {
+        await harness.waitForIdle();
+        const pr = harness.value.prData.get(key("/tmp/repo", "feature"));
+        if (!pr) throw new Error("Missing associated PR");
+        const confirmed: MergeSnapshot = {
+          pr: {
+            ...pr,
+            id: "PR-1",
+            isDraft: false,
+            reviewDecision: "APPROVED",
+            mergeable: "MERGEABLE",
+            mergeStateStatus: "CLEAN",
+          },
+          queueRequired: false,
+          methods: ["SQUASH"],
+          configurationError: null,
+        };
+        const refreshAfterCurrent = vi.fn((path: string) =>
+          harness.value.refreshAfterCurrent(path),
+        );
+        const reportError = vi.fn();
+        const controller = createPrActionsController({
+          getMode: () => Mode.Navigate,
+          setMode: vi.fn(),
+          showActionError: reportError,
+          fetchSnapshot: async () => confirmed,
+          submitMerge: async () => {
+            if (outcome === "failure") throw new Error("merge failed");
+            return "merged";
+          },
+          refresh: (path) => harness.value.refresh(path),
+          refreshAfterCurrent,
+          setExplicit: (path, branch, value) =>
+            harness.value.setExplicit(path, branch, value),
+          clearExplicit: (path, branch) =>
+            harness.value.clearExplicit(path, branch),
+          openInBrowser: vi.fn(),
+        });
+        controller.open({
+          kind: "pr",
+          repoPath: "/tmp/repo",
+          branch: "feature",
+          pr: confirmed.pr,
+          candidates: [],
+          explicit: false,
+        });
+        await harness.waitFor(() =>
+          expect(controller.getSnapshot().menu).toMatchObject({
+            mergeCheck: { status: "ready" },
+          }),
+        );
+        controller.choose("merge");
+        await harness.waitFor(() =>
+          expect(controller.getSnapshot().menu?.screen).toBe("confirm"),
+        );
+
+        // This poll captured the old facts before submission and settles afterwards.
+        const older = [...history];
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        list.mockImplementationOnce(() =>
+          Effect.promise(async () => {
+            await gate;
+            return older;
+          }),
+        );
+        vi.advanceTimersByTime(120_000);
+        await harness.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+        history = [
+          rawPr(
+            1,
+            outcome === "success" ? "MERGED" : "OPEN",
+            "feature",
+            "fork/repo",
+            "after-submission",
+          ),
+        ];
+        controller.choose("confirm");
+        await harness.waitFor(() =>
+          expect(refreshAfterCurrent).toHaveBeenCalledExactlyOnceWith(
+            "/tmp/repo",
+          ),
+        );
+        await harness.flush();
+        expect(list).toHaveBeenCalledTimes(2);
+        expect(pendingEffects.size).toBeGreaterThan(0);
+
+        release();
+        await harness.waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+        await harness.waitForIdle();
+        const current = harness.value.prData.get(key("/tmp/repo", "feature"));
+        expect(current?.headOid).toBe("after-submission");
+        expect(current?.state).toBe(outcome === "success" ? "MERGED" : "OPEN");
+        expect(list.mock.calls.map((call) => call[1])).toEqual([
+          "all",
+          "updated",
+          "updated",
+        ]);
+        if (outcome === "failure")
+          expect(reportError).toHaveBeenCalledWith("merge failed");
+      } finally {
+        release?.();
+        harness.unmount();
+      }
+    },
+  );
 
   test("an expired base repository resolution detects changes and triggers complete discovery", async () => {
     const harness = await renderHook([repo()]);

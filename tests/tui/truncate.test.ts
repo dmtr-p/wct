@@ -110,7 +110,7 @@ describe("truncateBranch", () => {
   });
 
   test("never splits an emoji ZWJ sequence when truncating", () => {
-    const family = "👨‍👩‍👧‍👦"; // one grapheme (4 code points + ZWJs), 2 columns
+    const family = "👨‍👩‍👧‍👦";
     expect(truncateBranch(family.repeat(3), 5)).toBe(`${family.repeat(2)}…`);
   });
 });
@@ -153,7 +153,7 @@ describe("truncateWithPrefix", () => {
     expect(truncateWithPrefix("1:0 ", "vim this is long", 7)).toBe("1:0 vi…");
   });
 
-  test("falls back to truncateBranch when available <= prefix.length + ellipsis", () => {
+  test("truncates when the prefix consumes the available columns", () => {
     expect(truncateWithPrefix("1:0 ", "vim this is long", 5)).toBe("1:0 …");
   });
 
@@ -181,8 +181,6 @@ describe("toSingleLine", () => {
   });
 
   test("collapses git-style multi-line stderr onto one line", () => {
-    // The exact shape that breaks the one-row-per-error budget: wrap="truncate"
-    // does not remove embedded newlines, so this MUST be collapsed before render.
     expect(toSingleLine("fatal: something went wrong\nhint: try again")).toBe(
       "fatal: something went wrong hint: try again",
     );

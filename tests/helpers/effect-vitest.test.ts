@@ -15,8 +15,6 @@ import { noopTmuxService, withTestServices } from "./services";
 describe("WctTestLayer", { concurrent: false }, () => {
   let nonGitDir: string;
 
-  // Vitest registers this beforeAll before the it.layer block below registers
-  // its own setup, so nonGitDir is initialized before any layered test body runs.
   beforeAll(() => {
     nonGitDir = mkdtempSync(join(tmpdir(), "wct-test-layer-non-git-"));
   });
@@ -74,7 +72,6 @@ describe("WctTestLayer", { concurrent: false }, () => {
 });
 
 describe("test layer tmux defaults", { concurrent: false }, () => {
-  // A regression must fail before it can create or kill a host tmux session.
   beforeEach(() => {
     vi.spyOn(processService, "execProcess").mockImplementation(() =>
       Effect.die("Unexpected host process execution"),

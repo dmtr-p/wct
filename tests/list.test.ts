@@ -137,7 +137,6 @@ describe("getAheadBehind", { concurrent: false }, () => {
   });
 
   afterAll(async () => {
-    // Remove worktree before deleting directories
     await $`git worktree remove --force ${join(worktreeDir, "feature-branch")}`
       .quiet()
       .cwd(repoDir)

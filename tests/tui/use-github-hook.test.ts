@@ -1,8 +1,10 @@
+import { Database } from "bun:sqlite";
 import { PassThrough } from "node:stream";
 import { Effect } from "effect";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
+import { runMigrations } from "../../src/services/db";
 import { GitHubService } from "../../src/services/github-service";
 import {
   type ExplicitPrAssociation,
@@ -10,9 +12,11 @@ import {
   PrCacheService,
   type PrCacheServiceApi,
   type PrDiscoverySnapshot,
+  sqlGetOpenPrs,
+  sqlSetOpenPrs,
   type WorkspacePrEntry,
 } from "../../src/services/pr-cache-service";
-import type { PrFacts } from "../../src/services/pr-model";
+import type { OpenPrChoice, PrFacts } from "../../src/services/pr-model";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 
 vi.mock("../../src/tui/runtime", () => ({
@@ -56,6 +60,7 @@ vi.mock("../../src/services/pr-details", () => ({
 const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useGitHub } = await import("../../src/tui/hooks/useGitHub");
 const runPromise = vi.mocked(tuiRuntime.runPromise);
+const runSync = vi.mocked(tuiRuntime.runSync);
 
 function rawPr(
   number: number,
@@ -298,6 +303,8 @@ describe("useGitHub", () => {
     explicitCache.clear();
     list.mockClear();
     get.mockClear();
+    runSync.mockReset();
+    runSync.mockReturnValue(null);
     runPromise.mockReset();
     runPromise.mockImplementation((<A, E>(
       effect: Effect.Effect<A, E, GitHubService | PrCacheServiceApi>,
@@ -321,6 +328,56 @@ describe("useGitHub", () => {
       expect(harness.value.prData.size).toBe(0);
     } finally {
       harness.unmount();
+    }
+  });
+
+  test("hydrates cached Open modal choices at startup and retains them when discovery fails", async () => {
+    const database = new Database(":memory:");
+    runMigrations(database);
+    const repoPath = "/tmp/repo";
+    const choices: OpenPrChoice[] = [
+      {
+        number: 7,
+        title: "Cached PR",
+        state: "OPEN",
+        headRefName: "feature",
+      },
+    ];
+    sqlSetOpenPrs(database, repoPath, choices);
+    const startupCache = PrCacheService.of({
+      ...cache,
+      getOpenPrs: (path) => Effect.sync(() => sqlGetOpenPrs(database, path)),
+    });
+    runSync.mockImplementation((<A, E>(
+      effect: Effect.Effect<A, E, PrCacheServiceApi>,
+    ) =>
+      Effect.runSync(
+        effect.pipe(Effect.provideService(PrCacheService, startupCache)),
+      )) as typeof tuiRuntime.runSync);
+    let releaseRefresh!: () => void;
+    holdList = new Promise((resolve) => {
+      releaseRefresh = resolve;
+    });
+    listError = "offline";
+    const harness = await renderHook([repo(repoPath, ["feature"])]);
+    try {
+      await settle();
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(harness.value.refreshingProjects.has(repoPath)).toBe(true);
+      expect(harness.value.openPrs.get(repoPath)).toEqual(choices);
+
+      releaseRefresh();
+      await settle();
+      expect(harness.value.errors.get(repoPath)).toContain("offline");
+      expect(harness.value.refreshingProjects.has(repoPath)).toBe(false);
+      expect(harness.value.openPrs.get(repoPath)).toEqual(choices);
+      expect(harness.value.prData.size).toBe(0);
+      expect(harness.value.associations.size).toBe(0);
+    } finally {
+      releaseRefresh();
+      harness.unmount();
+      runSync.mockReturnValue(null);
+      database.close();
     }
   });
 

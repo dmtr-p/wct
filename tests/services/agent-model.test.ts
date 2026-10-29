@@ -465,6 +465,8 @@ describe("agent classifier", () => {
     "❯ ○ impl-loop ▱▱▱▱▱▱ 0/1 · 4m42s · ↓ 49.3k tokens",
     "  ◯ impl-loop        ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱  0/1 · 30m22s · ↓ 133.9k tokens",
     "❯ ◯ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens",
+    "○ wave2-deliver-bloat ▰▰▰▰▰▰▰▰▰▱ 18/20 · 1h06m · ↓ 2.7m tokens · ⚠ Large workflow · /workflows to stop",
+    "◯ wave2-deliver-bloat ▰▰▰▰▰▰▰▰▰▱ 18/20 · 1h06m · ↓ 2.7m tokens · ⚠️ Large workflow · /workflows to stop",
   ])("Claude keeps a compacted session working with footer row %s", (row) => {
     const screen = [
       "  └ Skills restored (gh-stack, workflow-authoring)",
@@ -569,12 +571,14 @@ describe("agent classifier", () => {
     const row = "○ impl-loop ▰▰▰▰▰▱ 5/6 · 1h42m · ↓ 1.0m tokens";
     for (const footer of [
       row.replace("5/6", "6/6"),
+      `${row.replace("5/6", "6/6")} · ⚠ Large workflow · /workflows to stop`,
       row.replace("○", "◯").replace("5/6", "6/6"),
       row.replace("5/6", "7/6"),
       row.replace("5/6", "0/0"),
       row.replace("○", "✓"),
       row.replace("○", "✗"),
       row.replace("○", "⏸"),
+      `${row.replace("○", "⏸")} · ⚠ Large workflow · /workflows to stop`,
       row.replace(" · ↓ 1.0m tokens", ""),
       "⏵⏵ auto mode on · 1 shell, 1 monitor",
     ])

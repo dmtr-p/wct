@@ -387,13 +387,20 @@ describe("Ctrl+Enter submit", () => {
   });
 
   describe("AddProjectModal", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
+    afterEach(() => vi.useRealTimers());
+
     test("Ctrl+Enter from path field fires onSubmit with nameManuallyEdited=false (name never touched)", async () => {
       runPromiseMock.mockResolvedValue(true);
       const onSubmitMock = vi.fn();
       const rendered = await renderAddProjectModal(onSubmitMock);
 
       try {
-        await new Promise((r) => setTimeout(r, 150));
+        await vi.advanceTimersByTimeAsync(100);
+        await rendered.flush();
+        expect(rendered.lastFrame()).toContain("Path ✓");
         await sendKeys(rendered.stdin, CTRL_ENTER);
 
         expect(onSubmitMock).toHaveBeenCalledTimes(1);
@@ -415,9 +422,11 @@ describe("Ctrl+Enter submit", () => {
       const rendered = await renderAddProjectModal(onSubmitMock);
 
       try {
-        await new Promise((r) => setTimeout(r, 150));
+        await vi.advanceTimersByTimeAsync(100);
+        await rendered.flush();
+        expect(rendered.lastFrame()).toContain("Path ✓");
         await sendKeys(rendered.stdin, ENTER);
-        await new Promise((r) => setTimeout(r, 0));
+        await rendered.flush();
         await sendKeys(
           rendered.stdin,
           "\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f",
@@ -426,7 +435,7 @@ describe("Ctrl+Enter submit", () => {
         await sendKeys(rendered.stdin, "\x1b[D");
         await sendKeys(rendered.stdin, "o");
         expect(rendered.lastFrame()).toContain("my-proj");
-        await new Promise((r) => setTimeout(r, 0));
+        await rendered.flush();
         await sendKeys(rendered.stdin, CTRL_ENTER);
 
         expect(onSubmitMock).toHaveBeenCalledTimes(1);
@@ -442,11 +451,15 @@ describe("Ctrl+Enter submit", () => {
     });
 
     test("Ctrl+Enter with a non-git path is a silent no-op", async () => {
+      runPromiseMock.mockResolvedValue(false);
       const onSubmitMock = vi.fn();
       const rendered = await renderAddProjectModal(onSubmitMock);
 
       try {
-        await new Promise((r) => setTimeout(r, 150));
+        await vi.advanceTimersByTimeAsync(100);
+        await rendered.flush();
+        expect(runPromiseMock).toHaveBeenCalled();
+        expect(rendered.lastFrame()).not.toContain("Path ✓");
         await sendKeys(rendered.stdin, CTRL_ENTER);
 
         expect(onSubmitMock).not.toHaveBeenCalled();
@@ -461,9 +474,11 @@ describe("Ctrl+Enter submit", () => {
       const rendered = await renderAddProjectModal(onSubmitMock);
 
       try {
-        await new Promise((r) => setTimeout(r, 150));
+        await vi.advanceTimersByTimeAsync(100);
+        await rendered.flush();
+        expect(rendered.lastFrame()).toContain("Path ✓");
         await sendKeys(rendered.stdin, ENTER);
-        await new Promise((r) => setTimeout(r, 0));
+        await rendered.flush();
         expect(onSubmitMock).not.toHaveBeenCalled();
         await sendKeys(rendered.stdin, CTRL_ENTER);
 

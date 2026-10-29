@@ -1,4 +1,5 @@
-import { Effect } from "effect";
+import { Config, Effect } from "effect";
+import { loadRuntimeConfig } from "../effect/config";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { spawnInteractive } from "../services/process";
@@ -26,7 +27,9 @@ export function cdCommand(
       );
     }
 
-    const shell = process.env.SHELL ?? "/bin/sh";
+    const shell = yield* loadRuntimeConfig(
+      Config.String("SHELL").pipe(Config.withDefault("/bin/sh")),
+    );
 
     yield* logger.info(`Entering ${worktree.path} (exit to return)`);
 

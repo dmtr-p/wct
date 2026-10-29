@@ -1,4 +1,5 @@
 import { PassThrough } from "node:stream";
+import { setImmediate } from "node:timers/promises";
 import type React from "react";
 import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
@@ -49,7 +50,8 @@ function createStdoutStdin() {
 
 export async function tick(count = 1) {
   for (let i = 0; i < count; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Keep input scheduling real when a test controls application timers.
+    await setImmediate();
   }
 }
 
@@ -70,15 +72,16 @@ export async function renderWithInput(node: React.ReactElement) {
     exitOnCtrlC: false,
   });
 
-  await tick(2);
+  await instance.waitUntilRenderFlush();
 
   return {
     stdin,
     output: () => stripAnsi(chunks.join("")),
     lastFrame: () => stripAnsi(chunks.at(-1) ?? ""),
+    flush: () => instance.waitUntilRenderFlush(),
     async rerender(next: React.ReactElement) {
       instance.rerender(next);
-      await tick(2);
+      await instance.waitUntilRenderFlush();
     },
     unmount() {
       instance.unmount();

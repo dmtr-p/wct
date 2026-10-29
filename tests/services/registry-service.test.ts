@@ -87,7 +87,7 @@ describe("registry-service", () => {
           const registry = yield* RegistryService;
           yield* registry.listRepos;
 
-          const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
+          const db = new Database(join(tempDir, ".wct", "wct.db"), {
             readonly: true,
           });
           try {
@@ -176,8 +176,8 @@ describe("registry-service", () => {
         Effect.gen(function* () {
           // Simulate a legacy DB: create the registry table directly,
           // insert a row, but do NOT create schema_version.
-          const dbPath = `${process.env.HOME}/.wct/wct.db`;
-          mkdirSync(`${process.env.HOME}/.wct`, { recursive: true });
+          const dbPath = join(tempDir, ".wct", "wct.db");
+          mkdirSync(join(tempDir, ".wct"), { recursive: true });
           const legacy = new Database(dbPath, { create: true });
           legacy.run("PRAGMA journal_mode=WAL");
           legacy.run(`CREATE TABLE registry (
@@ -221,7 +221,7 @@ describe("registry-service", () => {
         yield* registry.listRepos;
         yield* registry.listRepos;
 
-        const db = new Database(`${process.env.HOME}/.wct/wct.db`, {
+        const db = new Database(join(tempDir, ".wct", "wct.db"), {
           readonly: true,
         });
         try {

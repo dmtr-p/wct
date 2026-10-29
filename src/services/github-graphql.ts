@@ -59,13 +59,14 @@ export function queryGitHub(
       stdout: result.stdout,
       transportError: null as string | null,
     })),
-    Effect.catch((error) =>
-      error instanceof ProcessExitError && error.stdout.trim()
-        ? Effect.succeed({
-            stdout: error.stdout,
-            transportError: getProcessErrorMessage(error),
-          })
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) =>
+        error instanceof ProcessExitError && error.stdout.trim().length > 0,
+      (error) =>
+        Effect.succeed({
+          stdout: error.stdout,
+          transportError: getProcessErrorMessage(error),
+        }),
     ),
     Effect.flatMap(({ stdout, transportError }) =>
       Effect.try({

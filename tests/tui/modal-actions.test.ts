@@ -1240,7 +1240,7 @@ describe("open lifecycle reconciliation", () => {
     });
     const discoverClient = vi.fn().mockImplementation(async () => {
       order.push(`discover(lifecycle=${tracker.state.size})`);
-      return { type: "single", client: null } as unknown as TmuxClientDiscovery;
+      return { type: "single", client: null };
     });
     const switchSession = vi.fn().mockImplementation(async () => {
       order.push(`switch(lifecycle=${tracker.state.size})`);

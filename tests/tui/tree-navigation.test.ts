@@ -67,7 +67,7 @@ function rowsFor(items: TreeItem[]): TreeRow[] {
   return items.map((item, itemIndex) => ({
     kind: item.type === "repo" ? "repo" : "worktree",
     itemIndex,
-  })) as TreeRow[];
+  }));
 }
 
 function snapshot(

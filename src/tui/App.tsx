@@ -354,7 +354,9 @@ export function App() {
         expandedPrKeys,
         panes,
         agents: agents.observations,
-        jumpToPane,
+        jumpToPane: (paneId) => {
+          void jumpToPane(paneId);
+        },
       }),
     [
       filteredRepos,
@@ -1059,6 +1061,7 @@ export function App() {
   }
 
   function submitConfirm() {
+    if (!isConfirmMode(mode)) return;
     if (confirmationAnchorItemIndex === null) {
       cancelConfirm();
       return;

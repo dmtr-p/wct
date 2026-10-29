@@ -25,6 +25,8 @@ const SINGLE_PRESS = "\x1b[<0;12;38M";
 const SINGLE_RELEASE = "\x1b[<0;12;38m";
 const click = (col: number, row: number) => `\x1b[<0;${col};${row}M`;
 
+afterEach(() => vi.useRealTimers());
+
 function renderNewBranchForm(onSubmit: (result: unknown) => void) {
   return renderWithInput(
     <NewBranchForm
@@ -95,6 +97,7 @@ describe("modal text inputs never consume mouse sequences as text", () => {
   });
 
   test("AddProjectModal PathInput: a batched click chunk does not corrupt the path", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     runPromiseMock.mockResolvedValue(true); // git-repo check passes; completions fail harmlessly
     const onSubmitMock = vi.fn();
     const rendered = await renderWithInput(
@@ -107,7 +110,9 @@ describe("modal text inputs never consume mouse sequences as text", () => {
     );
 
     try {
-      await new Promise((r) => setTimeout(r, 150)); // past the git-check debounce
+      await vi.advanceTimersByTimeAsync(100);
+      await rendered.flush();
+      expect(rendered.lastFrame()).toContain("Path ✓");
       await sendKeys(rendered.stdin, BATCHED_CLICK);
       await sendKeys(rendered.stdin, CTRL_ENTER);
 

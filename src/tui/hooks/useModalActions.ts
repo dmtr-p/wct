@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import { registerProject } from "../../services/project-registration";
 import {
@@ -75,8 +75,8 @@ export interface ModalActionDeps extends SessionHandoffDeps {
   // the render-time `filteredRepos` capture.
   refreshAll: () => Promise<RepoInfo[] | null>;
 
-  upModalReturnModeRef: MutableRefObject<Mode>;
-  modalReturnModeRef: MutableRefObject<Mode>;
+  upModalReturnModeRef: RefObject<Mode>;
+  modalReturnModeRef: RefObject<Mode>;
 }
 
 export function createPrepareOpenModal(deps: ModalActionDeps) {

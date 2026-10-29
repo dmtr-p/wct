@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import type { ResolvedConfig } from "../config/schema";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
+import { processEnvironment } from "./process";
 import type {
   WorkspaceCloseResult,
   WorkspaceDownResult,
@@ -105,11 +106,12 @@ export function runDetachedShutdown(
     void completed.promise.catch(() => undefined);
     let events = Promise.resolve();
     let started = false;
+    const env = yield* processEnvironment;
     const child = yield* Effect.try({
       try: () =>
         Bun.spawn(shutdownWorkerCommand(directory), {
           cwd: request.shutdown?.env.WCT_MAIN_DIR ?? request.cwd,
-          env: { ...process.env },
+          env,
           detached: true,
           stdin: "ignore",
           stdout: "ignore",

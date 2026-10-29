@@ -75,7 +75,7 @@ export function AddProjectModal({
       return;
     }
     let cancelled = false;
-    const timer = setTimeout(async () => {
+    const checkRepository = async () => {
       try {
         const gitPath = expanded.endsWith("/")
           ? `${expanded}.git`
@@ -90,6 +90,9 @@ export function AddProjectModal({
       } catch {
         if (!cancelled) setIsGitRepo(false);
       }
+    };
+    const timer = setTimeout(() => {
+      void checkRepository();
     }, 100);
     return () => {
       cancelled = true;

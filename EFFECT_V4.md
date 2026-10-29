@@ -21,11 +21,19 @@ CI uses `bun run lint` and the stop hooks use `mise run lint:fix` to report
 TypeScript errors, lint issues, and Effect diagnostics in one Oxlint run.
 Errors and warnings fail the check; suggestions are shown only in the editor.
 Oxlint uses the Effect-aware schema and `effecttsgo` plugin in `.oxlintrc.json`
-with both `options.typeAware` and `options.typeCheck` enabled. Its explicit
-Effect rules match the compiler's
-error and warning severities, including the configured diagnostics in
-`tsconfig.json`; keep these configurations aligned. Suggestion-level refactors
-are left to the editor rather than promoted to lint warnings.
+with both `options.typeAware` and `options.typeCheck` enabled. It extends
+`@effect/tsgo/oxlint-presets/strict.json`, which reports its Effect rules as
+errors, including refactors otherwise offered as editor suggestions. Explicit
+Effect rules retain warning-level checks for error/context types, native Error
+subclasses, and unsafe Effect type assertions that the preset does not cover.
+Additional error-level rules require Effect clock, logging, HTTP, random,
+Crypto, Config, and timer APIs inside generators, schema-aware checks for Schema
+types, and no redundant nested generators. Effect composition uses `Effect.gen`
+or `Effect.fn` rather than `Effect.Do` helpers. TypeScript rules check promise misuse, exhaustive
+switches over union types, deprecated APIs, redundant type assertions, and
+non-Error throws and promise rejections.
+The language service diagnostics in `tsconfig.json` configure editor feedback
+independently of Oxlint's strict severities.
 Bun's built-in formatter owns formatting and import sorting through the
 `[fmt]` and `[fmt.sortImports]` sections in `bunfig.toml`.
 The React Compiler rules for refs, state updates in effects, globals, and
@@ -207,6 +215,13 @@ Bun services, and call `BunRuntime.runMain`.
   its outcome outside the target checkout before exiting.
 - Use `Bun.YAML.parse`, `Bun.Glob`, and `Bun.which` for their respective runtime
   primitives.
+- Read runtime settings with `loadRuntimeConfig` from `src/effect/config.ts`.
+  It preserves an explicit Config provider and otherwise reads a fresh
+  environment snapshot on each execution, preserving empty strings. Subprocess
+  inheritance uses `processEnvironment` from `src/services/process.ts` to copy the complete
+  environment independently of Config overrides.
+- Wrap IPC listeners in `Effect.callback` with interruption cleanup. The
+  shutdown worker's handoff uses a 30-second Effect timeout.
 - Use `FileSystem.lstat` when selecting regular files without following
   symlinks. Keep filesystem dependencies available during service construction;
   use `FileSystem.makeNoop` for partial test implementations. Stat metadata uses

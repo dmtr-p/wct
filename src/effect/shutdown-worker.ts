@@ -2,7 +2,7 @@ import type { EventEmitter } from "node:events";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Cause, Effect } from "effect";
-import { commandError } from "../errors";
+import { commandError, type WctError } from "../errors";
 import type {
   ShutdownMessage,
   ShutdownOutcome,
@@ -17,6 +17,57 @@ function send(message: ShutdownMessage) {
   } catch {
     /* The IPC peer may exit between the check and send. */
   }
+}
+
+export function waitForShutdownStart(
+  ipcEvents: EventEmitter,
+  sendReady: () => void,
+) {
+  return Effect.callback<void, WctError>((resume) => {
+    const cleanup = () => {
+      ipcEvents.removeListener("message", onMessage);
+      ipcEvents.removeListener("disconnect", onDisconnect);
+    };
+    const onMessage = (message: unknown) => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "_tag" in message &&
+        message._tag === "Start"
+      ) {
+        cleanup();
+        resume(Effect.void);
+      }
+    };
+    const onDisconnect = () => {
+      cleanup();
+      resume(
+        Effect.fail(
+          commandError(
+            "unexpected_error",
+            "Shutdown handoff failed",
+            new Error("Shutdown caller exited before handoff"),
+          ),
+        ),
+      );
+    };
+    ipcEvents.on("message", onMessage);
+    ipcEvents.on("disconnect", onDisconnect);
+    sendReady();
+    return Effect.sync(cleanup);
+  }).pipe(
+    Effect.timeoutOrElse({
+      duration: "30 seconds",
+      orElse: () =>
+        Effect.fail(
+          commandError(
+            "unexpected_error",
+            "Shutdown handoff failed",
+            new Error("Shutdown handoff timed out"),
+          ),
+        ),
+    }),
+  );
 }
 
 export function runShutdownWorker(directory: string) {
@@ -41,40 +92,7 @@ export function runShutdownWorker(directory: string) {
     });
     // Bun's Process overloads hide the inherited IPC event signatures.
     const ipcEvents: EventEmitter = process;
-    yield* Effect.tryPromise({
-      try: () =>
-        new Promise<void>((resolve, reject) => {
-          const cleanup = () => {
-            ipcEvents.removeListener("message", onMessage);
-            ipcEvents.removeListener("disconnect", onDisconnect);
-            clearTimeout(timeout);
-          };
-          const onMessage = (message: unknown) => {
-            if (
-              typeof message === "object" &&
-              message !== null &&
-              "_tag" in message &&
-              message._tag === "Start"
-            ) {
-              cleanup();
-              resolve();
-            }
-          };
-          const onDisconnect = () => {
-            cleanup();
-            reject(new Error("Shutdown caller exited before handoff"));
-          };
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error("Shutdown handoff timed out"));
-          }, 30000);
-          ipcEvents.on("message", onMessage);
-          ipcEvents.on("disconnect", onDisconnect);
-          send({ _tag: "Ready" });
-        }),
-      catch: (error) =>
-        commandError("unexpected_error", "Shutdown handoff failed", error),
-    });
+    yield* waitForShutdownStart(ipcEvents, () => send({ _tag: "Ready" }));
     const outcome: ShutdownOutcome = yield* executeWorkspaceShutdown(request, {
       event: (event) => Effect.sync(() => send({ _tag: "Event", event })),
     }).pipe(

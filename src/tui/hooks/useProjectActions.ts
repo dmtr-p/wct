@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { Effect } from "effect";
-import type { MutableRefObject } from "react";
+import type { RefObject } from "react";
 import { toWctError } from "../../errors";
 import { PrCacheService } from "../../services/pr-cache-service";
 import { RegistryService } from "../../services/registry-service";
@@ -31,7 +31,7 @@ export interface ProjectActionDeps {
     sessionNames: readonly string[],
   ) => Promise<boolean>;
 
-  confirmRemoveProjectReturnModeRef: MutableRefObject<Mode>;
+  confirmRemoveProjectReturnModeRef: RefObject<Mode>;
 }
 
 function restoreProjectUi(deps: ProjectActionDeps) {

@@ -113,8 +113,8 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
     case "PrMenu":
     case "UpModal":
     case "AddProjectModal":
-      return hasRepoError ? 1 : 0;
-    default:
+    case "Navigate":
+    case "Expanded":
       return hasRepoError ? 1 : 0;
   }
 }

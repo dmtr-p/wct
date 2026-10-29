@@ -1,6 +1,7 @@
 import type { BunServices } from "@effect/platform-bun";
-import { Context, Effect } from "effect";
+import { Config, Context, Effect } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
+import { loadRuntimeConfig } from "../effect/config";
 import {
   captureBunService,
   type ServiceImplementation,
@@ -484,15 +485,19 @@ function killPaneImpl(paneId: string) {
   return execProcess("tmux", ["kill-pane", "-t", paneId]).pipe(Effect.asVoid);
 }
 
-const getCurrentSessionImpl = Effect.suspend(() => {
-  if (!process.env.TMUX) {
-    return Effect.succeed(null);
-  }
+const getCurrentSessionImpl = Effect.gen(function* () {
+  const { tmux, pane } = yield* loadRuntimeConfig(
+    Config.all({
+      tmux: Config.String("TMUX").pipe(Config.withDefault("")),
+      pane: Config.String("TMUX_PANE").pipe(Config.withDefault("")),
+    }),
+  );
+  if (!tmux) return null;
 
-  return Effect.orElseSucceed(
+  return yield* Effect.orElseSucceed(
     execProcess("tmux", [
       "display-message",
-      ...(process.env.TMUX_PANE ? ["-t", process.env.TMUX_PANE] : []),
+      ...(pane ? ["-t", pane] : []),
       "-p",
       "#S",
     ]).pipe(Effect.map((result) => result.stdout.trim())),

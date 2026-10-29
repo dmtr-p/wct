@@ -168,7 +168,9 @@ export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
               ? 0
               : Math.max(0, 1000 - (Date.now() - started));
           requested = false;
-          timer = setTimeout(observe, delay);
+          timer = setTimeout(() => {
+            void observe();
+          }, delay);
         }
       }
     };

@@ -86,7 +86,7 @@ export function PathInput({
     if (cancelledRef.current) cancelledRef.current.cancelled = true;
     const token = { cancelled: false };
     cancelledRef.current = token;
-    debounceRef.current = setTimeout(async () => {
+    const updateCompletions = async () => {
       const expanded = expandTilde(inputValue);
       const { parent } = getParentAndPrefix(expanded);
       try {
@@ -116,6 +116,9 @@ export function PathInput({
         setSelectedCompletionIndex(0);
         setCompletionScrollOffset(0);
       }
+    };
+    debounceRef.current = setTimeout(() => {
+      void updateCompletions();
     }, 100);
   }, []);
 

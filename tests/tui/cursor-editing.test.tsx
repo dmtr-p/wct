@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useState } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 // Force the regular blink phase off so movement visibility must come from
 // the editing hold, not from a conveniently visible animation frame.
@@ -20,6 +20,8 @@ const HOME = "\x1b[H";
 const END = "\x1b[F";
 const DELETE = "\x1b[3~";
 const DOWN = "\x1b[B";
+
+afterEach(() => vi.useRealTimers());
 
 function renderBranch(onSubmit: (result: unknown) => void) {
   return renderWithInput(
@@ -76,6 +78,7 @@ describe("cursor editing through Ink stdin", () => {
   });
 
   test("moving left within a path does not insert a blank column", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const view = await renderWithInput(<PathFixture />);
     try {
       await sendKeys(view.stdin, LEFT);
@@ -84,7 +87,11 @@ describe("cursor editing through Ink stdin", () => {
       expect(view.lastFrame()).not.toContain("~/tes t");
       await sendKeys(view.stdin, RIGHT);
       expect(view.lastFrame()).toContain("~/test▎");
-      await new Promise((resolve) => setTimeout(resolve, 750));
+      await vi.advanceTimersByTimeAsync(699);
+      await view.flush();
+      expect(view.lastFrame()).toContain("~/test▎");
+      await vi.advanceTimersByTimeAsync(1);
+      await view.flush();
       expect(view.lastFrame()).not.toContain("~/test▎");
     } finally {
       view.unmount();

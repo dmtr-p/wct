@@ -1,5 +1,6 @@
 import { basename } from "node:path";
-import { Effect } from "effect";
+import { Config, Effect } from "effect";
+import { loadRuntimeConfig } from "../effect/config";
 import { commandError } from "../errors";
 import { formatSessionName, TmuxService } from "../services/tmux";
 import { WorktreeService } from "../services/worktree-service";
@@ -35,7 +36,10 @@ export function switchCommand(branch: string) {
       );
     }
 
-    if (process.env.TMUX) {
+    const tmux = yield* loadRuntimeConfig(
+      Config.String("TMUX").pipe(Config.withDefault("")),
+    );
+    if (tmux) {
       yield* TmuxService.use((service) => service.switchSession(sessionName));
       yield* logger.success(`Switched to session '${sessionName}'`);
       return;

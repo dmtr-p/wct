@@ -182,6 +182,7 @@ describe("process", () => {
     async (failure) => {
       const kill = vi.fn();
       vi.spyOn(Bun, "spawn").mockReturnValue({
+        // eslint-disable-next-line typescript/prefer-promise-reject-errors -- verify external non-Error rejections preserve their cause
         exited: Promise.reject(failure),
         exitCode: 1,
         signalCode: null,

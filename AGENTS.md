@@ -96,6 +96,7 @@ src/
 │   ├── lifecycle.ts       # Per-workspace lifecycle progress, keyed by Workspace Identity
 │   ├── pr-layout.ts       # Terminal-width-aware PR title wrapping
 │   ├── pr-status.ts       # Compact PR status presentation
+│   ├── pr-actions.ts      # Typed PR menu state, requests, transitions, and options
 │   ├── session-utils.ts   # Safe tmux client handoff decisions and start action messages
 │   ├── session-handoff.ts # Open/up client switching after lifecycle presentation cleanup
 │   ├── workspace-warning.ts # Shared lifecycle warning messages
@@ -141,6 +142,7 @@ src/
 │   │   ├── useSessionActions.ts # Tmux handoff and start/down/close worktree actions
 │   │   ├── useModalActions.ts # Open/up/add modal orchestration
 │   │   ├── useProjectActions.ts # Project removal and safe session handoff
+│   │   ├── usePrActions.ts # React binding and service wiring for PR actions
 │   │   ├── useSessionOptionsState.ts # Shared session option state
 │   │   ├── useActionError.ts # Timed action error state
 │   │   ├── useRegistry.ts # Fetch repos from DB, discover worktrees via git

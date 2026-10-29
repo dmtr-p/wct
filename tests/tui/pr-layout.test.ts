@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { prLabelStart, wrapPrLabel } from "../../src/tui/pr-layout";
+import { wrapPrTitle } from "../../src/tui/pr-layout";
 import { displayWidth } from "../../src/tui/utils/display-width";
 
 describe("displayWidth", () => {
@@ -24,31 +24,20 @@ describe("displayWidth", () => {
   });
 });
 
-describe("prLabelStart", () => {
-  test("reserves the five-column indent with no cursor glyph", () => {
-    expect(prLabelStart(false)).toBe(5);
-  });
-
-  test("reserves an extra 2 columns for the rollup icon", () => {
-    expect(prLabelStart(true)).toBe(7);
-  });
-});
-
-describe("wrapPrLabel", () => {
+describe("wrapPrTitle", () => {
   test("keeps a short label on a single line", () => {
-    expect(wrapPrLabel("PR #1: short (OPEN)", 80, true)).toEqual([
+    expect(wrapPrTitle("PR #1: short (OPEN)", 80)).toEqual([
       "PR #1: short (OPEN)",
     ]);
   });
 
   test("wraps a long label onto multiple lines at word boundaries", () => {
-    const lines = wrapPrLabel(
+    const lines = wrapPrTitle(
       "PR #1: a very long pull request title that certainly wraps (OPEN)",
       40,
-      true,
     );
     expect(lines.length).toBeGreaterThan(1);
-    const budget = 40 - prLabelStart(true);
+    const budget = 31;
     for (const line of lines) {
       expect(displayWidth(line)).toBeLessThanOrEqual(budget);
     }
@@ -58,8 +47,8 @@ describe("wrapPrLabel", () => {
   });
 
   test("hard-breaks a single word longer than the budget", () => {
-    const lines = wrapPrLabel("x".repeat(50), 20, false);
-    const budget = 20 - prLabelStart(false);
+    const lines = wrapPrTitle("x".repeat(50), 20);
+    const budget = 11;
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
       expect(displayWidth(line)).toBeLessThanOrEqual(budget);
@@ -68,11 +57,11 @@ describe("wrapPrLabel", () => {
   });
 
   test("never returns zero lines for an empty label", () => {
-    expect(wrapPrLabel("", 80, false)).toEqual([""]);
+    expect(wrapPrTitle("", 80)).toEqual([""]);
   });
 
   test("wraps by display width, not code points, for a CJK title", () => {
-    const lines = wrapPrLabel("日本語のタイトル", 20, false);
+    const lines = wrapPrTitle("日本語のタイトル", 24);
     expect(lines).toEqual(["日本語のタイト", "ル"]);
     for (const line of lines) {
       expect(displayWidth(line)).toBeLessThanOrEqual(15);
@@ -80,13 +69,13 @@ describe("wrapPrLabel", () => {
   });
 
   test("wraps emoji words by their two-column width", () => {
-    const lines = wrapPrLabel("fix 🎉🎉🎉🎉🎉", 18, false);
+    const lines = wrapPrTitle("fix 🎉🎉🎉🎉🎉", 22);
     expect(lines).toEqual(["fix", "🎉🎉🎉🎉🎉"]);
   });
 
   test("never splits an emoji ZWJ sequence when hard-breaking", () => {
     const family = "👨‍👩‍👧‍👦"; // one grapheme (4 code points + ZWJs), 2 columns
-    const lines = wrapPrLabel(family.repeat(4), 12, false);
+    const lines = wrapPrTitle(family.repeat(4), 16);
     expect(lines).toEqual([family.repeat(3), family]);
   });
 });

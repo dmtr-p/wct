@@ -10,6 +10,7 @@ import {
   resolveSelectedPane,
 } from "../../src/tui/tree-helpers";
 import { Mode, type PaneInfo, type TreeItem } from "../../src/tui/types";
+import { prFacts } from "../helpers/pr";
 
 describe("buildTreeItems", () => {
   test("PR and pane details and confirmations belong to the selected Workspace when display names collide", () => {
@@ -45,13 +46,13 @@ describe("buildTreeItems", () => {
       prData: new Map([
         [
           workspaceKey,
-          {
+          prFacts({
             number: 2,
             title: "Second repository PR",
             state: "OPEN" as const,
             headRefName: branch,
-            rollupState: null,
-          },
+            checks: [],
+          }),
         ],
       ]),
       panes,
@@ -59,7 +60,7 @@ describe("buildTreeItems", () => {
     });
     const details = items.filter((item) => item.type === "detail");
     expect(details.map((item) => item.repoIndex)).toEqual([1, 1, 1]);
-    expect(details[0]?.label).toContain("PR #2");
+    expect(details[0]?.label).toContain("#2");
     const paneIndex = items.findIndex(
       (item) => item.type === "detail" && item.detailKind === "pane",
     );
@@ -150,23 +151,23 @@ describe("buildTreeItems", () => {
     const prData = new Map([
       [
         workspaceIdentityKey("/tmp/example-repo", "main"),
-        {
+        prFacts({
           number: 1,
           title: "Main PR",
           state: "OPEN" as const,
           headRefName: "main",
-          rollupState: null,
-        },
+          checks: [],
+        }),
       ],
       [
         workspaceIdentityKey("/tmp/example-repo", "feature"),
-        {
+        prFacts({
           number: 2,
           title: "Feature PR",
           state: "OPEN" as const,
           headRefName: "feature",
-          rollupState: null,
-        },
+          checks: [],
+        }),
       ],
     ]);
 

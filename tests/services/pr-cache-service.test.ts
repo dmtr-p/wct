@@ -15,7 +15,7 @@ import {
   sqlSetOpenPrs,
 } from "../../src/services/pr-cache-service";
 import { normalizeGhPr } from "../../src/services/pr-discovery";
-import type { PRInfo } from "../../src/tui/types";
+import type { OpenPrChoice } from "../../src/services/pr-model";
 
 function makeDb(): Database {
   const db = new Database(":memory:");
@@ -24,20 +24,18 @@ function makeDb(): Database {
   return db;
 }
 
-const PR_A: PRInfo = {
+const PR_A: OpenPrChoice = {
   number: 1,
   title: "feat: add thing",
   state: "OPEN",
   headRefName: "feat/thing",
-  rollupState: "success",
 };
 
-const PR_B: PRInfo = {
+const PR_B: OpenPrChoice = {
   number: 2,
   title: "fix: broken thing",
   state: "OPEN",
   headRefName: "fix/broken",
-  rollupState: "failure",
 };
 
 describe("PrCacheService SQL helpers", () => {

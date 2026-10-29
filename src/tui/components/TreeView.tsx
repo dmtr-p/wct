@@ -2,13 +2,14 @@ import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
 import type { WorkspacePrEntry } from "../../services/pr-cache-service";
+import type { PrFacts } from "../../services/pr-model";
 import { formatSessionName } from "../../services/tmux";
 import { formatSync } from "../../services/worktree-service";
 import type { WorkspaceAgentSnapshot } from "../hooks/useAgents";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { type LifecycleState, workspaceIdentityKey } from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
-import type { PaneInfo, PRInfo, TreeItem } from "../types";
+import type { PaneInfo, TreeItem } from "../types";
 import { ConfirmModal, type ConfirmMode } from "./ConfirmModal";
 import { DetailRow } from "./DetailRow";
 import { LifecycleProgressRow } from "./LifecycleProgressRow";
@@ -27,7 +28,7 @@ interface Props {
   rows: TreeRow[];
   hoveredItemIndex?: number | null;
   lifecycle?: LifecycleState;
-  prData: Map<string, PRInfo>;
+  prData: Map<string, PrFacts>;
   associations?: Map<string, WorkspacePrEntry>;
   panes: Map<string, PaneInfo[]>;
   expandedWorkspaceKeys?: Set<string>;
@@ -128,7 +129,7 @@ interface RenderRowContext {
   expandedWorkspaceKeys?: Set<string>;
   lifecycle: LifecycleState;
   sessionMap: Map<string, { name: string; attached: boolean }>;
-  prData: Map<string, PRInfo>;
+  prData: Map<string, PrFacts>;
   associations?: Map<string, WorkspacePrEntry>;
   panes: Map<string, PaneInfo[]>;
   maxWidth: number;
@@ -303,7 +304,6 @@ function renderDetailRow(
       isSelected={idx === ctx.selectedIndex}
       isHovered={idx === ctx.hoveredItemIndex}
       maxWidth={ctx.maxWidth}
-      pieceIndex={pieceIndex}
       prLine={prLine}
     />
   );

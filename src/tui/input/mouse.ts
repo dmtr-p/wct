@@ -131,12 +131,7 @@ export function resolveTreeDoubleClickAction(
         }
       : { type: "expand-worktree", workspaceKey };
   }
-  if (
-    item.type === "detail" &&
-    (item.detailKind === "pane" ||
-      (item.detailKind === "pr" && !item.meta.prKey)) &&
-    item.action
-  ) {
+  if (item.type === "detail" && item.detailKind === "pane" && item.action) {
     return { type: "activate-detail", action: item.action };
   }
   return { type: "noop" };

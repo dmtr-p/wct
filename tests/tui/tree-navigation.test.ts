@@ -13,6 +13,7 @@ import {
   type TreeNavigationState,
 } from "../../src/tui/tree-navigation";
 import type { TreeItem } from "../../src/tui/types";
+import { prRowMeta } from "../helpers/pr";
 
 const repos: RepoInfo[] = [
   {
@@ -481,7 +482,7 @@ describe("tree navigation sequences", () => {
       worktreeIndex: 0,
       detailKind: "pr",
       label: "#42",
-      meta: { rollupState: null },
+      meta: prRowMeta(),
     };
     const beforeItems = [
       ...baseItems.slice(0, 2),

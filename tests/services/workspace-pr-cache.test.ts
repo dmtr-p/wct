@@ -121,7 +121,6 @@ describe("Workspace PR cache", () => {
         title: "open",
         state: "OPEN" as const,
         headRefName: "feature",
-        rollupState: null,
       },
     ];
     try {
@@ -186,14 +185,12 @@ describe("Workspace PR cache", () => {
         title: "open",
         state: "OPEN",
         headRefName: "a",
-        rollupState: null,
       },
       {
         number: 2,
         title: "merged",
         state: "MERGED",
         headRefName: "b",
-        rollupState: null,
       },
     ]);
     expect(

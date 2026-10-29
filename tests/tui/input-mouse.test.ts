@@ -20,9 +20,11 @@ import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
   buildTreeRows,
+  prExpansionKey,
   type TreeRow,
 } from "../../src/tui/tree-helpers";
 import { Mode, type PaneInfo } from "../../src/tui/types";
+import { prFacts, prRowMeta } from "../helpers/pr";
 
 describe("add-project button mouse targeting", () => {
   test("matches a left click on the right-aligned header button", () => {
@@ -240,7 +242,7 @@ describe("double-click actions", () => {
     ).toBe(false);
   });
 
-  test("toggles worktrees and activates only PR or pane details", () => {
+  test("toggles worktrees and leaves associated PR expansion to the App", () => {
     const repo = {
       id: "repo-1",
       repoPath: "/tmp/alpha",
@@ -280,12 +282,11 @@ describe("double-click actions", () => {
       worktreeIndex: 0,
       detailKind: "pr",
       label: "PR #1",
-      meta: { rollupState: null },
+      meta: prRowMeta(),
       action,
     } as const;
     expect(resolveTreeDoubleClickAction(pr, [repo], new Set())).toEqual({
-      type: "activate-detail",
-      action,
+      type: "noop",
     });
   });
 });
@@ -677,25 +678,19 @@ describe("resolveMouseAction", () => {
     });
   });
 
-  test("Expanded: a click on a wrapped PR's continuation row selects the PR", () => {
+  test("Expanded: a click on a wrapped title continuation row selects the title", () => {
     const branch = "feature/a";
     const key = workspaceIdentityKey("/tmp/repo-1", branch);
-    const prData = new Map([
-      [
-        workspaceIdentityKey("/tmp/repo-1", branch),
-        {
-          number: 1,
-          title: "a very long pull request title that certainly wraps",
-          state: "OPEN" as const,
-          headRefName: branch,
-          rollupState: "success" as const,
-        },
-      ],
-    ]);
+    const pr = prFacts({
+      title: "a very long pull request title that certainly wraps",
+      headRefName: branch,
+    });
+    const prData = new Map([[workspaceIdentityKey("/tmp/repo-1", branch), pr]]);
     const treeItems = buildTreeItems({
       repos,
       expandedWorkspaceKeys: new Set([key]),
       prData,
+      expandedPrKeys: new Set([prExpansionKey(key, pr)]),
       panes: new Map(),
       jumpToPane: () => undefined,
     });
@@ -714,14 +709,14 @@ describe("resolveMouseAction", () => {
       repos,
     };
 
-    // The continuation row carries the PR's own itemIndex, so clicking the
-    // wrapped line resolves to selecting the PR (within the expanded subtree).
+    // The continuation row carries the title's own itemIndex, so clicking the
+    // wrapped line resolves to selecting the title (within the expanded subtree).
     const contRowIndex = rows.findIndex(
       (r: TreeRow) => r.kind === "detail-pr-cont",
     );
     expect(contRowIndex).toBeGreaterThan(-1);
     const prItemIndex = rows[contRowIndex]?.itemIndex as number;
-    // The primary PR row precedes it and maps to the same item.
+    // The primary title row precedes it and maps to the same item.
     expect(rows[contRowIndex - 1]).toMatchObject({
       kind: "detail",
       itemIndex: prItemIndex,

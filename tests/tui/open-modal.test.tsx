@@ -134,7 +134,6 @@ describe("OpenModal form variants", () => {
             title: "Feature from PR",
             state: "OPEN",
             headRefName: "feature-from-pr",
-            rollupState: null,
           },
         ]}
         profileNames={["backend"]}
@@ -165,7 +164,6 @@ describe("OpenModal form variants", () => {
             title: "First PR",
             state: "OPEN",
             headRefName: "feat-1",
-            rollupState: null,
           },
         ]}
         profileNames={[]}
@@ -194,7 +192,6 @@ describe("OpenModal form variants", () => {
             title: "First PR",
             state: "OPEN",
             headRefName: "feat-1",
-            rollupState: null,
           },
         ]}
         profileNames={[]}
@@ -228,14 +225,12 @@ describe("OpenModal form variants", () => {
             title: "First PR",
             state: "OPEN",
             headRefName: "feat-1",
-            rollupState: null,
           },
           {
             number: 2,
             title: "Second PR",
             state: "OPEN",
             headRefName: "feat-2",
-            rollupState: null,
           },
         ]}
         profileNames={[]}
@@ -290,7 +285,6 @@ describe("OpenModal form variants", () => {
             title: "Some PR",
             state: "OPEN",
             headRefName: "feat-42",
-            rollupState: null,
           },
         ]}
         profileNames={[]}

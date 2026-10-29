@@ -1,8 +1,10 @@
+import { Database } from "bun:sqlite";
 import { PassThrough } from "node:stream";
 import { Effect } from "effect";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
+import { runMigrations } from "../../src/services/db";
 import { GitHubService } from "../../src/services/github-service";
 import {
   type ExplicitPrAssociation,
@@ -10,9 +12,11 @@ import {
   PrCacheService,
   type PrCacheServiceApi,
   type PrDiscoverySnapshot,
+  sqlGetOpenPrs,
+  sqlSetOpenPrs,
   type WorkspacePrEntry,
 } from "../../src/services/pr-cache-service";
-import type { PrFacts } from "../../src/services/pr-model";
+import type { OpenPrChoice, PrFacts } from "../../src/services/pr-model";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 
 vi.mock("../../src/tui/runtime", () => ({
@@ -56,6 +60,7 @@ vi.mock("../../src/services/pr-details", () => ({
 const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useGitHub } = await import("../../src/tui/hooks/useGitHub");
 const runPromise = vi.mocked(tuiRuntime.runPromise);
+const runSync = vi.mocked(tuiRuntime.runSync);
 
 function rawPr(
   number: number,
@@ -298,6 +303,8 @@ describe("useGitHub", () => {
     explicitCache.clear();
     list.mockClear();
     get.mockClear();
+    runSync.mockReset();
+    runSync.mockReturnValue(null);
     runPromise.mockReset();
     runPromise.mockImplementation((<A, E>(
       effect: Effect.Effect<A, E, GitHubService | PrCacheServiceApi>,
@@ -324,6 +331,56 @@ describe("useGitHub", () => {
     }
   });
 
+  test("hydrates cached Open modal choices at startup and retains them when discovery fails", async () => {
+    const database = new Database(":memory:");
+    runMigrations(database);
+    const repoPath = "/tmp/repo";
+    const choices: OpenPrChoice[] = [
+      {
+        number: 7,
+        title: "Cached PR",
+        state: "OPEN",
+        headRefName: "feature",
+      },
+    ];
+    sqlSetOpenPrs(database, repoPath, choices);
+    const startupCache = PrCacheService.of({
+      ...cache,
+      getOpenPrs: (path) => Effect.sync(() => sqlGetOpenPrs(database, path)),
+    });
+    runSync.mockImplementation((<A, E>(
+      effect: Effect.Effect<A, E, PrCacheServiceApi>,
+    ) =>
+      Effect.runSync(
+        effect.pipe(Effect.provideService(PrCacheService, startupCache)),
+      )) as typeof tuiRuntime.runSync);
+    let releaseRefresh!: () => void;
+    holdList = new Promise((resolve) => {
+      releaseRefresh = resolve;
+    });
+    listError = "offline";
+    const harness = await renderHook([repo(repoPath, ["feature"])]);
+    try {
+      await settle();
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(harness.value.refreshingProjects.has(repoPath)).toBe(true);
+      expect(harness.value.openPrs.get(repoPath)).toEqual(choices);
+
+      releaseRefresh();
+      await settle();
+      expect(harness.value.errors.get(repoPath)).toContain("offline");
+      expect(harness.value.refreshingProjects.has(repoPath)).toBe(false);
+      expect(harness.value.openPrs.get(repoPath)).toEqual(choices);
+      expect(harness.value.prData.size).toBe(0);
+      expect(harness.value.associations.size).toBe(0);
+    } finally {
+      releaseRefresh();
+      harness.unmount();
+      runSync.mockReturnValue(null);
+      database.close();
+    }
+  });
+
   test("derives the modal list from complete discovery then polls updates with a cached base", async () => {
     history = [rawPr(1), rawPr(2, "MERGED")];
     const harness = await renderHook([repo()]);
@@ -335,6 +392,12 @@ describe("useGitHub", () => {
       expect(
         harness.value.openPrs.get("/tmp/repo")?.map((pr) => pr.number),
       ).toEqual([1]);
+      expect(harness.value.openPrs.get("/tmp/repo")).toEqual([
+        { number: 1, title: "PR 1", state: "OPEN", headRefName: "feature" },
+      ]);
+      expect(openCache.get("/tmp/repo")).toEqual(
+        harness.value.openPrs.get("/tmp/repo"),
+      );
       expect(harness.value.prData.size).toBe(0);
       await poll();
       await poll();
@@ -414,8 +477,8 @@ describe("useGitHub", () => {
         await poll();
         const pr = harness.value.prData.get(key("/tmp/repo", "feature"));
         expect(pr?.state).toBe(state);
-        expect(pr?.facts?.checksComplete).toBe(false);
-        expect(pr?.facts?.lastError).toBe(detailError);
+        expect(pr?.checksComplete).toBe(false);
+        expect(pr?.lastError).toBe(detailError);
       } finally {
         harness.unmount();
       }
@@ -585,7 +648,7 @@ describe("useGitHub", () => {
       await settle();
       await poll();
       expect(
-        harness.value.prData.get(key("/tmp/repo", "feature"))?.facts?.lastError,
+        harness.value.prData.get(key("/tmp/repo", "feature"))?.lastError,
       ).toBeNull();
       expect(
         harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,

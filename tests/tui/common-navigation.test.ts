@@ -7,6 +7,7 @@ import {
 } from "../../src/tui/input/expanded";
 import { handleNavigateInput } from "../../src/tui/input/navigate";
 import { Mode, type TreeItem } from "../../src/tui/types";
+import { prRowMeta } from "../helpers/pr";
 
 const noKey: Key = {
   upArrow: false,
@@ -85,7 +86,7 @@ const selectedItems: TreeItem[] = [
     worktreeIndex: 0,
     detailKind: "pr",
     label: "PR #1",
-    meta: { rollupState: "success" },
+    meta: prRowMeta(),
   },
   {
     type: "detail",

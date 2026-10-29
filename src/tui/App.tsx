@@ -725,7 +725,7 @@ export function App() {
       item.detailKind === "candidate"
         ? item.meta.pr
         : prRow?.type === "detail" && prRow.detailKind === "pr"
-          ? (prRow.meta.pr ?? null)
+          ? prRow.meta.pr
           : null;
     const kind =
       item.detailKind === "candidate"

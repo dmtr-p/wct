@@ -33,6 +33,7 @@ import {
   isWorktreeEffectivelyExpanded,
 } from "../../src/tui/tree-helpers";
 import { Mode, type TreeItem } from "../../src/tui/types";
+import { prFacts, prRowMeta } from "../helpers/pr";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -201,7 +202,7 @@ describe("createHandleSpaceSwitch", () => {
         worktreeIndex: 0,
         detailKind: "pr",
         label: "PR #42",
-        meta: { rollupState: null },
+        meta: prRowMeta(),
         action,
       },
     ];
@@ -1191,13 +1192,13 @@ describe("a Workspace under an active lifecycle", () => {
       prData: new Map([
         [
           workspaceIdentityKey(repoPath, branch),
-          {
+          prFacts({
             number: 7,
             title: "Add thing",
             state: "OPEN" as const,
             headRefName: branch,
-            rollupState: null,
-          },
+            checks: [],
+          }),
         ],
       ]),
       panes: new Map([
@@ -1527,13 +1528,13 @@ describe("up and down lifecycle progress", () => {
       prData: new Map([
         [
           workspaceIdentityKey(repoPath, branch),
-          {
+          prFacts({
             number: 7,
             title: "Add thing",
             state: "OPEN" as const,
             headRefName: branch,
-            rollupState: null,
-          },
+            checks: [],
+          }),
         ],
       ]),
       panes: new Map([

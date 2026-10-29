@@ -33,6 +33,11 @@ export interface PrFacts {
   lastError: string | null;
 }
 
+export type OpenPrChoice = Pick<
+  PrFacts,
+  "number" | "title" | "state" | "headRefName"
+>;
+
 export function prIdentity(
   pr: Pick<PrFacts, "baseRepository" | "number">,
 ): string {

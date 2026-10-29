@@ -1,12 +1,16 @@
 import type { Database } from "bun:sqlite";
 import { Context, Effect } from "effect";
 import type { WctError } from "../errors";
-import type { PRInfo } from "../tui/types";
 import { withDb, withDbEffect } from "./db";
-import { hydratePrFacts, type PrFacts, prIdentity } from "./pr-model";
+import {
+  hydratePrFacts,
+  type OpenPrChoice,
+  type PrFacts,
+  prIdentity,
+} from "./pr-model";
 
 export interface CachedPrEntry {
-  payload: PRInfo[];
+  payload: OpenPrChoice[];
   fetchedAt: number;
   lastError: string | null;
 }
@@ -96,7 +100,7 @@ export interface PrCacheServiceApi {
   ) => Effect.Effect<CachedPrEntry | null, WctError>;
   setOpenPrs: (
     repoPath: string,
-    prs: PRInfo[],
+    prs: OpenPrChoice[],
     registrationId?: string,
   ) => Effect.Effect<void, WctError>;
 }
@@ -477,7 +481,7 @@ export function sqlGetOpenPrs(
     last_error: string | null;
   } | null;
   if (!row) return null;
-  let payload: PRInfo[] = [];
+  let payload: OpenPrChoice[] = [];
   try {
     const parsed = JSON.parse(row.payload);
     if (Array.isArray(parsed))
@@ -491,7 +495,7 @@ export function sqlGetOpenPrs(
 export function sqlSetOpenPrs(
   db: Database,
   repoPath: string,
-  prs: PRInfo[],
+  prs: OpenPrChoice[],
 ): void {
   db.run(
     `INSERT INTO open_pr_cache (repo_path, payload, fetched_at, last_error) VALUES (?, ?, ?, NULL)

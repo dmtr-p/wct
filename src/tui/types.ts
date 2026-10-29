@@ -152,11 +152,10 @@ export type TreeItem =
   | DetailItem<
       "pr",
       {
-        rollupState: "success" | "failure" | "pending" | "unknown" | null;
-        prKey?: string;
-        presentation?: import("./pr-status").PrPresentation;
-        pr?: import("../services/pr-model").PrFacts;
-        expanded?: boolean;
+        prKey: string;
+        presentation: import("./pr-status").PrPresentation;
+        pr: import("../services/pr-model").PrFacts;
+        expanded: boolean;
       }
     >
   | DetailItem<"pr-title", { prKey: string }>
@@ -210,14 +209,5 @@ type DetailItem<
       action?: () => void;
       meta: TMeta;
     };
-
-export interface PRInfo {
-  number: number;
-  title: string;
-  state: "OPEN" | "MERGED" | "CLOSED";
-  headRefName: string;
-  rollupState: "success" | "failure" | "pending" | "unknown" | null;
-  facts?: import("../services/pr-model").PrFacts;
-}
 
 export type { TmuxPaneInfo as PaneInfo } from "../services/tmux";

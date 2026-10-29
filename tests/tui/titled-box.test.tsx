@@ -183,6 +183,31 @@ describe("TitledBox", () => {
     }
   });
 
+  test.each([true, false])(
+    "keeps the border aligned for combining-character input when focused=%s",
+    async (isFocused) => {
+      const rendered = await renderTitledBox({
+        title: "Profile",
+        titleInput: { value: "e\u0301", cursor: 1, cursorVisible: true },
+        isFocused,
+        width: 10,
+        children: "content",
+      });
+
+      try {
+        const lines = rendered.output.trimEnd().split("\n");
+        expect(lines[0]).toBe(
+          isFocused ? "╭ e\u0301▎ ────╮" : "╭ e\u0301 ─────╮",
+        );
+        expect(lines.every((line) => line.normalize("NFC").length === 10)).toBe(
+          true,
+        );
+      } finally {
+        rendered.unmount();
+      }
+    },
+  );
+
   test("truncates a footer when the box is too narrow", async () => {
     let rendered: Awaited<ReturnType<typeof renderTitledBox>> | undefined;
 

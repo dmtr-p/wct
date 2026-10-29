@@ -298,6 +298,11 @@ export function FromPRForm({
     },
     currentField === "prList",
   );
+  const filterCursorVisible = useCursorBlink(
+    filterQuery,
+    filterEditing.cursor,
+    currentField === "prList",
+  );
 
   const prItems: ListItem[] = useMemo(
     () =>
@@ -406,6 +411,15 @@ export function FromPRForm({
       <Box height={1} />
       <TitledBox
         title="Select PR"
+        titleInput={
+          filterQuery
+            ? {
+                value: filterQuery,
+                cursor: filterEditing.cursor,
+                cursorVisible: filterCursorVisible,
+              }
+            : undefined
+        }
         footer={`${selectedPRIndex + 1} of ${displayItems.length}`}
         isFocused={currentField === "prList"}
         width={width}
@@ -417,6 +431,7 @@ export function FromPRForm({
           filterCursor={filterEditing.cursor}
           maxVisible={5}
           isFocused={currentField === "prList"}
+          showFilter={false}
           onSelect={(index) => {
             focusField("prList");
             setSelectedPRIndex(index);
@@ -499,6 +514,11 @@ export function ExistingBranchForm({
     },
     currentField === "branchList",
   );
+  const filterCursorVisible = useCursorBlink(
+    filterQuery,
+    filterEditing.cursor,
+    currentField === "branchList",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -578,6 +598,15 @@ export function ExistingBranchForm({
       <Box height={1} />
       <TitledBox
         title="Select Branch"
+        titleInput={
+          filterQuery
+            ? {
+                value: filterQuery,
+                cursor: filterEditing.cursor,
+                cursorVisible: filterCursorVisible,
+              }
+            : undefined
+        }
         footer={
           filteredBranchItems.length > 0
             ? `${selectedBranchIndex + 1} of ${filteredBranchItems.length}`
@@ -593,6 +622,7 @@ export function ExistingBranchForm({
           filterCursor={filterEditing.cursor}
           maxVisible={5}
           isFocused={currentField === "branchList"}
+          showFilter={false}
           onSelect={(index) => {
             focusField("branchList");
             setSelectedBranchIndex(index);

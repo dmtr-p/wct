@@ -61,15 +61,17 @@ function editableTopBorder(
   width: number,
   input: TitleInput,
   isFocused: boolean,
+  lineProps: Pick<TextProps, "color" | "bold" | "dimColor">,
 ) {
-  if (width <= 4) return topBorder(width, "");
+  const border = <Text {...lineProps}>{topBorder(width, "")}</Text>;
+  if (width <= 4) return border;
 
   const available = width - 4;
   const characters = graphemeWidths(input.value);
   const cursor = Math.max(0, Math.min(input.cursor, characters.length));
   let start = cursor;
   let used = characters[cursor]?.[1] ?? (isFocused || !input.value ? 1 : 0);
-  if (used > available) return topBorder(width, "");
+  if (used > available) return border;
 
   // Keep the cursor in view without letting a long query wrap the border.
   while (start > 0 && used + (characters[start - 1]?.[1] ?? 0) <= available) {
@@ -86,19 +88,30 @@ function editableTopBorder(
   }
 
   return (
-    <>
-      {"╭ "}
-      <EditableText
-        value={characters
-          .slice(start, end)
-          .map(([char]) => char)
-          .join("")}
-        cursor={cursor - start}
-        isFocused={isFocused}
-        cursorVisible={input.cursorVisible}
-      />
-      {` ${"─".repeat(Math.max(0, available - used))}╮`}
-    </>
+    <Box width={width} height={1} position="relative">
+      {border}
+      {/* Overlay the input so width estimates cannot move the border corner. */}
+      <Box
+        position="absolute"
+        left={2}
+        top={0}
+        width={available + 1}
+        height={1}
+        overflow="hidden"
+      >
+        <Text {...lineProps} wrap="truncate">
+          <EditableText
+            value={characters
+              .slice(start, end)
+              .map(([char]) => char)
+              .join("")}
+            cursor={cursor - start}
+            isFocused={isFocused}
+            cursorVisible={input.cursorVisible}
+          />{" "}
+        </Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -146,11 +159,13 @@ export function TitledBox({
   return (
     <Box flexDirection="column">
       <Box width={boxWidth}>
-        <Text {...lineProps} wrap="truncate">
-          {titleInput
-            ? editableTopBorder(boxWidth, titleInput, isFocused)
-            : topBorder(boxWidth, title)}
-        </Text>
+        {titleInput ? (
+          editableTopBorder(boxWidth, titleInput, isFocused, lineProps)
+        ) : (
+          <Text {...lineProps} wrap="truncate">
+            {topBorder(boxWidth, title)}
+          </Text>
+        )}
       </Box>
       <Box
         width={boxWidth}

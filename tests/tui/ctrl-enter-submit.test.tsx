@@ -275,7 +275,7 @@ describe("Ctrl+Enter submit", () => {
         await sendKeys(rendered.stdin, "fet");
         await sendKeys(rendered.stdin, "\x1b[D");
         await sendKeys(rendered.stdin, "a");
-        expect(rendered.lastFrame()).toContain("filter: feat");
+        expect(rendered.lastFrame()).toContain("╭ feat");
         await sendKeys(rendered.stdin, DOWN_ARROW);
         await sendKeys(rendered.stdin, "\x1b[D");
         await sendKeys(rendered.stdin, "\x1b[C");

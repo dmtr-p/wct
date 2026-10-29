@@ -18,7 +18,6 @@ export const shutdownWorktreeService: WorktreeServiceApi = {
 
 export type ServiceOverrides = WctServiceOverrides;
 
-/** Default test double prevents tmux operations on the host. */
 export const noopTmuxService: TmuxServiceApi = {
   listSessions: Effect.succeed(null),
   sessionExists: () => Effect.succeed(false),
@@ -42,6 +41,9 @@ export function withTestServices<A, E, R>(
 ) {
   return Effect.provide(
     effect,
-    makeWctServicesLayer({ tmux: noopTmuxService, ...overrides }),
+    makeWctServicesLayer({
+      ...overrides,
+      tmux: overrides.tmux ?? noopTmuxService,
+    }),
   );
 }

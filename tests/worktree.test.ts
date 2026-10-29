@@ -5,7 +5,6 @@ import { $ } from "bun";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
-import { provideWctServices } from "../src/effect/services";
 import { WorkspaceService } from "../src/services/workspace-service";
 import {
   formatChanges,
@@ -20,7 +19,7 @@ import { test as repoTest } from "./helpers/include-repo";
 import { noopTmuxService, withTestServices } from "./helpers/services";
 
 function withWorktreeService<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return provideWctServices(effect);
+  return withTestServices(effect);
 }
 
 describe("parseWorktreeListOutput", () => {
@@ -142,7 +141,7 @@ describe("findWorktreeByBranch", () => {
   });
 });
 
-describe("createWorktree with base branch", () => {
+describe("createWorktree with base branch", { concurrent: false }, () => {
   let repoDir: string;
   let worktreeDir: string;
   const originalDir = process.cwd();
@@ -502,7 +501,7 @@ describe("createWorktree with base branch", () => {
   });
 });
 
-describe("WorkspaceService remote fetching", () => {
+describe("WorkspaceService remote fetching", { concurrent: false }, () => {
   test.each(["main", "new-base"])(
     "creates from the fetched upstream/%s commit",
     async (baseBranch) => {

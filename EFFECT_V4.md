@@ -312,58 +312,30 @@ const decodeConfig = Schema.decodeUnknownSync(ConfigSchema);
 
 ## Testing with @effect/vitest
 
-Prefer `it.effect` with `it.layer` for new Effect-aware tests:
+Prefer `it.effect` for Effect tests; use `it.live` when live clocks or console
+output are required. Both own the test scope, so acquire resources directly
+without wrapping the body in `Effect.scoped`. Own pending work with child
+fibers and synchronize with `Deferred`. Imperative runners must cancel and
+settle pending work in `finally`.
 
-```ts
-import { describe, it } from "@effect/vitest";
-import { Effect } from "effect";
-import { expect } from "vitest";
-import {
-  liveWorktreeService,
-  WorktreeService,
-} from "../src/services/worktree-service";
-import { wctTestLayer } from "./helpers/effect-vitest";
+See [repository testing](docs/testing.md) for service helpers and tmux isolation.
 
-const TestLayer = wctTestLayer({
-  worktree: {
-    ...liveWorktreeService,
-    getCurrentBranch: () => Effect.succeed("main"),
-  },
-});
+Read captured output with `TestConsole.logLines` and `TestConsole.errorLines`
+from `effect/testing`. Terminal-styling tests provide explicit `Stdio` flags.
 
-describe("getCurrentBranch", () => {
-  it.layer(TestLayer)("with an overridden service", (it) => {
-    it.effect("returns the provided branch", () =>
-      Effect.gen(function* () {
-        const wt = yield* WorktreeService;
-        const branch = yield* wt.getCurrentBranch();
-        expect(branch).toBe("main");
-      }),
-    );
-  });
-});
-```
+`it.layer` shares service instances for its block. Build layers inside the test
+when each test needs independent state. Suites that mutate process-wide
+environment, working directory, or shared mocks declare `{ concurrent: false }`.
 
-Adjust relative imports for the test's location. For service overrides, use
-`wctTestLayer({ tmux: fakeTmux })`; its options match `withTestServices`.
+Create Effect methods for fixtures with `makeMethods(test.extend(...))` using
+the top-level `test` export. Destructure fixture dependencies; `it.effect.each`
+receives fixture context as its second argument. Guard fixture setup and `use`
+with `try/finally` immediately after acquisition. Use `test.for` for imperative
+parameterized tests that need fixture context.
 
-Keep `runBunPromise` with `withTestServices` when an existing test mixes
-imperative mocks with Effect execution or mutates state between separate Effect
-runs. Both patterns are supported; choose the one appropriate to the test.
+Use `it.prop` for synchronous properties and `it.effect.prop` for Effectful
+ones. Bound generators and local `arbitrary` options (`runs`, `size`,
+`maxShrinks`), retain regression examples, and include positive cases so an
+implementation that always rejects input cannot satisfy the properties.
 
-For Vitest fixtures, create Effect test methods with
-`makeMethods(test.extend(...))` using the top-level `test` export.
-`it.effect.each` receives the test context as its second argument.
-`Arbitrary.configureGlobal` can configure shared property-test defaults before
-concurrent tests start.
-
-Reusable imperative resources use typed, test-scoped fixtures in `tests/helpers`.
-Declare resource dependencies through destructured fixture parameters. Guard
-setup and `use` with `try/finally` immediately after acquiring a resource so
-setup failures also release it. Use `test.for` for parameterized imperative
-tests that need fixture context as their second argument. Keep tests that stub
-process-wide environment variables or change the working directory sequential;
-fixtures do not isolate that state.
-
-Do not run tests or lint manually; the harness hooks handle those checks as
-specified in `AGENTS.md`.
+Follow [AGENTS.md](AGENTS.md) for hook-managed checks.

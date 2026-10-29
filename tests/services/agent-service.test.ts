@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { it } from "@effect/vitest";
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect";
 import { describe, expect, test, vi } from "vitest";
-import { runBunPromise } from "../../src/effect/runtime";
+import { provideBunServices, runBunPromise } from "../../src/effect/runtime";
 import { commandError } from "../../src/errors";
 import type { ForegroundProcess } from "../../src/services/agent-process";
 import {
@@ -683,36 +684,72 @@ describe("agent observations", () => {
     );
     expect(replaced.observations.size).toBe(0);
   });
-  test("bounds capture concurrency and interrupts pending observations", async () => {
-    const f = await fixture(
-      Array.from({ length: 15 }, (_, i) => pane(`%${i + 1}`)),
-    );
-    let active = 0;
-    let maximum = 0;
-    f.ports.capture = () =>
-      Effect.acquireUseRelease(
-        Effect.sync(() => {
-          active++;
-          maximum = Math.max(maximum, active);
-        }),
-        () => Effect.never,
-        () =>
-          Effect.sync(() => {
-            active--;
+  it.effect.each(["interruption", "assertion failure"] as const)(
+    "bounds capture concurrency and releases pending observations on %s",
+    (ending) =>
+      Effect.gen(function* () {
+        const panes = Array.from({ length: 15 }, (_, i) => pane(`%${i + 1}`));
+        const saturated = yield* Deferred.make<void>();
+        const failOwner = yield* Deferred.make<void>();
+        let active = 0;
+        let maximum = 0;
+        const service = yield* provideBunServices(
+          makeAgentService({
+            discover: Effect.succeed(panes),
+            processes: Effect.succeed(panes.map(processFor)),
+            arguments: () => Effect.succeed(new Map()),
+            capture: () =>
+              Effect.acquireUseRelease(
+                Effect.sync(() => {
+                  active++;
+                  maximum = Math.max(maximum, active);
+                }),
+                () =>
+                  Effect.gen(function* () {
+                    if (active === 4)
+                      yield* Deferred.succeed(saturated, undefined);
+                    return yield* Effect.never;
+                  }),
+                () =>
+                  Effect.sync(() => {
+                    active--;
+                  }),
+              ),
+            now: () => 0,
           }),
-      );
-    const controller = new AbortController();
-    const result = Effect.runPromise(
-      f.service.observe(f.sessions, emptyAgentSnapshot()),
-      { signal: controller.signal },
-    );
-    const rejection = expect(result).rejects.toThrow();
-    await vi.waitFor(() => expect(active).toBe(4));
-    controller.abort();
-    await rejection;
-    expect(maximum).toBe(4);
-    expect(active).toBe(0);
-  });
+        );
+        const owner = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            yield* Effect.forkChild(
+              service.observe(new Set(["workspace"]), emptyAgentSnapshot()),
+            );
+            yield* Deferred.await(failOwner);
+            expect.fail("observation owner assertion failed");
+          }),
+        );
+        yield* Deferred.await(saturated);
+        yield* Effect.yieldNow;
+        expect(active).toBe(4);
+        if (ending === "assertion failure") {
+          yield* Deferred.succeed(failOwner, undefined);
+        } else {
+          yield* Fiber.interrupt(owner);
+        }
+        const exit = yield* Effect.exit(Fiber.join(owner));
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          if (ending === "assertion failure") {
+            expect(Cause.pretty(exit.cause)).toContain(
+              "observation owner assertion failed",
+            );
+          } else {
+            expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+          }
+        }
+        expect(maximum).toBe(4);
+        expect(active).toBe(0);
+      }),
+  );
   test("timeout and output limits have structured reasons without raw output", () => {
     expect(observationFailureReason({ _tag: "TimeoutError" })).toBe("timeout");
     expect(observationFailureReason(new ProcessOutputLimitError())).toBe(

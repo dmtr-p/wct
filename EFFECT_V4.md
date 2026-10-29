@@ -318,12 +318,7 @@ without wrapping the body in `Effect.scoped`. Own pending work with child
 fibers and synchronize with `Deferred`. Imperative runners must cancel and
 settle pending work in `finally`.
 
-Use [wctTestLayer](tests/helpers/effect-vitest.ts) for service overrides, or
-[withTestServices](tests/helpers/services.ts) with imperative runners. Both
-default to no-op tmux, including when the override is `undefined`; other
-services remain live. [Test setup](tests/setup.ts) blocks bare tmux commands
-through application process helpers. CLI subprocess tests that exercise tmux
-must provide a fixture executable.
+See [repository testing](docs/testing.md) for service helpers and tmux isolation.
 
 Read captured output with `TestConsole.logLines` and `TestConsole.errorLines`
 from `effect/testing`. Terminal-styling tests provide explicit `Stdio` flags.

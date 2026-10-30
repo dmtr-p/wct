@@ -1,5 +1,6 @@
 import type { BunServices } from "@effect/platform-bun";
 import {
+  Cache,
   Cause,
   Clock,
   Context,
@@ -66,6 +67,9 @@ export const PrRefreshService = Context.Service<PrRefreshServiceApi>(
 const DISCOVERY_RETRY_DELAY = 600_000;
 const CACHE_FRESH_WINDOW = 30_000;
 const BASE_REPO_CACHE_WINDOW = 600_000;
+function baseRepositoryKey(repoPath: string, registrationId: string) {
+  return `${repoPath}\0${registrationId}`;
+}
 function causeMessage<E>(cause: Cause.Cause<E>): string {
   const error = Cause.squash(cause);
   return error instanceof Error ? error.message : String(error);
@@ -110,6 +114,15 @@ export const makePrRefreshService = Effect.gen(function* () {
       GitHubService | PrCacheServiceApi | BunServices.BunServices
     >(),
   );
+  const github = Context.get(context, GitHubService);
+  const baseRepositories = yield* Cache.makeWith(
+    // Filesystem paths cannot contain NUL, so the registration suffix is unambiguous.
+    (key: string) => github.resolveBaseRepo(key.slice(0, key.indexOf("\0"))),
+    {
+      capacity: Number.POSITIVE_INFINITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? BASE_REPO_CACHE_WINDOW : 0),
+    },
+  );
   const openSession = (observer: PrRefreshObserver) =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
@@ -124,10 +137,6 @@ export const makePrRefreshService = Effect.gen(function* () {
       const persisted = new Map<string, PrDiscoverySnapshot>();
       const loaded = new Set<string>();
       const discoveryRetries = new Map<string, number>();
-      const baseRepositories = new Map<
-        string,
-        { name: string; resolvedAt: number }
-      >();
       const inFlight = new Map<string, RefreshFlight>();
       const setAssociations = observer.associations;
       const setOpenPrs = observer.openPrs;
@@ -238,27 +247,13 @@ export const makePrRefreshService = Effect.gen(function* () {
                   setRefreshingProjects((previous) =>
                     new Set(previous).add(repoPath),
                   );
-                  const cachedBase = baseRepositories.get(repoPath);
-                  let base: string;
-                  if (
-                    requested !== "manual" &&
-                    cachedBase &&
-                    (yield* Clock.currentTimeMillis) - cachedBase.resolvedAt <
-                      BASE_REPO_CACHE_WINDOW
-                  ) {
-                    base = cachedBase.name;
-                  } else {
-                    resolvingBase = true;
-                    base = yield* GitHubService.use((s) =>
-                      s.resolveBaseRepo(repoPath),
-                    );
-                    resolvingBase = false;
-                    if (!active()) return;
-                    baseRepositories.set(repoPath, {
-                      name: base,
-                      resolvedAt: yield* Clock.currentTimeMillis,
-                    });
-                  }
+                  const baseKey = baseRepositoryKey(repoPath, registrationId);
+                  if (requested === "manual")
+                    yield* Cache.invalidate(baseRepositories, baseKey);
+                  resolvingBase = true;
+                  const base = yield* Cache.get(baseRepositories, baseKey);
+                  resolvingBase = false;
+                  if (!active()) return;
                   const previous = requested === "manual" ? null : snapshot;
                   flight.history =
                     previous?.baseRepository.toLowerCase() !==
@@ -523,6 +518,7 @@ export const makePrRefreshService = Effect.gen(function* () {
         );
       const forget = (path: string) =>
         Effect.gen(function* () {
+          const registrationId = registrations.get(path);
           const flight = inFlight.get(path);
           if (flight) {
             flight.cancelled = true;
@@ -533,7 +529,11 @@ export const makePrRefreshService = Effect.gen(function* () {
           persisted.delete(path);
           loaded.delete(path);
           discoveryRetries.delete(path);
-          baseRepositories.delete(path);
+          if (registrationId !== undefined)
+            yield* Cache.invalidate(
+              baseRepositories,
+              baseRepositoryKey(path, registrationId),
+            );
           setRefreshingProjects((previous) => {
             const next = new Set(previous);
             next.delete(path);

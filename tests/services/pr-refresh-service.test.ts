@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Scheduler } from "effect";
+import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { commandError } from "../../src/errors";
+import { commandError, type WctError } from "../../src/errors";
 import { livePrCacheService } from "../../src/services/pr-cache-service";
 import {
   type PrRefreshRepository,
@@ -21,6 +22,7 @@ function fixture(
     waitForStart?: boolean;
     stopping?: Deferred.Deferred<void>;
     cleanup?: Deferred.Deferred<void>;
+    resolveBaseRepo?: () => Effect.Effect<string, WctError>;
   } = {},
 ) {
   return Effect.gen(function* () {
@@ -28,6 +30,8 @@ function fixture(
     const release = yield* Deferred.make<void>();
     const stopped = yield* Deferred.make<void>();
     let scans = 0;
+    let resolutions = 0;
+    const scanModes: string[] = [];
     let publications = 0;
     const errors = new Map<string, string>();
     const layer = wctTestLayer({
@@ -36,10 +40,15 @@ function fixture(
         resolvePr: () => Effect.die("unused"),
         addForkRemote: () => Effect.void,
         fetchBranch: () => Effect.void,
-        resolveBaseRepo: () => Effect.succeed("owner/repo"),
-        listRawPrs: () =>
+        resolveBaseRepo: () =>
+          Effect.suspend(() => {
+            resolutions++;
+            return options.resolveBaseRepo?.() ?? Effect.succeed("owner/repo");
+          }),
+        listRawPrs: (_cwd, mode) =>
           Effect.gen(function* () {
             scans++;
+            scanModes.push(mode);
             if (scans === 1) {
               yield* Deferred.succeed(started, undefined);
               yield* Deferred.await(release).pipe(
@@ -69,7 +78,8 @@ function fixture(
         pruneWorkspaces: () => Effect.void,
       },
     });
-    const session = yield* PrRefreshService.use((service) =>
+    const service = yield* PrRefreshService.pipe(Effect.provide(layer));
+    const openSession = () =>
       service.openSession({
         associations: () => {
           publications++;
@@ -83,20 +93,27 @@ function fixture(
           errors.clear();
           for (const [key, value] of next) errors.set(key, value);
         },
-      }),
-    ).pipe(Effect.provide(layer));
+      });
+    const session = yield* openSession();
     yield* Effect.addFinalizer(() => session.close);
-    yield* Effect.forkChild(session.updateRepositories([repo]), {
-      startImmediately: true,
-    });
+    const initial = yield* Effect.forkChild(
+      session.updateRepositories([repo]),
+      {
+        startImmediately: true,
+      },
+    );
     if (options.waitForStart !== false) yield* Deferred.await(started);
     return {
       session,
+      openSession,
+      initial,
       started,
       release,
       stopped,
       errors,
       scans: () => scans,
+      resolutions: () => resolutions,
+      scanModes,
       publications: () => publications,
     };
   });
@@ -236,4 +253,239 @@ it.effect.each([3, 4, 6])(
       yield* Effect.forEach(callers, Fiber.join, { concurrency: "unbounded" });
       expect(f.scans()).toBe(1);
     }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)),
+);
+
+it.effect("base resolution expires ten minutes after success", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    yield* Deferred.succeed(f.release, undefined);
+    yield* Fiber.join(f.initial);
+    yield* f.session.refresh("action");
+    expect(f.resolutions()).toBe(1);
+    yield* TestClock.adjust(599_999);
+    yield* f.session.refresh("action");
+    expect(f.resolutions()).toBe(1);
+    yield* TestClock.adjust(1);
+    yield* f.session.refresh("action");
+    expect(f.resolutions()).toBe(2);
+  }),
+);
+
+it.effect("manual bypass resolves once for concurrent manual waiters", () =>
+  Effect.gen(function* () {
+    const resolving = yield* Deferred.make<void>();
+    const releaseBase = yield* Deferred.make<void>();
+    let calls = 0;
+    const f = yield* fixture(false, {
+      resolveBaseRepo: () =>
+        Effect.gen(function* () {
+          if (++calls === 2) {
+            yield* Deferred.succeed(resolving, undefined);
+            yield* Deferred.await(releaseBase);
+          }
+          return "owner/repo";
+        }),
+    });
+    yield* Deferred.succeed(f.release, undefined);
+    yield* Fiber.join(f.initial);
+    const first = yield* Effect.forkChild(f.session.refresh("manual"), {
+      startImmediately: true,
+    });
+    yield* Deferred.await(resolving);
+    const second = yield* Effect.forkChild(f.session.refresh("manual"), {
+      startImmediately: true,
+    });
+    yield* Deferred.succeed(releaseBase, undefined);
+    yield* Fiber.join(first);
+    yield* Fiber.join(second);
+    expect(f.resolutions()).toBe(2);
+    yield* f.session.refresh("action");
+    expect(f.resolutions()).toBe(2);
+    yield* f.session.refresh("manual");
+    expect(f.resolutions()).toBe(3);
+  }),
+);
+
+it.effect(
+  "replacement interrupts an obsolete base lookup and resolves anew",
+  () =>
+    Effect.gen(function* () {
+      const resolving = yield* Deferred.make<void>();
+      const interrupted = yield* Deferred.make<void>();
+      let calls = 0;
+      const f = yield* fixture(false, {
+        waitForStart: false,
+        resolveBaseRepo: () =>
+          Effect.gen(function* () {
+            if (++calls === 1) {
+              yield* Deferred.succeed(resolving, undefined);
+              return yield* Effect.never.pipe(
+                Effect.ensuring(Deferred.succeed(interrupted, undefined)),
+              );
+            }
+            return "owner/repo";
+          }),
+      });
+      yield* Deferred.await(resolving);
+      yield* Deferred.succeed(f.release, undefined);
+      yield* f.session.updateRepositories([{ ...repo, id: "two" }]);
+      yield* Deferred.await(interrupted);
+      yield* Fiber.join(f.initial);
+      expect(f.resolutions()).toBe(2);
+      expect(f.scans()).toBe(1);
+      yield* f.session.updateRepositories([repo]);
+      expect(f.resolutions()).toBe(3);
+    }),
+);
+
+it.effect.each(["action", "manual"] as const)(
+  "failed base resolution is not cached for %s retries",
+  (kind) =>
+    Effect.gen(function* () {
+      let failing = true;
+      const f = yield* fixture(false, {
+        waitForStart: false,
+        resolveBaseRepo: () =>
+          failing
+            ? commandError("pr_error", "resolution failed")
+            : Effect.succeed("owner/repo"),
+      });
+      yield* Fiber.join(f.initial);
+      expect(f.resolutions()).toBe(1);
+      expect(f.errors.get(repo.repoPath)).toContain("resolution failed");
+      yield* f.session.refresh("poll");
+      expect(f.resolutions()).toBe(1);
+      yield* f.session.refresh(kind);
+      expect(f.resolutions()).toBe(2);
+      failing = false;
+      yield* Deferred.succeed(f.release, undefined);
+      yield* f.session.refresh(kind);
+      expect(f.resolutions()).toBe(3);
+      expect(f.scans()).toBe(1);
+      expect(f.errors.size).toBe(0);
+    }),
+);
+
+it.effect("automatic resolution retries when discovery backoff expires", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture(false, {
+      waitForStart: false,
+      resolveBaseRepo: () => commandError("pr_error", "resolution failed"),
+    });
+    yield* Fiber.join(f.initial);
+    yield* TestClock.adjust(599_999);
+    yield* f.session.refresh("poll");
+    expect(f.resolutions()).toBe(1);
+    yield* TestClock.adjust(1);
+    yield* f.session.refresh("poll");
+    expect(f.resolutions()).toBe(2);
+  }),
+);
+
+it.effect(
+  "registration replacement and removal invalidate base resolution",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      yield* Deferred.succeed(f.release, undefined);
+      yield* Fiber.join(f.initial);
+      yield* f.session.updateRepositories([{ ...repo, id: "two" }]);
+      expect(f.resolutions()).toBe(2);
+      yield* f.session.updateRepositories([repo]);
+      expect(f.resolutions()).toBe(3);
+      yield* f.session.updateRepositories([]);
+      yield* f.session.updateRepositories([repo]);
+      expect(f.resolutions()).toBe(4);
+    }),
+);
+
+it.effect(
+  "changed base repository starts complete discovery after expiry",
+  () =>
+    Effect.gen(function* () {
+      let base = "owner/repo";
+      const f = yield* fixture(false, {
+        resolveBaseRepo: () => Effect.sync(() => base),
+      });
+      yield* Deferred.succeed(f.release, undefined);
+      yield* Fiber.join(f.initial);
+      yield* f.session.refresh("action");
+      base = "owner/replacement";
+      yield* TestClock.adjust("10 minutes");
+      yield* f.session.refresh("action");
+      expect(f.scanModes).toEqual(["all", "updated", "all"]);
+    }),
+);
+
+it.effect("sessions share compatible in-progress base resolutions", () =>
+  Effect.gen(function* () {
+    const resolving = yield* Deferred.make<void>();
+    const releaseBase = yield* Deferred.make<void>();
+    const f = yield* fixture(false, {
+      waitForStart: false,
+      resolveBaseRepo: () =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(resolving, undefined);
+          yield* Deferred.await(releaseBase);
+          return "owner/repo";
+        }),
+    });
+    yield* Deferred.await(resolving);
+    const second = yield* f.openSession();
+    yield* Effect.addFinalizer(() => second.close);
+    const updating = yield* Effect.forkChild(
+      second.updateRepositories([repo]),
+      {
+        startImmediately: true,
+      },
+    );
+    yield* Effect.yieldNow;
+    yield* Deferred.succeed(f.release, undefined);
+    yield* Deferred.succeed(releaseBase, undefined);
+    yield* Fiber.join(f.initial);
+    yield* Fiber.join(updating);
+    expect(f.resolutions()).toBe(1);
+    yield* second.refresh("action");
+    expect(f.resolutions()).toBe(1);
+  }),
+);
+
+it.effect("base resolution freshness starts when the lookup completes", () =>
+  Effect.gen(function* () {
+    const resolving = yield* Deferred.make<void>();
+    const releaseBase = yield* Deferred.make<void>();
+    const f = yield* fixture(false, {
+      waitForStart: false,
+      resolveBaseRepo: () =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(resolving, undefined);
+          yield* Deferred.await(releaseBase);
+          return "owner/repo";
+        }),
+    });
+    yield* Deferred.await(resolving);
+    yield* TestClock.adjust("5 minutes");
+    yield* Deferred.succeed(f.release, undefined);
+    yield* Deferred.succeed(releaseBase, undefined);
+    yield* Fiber.join(f.initial);
+    yield* TestClock.adjust("9 minutes");
+    yield* f.session.refresh("action");
+    expect(f.resolutions()).toBe(1);
+    yield* TestClock.adjust("1 minute");
+    yield* f.session.refresh("action");
+    expect(f.resolutions()).toBe(2);
+  }),
+);
+
+it.effect("independent services own independent base resolution caches", () =>
+  Effect.gen(function* () {
+    const first = yield* fixture();
+    const second = yield* fixture();
+    yield* Deferred.succeed(first.release, undefined);
+    yield* Deferred.succeed(second.release, undefined);
+    yield* Fiber.join(first.initial);
+    yield* Fiber.join(second.initial);
+    expect(first.resolutions()).toBe(1);
+    expect(second.resolutions()).toBe(1);
+  }),
 );

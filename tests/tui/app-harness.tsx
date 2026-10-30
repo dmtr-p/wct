@@ -43,20 +43,67 @@ vi.mock("../../src/tui/runtime", async () => {
     await import("../../src/services/pr-cache-service");
   const { PrRefreshService, makePrRefreshService } =
     await import("../../src/services/pr-refresh-service");
+  const { RegistryService, liveRegistryService } =
+    await import("../../src/services/registry-service");
+  const { WorktreeService, liveWorktreeService, makeWorktreeService } =
+    await import("../../src/services/worktree-service");
+  const { TmuxService } = await import("../../src/services/tmux");
+  const { noopTmuxService } = await import("../helpers/services");
+  const { LocalObservationService, makeLocalObservationService } =
+    await import("../../src/services/local-observation-service");
+  const tmux = {
+    ...noopTmuxService,
+    listClients: Effect.sync(() => tmuxFixtures.clients),
+    listSessions: Effect.sync(() => tmuxFixtures.sessions),
+    switchClientToPane: (clientTty: string, target: string) =>
+      Effect.sync(() => {
+        tmuxFixtures.switchCalls.push({ clientTty, target });
+        tmuxFixtures.onSwitch?.(clientTty, target);
+      }),
+  };
+  const worktree = await Effect.runPromise(
+    makeWorktreeService({
+      ...liveWorktreeService,
+      listWorktrees: (path?: string) =>
+        Effect.sync(() => worktreeFixtures.byRepoPath.get(path ?? "") ?? []),
+      getDefaultBranch: () => Effect.succeed("main"),
+      getChangedFileCount: () => Effect.succeed(0),
+      getAheadBehind: () => Effect.succeed({ ahead: 0, behind: 0 }),
+    }).pipe(Effect.provide(BunServices.layer)),
+  );
+  const observation = await Effect.runPromise(
+    makeLocalObservationService.pipe(
+      Effect.provideService(RegistryService, {
+        ...liveRegistryService,
+        listRepos: Effect.sync(() =>
+          registryItems.items.map((item) => ({ ...item, created_at: 0 })),
+        ),
+      }),
+      Effect.provideService(WorktreeService, worktree),
+      Effect.provideService(TmuxService, tmux),
+      Effect.provide(BunServices.layer),
+    ),
+  );
   const provide = <A, E>(effect: Effect.Effect<A, E>) => {
     if (!serviceFixtures.github || !serviceFixtures.cache)
       throw new Error("Missing harness service fixtures");
     return effect.pipe(
+      Effect.provideService(LocalObservationService, observation),
+      Effect.provideService(TmuxService, tmux),
+      Effect.provideService(WorktreeService, worktree),
       Effect.provideServiceEffect(PrRefreshService, makePrRefreshService),
       Effect.provideService(GitHubService, serviceFixtures.github),
       Effect.provideService(PrCacheService, serviceFixtures.cache),
       Effect.provide(BunServices.layer),
     );
   };
-  const runPromise = async (effect: Effect.Effect<unknown, WctError>) => {
+  const runPromise = async (
+    effect: Effect.Effect<unknown, WctError>,
+    options?: { signal?: AbortSignal },
+  ) => {
     const result = await runtimeMock.runPromise(effect);
     return Effect.isEffect(result)
-      ? Effect.runPromise(provide(result))
+      ? Effect.runPromise(provide(result), options)
       : result;
   };
   return {
@@ -95,41 +142,9 @@ const registryItems = vi.hoisted(() => ({
   items: [] as Array<{ id: string; repo_path: string; project: string }>,
 }));
 
-vi.mock("../../src/services/registry-service", () => ({
-  RegistryService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        listRepos: Promise.resolve(registryItems.items),
-      }),
-  },
-}));
-
 const worktreeFixtures = vi.hoisted(() => ({
   byRepoPath: new Map<string, Worktree[]>(),
 }));
-
-vi.mock("../../src/services/worktree-service", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/worktree-service")
-  >("../../src/services/worktree-service");
-  return {
-    ...actual,
-    WorktreeService: {
-      use: (selector: (svc: unknown) => unknown) =>
-        selector({
-          listWorktrees: (repoPath: string) =>
-            Promise.resolve(worktreeFixtures.byRepoPath.get(repoPath) ?? []),
-          getDefaultBranch: () => Promise.resolve("main"),
-          getChangedFileCount: () => Promise.resolve(0),
-          getAheadBehind: () =>
-            Promise.resolve({ ahead: 0, behind: 0 }) as Promise<{
-              ahead: number;
-              behind: number;
-            } | null>,
-        }),
-    },
-  };
-});
 
 const tmuxFixtures = vi.hoisted(() => ({
   clients: [] as Array<{ tty: string; session: string }>,
@@ -141,29 +156,6 @@ const tmuxFixtures = vi.hoisted(() => ({
   switchCalls: [] as Array<{ clientTty: string; target: string }>,
   onSwitch: null as ((clientTty: string, target: string) => void) | null,
 }));
-
-vi.mock("../../src/services/tmux", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/tmux")
-  >("../../src/services/tmux");
-  return {
-    ...actual,
-    TmuxService: {
-      use: (selector: (svc: unknown) => unknown) =>
-        selector({
-          listClients: Promise.resolve(tmuxFixtures.clients),
-          listSessions: Promise.resolve(tmuxFixtures.sessions),
-          listPanes: () => Promise.resolve([]),
-          switchClientToPane: (clientTty: string, target: string) => {
-            tmuxFixtures.switchCalls.push({ clientTty, target });
-            tmuxFixtures.onSwitch?.(clientTty, target);
-            return Promise.resolve();
-          },
-          detachClient: () => Promise.resolve(),
-        }),
-    },
-  };
-});
 
 // Drive "r" to await Navigate mode's PR refresh deterministically.
 const githubFixtures = vi.hoisted(() => ({

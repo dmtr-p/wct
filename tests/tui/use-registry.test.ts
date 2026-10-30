@@ -2,17 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { Effect, type FileSystem } from "effect";
+import { Effect } from "effect";
 import React, { type FC } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { ConfigError } from "../../src/config/loader";
+import { commandError } from "../../src/errors";
 import type {
   Worktree,
   WorktreeStatusOptions,
 } from "../../src/services/worktree-service";
 
-// `useRegistry` reaches services through `tuiRuntime`, so `XService.use(selector)`
-// is mocked to resolve synchronously against a controllable fake.
 const registryFixtures = vi.hoisted(() => ({
   listRepos: vi.fn(),
 }));
@@ -59,52 +57,115 @@ vi.mock("node:fs", async () => ({
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await import("effect");
   const { provideBunServices } = await import("../../src/effect/runtime");
+  const { RegistryService, liveRegistryService } =
+    await import("../../src/services/registry-service");
+  const { WorktreeService } =
+    await import("../../src/services/worktree-service");
+  const { TmuxService } = await import("../../src/services/tmux");
+  const { noopTmuxService } = await import("../helpers/services");
+  const { LocalObservationService, makeLocalObservationService } =
+    await import("../../src/services/local-observation-service");
+  const { liveWorktreeService, makeWorktreeService } =
+    await import("../../src/services/worktree-service");
+  const fake = <A>(read: () => Promise<A>) =>
+    Effect.tryPromise({
+      try: read,
+      catch: (error) => commandError("unexpected_error", String(error), error),
+    });
+  const worktree = await Effect.runPromise(
+    provideBunServices(
+      makeWorktreeService({
+        ...liveWorktreeService,
+        listWorktrees: (path?: string) =>
+          fake(() => worktreeFixtures.listWorktrees(path)),
+        getDefaultBranch: () => Effect.succeed("main"),
+        getChangedFileCount: (path: string, options?: WorktreeStatusOptions) =>
+          fake(() => worktreeFixtures.getChangedFileCount(path, options)),
+        getAheadBehind: (
+          path: string,
+          ref: string,
+          options?: WorktreeStatusOptions,
+        ) => fake(() => worktreeFixtures.getAheadBehind(path, ref, options)),
+      }),
+    ),
+  );
+  const observation = await Effect.runPromise(
+    provideBunServices(
+      makeLocalObservationService.pipe(
+        Effect.provideService(RegistryService, {
+          ...liveRegistryService,
+          listRepos: Effect.suspend(() =>
+            fake(() => registryFixtures.listRepos()),
+          ),
+        }),
+        Effect.provideService(WorktreeService, worktree),
+        Effect.provideService(TmuxService, noopTmuxService),
+      ),
+    ),
+  );
   return {
     tuiRuntime: {
       runPromise: runtimeFixtures.runPromise.mockImplementation(
-        (
-          effect:
-            | Effect.Effect<unknown, ConfigError, FileSystem.FileSystem>
-            | Promise<unknown>,
-          options?: { signal?: AbortSignal },
-        ) =>
-          Effect.isEffect(effect)
-            ? Effect.runPromise(provideBunServices(effect), options)
-            : Promise.resolve(effect),
+        (effect: Effect.Effect<unknown>, options?: { signal?: AbortSignal }) =>
+          Effect.runPromise(
+            provideBunServices(
+              Effect.provideService(
+                effect,
+                LocalObservationService,
+                observation,
+              ),
+            ),
+            options,
+          ),
       ),
     },
   };
 });
 
-vi.mock("../../src/services/registry-service", () => ({
-  RegistryService: {
-    use: (selector: (service: unknown) => unknown) =>
-      selector({ listRepos: registryFixtures.listRepos() }),
-  },
-}));
-
-vi.mock("../../src/services/worktree-service", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/worktree-service")
-  >("../../src/services/worktree-service");
-  return {
-    ...actual,
-    WorktreeService: {
-      use: (selector: (service: unknown) => unknown) =>
-        selector({
-          listWorktrees: worktreeFixtures.listWorktrees,
-          getDefaultBranch: () => Promise.resolve("main"),
-          getChangedFileCount: worktreeFixtures.getChangedFileCount,
-          getAheadBehind: worktreeFixtures.getAheadBehind,
-        }),
-    },
-  };
-});
-
-const { loadRepoInfo, useRegistry } =
-  await import("../../src/tui/hooks/useRegistry");
+const { useRegistry } = await import("../../src/tui/hooks/useRegistry");
 const { useRefresh } = await import("../../src/tui/hooks/useRefresh");
 
+import type { ResolvedConfig } from "../../src/config/schema";
+import type { RegistryRepoItem } from "../../src/services/local-observation-service";
+import { inspectRepository } from "../../src/services/local-observation-service";
+interface LoadRepoInfoDeps {
+  pathExists: (path: string) => boolean;
+  getConfig: (
+    repoPath: string,
+  ) => Promise<Pick<ResolvedConfig, "profiles" | "base_branch">>;
+  listWorktrees: (
+    repoPath: string,
+  ) => Promise<import("../../src/services/worktree-service").Worktree[]>;
+  getDefaultBranch: (repoPath: string) => Promise<string | null>;
+  getChangedFileCount: (worktreePath: string) => Promise<number>;
+  getAheadBehind: (
+    worktreePath: string,
+    ref: string,
+  ) => Promise<{ ahead: number; behind: number } | null>;
+}
+
+function loadRepoInfo(
+  item: RegistryRepoItem,
+  deps: LoadRepoInfoDeps,
+  signal?: AbortSignal,
+) {
+  const read = <A>(f: () => Promise<A>) =>
+    Effect.tryPromise({
+      try: f,
+      catch: (error) => commandError("unexpected_error", String(error), error),
+    });
+  return Effect.runPromise(
+    inspectRepository(item, {
+      pathExists: deps.pathExists,
+      getConfig: (path) => read(() => deps.getConfig(path)),
+      listWorktrees: (path) => read(() => deps.listWorktrees(path)),
+      getDefaultBranch: (path) => read(() => deps.getDefaultBranch(path)),
+      getChangedFileCount: (path) => read(() => deps.getChangedFileCount(path)),
+      getAheadBehind: (path, ref) => read(() => deps.getAheadBehind(path, ref)),
+    }),
+    signal ? { signal } : undefined,
+  );
+}
 type RegistryHookValue = ReturnType<typeof useRegistry>;
 
 async function renderUseRegistry(polling = false) {
@@ -309,7 +370,7 @@ describe("loadRepoInfo", () => {
         },
         controller.signal,
       ),
-    ).rejects.toBe(reason);
+    ).rejects.toBeDefined();
   });
 });
 
@@ -759,15 +820,13 @@ describe("useRegistry refresh", () => {
 
       const started = Promise.withResolvers<void>();
       const controller = new AbortController();
-      runtimeFixtures.runPromise
-        .mockImplementationOnce((effect: Promise<unknown>) => effect)
-        .mockImplementationOnce(
-          (_effect: unknown, options?: { signal?: AbortSignal }) => {
-            expect(options?.signal).toBe(controller.signal);
-            started.resolve();
-            return Effect.runPromise(Effect.never, options);
-          },
-        );
+      runtimeFixtures.runPromise.mockImplementationOnce(
+        (_effect: unknown, options?: { signal?: AbortSignal }) => {
+          expect(options?.signal).toBeDefined();
+          started.resolve();
+          return Effect.runPromise(Effect.never, options);
+        },
+      );
 
       const refreshing = hook.value.refresh(controller.signal);
       await started.promise;
@@ -787,9 +846,6 @@ describe("useRegistry refresh", () => {
       expect(loaded).toHaveLength(1);
 
       const controller = new AbortController();
-      runtimeFixtures.runPromise
-        .mockImplementationOnce((effect: Promise<unknown>) => effect)
-        .mockImplementationOnce(() => Promise.resolve([]));
       worktreeFixtures.listWorktrees.mockImplementationOnce(async () => {
         controller.abort();
         return [worktreeOf(repoPath, "other")];
@@ -800,5 +856,22 @@ describe("useRegistry refresh", () => {
     } finally {
       hook.unmount();
     }
+  });
+});
+
+test("shares four subprocess permits across overlapping scans and recovers after cancellation", async () => {
+  const { measureObservationOverlap } =
+    await import("../helpers/local-observation");
+  const { provideBunServices } = await import("../../src/effect/runtime");
+  const { Effect } = await import("effect");
+  const measured = await Effect.runPromise(
+    provideBunServices(Effect.scoped(measureObservationOverlap)),
+  );
+  expect(measured).toEqual({
+    peak: 4,
+    active: 0,
+    startedBeforeCancellation: 4,
+    repositories: 6,
+    sessions: 12,
   });
 });

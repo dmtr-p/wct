@@ -2,12 +2,20 @@ import { BunServices } from "@effect/platform-bun";
 import { Console, Effect, Layer, ManagedRuntime } from "effect";
 import { type WctServices, WctServicesLayer } from "../effect/services";
 import { AgentService, makeAgentService } from "../services/agent-service";
+import {
+  LocalObservationService,
+  makeLocalObservationService,
+} from "../services/local-observation-service";
 
-const tuiLayer = Layer.mergeAll(
+const dependencies = Layer.mergeAll(
   Layer.effect(AgentService, makeAgentService()),
   WctServicesLayer,
 ).pipe(Layer.provideMerge(BunServices.layer));
 
+const tuiLayer = Layer.effect(
+  LocalObservationService,
+  makeLocalObservationService,
+).pipe(Layer.provideMerge(dependencies));
 export const tuiRuntime = ManagedRuntime.make(tuiLayer);
 
 const noop = () => {};

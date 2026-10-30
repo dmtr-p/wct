@@ -1,6 +1,10 @@
-import { Data, Effect, Stream } from "effect";
+import { Context, Data, Effect, Semaphore, Stream } from "effect";
 import { ChildProcess } from "effect/process";
 import { commandError } from "../errors";
+
+export const ObservationProcessBudget = Context.Reference<
+  Semaphore.Semaphore | undefined
+>("wct/ObservationProcessBudget", { defaultValue: () => undefined });
 
 // Child processes inherit the full environment, independent of Config overrides.
 export const processEnvironment = Effect.sync(() => ({ ...process.env }));
@@ -82,7 +86,7 @@ function collectOutput(
   args: ReadonlyArray<string>,
   options?: ProcessOptions,
 ) {
-  return Effect.scoped(
+  const collected = Effect.scoped(
     Effect.gen(function* () {
       const handle = yield* makeCommand(command, args, {
         ...options,
@@ -106,6 +110,9 @@ function collectOutput(
         exitCode,
       };
     }),
+  );
+  return Effect.flatMap(ObservationProcessBudget, (budget) =>
+    budget ? budget.withPermits(1)(collected) : collected,
   );
 }
 

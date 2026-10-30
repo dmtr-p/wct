@@ -1,5 +1,6 @@
 import type { Effect } from "effect";
 import { useCallback, useEffect, useState } from "react";
+import { LocalObservationService } from "../../services/local-observation-service";
 import {
   type TmuxClient,
   type TmuxPaneInfo,
@@ -44,31 +45,13 @@ export function useTmux() {
     async (signal?: AbortSignal): Promise<TmuxSessionInfo[]> => {
       const request = beginSessions(signal);
       if (!request.isActive()) return [];
-      const opts = signal ? { signal } : undefined;
+      const opts = { signal: request.signal };
       try {
-        const result = await tuiRuntime.runPromise(
-          TmuxService.use((service) => service.listSessions),
-          opts,
-        );
-        if (!request.isActive()) return [];
-        const parsed = (result ?? []).map((session) => ({
-          name: session.name,
-          attached: session.attached,
-        }));
-        const paneMap = new Map<string, TmuxPaneInfo[]>();
-        await Promise.all(
-          parsed.map(async (session) => {
-            try {
-              const result = await tuiRuntime.runPromise(
-                TmuxService.use((service) => service.listPanes(session.name)),
-                opts,
-              );
-              paneMap.set(session.name, result);
-            } catch {
-              // A failed session must not prevent refreshing other sessions' panes.
-            }
-          }),
-        );
+        const { sessions: parsed, panes: paneMap } =
+          await tuiRuntime.runPromise(
+            LocalObservationService.use((service) => service.sessions),
+            opts,
+          );
         if (!request.isActive()) return [];
         if (request.accept()) {
           setSessions(parsed);
@@ -90,10 +73,10 @@ export function useTmux() {
     async (signal?: AbortSignal): Promise<TmuxClientDiscovery> => {
       const request = beginClient(signal);
       if (!request.isActive()) return { type: "error" };
-      const opts = signal ? { signal } : undefined;
+      const opts = { signal: request.signal };
       try {
         const clients = await tuiRuntime.runPromise(
-          TmuxService.use((service) => service.listClients),
+          LocalObservationService.use((service) => service.clients),
           opts,
         );
         if (!request.isActive()) return { type: "error" };

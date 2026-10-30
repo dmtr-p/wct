@@ -20,10 +20,17 @@ PRs that closed or merged between polls or while the TUI was closed. Malformed
 discovery records fail the scan rather than advancing a checkpoint that could
 permanently skip a PR.
 
-Successful base-repository resolution is cached for ten minutes. Manual refresh
-bypasses cache freshness and requests complete historical discovery and fresh
-terminal facts. Concurrent manual requests can share a complete scan. A changed
-base repository rebuilds discovery when resolution next runs.
+Each `PrRefreshService` instance owns an Effect keyed cache for base-repository
+resolution, shared by its sessions. Keys combine Main Repository path and
+registration identity. Successful results are cached for ten minutes after
+resolution completes; failures are not retained. Compatible concurrent lookups
+share one resolution. Removal or replacement of a registration invalidates its
+entry. Resolution failure backoff remains owned by refresh coordination.
+
+Manual refresh bypasses cache freshness and requests complete historical
+discovery and fresh terminal facts. Concurrent manual requests can share a
+complete scan. A changed base repository rebuilds discovery when resolution next
+runs.
 
 ## Association facts and details
 

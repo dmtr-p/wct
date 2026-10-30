@@ -1,6 +1,12 @@
 import { Effect } from "effect";
 import { graphQlAliasError, queryGitHub } from "./github-graphql";
-import { checkOutcome, type PrCheck, type PrFacts } from "./pr-model";
+import {
+  checkOutcome,
+  normalizeMergeable,
+  normalizeReviewDecision,
+  type PrCheck,
+  type PrFacts,
+} from "./pr-model";
 
 const INITIAL_BATCH = 20;
 const MAX_FOLLOW_UPS = 20;
@@ -68,20 +74,10 @@ function unwrapPage(raw: unknown): {
         ? { nodes: [], pageInfo: { hasNextPage: false } }
         : null),
     id: typeof pr.id === "string" ? pr.id : "",
-    mergeable:
-      pr.mergeable === "MERGEABLE" ||
-      pr.mergeable === "CONFLICTING" ||
-      pr.mergeable === "UNKNOWN"
-        ? pr.mergeable
-        : null,
+    mergeable: normalizeMergeable(pr.mergeable),
     mergeStateStatus:
       typeof pr.mergeStateStatus === "string" ? pr.mergeStateStatus : null,
-    reviewDecision:
-      pr.reviewDecision === "APPROVED" ||
-      pr.reviewDecision === "CHANGES_REQUESTED" ||
-      pr.reviewDecision === "REVIEW_REQUIRED"
-        ? pr.reviewDecision
-        : null,
+    reviewDecision: normalizeReviewDecision(pr.reviewDecision),
     queued:
       pr.mergeQueueEntry === null
         ? false

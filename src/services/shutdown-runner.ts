@@ -161,7 +161,7 @@ export function runDetachedShutdown(
     );
     yield* Effect.tryPromise({
       try: () => ready.promise,
-      catch: toWctError,
+      catch: (error) => toWctError(error),
     }).pipe(
       Effect.timeout("30 seconds"),
       Effect.mapError((error) =>

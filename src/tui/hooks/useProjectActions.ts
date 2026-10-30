@@ -69,7 +69,7 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
 
     const refresh = Effect.tryPromise({
       try: () => deps.refreshAll(),
-      catch: toWctError,
+      catch: (error) => toWctError(error),
     });
 
     const program = Effect.gen(function* () {
@@ -91,7 +91,7 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
       ];
       const canProceed = yield* Effect.tryPromise({
         try: () => deps.switchClientAwayFromSessions(sessionNames),
-        catch: toWctError,
+        catch: (error) => toWctError(error),
       });
       if (!canProceed) {
         return yield* toWctError(

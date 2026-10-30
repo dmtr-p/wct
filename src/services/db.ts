@@ -155,7 +155,7 @@ export function withDbEffect<A>(
           throw error;
         }
       },
-      catch: failure,
+      catch: (error) => failure(error),
     }),
     (db) =>
       Effect.suspend(() => f(db)).pipe(

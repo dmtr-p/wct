@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Data, Effect, FileSystem } from "effect";
-import { identity } from "effect/Function";
 import type { Profile, ResolvedConfig, WctConfig } from "./schema";
 import { resolveConfig, validateConfig } from "./validator";
 
@@ -86,7 +85,7 @@ function loadConfigFileEffect(
     const fs = yield* FileSystem.FileSystem;
     const exists = yield* Effect.match(fs.exists(filePath), {
       onFailure: () => false,
-      onSuccess: identity,
+      onSuccess: (exists) => exists,
     });
 
     if (!exists) {

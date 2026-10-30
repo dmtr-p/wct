@@ -341,7 +341,9 @@ function executeCommand(cmd: TmuxCommand) {
 }
 
 function executeCommands(commands: TmuxCommand[]) {
-  return Effect.forEach(commands, executeCommand, { discard: true });
+  return Effect.forEach(commands, (command) => executeCommand(command), {
+    discard: true,
+  });
 }
 
 export function buildWindowsPaneCommands(

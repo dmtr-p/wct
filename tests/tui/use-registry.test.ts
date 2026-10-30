@@ -69,7 +69,7 @@ vi.mock("../../src/tui/runtime", async () => {
     await import("../../src/services/worktree-service");
   const fake = <A>(read: () => Promise<A>) =>
     Effect.tryPromise({
-      try: read,
+      try: () => read(),
       catch: (error) => commandError("unexpected_error", String(error), error),
     });
   const worktree = await Effect.runPromise(
@@ -151,7 +151,7 @@ function loadRepoInfo(
 ) {
   const read = <A>(f: () => Promise<A>) =>
     Effect.tryPromise({
-      try: f,
+      try: () => f(),
       catch: (error) => commandError("unexpected_error", String(error), error),
     });
   return Effect.runPromise(

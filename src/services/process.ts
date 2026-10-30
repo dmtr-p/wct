@@ -99,7 +99,7 @@ function collectOutput(
         [
           decodeOutput(handle.stdout, options?.maxOutputBytes),
           decodeOutput(handle.stderr, options?.maxOutputBytes),
-          Effect.map(handle.exitCode, Number),
+          Effect.map(handle.exitCode, (exitCode) => Number(exitCode)),
         ],
         { concurrency: "unbounded" },
       );

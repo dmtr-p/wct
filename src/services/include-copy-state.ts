@@ -40,10 +40,10 @@ export function getIncludeCopyState(worktreePath: string) {
       pending,
       begin: fs
         .writeFileString(pendingPath, "pending\n")
-        .pipe(Effect.mapError(stateError)),
+        .pipe(Effect.mapError((error) => stateError(error))),
       complete: fs
         .remove(pendingPath, { force: true })
-        .pipe(Effect.mapError(stateError)),
+        .pipe(Effect.mapError((error) => stateError(error))),
     };
   }).pipe(
     Effect.mapError((error) =>

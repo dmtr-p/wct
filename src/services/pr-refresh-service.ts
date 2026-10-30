@@ -582,7 +582,9 @@ export const makePrRefreshService = Effect.gen(function* () {
             )
             .pipe(
               Effect.flatMap((pending) =>
-                Effect.forEach(pending, Fiber.await, { discard: true }),
+                Effect.forEach(pending, (fiber) => Fiber.await(fiber), {
+                  discard: true,
+                }),
               ),
             ),
         refresh,

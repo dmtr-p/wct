@@ -44,7 +44,17 @@ export interface WorkspacePrInput {
   cached: WorkspacePrEntry | null;
 }
 
+export interface PrCacheHydration {
+  workspaces: Pick<WorkspacePrInput, "branch" | "cached">[];
+  openPrs: CachedPrEntry | null;
+}
+
 export interface PrCacheServiceApi {
+  getHydration: (
+    repoPath: string,
+    branches: readonly string[],
+    includeOpenPrs: boolean,
+  ) => Effect.Effect<PrCacheHydration, WctError>;
   getWorkspaceInputs: (
     repoPath: string,
     branches: readonly string[],
@@ -509,6 +519,18 @@ function prCacheDb<A>(
 }
 
 export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
+  getHydration: (repoPath, branches, includeOpenPrs) =>
+    prCacheDb("getHydration", (db) =>
+      db
+        .transaction(() => ({
+          workspaces: branches.map((branch) => ({
+            branch,
+            cached: sqlGetWorkspace(db, repoPath, branch),
+          })),
+          openPrs: includeOpenPrs ? sqlGetOpenPrs(db, repoPath) : null,
+        }))
+        .deferred(),
+    ),
   getWorkspaceInputs: (repoPath, branches) =>
     prCacheDb("getWorkspaceInputs", (db) =>
       db

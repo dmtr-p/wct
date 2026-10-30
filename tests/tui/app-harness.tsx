@@ -305,6 +305,7 @@ vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: {
     use: (selector: (svc: unknown) => unknown) =>
       selector({
+        getHydration: () => ({ workspaces: [], openPrs: null }),
         getDiscovery: () => Promise.resolve(null),
         setDiscovery: () => Promise.resolve(true),
         getWorkspace: () => null,

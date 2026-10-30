@@ -21,7 +21,7 @@
     "prepare": "bun run --bun effect-tsgo patch --typescript --oxlint"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.57.0",
+    "@effect/tsgo": "0.62.0",
     "@effect/vitest": "4.0.6",
     "@types/bun": "1.4.4",
     "@types/react": "19.3.0",

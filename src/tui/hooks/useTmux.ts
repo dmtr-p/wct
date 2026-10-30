@@ -70,7 +70,6 @@ export function useTmux() {
           }),
         );
         if (!request.isActive()) return [];
-        // Publish sessions and their panes together, under the same generation.
         if (request.accept()) {
           setSessions(parsed);
           setPanes(paneMap);

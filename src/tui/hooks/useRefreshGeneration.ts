@@ -1,6 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 
-/** Fresh observations publish without regressing the accepted request order. */
 export function useRefreshGeneration() {
   const generation = useRef(0);
   const accepted = useRef(0);
@@ -15,15 +14,13 @@ export function useRefreshGeneration() {
   const begin = useCallback((signal?: AbortSignal) => {
     const current = ++generation.current;
     const startedIn = lifetime.current;
-    // Superseded callers still need their own post-request snapshot for
-    // lifecycle validation. Cancellation, unlike supersession, discards it.
+    // Lifecycle validation still needs a superseded request's own snapshot.
     const isActive = () =>
       mounted.current && lifetime.current === startedIn && !signal?.aborted;
     return {
       isActive,
       accept: () => {
-        // Starting another scan must not starve slower observations. Only a
-        // newer accepted result (or an action invalidation) makes this obsolete.
+        // Polling can start newer scans before a slow scan finishes.
         if (!isActive() || current < accepted.current) return false;
         accepted.current = current;
         return true;
@@ -31,7 +28,7 @@ export function useRefreshGeneration() {
     };
   }, []);
 
-  // Invalidate synchronously on unmount, before pending promise continuations.
+  // Layout cleanup must run before queued promise continuations.
   useLayoutEffect(() => {
     mounted.current = true;
     return () => {

@@ -427,6 +427,19 @@ export const agentRules: Record<"claude" | "codex", readonly AgentRule[]> = {
       ],
     },
     {
+      id: "plan_approval_prompt",
+      state: "blocked",
+      priority: 900,
+      // The selected option uses the same › marker as the composer.
+      region: "whole_recent",
+      visible_blocker: true,
+      regex: [
+        "(?im)^\\s*Implement\\s+this\\s+plan\\?\\s*$",
+        "(?i)\\benter\\s+select\\s*·\\s*esc\\s+back\\s*\\z",
+      ],
+      line_regex: ["(?i)^\\s*›?\\s*\\d+\\.\\s*Yes\\b"],
+    },
+    {
       id: "live_strong_blocker",
       state: "blocked",
       priority: 900,

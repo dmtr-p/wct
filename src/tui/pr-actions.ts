@@ -352,7 +352,6 @@ export function createPrActionsController(deps: PrActionsDependencies) {
         close();
         return;
       }
-      // Accept only actions currently offered by this screen.
       if (
         !prMenuOptions(menu).some(
           (option) => option.id === id && !option.disabled,

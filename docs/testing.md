@@ -13,3 +13,9 @@ tests that exercise tmux must provide a fixture executable, as in the
 
 See the [Effect reference](../EFFECT_V4.md) for scope ownership, console capture,
 layers, and property testing.
+
+`PrRefreshService.openSession` requires an Effect scope. Acquire a session
+directly in an `it.effect` test, or provide a child scope when testing early
+release. The [PR refresh service tests](../tests/services/pr-refresh-service.test.ts)
+cover scope completion, interruption, and session isolation; see
+[PR refresh](pr-refresh.md) for behavior.

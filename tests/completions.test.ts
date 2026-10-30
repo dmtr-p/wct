@@ -376,7 +376,7 @@ describe("Effect CLI root", () => {
     },
   );
 
-  test("does not expose the legacy completions subcommand", async () => {
+  test("rejects completions as a subcommand", async () => {
     const result = runCliProcess(["completions", "fish"]);
 
     expect(result.exitCode).toBe(1);
@@ -412,7 +412,7 @@ describe("Effect CLI root", () => {
     expect(stderr).not.toContain("Help requested");
   });
 
-  test("emits JSON for the removed queue subcommand when --json is present", () => {
+  test("emits JSON for the unknown queue subcommand when --json is present", () => {
     const result = runCliProcess(["--json", "queue"]);
     const stdout = result.stdout.toString();
     const stderr = result.stderr.toString();

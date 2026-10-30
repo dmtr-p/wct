@@ -17,6 +17,13 @@ import type { Worktree } from "../../src/services/worktree-service";
 import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 import { createTerminalInput } from "../../src/tui/input/terminal-input";
 
+const serviceFixtures = vi.hoisted(() => ({
+  github: null as
+    import("../../src/services/github-service").GitHubService | null,
+  cache: null as
+    import("../../src/services/pr-cache-service").PrCacheServiceApi | null,
+}));
+
 const runtimeMock = vi.hoisted(() => ({
   runPromise: vi.fn((effect: Effect.Effect<unknown, WctError>) =>
     Promise.resolve(effect),
@@ -30,9 +37,27 @@ const refreshHarness = vi.hoisted(() => ({
 
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await vi.importActual<typeof import("effect")>("effect");
+  const { BunServices } = await import("@effect/platform-bun");
+  const { GitHubService } = await import("../../src/services/github-service");
+  const { PrCacheService } =
+    await import("../../src/services/pr-cache-service");
+  const { PrRefreshService, makePrRefreshService } =
+    await import("../../src/services/pr-refresh-service");
+  const provide = <A, E>(effect: Effect.Effect<A, E>) => {
+    if (!serviceFixtures.github || !serviceFixtures.cache)
+      throw new Error("Missing harness service fixtures");
+    return effect.pipe(
+      Effect.provideServiceEffect(PrRefreshService, makePrRefreshService),
+      Effect.provideService(GitHubService, serviceFixtures.github),
+      Effect.provideService(PrCacheService, serviceFixtures.cache),
+      Effect.provide(BunServices.layer),
+    );
+  };
   const runPromise = async (effect: Effect.Effect<unknown, WctError>) => {
     const result = await runtimeMock.runPromise(effect);
-    return Effect.isEffect(result) ? Effect.runPromise(result) : result;
+    return Effect.isEffect(result)
+      ? Effect.runPromise(provide(result))
+      : result;
   };
   return {
     tuiRuntime: { runPromise },
@@ -155,61 +180,63 @@ const githubFixtures = vi.hoisted(() => ({
   >(),
 }));
 
-vi.mock("../../src/services/github-service", () => ({
-  GitHubService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        resolveBaseRepo: () => Promise.resolve("test/repo"),
-        getRawPrs: (
-          repoPath: string,
-          _base: string,
-          numbers: readonly number[],
-        ) =>
-          Effect.succeed(
-            numbers.map((number) => {
-              const pr = githubFixtures.prsByRepoPath
-                .get(repoPath)
-                ?.find((pr) => pr.number === number);
-              return {
-                number,
-                error: pr ? null : "PR unavailable",
-                raw: pr
-                  ? {
-                      ...pr,
-                      id: `PR-${pr.number}`,
-                      headRepository: { nameWithOwner: "test/repo" },
-                    }
-                  : null,
-              };
-            }),
-          ),
-        listRawPrs: (repoPath: string, state: "all" | "updated") => {
-          githubFixtures.listRequests.push({ repoPath, state });
-          return Effect.succeed(
-            (githubFixtures.prsByRepoPath.get(repoPath) ?? []).map((pr) => ({
-              ...pr,
-              id: `PR-${pr.number}`,
-              headRepositoryOwner: { login: "test" },
-              headRepository: { name: "repo" },
-              headRefOid: `oid-${pr.number}`,
-              baseRefName: "main",
-              updatedAt: new Date().toISOString(),
-              isDraft: false,
-              statusCheckRollup:
-                pr.rollupState === null
-                  ? []
-                  : [
-                      {
-                        name: "test",
-                        conclusion: pr.rollupState.toUpperCase(),
-                      },
-                    ],
-            })),
-          );
-        },
-      }),
-  },
-}));
+vi.mock("../../src/services/github-service", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/services/github-service")
+  >("../../src/services/github-service");
+  serviceFixtures.github = {
+    isGhInstalled: Effect.succeed(true),
+    resolvePr: () => Effect.die("unused"),
+    addForkRemote: () => Effect.void,
+    fetchBranch: () => Effect.void,
+    findRemoteForRepo: () => Effect.succeed(null),
+    resolveBaseRepo: () => Effect.succeed("test/repo"),
+    getRawPrs: (repoPath: string, _base: string, numbers: readonly number[]) =>
+      Effect.succeed(
+        numbers.map((number) => {
+          const pr = githubFixtures.prsByRepoPath
+            .get(repoPath)
+            ?.find((pr) => pr.number === number);
+          return {
+            number,
+            error: pr ? null : "PR unavailable",
+            raw: pr
+              ? {
+                  ...pr,
+                  id: `PR-${pr.number}`,
+                  headRepository: { nameWithOwner: "test/repo" },
+                }
+              : null,
+          };
+        }),
+      ),
+    listRawPrs: (repoPath: string, state: "all" | "updated") => {
+      githubFixtures.listRequests.push({ repoPath, state });
+      return Effect.succeed(
+        (githubFixtures.prsByRepoPath.get(repoPath) ?? []).map((pr) => ({
+          ...pr,
+          id: `PR-${pr.number}`,
+          headRepositoryOwner: { login: "test" },
+          headRepository: { name: "repo" },
+          headRefOid: `oid-${pr.number}`,
+          baseRefName: "main",
+          updatedAt: new Date().toISOString(),
+          isDraft: false,
+          statusCheckRollup:
+            pr.rollupState === null
+              ? []
+              : [
+                  {
+                    name: "test",
+                    conclusion: pr.rollupState.toUpperCase(),
+                  },
+                ],
+        })),
+      );
+    },
+  };
+  return actual;
+});
 
 vi.mock("../../src/services/pr-discovery", async () => {
   const actual = await vi.importActual<
@@ -301,30 +328,32 @@ vi.mock("../../src/services/workspace-service", async () => {
   };
 });
 
-vi.mock("../../src/services/pr-cache-service", () => ({
-  PrCacheService: {
-    use: (selector: (svc: unknown) => unknown) =>
-      selector({
-        getHydration: () => ({ workspaces: [], openPrs: null }),
-        getDiscovery: () => Promise.resolve(null),
-        setDiscovery: () => Promise.resolve(true),
-        getWorkspace: () => null,
-        getWorkspaceInputs: (_path: string, branches: string[]) =>
-          Promise.resolve(
-            branches.map((branch) => ({
-              branch,
-              explicit: null,
-              cached: null,
-            })),
-          ),
-        getOpenPrs: () => null,
-        setWorkspace: () => Promise.resolve(),
-        setOpenPrs: () => Promise.resolve(),
-        pruneWorkspaces: () => Promise.resolve(),
-        setWorkspaceError: () => Promise.resolve(),
-      }),
-  },
-}));
+vi.mock("../../src/services/pr-cache-service", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/services/pr-cache-service")
+  >("../../src/services/pr-cache-service");
+  serviceFixtures.cache = {
+    ...actual.livePrCacheService,
+    getHydration: () => Effect.succeed({ workspaces: [], openPrs: null }),
+    getDiscovery: () => Effect.succeed(null),
+    setDiscovery: () => Effect.succeed(true),
+    getWorkspace: () => Effect.succeed(null),
+    getWorkspaceInputs: (_path: string, branches: readonly string[]) =>
+      Effect.succeed(
+        branches.map((branch) => ({
+          branch,
+          explicit: null,
+          cached: null,
+        })),
+      ),
+    getOpenPrs: () => Effect.succeed(null),
+    setWorkspace: () => Effect.void,
+    setOpenPrs: () => Effect.void,
+    pruneWorkspaces: () => Effect.void,
+    setWorkspaceError: () => Effect.void,
+  };
+  return actual;
+});
 
 export {
   githubFixtures,

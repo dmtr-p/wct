@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { PassThrough } from "node:stream";
+import { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -20,6 +21,10 @@ import {
 import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { MergeSnapshot } from "../../src/services/pr-merge-service";
 import type { OpenPrChoice, PrFacts } from "../../src/services/pr-model";
+import {
+  makePrRefreshService,
+  PrRefreshService,
+} from "../../src/services/pr-refresh-service";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { createPrActionsController } from "../../src/tui/pr-actions";
 import { Mode } from "../../src/tui/types";
@@ -297,11 +302,16 @@ async function renderHook(repos: RepoInfo[]) {
       instance.rerender(React.createElement(Hook, { repos: nextRepos })),
     flush: () => instance.waitUntilRenderFlush(),
     waitFor,
-    waitForIdle: () =>
-      waitFor(() => {
+    waitForIdle: async () => {
+      // Let passive effects submit session work before checking tracked waiters.
+      await instance.waitUntilRenderFlush();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await waitFor(() => {
         expect(pendingEffects.size).toBe(0);
         expect(value?.refreshingProjects.size).toBe(0);
-      }),
+      });
+      await instance.waitUntilRenderFlush();
+    },
     unmount: () => instance.unmount(),
   };
 }
@@ -369,6 +379,8 @@ describe("useGitHub", () => {
     ) => {
       const promise = Effect.runPromise(
         effect.pipe(
+          Effect.provideServiceEffect(PrRefreshService, makePrRefreshService),
+          Effect.provide(BunServices.layer),
           Effect.provideService(GitHubService, github),
           Effect.provideService(PrCacheService, cache),
         ),
@@ -388,7 +400,7 @@ describe("useGitHub", () => {
     const harness = await renderHook([]);
     try {
       await harness.waitForIdle();
-      expect(runPromise).not.toHaveBeenCalled();
+      expect(list).not.toHaveBeenCalled();
       expect(hydrationRead).not.toHaveBeenCalled();
       expect(harness.value.prData.size).toBe(0);
     } finally {
@@ -662,7 +674,9 @@ describe("useGitHub", () => {
     try {
       await harness.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
       expect(list).toHaveBeenCalledTimes(1);
-      expect(harness.value.refreshingProjects.has(repoPath)).toBe(true);
+      await harness.waitFor(() =>
+        expect(harness.value.refreshingProjects.has(repoPath)).toBe(true),
+      );
       expect(harness.value.openPrs.get(repoPath)).toEqual(choices);
 
       releaseRefresh();
@@ -1495,10 +1509,17 @@ describe("useGitHub", () => {
     const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
     try {
       await harness.waitForIdle();
+      await harness.waitFor(() =>
+        expect(
+          harness.value.prData.get(key("/tmp/repo", "feature"))?.number,
+        ).toBe(1),
+      );
       listError = "incomplete pagination";
       await harness.value.refresh();
       await harness.waitForIdle();
-      expect(harness.value.errors.get("/tmp/repo")).toContain(listError);
+      await harness.waitFor(() =>
+        expect(harness.value.errors.get("/tmp/repo")).toContain(listError),
+      );
       expect(
         harness.value.associations.get(key("/tmp/repo", "feature"))?.lastError,
       ).toContain(listError);

@@ -1,7 +1,6 @@
 // Import this harness before dynamically importing App so service mocks are
-// registered first; their fixtures must use vi.hoisted. Service selectors return
-// either plain values/Promises or Effects, so the runtime stub executes Effects
-// and passes other results through.
+// registered first; their fixtures must use vi.hoisted. The promise runner
+// evaluates Effects with fixture services and passes through plain mock results.
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { Effect } from "effect";

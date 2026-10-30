@@ -146,10 +146,8 @@ describe("App mouse selection and viewport behavior", () => {
         await sendKeys(rendered.stdin, "\x1b[B"); // main -> feature/a
         await sendKeys(rendered.stdin, "\x1b[C"); // expand feature/a
 
-        // Refresh the fixture PRs through the keyboard path:
-        // ctx.refreshRepo -> refreshGitHub -> GitHubService.use(listRawPrs).
-        // "r" is Navigate-only, so collapse out of Expanded first, then
-        // re-expand.
+        // "r" is Navigate-only, so collapse out of Expanded before refreshing
+        // the fixture PRs through the keyboard action, then re-expand.
         await sendKeys(rendered.stdin, "\x1b[D"); // left: collapse to Navigate
         await sendKeys(rendered.stdin, "r"); // refresh PRs for repo "alpha"
         await tick(15);

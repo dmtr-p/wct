@@ -34,6 +34,9 @@ runs.
 
 ## Association facts and details
 
+Main and linked worktrees use the same Push Destination and Explicit PR
+Association rules, cache persistence, and refresh error handling.
+
 Unresolved or live external Explicit PR Associations use batched updates.
 Historical candidates and merged PRs use cached facts. Check details are fetched
 for live associated PRs and open PR Candidates; terminal associations reuse

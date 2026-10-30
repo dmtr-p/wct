@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { Schema } from "effect";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import {
   ConfigError,
   DEFAULT_CONFIG,
@@ -10,12 +11,47 @@ import {
   resolveWorktreePath,
   slugifyBranch,
 } from "../src/config/loader";
+import {
+  type ResolvedConfig,
+  ResolvedConfigSchema,
+  WctConfigSchema,
+} from "../src/config/schema";
 import { resolveConfig, validateConfig } from "../src/config/validator";
 import { runBunPromise } from "../src/effect/runtime";
 
 function expectValidationError(errors: string[], expected: string): void {
   expect(errors.some((error) => error.includes(expected))).toBe(true);
 }
+
+describe("ResolvedConfigSchema", () => {
+  test("accepts resolved defaults with optional fields absent or undefined", () => {
+    const config = resolveConfig({ copy: undefined }, "/projects/app");
+    expect(Schema.decodeSync(ResolvedConfigSchema)(config)).toEqual(config);
+    expectTypeOf<ResolvedConfig["worktree_dir"]>().toEqualTypeOf<string>();
+    expectTypeOf<ResolvedConfig["project_name"]>().toEqualTypeOf<string>();
+    expectTypeOf<ResolvedConfig["work_dir"]>().toEqualTypeOf<string>();
+  });
+
+  test.each(["worktree_dir", "project_name", "work_dir"] as const)(
+    "requires %s only in resolved configuration",
+    (key) => {
+      const config = resolveConfig({}, "/projects/app");
+      for (const value of [undefined, null, 123]) {
+        const invalid: unknown = { ...config, [key]: value };
+        expect(() =>
+          Schema.decodeUnknownSync(ResolvedConfigSchema)(invalid),
+        ).toThrow();
+      }
+      const { [key]: _, ...withoutKey } = config;
+      expect(() =>
+        Schema.decodeUnknownSync(ResolvedConfigSchema)(withoutKey),
+      ).toThrow();
+      expect(() =>
+        Schema.decodeSync(WctConfigSchema)(withoutKey),
+      ).not.toThrow();
+    },
+  );
+});
 
 describe("validateConfig", () => {
   test("accepts valid minimal config", () => {
@@ -49,6 +85,35 @@ describe("validateConfig", () => {
     });
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
+  });
+
+  test("uses the first decoded value for semantic validation", () => {
+    const readWorkDir = vi.fn(() => "/tmp/web");
+    const result = validateConfig({
+      get work_dir() {
+        return readWorkDir();
+      },
+    });
+    expect(result).toEqual({
+      valid: false,
+      errors: ["work_dir must be a relative path."],
+    });
+    expect(readWorkDir).toHaveBeenCalledTimes(1);
+  });
+
+  test("aggregates structural errors before checking semantics", () => {
+    const result = validateConfig({
+      work_dir: "/tmp/web",
+      copy: [123],
+      profiles: { dev: { setup: [{ name: "Install" }] } },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toHaveLength(2);
+    expectValidationError(result.errors, "copy[0]: Expected string");
+    expectValidationError(
+      result.errors,
+      "profiles.dev.setup[0].command: Missing key",
+    );
   });
 
   test("rejects non-object config", () => {
@@ -575,7 +640,31 @@ describe("DEFAULT_CONFIG", () => {
   });
 });
 
-describe("branch defaults config loading", () => {
+describe("config loading", () => {
+  test("preserves unknown fields in returned base and profile configuration", async () => {
+    const home = mkdtempSync(join(tmpdir(), "wct-config-home-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "wct-config-project-"));
+    vi.stubEnv("HOME", home);
+    try {
+      await Bun.write(
+        join(projectDir, ".wct.yaml"),
+        "project_name: app\ncustom: base\nprofiles:\n  dev:\n    custom: profile\n",
+      );
+      const config = await runBunPromise(loadConfig(projectDir));
+      expect(config).toEqual({
+        project_name: "app",
+        worktree_dir: "../worktrees",
+        work_dir: ".",
+        custom: "base",
+        profiles: { dev: { custom: "profile" } },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   test.each([
     ["project_name: app\n", "upstream/main", "fork"],
     ["base_branch: develop\n", "develop", "fork"],

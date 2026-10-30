@@ -59,17 +59,10 @@ export const WctConfigSchema = Schema.Struct({
 });
 
 export const ResolvedConfigSchema = Schema.Struct({
-  version: Schema.optional(Schema.Finite),
-  base_branch: Schema.optional(Schema.String),
-  push_remote: Schema.optional(Schema.String),
+  ...WctConfigSchema.fields,
   worktree_dir: Schema.String,
   project_name: Schema.String,
   work_dir: Schema.String,
-  copy: Schema.optional(Schema.Array(Schema.String)),
-  setup: Schema.optional(Schema.Array(SetupCommandSchema)),
-  down: Schema.optional(Schema.Array(SetupCommandSchema)),
-  tmux: Schema.optional(TmuxConfigSchema),
-  profiles: Schema.optional(Schema.Record(Schema.String, ProfileSchema)),
 });
 
 export type SetupCommand = typeof SetupCommandSchema.Type;

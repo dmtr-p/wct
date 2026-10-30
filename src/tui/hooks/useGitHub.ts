@@ -1,3 +1,4 @@
+import { Deferred, Effect } from "effect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PrCacheService,
@@ -18,6 +19,11 @@ interface HydratedRegistration {
   id: string;
   branches: Set<string>;
   openPrs: boolean;
+}
+
+interface OwnedSession {
+  ready: Deferred.Deferred<PrRefreshSession>;
+  signal: AbortSignal;
 }
 
 function hydrate(
@@ -91,9 +97,31 @@ export function useGitHub(repos: RepoInfo[]) {
   const [refreshingProjects, setRefreshingProjects] = useState<Set<string>>(
     new Set(),
   );
-  const reposRef = useRef(repos);
-  reposRef.current = repos;
-  const session = useRef<Promise<PrRefreshSession> | null>(null);
+  const session = useRef<OwnedSession | null>(null);
+  const runWithSession = useCallback(
+    async <E>(
+      action: (value: PrRefreshSession) => Effect.Effect<void, E>,
+      signal?: AbortSignal,
+    ) => {
+      const owned = session.current;
+      if (!owned) return;
+      const cancellation = signal
+        ? AbortSignal.any([owned.signal, signal])
+        : owned.signal;
+      try {
+        await tuiRuntime.runPromise(
+          Effect.gen(function* () {
+            const value = yield* Deferred.await(owned.ready);
+            if (session.current === owned) yield* action(value);
+          }),
+          { signal: cancellation },
+        );
+      } catch (cause) {
+        if (!cancellation.aborted) throw cause;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const cached = hydrate(repos, hydrated.current);
@@ -124,60 +152,56 @@ export function useGitHub(repos: RepoInfo[]) {
 
   useEffect(() => {
     let attached = true;
+    const controller = new AbortController();
+    const owned: OwnedSession = {
+      ready: Deferred.makeUnsafe(),
+      signal: controller.signal,
+    };
+    session.current = owned;
     const observe =
       <A>(publish: (update: (previous: A) => A) => void) =>
       (update: (previous: A) => A) => {
         if (attached)
           publish((previous) => (attached ? update(previous) : previous));
       };
-    const owned = tuiRuntime.runPromise(
-      PrRefreshService.use((service) =>
-        service.openSession({
-          associations: observe(setAssociations),
-          openPrs: observe(setOpenPrs),
-          errors: observe(setErrors),
-          refreshing: observe(setRefreshingProjects),
-        }),
+    tuiRuntime.runFork(
+      Effect.gen(function* () {
+        const value = yield* PrRefreshService.use((service) =>
+          service.openSession({
+            associations: observe(setAssociations),
+            openPrs: observe(setOpenPrs),
+            errors: observe(setErrors),
+            refreshing: observe(setRefreshingProjects),
+          }),
+        );
+        yield* Deferred.succeed(owned.ready, value);
+        return yield* Effect.never;
+      }).pipe(
+        Effect.scoped,
+        Effect.onError((cause) => Deferred.failCause(owned.ready, cause)),
       ),
-    );
-    session.current = owned;
-    void owned.then((value) =>
-      tuiRuntime.runPromise(value.updateRepositories(reposRef.current)),
+      { signal: controller.signal },
     );
     const timer = setInterval(() => {
-      void owned.then((value) => tuiRuntime.runPromise(value.refresh("poll")));
+      void runWithSession((value) => value.refresh("poll"));
     }, GITHUB_POLL_INTERVAL);
     return () => {
       attached = false;
       clearInterval(timer);
       session.current = null;
-      void owned.then((value) => tuiRuntime.runPromise(value.close));
+      controller.abort();
     };
-  }, []);
+  }, [runWithSession]);
   useEffect(() => {
-    const owned = session.current;
-    if (owned)
-      void owned.then((value) =>
-        tuiRuntime.runPromise(value.updateRepositories(repos)),
-      );
-  }, [repos]);
+    void runWithSession((value) => value.updateRepositories(repos));
+  }, [repos, runWithSession]);
   const refreshTargets = useCallback(
-    async (
+    (
       kind: "poll" | "manual" | "action",
       repoPath?: string,
       signal?: AbortSignal,
-    ) => {
-      const owned = session.current;
-      if (!owned || signal?.aborted) return;
-      const value = await owned;
-      if (signal?.aborted || session.current !== owned) return;
-      await tuiRuntime
-        .runPromise(value.refresh(kind, repoPath), { signal })
-        .catch((cause) => {
-          if (!signal?.aborted) throw cause;
-        });
-    },
-    [],
+    ) => runWithSession((value) => value.refresh(kind, repoPath), signal),
+    [runWithSession],
   );
   const refresh = useCallback(
     (repoPath?: string, signal?: AbortSignal) =>
@@ -194,17 +218,15 @@ export function useGitHub(repos: RepoInfo[]) {
     [refreshTargets],
   );
   const setExplicit = useCallback(
-    async (path: string, branch: string, pr: PrFacts) => {
-      const value = await session.current;
-      if (value)
-        await tuiRuntime.runPromise(value.setExplicit(path, branch, pr));
-    },
-    [],
+    (path: string, branch: string, pr: PrFacts) =>
+      runWithSession((value) => value.setExplicit(path, branch, pr)),
+    [runWithSession],
   );
-  const clearExplicit = useCallback(async (path: string, branch: string) => {
-    const value = await session.current;
-    if (value) await tuiRuntime.runPromise(value.clearExplicit(path, branch));
-  }, []);
+  const clearExplicit = useCallback(
+    (path: string, branch: string) =>
+      runWithSession((value) => value.clearExplicit(path, branch)),
+    [runWithSession],
+  );
   const prData = useMemo(() => {
     const data = new Map<string, PrFacts>();
     for (const [key, entry] of associations)

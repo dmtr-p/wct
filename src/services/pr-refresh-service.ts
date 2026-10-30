@@ -56,10 +56,11 @@ export interface PrRefreshSession {
     path: string,
     branch: string,
   ) => Effect.Effect<void, WctError>;
-  close: Effect.Effect<void>;
 }
 export interface PrRefreshServiceApi {
-  openSession: (observer: PrRefreshObserver) => Effect.Effect<PrRefreshSession>;
+  openSession: (
+    observer: PrRefreshObserver,
+  ) => Effect.Effect<PrRefreshSession, never, Scope.Scope>;
 }
 export const PrRefreshService = Context.Service<PrRefreshServiceApi>(
   "wct/PrRefreshService",
@@ -125,9 +126,14 @@ export const makePrRefreshService = Effect.gen(function* () {
   );
   const openSession = (observer: PrRefreshObserver) =>
     Effect.gen(function* () {
-      const scope = yield* Scope.make();
-      const transitions = yield* Semaphore.make(1);
       let closed = false;
+      const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+        Effect.gen(function* () {
+          closed = true;
+          yield* Scope.close(scope, Exit.void);
+        }),
+      );
+      const transitions = yield* Semaphore.make(1);
       let repos: readonly PrRefreshRepository[] = [];
       const currentRepo = (path: string) =>
         repos.find((repo) => repo.repoPath === path);
@@ -595,10 +601,6 @@ export const makePrRefreshService = Effect.gen(function* () {
             Effect.provideContext(context),
             Effect.andThen(() => refresh("action", path)),
           ),
-        close: Effect.gen(function* () {
-          closed = true;
-          yield* Scope.close(scope, Exit.void);
-        }),
       } satisfies PrRefreshSession;
     });
   return { openSession } satisfies PrRefreshServiceApi;

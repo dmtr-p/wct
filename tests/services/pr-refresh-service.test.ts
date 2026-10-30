@@ -3,7 +3,10 @@ import { Deferred, Effect, Exit, Fiber, Scheduler, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { commandError, type WctError } from "../../src/errors";
-import { livePrCacheService } from "../../src/services/pr-cache-service";
+import {
+  livePrCacheService,
+  type PrCacheServiceApi,
+} from "../../src/services/pr-cache-service";
 import {
   type PrRefreshRepository,
   PrRefreshService,
@@ -23,6 +26,7 @@ function fixture(
     stopping?: Deferred.Deferred<void>;
     cleanup?: Deferred.Deferred<void>;
     resolveBaseRepo?: () => Effect.Effect<string, WctError>;
+    prCache?: Partial<PrCacheServiceApi>;
   } = {},
 ) {
   return Effect.gen(function* () {
@@ -76,6 +80,7 @@ function fixture(
         setDiscovery: () => Effect.succeed(true),
         setOpenPrs: () => Effect.void,
         pruneWorkspaces: () => Effect.void,
+        ...options.prCache,
       },
     });
     const service = yield* PrRefreshService.pipe(Effect.provide(layer));
@@ -173,6 +178,39 @@ it.effect("worktree metadata changes reuse repository discovery", () =>
     yield* f.session.refresh("poll");
     expect(f.scans()).toBe(1);
   }),
+);
+
+it.effect.each(["discovery", "open list", "workspace pruning"] as const)(
+  "a failed %s write retains discovery and retries storage without discovery backoff",
+  (stage) =>
+    Effect.gen(function* () {
+      let failing = true;
+      let writes = 0;
+      const write = Effect.suspend(() => {
+        writes++;
+        return failing ? Effect.die(new Error("storage failed")) : Effect.void;
+      });
+      const prCache: Partial<PrCacheServiceApi> =
+        stage === "discovery"
+          ? { setDiscovery: () => write.pipe(Effect.as(true)) }
+          : stage === "open list"
+            ? { setOpenPrs: () => write }
+            : { pruneWorkspaces: () => write };
+      const f = yield* fixture(false, { prCache });
+      yield* Deferred.succeed(f.release, undefined);
+      yield* Fiber.join(f.initial);
+      expect(f.errors.get(repo.repoPath)).toContain("storage failed");
+      expect(writes).toBe(1);
+      failing = false;
+      yield* f.session.refresh("poll");
+      expect(writes).toBe(2);
+      expect(f.errors.size).toBe(0);
+      expect(f.scans()).toBe(1);
+      yield* TestClock.adjust(30_000);
+      yield* f.session.refresh("poll");
+      expect(f.scanModes).toEqual(["all", "updated"]);
+      expect(f.errors.size).toBe(0);
+    }),
 );
 
 it.effect(

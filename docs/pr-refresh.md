@@ -63,6 +63,12 @@ callers share a readiness Deferred. The shared TUI runtime remains available to
 other services. React hydrates cached presentation state, triggers polling, and
 receives results through a callback bridge.
 
+Flight reservation, scoped task startup, and completion cleanup stay together in
+`refreshOne`. Named task phases prepare discovery, reconcile and persist Workspace
+facts, publish observer updates, and recover failures. They receive session cache
+state and the task's registration guard explicitly; storage errors are retained
+on the task separately from discovery failures.
+
 Discovery belongs to the repository: modal cancellation and worktree changes do
 not cancel it. Worktree changes reconcile against its completed results.
 Repository removal, replacement registration, and TUI shutdown cancel owned

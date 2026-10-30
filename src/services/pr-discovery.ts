@@ -4,7 +4,12 @@ import type {
   ExplicitPrAssociation,
   WorkspacePrEntry,
 } from "./pr-cache-service";
-import { checkOutcome, type PrFacts } from "./pr-model";
+import {
+  checkOutcome,
+  normalizeMergeable,
+  normalizeReviewDecision,
+  type PrFacts,
+} from "./pr-model";
 import { execProcess } from "./process";
 
 export interface PushDestination {
@@ -161,18 +166,8 @@ export function normalizeGhPr(
     headRefName: p.headRefName,
     headOid: typeof p.headRefOid === "string" ? p.headRefOid : null,
     baseRefName: typeof p.baseRefName === "string" ? p.baseRefName : null,
-    reviewDecision:
-      p.reviewDecision === "APPROVED" ||
-      p.reviewDecision === "CHANGES_REQUESTED" ||
-      p.reviewDecision === "REVIEW_REQUIRED"
-        ? p.reviewDecision
-        : null,
-    mergeable:
-      p.mergeable === "MERGEABLE" ||
-      p.mergeable === "CONFLICTING" ||
-      p.mergeable === "UNKNOWN"
-        ? p.mergeable
-        : null,
+    reviewDecision: normalizeReviewDecision(p.reviewDecision),
+    mergeable: normalizeMergeable(p.mergeable),
     mergeStateStatus:
       typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
     isMergeQueueEnabled: null,

@@ -6,6 +6,7 @@ import { provideBunServices, runBunPromise } from "../../src/effect/runtime";
 import { WctCommandError } from "../../src/errors";
 import { normalizeGhPr } from "../../src/services/pr-discovery";
 import { ProcessExitError } from "../../src/services/process";
+import { prFactEnumCases, prFacts } from "../helpers/pr";
 
 type ExecProcess = typeof import("../../src/services/process").execProcess;
 
@@ -32,6 +33,80 @@ function page(nodes: unknown[], hasNextPage = false, endCursor?: string) {
 
 describe("GitHub raw PR fetching", () => {
   beforeEach(() => exec.mockReset());
+
+  test.each(prFactEnumCases)(
+    "detail fetch normalizes enum fields %j without resetting other facts",
+    async (fields, expected) => {
+      const pr = prFacts({ fetchedAt: 123, lastError: "old error" });
+      exec.mockReturnValueOnce(
+        Effect.succeed({
+          stdout: JSON.stringify({
+            data: {
+              repository: {
+                p0: {
+                  id: "detail-id",
+                  ...fields,
+                  mergeStateStatus: "BLOCKED",
+                  isMergeQueueEnabled: true,
+                  mergeQueueEntry: { id: "queue-entry" },
+                  commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+                },
+              },
+            },
+          }),
+          stderr: "",
+          exitCode: 0,
+        }),
+      );
+      const result = await runBunPromise(
+        fetchPrDetails("/repo", "owner/repo", [pr]),
+      );
+      expect(result).toEqual([
+        {
+          ...pr,
+          ...expected,
+          id: "detail-id",
+          mergeStateStatus: "BLOCKED",
+          isMergeQueueEnabled: true,
+          isQueued: true,
+          checks: [],
+          checksComplete: true,
+          lastError: null,
+        },
+      ]);
+    },
+  );
+
+  test.each([
+    {},
+    { id: "detail-id", isMergeQueueEnabled: false },
+    {
+      id: "detail-id",
+      commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+    },
+  ])(
+    "incomplete details %j retain prior facts and freshness",
+    async (partial) => {
+      const pr = prFacts({ fetchedAt: 123 });
+      exec.mockReturnValueOnce(
+        Effect.succeed({
+          stdout: JSON.stringify({ data: { repository: { p0: partial } } }),
+          stderr: "",
+          exitCode: 0,
+        }),
+      );
+      const result = await runBunPromise(
+        fetchPrDetails("/repo", "owner/repo", [pr]),
+      );
+      expect(result).toEqual([
+        {
+          ...pr,
+          checksComplete: false,
+          lastError: "Incomplete PR detail response",
+        },
+      ]);
+    },
+  );
 
   test("an empty GraphQL errors array still reports a missing repository", async () => {
     exec.mockReturnValueOnce(

@@ -3,8 +3,61 @@ import { normalizeGhPr } from "../../src/services/pr-discovery";
 import {
   checkOutcome,
   checkSummary,
+  hydratePrFacts,
   type PrCheck,
 } from "../../src/services/pr-model";
+import { prFactEnumCases, prFacts } from "../helpers/pr";
+
+describe("PR fact normalization boundaries", () => {
+  test.each(prFactEnumCases)(
+    "normalizes enum fields %j",
+    (fields, expected) => {
+      const identity = {
+        baseRepository: "base/repo",
+        number: 34,
+        title: "Change",
+        state: "OPEN",
+        headRefName: "feature",
+      };
+      expect(hydratePrFacts({ ...identity, ...fields })).toMatchObject(
+        expected,
+      );
+      expect(
+        normalizeGhPr({ ...identity, ...fields }, "base/repo", 123),
+      ).toMatchObject(expected);
+    },
+  );
+
+  test("cache hydration preserves internal facts, timestamps, and errors", () => {
+    const cached = prFacts({
+      headRepository: "fork/repo",
+      headOid: "cached-head",
+      updatedAt: "2026-10-15T00:01:00Z",
+      fetchedAt: 123,
+      isMergeQueueEnabled: true,
+      isQueued: true,
+      checks: [
+        { name: "required", outcome: "passed", required: true },
+        { name: "optional", outcome: "cancelled", required: false },
+        { name: "unknown", outcome: "unknown", required: null },
+      ],
+      lastError: "offline",
+    });
+    expect(hydratePrFacts({ ...cached, headRefOid: "network-head" })).toEqual(
+      cached,
+    );
+  });
+
+  test.each([
+    null,
+    {},
+    { ...prFacts(), state: "FUTURE_STATE" },
+    { ...prFacts(), number: "34" },
+    { ...prFacts(), title: undefined },
+  ])("cache hydration rejects malformed identity %j", (value) => {
+    expect(hydratePrFacts(value)).toBeNull();
+  });
+});
 
 describe("PR check outcomes", () => {
   test.each([
@@ -100,6 +153,33 @@ describe("GitHub PR normalization", () => {
     });
     if (!facts) throw new Error("Missing normalized PR");
     expect(checkSummary(facts.checks, true)).toBe("pending");
+  });
+
+  test("discovery maps GitHub facts and initializes freshness independently", () => {
+    const raw = {
+      ...rawPr,
+      headRepositoryOwner: { login: "fork" },
+      headRepository: { name: "repo" },
+      headRefOid: "network-head",
+      headOid: "cached-head",
+      statusCheckRollup: [{ context: "build", state: "SUCCESS" }],
+      checksComplete: true,
+      fetchedAt: 1,
+      lastError: "cached error",
+      isMergeQueueEnabled: true,
+      isQueued: true,
+    };
+    expect(normalizeGhPr(raw, "base/repo", 123)).toMatchObject({
+      baseRepository: "base/repo",
+      headRepository: "fork/repo",
+      headOid: "network-head",
+      checks: [{ name: "build", outcome: "passed", required: null }],
+      checksComplete: false,
+      fetchedAt: 123,
+      lastError: null,
+      isMergeQueueEnabled: null,
+      isQueued: null,
+    });
   });
 
   test.each([undefined, "not-an-array"])(

@@ -33,6 +33,22 @@ export interface PrFacts {
   lastError: string | null;
 }
 
+export function normalizeReviewDecision(
+  value: unknown,
+): PrFacts["reviewDecision"] {
+  return value === "APPROVED" ||
+    value === "CHANGES_REQUESTED" ||
+    value === "REVIEW_REQUIRED"
+    ? value
+    : null;
+}
+
+export function normalizeMergeable(value: unknown): PrFacts["mergeable"] {
+  return value === "MERGEABLE" || value === "CONFLICTING" || value === "UNKNOWN"
+    ? value
+    : null;
+}
+
 export type OpenPrChoice = Pick<
   PrFacts,
   "number" | "title" | "state" | "headRefName"
@@ -138,18 +154,8 @@ export function hydratePrFacts(value: unknown): PrFacts | null {
     headRefName: p.headRefName,
     headOid: typeof p.headOid === "string" ? p.headOid : null,
     baseRefName: typeof p.baseRefName === "string" ? p.baseRefName : null,
-    reviewDecision:
-      p.reviewDecision === "APPROVED" ||
-      p.reviewDecision === "CHANGES_REQUESTED" ||
-      p.reviewDecision === "REVIEW_REQUIRED"
-        ? p.reviewDecision
-        : null,
-    mergeable:
-      p.mergeable === "MERGEABLE" ||
-      p.mergeable === "CONFLICTING" ||
-      p.mergeable === "UNKNOWN"
-        ? p.mergeable
-        : null,
+    reviewDecision: normalizeReviewDecision(p.reviewDecision),
+    mergeable: normalizeMergeable(p.mergeable),
     mergeStateStatus:
       typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
     isMergeQueueEnabled:

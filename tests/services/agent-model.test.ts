@@ -245,6 +245,65 @@ describe("agent classifier", () => {
         .state,
     ).toBe("idle");
   });
+  test.each([1, 2, 3])(
+    "Codex plan approval is blocked with option %s selected",
+    (selected) => {
+      const header = "Implement this plan?";
+      const options = [
+        "1. Yes, implement this plan                 Switch to Default and start coding",
+        "2. Yes, clear context and implement        Start a fresh thread (current context: 8% used)",
+        "3. No, stay in Plan mode                   Continue planning with the model",
+      ]
+        .map(
+          (option, index) => `${selected === index + 1 ? "›" : " "} ${option}`,
+        )
+        .join("\n");
+      const footer = "  enter select · esc back";
+      const dialog = `${header}\n\n${options}\n\n${footer}\n`;
+      for (const screen of [
+        dialog,
+        `› previous request\n\nNo files changed. Plan Mode prevents applying a fix.\n\nWorked for 2m 10s · 18:28\n\n${dialog}`,
+        dialog
+          .replace("Implement this plan?", "Implement this\nplan?")
+          .replace("enter select · esc back", "enter select ·\nesc back"),
+      ]) {
+        const classified = classifyAgent("codex", screen);
+        expect(classified).toMatchObject({
+          state: "blocked",
+          rule: "plan_approval_prompt",
+          source: "screen",
+          strong: true,
+        });
+        expect(
+          agentSummary([
+            reconcileAgent(undefined, "codex", "job", classified, 0),
+          ]),
+        ).toBe("1 blocked");
+        expect(classifyAgent("codex", screen, "Action Required").state).toBe(
+          "blocked",
+        );
+        expect(classifyAgent("codex", screen, "⠋ busy").state).toBe("working");
+      }
+      for (const screen of [
+        `${header}\n${options}`,
+        `${options}\n${footer}`,
+        `${header}\n${footer}`,
+      ])
+        expect(classifyAgent("codex", screen).state).toBe("unknown");
+      for (const screen of [
+        `${dialog}\n› current request\n? for shortcuts`,
+        `› Explain this menu:\n${dialog
+          .split("\n")
+          .map((line) => `  ${line}`)
+          .join("\n")}\n  GPT-6.1-Sol · weekly 80% left`,
+      ]) {
+        expect(classifyAgent("codex", screen).state).toBe("idle");
+        expect(classifyAgent("codex", screen, "Action Required").state).toBe(
+          "idle",
+        );
+      }
+    },
+  );
   test("Claude working and approval controls outrank readiness", () => {
     const composer = "──────\n❯\n──────\n? for shortcuts";
     expect(classifyAgent("claude", composer).state).toBe("idle");

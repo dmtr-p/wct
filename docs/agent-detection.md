@@ -81,6 +81,9 @@ elapsed time or token usage do not establish background agent activity.
 Live blocker and viewer rules retain priority.
 Claude's plan execution approval menu establishes blocked from its approval
 question and numbered Yes choices, without requiring an `esc to cancel` hint.
+Codex's `Implement this plan?` menu establishes blocked from its question,
+numbered Yes choices, and trailing `enter select · esc back` controls, including
+when the selection marker moves to another option.
 A recognized composer also excludes preceding completed-response text from
 blocker rules, so quoted workflow, permission, and directory-trust dialogs do
 not establish live blockers or corroborate a blocked title. Activity rules

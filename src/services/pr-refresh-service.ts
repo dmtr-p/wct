@@ -105,6 +105,328 @@ interface RefreshFlight {
   registrationId: string;
   signature: string;
 }
+
+interface RefreshCacheState {
+  discovery: Map<string, PrDiscoverySnapshot>;
+  persisted: Map<string, PrDiscoverySnapshot>;
+  loaded: Set<string>;
+  discoveryRetries: Map<string, number>;
+}
+interface RefreshTask {
+  repoPath: string;
+  flight: RefreshFlight;
+  active: () => boolean;
+  showingRefresh: boolean;
+  historyPending: boolean;
+  resolvingBase: boolean;
+  historyBase?: string;
+  cacheError: string | null;
+}
+type CurrentRepository = (path: string) => PrRefreshRepository | undefined;
+interface PreparedDiscovery {
+  snapshot: PrDiscoverySnapshot;
+  reuseFresh: boolean;
+}
+
+function writeRefreshCache<A, E, R>(
+  task: RefreshTask,
+  effect: Effect.Effect<A, E, R>,
+  fallback: A,
+) {
+  return effect.pipe(
+    Effect.catchCause((cause) => {
+      task.cacheError ??= causeMessage(cause);
+      return Effect.succeed(fallback);
+    }),
+  );
+}
+
+function prepareDiscovery(
+  task: RefreshTask,
+  state: RefreshCacheState,
+  baseRepositories: Cache.Cache<string, string, WctError>,
+  observer: PrRefreshObserver,
+  shareDiscovery: boolean,
+) {
+  return Effect.gen(function* () {
+    const { repoPath, flight, active } = task;
+    const { kind: requested, registrationId } = flight;
+    const { discovery, persisted, loaded, discoveryRetries } = state;
+    if (!loaded.has(repoPath)) {
+      const cached = yield* PrCacheService.use((s) => s.getDiscovery(repoPath));
+      if (!active()) return;
+      if (cached) {
+        discovery.set(repoPath, cached);
+        persisted.set(repoPath, cached);
+      }
+      loaded.add(repoPath);
+    }
+    // Backoff belongs to automatic discovery, not user actions or live data.
+    if (
+      requested === "poll" &&
+      (yield* Clock.currentTimeMillis) < (discoveryRetries.get(repoPath) ?? 0)
+    )
+      return;
+    let snapshot = discovery.get(repoPath) ?? null;
+    const reuseFresh =
+      requested === "poll" &&
+      snapshot !== null &&
+      (yield* Clock.currentTimeMillis) - snapshot.fetchedAt <
+        CACHE_FRESH_WINDOW;
+    if (!reuseFresh && !shareDiscovery) {
+      task.showingRefresh = true;
+      observer.refreshing((previous) => new Set(previous).add(repoPath));
+      const baseKey = baseRepositoryKey(repoPath, registrationId);
+      if (requested === "manual")
+        yield* Cache.invalidate(baseRepositories, baseKey);
+      task.resolvingBase = true;
+      const base = yield* Cache.get(baseRepositories, baseKey);
+      task.resolvingBase = false;
+      if (!active()) return;
+      const previous = requested === "manual" ? null : snapshot;
+      flight.history =
+        previous?.baseRepository.toLowerCase() !== base.toLowerCase();
+      task.historyPending = flight.history;
+      task.historyBase = base;
+      const fetched = yield* refreshPrDiscovery(repoPath, base, previous).pipe(
+        Effect.timeout("10 minutes"),
+      );
+      if (!active()) return;
+      snapshot = fetched;
+      discovery.set(repoPath, fetched);
+      discoveryRetries.delete(repoPath);
+      task.historyPending = false;
+      flight.discovered = true;
+    }
+    if (!snapshot || !active()) return;
+    return { snapshot, reuseFresh } satisfies PreparedDiscovery;
+  });
+}
+
+function publishOpenPrs(
+  observer: PrRefreshObserver,
+  repoPath: string,
+  choices: OpenPrChoice[],
+) {
+  observer.openPrs((previous) => new Map(previous).set(repoPath, choices));
+}
+
+function publishWorkspaceEntries(
+  observer: PrRefreshObserver,
+  repoPath: string,
+  found: Map<string, WorkspacePrEntry>,
+  cacheError: string | null,
+) {
+  observer.associations(
+    (previous) =>
+      new Map(
+        [...previous]
+          .filter(([key]) => !key.startsWith(`${repoPath}\0`))
+          .concat([...found]),
+      ),
+  );
+  const error =
+    cacheError ??
+    [...found.values()].find((entry) => entry.lastError)?.lastError;
+  observer.errors((previous) => {
+    const next = new Map(previous);
+    if (error) next.set(repoPath, error);
+    else next.delete(repoPath);
+    return next;
+  });
+}
+
+function reconcileWorkspaces(
+  task: RefreshTask,
+  state: RefreshCacheState,
+  currentRepo: CurrentRepository,
+  prepared: PreparedDiscovery,
+  observer: PrRefreshObserver,
+) {
+  return Effect.gen(function* () {
+    const { repoPath, flight, active } = task;
+    const { kind: requested, registrationId } = flight;
+    const { discovery, persisted, loaded } = state;
+    const { snapshot, reuseFresh } = prepared;
+    if (!active()) return;
+    const openNumbers = new Set(snapshot.openNumbers);
+    const open = snapshot.prs.filter(
+      (pr) => openNumbers.has(pr.number) && pr.state === "OPEN",
+    );
+    publishOpenPrs(observer, repoPath, open.map(openPrChoice));
+    let currentSnapshot: PrDiscoverySnapshot = snapshot;
+    // Worktree changes reconcile against the completed scan without restarting it.
+    while (active()) {
+      const repo = currentRepo(repoPath);
+      if (!repo) return;
+      const signature = worktreeSignature(repo);
+      const isCurrent = () => {
+        const latest = currentRepo(repoPath);
+        return (
+          active() &&
+          latest !== undefined &&
+          worktreeSignature(latest) === signature
+        );
+      };
+      const trees = repo.worktrees;
+      const inputs = yield* PrCacheService.use((s) =>
+        s.getWorkspaceInputs(
+          repoPath,
+          trees.map((wt) => wt.branch),
+        ),
+      );
+      const byBranch = new Map(inputs.map((input) => [input.branch, input]));
+      const workspaces = yield* Effect.forEach(
+        trees,
+        (wt) =>
+          Effect.map(
+            resolvePushDestination(wt.path, wt.branch),
+            (destination) => ({
+              branch: wt.branch,
+              destination,
+              explicit: byBranch.get(wt.branch)?.explicit ?? null,
+              cached: byBranch.get(wt.branch)?.cached ?? null,
+            }),
+          ),
+        { concurrency: 4 },
+      );
+      if (!active()) return;
+      const refreshed = yield* refreshWorkspacePrs(
+        repoPath,
+        currentSnapshot,
+        workspaces,
+        requested !== "poll",
+        reuseFresh,
+      );
+      if (!active()) return;
+      currentSnapshot = refreshed.snapshot;
+      discovery.set(repoPath, refreshed.snapshot);
+      const latest = currentRepo(repoPath);
+      if (!latest) return;
+      if (worktreeSignature(latest) !== signature) continue;
+      if (persisted.get(repoPath) !== refreshed.snapshot) {
+        const saved = yield* writeRefreshCache(
+          task,
+          PrCacheService.use((s) =>
+            s.setDiscovery(
+              repoPath,
+              refreshed.snapshot,
+              persisted.get(repoPath),
+              registrationId,
+            ),
+          ),
+          null as boolean | null,
+        );
+        if (saved === false) {
+          discovery.delete(repoPath);
+          persisted.delete(repoPath);
+          loaded.delete(repoPath);
+          flight.cancelled = true;
+          return;
+        }
+        if (saved) persisted.set(repoPath, refreshed.snapshot);
+      }
+      if (!isCurrent()) continue;
+      const refreshedOpen = refreshed.snapshot.prs
+        .filter((pr) => pr.state === "OPEN")
+        .map(openPrChoice);
+      yield* writeRefreshCache(
+        task,
+        PrCacheService.use((s) =>
+          s.setOpenPrs(repoPath, refreshedOpen, registrationId),
+        ),
+        undefined,
+      );
+      if (!isCurrent()) continue;
+      publishOpenPrs(observer, repoPath, refreshedOpen);
+      const found = new Map(
+        [...refreshed.entries].map(([branch, entry]) => [
+          workspaceIdentityKey(repoPath, branch),
+          entry,
+        ]),
+      );
+      yield* Effect.forEach(
+        [...refreshed.entries],
+        ([branch, entry]) =>
+          writeRefreshCache(
+            task,
+            PrCacheService.use((s) =>
+              s.setWorkspace(repoPath, branch, entry, registrationId),
+            ),
+            undefined,
+          ),
+        { concurrency: "unbounded", discard: true },
+      );
+      if (!isCurrent()) continue;
+      if (!repo.error)
+        yield* writeRefreshCache(
+          task,
+          PrCacheService.use((s) =>
+            s.pruneWorkspaces(
+              repoPath,
+              workspaces.map((wt) => wt.branch),
+              registrationId,
+            ),
+          ),
+          undefined,
+        );
+      if (!isCurrent()) continue;
+      publishWorkspaceEntries(observer, repoPath, found, task.cacheError);
+      flight.signature = signature;
+      flight.succeeded = true;
+      return;
+    }
+  });
+}
+
+function recoverRefreshFailure<E>(
+  task: RefreshTask,
+  state: RefreshCacheState,
+  currentRepo: CurrentRepository,
+  observer: PrRefreshObserver,
+  cause: Cause.Cause<E>,
+) {
+  return Effect.gen(function* () {
+    const { repoPath, flight, active } = task;
+    const { registrationId } = flight;
+    const { discovery, discoveryRetries } = state;
+    if (!active()) return;
+    flight.failed = true;
+    // A failed associated PR cannot invalidate a completed history scan.
+    if (
+      task.resolvingBase ||
+      (task.historyPending &&
+        discovery.get(repoPath)?.baseRepository.toLowerCase() !==
+          task.historyBase?.toLowerCase())
+    )
+      discoveryRetries.set(
+        repoPath,
+        (yield* Clock.currentTimeMillis) + DISCOVERY_RETRY_DELAY,
+      );
+    const message = causeMessage(cause);
+    observer.errors((previous) => new Map(previous).set(repoPath, message));
+    yield* Effect.forEach(
+      currentRepo(repoPath)?.worktrees ?? [],
+      (wt) =>
+        PrCacheService.use((s) =>
+          s.setWorkspaceError(repoPath, wt.branch, message, registrationId),
+        ).pipe(Effect.ignoreCause),
+      { concurrency: "unbounded", discard: true },
+    );
+    if (!active()) return;
+    observer.associations(
+      (previous) =>
+        new Map(
+          [...previous].map(([key, entry]) =>
+            key.startsWith(`${repoPath}\0`)
+              ? [key, { ...entry, lastError: message }]
+              : [key, entry],
+          ),
+        ),
+    );
+  });
+}
+
 export const makePrRefreshService = Effect.gen(function* () {
   const context = Context.pick(
     GitHubService,
@@ -143,9 +465,13 @@ export const makePrRefreshService = Effect.gen(function* () {
       const persisted = new Map<string, PrDiscoverySnapshot>();
       const loaded = new Set<string>();
       const discoveryRetries = new Map<string, number>();
+      const cacheState: RefreshCacheState = {
+        discovery,
+        persisted,
+        loaded,
+        discoveryRetries,
+      };
       const inFlight = new Map<string, RefreshFlight>();
-      const setAssociations = observer.associations;
-      const setOpenPrs = observer.openPrs;
       const setErrors = observer.errors;
       const setRefreshingProjects = observer.refreshing;
       const refreshOne = (
@@ -206,282 +532,44 @@ export const makePrRefreshService = Effect.gen(function* () {
               !closed &&
               !flight.cancelled &&
               currentRepo(repoPath)?.id === registrationId;
-            let showingRefresh = false;
+            const refreshTask: RefreshTask = {
+              repoPath,
+              flight,
+              active,
+              showingRefresh: false,
+              historyPending: false,
+              resolvingBase: false,
+              cacheError: null,
+            };
             const task = Effect.gen(function* () {
               if (!active()) return;
-              let historyPending = false;
-              let resolvingBase = false;
-              let historyBase: string | undefined;
-              let cacheError: string | null = null;
-              const cacheWrite = <A, E, R>(
-                effect: Effect.Effect<A, E, R>,
-                fallback: A,
-              ) =>
-                effect.pipe(
-                  Effect.catchCause((cause) => {
-                    cacheError ??= causeMessage(cause);
-                    return Effect.succeed(fallback);
-                  }),
-                );
-              const work = Effect.gen(function* () {
-                if (!loaded.has(repoPath)) {
-                  const cached = yield* PrCacheService.use((s) =>
-                    s.getDiscovery(repoPath),
-                  );
-                  if (!active()) return;
-                  if (cached) {
-                    discovery.set(repoPath, cached);
-                    persisted.set(repoPath, cached);
-                  }
-                  loaded.add(repoPath);
-                }
-                // Backoff belongs to automatic discovery, not user actions or live data.
-                if (
-                  requested === "poll" &&
-                  (yield* Clock.currentTimeMillis) <
-                    (discoveryRetries.get(repoPath) ?? 0)
-                )
-                  return;
-                let snapshot = discovery.get(repoPath) ?? null;
-                const reuseFresh =
-                  requested === "poll" &&
-                  snapshot !== null &&
-                  (yield* Clock.currentTimeMillis) - snapshot.fetchedAt <
-                    CACHE_FRESH_WINDOW;
-                if (!reuseFresh && !shareDiscovery) {
-                  showingRefresh = true;
-                  setRefreshingProjects((previous) =>
-                    new Set(previous).add(repoPath),
-                  );
-                  const baseKey = baseRepositoryKey(repoPath, registrationId);
-                  if (requested === "manual")
-                    yield* Cache.invalidate(baseRepositories, baseKey);
-                  resolvingBase = true;
-                  const base = yield* Cache.get(baseRepositories, baseKey);
-                  resolvingBase = false;
-                  if (!active()) return;
-                  const previous = requested === "manual" ? null : snapshot;
-                  flight.history =
-                    previous?.baseRepository.toLowerCase() !==
-                    base.toLowerCase();
-                  historyPending = flight.history;
-                  historyBase = base;
-                  const fetched = yield* refreshPrDiscovery(
-                    repoPath,
-                    base,
-                    previous,
-                  ).pipe(Effect.timeout("10 minutes"));
-                  if (!active()) return;
-                  snapshot = fetched;
-                  discovery.set(repoPath, fetched);
-                  discoveryRetries.delete(repoPath);
-                  historyPending = false;
-                  flight.discovered = true;
-                }
-                if (!snapshot || !active()) return;
-                const openNumbers = new Set(snapshot.openNumbers);
-                const open = snapshot.prs.filter(
-                  (pr) => openNumbers.has(pr.number) && pr.state === "OPEN",
-                );
-                setOpenPrs((previous) =>
-                  new Map(previous).set(repoPath, open.map(openPrChoice)),
-                );
-                let currentSnapshot: PrDiscoverySnapshot = snapshot;
-                // Worktree changes reconcile against the completed scan without restarting it.
-                while (active()) {
-                  const repo = currentRepo(repoPath);
-                  if (!repo) return;
-                  const signature = worktreeSignature(repo);
-                  const isCurrent = () => {
-                    const latest = currentRepo(repoPath);
-                    return (
-                      active() &&
-                      latest !== undefined &&
-                      worktreeSignature(latest) === signature
-                    );
-                  };
-                  const trees = repo.worktrees;
-                  const inputs = yield* PrCacheService.use((s) =>
-                    s.getWorkspaceInputs(
-                      repoPath,
-                      trees.map((wt) => wt.branch),
-                    ),
-                  );
-                  const byBranch = new Map(
-                    inputs.map((input) => [input.branch, input]),
-                  );
-                  const workspaces = yield* Effect.forEach(
-                    trees,
-                    (wt) =>
-                      Effect.map(
-                        resolvePushDestination(wt.path, wt.branch),
-                        (destination) => ({
-                          branch: wt.branch,
-                          destination,
-                          explicit: byBranch.get(wt.branch)?.explicit ?? null,
-                          cached: byBranch.get(wt.branch)?.cached ?? null,
-                        }),
-                      ),
-                    { concurrency: 4 },
-                  );
-                  if (!active()) return;
-                  const refreshed = yield* refreshWorkspacePrs(
-                    repoPath,
-                    currentSnapshot,
-                    workspaces,
-                    requested !== "poll",
-                    reuseFresh,
-                  );
-                  if (!active()) return;
-                  currentSnapshot = refreshed.snapshot;
-                  discovery.set(repoPath, refreshed.snapshot);
-                  const latest = currentRepo(repoPath);
-                  if (!latest) return;
-                  if (worktreeSignature(latest) !== signature) continue;
-                  if (persisted.get(repoPath) !== refreshed.snapshot) {
-                    const saved = yield* cacheWrite(
-                      PrCacheService.use((s) =>
-                        s.setDiscovery(
-                          repoPath,
-                          refreshed.snapshot,
-                          persisted.get(repoPath),
-                          registrationId,
-                        ),
-                      ),
-                      null as boolean | null,
-                    );
-                    if (saved === false) {
-                      discovery.delete(repoPath);
-                      persisted.delete(repoPath);
-                      loaded.delete(repoPath);
-                      flight.cancelled = true;
-                      return;
-                    }
-                    if (saved) persisted.set(repoPath, refreshed.snapshot);
-                  }
-                  if (!isCurrent()) continue;
-                  const refreshedOpen = refreshed.snapshot.prs
-                    .filter((pr) => pr.state === "OPEN")
-                    .map(openPrChoice);
-                  yield* cacheWrite(
-                    PrCacheService.use((s) =>
-                      s.setOpenPrs(repoPath, refreshedOpen, registrationId),
-                    ),
-                    undefined,
-                  );
-                  if (!isCurrent()) continue;
-                  setOpenPrs((previous) =>
-                    new Map(previous).set(repoPath, refreshedOpen),
-                  );
-                  const found = new Map(
-                    [...refreshed.entries].map(([branch, entry]) => [
-                      workspaceIdentityKey(repoPath, branch),
-                      entry,
-                    ]),
-                  );
-                  yield* Effect.forEach(
-                    [...refreshed.entries],
-                    ([branch, entry]) =>
-                      cacheWrite(
-                        PrCacheService.use((s) =>
-                          s.setWorkspace(
-                            repoPath,
-                            branch,
-                            entry,
-                            registrationId,
-                          ),
-                        ),
-                        undefined,
-                      ),
-                    { concurrency: "unbounded", discard: true },
-                  );
-                  if (!isCurrent()) continue;
-                  if (!repo.error)
-                    yield* cacheWrite(
-                      PrCacheService.use((s) =>
-                        s.pruneWorkspaces(
-                          repoPath,
-                          workspaces.map((wt) => wt.branch),
-                          registrationId,
-                        ),
-                      ),
-                      undefined,
-                    );
-                  if (!isCurrent()) continue;
-                  setAssociations(
-                    (previous) =>
-                      new Map(
-                        [...previous]
-                          .filter(([key]) => !key.startsWith(`${repoPath}\0`))
-                          .concat([...found]),
-                      ),
-                  );
-                  const error =
-                    cacheError ??
-                    [...found.values()].find((entry) => entry.lastError)
-                      ?.lastError;
-                  setErrors((previous) => {
-                    const next = new Map(previous);
-                    if (error) next.set(repoPath, error);
-                    else next.delete(repoPath);
-                    return next;
-                  });
-                  flight.signature = signature;
-                  flight.succeeded = true;
-                  return;
-                }
-              });
-              yield* work.pipe(
-                Effect.catchCause((cause) =>
-                  Effect.gen(function* () {
-                    if (!active()) return;
-                    flight.failed = true;
-                    // A failed associated PR cannot invalidate a completed history scan.
-                    if (
-                      resolvingBase ||
-                      (historyPending &&
-                        discovery
-                          .get(repoPath)
-                          ?.baseRepository.toLowerCase() !==
-                          historyBase?.toLowerCase())
-                    )
-                      discoveryRetries.set(
-                        repoPath,
-                        (yield* Clock.currentTimeMillis) +
-                          DISCOVERY_RETRY_DELAY,
-                      );
-                    const message = causeMessage(cause);
-                    setErrors((previous) =>
-                      new Map(previous).set(repoPath, message),
-                    );
-                    yield* Effect.forEach(
-                      currentRepo(repoPath)?.worktrees ?? [],
-                      (wt) =>
-                        PrCacheService.use((s) =>
-                          s.setWorkspaceError(
-                            repoPath,
-                            wt.branch,
-                            message,
-                            registrationId,
-                          ),
-                        ).pipe(Effect.ignoreCause),
-                      { concurrency: "unbounded", discard: true },
-                    );
-                    if (!active()) return;
-                    setAssociations(
-                      (previous) =>
-                        new Map(
-                          [...previous].map(([key, entry]) =>
-                            key.startsWith(`${repoPath}\0`)
-                              ? [key, { ...entry, lastError: message }]
-                              : [key, entry],
-                          ),
-                        ),
-                    );
-                  }),
-                ),
+              const prepared = yield* prepareDiscovery(
+                refreshTask,
+                cacheState,
+                baseRepositories,
+                observer,
+                shareDiscovery,
               );
-            }).pipe(Effect.provideContext(context));
+              if (!prepared) return;
+              yield* reconcileWorkspaces(
+                refreshTask,
+                cacheState,
+                currentRepo,
+                prepared,
+                observer,
+              );
+            }).pipe(
+              Effect.catchCause((cause) =>
+                recoverRefreshFailure(
+                  refreshTask,
+                  cacheState,
+                  currentRepo,
+                  observer,
+                  cause,
+                ),
+              ),
+              Effect.provideContext(context),
+            );
             // Completion observers also run when cancellation precedes task startup.
             yield* Effect.uninterruptible(
               Effect.gen(function* () {
@@ -490,7 +578,11 @@ export const makePrRefreshService = Effect.gen(function* () {
                   try {
                     if (inFlight.get(repoPath) === flight)
                       inFlight.delete(repoPath);
-                    if (showingRefresh && !closed && !inFlight.has(repoPath)) {
+                    if (
+                      refreshTask.showingRefresh &&
+                      !closed &&
+                      !inFlight.has(repoPath)
+                    ) {
                       setRefreshingProjects((previous) => {
                         const next = new Set(previous);
                         next.delete(repoPath);

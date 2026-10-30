@@ -317,7 +317,6 @@ vi.mock("../../src/services/pr-cache-service", () => ({
             })),
           ),
         getOpenPrs: () => null,
-        getExplicit: () => Promise.resolve(null),
         setWorkspace: () => Promise.resolve(),
         setOpenPrs: () => Promise.resolve(),
         pruneWorkspaces: () => Promise.resolve(),

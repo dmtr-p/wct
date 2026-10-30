@@ -376,14 +376,15 @@ describe("WorkspaceService .worktreeinclude", { concurrent: false }, () => {
       ok: true,
       value: [{ _tag: "Succeeded" }],
     });
-    const copyDone = events.findIndex(
-      (event) => event._tag === "AttemptCompleted" && event.attempt === "copy",
+    const copyStarted = events.findIndex(
+      (event) =>
+        event._tag === "PhaseStarted" && event.phase._tag === "CopyingFiles",
     );
     const setupStarted = events.findIndex(
-      (event) => event._tag === "AttemptStarted" && event.attempt === "setup",
+      (event) => event._tag === "SetupCommandStarted",
     );
-    expect(copyDone).toBeGreaterThan(-1);
-    expect(setupStarted).toBeGreaterThan(copyDone);
+    expect(copyStarted).toBeGreaterThan(-1);
+    expect(setupStarted).toBeGreaterThan(copyStarted);
     expect(events).toContainEqual({
       operation: "open",
       _tag: "PhaseStarted",

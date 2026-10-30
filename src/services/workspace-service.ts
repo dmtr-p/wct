@@ -110,19 +110,8 @@ export type WorkspaceReporterEvent =
     }
   | {
       operation: WorkspaceOperation;
-      _tag: "ProfileResolved";
-      profileName?: string;
-    }
-  | {
-      operation: WorkspaceOperation;
       _tag: "AttemptStarted";
       attempt: "worktree" | "copy" | "setup" | "tmux" | "down";
-    }
-  | {
-      operation: WorkspaceOperation;
-      _tag: "AttemptCompleted";
-      attempt: "worktree" | "copy" | "setup" | "tmux" | "down";
-      ok: boolean;
     }
   | {
       operation: "open";
@@ -368,14 +357,6 @@ function startWorkspaceSession(options: {
         service.createSession(sessionName, workingDir, tmuxConfig, env),
       ),
     );
-    if (tmux.attempted) {
-      yield* emitReporter(reporter, {
-        operation,
-        _tag: "AttemptCompleted",
-        attempt: "tmux",
-        ok: tmux.ok,
-      });
-    }
     const warnings: WorkspaceWarning[] = [];
     if (tmux.attempted && !tmux.ok) {
       warnings.push({ _tag: "TmuxStartFailed", operation, error: tmux.error });
@@ -576,11 +557,6 @@ function openImpl(
       branch,
       profile,
     );
-    yield* emitReporter(reporter, {
-      operation: "open",
-      _tag: "ProfileResolved",
-      ...(profileName ? { profileName } : {}),
-    });
     if (existing && explicitBase) {
       return yield* commandError(
         "invalid_options",
@@ -669,12 +645,6 @@ function openImpl(
           : `Path '${worktreePath}' already exists and is not a registered worktree for '${branch}'`,
       );
     }
-    yield* emitReporter(reporter, {
-      operation: "open",
-      _tag: "AttemptCompleted",
-      attempt: "worktree",
-      ok: true,
-    });
 
     if (resolvedOptions.prNumber !== undefined) {
       const prNumber = resolvedOptions.prNumber;
@@ -761,14 +731,6 @@ function openImpl(
             })),
           )
         : skippedAttempt<CopyResult[]>("copy_not_configured");
-    if (copy.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptCompleted",
-        attempt: "copy",
-        ok: copy.ok,
-      });
-    }
     if (processInclude || includeState.pending) yield* includeState.complete;
 
     if (resolved.setup && resolved.setup.length > 0) {
@@ -814,14 +776,6 @@ function openImpl(
             ),
           )
         : skippedAttempt<SetupResult[]>("setup_not_configured");
-    if (setup.attempted) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptCompleted",
-        attempt: "setup",
-        ok: setup.ok,
-      });
-    }
 
     const { tmux, warnings: tmuxWarnings } = yield* startWorkspaceSession({
       operation: "open",
@@ -974,11 +928,6 @@ function upImpl(
       branch,
       profile,
     );
-    yield* emitReporter(reporter, {
-      operation: "up",
-      _tag: "ProfileResolved",
-      ...(profileName ? { profileName } : {}),
-    });
 
     const sessionName = formatSessionName(basename(worktreePath));
     const env = createWctEnv(
@@ -1126,12 +1075,6 @@ function runDownScripts(
       },
     );
     const failed = results.filter((result) => result._tag === "Failed");
-    yield* emitReporter(reporter, {
-      operation,
-      _tag: "AttemptCompleted",
-      attempt: "down",
-      ok: failed.length === 0,
-    });
     if (failed.length > 0) {
       const details = results
         .filter((result) => result._tag !== "Succeeded")
@@ -1311,16 +1254,9 @@ function removeWorkspace(
       _tag: "AttemptStarted",
       attempt: "worktree",
     });
-    const result = yield* WorktreeService.use((service) =>
+    return yield* WorktreeService.use((service) =>
       service.removeWorktree(worktreePath, force, cwd),
     );
-    yield* emitReporter(reporter, {
-      operation: "close",
-      _tag: "AttemptCompleted",
-      attempt: "worktree",
-      ok: result._tag === "Removed",
-    });
-    return result;
   });
 }
 

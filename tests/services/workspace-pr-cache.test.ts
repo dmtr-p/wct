@@ -13,6 +13,7 @@ import {
   sqlSetWorkspace,
   sqlSetWorkspaceError,
 } from "../../src/services/pr-cache-service";
+import { normalizeGhPr } from "../../src/services/pr-discovery";
 
 function db() {
   const database = new Database(":memory:");
@@ -21,13 +22,67 @@ function db() {
 }
 
 describe("Workspace PR cache", () => {
+  test("reads legacy association metadata and omits it when rewriting the cache", () => {
+    const database = db();
+    try {
+      const pr = normalizeGhPr(
+        {
+          number: 1,
+          title: "selected",
+          state: "MERGED",
+          headRefName: "feature",
+        },
+        "base/repo",
+        123,
+      );
+      const candidate = normalizeGhPr(
+        { number: 2, title: "newer", state: "OPEN", headRefName: "feature" },
+        "base/repo",
+        123,
+      );
+      const payload = {
+        pr,
+        candidates: [candidate],
+        newerOpenPr: 2,
+        explicit: true,
+      };
+      database.run(
+        "INSERT INTO workspace_pr_cache (repo_path, branch, payload, fetched_at, last_error) VALUES (?, ?, ?, ?, ?)",
+        [
+          "/a",
+          "feature",
+          JSON.stringify({ ...payload, uncertain: false }),
+          123,
+          "offline",
+        ],
+      );
+
+      const entry = sqlGetWorkspace(database, "/a", "feature");
+      expect(entry).toEqual({
+        ...payload,
+        fetchedAt: 123,
+        lastError: "offline",
+      });
+      if (!entry) throw new Error("Expected legacy cache entry");
+      sqlSetWorkspace(database, "/a", "feature", entry);
+      const row = database
+        .query(
+          "SELECT payload FROM workspace_pr_cache WHERE repo_path = ? AND branch = ?",
+        )
+        .get("/a", "feature") as { payload: string };
+      expect(JSON.parse(row.payload)).toEqual(payload);
+      expect(sqlGetWorkspace(database, "/a", "feature")).toEqual(entry);
+    } finally {
+      database.close();
+    }
+  });
+
   test("keys by main repo path and branch, retaining complete data on error", () => {
     const database = db();
     const entry = {
       pr: null,
       candidates: [],
       newerOpenPr: null,
-      uncertain: true,
       fetchedAt: 123,
       lastError: null,
     };
@@ -65,7 +120,6 @@ describe("Workspace PR cache", () => {
       pr: null,
       candidates: [],
       newerOpenPr: null,
-      uncertain: true,
       fetchedAt: 123,
       lastError: null,
     };
@@ -88,7 +142,6 @@ describe("Workspace PR cache", () => {
       pr: null,
       candidates: [],
       newerOpenPr: null,
-      uncertain: true,
       fetchedAt: 123,
       lastError: null,
     });
@@ -111,7 +164,6 @@ describe("Workspace PR cache", () => {
       pr: null,
       candidates: [],
       newerOpenPr: null,
-      uncertain: true,
       fetchedAt: 123,
       lastError: null,
     };
@@ -160,7 +212,6 @@ describe("Workspace PR cache", () => {
         pr: null,
         candidates: [],
         newerOpenPr: null,
-        uncertain: true,
         fetchedAt: 123,
         lastError: null,
       });

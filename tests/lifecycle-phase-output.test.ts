@@ -116,18 +116,9 @@ const OPEN_EVENTS: WorkspaceReporterEvent[] = [
     branch: "feature",
     base: "main",
   },
-  { operation: "open", _tag: "ProfileResolved", profileName: "dev" },
   { operation: "open", _tag: "AttemptStarted", attempt: "worktree" },
-  {
-    operation: "open",
-    _tag: "AttemptCompleted",
-    attempt: "worktree",
-    ok: true,
-  },
   { operation: "open", _tag: "AttemptStarted", attempt: "copy" },
-  { operation: "open", _tag: "AttemptCompleted", attempt: "copy", ok: true },
   { operation: "open", _tag: "AttemptStarted", attempt: "setup" },
-  { operation: "open", _tag: "AttemptCompleted", attempt: "setup", ok: true },
 ];
 
 const ALL_PHASES: WorkspacePhase[] = [

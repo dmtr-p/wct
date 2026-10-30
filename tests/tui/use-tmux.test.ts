@@ -1,12 +1,14 @@
 import { PassThrough } from "node:stream";
 import React, { type FC } from "react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import type { TmuxClient, TmuxPaneInfo } from "../../src/services/tmux";
 
 const tmuxServiceMock = vi.hoisted(() => ({
   listClients: vi.fn(),
   listSessions: vi.fn(),
   listPanes: vi.fn(),
   switchClientToPane: vi.fn(),
+  detachClient: vi.fn(),
   togglePaneZoom: vi.fn(),
   killPane: vi.fn(),
 }));
@@ -200,6 +202,255 @@ describe("useTmux hook", () => {
 
     harness.unmount();
   });
+
+  test.each(["success", "empty", "failure"])(
+    "ignores an older session %s after a newer observation",
+    async (outcome) => {
+      const harness = await renderWithSingleClient();
+      const pending = Promise.withResolvers<
+        { name: string; attached: boolean }[] | null
+      >();
+      try {
+        const freshSessions = [{ name: "new", attached: true }];
+        mockRunPromise
+          .mockReturnValueOnce(pending.promise)
+          .mockResolvedValueOnce(freshSessions)
+          .mockResolvedValueOnce([])
+          .mockResolvedValue([]);
+        const older = harness.value.refreshSessions();
+        expect(await harness.value.refreshSessions()).toEqual(freshSessions);
+        if (outcome === "failure") pending.reject(new Error("old failure"));
+        else
+          pending.resolve(
+            outcome === "empty" ? null : [{ name: "old", attached: false }],
+          );
+        await older;
+        await flush();
+        expect(harness.value.sessions).toEqual(freshSessions);
+        expect([...harness.value.panes.keys()]).toEqual(["new"]);
+      } finally {
+        pending.resolve(null);
+        harness.unmount();
+      }
+    },
+  );
+
+  test("does not restore delayed panes after a newer empty session observation", async () => {
+    const harness = await renderWithSingleClient();
+    const pending = Promise.withResolvers<TmuxPaneInfo[]>();
+    const started = Promise.withResolvers<void>();
+    try {
+      mockRunPromise
+        .mockResolvedValueOnce([{ name: "old", attached: false }])
+        .mockImplementationOnce(() => {
+          started.resolve();
+          return pending.promise;
+        });
+      const older = harness.value.refreshSessions();
+      await started.promise;
+      mockRunPromise.mockResolvedValueOnce(null);
+      expect(await harness.value.refreshSessions()).toEqual([]);
+      pending.resolve([]);
+      expect(await older).toEqual([{ name: "old", attached: false }]);
+      await flush();
+      expect(harness.value.sessions).toEqual([]);
+      expect(harness.value.panes.size).toBe(0);
+    } finally {
+      pending.resolve([]);
+      harness.unmount();
+    }
+  });
+
+  test("publishes sessions and clients while newer observations remain pending", async () => {
+    const harness = await renderWithSingleClient();
+    const firstSessions =
+      Promise.withResolvers<{ name: string; attached: boolean }[]>();
+    const secondSessions =
+      Promise.withResolvers<{ name: string; attached: boolean }[]>();
+    const firstClients = Promise.withResolvers<TmuxClient[]>();
+    const secondClients = Promise.withResolvers<TmuxClient[]>();
+    const running: Promise<unknown>[] = [];
+    try {
+      mockRunPromise
+        .mockReturnValueOnce(firstSessions.promise)
+        .mockReturnValueOnce(firstClients.promise)
+        .mockReturnValueOnce(secondSessions.promise)
+        .mockReturnValueOnce(secondClients.promise)
+        .mockResolvedValue([]);
+      const sessionsA = harness.value.refreshSessions();
+      const clientA = harness.value.discoverClient();
+      const sessionsB = harness.value.refreshSessions();
+      const clientB = harness.value.discoverClient();
+      running.push(sessionsA, clientA, sessionsB, clientB);
+      const observedSessions = [{ name: "first", attached: true }];
+      const observedClient = { tty: "/dev/ttys002", session: "first" };
+      firstSessions.resolve(observedSessions);
+      firstClients.resolve([observedClient]);
+      await Promise.all([sessionsA, clientA]);
+      await flush();
+      expect(harness.value.sessions).toEqual(observedSessions);
+      expect([...harness.value.panes.keys()]).toEqual(["first"]);
+      expect(harness.value.client).toEqual(observedClient);
+
+      secondSessions.resolve([]);
+      secondClients.resolve([]);
+      await Promise.all([sessionsB, clientB]);
+      await flush();
+      expect(harness.value.sessions).toEqual([]);
+      expect(harness.value.panes.size).toBe(0);
+      expect(harness.value.client).toBeNull();
+    } finally {
+      firstSessions.resolve([]);
+      secondSessions.resolve([]);
+      firstClients.resolve([]);
+      secondClients.resolve([]);
+      await Promise.all(running);
+      harness.unmount();
+    }
+  });
+
+  test.each(["success", "empty", "failure", "multiple"])(
+    "ignores an older client %s after a newer discovery",
+    async (outcome) => {
+      const harness = await renderWithSingleClient();
+      const pending = Promise.withResolvers<TmuxClient[]>();
+      const fresh = { tty: "/dev/ttys002", session: "new" };
+      try {
+        mockRunPromise
+          .mockReturnValueOnce(pending.promise)
+          .mockResolvedValueOnce([fresh]);
+        const older = harness.value.discoverClient();
+        expect(await harness.value.discoverClient()).toEqual({
+          type: "single",
+          client: fresh,
+        });
+        if (outcome === "failure") pending.reject(new Error("old failure"));
+        else
+          pending.resolve(
+            outcome === "empty"
+              ? []
+              : outcome === "multiple"
+                ? [fresh, { tty: "/dev/ttys001", session: "old" }]
+                : [{ tty: "/dev/ttys001", session: "old" }],
+          );
+        await older;
+        await flush();
+        expect(harness.value.client).toEqual(fresh);
+        expect(harness.value.error).toBeNull();
+      } finally {
+        pending.resolve([]);
+        harness.unmount();
+      }
+    },
+  );
+
+  test.each([
+    { action: "switch", timing: "before" },
+    { action: "detach", timing: "before" },
+    { action: "switch", timing: "during" },
+    { action: "detach", timing: "during" },
+  ])(
+    "invalidates discoveries started $timing a successful client $action",
+    async ({ action, timing }) => {
+      const harness = await renderWithSingleClient();
+      const pending = Promise.withResolvers<TmuxClient[]>();
+      const actionPending = Promise.withResolvers<void>();
+      try {
+        const runAction = () =>
+          action === "switch"
+            ? harness.value.switchSession("new")
+            : harness.value.detachClient();
+        mockRunPromise
+          .mockReturnValueOnce(
+            timing === "before" ? pending.promise : actionPending.promise,
+          )
+          .mockReturnValueOnce(
+            timing === "before" ? actionPending.promise : pending.promise,
+          );
+        const first =
+          timing === "before" ? harness.value.discoverClient() : runAction();
+        const second =
+          timing === "before" ? runAction() : harness.value.discoverClient();
+        actionPending.resolve();
+        expect(await (timing === "before" ? second : first)).toBe(true);
+        pending.resolve([{ tty: "/dev/ttys001", session: "main" }]);
+        await (timing === "before" ? first : second);
+        await flush();
+        expect(harness.value.client).toEqual(
+          action === "switch" ? { tty: "/dev/ttys001", session: "new" } : null,
+        );
+      } finally {
+        actionPending.resolve();
+        pending.resolve([]);
+        harness.unmount();
+      }
+    },
+  );
+
+  test("preserves the current snapshot when aborted pane reads fail", async () => {
+    const harness = await renderWithSingleClient();
+    const pending = Promise.withResolvers<TmuxPaneInfo[]>();
+    const started = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    try {
+      const stable = [{ name: "stable", attached: true }];
+      mockRunPromise.mockResolvedValueOnce(stable).mockResolvedValueOnce([]);
+      await harness.value.refreshSessions();
+      mockRunPromise
+        .mockResolvedValueOnce([{ name: "cancelled", attached: false }])
+        .mockImplementationOnce(() => {
+          started.resolve();
+          return pending.promise;
+        });
+      const refreshing = harness.value.refreshSessions(controller.signal);
+      await started.promise;
+      controller.abort();
+      pending.reject(new Error("cancelled pane read"));
+      expect(await refreshing).toEqual([]);
+      await flush();
+      expect(harness.value.sessions).toEqual(stable);
+      expect([...harness.value.panes.keys()]).toEqual(["stable"]);
+    } finally {
+      pending.resolve([]);
+      harness.unmount();
+    }
+  });
+
+  test.each(["abort", "unmount"])(
+    "discards direct session and client refreshes after %s",
+    async (cancellation) => {
+      const harness = await renderWithSingleClient();
+      const pendingSessions =
+        Promise.withResolvers<{ name: string; attached: boolean }[]>();
+      const pendingClients = Promise.withResolvers<TmuxClient[]>();
+      const controller = new AbortController();
+      try {
+        mockRunPromise
+          .mockReturnValueOnce(pendingSessions.promise)
+          .mockReturnValueOnce(pendingClients.promise);
+        const signal = cancellation === "abort" ? controller.signal : undefined;
+        const sessions = harness.value.refreshSessions(signal);
+        const clients = harness.value.discoverClient(signal);
+        if (cancellation === "abort") controller.abort();
+        else harness.unmount();
+        pendingSessions.resolve([{ name: "cancelled", attached: true }]);
+        pendingClients.resolve([]);
+        expect(await sessions).toEqual([]);
+        expect(await clients).toEqual({ type: "error" });
+        await flush();
+        expect(harness.value.sessions).toEqual([]);
+        expect(harness.value.client).toEqual({
+          tty: "/dev/ttys001",
+          session: "main",
+        });
+        expect(harness.value.error).toBeNull();
+      } finally {
+        pendingSessions.resolve([]);
+        pendingClients.resolve([]);
+        if (cancellation !== "unmount") harness.unmount();
+      }
+    },
+  );
 
   test("switchSession returns false when no active client exists", async () => {
     mockRunPromise

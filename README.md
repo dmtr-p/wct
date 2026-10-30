@@ -294,6 +294,8 @@ Use `--profile ""` to select the base configuration without automatic matching.
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
 
+Repository and tmux observations refresh automatically and after Workspace actions. See [TUI refresh](docs/tui-refresh.md) for ordering, lifecycle validation, and cancellation behavior.
+
 GitHub PR Associations and the Open modal's PR list use cached discovery with incremental background updates. Manual refresh rebuilds history. See [PR discovery and refresh](docs/pr-refresh.md) for polling, cache reuse, and failure behavior.
 
 Claude Code and Codex foreground agents are detected automatically in Workspace panes, including agents started manually. Pane rows show `idle`, `working`, `blocked`, or `unknown`; Workspace rows show counts, including collapsed and detached Workspaces. Unknown means the current UI could not be classified. Stale observations retain their last state for at most five seconds before becoming unavailable. Detection uses a separate one-second observation loop and does not install agent hooks or save transcripts. See [agent detection behavior and compatibility](docs/agent-detection.md) for supported wrappers and validation requirements.

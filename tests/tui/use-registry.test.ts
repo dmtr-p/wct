@@ -22,6 +22,25 @@ const runtimeFixtures = vi.hoisted(() => ({
   runPromise: vi.fn(),
 }));
 
+const watchFixtures = vi.hoisted(() => ({
+  callback: null as ((event: string, filename: string) => void) | null,
+}));
+
+vi.mock("node:fs", async () => ({
+  ...(await vi.importActual<typeof import("node:fs")>("node:fs")),
+  watch: (
+    _path: string,
+    callback: (event: string, filename: string) => void,
+  ) => {
+    watchFixtures.callback = callback;
+    return {
+      close: () => {
+        watchFixtures.callback = null;
+      },
+    };
+  },
+}));
+
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await import("effect");
   const { provideBunServices } = await import("../../src/effect/runtime");
@@ -69,13 +88,24 @@ vi.mock("../../src/services/worktree-service", async () => {
 
 const { loadRepoInfo, useRegistry } =
   await import("../../src/tui/hooks/useRegistry");
+const { useRefresh } = await import("../../src/tui/hooks/useRefresh");
 
 type RegistryHookValue = ReturnType<typeof useRegistry>;
 
-async function renderUseRegistry() {
+async function renderUseRegistry(polling = false) {
   let latest: RegistryHookValue | undefined;
+  let background: Promise<unknown> | undefined;
   const Wrapper: FC = () => {
     latest = useRegistry();
+    return null;
+  };
+  const PollingWrapper: FC = () => {
+    const value = useRegistry();
+    latest = value;
+    useRefresh(async () => {
+      background = value.refresh();
+      await background;
+    });
     return null;
   };
   const stdout = new PassThrough() as unknown as NodeJS.WriteStream & {
@@ -91,14 +121,20 @@ async function renderUseRegistry() {
   stdin.isTTY = false;
   stdin.setRawMode = () => stdin;
   const { render } = await import("ink");
-  const instance = render(React.createElement(Wrapper), {
-    stdout,
-    stdin,
-    patchConsole: false,
-    exitOnCtrlC: false,
-  });
+  const instance = render(
+    React.createElement(polling ? PollingWrapper : Wrapper),
+    {
+      stdout,
+      stdin,
+      patchConsole: false,
+      exitOnCtrlC: false,
+    },
+  );
   for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
   return {
+    get background() {
+      return background;
+    },
     get value() {
       if (!latest) throw new Error("Hook not captured");
       return latest;
@@ -282,9 +318,129 @@ describe("useRegistry refresh", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     rmSync(repoPath, { recursive: true, force: true });
     rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  test.each(["poll", "watch"])(
+    "keeps a newer direct refresh when an older %s scan finishes last",
+    async (trigger) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      const hook = await renderUseRegistry(true);
+      const pending =
+        Promise.withResolvers<
+          { id: string; repo_path: string; project: string }[]
+        >();
+      const started = Promise.withResolvers<void>();
+      try {
+        registryFixtures.listRepos.mockImplementationOnce(() => {
+          started.resolve();
+          return pending.promise;
+        });
+        if (trigger === "poll") vi.advanceTimersByTime(5000);
+        else {
+          expect(watchFixtures.callback).not.toBeNull();
+          watchFixtures.callback?.("change", "wct.db-wal");
+        }
+        await started.promise;
+
+        registryFixtures.listRepos.mockResolvedValueOnce([]);
+        expect(await hook.value.refresh()).toEqual([]);
+        pending.resolve([
+          { id: "r1", repo_path: repoPath, project: "removed" },
+        ]);
+        await hook.background;
+        for (let i = 0; i < 6; i++)
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(hook.value.repos).toEqual([]);
+      } finally {
+        pending.resolve([]);
+        await hook.background;
+        hook.unmount();
+      }
+    },
+  );
+
+  test("returns each lifecycle caller's post-request snapshot despite supersession", async () => {
+    const hook = await renderUseRegistry();
+    const pending =
+      Promise.withResolvers<
+        { id: string; repo_path: string; project: string }[]
+      >();
+    try {
+      registryFixtures.listRepos.mockReturnValueOnce(pending.promise);
+      const first = hook.value.refresh();
+      registryFixtures.listRepos.mockResolvedValueOnce([]);
+      expect(await hook.value.refresh()).toEqual([]);
+      pending.resolve([{ id: "r1", repo_path: repoPath, project: "first" }]);
+      expect((await first)?.[0]?.project).toBe("first");
+      for (let i = 0; i < 6; i++)
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hook.value.repos).toEqual([]);
+    } finally {
+      pending.resolve([]);
+      hook.unmount();
+    }
+  });
+
+  test("publishes slow scans across successive polls while newer scans remain pending", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    type Item = { id: string; repo_path: string; project: string };
+    const initial = Promise.withResolvers<Item[]>();
+    const second = Promise.withResolvers<Item[]>();
+    const third = Promise.withResolvers<Item[]>();
+    registryFixtures.listRepos.mockReturnValueOnce(initial.promise);
+    const hook = await renderUseRegistry(true);
+    const items = (project: string): Item[] => [
+      {
+        id: project,
+        repo_path: join(repoPath, "missing"),
+        project,
+      },
+    ];
+    try {
+      expect(hook.value.loading).toBe(true);
+      registryFixtures.listRepos.mockReturnValueOnce(second.promise);
+      vi.advanceTimersByTime(5000);
+      const secondRefresh = hook.background;
+      initial.resolve(items("first"));
+      for (let i = 0; i < 6; i++)
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hook.value.loading).toBe(false);
+      expect(hook.value.repos[0]?.project).toBe("first");
+
+      registryFixtures.listRepos.mockReturnValueOnce(third.promise);
+      vi.advanceTimersByTime(5000);
+      second.resolve(items("second"));
+      await secondRefresh;
+      for (let i = 0; i < 6; i++)
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hook.value.repos[0]?.project).toBe("second");
+
+      third.resolve([]);
+      await hook.background;
+      for (let i = 0; i < 6; i++)
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hook.value.repos).toEqual([]);
+    } finally {
+      initial.resolve([]);
+      second.resolve([]);
+      third.resolve([]);
+      await hook.background;
+      hook.unmount();
+    }
+  });
+
+  test("discards a direct refresh that finishes after unmount", async () => {
+    const hook = await renderUseRegistry();
+    const pending = Promise.withResolvers<never[]>();
+    registryFixtures.listRepos.mockReturnValueOnce(pending.promise);
+    const refreshing = hook.value.refresh();
+    hook.unmount();
+    pending.resolve([]);
+    expect(await refreshing).toBeNull();
   });
 
   test.each([

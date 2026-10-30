@@ -5,6 +5,7 @@ import type { ResolvedConfig } from "../../config/schema";
 import { RegistryService } from "../../services/registry-service";
 import { WorktreeService } from "../../services/worktree-service";
 import { tuiRuntime } from "../runtime";
+import { useRefreshGeneration } from "./useRefreshGeneration";
 
 export interface WorktreeInfo {
   branch: string;
@@ -132,12 +133,15 @@ export async function loadRepoInfo(
 export function useRegistry() {
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const { begin } = useRefreshGeneration();
 
   // Resolves the snapshot it just loaded (or null if aborted/failed), so a
   // caller can reconcile against fresh state instead of a stale `repos`
   // closure captured before the await.
   const refresh = useCallback(
     async (signal?: AbortSignal): Promise<RepoInfo[] | null> => {
+      const request = begin(signal);
+      if (!request.isActive()) return null;
       const opts = signal ? { signal } : undefined;
       try {
         const items = await tuiRuntime.runPromise(
@@ -181,17 +185,17 @@ export function useRegistry() {
             ),
           ),
         );
-        if (signal?.aborted) return null;
-        setRepos(repoInfos);
+        if (!request.isActive()) return null;
+        if (request.accept()) setRepos(repoInfos);
         return repoInfos;
       } catch {
         // Swallow — previous repos preserved, next poll/watch will retry
         return null;
       } finally {
-        setLoading(false);
+        if (request.accept()) setLoading(false);
       }
     },
-    [],
+    [begin],
   );
 
   useEffect(() => {

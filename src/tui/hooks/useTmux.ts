@@ -6,6 +6,7 @@ import {
   TmuxService,
 } from "../../services/tmux";
 import { tuiRuntime } from "../runtime";
+import { useRefreshGeneration } from "./useRefreshGeneration";
 
 const EMPTY_PANES: Map<string, TmuxPaneInfo[]> = new Map();
 
@@ -35,122 +36,144 @@ export function useTmux() {
   const [panes, setPanes] = useState<Map<string, TmuxPaneInfo[]>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
-  const refreshPanes = useCallback(
-    async (sessionList: TmuxSessionInfo[], signal?: AbortSignal) => {
-      const opts = signal ? { signal } : undefined;
-      const paneMap = new Map<string, TmuxPaneInfo[]>();
-      await Promise.all(
-        sessionList.map(async (session) => {
-          try {
-            const result = await tuiRuntime.runPromise(
-              TmuxService.use((service) => service.listPanes(session.name)),
-              opts,
-            );
-            paneMap.set(session.name, result);
-          } catch {
-            // A failed session must not prevent refreshing other sessions' panes.
-          }
-        }),
-      );
-      setPanes(paneMap);
-    },
-    [],
-  );
+  const { begin: beginSessions } = useRefreshGeneration();
+  const { begin: beginClient, invalidate: invalidateClient } =
+    useRefreshGeneration();
 
   const refreshSessions = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal): Promise<TmuxSessionInfo[]> => {
+      const request = beginSessions(signal);
+      if (!request.isActive()) return [];
       const opts = signal ? { signal } : undefined;
       try {
         const result = await tuiRuntime.runPromise(
           TmuxService.use((service) => service.listSessions),
           opts,
         );
-        if (!result) {
-          setSessions([]);
-          setPanes(EMPTY_PANES);
-          return [];
-        }
-        const parsed = result.map((session) => ({
+        if (!request.isActive()) return [];
+        const parsed = (result ?? []).map((session) => ({
           name: session.name,
           attached: session.attached,
         }));
-        setSessions(parsed);
-        await refreshPanes(parsed, signal);
+        const paneMap = new Map<string, TmuxPaneInfo[]>();
+        await Promise.all(
+          parsed.map(async (session) => {
+            try {
+              const result = await tuiRuntime.runPromise(
+                TmuxService.use((service) => service.listPanes(session.name)),
+                opts,
+              );
+              paneMap.set(session.name, result);
+            } catch {
+              // A failed session must not prevent refreshing other sessions' panes.
+            }
+          }),
+        );
+        if (!request.isActive()) return [];
+        if (request.accept()) {
+          setSessions(parsed);
+          setPanes(paneMap);
+        }
         return parsed;
       } catch {
-        setSessions([]);
-        setPanes(EMPTY_PANES);
+        if (request.accept()) {
+          setSessions([]);
+          setPanes(EMPTY_PANES);
+        }
         return [];
       }
     },
-    [refreshPanes],
+    [beginSessions],
   );
 
-  const discoverClient = useCallback(async (signal?: AbortSignal) => {
-    const opts = signal ? { signal } : undefined;
-    try {
-      const clients = await tuiRuntime.runPromise(
-        TmuxService.use((service) => service.listClients),
-        opts,
-      );
+  const discoverClient = useCallback(
+    async (signal?: AbortSignal): Promise<TmuxClientDiscovery> => {
+      const request = beginClient(signal);
+      if (!request.isActive()) return { type: "error" };
+      const opts = signal ? { signal } : undefined;
+      try {
+        const clients = await tuiRuntime.runPromise(
+          TmuxService.use((service) => service.listClients),
+          opts,
+        );
+        if (!request.isActive()) return { type: "error" };
 
-      if (clients.length === 0) {
-        setError("No tmux client found — start tmux in the other pane");
-        setClient(null);
-        return { type: "none" } as const;
+        if (clients.length === 0) {
+          if (request.accept()) {
+            setError("No tmux client found — start tmux in the other pane");
+            setClient(null);
+          }
+          return { type: "none" };
+        }
+
+        if (clients.length === 1) {
+          const [onlyClient] = clients;
+          const client = onlyClient ?? null;
+          if (request.accept()) {
+            setClient(client);
+            setError(null);
+          }
+          return client ? { type: "single", client } : { type: "none" };
+        }
+
+        if (request.accept()) {
+          setClient(null);
+          setError(null);
+        }
+        return { type: "multiple" };
+      } catch {
+        if (request.accept()) {
+          setError("No tmux client found — start tmux in the other pane");
+          setClient(null);
+        }
+        return { type: "error" };
       }
-
-      if (clients.length === 1) {
-        const [onlyClient] = clients;
-        const client = onlyClient ?? null;
-        setClient(client);
-        setError(null);
-        return client
-          ? ({ type: "single", client } as const)
-          : ({ type: "none" } as const);
-      }
-
-      setClient(null);
-      return { type: "multiple" } as const;
-    } catch {
-      setError("No tmux client found — start tmux in the other pane");
-      setClient(null);
-      return { type: "error" } as const;
-    }
-  }, []);
+    },
+    [beginClient],
+  );
 
   const switchSession = useCallback(
     async (sessionName: string, activeClient: TmuxClient | null = client) => {
       if (!activeClient) return false;
+      const request = beginClient();
+      if (!request.isActive()) return false;
       try {
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>
             service.switchClientToPane(activeClient.tty, `=${sessionName}`),
           ),
         );
-        setClient({ ...activeClient, session: sessionName });
+        if (request.isActive() && invalidateClient()) {
+          setClient({ ...activeClient, session: sessionName });
+          setError(null);
+        }
         return true;
       } catch {
         return false;
       }
     },
-    [client],
+    [client, beginClient, invalidateClient],
   );
 
   const detachClient = useCallback(
     async (activeClient: TmuxClient | null = client) => {
       if (!activeClient) return false;
+      const request = beginClient();
+      if (!request.isActive()) return false;
       try {
         await tuiRuntime.runPromise(
           TmuxService.use((service) => service.detachClient(activeClient.tty)),
         );
-        setClient(null);
+        if (request.isActive() && invalidateClient()) {
+          setClient(null);
+          setError(null);
+        }
         return true;
       } catch {
         return false;
       }
     },
-    [client],
+    [client, beginClient, invalidateClient],
   );
 
   const jumpToPane = useCallback(

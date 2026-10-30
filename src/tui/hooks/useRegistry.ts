@@ -169,14 +169,18 @@ export function useRegistry() {
                 getChangedFileCount: (worktreePath) =>
                   tuiRuntime.runPromise(
                     WorktreeService.use((s) =>
-                      s.getChangedFileCount(worktreePath),
+                      s.getChangedFileCount(worktreePath, {
+                        logWarnings: false,
+                      }),
                     ),
                     opts,
                   ),
                 getAheadBehind: (worktreePath, ref) =>
                   tuiRuntime.runPromise(
                     WorktreeService.use((s) =>
-                      s.getAheadBehind(worktreePath, ref),
+                      s.getAheadBehind(worktreePath, ref, {
+                        logWarnings: false,
+                      }),
                     ),
                     opts,
                   ),

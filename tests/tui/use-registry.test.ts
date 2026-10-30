@@ -6,7 +6,10 @@ import { Effect, type FileSystem } from "effect";
 import React, { type FC } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConfigError } from "../../src/config/loader";
-import type { Worktree } from "../../src/services/worktree-service";
+import type {
+  Worktree,
+  WorktreeStatusOptions,
+} from "../../src/services/worktree-service";
 
 // `useRegistry` reaches services through `tuiRuntime`, so `XService.use(selector)`
 // is mocked to resolve synchronously against a controllable fake.
@@ -16,6 +19,18 @@ const registryFixtures = vi.hoisted(() => ({
 
 const worktreeFixtures = vi.hoisted(() => ({
   listWorktrees: vi.fn(),
+  getChangedFileCount:
+    vi.fn<
+      (worktreePath: string, options?: WorktreeStatusOptions) => Promise<number>
+    >(),
+  getAheadBehind:
+    vi.fn<
+      (
+        worktreePath: string,
+        ref: string,
+        options?: WorktreeStatusOptions,
+      ) => Promise<{ ahead: number; behind: number } | null>
+    >(),
 }));
 
 const runtimeFixtures = vi.hoisted(() => ({
@@ -79,8 +94,8 @@ vi.mock("../../src/services/worktree-service", async () => {
         selector({
           listWorktrees: worktreeFixtures.listWorktrees,
           getDefaultBranch: () => Promise.resolve("main"),
-          getChangedFileCount: () => Promise.resolve(0),
-          getAheadBehind: () => Promise.resolve({ ahead: 0, behind: 0 }),
+          getChangedFileCount: worktreeFixtures.getChangedFileCount,
+          getAheadBehind: worktreeFixtures.getAheadBehind,
         }),
     },
   };
@@ -306,6 +321,10 @@ describe("useRegistry refresh", () => {
   beforeEach(() => {
     registryFixtures.listRepos.mockReset();
     worktreeFixtures.listWorktrees.mockReset();
+    worktreeFixtures.getChangedFileCount.mockReset().mockResolvedValue(0);
+    worktreeFixtures.getAheadBehind
+      .mockReset()
+      .mockResolvedValue({ ahead: 0, behind: 0 });
     repoPath = mkdtempSync(join(tmpdir(), "wct-use-registry-repo-"));
     homeDir = mkdtempSync(join(tmpdir(), "wct-use-registry-home-"));
     vi.stubEnv("HOME", homeDir);
@@ -322,6 +341,73 @@ describe("useRegistry refresh", () => {
     vi.unstubAllEnvs();
     rmSync(repoPath, { recursive: true, force: true });
     rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  test("suppresses status warnings and refreshes healthy worktrees and repos when status reads fail", async () => {
+    const otherRepoPath = join(repoPath, "other-repo");
+    const failed = worktreeOf(repoPath, "failed");
+    const healthy = worktreeOf(repoPath, "healthy");
+    const other = worktreeOf(otherRepoPath, "main");
+    for (const wt of [failed, healthy, other]) {
+      mkdirSync(wt.path, { recursive: true });
+    }
+    registryFixtures.listRepos.mockResolvedValue([
+      { id: "r1", repo_path: repoPath, project: "alpha" },
+      { id: "r2", repo_path: otherRepoPath, project: "beta" },
+    ]);
+    worktreeFixtures.listWorktrees.mockImplementation(async (path: string) =>
+      path === repoPath ? [failed, healthy] : [other],
+    );
+    worktreeFixtures.getChangedFileCount.mockImplementation(async (path) => {
+      if (path === failed.path) throw new Error("status failed");
+      return path === healthy.path ? 2 : 3;
+    });
+    worktreeFixtures.getAheadBehind.mockImplementation(async (path) => {
+      if (path === failed.path) throw new Error("sync failed");
+      return { ahead: path === healthy.path ? 1 : 2, behind: 0 };
+    });
+
+    const hook = await renderUseRegistry();
+    try {
+      const snapshot = await hook.value.refresh();
+
+      for (const wt of [failed, healthy, other]) {
+        expect(worktreeFixtures.getChangedFileCount).toHaveBeenCalledWith(
+          wt.path,
+          { logWarnings: false },
+        );
+        expect(worktreeFixtures.getAheadBehind).toHaveBeenCalledWith(
+          wt.path,
+          "main",
+          { logWarnings: false },
+        );
+      }
+      expect(snapshot).toMatchObject([
+        {
+          id: "r1",
+          worktrees: [
+            { path: failed.path, changedFiles: 0, sync: null },
+            {
+              path: healthy.path,
+              changedFiles: 2,
+              sync: { ahead: 1, behind: 0 },
+            },
+          ],
+        },
+        {
+          id: "r2",
+          worktrees: [
+            {
+              path: other.path,
+              changedFiles: 3,
+              sync: { ahead: 2, behind: 0 },
+            },
+          ],
+        },
+      ]);
+    } finally {
+      hook.unmount();
+    }
   });
 
   test.each(["poll", "watch"])(

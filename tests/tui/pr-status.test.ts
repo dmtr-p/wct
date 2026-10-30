@@ -298,7 +298,6 @@ describe("PR tree rows", () => {
           pr: null,
           candidates: [candidate],
           newerOpenPr: null,
-          uncertain: true,
           fetchedAt: 1,
           lastError: null,
         },

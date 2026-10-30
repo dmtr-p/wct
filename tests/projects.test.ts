@@ -593,7 +593,6 @@ describe("projects command", () => {
           pr: null,
           candidates: [],
           newerOpenPr: null,
-          uncertain: true,
           fetchedAt: 123,
           lastError: null,
         });

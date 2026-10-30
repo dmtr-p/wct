@@ -1634,9 +1634,8 @@ project_name: "myapp"
             if (operation === "open") {
               expect(events).toContainEqual({
                 operation,
-                _tag: "AttemptCompleted",
-                attempt: "setup",
-                ok: true,
+                _tag: "SetupCommandCompleted",
+                result: { _tag: "Succeeded", name: "bootstrap" },
               });
             } else {
               expect(
@@ -1692,9 +1691,7 @@ project_name: "myapp"
           expect(
             events.some(
               (event) =>
-                (event._tag === "AttemptStarted" ||
-                  event._tag === "AttemptCompleted") &&
-                event.attempt === "tmux",
+                event._tag === "AttemptStarted" && event.attempt === "tmux",
             ),
           ).toBe(false);
           expect(result.warnings).toEqual([]);
@@ -1712,9 +1709,8 @@ project_name: "myapp"
           });
           expect(events.at(-1)).toEqual({
             operation,
-            _tag: "AttemptCompleted",
+            _tag: "AttemptStarted",
             attempt: "tmux",
-            ok: outcome !== "failed",
           });
           if (outcome === "failed") {
             const error = { code: "tmux_error", message: "startup failed" };

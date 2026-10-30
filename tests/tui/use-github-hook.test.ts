@@ -197,8 +197,6 @@ const cache = PrCacheService.of({
       if (entry)
         workspaceCache.set(key(path, branch), { ...entry, lastError: message });
     }),
-  getExplicit: (path, branch) =>
-    Effect.sync(() => explicitCache.get(key(path, branch)) ?? null),
   setExplicit: (path, branch, association) =>
     Effect.sync(() => {
       explicitCache.set(key(path, branch), association);
@@ -1133,7 +1131,7 @@ describe("useGitHub", () => {
       await poll(harness);
       const entry = harness.value.associations.get(key("/tmp/repo", "feature"));
       expect(entry?.pr).toBeNull();
-      expect(entry?.uncertain).toBe(true);
+      expect(entry?.explicit).toBe(false);
       expect(
         entry?.candidates.map((pr) => pr.number).sort((a, b) => a - b),
       ).toEqual([1, 3]);

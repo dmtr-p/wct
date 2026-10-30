@@ -47,16 +47,15 @@ test.each(["success", "failure", "defect", "mixed"])(
       _tag: "PhaseStarted",
       phase: { _tag: "StoppingTmuxSession" },
     };
-    const completed: WorkspaceReporterEvent = {
+    const killed: WorkspaceReporterEvent = {
       operation: "down",
-      _tag: "AttemptCompleted",
-      attempt: "tmux",
-      ok: true,
+      _tag: "SessionKilled",
+      sessionName: result.sessionName,
     };
     const child = {
       send: () => {
         emit({ _tag: "Event", event: phase });
-        emit({ _tag: "Event", event: completed });
+        emit({ _tag: "Event", event: killed });
         emit({ _tag: "Completed", outcome: { ok: true, data: result } });
       },
       kill: vi.fn(),
@@ -115,7 +114,7 @@ test.each(["success", "failure", "defect", "mixed"])(
         resultPath: join(directory ?? "", "result.json"),
       },
       phase,
-      completed,
+      killed,
     ]);
   },
 );

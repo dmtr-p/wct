@@ -28,7 +28,6 @@ export interface WorkspacePrEntry {
   pr: PrFacts | null;
   candidates: PrFacts[];
   newerOpenPr: number | null;
-  uncertain: boolean;
   explicit?: boolean;
   fetchedAt: number;
   lastError: string | null;
@@ -82,10 +81,6 @@ export interface PrCacheServiceApi {
     presentBranches: string[],
     registrationId?: string,
   ) => Effect.Effect<void, WctError>;
-  getExplicit: (
-    repoPath: string,
-    branch: string,
-  ) => Effect.Effect<ExplicitPrAssociation | null, WctError>;
   setExplicit: (
     repoPath: string,
     branch: string,
@@ -347,7 +342,6 @@ export function sqlGetWorkspace(
       : [],
     newerOpenPr:
       typeof payload.newerOpenPr === "number" ? payload.newerOpenPr : null,
-    uncertain: payload.uncertain === true,
     explicit: payload.explicit === true,
     fetchedAt: row.fetched_at,
     lastError: row.last_error,
@@ -371,7 +365,6 @@ export function sqlSetWorkspace(
         pr: entry.pr,
         candidates: entry.candidates,
         newerOpenPr: entry.newerOpenPr,
-        uncertain: entry.uncertain,
         explicit: entry.explicit,
       }),
       entry.fetchedAt,
@@ -558,8 +551,6 @@ export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
         sqlPruneWorkspaces(db, repoPath, branches),
       );
     }),
-  getExplicit: (repoPath, branch) =>
-    prCacheDb("getExplicit", (db) => sqlGetExplicit(db, repoPath, branch)),
   setExplicit: (repoPath, branch, association) =>
     prCacheDb("setExplicit", (db) =>
       sqlSetExplicit(db, repoPath, branch, association),

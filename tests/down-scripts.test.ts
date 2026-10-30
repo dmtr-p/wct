@@ -275,12 +275,17 @@ describe("down scripts", () => {
         "after",
       ]);
       expect((await stat(worktreePath)).isDirectory()).toBe(true);
-      expect(events).toContainEqual({
-        operation: kind,
-        _tag: "AttemptCompleted",
-        attempt: "down",
-        ok: false,
-      });
+      expect(
+        events.filter((event) => event._tag === "DownCommandCompleted"),
+      ).toMatchObject([
+        { operation: kind, result: { _tag: "Failed", name: "first" } },
+        {
+          operation: kind,
+          result: { _tag: "OptionalFailed", name: "optional" },
+        },
+        { operation: kind, result: { _tag: "Failed", name: "last" } },
+        { operation: kind, result: { _tag: "Succeeded", name: "after" } },
+      ]);
       expect(
         events.some(
           (event) =>

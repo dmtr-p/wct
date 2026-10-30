@@ -1,5 +1,6 @@
 import { isAbsolute, win32 } from "node:path";
 import { Schema } from "effect";
+import type { StandardSchemaV1 } from "effect/StandardSchema";
 import {
   type ResolvedConfig,
   type TmuxWindow,
@@ -48,25 +49,6 @@ function formatIssuePath(path?: ReadonlyArray<unknown>): string {
   return rendered;
 }
 
-function formatSchemaIssues(config: unknown): string[] {
-  const result = StandardWctConfigSchema["~standard"].validate(config) as
-    | { value: unknown }
-    | {
-        issues: ReadonlyArray<{
-          message: string;
-          path?: ReadonlyArray<unknown>;
-        }>;
-      };
-  if ("value" in result) {
-    return [];
-  }
-
-  return result.issues.map((issue) => {
-    const path = formatIssuePath(issue.path);
-    return path ? `${path}: ${issue.message}` : issue.message;
-  });
-}
-
 function validateTmuxWindowNames(
   windows: ReadonlyArray<TmuxWindow>,
   path: string,
@@ -98,12 +80,20 @@ function validateWorkDir(workDir: string | undefined, path: string): string[] {
 }
 
 export function validateConfig(config: unknown): ValidationResult {
-  const errors = formatSchemaIssues(config);
-  if (errors.length > 0) {
+  // Configuration schemas contain only synchronous checks.
+  const result = StandardWctConfigSchema["~standard"].validate(
+    config,
+  ) as StandardSchemaV1.Result<WctConfig>;
+  if (result.issues) {
+    const errors = result.issues.map((issue) => {
+      const path = formatIssuePath(issue.path);
+      return path ? `${path}: ${issue.message}` : issue.message;
+    });
     return { valid: false, errors };
   }
 
-  const decoded = Schema.decodeUnknownSync(WctConfigSchema)(config);
+  const decoded = result.value;
+  const errors: string[] = [];
   for (const key of ["base_branch", "push_remote"] as const) {
     const value = decoded[key];
     if (value !== undefined && value.trim() === "") {

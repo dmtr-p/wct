@@ -13,6 +13,11 @@ import {
   type PrCacheServiceApi,
 } from "../services/pr-cache-service";
 import {
+  makePrRefreshService,
+  PrRefreshService,
+  type PrRefreshServiceApi,
+} from "../services/pr-refresh-service";
+import {
   liveRegistryService,
   RegistryService,
   type RegistryServiceApi,
@@ -45,6 +50,7 @@ import {
 export type WctServices =
   | BunServices.BunServices
   | GitHubServiceApi
+  | PrRefreshServiceApi
   | PrCacheServiceApi
   | RegistryServiceApi
   | SetupServiceApi
@@ -56,6 +62,7 @@ export interface WctServiceOverrides {
   github?: GitHubServiceImplementation;
   json?: boolean;
   prCache?: PrCacheServiceApi;
+  prRefresh?: PrRefreshServiceApi;
   registry?: RegistryServiceApi;
   setup?: SetupServiceImplementation;
   tmux?: TmuxServiceImplementation;
@@ -73,9 +80,11 @@ export function makeWctServicesLayer(overrides: WctServiceOverrides = {}) {
     Layer.succeed(RegistryService, overrides.registry ?? liveRegistryService),
     Layer.succeed(JsonFlag, overrides.json ?? false),
   );
-  return Layer.effect(
-    WorkspaceService,
-    makeWorkspaceService(overrides.workspace),
+  return Layer.mergeAll(
+    Layer.effect(WorkspaceService, makeWorkspaceService(overrides.workspace)),
+    overrides.prRefresh
+      ? Layer.succeed(PrRefreshService, overrides.prRefresh)
+      : Layer.effect(PrRefreshService, makePrRefreshService),
   ).pipe(Layer.provideMerge(dependencies));
 }
 

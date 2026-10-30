@@ -44,9 +44,17 @@ repository loads its Workspace cache inputs through one database connection.
 
 ## Refresh coordination and failures
 
+`PrRefreshService` owns refresh coordination, discovery snapshots, retry deadlines,
+and registration-fenced persistence. Each mounted TUI hook opens a session with
+owned refresh fibers and closes its scope on unmount. The shared TUI runtime
+remains available to other services. React hydrates cached presentation state,
+triggers polling, and receives results through a callback bridge.
+
 Discovery belongs to the repository: modal cancellation and worktree changes do
 not cancel it. Worktree changes reconcile against its completed results.
-Repository removal and TUI shutdown cancel that repository's active requests.
+Repository removal, replacement registration, and TUI shutdown cancel owned
+requests. Cancelling a caller interrupts only its wait; queued cancelled callers
+do not start another refresh.
 
 Concurrent manual refreshes share a running complete scan while still forcing
 terminal and external fact reads. Automatic waiters share a failed request's

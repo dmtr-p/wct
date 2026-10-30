@@ -107,7 +107,13 @@ vi.mock("../../src/tui/runtime", async () => {
       : result;
   };
   return {
-    tuiRuntime: { runPromise },
+    tuiRuntime: {
+      runPromise,
+      runFork: (
+        effect: Effect.Effect<unknown, WctError>,
+        options?: Effect.RunOptions,
+      ) => Effect.runFork(provide(effect), options),
+    },
     runTuiSilentPromise: runPromise,
   };
 });

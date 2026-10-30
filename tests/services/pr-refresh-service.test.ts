@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Scheduler } from "effect";
+import { Deferred, Effect, Exit, Fiber, Scheduler, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { commandError, type WctError } from "../../src/errors";
@@ -80,22 +80,27 @@ function fixture(
     });
     const service = yield* PrRefreshService.pipe(Effect.provide(layer));
     const openSession = () =>
-      service.openSession({
-        associations: () => {
-          publications++;
-        },
-        openPrs: () => {
-          publications++;
-        },
-        refreshing: () => {},
-        errors: (update) => {
-          const next = update(errors);
-          errors.clear();
-          for (const [key, value] of next) errors.set(key, value);
-        },
+      Effect.gen(function* () {
+        const scope = yield* Scope.fork(yield* Effect.scope);
+        const session = yield* service
+          .openSession({
+            associations: () => {
+              publications++;
+            },
+            openPrs: () => {
+              publications++;
+            },
+            refreshing: () => {},
+            errors: (update) => {
+              const next = update(errors);
+              errors.clear();
+              for (const [key, value] of next) errors.set(key, value);
+            },
+          })
+          .pipe(Scope.provide(scope));
+        return { session, close: Scope.close(scope, Exit.void) };
       });
-    const session = yield* openSession();
-    yield* Effect.addFinalizer(() => session.close);
+    const { session, close } = yield* openSession();
     const initial = yield* Effect.forkChild(
       session.updateRepositories([repo]),
       {
@@ -105,6 +110,7 @@ function fixture(
     if (options.waitForStart !== false) yield* Deferred.await(started);
     return {
       session,
+      close,
       openSession,
       initial,
       started,
@@ -182,12 +188,50 @@ it.effect(
 );
 
 it.effect(
+  "completing the acquisition scope releases the session automatically",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* Effect.scoped(fixture());
+      yield* Fiber.join(f.initial);
+      expect(yield* Deferred.isDone(f.stopped)).toBe(true);
+      expect(f.publications()).toBe(0);
+      yield* f.session.refresh("manual");
+      expect(f.scans()).toBe(1);
+    }),
+);
+
+it.effect(
+  "interrupting the session owner releases discovery and external waiters",
+  () =>
+    Effect.gen(function* () {
+      const ready =
+        yield* Deferred.make<Effect.Success<ReturnType<typeof fixture>>>();
+      const owner = yield* Effect.forkChild(
+        Effect.gen(function* () {
+          const f = yield* fixture();
+          yield* Deferred.succeed(ready, f);
+          return yield* Effect.never;
+        }).pipe(Effect.scoped),
+      );
+      const f = yield* Deferred.await(ready);
+      const waiter = yield* Effect.forkChild(f.session.refresh("manual"), {
+        startImmediately: true,
+      });
+      yield* Fiber.interrupt(owner);
+      yield* Fiber.join(waiter);
+      expect(yield* Deferred.isDone(f.stopped)).toBe(true);
+      expect(f.publications()).toBe(0);
+      expect(f.scans()).toBe(1);
+    }),
+);
+
+it.effect(
   "closing a session interrupts owned discovery without closing another session",
   () =>
     Effect.gen(function* () {
       const first = yield* fixture();
       const second = yield* fixture();
-      yield* first.session.close;
+      yield* first.close;
       expect(yield* Deferred.isDone(first.stopped)).toBe(true);
       expect(first.publications()).toBe(0);
       expect(yield* Deferred.isDone(second.stopped)).toBe(false);
@@ -207,7 +251,7 @@ it.effect("closing before task startup settles every external waiter", () =>
       startImmediately: true,
     });
     expect(f.scans()).toBe(0);
-    yield* f.session.close;
+    yield* f.close;
     yield* Fiber.join(first);
     yield* Fiber.join(second);
     expect(f.scans()).toBe(0);
@@ -432,9 +476,8 @@ it.effect("sessions share compatible in-progress base resolutions", () =>
     });
     yield* Deferred.await(resolving);
     const second = yield* f.openSession();
-    yield* Effect.addFinalizer(() => second.close);
     const updating = yield* Effect.forkChild(
-      second.updateRepositories([repo]),
+      second.session.updateRepositories([repo]),
       {
         startImmediately: true,
       },
@@ -445,7 +488,7 @@ it.effect("sessions share compatible in-progress base resolutions", () =>
     yield* Fiber.join(f.initial);
     yield* Fiber.join(updating);
     expect(f.resolutions()).toBe(1);
-    yield* second.refresh("action");
+    yield* second.session.refresh("action");
     expect(f.resolutions()).toBe(1);
   }),
 );

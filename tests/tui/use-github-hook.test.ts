@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { PassThrough } from "node:stream";
 import { BunServices } from "@effect/platform-bun";
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
@@ -24,13 +24,18 @@ import type { OpenPrChoice, PrFacts } from "../../src/services/pr-model";
 import {
   makePrRefreshService,
   PrRefreshService,
+  type PrRefreshServiceApi,
 } from "../../src/services/pr-refresh-service";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { createPrActionsController } from "../../src/tui/pr-actions";
 import { Mode } from "../../src/tui/types";
 
 vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: { runPromise: vi.fn(), runSync: vi.fn(() => null) },
+  tuiRuntime: {
+    runPromise: vi.fn(),
+    runFork: vi.fn(),
+    runSync: vi.fn(() => null),
+  },
 }));
 vi.mock("../../src/services/pr-discovery", async () => ({
   ...(await vi.importActual<typeof import("../../src/services/pr-discovery")>(
@@ -70,8 +75,10 @@ vi.mock("../../src/services/pr-details", () => ({
 const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useGitHub } = await import("../../src/tui/hooks/useGitHub");
 const runPromise = vi.mocked(tuiRuntime.runPromise);
+const runFork = vi.mocked(tuiRuntime.runFork);
 const runSync = vi.mocked(tuiRuntime.runSync);
 const pendingEffects = new Set<Promise<unknown>>();
+const ownerFibers = new Set<Fiber.Fiber<unknown, unknown>>();
 
 function rawPr(
   number: number,
@@ -380,20 +387,39 @@ describe("useGitHub", () => {
         effect.pipe(Effect.provideService(PrCacheService, cache)),
       )) as typeof tuiRuntime.runSync);
     runPromise.mockReset();
+    runFork.mockReset();
     pendingEffects.clear();
+    const provide = <A, E>(
+      effect: Effect.Effect<
+        A,
+        E,
+        GitHubService | PrCacheServiceApi | PrRefreshServiceApi
+      >,
+    ) =>
+      effect.pipe(
+        Effect.provideServiceEffect(PrRefreshService, makePrRefreshService),
+        Effect.provide(BunServices.layer),
+        Effect.provideService(GitHubService, github),
+        Effect.provideService(PrCacheService, cache),
+      );
+    runFork.mockImplementation((<A, E>(
+      effect: Effect.Effect<
+        A,
+        E,
+        GitHubService | PrCacheServiceApi | PrRefreshServiceApi
+      >,
+      options?: Effect.RunOptions,
+    ) => {
+      const fiber = Effect.runFork(provide(effect), options);
+      ownerFibers.add(fiber);
+      fiber.addObserver(() => ownerFibers.delete(fiber));
+      return fiber;
+    }) as typeof tuiRuntime.runFork);
     runPromise.mockImplementation((<A, E>(
       effect: Effect.Effect<A, E, GitHubService | PrCacheServiceApi>,
       options?: { signal?: AbortSignal },
     ) => {
-      const promise = Effect.runPromise(
-        effect.pipe(
-          Effect.provideServiceEffect(PrRefreshService, makePrRefreshService),
-          Effect.provide(BunServices.layer),
-          Effect.provideService(GitHubService, github),
-          Effect.provideService(PrCacheService, cache),
-        ),
-        options,
-      );
+      const promise = Effect.runPromise(provide(effect), options);
       pendingEffects.add(promise);
       const complete = () => {
         pendingEffects.delete(promise);
@@ -402,7 +428,11 @@ describe("useGitHub", () => {
       return promise;
     }) as typeof tuiRuntime.runPromise);
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(async () => {
+    await Effect.runPromise(Fiber.interruptAll(ownerFibers));
+    await Promise.allSettled(pendingEffects);
+    vi.useRealTimers();
+  });
 
   test("automatically associates and persists main and linked worktree PRs", async () => {
     history = [
@@ -532,6 +562,66 @@ describe("useGitHub", () => {
       expect(harness.value.prData.size).toBe(0);
     } finally {
       harness.unmount();
+    }
+  });
+
+  test("unmount interrupts the owner and settles refreshes waiting for session acquisition", async () => {
+    const start = Deferred.makeUnsafe<void>();
+    const fork = runFork.getMockImplementation();
+    if (!fork) throw new Error("Missing owner runner");
+    runFork.mockImplementationOnce((<A, E>(
+      effect: Effect.Effect<
+        A,
+        E,
+        GitHubService | PrCacheServiceApi | PrRefreshServiceApi
+      >,
+      options?: Effect.RunOptions,
+    ) =>
+      fork(
+        Effect.andThen(Deferred.await(start), effect),
+        options,
+      )) as typeof tuiRuntime.runFork);
+    const harness = await renderHook([repo()]);
+    try {
+      await harness.waitFor(() => expect(runFork).toHaveBeenCalledTimes(1));
+      const manual = harness.value.refresh();
+      harness.unmount();
+      await manual;
+      await harness.waitFor(() => expect(ownerFibers.size).toBe(0));
+      Effect.runSync(Deferred.succeed(start, undefined));
+      expect(list).not.toHaveBeenCalled();
+      expect(discoveryWrites).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("unmount releases active discovery and a new mount owns an independent session", async () => {
+    let release!: () => void;
+    holdList = new Promise((resolve) => {
+      release = resolve;
+    });
+    const first = await renderHook([repo()]);
+    try {
+      await first.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+      const manual = first.value.refresh();
+      first.unmount();
+      await manual;
+      await first.waitFor(() => expect(ownerFibers.size).toBe(0));
+      expect(discoveryWrites).toBe(0);
+    } finally {
+      first.unmount();
+      holdList = null;
+      release();
+    }
+    const second = await renderHook([repo()]);
+    try {
+      await second.waitForIdle();
+      expect(ownerFibers.size).toBe(1);
+      expect(list).toHaveBeenCalledTimes(2);
+      expect(discoveryWrites).toBe(1);
+    } finally {
+      second.unmount();
     }
   });
 

@@ -1,5 +1,4 @@
 import { basename } from "node:path";
-import { Effect } from "effect";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import type { TmuxClient } from "../../services/tmux";
@@ -92,53 +91,36 @@ export function createSwitchClientAway(deps: SessionActionDeps) {
 }
 
 export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
-  return (sessionNames: readonly string[]) =>
-    Effect.runPromise(
-      Effect.gen(function* () {
-        const [client, latestSessions] = yield* Effect.all(
-          [
-            Effect.tryPromise({
-              try: () => deps.discoverClient(),
-              catch: toWctError,
-            }),
-            Effect.tryPromise({
-              try: () => deps.refreshSessions(),
-              catch: toWctError,
-            }),
-          ],
-          { concurrency: "unbounded" },
-        );
-        const handoff = resolveSessionsHandoff({
-          client,
-          targetSessions: sessionNames,
-          sessions: latestSessions,
-        });
+  return async (sessionNames: readonly string[]): Promise<boolean> => {
+    try {
+      // Attach both rejection handlers before a dependency can throw synchronously.
+      const [client, latestSessions] = await Promise.all([
+        Promise.resolve().then(() => deps.discoverClient()),
+        Promise.resolve().then(() => deps.refreshSessions()),
+      ]);
+      const handoff = resolveSessionsHandoff({
+        client,
+        targetSessions: sessionNames,
+        sessions: latestSessions,
+      });
 
-        if (handoff.type === "not-needed") {
-          return true;
-        }
+      if (handoff.type === "not-needed") {
+        return true;
+      }
 
-        if (handoff.type === "blocked") {
-          return false;
-        }
+      if (handoff.type === "blocked" || client.type !== "single") {
+        return false;
+      }
 
-        if (handoff.type === "detach") {
-          return client.type === "single"
-            ? yield* Effect.tryPromise({
-                try: () => deps.detachClient(client.client),
-                catch: toWctError,
-              })
-            : false;
-        }
+      if (handoff.type === "detach") {
+        return await deps.detachClient(client.client);
+      }
 
-        return client.type === "single"
-          ? yield* Effect.tryPromise({
-              try: () => deps.switchSession(handoff.sessionName, client.client),
-              catch: toWctError,
-            })
-          : false;
-      }).pipe(Effect.orElseSucceed(() => false)),
-    );
+      return await deps.switchSession(handoff.sessionName, client.client);
+    } catch {
+      return false;
+    }
+  };
 }
 
 export interface StartWorkspaceTarget {

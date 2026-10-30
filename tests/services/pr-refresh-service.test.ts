@@ -294,7 +294,9 @@ it.effect.each([3, 4, 6])(
       );
       yield* Deferred.await(f.started);
       yield* Deferred.succeed(f.release, undefined);
-      yield* Effect.forEach(callers, Fiber.join, { concurrency: "unbounded" });
+      yield* Effect.forEach(callers, (fiber) => Fiber.join(fiber), {
+        concurrency: "unbounded",
+      });
       expect(f.scans()).toBe(1);
     }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)),
 );

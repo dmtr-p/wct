@@ -126,7 +126,7 @@ export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
     const worker = Effect.gen(function* () {
       const signals = yield* Effect.acquireRelease(
         Queue.dropping<void>(1),
-        Queue.shutdown,
+        (queue) => Queue.shutdown(queue),
       );
       yield* Effect.sync(() => {
         request.current = () => {

@@ -54,7 +54,7 @@ export function waitForShutdownStart(
     ipcEvents.on("message", onMessage);
     ipcEvents.on("disconnect", onDisconnect);
     sendReady();
-    return Effect.sync(cleanup);
+    return Effect.sync(() => cleanup());
   }).pipe(
     Effect.timeoutOrElse({
       duration: "30 seconds",

@@ -309,7 +309,7 @@ vi.mock("../../src/services/workspace-service", async () => {
     (options: Record<string, unknown>) =>
       Effect.tryPromise({
         try: () => workspaceHarness.service[operation](options),
-        catch: toWctError,
+        catch: (error) => toWctError(error),
       });
   return {
     ...actual,

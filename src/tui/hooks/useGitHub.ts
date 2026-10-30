@@ -48,38 +48,77 @@ function openPrChoice(pr: PrFacts): OpenPrChoice {
   };
 }
 
-function hydrate(repos: RepoInfo[]) {
+interface HydratedRegistration {
+  id: string;
+  branches: Set<string>;
+  openPrs: boolean;
+}
+
+function hydrate(
+  repos: RepoInfo[],
+  processed: Map<string, HydratedRegistration>,
+) {
   const associations = new Map<string, WorkspacePrEntry>();
   const openPrs = new Map<string, OpenPrChoice[]>();
+  const reset = new Set<string>();
+  const present = new Set(repos.map((repo) => repo.repoPath));
+  for (const path of processed.keys()) {
+    if (present.has(path)) continue;
+    processed.delete(path);
+    reset.add(path);
+  }
   for (const repo of repos) {
+    const previous = processed.get(repo.repoPath);
+    const registration =
+      previous?.id === repo.id
+        ? previous
+        : { id: repo.id, branches: new Set<string>(), openPrs: false };
+    if (previous && previous !== registration) reset.add(repo.repoPath);
+    processed.set(repo.repoPath, registration);
+    const presentBranches = new Set(repo.worktrees.map((wt) => wt.branch));
+    // Refreshes can evict absent Workspaces while their persisted cache survives.
+    for (const branch of registration.branches) {
+      if (!presentBranches.has(branch)) registration.branches.delete(branch);
+    }
+    const branches = [...presentBranches].filter(
+      (branch) => !registration.branches.has(branch),
+    );
+    const includeOpenPrs = !registration.openPrs;
+    if (!includeOpenPrs && branches.length === 0) continue;
     try {
-      const open = tuiRuntime.runSync(
-        PrCacheService.use((s) => s.getOpenPrs(repo.repoPath)),
+      const cached = tuiRuntime.runSync(
+        PrCacheService.use((s) =>
+          s.getHydration(repo.repoPath, branches, includeOpenPrs),
+        ),
       );
-      if (open)
+      if (includeOpenPrs && cached.openPrs)
         openPrs.set(
           repo.repoPath,
-          open.payload.filter((pr) => pr.state === "OPEN"),
+          cached.openPrs.payload.filter((pr) => pr.state === "OPEN"),
         );
-      for (const wt of repo.worktrees) {
-        const cached = tuiRuntime.runSync(
-          PrCacheService.use((s) => s.getWorkspace(repo.repoPath, wt.branch)),
-        );
-        if (cached)
+      for (const workspace of cached.workspaces) {
+        if (workspace.cached)
           associations.set(
-            workspaceIdentityKey(repo.repoPath, wt.branch),
-            cached,
+            workspaceIdentityKey(repo.repoPath, workspace.branch),
+            workspace.cached,
           );
       }
+      // A successful miss is processed too; failures can retry on the next poll.
+      registration.openPrs = true;
+      for (const branch of branches) registration.branches.add(branch);
     } catch {
       /* cache errors leave unknown data */
     }
   }
-  return { associations, openPrs };
+  return { associations, openPrs, reset };
 }
 
 export function useGitHub(repos: RepoInfo[]) {
-  const [initial] = useState(() => hydrate(repos));
+  const [initial] = useState(() => {
+    const processed = new Map<string, HydratedRegistration>();
+    return { ...hydrate(repos, processed), processed };
+  });
+  const hydrated = useRef(initial.processed);
   const [associations, setAssociations] = useState(initial.associations);
   const [openPrs, setOpenPrs] = useState(initial.openPrs);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
@@ -108,15 +147,26 @@ export function useGitHub(repos: RepoInfo[]) {
   );
 
   useEffect(() => {
-    const cached = hydrate(repos);
+    const cached = hydrate(repos, hydrated.current);
+    if (
+      cached.reset.size === 0 &&
+      cached.associations.size === 0 &&
+      cached.openPrs.size === 0
+    )
+      return;
     setAssociations((previous) => {
-      const next = new Map(previous);
+      const next = new Map(
+        [...previous].filter(
+          ([key]) => !cached.reset.has(key.slice(0, key.indexOf("\0"))),
+        ),
+      );
       for (const [key, entry] of cached.associations)
         if (!next.has(key)) next.set(key, entry);
       return next;
     });
     setOpenPrs((previous) => {
       const next = new Map(previous);
+      for (const path of cached.reset) next.delete(path);
       for (const [key, prs] of cached.openPrs)
         if (!next.has(key)) next.set(key, prs);
       return next;
@@ -553,19 +603,6 @@ export function useGitHub(repos: RepoInfo[]) {
         loaded.current.delete(repo.repoPath);
         discoveryRetries.current.delete(repo.repoPath);
         baseRepositories.current.delete(repo.repoPath);
-        setAssociations(
-          (previous) =>
-            new Map(
-              [...previous].filter(
-                ([key]) => !key.startsWith(`${repo.repoPath}\0`),
-              ),
-            ),
-        );
-        setOpenPrs((previous) => {
-          const next = new Map(previous);
-          next.delete(repo.repoPath);
-          return next;
-        });
         setErrors((previous) => {
           const next = new Map(previous);
           next.delete(repo.repoPath);

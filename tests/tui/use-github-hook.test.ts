@@ -13,9 +13,11 @@ import {
   type PrCacheServiceApi,
   type PrDiscoverySnapshot,
   sqlGetOpenPrs,
+  sqlGetWorkspace,
   sqlSetOpenPrs,
   type WorkspacePrEntry,
 } from "../../src/services/pr-cache-service";
+import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { MergeSnapshot } from "../../src/services/pr-merge-service";
 import type { OpenPrChoice, PrFacts } from "../../src/services/pr-model";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
@@ -101,7 +103,7 @@ let heldRepo: string | null;
 const detailErrors = new Map<number, string>();
 const detailCalls: number[][] = [];
 const discoveryCache = new Map<string, PrDiscoverySnapshot>();
-const openCache = new Map<string, { number: number }[]>();
+const openCache = new Map<string, OpenPrChoice[]>();
 const baseRead = vi.fn(() =>
   Effect.suspend(() =>
     baseError
@@ -166,8 +168,24 @@ const github = GitHubService.of({
 const workspaceCache = new Map<string, WorkspacePrEntry>();
 const explicitCache = new Map<string, ExplicitPrAssociation>();
 const key = (path: string, branch: string) => `${path}\0${branch}`;
+const hydrationRead = vi.fn<PrCacheServiceApi["getHydration"]>(
+  (path: string, branches: readonly string[], includeOpenPrs: boolean) =>
+    Effect.sync(() => {
+      const choices = includeOpenPrs ? openCache.get(path) : undefined;
+      return {
+        workspaces: branches.map((branch) => ({
+          branch,
+          cached: workspaceCache.get(key(path, branch)) ?? null,
+        })),
+        openPrs: choices
+          ? { payload: choices, fetchedAt: 1, lastError: null }
+          : null,
+      };
+    }),
+);
 const cache = PrCacheService.of({
   ...livePrCacheService,
+  getHydration: hydrationRead,
   getWorkspaceInputs: (path, branches) =>
     Effect.sync(() =>
       branches.map((branch) => ({
@@ -292,6 +310,25 @@ async function poll(harness: Awaited<ReturnType<typeof renderHook>>) {
   await harness.waitForIdle();
 }
 
+function cachedWorkspace(number: number, branch = "feature"): WorkspacePrEntry {
+  return {
+    pr: normalizeGhPr(rawPr(number, "MERGED", branch), "base/repo", 1),
+    candidates: [],
+    newerOpenPr: null,
+    fetchedAt: 1,
+    lastError: null,
+  };
+}
+
+function cachedChoice(number: number): OpenPrChoice {
+  return {
+    number,
+    title: `Cached PR ${number}`,
+    state: "OPEN",
+    headRefName: "feature",
+  };
+}
+
 describe("useGitHub", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
@@ -313,11 +350,17 @@ describe("useGitHub", () => {
     baseRead.mockClear();
     batchGet.mockClear();
     workspaceCache.clear();
+    hydrationRead.mockClear();
     explicitCache.clear();
     list.mockClear();
     get.mockClear();
     runSync.mockReset();
-    runSync.mockReturnValue(null);
+    runSync.mockImplementation((<A, E>(
+      effect: Effect.Effect<A, E, PrCacheServiceApi>,
+    ) =>
+      Effect.runSync(
+        effect.pipe(Effect.provideService(PrCacheService, cache)),
+      )) as typeof tuiRuntime.runSync);
     runPromise.mockReset();
     pendingEffects.clear();
     runPromise.mockImplementation((<A, E>(
@@ -346,7 +389,235 @@ describe("useGitHub", () => {
     try {
       await harness.waitForIdle();
       expect(runPromise).not.toHaveBeenCalled();
+      expect(hydrationRead).not.toHaveBeenCalled();
       expect(harness.value.prData.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test.each(["hit", "miss"])(
+    "hydrates a cache %s once across startup and unchanged registry polls",
+    async (result) => {
+      const path = "/tmp/repo";
+      const branches = Array.from(
+        { length: 20 },
+        (_, index) => `branch-${index}`,
+      );
+      if (result === "hit") {
+        for (const branch of branches)
+          workspaceCache.set(key(path, branch), cachedWorkspace(1, branch));
+        openCache.set(path, [cachedChoice(1)]);
+      }
+      listError = "offline";
+      const harness = await renderHook([repo(path, branches)]);
+      try {
+        await harness.waitForIdle();
+        expect(hydrationRead.mock.calls).toEqual([[path, branches, true]]);
+        const associations = harness.value.associations;
+        const choices = harness.value.openPrs;
+        for (let index = 0; index < 3; index++) {
+          vi.advanceTimersByTime(5000);
+          harness.rerender([
+            { ...repo(path, branches), project: `renamed-${index}` },
+          ]);
+          await harness.waitForIdle();
+        }
+        expect(hydrationRead).toHaveBeenCalledTimes(1);
+        expect(harness.value.associations).toBe(associations);
+        expect(harness.value.openPrs).toBe(choices);
+        expect(associations.size).toBe(result === "hit" ? 20 : 0);
+        expect(choices.get(path)).toEqual(
+          result === "hit" ? [cachedChoice(1)] : undefined,
+        );
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("hydrates only new Workspaces and registrations while preserving in-memory facts", async () => {
+    const path = "/tmp/repo";
+    workspaceCache.set(key(path, "feature"), cachedWorkspace(1));
+    openCache.set(path, [cachedChoice(1)]);
+    listError = "offline";
+    const harness = await renderHook([repo(path, ["feature"])]);
+    let release!: () => void;
+    try {
+      await harness.waitForIdle();
+      workspaceCache.set(key(path, "feature"), cachedWorkspace(99));
+      openCache.set(path, [cachedChoice(99)]);
+      workspaceCache.set(key(path, "new"), cachedWorkspace(2, "new"));
+      workspaceCache.set(key("/tmp/other", "feature"), cachedWorkspace(3));
+      openCache.set("/tmp/other", [cachedChoice(3)]);
+      holdList = new Promise((resolve) => {
+        release = resolve;
+      });
+      harness.rerender([
+        repo(path, ["feature", "new"]),
+        repo("/tmp/other", ["feature"]),
+      ]);
+      await harness.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+      expect(hydrationRead.mock.calls).toEqual([
+        [path, ["feature"], true],
+        [path, ["new"], false],
+        ["/tmp/other", ["feature"], true],
+      ]);
+      expect(harness.value.prData.get(key(path, "feature"))?.number).toBe(1);
+      expect(harness.value.prData.get(key(path, "new"))?.number).toBe(2);
+      expect(
+        harness.value.prData.get(key("/tmp/other", "feature"))?.number,
+      ).toBe(3);
+      expect(harness.value.openPrs.get(path)).toEqual([cachedChoice(1)]);
+      expect(harness.value.openPrs.get("/tmp/other")).toEqual([
+        cachedChoice(3),
+      ]);
+      release();
+      await harness.waitForIdle();
+    } finally {
+      release?.();
+      harness.unmount();
+    }
+  });
+
+  test.each([true, false])(
+    "rehydrates reappearing Workspaces while offline (inspection failure: %s)",
+    async (inspectionFailure) => {
+      const path = "/tmp/repo";
+      history = [rawPr(1)];
+      const harness = await renderHook([repo(path, ["feature"])]);
+      try {
+        await harness.waitForIdle();
+        expect(harness.value.prData.get(key(path, "feature"))?.number).toBe(1);
+        harness.rerender([
+          {
+            ...repo(path),
+            ...(inspectionFailure
+              ? { error: "Failed to inspect repository" }
+              : {}),
+          },
+        ]);
+        await harness.waitForIdle();
+        expect(harness.value.associations.has(key(path, "feature"))).toBe(
+          false,
+        );
+        if (!inspectionFailure) {
+          // Another TUI can populate the cache after successful removal prunes it.
+          workspaceCache.clear();
+          workspaceCache.set(key(path, "feature"), cachedWorkspace(2));
+        }
+        vi.advanceTimersByTime(31_000);
+        listError = "offline";
+        harness.rerender([repo(path, ["feature"])]);
+        await harness.waitForIdle();
+        expect(hydrationRead.mock.calls).toEqual([
+          [path, ["feature"], true],
+          [path, ["feature"], false],
+        ]);
+        expect(harness.value.prData.get(key(path, "feature"))?.number).toBe(
+          inspectionFailure ? 1 : 2,
+        );
+        expect(harness.value.errors.get(path)).toContain("offline");
+        harness.rerender([repo(path, ["feature"])]);
+        await harness.waitForIdle();
+        expect(hydrationRead).toHaveBeenCalledTimes(2);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test.each([true, false])(
+    "resets hydration on re-registration (observed removal: %s)",
+    async (observeRemoval) => {
+      const path = "/tmp/repo";
+      workspaceCache.set(key(path, "feature"), cachedWorkspace(1));
+      workspaceCache.set(key(path, "old"), cachedWorkspace(9, "old"));
+      openCache.set(path, [cachedChoice(1)]);
+      listError = "offline";
+      const harness = await renderHook([repo(path, ["feature", "old"])]);
+      let release!: () => void;
+      try {
+        await harness.waitForIdle();
+        if (observeRemoval) {
+          harness.rerender([]);
+          await harness.waitForIdle();
+          expect(harness.value.associations.size).toBe(0);
+          expect(harness.value.openPrs.size).toBe(0);
+        }
+        workspaceCache.clear();
+        workspaceCache.set(key(path, "feature"), cachedWorkspace(2));
+        openCache.set(path, [cachedChoice(2)]);
+        holdList = new Promise((resolve) => {
+          release = resolve;
+        });
+        harness.rerender([
+          { ...repo(path, ["feature"]), id: "new-registration" },
+        ]);
+        await harness.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+        expect(hydrationRead.mock.calls).toEqual([
+          [path, ["feature", "old"], true],
+          [path, ["feature"], true],
+        ]);
+        expect(harness.value.prData.get(key(path, "feature"))?.number).toBe(2);
+        expect(harness.value.associations.has(key(path, "old"))).toBe(false);
+        expect(harness.value.openPrs.get(path)).toEqual([cachedChoice(2)]);
+        release();
+        await harness.waitForIdle();
+      } finally {
+        release?.();
+        harness.unmount();
+      }
+    },
+  );
+
+  test("retries failed hydration on a registry update and remembers the successful miss", async () => {
+    hydrationRead.mockReturnValueOnce(
+      Effect.fail(commandError("pr_cache_error", "unavailable")),
+    );
+    hydrationRead.mockReturnValueOnce(
+      Effect.fail(commandError("pr_cache_error", "unavailable")),
+    );
+    listError = "offline";
+    const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+    try {
+      await harness.waitForIdle();
+      expect(hydrationRead).toHaveBeenCalledTimes(2);
+      harness.rerender([repo("/tmp/repo", ["feature"])]);
+      await harness.waitForIdle();
+      expect(hydrationRead).toHaveBeenCalledTimes(3);
+      harness.rerender([repo("/tmp/repo", ["feature"])]);
+      await harness.waitForIdle();
+      expect(hydrationRead).toHaveBeenCalledTimes(3);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test("a hydration retry cannot overwrite newer GitHub facts already in memory", async () => {
+    hydrationRead.mockReturnValueOnce(
+      Effect.fail(commandError("pr_cache_error", "unavailable")),
+    );
+    hydrationRead.mockReturnValueOnce(
+      Effect.fail(commandError("pr_cache_error", "unavailable")),
+    );
+    history = [rawPr(1)];
+    const path = "/tmp/repo";
+    const harness = await renderHook([repo(path, ["feature"])]);
+    try {
+      await harness.waitForIdle();
+      expect(harness.value.prData.get(key(path, "feature"))?.number).toBe(1);
+      const association = harness.value.associations.get(key(path, "feature"));
+      const choices = harness.value.openPrs.get(path);
+      workspaceCache.set(key(path, "feature"), cachedWorkspace(99));
+      openCache.set(path, [cachedChoice(99)]);
+      harness.rerender([repo(path, ["feature"])]);
+      await harness.waitForIdle();
+      expect(hydrationRead).toHaveBeenCalledTimes(3);
+      expect(harness.value.associations.get(key(path, "feature"))).toBe(
+        association,
+      );
+      expect(harness.value.openPrs.get(path)).toBe(choices);
     } finally {
       harness.unmount();
     }
@@ -367,7 +638,14 @@ describe("useGitHub", () => {
     sqlSetOpenPrs(database, repoPath, choices);
     const startupCache = PrCacheService.of({
       ...cache,
-      getOpenPrs: (path) => Effect.sync(() => sqlGetOpenPrs(database, path)),
+      getHydration: (path, branches, includeOpenPrs) =>
+        Effect.sync(() => ({
+          workspaces: branches.map((branch) => ({
+            branch,
+            cached: sqlGetWorkspace(database, path, branch),
+          })),
+          openPrs: includeOpenPrs ? sqlGetOpenPrs(database, path) : null,
+        })),
     });
     runSync.mockImplementation((<A, E>(
       effect: Effect.Effect<A, E, PrCacheServiceApi>,

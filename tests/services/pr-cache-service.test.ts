@@ -1,11 +1,12 @@
 import { Database } from "bun:sqlite";
-import { rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runMigrations } from "../../src/services/db";
 import {
+  livePrCacheService,
   sqlGetDiscovery,
   sqlGetDiscoveryEffect,
   sqlGetOpenPrs,
@@ -13,6 +14,7 @@ import {
   sqlOwnedWrite,
   sqlSetDiscovery,
   sqlSetOpenPrs,
+  sqlSetWorkspace,
 } from "../../src/services/pr-cache-service";
 import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { OpenPrChoice } from "../../src/services/pr-model";
@@ -38,7 +40,85 @@ const PR_B: OpenPrChoice = {
   headRefName: "fix/broken",
 };
 
-describe("PrCacheService SQL helpers", () => {
+describe("PrCacheService SQL helpers", { concurrent: false }, () => {
+  it("hydrates requested Workspaces and modal choices through one connection per batch", () => {
+    const home = mkdtempSync(join(tmpdir(), "wct-hydration-"));
+    const originalHome = process.env.HOME;
+    const branches = Array.from(
+      { length: 20 },
+      (_, index) => `branch-${index}`,
+    );
+    const entry = {
+      pr: null,
+      candidates: [],
+      newerOpenPr: null,
+      fetchedAt: 123,
+      lastError: null,
+    };
+    try {
+      process.env.HOME = home;
+      mkdirSync(join(home, ".wct"));
+      const db = new Database(join(home, ".wct", "wct.db"));
+      try {
+        runMigrations(db);
+        for (const branch of branches) sqlSetWorkspace(db, "/a", branch, entry);
+        sqlSetWorkspace(db, "/b", branches[0] ?? "", {
+          ...entry,
+          fetchedAt: 456,
+        });
+        sqlSetOpenPrs(db, "/a", [PR_A, PR_B]);
+      } finally {
+        db.close();
+      }
+      const close = vi.spyOn(Database.prototype, "close");
+      const query = vi.spyOn(Database.prototype, "query");
+      try {
+        const loaded = Effect.runSync(
+          livePrCacheService.getHydration("/a", [...branches, "missing"], true),
+        );
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(loaded.workspaces).toEqual([
+          ...branches.map((branch) => ({
+            branch,
+            cached: { ...entry, explicit: false },
+          })),
+          { branch: "missing", cached: null },
+        ]);
+        expect(loaded.openPrs?.payload).toEqual([PR_A, PR_B]);
+        expect(
+          query.mock.calls.filter(([sql]) =>
+            sql.includes("FROM open_pr_cache"),
+          ),
+        ).toHaveLength(1);
+
+        query.mockClear();
+        expect(
+          Effect.runSync(
+            livePrCacheService.getHydration("/a", ["missing"], false),
+          ),
+        ).toEqual({
+          workspaces: [{ branch: "missing", cached: null }],
+          openPrs: null,
+        });
+        expect(close).toHaveBeenCalledTimes(2);
+        expect(
+          query.mock.calls.some(([sql]) => sql.includes("FROM open_pr_cache")),
+        ).toBe(false);
+        expect(
+          query.mock.calls.filter(([sql]) =>
+            sql.includes("FROM workspace_pr_cache"),
+          ),
+        ).toHaveLength(1);
+      } finally {
+        query.mockRestore();
+        close.mockRestore();
+      }
+    } finally {
+      process.env.HOME = originalHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("yields while hydrating history without mixing concurrent cache revisions", async () => {
     const path = join(tmpdir(), `wct-discovery-yield-${Date.now()}.db`);
     const first = new Database(path);

@@ -59,6 +59,15 @@ delay. Base-repository resolution failures also delay automatic requests.
 
 ## Persistence
 
+Initial modal and Workspace cache hydration reads only newly observed repository
+registrations and Workspace Identities, including remembering cache misses.
+Each repository's required reads share one database connection and transaction.
+Unchanged registry polls skip these reads. Removal or a new registration ID at
+the same path resets hydration state; routine hydration preserves facts already
+in memory. Workspaces that disappear can hydrate again when rediscovered,
+including after repository inspection failures. Failed cache reads can retry on
+a later registry update.
+
 Cache writes are fenced by the project registration identity so removed projects
 cannot regain cached rows from old refreshes. Discovery stores changed PR records
 and a small checkpoint separately, once per refresh; unchanged records are

@@ -18,7 +18,12 @@ import {
   createHandleSpaceSwitch,
   createStartWorkspace,
   createSwitchClientAway,
+  createSwitchClientAwayFromSessions,
 } from "../../src/tui/hooks/useSessionActions";
+import type {
+  TmuxClientDiscovery,
+  TmuxSessionInfo,
+} from "../../src/tui/hooks/useTmux";
 import {
   createLifecycleClaims,
   type LifecycleEntry,
@@ -189,6 +194,161 @@ describe("createSwitchClientAway", () => {
       tty: "/dev/pts/0",
       session: "target",
     });
+  });
+});
+
+describe("createSwitchClientAwayFromSessions", () => {
+  test("discovers concurrently and switches outside the full target set", async () => {
+    const client = { tty: "/dev/pts/0", session: "target" };
+    const discovery = Promise.withResolvers<TmuxClientDiscovery>();
+    const sessions = Promise.withResolvers<TmuxSessionInfo[]>();
+    const deps = makeDeps({
+      discoverClient: vi.fn(() => discovery.promise),
+      refreshSessions: vi.fn(() => sessions.promise),
+    });
+    const result = createSwitchClientAwayFromSessions(deps)([
+      "target",
+      "sibling",
+    ]);
+
+    try {
+      await vi.waitFor(() => {
+        expect(deps.discoverClient).toHaveBeenCalledOnce();
+        expect(deps.refreshSessions).toHaveBeenCalledOnce();
+      });
+      expect(deps.switchSession).not.toHaveBeenCalled();
+      expect(deps.detachClient).not.toHaveBeenCalled();
+    } finally {
+      discovery.resolve({ type: "single", client });
+      sessions.resolve([
+        { name: "target", attached: true },
+        { name: "sibling", attached: false },
+        { name: "fallback", attached: false },
+      ]);
+      await result;
+    }
+
+    await expect(result).resolves.toBe(true);
+    expect(deps.switchSession).toHaveBeenCalledWith("fallback", client);
+    expect(deps.detachClient).not.toHaveBeenCalled();
+  });
+
+  test("detaches when all sessions are targets", async () => {
+    const client = { tty: "/dev/pts/0", session: "target" };
+    const deps = makeDeps({
+      discoverClient: vi.fn().mockResolvedValue({ type: "single", client }),
+      refreshSessions: vi.fn().mockResolvedValue([
+        { name: "target", attached: true },
+        { name: "sibling", attached: false },
+      ]),
+    });
+
+    await expect(
+      createSwitchClientAwayFromSessions(deps)(["target", "sibling"]),
+    ).resolves.toBe(true);
+    expect(deps.detachClient).toHaveBeenCalledWith(client);
+    expect(deps.switchSession).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { type: "multiple", targetExists: true, expected: false },
+    { type: "error", targetExists: true, expected: false },
+    { type: "multiple", targetExists: false, expected: true },
+    { type: "error", targetExists: false, expected: true },
+  ] as const)(
+    "returns $expected for $type discovery with targetExists=$targetExists",
+    async ({ type, targetExists, expected }) => {
+      const deps = makeDeps({
+        discoverClient: vi.fn().mockResolvedValue({ type }),
+        refreshSessions: vi
+          .fn()
+          .mockResolvedValue(
+            targetExists ? [{ name: "target", attached: true }] : [],
+          ),
+      });
+
+      await expect(
+        createSwitchClientAwayFromSessions(deps)(["target"]),
+      ).resolves.toBe(expected);
+      expect(deps.switchSession).not.toHaveBeenCalled();
+      expect(deps.detachClient).not.toHaveBeenCalled();
+    },
+  );
+
+  describe.each(["discoverClient", "refreshSessions"] as const)(
+    "%s failure",
+    (dependency) => {
+      test.each(["throw", "reject"] as const)(
+        "handles %s and a later sibling rejection without taking action",
+        async (failure) => {
+          const pending = Promise.withResolvers<never>();
+          const deps = makeDeps({
+            discoverClient: vi.fn(() => pending.promise),
+            refreshSessions: vi.fn(() => pending.promise),
+          });
+          deps[dependency] = vi.fn(() => {
+            const error = new Error("discovery failed");
+            if (failure === "throw") throw error;
+            return Promise.reject(error);
+          });
+
+          try {
+            await expect(
+              createSwitchClientAwayFromSessions(deps)(["target"]),
+            ).resolves.toBe(false);
+            expect(deps.discoverClient).toHaveBeenCalledOnce();
+            expect(deps.refreshSessions).toHaveBeenCalledOnce();
+          } finally {
+            pending.reject(new Error("later discovery failure"));
+            // Let unhandled rejections surface before this test completes.
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          }
+
+          expect(deps.switchSession).not.toHaveBeenCalled();
+          expect(deps.detachClient).not.toHaveBeenCalled();
+        },
+      );
+    },
+  );
+
+  describe.each(["detach", "switch"] as const)("%s failure", (action) => {
+    test.each(["false", "throw", "reject"] as const)(
+      "returns false when the action produces %s",
+      async (failure) => {
+        const client = { tty: "/dev/pts/0", session: "target" };
+        const deps = makeDeps({
+          discoverClient: vi.fn().mockResolvedValue({ type: "single", client }),
+          refreshSessions: vi
+            .fn()
+            .mockResolvedValue([
+              { name: "target", attached: true },
+              ...(action === "switch"
+                ? [{ name: "fallback", attached: false }]
+                : []),
+            ]),
+        });
+        const actionMock = vi.fn(() => {
+          if (failure === "false") return Promise.resolve(false);
+          const error = new Error("action failed");
+          if (failure === "throw") throw error;
+          return Promise.reject(error);
+        });
+        deps[action === "detach" ? "detachClient" : "switchSession"] =
+          actionMock;
+
+        await expect(
+          createSwitchClientAwayFromSessions(deps)(["target"]),
+        ).resolves.toBe(false);
+        expect(actionMock).toHaveBeenCalledOnce();
+        if (action === "detach") {
+          expect(actionMock).toHaveBeenCalledWith(client);
+          expect(deps.switchSession).not.toHaveBeenCalled();
+        } else {
+          expect(actionMock).toHaveBeenCalledWith("fallback", client);
+          expect(deps.detachClient).not.toHaveBeenCalled();
+        }
+      },
+    );
   });
 });
 

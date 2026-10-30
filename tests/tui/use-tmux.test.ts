@@ -1,6 +1,8 @@
 import { PassThrough } from "node:stream";
+import type { Effect as EffectType } from "effect";
 import React, { type FC } from "react";
-import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { commandError } from "../../src/errors";
 import type { TmuxClient, TmuxPaneInfo } from "../../src/services/tmux";
 
 const tmuxServiceMock = vi.hoisted(() => ({
@@ -13,39 +15,78 @@ const tmuxServiceMock = vi.hoisted(() => ({
   killPane: vi.fn(),
 }));
 
-vi.mock("../../src/tui/runtime", () => ({
-  tuiRuntime: {
-    runPromise: vi.fn(),
-  },
-}));
-
-vi.mock("../../src/services/tmux", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/services/tmux")
-  >("../../src/services/tmux");
-
-  return {
-    ...actual,
-    TmuxService: {
-      use: (selector: (service: typeof tmuxServiceMock) => unknown) =>
-        selector({
-          ...tmuxServiceMock,
-          get listClients() {
-            return tmuxServiceMock.listClients();
-          },
-          get listSessions() {
-            return tmuxServiceMock.listSessions();
-          },
+const readFixtures = vi.hoisted(() => ({ read: vi.fn() }));
+vi.mock("../../src/tui/runtime", async () => {
+  const { Effect } = await import("effect");
+  const { provideBunServices } = await import("../../src/effect/runtime");
+  const { TmuxService } = await import("../../src/services/tmux");
+  const { RegistryService, liveRegistryService } =
+    await import("../../src/services/registry-service");
+  const { WorktreeService, makeWorktreeService } =
+    await import("../../src/services/worktree-service");
+  const { noopTmuxService } = await import("../helpers/services");
+  const { LocalObservationService, makeLocalObservationService } =
+    await import("../../src/services/local-observation-service");
+  const read = <A>(call: () => unknown) =>
+    Effect.tryPromise({
+      try: async (): Promise<A> => {
+        call();
+        return await readFixtures.read();
+      },
+      catch: (error) => commandError("unexpected_error", String(error), error),
+    });
+  const tmux = {
+    ...noopTmuxService,
+    listClients: read<TmuxClient[]>(() => tmuxServiceMock.listClients()),
+    listSessions: read<import("../../src/services/tmux").TmuxSession[] | null>(
+      () => tmuxServiceMock.listSessions(),
+    ),
+    listPanes: (name: string) =>
+      read<TmuxPaneInfo[]>(() => tmuxServiceMock.listPanes(name)),
+    switchClientToPane: (tty: string, target: string) =>
+      read<void>(() => tmuxServiceMock.switchClientToPane(tty, target)),
+    detachClient: (tty: string) =>
+      read<void>(() => tmuxServiceMock.detachClient(tty)),
+    togglePaneZoom: (pane: string) =>
+      read<void>(() => tmuxServiceMock.togglePaneZoom(pane)),
+    killPane: (pane: string) =>
+      read<void>(() => tmuxServiceMock.killPane(pane)),
+  };
+  const worktree = await Effect.runPromise(
+    provideBunServices(makeWorktreeService()),
+  );
+  const observation = await Effect.runPromise(
+    provideBunServices(
+      makeLocalObservationService.pipe(
+        Effect.provideService(RegistryService, {
+          ...liveRegistryService,
+          listRepos: Effect.succeed([]),
         }),
+        Effect.provideService(WorktreeService, worktree),
+        Effect.provideService(TmuxService, tmux),
+      ),
+    ),
+  );
+  return {
+    tuiRuntime: {
+      runPromise: (
+        effect: EffectType.Effect<unknown>,
+        options?: { signal?: AbortSignal },
+      ) =>
+        Effect.runPromise(
+          effect.pipe(
+            Effect.provideService(LocalObservationService, observation),
+            Effect.provideService(TmuxService, tmux),
+          ),
+          options,
+        ),
     },
   };
 });
 
-// Import after registering mocks so the hook captures the mocked runtime.
-const { tuiRuntime } = await import("../../src/tui/runtime");
 const { useTmux } = await import("../../src/tui/hooks/useTmux");
 
-const mockRunPromise = tuiRuntime.runPromise as Mock;
+const mockRunPromise = readFixtures.read;
 type TestStdout = NodeJS.WriteStream & { columns: number; rows: number };
 type TestStdin = NodeJS.ReadStream & {
   isTTY: boolean;
@@ -620,5 +661,22 @@ describe("useTmux hook", () => {
     expect(tmuxServiceMock.killPane).toHaveBeenCalledWith("pane-id");
 
     harness.unmount();
+  });
+});
+
+test("shares four subprocess permits across overlapping scans and recovers after cancellation", async () => {
+  const { measureObservationOverlap } =
+    await import("../helpers/local-observation");
+  const { provideBunServices } = await import("../../src/effect/runtime");
+  const { Effect } = await import("effect");
+  const measured = await Effect.runPromise(
+    provideBunServices(Effect.scoped(measureObservationOverlap)),
+  );
+  expect(measured).toEqual({
+    peak: 4,
+    active: 0,
+    startedBeforeCancellation: 4,
+    repositories: 6,
+    sessions: 12,
   });
 });

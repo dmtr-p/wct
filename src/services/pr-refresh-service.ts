@@ -294,9 +294,7 @@ export const makePrRefreshService = Effect.gen(function* () {
                       worktreeSignature(latest) === signature
                     );
                   };
-                  const trees = repo.worktrees.filter(
-                    (wt) => !wt.isMainWorktree,
-                  );
+                  const trees = repo.worktrees;
                   const inputs = yield* PrCacheService.use((s) =>
                     s.getWorkspaceInputs(
                       repoPath,
@@ -451,9 +449,7 @@ export const makePrRefreshService = Effect.gen(function* () {
                       new Map(previous).set(repoPath, message),
                     );
                     yield* Effect.forEach(
-                      currentRepo(repoPath)?.worktrees.filter(
-                        (wt) => !wt.isMainWorktree,
-                      ) ?? [],
+                      currentRepo(repoPath)?.worktrees ?? [],
                       (wt) =>
                         PrCacheService.use((s) =>
                           s.setWorkspaceError(

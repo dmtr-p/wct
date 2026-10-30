@@ -260,6 +260,14 @@ function repo(path = "/tmp/repo", branches: string[] = []): RepoInfo {
   };
 }
 
+function repoWithMainWorktree(branch = "feature"): RepoInfo {
+  const result = repo("/tmp/repo", [branch, "second"]);
+  result.worktrees = result.worktrees.map((wt, index) =>
+    index === 0 ? { ...wt, path: result.repoPath, isMainWorktree: true } : wt,
+  );
+  return result;
+}
+
 async function renderHook(repos: RepoInfo[]) {
   let value: ReturnType<typeof useGitHub> | undefined;
   const stdout = new PassThrough() as unknown as NodeJS.WriteStream & {
@@ -395,6 +403,125 @@ describe("useGitHub", () => {
     }) as typeof tuiRuntime.runPromise);
   });
   afterEach(() => vi.useRealTimers());
+
+  test("automatically associates and persists main and linked worktree PRs", async () => {
+    history = [
+      rawPr(1),
+      rawPr(2, "OPEN", "second"),
+      rawPr(3, "OPEN", "feature", "other/repo"),
+    ];
+    const harness = await renderHook([repoWithMainWorktree()]);
+    try {
+      await harness.waitForIdle();
+      await poll(harness);
+      for (const [branch, number] of [
+        ["feature", 1],
+        ["second", 2],
+      ] as const) {
+        const identity = key("/tmp/repo", branch);
+        expect(harness.value.prData.get(identity)).toMatchObject({
+          baseRepository: "base/repo",
+          headRepository: "fork/repo",
+          number,
+        });
+        expect(workspaceCache.get(identity)).toMatchObject({
+          explicit: false,
+          pr: { number },
+          lastError: null,
+        });
+      }
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test.each([
+    {
+      reason: "unknown Push Destination",
+      branch: "unknown",
+      prs: [rawPr(1, "OPEN", "unknown")],
+      candidates: [1],
+    },
+    {
+      reason: "different head repository",
+      branch: "feature",
+      prs: [rawPr(1, "OPEN", "feature", "other/repo")],
+      candidates: [],
+    },
+    {
+      reason: "ambiguous open PRs",
+      branch: "feature",
+      prs: [rawPr(1), rawPr(3)],
+      candidates: [1, 3],
+    },
+  ])(
+    "keeps a main-worktree association unresolved with $reason",
+    async ({ branch, prs, candidates }) => {
+      history = [...prs, rawPr(2, "OPEN", "second")];
+      const harness = await renderHook([repoWithMainWorktree(branch)]);
+      try {
+        await harness.waitForIdle();
+        const entry = harness.value.associations.get(key("/tmp/repo", branch));
+        expect(entry).toMatchObject({ pr: null, explicit: false });
+        expect(
+          entry?.candidates.map((pr) => pr.number).sort((a, b) => a - b),
+        ).toEqual(candidates);
+        expect(
+          harness.value.prData.get(key("/tmp/repo", "second"))?.number,
+        ).toBe(2);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+
+  test("preserves a main-worktree Explicit PR Association through pruning and refresh failures", async () => {
+    history = [rawPr(1), rawPr(2, "OPEN", "second")];
+    const identity = key("/tmp/repo", "feature");
+    const explicit = { baseRepository: "external/repo", number: 8 };
+    explicitCache.set(identity, explicit);
+    explicitCache.set(key("/tmp/repo", "removed"), explicit);
+    const harness = await renderHook([repoWithMainWorktree()]);
+    try {
+      await harness.waitForIdle();
+      const assertAssociations = (lastError: string | null) => {
+        for (const [branch, number] of [
+          ["feature", 8],
+          ["second", 2],
+        ] as const) {
+          const workspace = key("/tmp/repo", branch);
+          expect(harness.value.associations.get(workspace)).toMatchObject({
+            pr: { number },
+            explicit: branch === "feature",
+            lastError,
+          });
+          expect(workspaceCache.get(workspace)).toMatchObject({
+            pr: { number },
+            lastError,
+          });
+        }
+        expect(explicitCache.get(identity)).toEqual(explicit);
+      };
+      assertAssociations(null);
+      expect(harness.value.prData.get(identity)).toMatchObject({
+        baseRepository: "external/repo",
+        state: "MERGED",
+      });
+      expect(explicitCache.has(key("/tmp/repo", "removed"))).toBe(false);
+      listError = "discovery failed";
+      await harness.value.refresh();
+      await harness.waitForIdle();
+      assertAssociations(listError);
+      expect(harness.value.errors.get("/tmp/repo")).toContain(listError);
+      listError = null;
+      await poll(harness);
+      assertAssociations(null);
+      expect(harness.value.errors.size).toBe(0);
+    } finally {
+      harness.unmount();
+    }
+  });
 
   test("does not fetch an empty registry", async () => {
     const harness = await renderHook([]);

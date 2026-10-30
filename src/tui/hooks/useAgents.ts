@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { Clock, Effect, Queue } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AGENT_FRESHNESS_MS,
@@ -82,10 +83,7 @@ export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
   const requestedTargets = useRef(sessions);
   useEffect(() => {
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
-    let running = false;
-    let requested = false;
     const present = (raw: AgentSnapshot) => {
       const next = {
         ...raw,
@@ -125,65 +123,68 @@ export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
       present(next);
       armExpiry();
     };
-    const observe = async () => {
-      if (running) {
-        requested = true;
-        return;
-      }
-      running = true;
-      const started = Date.now();
-      const targets = targetSessions.current;
-      try {
-        const next = await tuiRuntime.runPromise(
-          AgentService.use((service) =>
-            service.observe(targets, latest.current),
+    const worker = Effect.gen(function* () {
+      const signals = yield* Effect.acquireRelease(
+        Queue.dropping<void>(1),
+        Queue.shutdown,
+      );
+      yield* Effect.sync(() => {
+        request.current = () => {
+          if (!controller.signal.aborted) Queue.offerUnsafe(signals, undefined);
+        };
+      });
+      yield* Queue.offer(signals, undefined);
+      yield* Queue.take(signals);
+      return yield* Effect.gen(function* () {
+        const started = yield* Clock.currentTimeMillis;
+        const targets = targetSessions.current;
+        const next = yield* AgentService.use((service) =>
+          service.observe(targets, latest.current),
+        ).pipe(
+          Effect.catchDefect(() =>
+            Effect.sync(() => ({
+              memberships: latest.current.memberships,
+              observations: new Map(
+                [...latest.current.observations].map(([id, prior]) => [
+                  id,
+                  reconcileAgent(
+                    prior,
+                    prior.agent,
+                    prior.generation,
+                    undefined,
+                    Date.now(),
+                    "runtime_unavailable",
+                  ),
+                ]),
+              ),
+            })),
           ),
-          { signal: controller.signal },
         );
-        if (controller.signal.aborted) return;
-        if (targets === targetSessions.current) publish(next);
-      } catch {
-        if (!controller.signal.aborted)
-          publish({
-            memberships: latest.current.memberships,
-            observations: new Map(
-              [...latest.current.observations].map(([id, prior]) => [
-                id,
-                reconcileAgent(
-                  prior,
-                  prior.agent,
-                  prior.generation,
-                  undefined,
-                  Date.now(),
-                  "runtime_unavailable",
-                ),
-              ]),
-            ),
-          });
-      } finally {
-        running = false;
-        if (!controller.signal.aborted) {
-          const delay =
-            requested || targets !== targetSessions.current
-              ? 0
-              : Math.max(0, 1000 - (Date.now() - started));
-          requested = false;
-          timer = setTimeout(() => {
-            void observe();
-          }, delay);
-        }
-      }
-    };
-    request.current = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      void observe();
-    };
-    void observe();
+        yield* Effect.sync(() => {
+          if (!controller.signal.aborted && targets === targetSessions.current)
+            publish(next);
+        });
+        const now = yield* Clock.currentTimeMillis;
+        // An early request consumes the pending signal and cancels this cycle's
+        // cadence timer, so it cannot trigger an extra observation later.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* Effect.sleep(Math.max(0, 1000 - (now - started))).pipe(
+              Effect.andThen(Queue.offer(signals, undefined)),
+              Effect.forkScoped,
+            );
+            yield* Queue.take(signals);
+          }),
+        );
+      }).pipe(Effect.forever);
+    }).pipe(Effect.scoped);
+    void tuiRuntime
+      .runPromise(worker, { signal: controller.signal })
+      .catch(() => {});
     return () => {
       request.current = undefined;
       controller.abort();
       if (expiryTimer !== undefined) clearTimeout(expiryTimer);
-      if (timer !== undefined) clearTimeout(timer);
     };
   }, []);
   useEffect(() => {

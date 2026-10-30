@@ -119,12 +119,20 @@ disappears and are never persisted.
 
 ## Observation and presentation
 
-A TUI-owned loop targets one second between observation starts. It batches
-server-wide pane metadata and host process metadata, captures only recognized
-agent panes, deduplicates linked panes, and revalidates generation afterward.
-Requests are coalesced; cycles and captures for the same pane do not overlap.
-Unregistration changes are rejected before an obsolete result can publish.
-Unmount interrupts scoped process operations and clears timers.
+A scoped Effect worker belongs to each mounted TUI agent observer. It consumes
+refresh signals from a capacity-one dropping Queue, reading the latest target
+sessions when each observation starts. Requests during an observation collapse
+into at most one immediate follow-up. Without an early request, the worker
+targets one second between observation starts; slow observations resume without
+an additional delay. Observations never overlap.
+
+Each observation batches server-wide pane metadata and host process metadata,
+captures only recognized agent panes, deduplicates linked panes, and revalidates
+generation afterward. Target changes request an immediate refresh and prevent
+obsolete results from publishing. An independent freshness-expiry timer updates
+presentation even while observations are blocked or failing. Unmount interrupts
+the worker and active process operations, shuts down the Queue, and releases
+cadence and freshness timers.
 
 There are at most four concurrent captures. Commands have a one-second timeout;
 capture output is limited to 256 KiB per stream. Metadata/process/argument reads

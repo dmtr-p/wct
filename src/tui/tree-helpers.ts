@@ -464,9 +464,6 @@ export function buildTreeItems({
   return items;
 }
 
-/**
- * Match pending Open operations by repository path; display names can collide.
- */
 function pendingWorkspacesByRepoIndex(
   repos: RepoInfo[],
   lifecycle: LifecycleState,
@@ -667,9 +664,6 @@ export function scrollToKeepVisible(
   return offset;
 }
 
-/**
- * Match the main repository path: project display names can collide.
- */
 export function lifecycleProgressRowIndex(
   rows: TreeRow[],
   repos: RepoInfo[],
@@ -686,7 +680,6 @@ export function lifecycleProgressRowIndex(
   return null;
 }
 
-/** The one-time viewport reveal for a newly active lifecycle operation. */
 export interface LifecycleReveal {
   /** The `workspaceIdentityKey` to mark revealed, so this happens exactly once. */
   key: string;

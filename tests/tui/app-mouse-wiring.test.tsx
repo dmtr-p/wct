@@ -1,6 +1,3 @@
-// Mouse selection and viewport regression tests render the exported App
-// through Ink's input pipeline. Shared service mocks and render helpers live
-// in tests/tui/app-harness.tsx.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,11 +29,7 @@ describe("App mouse selection and viewport behavior", () => {
   beforeEach(() => {
     homeDir = mkdtempSync(join(tmpdir(), "wct-app-mouse-home-"));
     repoPath = mkdtempSync(join(tmpdir(), "wct-app-mouse-repo-"));
-    // useRefresh's fs.watch(`${HOME}/.wct`) call throws synchronously (caught
-    // and silently swallowed) if the directory does not exist AT MOUNT TIME —
-    // it does not retroactively pick up a directory created after the watch()
-    // call. Create it up front so tests that trigger a real background
-    // refresh via a file write under it actually land.
+    // fs.watch requires the directory to exist when App mounts.
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
     resetHarnessFixtures();

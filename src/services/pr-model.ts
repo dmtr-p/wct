@@ -1,4 +1,3 @@
-/** Facts shared by GitHub fetching, SQLite, and the TUI. Missing facts stay unknown. */
 export type PrLifecycle = "OPEN" | "MERGED" | "CLOSED";
 export type CheckOutcome =
   "passed" | "failed" | "pending" | "cancelled" | "unknown";

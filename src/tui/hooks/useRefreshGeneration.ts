@@ -14,13 +14,12 @@ export function useRefreshGeneration() {
   const begin = useCallback((signal?: AbortSignal) => {
     const current = ++generation.current;
     const startedIn = lifetime.current;
-    // Lifecycle validation still needs a superseded request's own snapshot.
+    // Superseded requests can still return snapshots for lifecycle validation.
     const isActive = () =>
       mounted.current && lifetime.current === startedIn && !signal?.aborted;
     return {
       isActive,
       accept: () => {
-        // Polling can start newer scans before a slow scan finishes.
         if (!isActive() || current < accepted.current) return false;
         accepted.current = current;
         return true;

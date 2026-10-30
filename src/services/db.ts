@@ -71,7 +71,6 @@ export const MIGRATIONS: readonly string[] = [
 
 export const TARGET_SCHEMA_VERSION = MIGRATIONS.length;
 
-/** Exported for test access; use `runMigrations` in production code. */
 export function getCurrentSchemaVersion(db: Database): number {
   const row = db
     .query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
@@ -104,7 +103,6 @@ export function runMigrations(db: Database): void {
   apply.immediate();
 }
 
-/** Consumers choose the command error code for database failures. */
 export function withDb<A>(
   errorCode: ErrorCode,
   operation: string,

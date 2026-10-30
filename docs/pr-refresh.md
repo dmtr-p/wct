@@ -10,8 +10,9 @@ the [domain glossary](../CONTEXT.md#pr-identity).
 GitHub PR data refreshes every two minutes, when repositories or their worktrees
 change, and on explicit refresh actions. Complete PR discovery is cached in
 SQLite by Main Repository path; repositories without a usable snapshot scan
-their complete history. Fresh cache reads within thirty seconds avoid GitHub
-requests.
+their complete history. Automatic refreshes reuse discovery snapshots fetched
+within thirty seconds; incomplete association facts can still require GitHub
+detail requests.
 
 Ordinary polls read PRs in every state, newest-updated first, stopping after an
 inclusive server-timestamp checkpoint with a one-second overlap. This discovers
@@ -20,9 +21,9 @@ discovery records fail the scan rather than advancing a checkpoint that could
 permanently skip a PR.
 
 Successful base-repository resolution is cached for ten minutes. Manual refresh
-always resolves it again, rebuilds complete historical discovery, and refreshes
-selected terminal facts. A changed base repository rebuilds discovery when
-resolution next runs.
+bypasses cache freshness and requests complete historical discovery and fresh
+terminal facts. Concurrent manual requests can share a complete scan. A changed
+base repository rebuilds discovery when resolution next runs.
 
 ## Association facts and details
 
@@ -59,14 +60,12 @@ delay. Base-repository resolution failures also delay automatic requests.
 
 ## Persistence
 
-Initial modal and Workspace cache hydration reads only newly observed repository
-registrations and Workspace Identities, including remembering cache misses.
-Each repository's required reads share one database connection and transaction.
-Unchanged registry polls skip these reads. Removal or a new registration ID at
-the same path resets hydration state; routine hydration preserves facts already
-in memory. Workspaces that disappear can hydrate again when rediscovered,
-including after repository inspection failures. Failed cache reads can retry on
-a later registry update.
+Initial modal and Workspace cache reads are batched per repository in one
+connection and transaction. Successful reads, including cache misses, are
+remembered for each registration and Workspace Identity. Unchanged registry
+polls skip hydration; failed reads retry on a later update. Removal or a new
+registration ID resets hydration state, and rediscovered Workspaces can hydrate
+again. Hydration preserves facts already in memory.
 
 Cache writes are fenced by the project registration identity so removed projects
 cannot regain cached rows from old refreshes. Discovery stores changed PR records

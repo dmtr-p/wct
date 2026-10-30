@@ -113,7 +113,6 @@ export interface PrCacheServiceApi {
 export const PrCacheService =
   Context.Service<PrCacheServiceApi>("wct/PrCacheService");
 
-// Export SQL helpers so tests can use an in-memory database without withDb.
 const discoveryVersions = new WeakMap<PrDiscoverySnapshot, string>();
 
 export function sqlInvalidate(db: Database, repoPath: string): void {

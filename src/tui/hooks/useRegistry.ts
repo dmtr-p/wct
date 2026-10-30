@@ -135,9 +135,7 @@ export function useRegistry() {
   const [loading, setLoading] = useState(true);
   const { begin } = useRefreshGeneration();
 
-  // Resolves the snapshot it just loaded (or null if aborted/failed), so a
-  // caller can reconcile against fresh state instead of a stale `repos`
-  // closure captured before the await.
+  // Return this request's snapshot even when a newer one is already displayed.
   const refresh = useCallback(
     async (signal?: AbortSignal): Promise<RepoInfo[] | null> => {
       const request = begin(signal);

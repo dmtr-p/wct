@@ -143,8 +143,7 @@ export function App() {
   const [openModalRepoProject, setOpenModalRepoProject] = useState("");
   const [openModalRepoPath, setOpenModalRepoPath] = useState("");
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
-  // The live `mode`, for async continuations that must not act on a stale
-  // render-time capture.
+  // Async continuations must read the current mode after awaiting.
   const modeRef = useRef<Mode>(mode);
   // Manual and validated Open expansion share Workspace Identity Keys.
   const [expandedWorkspaceKeys, setExpandedWorkspaceKeys] = useState<
@@ -184,9 +183,7 @@ export function App() {
   });
   const { menu: prMenu, outcome: prOutcome } = prActions;
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
-  // External handoffs such as `tmux switch-client` can detach the terminal
-  // immediately. They need a commit barrier, not merely a queued state
-  // update, so the last frame the user sees cannot retain a progress row.
+  // Tmux handoff must wait until progress-row removal reaches the terminal.
   const lifecycleRef = useRef(lifecycle);
   const lifecycleCleanupWaitersRef = useRef<Map<string, Set<() => void>>>(
     new Map(),
@@ -209,8 +206,6 @@ export function App() {
     },
     [waitUntilRenderFlush],
   );
-  // Created once per App and shared by every verb: it decides, synchronously
-  // and before any state is written, whether an identity is already in flight.
   const lifecycleClaimsRef = useRef(createLifecycleClaims());
   const lifecycleClaims = lifecycleClaimsRef.current;
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -503,9 +498,6 @@ export function App() {
     returnFromConfirmation(confirmationMode);
   }, [confirmationMode, confirmationAnchorItemIndex, returnFromConfirmation]);
 
-  // Resolves the registry snapshot this refresh observed (or `null` when it
-  // failed and the previous repos were kept), so a lifecycle can reconcile
-  // against what it just validated instead of a stale `repos` capture.
   const refreshAll = useCallback(async (): Promise<RepoInfo[] | null> => {
     const [refreshedRepos] = await Promise.all([
       refreshRegistry(),
@@ -1001,8 +993,6 @@ export function App() {
         }
       }
 
-      // Disable mouse before Ink releases raw mode, or reports can echo at
-      // the shell prompt. exitOnCtrlC: false routes Ctrl+C through this handler.
       if (key.ctrl && input === "c") {
         disableMouse();
         exit();
@@ -1022,8 +1012,6 @@ export function App() {
         mode.type !== "ConfirmCloseForce" &&
         mode.type !== "ConfirmRemoveProject"
       ) {
-        // Disable mouse reporting BEFORE exit(): Ink's handleExit turns off raw
-        // mode before React unmount, so the unmount-cleanup disable is too late.
         disableMouse();
         exit();
         return;

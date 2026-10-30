@@ -39,8 +39,6 @@ export interface SessionActionDeps extends SessionHandoffDeps {
   selectedIndex: number;
   mode: Mode;
   lifecycle: LifecycleState;
-  // Shared across every lifecycle-driving hook, so a second operation for
-  // the same identity is impossible, not just unlikely.
   lifecycleClaims: LifecycleClaims;
 
   captureTreeReturnPosition: (
@@ -52,8 +50,6 @@ export interface SessionActionDeps extends SessionHandoffDeps {
     destination?: ReturnDestination,
   ) => void;
   setMode: (m: Mode) => void;
-  // The live mode, readable from async continuations: `mode` above is a
-  // render-time capture, stale by the time a lifecycle settles.
   modeRef: RefObject<Mode>;
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
 
@@ -65,8 +61,6 @@ export interface SessionActionDeps extends SessionHandoffDeps {
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
 
-  // Resolves the registry snapshot the refresh observed, or `null` when it
-  // failed (previous repos kept).
   refreshAll: () => Promise<RepoInfo[] | null>;
   confirmDownReturnModeRef: RefObject<Mode>;
   confirmCloseReturnModeRef: RefObject<Mode>;
@@ -314,9 +308,6 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
   };
 }
 
-// Every outcome — removed, refused by git, or fatally failed — goes through
-// the same validation step before the Workspace leaves the tree or unlocks,
-// so a closed Workspace never disappears optimistically.
 export function createExecuteClose(deps: SessionActionDeps) {
   const switchClientAway = createSwitchClientAway(deps);
 
@@ -366,15 +357,10 @@ export function createExecuteClose(deps: SessionActionDeps) {
           ),
         );
       },
-      // Asked from `afterCleanup`, after the lifecycle presentation is fully
-      // over, so the confirmation is anchored on a stable tree and a forced
-      // retry starts a fresh lifecycle instead of inheriting a stale lock.
+      // Force confirmation needs a stable tree and a released lifecycle claim.
       afterCleanup: async (result) => {
         if (result.status !== "blocked_by_changes") return undefined;
-        // The user may navigate away while validation runs. Only prompt if
-        // the tree is still in the mode this close restored; otherwise just
-        // report, so the refusal is never silent but also never clobbers
-        // what the user is doing elsewhere.
+        // Avoid replacing a mode the user entered while validation was in flight.
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }

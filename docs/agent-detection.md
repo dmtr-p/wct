@@ -144,8 +144,8 @@ Identity and include collapsed/detached sessions. Counts appear in blocked,
 working, idle, unknown order; retained counts explicitly say stale. Each linked
 pane counts once per Workspace. Rows remain single-line with width-aware
 truncation. Only semantic/membership/freshness changes update presentation.
-Registry, Git, and tmux refreshes run separately on a five-second interval
-and respond to registry database changes.
+Repository and tmux state use the separate
+[TUI refresh loop](tui-refresh.md).
 
 ## Compatibility validation
 

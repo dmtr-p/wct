@@ -10,7 +10,10 @@ files in `docs/adr/` for engineering decisions.
 - `docs/<topic>.md` owns current behavior for its named subsystem. Agent
   identification, observation, and compatibility belong in
   [agent detection](../agent-detection.md); GitHub PR discovery, caching, and
-  refresh coordination belong in [PR refresh](../pr-refresh.md).
+  refresh coordination belong in [PR refresh](../pr-refresh.md). Workspace
+  startup, copying, and shutdown belong in
+  [Workspace Operations](../workspace-operations.md); repository and tmux
+  polling belong in [TUI refresh](../tui-refresh.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine
   behavior descriptions belong in topic documents.
 - `docs/agents/` owns agent workflow and repository instructions.

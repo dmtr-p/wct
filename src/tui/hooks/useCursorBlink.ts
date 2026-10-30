@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useBlink } from "./useBlink";
 
-/** Keep an editing cursor visible while the user is actively moving it. */
 export function useCursorBlink(
   value: string,
   cursor: number,

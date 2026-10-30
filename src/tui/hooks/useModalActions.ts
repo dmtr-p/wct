@@ -53,8 +53,6 @@ export interface ModalActionDeps extends SessionHandoffDeps {
   openModalRepoProject: string;
   openModalRepoPath: string;
   lifecycle: LifecycleState;
-  // Shared with `useSessionActions` so an `open` and an `up`/`down`/`close`
-  // can't both claim the same Workspace.
   lifecycleClaims: LifecycleClaims;
 
   setLifecycle: Dispatch<SetStateAction<LifecycleState>>;
@@ -71,8 +69,6 @@ export interface ModalActionDeps extends SessionHandoffDeps {
   showActionError: (msg: string) => void;
   clearActionError: () => void;
   startWorkspace: (target: StartWorkspaceTarget) => Promise<void>;
-  // Lifecycle reconciliation must read the snapshot this resolves to, never
-  // the render-time `filteredRepos` capture.
   refreshAll: () => Promise<RepoInfo[] | null>;
 
   upModalReturnModeRef: RefObject<Mode>;
@@ -186,8 +182,6 @@ export function createPrepareUpModal(deps: ModalActionDeps) {
     const wt = repo?.worktrees[item.worktreeIndex];
     if (!repo || !wt) return;
 
-    // Same guard as space/down/close: refuse before opening the option
-    // sheet, not after submit.
     if (
       rejectIfLifecycleActive({
         lifecycle: deps.lifecycle,

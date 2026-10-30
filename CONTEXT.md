@@ -35,88 +35,18 @@ branch and from a PR's base or head GitHub repository.
 ### Workspace Operation
 
 A Workspace Operation is an `open`, `up`, `down`, or `close` action. Open
-creates or reuses a worktree, prepares its configured environment, and starts
-its tmux session when configured. Start means `up`, which starts its tmux
-session. Stop means `down`, which stops its tmux session while keeping the
-worktree. Stop then runs configured `down` scripts. Close stops the session,
-runs the same scripts, and removes the worktree only if required scripts
-succeed. Scripts also run when no tmux session exists; every command is
-attempted, and optional failures are warnings. Separate operations rerun
-scripts. The CLI's internal force-removal retry only retries removal.
-Removal retries resolve the main repository from the worktree root rather
-than using the invoking directory, which cleanup scripts may delete.
-Missing registered worktree directories skip scripts during Close.
-Startup and shutdown target the containing checkout root, including calls
-from nested working directories. Stopping the session containing the invoking
-pane hands completion to an independent process before the kill; its JSON
-outcome is saved outside the worktree, bypassing project-local temporary
-directories and symlinks into the checkout. The worker uses the configuration and
-environment resolved before handoff. A CLI `--yes` also authorizes its
-force-removal retry.
+creates or reuses a worktree, prepares its environment, and starts tmux when
+configured. Start (`up`) starts tmux. Stop (`down`) stops tmux and runs down
+scripts while retaining the worktree. Close runs the same shutdown and removes
+the worktree after required down scripts succeed.
 
 Use Start and Stop in user-facing action names, and `up` and `down` when
-referring to the CLI commands. Stopping a session uses tmux's `kill-session`
-operation; it does not suspend the processes in the session.
+referring to CLI commands. Stopping a session uses tmux's `kill-session`
+operation. Down's JSON results report stopped sessions as `status: "killed"`;
+Down and Close expose `attempts.kill`.
 
-Open uses optional `base_branch` and `push_remote` configuration for new branches.
-An explicit `--base` overrides `base_branch`; without either, the starting ref is
-HEAD. `push_remote` sets the new branch's local Git `pushRemote` configuration
-without changing its upstream. Existing branches, reused Worktrees, and PR
-checkouts retain their Git configuration and do not use these defaults.
-Initial push-remote setup records its intended remote in branch-specific keys
-in local Git configuration before creating the branch. A later failure leaves
-that intent pending; reopening the Worktree resumes it, even if the YAML default
-has changed.
-Success clears the pending intent so later opens preserve manual Git changes.
-If creation fails before the branch exists, the pending intent is removed.
-Before creating a new branch, Open fetches all remotes and then validates the
-base ref. Fetch failures stop creation. Remote-tracking bases use the fetched
-commit; fetching does not advance local branches or HEAD. Reused Worktrees and
-existing-branch checkouts skip this fetch; PR checkouts fetch their head branch.
-
-Open copies from the Main Repository before setup. For newly created Worktrees,
-copy-source precedence is the selected profile's `copy`, the project
-`.wct.yaml`'s `copy`, the Main Repository's root `.worktreeinclude`, then the
-global `~/.wct.yaml`'s `copy`. Project/profile `copy: []` disables copying.
-An existing empty or no-match include file overrides global copying; an absent
-include file falls through. Config loading preserves project copy provenance
-alongside the merged config, and the shared Workspace service selects the source
-after profile resolution.
-
-All copy sources select only untracked, gitignored regular files discovered by
-Git, including repository, `.git/info/exclude`, and global ignore rules.
-Tracked and nonignored files, symlinks, and Git metadata are excluded.
-YAML `copy` lists expand file, directory, and Bun glob entries, then filter the
-matches against those eligible files; missing files are skipped.
-
-`.worktreeinclude` uses gitignore syntax, including comments, blank lines,
-escapes, negation, root anchoring, directory patterns, and ordered rules.
-Positive rules include, negations exclude, and later matches override earlier
-ones. Git discovery uses NUL-delimited paths; selected paths are deduplicated,
-checked for regular files, and copied directly without glob expansion.
-
-Inside a directory ignored as a whole, a leading `**/` reaches files only if
-the directory matches the pattern or the first name after `**/` occurs in the
-directory's path. For ignored `vendor/`, `**/config.json` does not reach its
-files; `vendor/**/config.json` does. `**/.claude/skills/*.md` reaches an ignored
-`.claude/` directory. Beneath an ignored `outer/`, use
-`outer/**/.claude/skills/*.md` instead. This restriction applies only to include
-rules, not YAML Bun globs. Only the root include file is read.
-
-Include copying applies when Open creates a Worktree and when retrying failed
-initial include resolution or copying. A pending marker in worktree-local Git
-metadata persists across failures and is cleared after successful copy processing,
-including an explicit YAML override or an empty selection. Retrying reads the
-current configuration and include rules before setup. After success, reopening
-skips that source. YAML copy lists run on every Open and can overwrite previously
-copied files.
-Start does not copy files.
-Unreadable include files, Git discovery failures, and copy failures are fatal
-before setup; an empty selection skips the copy phase.
-
-The JSON contract uses tmux's kill wording: down reports
-a stopped session as `status: "killed"`, and down and close expose an
-`attempts.kill` field.
+See [Workspace Operations](docs/workspace-operations.md) for branch defaults,
+copy-source selection, setup, shutdown, and retry behavior.
 
 ### Lifecycle Phase
 

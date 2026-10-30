@@ -9,10 +9,6 @@ import type {
 import type { RepoInfo } from "./hooks/useRegistry";
 import { toSingleLine, truncateBranch } from "./utils/truncate";
 
-/**
- * A service phase plus the TUI-owned `Validating` phase, which has no service
- * event behind it — the TUI enters it once the lifecycle effect settles.
- */
 export type LifecyclePhase = WorkspacePhase | { _tag: "Validating" };
 
 export interface LifecycleEntry {
@@ -30,7 +26,6 @@ export type LifecycleState = ReadonlyMap<string, LifecycleEntry>;
 // the two halves of the identity can never be confused with each other.
 const KEY_SEPARATOR = "\u0000";
 
-/** Shared Workspace Identity Key for lifecycle, PR, and expansion state. */
 export function workspaceIdentityKey(
   mainRepoPath: string,
   branch: string,
@@ -131,7 +126,6 @@ export function rejectIfLifecycleActive({
   return true;
 }
 
-/** Canonical label mapping — add new phases here, not at call sites. */
 export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   switch (phase._tag) {
     case "Preparing":
@@ -257,7 +251,6 @@ export function beginLifecycle(
     setPhase,
     end,
     reporter: {
-      // Reporting adds no typed failures to the lifecycle operation.
       event: (event) =>
         Effect.sync(() => {
           if (event._tag !== "PhaseStarted") return;

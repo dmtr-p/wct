@@ -382,6 +382,168 @@ function setupWarning(result: SetupResult): WorkspaceWarning | undefined {
   };
 }
 
+function copyWorkspaceFiles(options: {
+  config: ResolvedConfig;
+  copyConfig: ResolvedConfig["copy"];
+  profileName?: string;
+  projectDefinesCopy: boolean;
+  created: boolean;
+  mainRepoPath: string;
+  worktreePath: string;
+  reporter?: WorkspaceReporter;
+}): Effect.Effect<
+  WorkspaceAttempt<CopyResult[]>,
+  WctError,
+  BunServices.BunServices
+> {
+  return Effect.gen(function* () {
+    const {
+      config,
+      copyConfig,
+      profileName,
+      projectDefinesCopy,
+      created,
+      mainRepoPath,
+      worktreePath,
+      reporter,
+    } = options;
+    const profileDefinesCopy =
+      profileName !== undefined &&
+      config.profiles?.[profileName]?.copy !== undefined;
+    const includeState = yield* getIncludeCopyState(worktreePath);
+    const processInclude =
+      !projectDefinesCopy &&
+      !profileDefinesCopy &&
+      (created || includeState.pending);
+    if (processInclude) yield* includeState.begin;
+    const includeFiles = processInclude
+      ? yield* resolveWorktreeInclude(mainRepoPath)
+      : undefined;
+    const filesToCopy = includeFiles ?? copyConfig;
+    const copyRoutine = includeFiles === undefined ? copyEntries : copyFiles;
+
+    let copy = skippedAttempt<CopyResult[]>("copy_not_configured");
+    if (filesToCopy && filesToCopy.length > 0) {
+      yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });
+      yield* emitReporter(reporter, {
+        operation: "open",
+        _tag: "AttemptStarted",
+        attempt: "copy",
+      });
+      const results = yield* Effect.mapError(
+        copyRoutine(filesToCopy, mainRepoPath, worktreePath, {
+          entrySkipped: ({ entry, reason }) =>
+            emitReporter(reporter, {
+              operation: "open",
+              _tag: "CopyEntrySkipped",
+              entry,
+              reason,
+            }),
+          entryFailed: ({ file, reason, error }) =>
+            emitReporter(reporter, {
+              operation: "open",
+              _tag: "CopyEntryFailed",
+              file,
+              reason,
+              error,
+            }),
+        }),
+        (error) =>
+          commandError(
+            "worktree_error",
+            `Failed to copy files: ${error instanceof Error ? error.message : String(error)}`,
+            error,
+          ),
+      );
+      const failed = results.find((result) => !result.success);
+      if (failed) {
+        return yield* commandError(
+          "worktree_error",
+          `Failed to copy files: ${failed.file}: ${failed.error ?? "Unknown error"}`,
+        );
+      }
+      copy = { attempted: true, ok: true, value: results };
+    }
+    // Keep the marker on failure so reopening retries before setup runs.
+    if (processInclude || includeState.pending) yield* includeState.complete;
+    return copy;
+  });
+}
+
+function runWorkspaceSetup(options: {
+  setupConfig: ResolvedConfig["setup"];
+  workingDir: string;
+  env: WctEnv;
+  reporter?: WorkspaceReporter;
+}) {
+  return Effect.gen(function* () {
+    const { setupConfig, workingDir, env, reporter } = options;
+    const warnings: WorkspaceWarning[] = [];
+    if (!setupConfig || setupConfig.length === 0) {
+      return {
+        setup: skippedAttempt<SetupResult[]>("setup_not_configured"),
+        warnings,
+      };
+    }
+
+    yield* emitReporter(reporter, {
+      operation: "open",
+      _tag: "AttemptStarted",
+      attempt: "setup",
+    });
+    const setup = yield* captureAttempt(
+      SetupService.use((service) =>
+        service.runSetupCommands(
+          setupConfig,
+          workingDir,
+          env,
+          reporter
+            ? {
+                commandStarted: (name, current, total) =>
+                  Effect.all([
+                    emitPhase(reporter, "open", {
+                      _tag: "RunningSetup",
+                      name,
+                    }),
+                    emitReporter(reporter, {
+                      operation: "open",
+                      _tag: "SetupCommandStarted",
+                      name,
+                      current,
+                      total,
+                    }),
+                  ]).pipe(Effect.asVoid),
+                commandCompleted: (result) =>
+                  emitReporter(reporter, {
+                    operation: "open",
+                    _tag: "SetupCommandCompleted",
+                    result,
+                  }),
+              }
+            : undefined,
+        ),
+      ),
+    );
+    if (setup.attempted && setup.ok) {
+      warnings.push(
+        ...setup.value.flatMap((result) => {
+          const warning = setupWarning(result);
+          return warning ? [warning] : [];
+        }),
+      );
+    } else if (setup.attempted && !setup.ok) {
+      warnings.push({
+        _tag: "SetupFailed",
+        operation: "open",
+        name: "setup",
+        optional: false,
+        error: setup.error,
+      });
+    }
+    return { setup, warnings };
+  });
+}
+
 function createWctEnv(
   worktreePath: string,
   workDir: string,
@@ -663,120 +825,22 @@ function openImpl(
       );
     }
 
-    const profileDefinesCopy =
-      profileName !== undefined &&
-      config.profiles?.[profileName]?.copy !== undefined;
-    const includeState = yield* getIncludeCopyState(worktreePath);
-    const processInclude =
-      !projectDefinesCopy &&
-      !profileDefinesCopy &&
-      (worktreeResult._tag !== "AlreadyExists" || includeState.pending);
-    if (processInclude) yield* includeState.begin;
-    const includeFiles = processInclude
-      ? yield* resolveWorktreeInclude(mainRepoPath)
-      : undefined;
-    const filesToCopy = includeFiles ?? resolved.copy;
-    const copyRoutine = includeFiles === undefined ? copyEntries : copyFiles;
-
-    if (filesToCopy && filesToCopy.length > 0) {
-      yield* emitPhase(reporter, "open", { _tag: "CopyingFiles" });
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptStarted",
-        attempt: "copy",
-      });
-    }
-    const copy =
-      filesToCopy && filesToCopy.length > 0
-        ? yield* Effect.mapError(
-            copyRoutine(filesToCopy, mainRepoPath, worktreePath, {
-              entrySkipped: ({ entry, reason }) =>
-                emitReporter(reporter, {
-                  operation: "open",
-                  _tag: "CopyEntrySkipped",
-                  entry,
-                  reason,
-                }),
-              entryFailed: ({ file, reason, error }) =>
-                emitReporter(reporter, {
-                  operation: "open",
-                  _tag: "CopyEntryFailed",
-                  file,
-                  reason,
-                  error,
-                }),
-            }),
-            (error) =>
-              commandError(
-                "worktree_error",
-                `Failed to copy files: ${error instanceof Error ? error.message : String(error)}`,
-                error,
-              ),
-          ).pipe(
-            Effect.flatMap((results) => {
-              const failed = results.find((result) => !result.success);
-              return failed
-                ? Effect.fail(
-                    commandError(
-                      "worktree_error",
-                      `Failed to copy files: ${failed.file}: ${failed.error ?? "Unknown error"}`,
-                    ),
-                  )
-                : Effect.succeed(results);
-            }),
-            Effect.map((value) => ({
-              attempted: true as const,
-              ok: true as const,
-              value,
-            })),
-          )
-        : skippedAttempt<CopyResult[]>("copy_not_configured");
-    if (processInclude || includeState.pending) yield* includeState.complete;
-
-    if (resolved.setup && resolved.setup.length > 0) {
-      yield* emitReporter(reporter, {
-        operation: "open",
-        _tag: "AttemptStarted",
-        attempt: "setup",
-      });
-    }
-    const setup =
-      resolved.setup && resolved.setup.length > 0
-        ? yield* captureAttempt(
-            SetupService.use((service) =>
-              service.runSetupCommands(
-                resolved.setup ?? [],
-                workingDir,
-                env,
-                reporter
-                  ? {
-                      commandStarted: (name, current, total) =>
-                        Effect.all([
-                          emitPhase(reporter, "open", {
-                            _tag: "RunningSetup",
-                            name,
-                          }),
-                          emitReporter(reporter, {
-                            operation: "open",
-                            _tag: "SetupCommandStarted",
-                            name,
-                            current,
-                            total,
-                          }),
-                        ]).pipe(Effect.asVoid),
-                      commandCompleted: (result) =>
-                        emitReporter(reporter, {
-                          operation: "open",
-                          _tag: "SetupCommandCompleted",
-                          result,
-                        }),
-                    }
-                  : undefined,
-              ),
-            ),
-          )
-        : skippedAttempt<SetupResult[]>("setup_not_configured");
-
+    const copy = yield* copyWorkspaceFiles({
+      config,
+      copyConfig: resolved.copy,
+      profileName,
+      projectDefinesCopy,
+      created: worktreeResult._tag !== "AlreadyExists",
+      mainRepoPath,
+      worktreePath,
+      reporter,
+    });
+    const { setup, warnings: setupWarnings } = yield* runWorkspaceSetup({
+      setupConfig: resolved.setup,
+      workingDir,
+      env,
+      reporter,
+    });
     const { tmux, warnings: tmuxWarnings } = yield* startWorkspaceSession({
       operation: "open",
       reporter,
@@ -785,24 +849,6 @@ function openImpl(
       tmuxConfig: resolved.tmux,
       env,
     });
-    const warnings: WorkspaceWarning[] = [];
-    if (setup.attempted && setup.ok) {
-      warnings.push(
-        ...setup.value.flatMap((result) => {
-          const warning = setupWarning(result);
-          return warning ? [warning] : [];
-        }),
-      );
-    } else if (setup.attempted && !setup.ok) {
-      warnings.push({
-        _tag: "SetupFailed",
-        operation: "open",
-        name: "setup",
-        optional: false,
-        error: setup.error,
-      });
-    }
-    warnings.push(...tmuxWarnings);
     return {
       operation: "open",
       worktreePath,
@@ -813,7 +859,7 @@ function openImpl(
       ...(profileName ? { profileName } : {}),
       created: worktreeResult._tag !== "AlreadyExists",
       env,
-      warnings,
+      warnings: [...setupWarnings, ...tmuxWarnings],
       attempts: {
         worktree: {
           attempted: true,

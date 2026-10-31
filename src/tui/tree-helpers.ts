@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import type { AgentObservation } from "../services/agent-model";
+import type { WorkspaceIdentityKey } from "../services/identities";
 import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import { type PrFacts, prIdentity } from "../services/pr-model";
 import { formatSessionName } from "../services/tmux";
@@ -29,7 +30,10 @@ export function openPrInBrowser(
   });
 }
 
-export function prExpansionKey(workspaceKey: string, pr: PrFacts): string {
+export function prExpansionKey(
+  workspaceKey: WorkspaceIdentityKey,
+  pr: PrFacts,
+): string {
   return `${workspaceKey}\0${prIdentity(pr)}`;
 }
 
@@ -42,7 +46,7 @@ export function isWorktreeEffectivelyExpanded({
   repoPath,
   branch,
 }: {
-  expandedWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<WorkspaceIdentityKey>;
   lifecycle?: LifecycleState;
   repoPath: string;
   branch: string;
@@ -70,10 +74,10 @@ export function isWorktreeLifecycleActive(
 interface BuildTreeOptions {
   agents?: Map<string, AgentObservation>;
   repos: RepoInfo[];
-  expandedWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<WorkspaceIdentityKey>;
   lifecycle?: LifecycleState;
-  prData: Map<string, PrFacts>;
-  associations?: Map<string, WorkspacePrEntry>;
+  prData: Map<WorkspaceIdentityKey, PrFacts>;
+  associations?: Map<WorkspaceIdentityKey, WorkspacePrEntry>;
   expandedPrKeys?: Set<string>;
   panes: Map<string, PaneInfo[]>;
   jumpToPane: (paneId: string) => void;
@@ -82,7 +86,7 @@ interface BuildTreeOptions {
 interface BuildTreeRowsOptions {
   items: TreeItem[];
   repos: RepoInfo[];
-  expandedWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<WorkspaceIdentityKey>;
   lifecycle?: LifecycleState;
   /** Defaults to `Infinity` so callers that don't model wrapping keep a 1:1 row-per-detail mapping. */
   maxWidth?: number;
@@ -188,7 +192,7 @@ interface ResolveSelectedPaneOptions {
 interface SelectedPaneResolution {
   pane: PaneInfo;
   label: string;
-  workspaceKey: string;
+  workspaceKey: WorkspaceIdentityKey;
 }
 
 interface ResolveStatusBarPropsOptions {
@@ -275,7 +279,7 @@ type ExpandedRightArrowAction =
   | { type: "noop" }
   | {
       type: "expand-worktree";
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
       nextSelectedIndex: number;
     };
 
@@ -290,10 +294,10 @@ export function resolveTreeReturnMode(mode: Mode): Mode {
 }
 
 export function reconcileExpandedWorkspaceKeys(
-  previous: Set<string>,
+  previous: Set<WorkspaceIdentityKey>,
   repos: RepoInfo[],
-): Set<string> {
-  const available = new Set(
+): Set<WorkspaceIdentityKey> {
+  const available = new Set<WorkspaceIdentityKey>(
     repos.flatMap((repo) =>
       repo.worktrees.map((worktree) =>
         workspaceIdentityKey(repo.repoPath, worktree.branch),
@@ -682,7 +686,7 @@ export function lifecycleProgressRowIndex(
 
 export interface LifecycleReveal {
   /** The `workspaceIdentityKey` to mark revealed, so this happens exactly once. */
-  key: string;
+  key: WorkspaceIdentityKey;
   scrollOffset: number;
 }
 
@@ -701,7 +705,7 @@ export function resolveLifecycleReveal({
   rows: TreeRow[];
   repos: RepoInfo[];
   lifecycle: LifecycleState;
-  revealed: ReadonlySet<string>;
+  revealed: ReadonlySet<WorkspaceIdentityKey>;
   scrollOffset: number;
   viewportRows: number;
 }): LifecycleReveal | null {

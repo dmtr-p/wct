@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import {
   emitWorkspacePhase,
   lastWorkspaceCall,
@@ -30,7 +31,7 @@ describe("TUI open lifecycle", () => {
     resetHarnessFixtures();
     worktreeFixtures.byRepoPath.set(repoPath, [makeWorktree(repoPath, "main")]);
     registryItems.items = [
-      { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
     ];
   });
 
@@ -145,7 +146,7 @@ describe("TUI open lifecycle", () => {
     const otherRepoPath = join(repoPath, "other");
     mkdirSync(otherRepoPath, { recursive: true });
     registryItems.items.push({
-      id: "repo-2",
+      id: RegistrationId("repo-2"),
       repo_path: otherRepoPath,
       project: "alpha",
     });
@@ -277,7 +278,7 @@ describe("TUI open lifecycle", () => {
       const otherRepoPath = join(repoPath, "other");
       mkdirSync(otherRepoPath);
       registryItems.items.push({
-        id: "repo-2",
+        id: RegistrationId("repo-2"),
         repo_path: otherRepoPath,
         project: "beta",
       });

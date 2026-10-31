@@ -5,8 +5,21 @@ import {
   checkSummary,
   hydratePrFacts,
   type PrCheck,
+  prIdentity,
 } from "../../src/services/pr-model";
 import { prFactEnumCases, prFacts } from "../helpers/pr";
+
+test("PR identity uses the lowercase base repository and PR number", () => {
+  const pr = prFacts({ baseRepository: "Base/Repo", number: 34 });
+  expect(prIdentity(pr)).toBe("base/repo#34");
+  expect(prIdentity(pr)).toBe(
+    prIdentity({ ...pr, baseRepository: "base/repo" }),
+  );
+  expect(prIdentity(pr)).not.toBe(prIdentity({ ...pr, number: 35 }));
+  expect(prIdentity(pr)).not.toBe(
+    prIdentity({ ...pr, baseRepository: "fork/repo" }),
+  );
+});
 
 describe("PR fact normalization boundaries", () => {
   test.each(prFactEnumCases)(

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { WorkspaceIdentityKey } from "../services/identities";
 import { AddProjectModal } from "./components/AddProjectModal";
 import {
   confirmModalRowCount,
@@ -147,7 +148,7 @@ export function App() {
   const modeRef = useRef<Mode>(mode);
   // Manual and validated Open expansion share Workspace Identity Keys.
   const [expandedWorkspaceKeys, setExpandedWorkspaceKeys] = useState<
-    Set<string>
+    Set<WorkspaceIdentityKey>
   >(new Set());
   const [expandedPrKeys, setExpandedPrKeys] = useState<Set<string>>(new Set());
   const setPrExpanded = useCallback((key: string, expanded: boolean) => {
@@ -185,9 +186,9 @@ export function App() {
   const [lifecycle, setLifecycle] = useState<LifecycleState>(new Map());
   // Tmux handoff must wait until progress-row removal reaches the terminal.
   const lifecycleRef = useRef(lifecycle);
-  const lifecycleCleanupWaitersRef = useRef<Map<string, Set<() => void>>>(
-    new Map(),
-  );
+  const lifecycleCleanupWaitersRef = useRef<
+    Map<WorkspaceIdentityKey, Set<() => void>>
+  >(new Map());
   const waitForLifecyclePresentationCleanup = useCallback(
     async (repoPath: string, branch: string): Promise<void> => {
       const key = workspaceIdentityKey(repoPath, branch);
@@ -513,7 +514,7 @@ export function App() {
 
   useRefresh(pollRefresh);
 
-  const expandWorktree = useCallback((workspaceKey: string) => {
+  const expandWorktree = useCallback((workspaceKey: WorkspaceIdentityKey) => {
     setExpandedWorkspaceKeys((previous) => {
       const next = new Set(previous);
       next.add(workspaceKey);
@@ -522,7 +523,7 @@ export function App() {
     setMode(Mode.Expanded(workspaceKey));
   }, []);
 
-  const collapseWorktree = useCallback((workspaceKey: string) => {
+  const collapseWorktree = useCallback((workspaceKey: WorkspaceIdentityKey) => {
     setExpandedWorkspaceKeys((previous) => {
       if (!previous.has(workspaceKey)) return previous;
       const next = new Set(previous);
@@ -531,14 +532,17 @@ export function App() {
     });
   }, []);
 
-  const markWorkspaceDiscovered = useCallback((workspaceKey: string) => {
-    setExpandedWorkspaceKeys((previous) => {
-      if (previous.has(workspaceKey)) return previous;
-      const next = new Set(previous);
-      next.add(workspaceKey);
-      return next;
-    });
-  }, []);
+  const markWorkspaceDiscovered = useCallback(
+    (workspaceKey: WorkspaceIdentityKey) => {
+      setExpandedWorkspaceKeys((previous) => {
+        if (previous.has(workspaceKey)) return previous;
+        const next = new Set(previous);
+        next.add(workspaceKey);
+        return next;
+      });
+    },
+    [],
+  );
 
   const openModalPRList = useMemo(() => {
     return openPrs.get(openModalRepoPath) ?? [];

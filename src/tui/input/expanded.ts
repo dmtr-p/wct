@@ -1,4 +1,5 @@
 import type { Key } from "ink";
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import type { TmuxSessionInfo } from "../hooks/useTmux";
 import { isLifecycleActive, workspaceIdentityKey } from "../lifecycle";
 import {
@@ -16,7 +17,7 @@ export interface ExpandedContext extends NavigateContext {
   captureTreeReturnPosition: (slot: "kill") => void;
   zoomPane: (paneId: string) => Promise<boolean>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
-  collapseWorktree: (workspaceKey: string) => void;
+  collapseWorktree: (workspaceKey: WorkspaceIdentityKey) => void;
 }
 
 export function handleExpandedInput(

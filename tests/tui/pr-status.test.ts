@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { PrFacts } from "../../src/services/pr-model";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
@@ -344,7 +345,7 @@ describe("PR status derivation", () => {
 
 function repo(): RepoInfo {
   return {
-    id: "repo",
+    id: RegistrationId("repo"),
     repoPath: "/repo",
     project: "repo",
     profileNames: [],

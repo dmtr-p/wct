@@ -3,6 +3,7 @@ import { Context, Effect, FileSystem, Semaphore } from "effect";
 import { loadConfig } from "../config/loader";
 import type { ResolvedConfig } from "../config/schema";
 import type { WctError } from "../errors";
+import type { RegistrationId } from "./identities";
 import { ObservationProcessBudget } from "./process";
 import { RegistryService } from "./registry-service";
 import { TmuxService } from "./tmux";
@@ -19,7 +20,7 @@ export interface WorktreeInfo {
 }
 
 export interface RepoInfo {
-  id: string;
+  id: RegistrationId;
   repoPath: string;
   /** Project Display Name from the registry, not the configured project_name. */
   project: string;
@@ -30,7 +31,7 @@ export interface RepoInfo {
 }
 
 export interface RegistryRepoItem {
-  id: string;
+  id: RegistrationId;
   repo_path: string;
   project: string;
 }

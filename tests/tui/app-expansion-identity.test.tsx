@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import {
   makeWorktree,
   registryItems,
@@ -36,7 +37,7 @@ describe("App Workspace Identity expansion", () => {
     vi.stubEnv("HOME", root);
     resetHarnessFixtures();
     registryItems.items = [a, b].map((repoPath, index) => ({
-      id: `repo-${index}`,
+      id: RegistrationId(`repo-${index}`),
       repo_path: repoPath,
       project: "org/shared",
     }));

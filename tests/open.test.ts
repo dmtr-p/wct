@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { openCommand } from "../src/commands/open";
 import { runBunPromise } from "../src/effect/runtime";
 import { WctCommandError } from "../src/errors";
+import { RegistrationId } from "../src/services/identities";
 import {
   liveRegistryService,
   type RegistryItem,
@@ -29,7 +30,7 @@ function registeredResult(
   return {
     status: "registered",
     item: {
-      id: "registry-item",
+      id: RegistrationId("registry-item"),
       repo_path: path,
       project,
       created_at: 1,
@@ -44,7 +45,7 @@ function alreadyRegisteredResult(
   return {
     status: "already-registered",
     item: {
-      id: "registry-item",
+      id: RegistrationId("registry-item"),
       repo_path: path,
       project,
       created_at: 1,

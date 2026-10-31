@@ -1,3 +1,4 @@
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { workspaceIdentityKey } from "../lifecycle";
 import { isInertTreeItem, type TreeRow } from "../tree-helpers";
@@ -107,17 +108,17 @@ export function detectDoubleClick(
 
 export type TreeDoubleClickAction =
   | { type: "noop" }
-  | { type: "expand-worktree"; workspaceKey: string }
+  | { type: "expand-worktree"; workspaceKey: WorkspaceIdentityKey }
   | {
       type: "collapse-worktree";
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
     }
   | { type: "activate-detail"; action: () => void };
 
 export function resolveTreeDoubleClickAction(
   item: TreeItem,
   repos: RepoInfo[],
-  expandedWorkspaceKeys: Set<string>,
+  expandedWorkspaceKeys: Set<WorkspaceIdentityKey>,
 ): TreeDoubleClickAction {
   if (item.type === "worktree") {
     const repo = repos[item.repoIndex];

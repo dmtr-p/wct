@@ -1,6 +1,10 @@
 import { Effect } from "effect";
 import type { Dispatch, SetStateAction } from "react";
 import { toWctError } from "../errors";
+import {
+  type WorkspaceIdentityKey,
+  workspaceIdentityKey,
+} from "../services/identities";
 import type {
   WorkspaceOperation,
   WorkspacePhase,
@@ -8,6 +12,8 @@ import type {
 } from "../services/workspace-service";
 import type { RepoInfo } from "./hooks/useRegistry";
 import { toSingleLine, truncateBranch } from "./utils/truncate";
+
+export { workspaceIdentityKey } from "../services/identities";
 
 export type LifecyclePhase = WorkspacePhase | { _tag: "Validating" };
 
@@ -20,18 +26,7 @@ export interface LifecycleEntry {
   phase: LifecyclePhase;
 }
 
-export type LifecycleState = ReadonlyMap<string, LifecycleEntry>;
-
-// NUL cannot appear in a filesystem path or a git ref, unlike `#` or `/`, so
-// the two halves of the identity can never be confused with each other.
-const KEY_SEPARATOR = "\u0000";
-
-export function workspaceIdentityKey(
-  mainRepoPath: string,
-  branch: string,
-): string {
-  return `${mainRepoPath}${KEY_SEPARATOR}${branch}`;
-}
+export type LifecycleState = ReadonlyMap<WorkspaceIdentityKey, LifecycleEntry>;
 
 export function lifecycleEntryFor(
   lifecycle: LifecycleState,
@@ -60,7 +55,7 @@ export function createLifecycleClaims(): LifecycleClaims {
   // scope to the operation that actually claimed it; `current` tracks phase
   // updates independently.
   const held = new Map<
-    string,
+    WorkspaceIdentityKey,
     { owner: LifecycleEntry; current: LifecycleEntry }
   >();
   return {

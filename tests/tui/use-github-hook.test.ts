@@ -8,6 +8,11 @@ import { commandError } from "../../src/errors";
 import { runMigrations } from "../../src/services/db";
 import { GitHubService } from "../../src/services/github-service";
 import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+  workspaceIdentityKey,
+} from "../../src/services/identities";
+import {
   type ExplicitPrAssociation,
   livePrCacheService,
   PrCacheService,
@@ -177,9 +182,9 @@ const github = GitHubService.of({
   listRawPrs: list,
   getRawPrs: batchGet,
 });
-const workspaceCache = new Map<string, WorkspacePrEntry>();
-const explicitCache = new Map<string, ExplicitPrAssociation>();
-const key = (path: string, branch: string) => `${path}\0${branch}`;
+const workspaceCache = new Map<WorkspaceIdentityKey, WorkspacePrEntry>();
+const explicitCache = new Map<WorkspaceIdentityKey, ExplicitPrAssociation>();
+const key = workspaceIdentityKey;
 const hydrationRead = vi.fn<PrCacheServiceApi["getHydration"]>(
   (path: string, branches: readonly string[], includeOpenPrs: boolean) =>
     Effect.sync(() => {
@@ -244,7 +249,7 @@ const cache = PrCacheService.of({
     Effect.sync(() => {
       for (const identity of explicitCache.keys())
         if (
-          identity.startsWith(`${path}\0`) &&
+          identity.startsWith(key(path, "")) &&
           !branches.includes(identity.slice(path.length + 1))
         )
           explicitCache.delete(identity);
@@ -253,7 +258,7 @@ const cache = PrCacheService.of({
 
 function repo(path = "/tmp/repo", branches: string[] = []): RepoInfo {
   return {
-    id: path,
+    id: RegistrationId(path),
     repoPath: path,
     project: "same-name",
     profileNames: [],
@@ -781,7 +786,10 @@ describe("useGitHub", () => {
           release = resolve;
         });
         harness.rerender([
-          { ...repo(path, ["feature"]), id: "new-registration" },
+          {
+            ...repo(path, ["feature"]),
+            id: RegistrationId("new-registration"),
+          },
         ]);
         await harness.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
         expect(hydrationRead.mock.calls).toEqual([
@@ -1476,7 +1484,7 @@ describe("useGitHub", () => {
       harness.rerender([]);
       await harness.waitForIdle();
       removedRegistration = false;
-      harness.rerender([{ ...repo(), id: "new-registration" }]);
+      harness.rerender([{ ...repo(), id: RegistrationId("new-registration") }]);
       await harness.waitForIdle();
       expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
     } finally {
@@ -1492,7 +1500,7 @@ describe("useGitHub", () => {
       discoveryCache.clear();
       workspaceCache.clear();
       history.push(rawPr(2, "MERGED"));
-      harness.rerender([{ ...repo(), id: "new-registration" }]);
+      harness.rerender([{ ...repo(), id: RegistrationId("new-registration") }]);
       await harness.waitForIdle();
       expect(list.mock.calls.map((call) => call[1])).toEqual(["all", "all"]);
       expect(

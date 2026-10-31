@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { workspaceIdentityKey } from "../../src/services/identities";
 import type { MergeSnapshot } from "../../src/services/pr-merge-service";
 import {
   createPrActionsController,
@@ -63,7 +64,9 @@ function deferred<A>() {
 
 function harness(overrides: Partial<PrActionsDependencies> = {}) {
   const deps = {
-    getMode: vi.fn(() => Mode.Expanded("workspace")),
+    getMode: vi.fn(() =>
+      Mode.Expanded(workspaceIdentityKey("/repo", "feature")),
+    ),
     setMode: vi.fn(),
     showActionError: vi.fn(),
     fetchSnapshot: vi.fn(async () => snapshot()),
@@ -109,7 +112,7 @@ describe("PR actions controller", () => {
       await pending.promise.catch(() => {});
       expect(h.menu()).toBeNull();
       expect(h.deps.setMode).toHaveBeenLastCalledWith(
-        Mode.Expanded("workspace"),
+        Mode.Expanded(workspaceIdentityKey("/repo", "feature")),
       );
       expect(h.deps.showActionError).not.toHaveBeenCalled();
     },
@@ -276,7 +279,7 @@ describe("PR actions controller", () => {
       else submission.reject(new Error("submission failed"));
       await vi.waitFor(() => expect(h.menu()).toBeNull());
       expect(h.deps.setMode).toHaveBeenLastCalledWith(
-        Mode.Expanded("workspace"),
+        Mode.Expanded(workspaceIdentityKey("/repo", "feature")),
       );
       expect(h.deps.refreshAfterCurrent).toHaveBeenCalledExactlyOnceWith(
         "/repo",

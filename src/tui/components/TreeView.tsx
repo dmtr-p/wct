@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import type { PrFacts } from "../../services/pr-model";
 import { formatSessionName } from "../../services/tmux";
@@ -28,10 +29,10 @@ interface Props {
   rows: TreeRow[];
   hoveredItemIndex?: number | null;
   lifecycle?: LifecycleState;
-  prData: Map<string, PrFacts>;
-  associations?: Map<string, WorkspacePrEntry>;
+  prData: Map<WorkspaceIdentityKey, PrFacts>;
+  associations?: Map<WorkspaceIdentityKey, WorkspacePrEntry>;
   panes: Map<string, PaneInfo[]>;
-  expandedWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<WorkspaceIdentityKey>;
   maxWidth: number;
   refreshingProjects?: Set<string>;
   errors?: Map<string, string>;
@@ -126,11 +127,11 @@ interface RenderRowContext {
   selectedIndex: number;
   selectedItem: TreeItem | undefined;
   hoveredItemIndex: number | null;
-  expandedWorkspaceKeys?: Set<string>;
+  expandedWorkspaceKeys?: Set<WorkspaceIdentityKey>;
   lifecycle: LifecycleState;
   sessionMap: Map<string, { name: string; attached: boolean }>;
-  prData: Map<string, PrFacts>;
-  associations?: Map<string, WorkspacePrEntry>;
+  prData: Map<WorkspaceIdentityKey, PrFacts>;
+  associations?: Map<WorkspaceIdentityKey, WorkspacePrEntry>;
   panes: Map<string, PaneInfo[]>;
   maxWidth: number;
   refreshingProjects?: Set<string>;

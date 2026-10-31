@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { commandDef, upCommand } from "../src/commands/up";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
+import { RegistrationId } from "../src/services/identities";
 import {
   liveRegistryService,
   type RegistryServiceApi,
@@ -311,7 +312,7 @@ describe("upCommand", { concurrent: false }, () => {
                 return {
                   status: "registered" as const,
                   item: {
-                    id: "registry-item",
+                    id: RegistrationId("registry-item"),
                     repo_path: path,
                     project: "myapp",
                     created_at: 1,

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import {
   lastWorkspaceCall,
   makeWorktree,
@@ -34,7 +35,7 @@ describe("lifecycle expansion affordances", () => {
       makeWorktree(repoPath, "feature/a"),
     ]);
     registryItems.items = [
-      { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
     ];
   });
 

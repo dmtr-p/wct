@@ -1,6 +1,10 @@
 import { PassThrough } from "node:stream";
 import React from "react";
 import { describe, expect, test } from "vitest";
+import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+} from "../../src/services/identities";
 import { TreeView } from "../../src/tui/components/TreeView";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { buildTreeItems, buildTreeRows } from "../../src/tui/tree-helpers";
@@ -25,7 +29,7 @@ describe("TreeView maxWidth wiring", () => {
   test("passes maxWidth to RepoNode — long project name is truncated", async () => {
     const repos = [
       {
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         repoPath: "/tmp/very-long-project-name",
         project: "very-long-project-name",
         worktrees: [],
@@ -34,7 +38,7 @@ describe("TreeView maxWidth wiring", () => {
     ];
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       prData: new Map(),
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -44,7 +48,7 @@ describe("TreeView maxWidth wiring", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       maxWidth: 15,
     });
 
@@ -64,7 +68,7 @@ describe("TreeView maxWidth wiring", () => {
         rows,
         prData: new Map(),
         panes: new Map(),
-        expandedWorkspaceKeys: new Set<string>(),
+        expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
         maxWidth: 15,
       }),
       { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false },
@@ -84,7 +88,7 @@ describe("TreeView maxWidth wiring", () => {
 describe("TreeView windowing", () => {
   function emptyRepos(): RepoInfo[] {
     return Array.from({ length: 6 }, (_, i) => ({
-      id: `repo-${i}`,
+      id: RegistrationId(`repo-${i}`),
       repoPath: `/tmp/repo-${i}`,
       project: `project-${i}`,
       worktrees: [],
@@ -98,7 +102,7 @@ describe("TreeView windowing", () => {
     const repos = emptyRepos();
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       prData: new Map(),
       panes: new Map(),
       jumpToPane: () => undefined,
@@ -106,7 +110,7 @@ describe("TreeView windowing", () => {
     const rows = buildTreeRows({
       items,
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       maxWidth: 80,
     });
     const { stdout, stdin } = createStdoutStdin();
@@ -124,7 +128,7 @@ describe("TreeView windowing", () => {
         rows,
         prData: new Map(),
         panes: new Map(),
-        expandedWorkspaceKeys: new Set<string>(),
+        expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
         maxWidth: 80,
         ...props,
       }),

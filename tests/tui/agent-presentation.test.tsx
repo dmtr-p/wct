@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { classifyAgent, reconcileAgent } from "../../src/services/agent-model";
+import { RegistrationId } from "../../src/services/identities";
 import { DetailRow } from "../../src/tui/components/DetailRow";
 import { WorktreeItem } from "../../src/tui/components/WorktreeItem";
 import {
@@ -20,7 +21,7 @@ const agent = reconcileAgent(
   0,
 );
 const repo: RepoInfo = {
-  id: "r",
+  id: RegistrationId("r"),
   repoPath: "/repo",
   project: "duplicate",
   profileNames: [],
@@ -41,7 +42,7 @@ describe("agent presentation", () => {
     if (!worktree) throw new Error("Missing Workspace fixture");
     const other = {
       ...repo,
-      id: "other",
+      id: RegistrationId("other"),
       repoPath: "/other",
       worktrees: [{ ...worktree, path: "/work/other-session" }],
     };

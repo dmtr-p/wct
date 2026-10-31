@@ -1,5 +1,6 @@
 import type { Key } from "ink";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import {
   type ExpandedContext,
   handleExpandedInput,
@@ -94,7 +95,7 @@ describe("handleExpandedInput", () => {
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: [
         {
-          id: "repo",
+          id: RegistrationId("repo"),
           project: "proj",
           repoPath: "/tmp/repo",
           worktrees: [
@@ -127,7 +128,7 @@ describe("handleExpandedInput", () => {
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: [
         {
-          id: "repo",
+          id: RegistrationId("repo"),
           project: "proj",
           repoPath: "/tmp/repo",
           worktrees: [
@@ -203,7 +204,7 @@ describe("handleExpandedInput", () => {
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: [
         {
-          id: "repo",
+          id: RegistrationId("repo"),
           project: "proj",
           repoPath: "/tmp/repo",
           worktrees: [
@@ -236,7 +237,7 @@ describe("handleExpandedInput", () => {
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: [
         {
-          id: "repo",
+          id: RegistrationId("repo"),
           project: "proj",
           repoPath: "/tmp/repo",
           worktrees: [

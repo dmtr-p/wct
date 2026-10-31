@@ -1,4 +1,8 @@
 import { describe, expect, test } from "vitest";
+import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+} from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   ADD_PROJECT_BUTTON_LABEL,
@@ -244,7 +248,7 @@ describe("double-click actions", () => {
 
   test("toggles worktrees and leaves associated PR expansion to the App", () => {
     const repo = {
-      id: "repo-1",
+      id: RegistrationId("repo-1"),
       repoPath: "/tmp/alpha",
       project: "alpha",
       worktrees: [
@@ -429,7 +433,7 @@ describe("paste fallback guard: mouse reports never reach Search text input", ()
   });
 });
 
-function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
+function repo(overrides: Partial<RepoInfo> & { id: RegistrationId }): RepoInfo {
   return {
     id: overrides.id,
     repoPath: overrides.repoPath ?? `/tmp/${overrides.id}`,
@@ -441,7 +445,7 @@ function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
 
 const repos: RepoInfo[] = [
   repo({
-    id: "repo-1",
+    id: RegistrationId("repo-1"),
     project: "alpha",
     worktrees: [
       {
@@ -461,7 +465,7 @@ const repos: RepoInfo[] = [
     ],
   }),
   repo({
-    id: "repo-2",
+    id: RegistrationId("repo-2"),
     project: "beta",
     worktrees: [
       {
@@ -477,13 +481,13 @@ const repos: RepoInfo[] = [
 
 function buildCtx(
   mode: Mode,
-  expandedWorkspaceKey: string | null,
+  expandedWorkspaceKey: WorkspaceIdentityKey | null,
   overrides?: Partial<MouseActionContext>,
   panes: Map<string, PaneInfo[]> = new Map(),
 ): MouseActionContext {
   const expandedWorkspaceKeys = expandedWorkspaceKey
     ? new Set([expandedWorkspaceKey])
-    : new Set<string>();
+    : new Set<WorkspaceIdentityKey>();
   const treeItems = buildTreeItems({
     repos,
     expandedWorkspaceKeys,

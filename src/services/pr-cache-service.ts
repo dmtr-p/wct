@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { Context, Effect } from "effect";
 import type { WctError } from "../errors";
 import { withDb, withDbEffect } from "./db";
+import type { PrIdentity, RegistrationId } from "./identities";
 import {
   hydratePrFacts,
   type OpenPrChoice,
@@ -66,7 +67,7 @@ export interface PrCacheServiceApi {
     repoPath: string,
     snapshot: PrDiscoverySnapshot,
     previous?: PrDiscoverySnapshot | null,
-    registrationId?: string,
+    registrationId?: RegistrationId,
   ) => Effect.Effect<boolean, WctError>;
   /** Clear a repository's cached PR payloads, retaining Explicit PR Associations. */
   invalidate: (repoPath: string) => Effect.Effect<void, WctError>;
@@ -78,18 +79,18 @@ export interface PrCacheServiceApi {
     repoPath: string,
     branch: string,
     entry: WorkspacePrEntry,
-    registrationId?: string,
+    registrationId?: RegistrationId,
   ) => Effect.Effect<void, WctError>;
   setWorkspaceError: (
     repoPath: string,
     branch: string,
     error: string,
-    registrationId?: string,
+    registrationId?: RegistrationId,
   ) => Effect.Effect<void, WctError>;
   pruneWorkspaces: (
     repoPath: string,
     presentBranches: string[],
-    registrationId?: string,
+    registrationId?: RegistrationId,
   ) => Effect.Effect<void, WctError>;
   setExplicit: (
     repoPath: string,
@@ -106,7 +107,7 @@ export interface PrCacheServiceApi {
   setOpenPrs: (
     repoPath: string,
     prs: OpenPrChoice[],
-    registrationId?: string,
+    registrationId?: RegistrationId,
   ) => Effect.Effect<void, WctError>;
 }
 
@@ -128,7 +129,7 @@ export function sqlInvalidate(db: Database, repoPath: string): void {
 export function sqlOwnedWrite(
   db: Database,
   repoPath: string,
-  registrationId: string | undefined,
+  registrationId: RegistrationId | undefined,
   write: () => void,
 ): boolean {
   return db
@@ -245,7 +246,7 @@ export function sqlSetDiscovery(
   repoPath: string,
   snapshot: PrDiscoverySnapshot,
   previous: PrDiscoverySnapshot | null = null,
-  registrationId?: string,
+  registrationId?: RegistrationId,
 ): boolean {
   return sqlOwnedWrite(db, repoPath, registrationId, () => {
     const stored = db
@@ -263,13 +264,13 @@ export function sqlSetDiscovery(
               pr,
             ]),
           )
-        : new Map<string, PrFacts>();
+        : new Map<PrIdentity, PrFacts>();
     let factsChanged = false;
     if (!old.size)
       factsChanged =
         db.run("DELETE FROM pr_discovery_facts WHERE repo_path = ?", [repoPath])
           .changes > 0;
-    const present = new Set<string>();
+    const present = new Set<PrIdentity>();
     for (const pr of [...snapshot.prs, ...snapshot.explicitPrs]) {
       const identity = prIdentity(pr);
       present.add(identity);

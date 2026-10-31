@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { WorkspaceIdentityKey } from "../../src/services/identities";
 import { HEADER_OFFSET } from "../../src/tui/input/mouse";
 import {
   beginLifecycle,
@@ -382,7 +383,7 @@ describe("TUI lifecycle viewport reveal", () => {
             entryFor(repoPath, "alpha", "feature/new"),
           ],
         ]),
-        revealed: new Set<string>(),
+        revealed: new Set<WorkspaceIdentityKey>(),
         scrollOffset: 7,
         viewportRows: 10,
       }),

@@ -3,6 +3,7 @@ import { Deferred, Effect, Exit, Fiber, Scheduler, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { commandError, type WctError } from "../../src/errors";
+import { RegistrationId } from "../../src/services/identities";
 import {
   livePrCacheService,
   type PrCacheServiceApi,
@@ -14,7 +15,7 @@ import {
 import { wctTestLayer } from "../helpers/effect-vitest";
 
 const repo: PrRefreshRepository = {
-  id: "one",
+  id: RegistrationId("one"),
   repoPath: "/repo",
   worktrees: [],
 };
@@ -218,7 +219,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* fixture();
-      yield* f.session.updateRepositories([{ ...repo, id: "two" }]);
+      yield* f.session.updateRepositories([
+        { ...repo, id: RegistrationId("two") },
+      ]);
       yield* f.session.refresh("poll");
       expect(yield* Deferred.isDone(f.stopped)).toBe(true);
       expect(f.scans()).toBe(2);
@@ -303,19 +306,21 @@ it.effect("overlapping replacements cannot erase a newer registration", () =>
     const cleanup = yield* Deferred.make<void>();
     const f = yield* fixture(false, { stopping, cleanup });
     const older = yield* Effect.forkChild(
-      f.session.updateRepositories([{ ...repo, id: "two" }]),
+      f.session.updateRepositories([{ ...repo, id: RegistrationId("two") }]),
       { startImmediately: true },
     );
     yield* Deferred.await(stopping);
     const newer = yield* Effect.forkChild(
-      f.session.updateRepositories([{ ...repo, id: "three" }]),
+      f.session.updateRepositories([{ ...repo, id: RegistrationId("three") }]),
       { startImmediately: true },
     );
     yield* Deferred.succeed(cleanup, undefined);
     yield* Fiber.join(older);
     yield* Fiber.join(newer);
     const scans = f.scans();
-    yield* f.session.updateRepositories([{ ...repo, id: "three" }]);
+    yield* f.session.updateRepositories([
+      { ...repo, id: RegistrationId("three") },
+    ]);
     yield* f.session.refresh("poll");
     expect(f.scans()).toBe(scans);
     expect(f.errors.size).toBe(0);
@@ -412,7 +417,9 @@ it.effect(
       });
       yield* Deferred.await(resolving);
       yield* Deferred.succeed(f.release, undefined);
-      yield* f.session.updateRepositories([{ ...repo, id: "two" }]);
+      yield* f.session.updateRepositories([
+        { ...repo, id: RegistrationId("two") },
+      ]);
       yield* Deferred.await(interrupted);
       yield* Fiber.join(f.initial);
       expect(f.resolutions()).toBe(2);
@@ -473,7 +480,9 @@ it.effect(
       const f = yield* fixture();
       yield* Deferred.succeed(f.release, undefined);
       yield* Fiber.join(f.initial);
-      yield* f.session.updateRepositories([{ ...repo, id: "two" }]);
+      yield* f.session.updateRepositories([
+        { ...repo, id: RegistrationId("two") },
+      ]);
       expect(f.resolutions()).toBe(2);
       yield* f.session.updateRepositories([repo]);
       expect(f.resolutions()).toBe(3);

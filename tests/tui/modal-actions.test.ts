@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { ModalActionDeps } from "../../src/tui/hooks/useModalActions";
 import {
   createHandleAddProject,
@@ -89,7 +90,7 @@ function makeOpenResult(overrides: Record<string, unknown> = {}) {
 function snapshotWithFeat(): ModalActionDeps["filteredRepos"] {
   return [
     {
-      id: "r1",
+      id: RegistrationId("r1"),
       project: "proj",
       repoPath: "/repo",
       profileNames: [],
@@ -158,7 +159,7 @@ describe("createPrepareOpenModal", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "myproj",
         repoPath: "/home/user/myproj",
         profileNames: ["dev", "ci"],
@@ -193,7 +194,7 @@ describe("createPrepareOpenModal", () => {
     const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "myproj",
         repoPath: "/repo",
         profileNames: ["dev"],
@@ -634,7 +635,7 @@ describe("createPrepareUpModal", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: ["dev"],
@@ -725,7 +726,7 @@ describe("createPrepareUpModal", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -860,7 +861,7 @@ describe("createHandleAddProject", () => {
   test("calls register and refreshes on success", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");
     (runTuiSilentPromise as Mock).mockResolvedValueOnce({
-      id: "1",
+      id: RegistrationId("1"),
       repoPath: "/home/user/myproj",
       project: "myproj",
     });

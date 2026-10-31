@@ -2,9 +2,10 @@ import type { Database } from "bun:sqlite";
 import { Context, type Effect } from "effect";
 import type { WctError } from "../errors";
 import { withDb } from "./db";
+import { RegistrationId } from "./identities";
 
 export interface RegistryItem {
-  id: string;
+  id: RegistrationId;
   repo_path: string;
   /** Project Display Name; membership is keyed by repo_path. */
   project: string;
@@ -43,10 +44,16 @@ export const RegistryService = Context.Service<RegistryServiceApi>(
   "wct/RegistryService",
 );
 
-function generateId(): string {
+type RegistryRow = Omit<RegistryItem, "id"> & { id: string };
+
+function hydrateRegistryItem(row: RegistryRow): RegistryItem {
+  return { ...row, id: RegistrationId(row.id) };
+}
+
+function generateId(): RegistrationId {
   const ts = Date.now();
   const rand = Math.random().toString(36).slice(2, 8);
-  return `${ts}-${rand}`;
+  return RegistrationId(`${ts}-${rand}`);
 }
 
 function registryDb<A>(
@@ -70,18 +77,20 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
                ON CONFLICT(repo_path) DO NOTHING
                RETURNING *`,
             )
-            .get(id, repoPath, project, now) as RegistryItem | null) ?? null;
+            .get(id, repoPath, project, now) as RegistryRow | null) ?? null;
 
         if (inserted) {
           return {
             status: "registered",
-            item: inserted,
+            item: hydrateRegistryItem(inserted),
           } satisfies RegistryRegistrationResult;
         }
 
-        const existing = db
-          .query("SELECT * FROM registry WHERE repo_path = ?")
-          .get(repoPath) as RegistryItem;
+        const existing = hydrateRegistryItem(
+          db
+            .query("SELECT * FROM registry WHERE repo_path = ?")
+            .get(repoPath) as RegistryRow,
+        );
 
         if (options?.forceRename === true && existing.project !== project) {
           const item = db
@@ -91,10 +100,10 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
                WHERE repo_path = ?
                RETURNING *`,
             )
-            .get(project, repoPath) as RegistryItem;
+            .get(project, repoPath) as RegistryRow;
           return {
             status: "updated",
-            item,
+            item: hydrateRegistryItem(item),
             previousItem: existing,
           } satisfies RegistryRegistrationResult;
         }
@@ -115,17 +124,18 @@ export const liveRegistryService: RegistryServiceApi = RegistryService.of({
     }),
 
   listRepos: registryDb("list repos", (db) => {
-    return db
+    const rows = db
       .query("SELECT * FROM registry ORDER BY project ASC")
-      .all() as RegistryItem[];
+      .all() as RegistryRow[];
+    return rows.map(hydrateRegistryItem);
   }),
 
   findByPath: (repoPath) =>
     registryDb("find repo", (db) => {
-      return (
+      const row =
         (db
           .query("SELECT * FROM registry WHERE repo_path = ?")
-          .get(repoPath) as RegistryItem | null) ?? null
-      );
+          .get(repoPath) as RegistryRow | null) ?? null;
+      return row ? hydrateRegistryItem(row) : null;
     }),
 });

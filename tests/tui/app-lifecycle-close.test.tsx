@@ -5,6 +5,10 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+} from "../../src/services/identities";
 import type { WorkspaceCloseResult } from "../../src/services/workspace-service";
 import type { SessionActionDeps } from "../../src/tui/hooks/useSessionActions";
 import type {
@@ -183,7 +187,7 @@ describe("TUI close lifecycle", () => {
         makeWorktree(repoPath, "feature/x"),
       ]);
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
     });
 
@@ -478,7 +482,10 @@ describe("TUI close lifecycle", () => {
     // it's expanded regardless of the stored preference; once the entry is
     // gone, the preference alone decides.
     expect(deps).not.toHaveProperty("setExpandedWorkspaceKeys");
-    for (const stored of [new Set<string>(), new Set([WORKTREE_KEY])]) {
+    for (const stored of [
+      new Set<WorkspaceIdentityKey>(),
+      new Set([WORKTREE_KEY]),
+    ]) {
       const forThisPreference = (lifecycle: LifecycleState) =>
         isWorktreeEffectivelyExpanded({
           expandedWorkspaceKeys: stored,

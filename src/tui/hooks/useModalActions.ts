@@ -1,5 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import { registerProject } from "../../services/project-registration";
 import {
   type WorkspaceOpenResult,
@@ -34,7 +35,7 @@ function discoveredWorkspaceIdentityKey(
   snapshot: readonly RepoInfo[],
   repoPath: string,
   branch: string,
-): string | undefined {
+): WorkspaceIdentityKey | undefined {
   if (!repoPath) return undefined;
   for (const repo of snapshot) {
     if (repo.repoPath !== repoPath) continue;
@@ -64,7 +65,7 @@ export interface ModalActionDeps extends SessionHandoffDeps {
   setOpenModalRepoProject: (v: string) => void;
   setOpenModalRepoPath: (v: string) => void;
 
-  markWorkspaceDiscovered: (workspaceKey: string) => void;
+  markWorkspaceDiscovered: (workspaceKey: WorkspaceIdentityKey) => void;
 
   showActionError: (msg: string) => void;
   clearActionError: () => void;

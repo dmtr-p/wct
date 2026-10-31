@@ -8,11 +8,10 @@ import {
   processEnvironment,
 } from "./process";
 
-export interface CommandResult {
-  name: string;
-  _tag: "Succeeded" | "OptionalFailed" | "Failed";
-  error?: string;
-}
+export type CommandResult =
+  | { _tag: "Succeeded"; name: string }
+  | { _tag: "OptionalFailed"; name: string; error: string }
+  | { _tag: "Failed"; name: string; error: string };
 
 export interface CommandReporter {
   commandStarted: (

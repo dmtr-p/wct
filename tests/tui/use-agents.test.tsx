@@ -1,8 +1,12 @@
 import { PassThrough } from "node:stream";
 import { Effect, Scheduler } from "effect";
-import React from "react";
+import React, { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { classifyAgent, reconcileAgent } from "../../src/services/agent-model";
+import {
+  AGENT_FRESHNESS_MS,
+  classifyAgent,
+  reconcileAgent,
+} from "../../src/services/agent-model";
 import {
   AgentService,
   type AgentServiceApi,
@@ -64,12 +68,20 @@ function workingSnapshot(): AgentSnapshot {
 }
 
 async function renderHook() {
-  let value: ReturnType<typeof useAgents> | undefined;
+  type HookValue = ReturnType<typeof useAgents>;
+  let value: HookValue | undefined;
+  let committedValue: HookValue | undefined;
   let repos = [repo];
   let renders = 0;
+  const commits = new Set<(next: HookValue) => void>();
   function Wrapper() {
-    value = useAgents(repos);
+    const next = useAgents(repos);
+    value = next;
     renders++;
+    useLayoutEffect(() => {
+      committedValue = next;
+      for (const committed of commits) committed(next);
+    });
     return null;
   }
   const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
@@ -116,6 +128,17 @@ async function renderHook() {
     },
     unmount,
     flush,
+    waitForValue: (predicate: (next: HookValue) => boolean) => {
+      if (committedValue && predicate(committedValue)) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const committed = (next: HookValue) => {
+          if (!predicate(next)) return;
+          commits.delete(committed);
+          resolve();
+        };
+        commits.add(committed);
+      });
+    },
   };
 }
 
@@ -240,9 +263,18 @@ describe("scoped agent polling", () => {
           mode === "stalled" ? Effect.never : Effect.die("unavailable"),
         );
       const harness = await renderHook();
+      await harness.waitForValue(
+        (next) => next.observations.get("%1")?.state === "working",
+      );
       expect(harness.value.observations.get("%1")?.state).toBe("working");
-      await vi.advanceTimersByTimeAsync(5000);
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      // Timer delivery does not imply that React committed the state update.
+      const expired = harness.waitForValue(
+        (next) => next.observations.get("%1")?.freshness === "unavailable",
+      );
+      await vi.advanceTimersByTimeAsync(
+        agent.observedAt + AGENT_FRESHNESS_MS - Date.now(),
+      );
+      await expired;
       if (mode === "stalled") expect(observe).toHaveBeenCalledTimes(2);
       else expect(observe.mock.calls.length).toBeGreaterThan(2);
       expect(harness.value.observations.get("%1")?.freshness).toBe(
@@ -351,14 +383,74 @@ describe("scoped agent polling", () => {
     await harness.flush();
     const renders = harness.renders;
     expect(interrupted).toBe(true);
+    observe.mockReturnValue(Effect.never);
+    const remounted = await renderHook();
+    const remountedRenders = remounted.renders;
+    expect(observe).toHaveBeenCalledTimes(2);
     resolve(workingSnapshot());
     await vi.advanceTimersByTimeAsync(6000);
-    expect(observe).toHaveBeenCalledTimes(1);
+    expect(observe).toHaveBeenCalledTimes(2);
     expect(harness.renders).toBe(renders);
     expect(harness.value.observations.size).toBe(0);
-    const remounted = await renderHook();
-    expect(observe).toHaveBeenCalledTimes(2);
+    expect(remounted.renders).toBe(remountedRenders);
+    expect(remounted.value.observations.size).toBe(0);
     remounted.unmount();
     await remounted.flush();
+  });
+
+  test("unmount cancels an armed expiry and the remounted worker owns its deadline", async () => {
+    fakeTime();
+    const timers: {
+      deadline: number;
+      handle: ReturnType<typeof globalThis.setTimeout>;
+    }[] = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    const schedule = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation((...args) => {
+        const handle = originalSetTimeout(...args);
+        timers.push({ deadline: Date.now() + (args[1] ?? 0), handle });
+        return handle;
+      });
+    const cancel = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      const old = workingSnapshot();
+      observe
+        .mockReturnValueOnce(Effect.succeed(old))
+        .mockReturnValue(Effect.never);
+      const harness = await renderHook();
+      await harness.waitForValue(
+        (value) => value.observations.get("%1")?.freshness === "fresh",
+      );
+      const oldDeadline =
+        (old.observations.get("%1")?.observedAt ?? 0) + AGENT_FRESHNESS_MS;
+      const expiry = timers.find((timer) => timer.deadline === oldDeadline);
+      if (!expiry) throw new Error("Missing expiry timer");
+      harness.unmount();
+      await harness.flush();
+      expect(cancel).toHaveBeenCalledWith(expiry.handle);
+      const renders = harness.renders;
+      await vi.advanceTimersByTimeAsync(1000);
+      const next = workingSnapshot();
+      observe.mockReturnValueOnce(Effect.succeed(next));
+      const remounted = await renderHook();
+      await remounted.waitForValue(
+        (value) => value.observations.get("%1")?.freshness === "fresh",
+      );
+      await vi.advanceTimersByTimeAsync(oldDeadline - Date.now());
+      expect(harness.renders).toBe(renders);
+      expect(remounted.value.observations.get("%1")?.freshness).toBe("fresh");
+      const expired = remounted.waitForValue(
+        (value) => value.observations.get("%1")?.freshness === "unavailable",
+      );
+      const newDeadline =
+        (next.observations.get("%1")?.observedAt ?? 0) + AGENT_FRESHNESS_MS;
+      await vi.advanceTimersByTimeAsync(newDeadline - Date.now());
+      await expired;
+      expect(harness.renders).toBe(renders);
+    } finally {
+      schedule.mockRestore();
+      cancel.mockRestore();
+    }
   });
 });

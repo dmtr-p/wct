@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { runBunPromise } from "../../src/effect/runtime";
 import {
   predictPushRef,
+  resolvePushDestination,
   resolveWorkspacePr,
 } from "../../src/services/pr-discovery";
 import type { PrFacts } from "../../src/services/pr-model";
@@ -197,22 +199,88 @@ describe("push destination against a real git push", () => {
       "origin",
       null,
     ],
-  ] as const)("%s", (_name, configure, expectedRemote, expectedBranch) => {
-    const { local, origin, fork } = fixture();
-    configure(local);
-    const prediction = predict(local);
-    expect(prediction.remote).toBe(expectedRemote);
-    expect(prediction.branch).toBe(expectedBranch);
-    const push = spawnSync("git", ["push"], { cwd: local, encoding: "utf8" });
-    if (expectedBranch) {
-      expect(push.status).toBe(0);
-      const bare = expectedRemote === "fork" ? fork : origin;
-      expect(git(bare, "rev-parse", `refs/heads/${expectedBranch}`)).toBe(
-        git(local, "rev-parse", "HEAD"),
+  ] as const)(
+    "%s",
+    async (_name, configure, expectedRemote, expectedBranch) => {
+      const { local, origin, fork } = fixture();
+      configure(local);
+      const prediction = predict(local);
+      expect(prediction.remote).toBe(expectedRemote);
+      expect(prediction.branch).toBe(expectedBranch);
+      const push = spawnSync("git", ["push"], { cwd: local, encoding: "utf8" });
+      if (expectedBranch) {
+        expect(push.status).toBe(0);
+        const bare = expectedRemote === "fork" ? fork : origin;
+        expect(git(bare, "rev-parse", `refs/heads/${expectedBranch}`)).toBe(
+          git(local, "rev-parse", "HEAD"),
+        );
+      } else {
+        expect(prediction.branch).toBeNull();
+      }
+      git(
+        local,
+        "remote",
+        "set-url",
+        "--push",
+        expectedRemote,
+        `https://github.com/${expectedRemote}/repo.git`,
       );
-    } else {
-      expect(prediction.branch).toBeNull();
-    }
+      expect(
+        await runBunPromise(resolvePushDestination(local, "feature")),
+      ).toEqual(
+        expectedBranch
+          ? { repository: `${expectedRemote}/repo`, branch: expectedBranch }
+          : null,
+      );
+    },
+  );
+
+  test("batched config reads preserve subsection case, literal keys, and the last scalar value", async () => {
+    const { local } = fixture();
+    const branch = "Feature.+(safe)";
+    const remote = "Fork.+(safe)";
+    git(local, "branch", branch);
+    git(local, "remote", "add", remote, "https://github.com/fork/repo.git");
+    git(local, "config", `branch.${branch}.remote`, remote);
+    git(local, "config", `branch.${branch}.merge`, `refs/heads/${branch}`);
+    git(local, "config", "push.default", "nothing");
+    git(local, "config", "--add", "push.default", "simple");
+    git(local, "config", `branch.FeatureZ+safe.remote`, "unrelated");
+    expect(await runBunPromise(resolvePushDestination(local, branch))).toEqual({
+      repository: "fork/repo",
+      branch,
+    });
+  });
+
+  test("multiple push URLs associate only when every URL names the same GitHub repository", async () => {
+    const { local } = fixture();
+    git(local, "config", "push.default", "current");
+    git(
+      local,
+      "config",
+      "remote.origin.pushurl",
+      "https://github.com/owner/repo.git",
+    );
+    git(
+      local,
+      "config",
+      "--add",
+      "remote.origin.pushurl",
+      "git@github.com:OWNER/REPO.git",
+    );
+    expect(
+      await runBunPromise(resolvePushDestination(local, "feature")),
+    ).toEqual({ repository: "owner/repo", branch: "feature" });
+    git(
+      local,
+      "config",
+      "--add",
+      "remote.origin.pushurl",
+      "https://github.com/other/repo.git",
+    );
+    expect(
+      await runBunPromise(resolvePushDestination(local, "feature")),
+    ).toBeNull();
   });
 });
 

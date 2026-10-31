@@ -49,7 +49,11 @@ A failed associated PR retains stale data or an unresolved association without
 discarding discovery or blocking healthy Workspaces. Sibling candidate errors
 do not mark a healthy associated PR as stale.
 
-Push Destination reads run with at most four concurrent Workspaces, and each
+Push Destination reads run with at most four concurrent Workspaces per
+repository. Each Workspace reads its push reference, batches the relevant Git
+configuration into one NUL-delimited read, and resolves push URLs sequentially.
+This uses at most three subprocesses in total and one at a time per Workspace;
+repositories and refresh owners retain their existing concurrency. Each
 repository loads its Workspace cache inputs through one database connection.
 
 ## Refresh coordination and failures
@@ -93,6 +97,11 @@ remembered for each registration and Workspace Identity. Unchanged registry
 polls skip hydration; failed reads retry on a later update. Removal or a new
 registration ID resets hydration state, and rediscovered Workspaces can hydrate
 again. Hydration preserves facts already in memory.
+
+Malformed Workspace cache envelopes are cache misses. Invalid PR Candidates are
+ignored, and malformed or missing checks remain unknown and incomplete. These
+entries cannot block healthy Workspaces from refreshing; a successful refresh
+replaces the cached payload while preserving Explicit PR Associations.
 
 Cache writes are fenced by the project registration identity so removed projects
 cannot regain cached rows from old refreshes. Discovery stores changed PR records

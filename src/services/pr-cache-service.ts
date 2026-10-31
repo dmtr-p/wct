@@ -337,22 +337,25 @@ export function sqlGetWorkspace(
     last_error: string | null;
   } | null;
   if (!row) return null;
-  let payload: Record<string, unknown> = {};
+  let payload: unknown;
   try {
-    payload = JSON.parse(row.payload) as Record<string, unknown>;
+    payload = JSON.parse(row.payload);
   } catch {
-    /* malformed cache stays unknown */
+    return null;
   }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload))
+    return null;
+  const entry = payload as Record<string, unknown>;
   return {
-    pr: hydratePrFacts(payload.pr),
-    candidates: Array.isArray(payload.candidates)
-      ? payload.candidates
-          .map(hydratePrFacts)
+    pr: hydratePrFacts(entry.pr),
+    candidates: Array.isArray(entry.candidates)
+      ? entry.candidates
+          .map((candidate) => hydratePrFacts(candidate))
           .filter((p): p is PrFacts => p !== null)
       : [],
     newerOpenPr:
-      typeof payload.newerOpenPr === "number" ? payload.newerOpenPr : null,
-    explicit: payload.explicit === true,
+      typeof entry.newerOpenPr === "number" ? entry.newerOpenPr : null,
+    explicit: entry.explicit === true,
     fetchedAt: row.fetched_at,
     lastError: row.last_error,
   };

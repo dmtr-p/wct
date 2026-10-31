@@ -26,6 +26,28 @@ function gitValue(cwd: string, args: string[]) {
   );
 }
 
+function gitConfigValues(cwd: string, keys: readonly string[]) {
+  const pattern = keys
+    .map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  return Effect.map(
+    gitValue(cwd, ["config", "--null", "--get-regexp", `^(${pattern})$`]),
+    (raw) => {
+      const config = new Map<string, string[]>();
+      // Git separates keys from values with a newline and records with NUL.
+      for (const entry of raw.split("\0")) {
+        if (!entry) continue;
+        const separator = entry.indexOf("\n");
+        const key = separator < 0 ? entry : entry.slice(0, separator);
+        const values = config.get(key) ?? [];
+        values.push(separator < 0 ? "" : entry.slice(separator + 1));
+        config.set(key, values);
+      }
+      return config;
+    },
+  );
+}
+
 /** Conservative prediction for the branch/ref written by a plain git push. */
 export function predictPushRef(options: {
   branch: string;
@@ -80,24 +102,34 @@ export function resolvePushDestination(cwd: string, branch: string) {
     ]);
     const [remote = "", pushRemoteRef = ""] = ref.split("\t");
     if (!remote) return null;
-    const [upstreamRemote, upstreamMerge, rawDefault, rawRefspecs, rawUrls] =
-      yield* Effect.all([
-        gitValue(cwd, ["config", "--get", `branch.${branch}.remote`]),
-        gitValue(cwd, ["config", "--get", `branch.${branch}.merge`]),
-        gitValue(cwd, ["config", "--get", "push.default"]),
-        gitValue(cwd, ["config", "--get-all", `remote.${remote}.push`]),
-        gitValue(cwd, ["remote", "get-url", "--push", "--all", remote]),
-      ]);
+    const config = yield* gitConfigValues(cwd, [
+      `branch.${branch}.remote`,
+      `branch.${branch}.merge`,
+      "push.default",
+      `remote.${remote}.push`,
+    ]);
+    const lastValue = (key: string) => config.get(key)?.at(-1)?.trim() ?? "";
+    const rawRefspecs = (config.get(`remote.${remote}.push`) ?? [])
+      .join("\n")
+      .trim();
     const destination = predictPushRef({
       branch,
       remote,
-      upstreamRemote: upstreamRemote || "origin",
-      upstreamMerge,
-      pushDefault: rawDefault || "simple",
+      upstreamRemote: lastValue(`branch.${branch}.remote`) || "origin",
+      upstreamMerge: lastValue(`branch.${branch}.merge`),
+      pushDefault: lastValue("push.default") || "simple",
       refspecs: rawRefspecs ? rawRefspecs.split("\n") : [],
       pushRemoteRef,
     });
-    if (!destination || !rawUrls) return null;
+    if (!destination) return null;
+    const rawUrls = yield* gitValue(cwd, [
+      "remote",
+      "get-url",
+      "--push",
+      "--all",
+      remote,
+    ]);
+    if (!rawUrls) return null;
     const repositories = rawUrls.split("\n").map(parseRemoteOwnerRepo);
     if (repositories.some((repo) => repo === null)) return null;
     const names = repositories.map((repo) => `${repo?.owner}/${repo?.repo}`);

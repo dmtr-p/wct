@@ -16,12 +16,10 @@ export function createDownHumanReporter(stdio: Stdio.Stdio): WorkspaceReporter {
         const { result } = event;
         if (result._tag === "OptionalFailed") {
           output = logger.warn(
-            `${result.name} failed (optional): ${result.error ?? "Unknown error"}`,
+            `${result.name} failed (optional): ${result.error}`,
           );
         } else if (result._tag === "Failed") {
-          output = logger.error(
-            `${result.name} failed: ${result.error ?? "Unknown error"}`,
-          );
+          output = logger.error(`${result.name} failed: ${result.error}`);
         }
       }
       return Effect.provideService(output, Stdio.Stdio, stdio);

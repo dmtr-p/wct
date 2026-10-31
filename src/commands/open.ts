@@ -111,12 +111,12 @@ function createOpenHumanReporter(
     if (event._tag === "SetupCommandCompleted") {
       if (event.result._tag === "OptionalFailed") {
         return logger.warn(
-          `${event.result.name} failed (optional): ${event.result.error ?? "Unknown error"}`,
+          `${event.result.name} failed (optional): ${event.result.error}`,
         );
       }
       if (event.result._tag === "Failed") {
         return logger.error(
-          `${event.result.name} failed: ${event.result.error ?? "Unknown error"}`,
+          `${event.result.name} failed: ${event.result.error}`,
         );
       }
       return Effect.void;

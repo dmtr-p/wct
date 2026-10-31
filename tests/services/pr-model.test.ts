@@ -63,12 +63,39 @@ describe("PR fact normalization boundaries", () => {
 
   test.each([
     null,
+    [],
+    42,
+    "cached",
     {},
     { ...prFacts(), state: "FUTURE_STATE" },
     { ...prFacts(), number: "34" },
     { ...prFacts(), title: undefined },
   ])("cache hydration rejects malformed identity %j", (value) => {
     expect(hydratePrFacts(value)).toBeNull();
+  });
+
+  test.each([
+    undefined,
+    null,
+    "checks",
+    [null],
+    [42, [], "check"],
+    [{ name: "test", outcome: "passed" }],
+    [{ name: "test", outcome: "future", required: true }],
+  ])("malformed checks stay incomplete: %j", (checks) => {
+    const hydrated = hydratePrFacts({ ...prFacts(), checks });
+    expect(hydrated).not.toBeNull();
+    expect(hydrated?.checksComplete).toBe(false);
+    expect(
+      checkSummary(hydrated?.checks ?? null, hydrated?.checksComplete ?? false),
+    ).toBe("unknown");
+  });
+
+  test("a valid empty complete check list remains complete", () => {
+    expect(hydratePrFacts(prFacts({ checks: [] }))).toMatchObject({
+      checks: [],
+      checksComplete: true,
+    });
   });
 });
 

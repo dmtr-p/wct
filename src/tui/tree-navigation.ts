@@ -1,3 +1,4 @@
+import type { WorkspaceIdentityKey } from "../services/identities";
 import type { RepoInfo } from "./hooks/useRegistry";
 import type { LifecycleState } from "./lifecycle";
 import {
@@ -58,7 +59,7 @@ export interface TreeNavigationState {
   confirmationRange: { start: number; end: number } | null;
   confirmationSlot: ReturnSlot | null;
   savedPositions: Partial<Record<ReturnSlot, SavedPosition>>;
-  revealedLifecycles: ReadonlySet<string>;
+  revealedLifecycles: ReadonlySet<WorkspaceIdentityKey>;
   selectionPending: boolean;
   restorePending: boolean;
 }

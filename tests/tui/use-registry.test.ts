@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import React, { type FC } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
+import { RegistrationId } from "../../src/services/identities";
 import type {
   Worktree,
   WorktreeStatusOptions,
@@ -234,7 +235,7 @@ describe("loadRepoInfo", () => {
     const getChangedFileCount = vi.fn(async () => 2);
     const getAheadBehind = vi.fn(async () => ({ ahead: 1, behind: 0 }));
     const result = await loadRepoInfo(
-      { id: "1", repo_path: "/repo", project: "demo" },
+      { id: RegistrationId("1"), repo_path: "/repo", project: "demo" },
       {
         pathExists: (path) => path !== missing.path,
         getConfig: async () => ({}),
@@ -258,7 +259,7 @@ describe("loadRepoInfo", () => {
 
   test("returns a repo-level error instead of throwing when inspection fails", async () => {
     const repo = {
-      id: "1",
+      id: RegistrationId("1"),
       repo_path: "/repo",
       project: "demo",
     };
@@ -273,7 +274,7 @@ describe("loadRepoInfo", () => {
         getAheadBehind: vi.fn(),
       }),
     ).resolves.toEqual({
-      id: "1",
+      id: RegistrationId("1"),
       repoPath: "/repo",
       project: "demo",
       worktrees: [],
@@ -284,7 +285,7 @@ describe("loadRepoInfo", () => {
 
   test("falls back to zero/null worktree status when per-worktree inspection fails", async () => {
     const repo = {
-      id: "1",
+      id: RegistrationId("1"),
       repo_path: "/repo",
       project: "demo",
     };
@@ -307,7 +308,7 @@ describe("loadRepoInfo", () => {
         getAheadBehind: () => Promise.reject(new Error("sync failed")),
       }),
     ).resolves.toEqual({
-      id: "1",
+      id: RegistrationId("1"),
       repoPath: "/repo",
       project: "demo",
       worktrees: [
@@ -327,7 +328,7 @@ describe("loadRepoInfo", () => {
     "isolates profile loading failure from repository inspection (inspection fails: %s)",
     async (inspectionFails) => {
       const result = await loadRepoInfo(
-        { id: "1", repo_path: "/repo", project: "demo" },
+        { id: RegistrationId("1"), repo_path: "/repo", project: "demo" },
         {
           pathExists: () => true,
           getConfig: async () => {
@@ -356,7 +357,7 @@ describe("loadRepoInfo", () => {
     const reason = new Error("cancelled");
     await expect(
       loadRepoInfo(
-        { id: "1", repo_path: "/repo", project: "demo" },
+        { id: RegistrationId("1"), repo_path: "/repo", project: "demo" },
         {
           pathExists: () => true,
           getConfig: async () => {
@@ -390,7 +391,7 @@ describe("useRegistry refresh", () => {
     homeDir = mkdtempSync(join(tmpdir(), "wct-use-registry-home-"));
     vi.stubEnv("HOME", homeDir);
     registryFixtures.listRepos.mockResolvedValue([
-      { id: "r1", repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("r1"), repo_path: repoPath, project: "alpha" },
     ]);
     worktreeFixtures.listWorktrees.mockResolvedValue([
       worktreeOf(repoPath, "feature/x"),
@@ -413,8 +414,8 @@ describe("useRegistry refresh", () => {
       mkdirSync(wt.path, { recursive: true });
     }
     registryFixtures.listRepos.mockResolvedValue([
-      { id: "r1", repo_path: repoPath, project: "alpha" },
-      { id: "r2", repo_path: otherRepoPath, project: "beta" },
+      { id: RegistrationId("r1"), repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("r2"), repo_path: otherRepoPath, project: "beta" },
     ]);
     worktreeFixtures.listWorktrees.mockImplementation(async (path: string) =>
       path === repoPath ? [failed, healthy] : [other],
@@ -445,7 +446,7 @@ describe("useRegistry refresh", () => {
       }
       expect(snapshot).toMatchObject([
         {
-          id: "r1",
+          id: RegistrationId("r1"),
           worktrees: [
             { path: failed.path, changedFiles: 0, sync: null },
             {
@@ -456,7 +457,7 @@ describe("useRegistry refresh", () => {
           ],
         },
         {
-          id: "r2",
+          id: RegistrationId("r2"),
           worktrees: [
             {
               path: other.path,
@@ -478,7 +479,7 @@ describe("useRegistry refresh", () => {
       const hook = await renderUseRegistry(true);
       const pending =
         Promise.withResolvers<
-          { id: string; repo_path: string; project: string }[]
+          { id: RegistrationId; repo_path: string; project: string }[]
         >();
       const started = Promise.withResolvers<void>();
       try {
@@ -496,7 +497,7 @@ describe("useRegistry refresh", () => {
         registryFixtures.listRepos.mockResolvedValueOnce([]);
         expect(await hook.value.refresh()).toEqual([]);
         pending.resolve([
-          { id: "r1", repo_path: repoPath, project: "removed" },
+          { id: RegistrationId("r1"), repo_path: repoPath, project: "removed" },
         ]);
         await hook.background;
         for (let i = 0; i < 6; i++)
@@ -514,14 +515,16 @@ describe("useRegistry refresh", () => {
     const hook = await renderUseRegistry();
     const pending =
       Promise.withResolvers<
-        { id: string; repo_path: string; project: string }[]
+        { id: RegistrationId; repo_path: string; project: string }[]
       >();
     try {
       registryFixtures.listRepos.mockReturnValueOnce(pending.promise);
       const first = hook.value.refresh();
       registryFixtures.listRepos.mockResolvedValueOnce([]);
       expect(await hook.value.refresh()).toEqual([]);
-      pending.resolve([{ id: "r1", repo_path: repoPath, project: "first" }]);
+      pending.resolve([
+        { id: RegistrationId("r1"), repo_path: repoPath, project: "first" },
+      ]);
       expect((await first)?.[0]?.project).toBe("first");
       for (let i = 0; i < 6; i++)
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -534,7 +537,7 @@ describe("useRegistry refresh", () => {
 
   test("publishes slow scans across successive polls while newer scans remain pending", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    type Item = { id: string; repo_path: string; project: string };
+    type Item = { id: RegistrationId; repo_path: string; project: string };
     const initial = Promise.withResolvers<Item[]>();
     const second = Promise.withResolvers<Item[]>();
     const third = Promise.withResolvers<Item[]>();
@@ -542,7 +545,7 @@ describe("useRegistry refresh", () => {
     const hook = await renderUseRegistry(true);
     const items = (project: string): Item[] => [
       {
-        id: project,
+        id: RegistrationId(project),
         repo_path: join(repoPath, "missing"),
         project,
       },
@@ -750,7 +753,7 @@ describe("useRegistry refresh", () => {
 
   test("resolves the repos it just loaded", async () => {
     registryFixtures.listRepos.mockResolvedValue([
-      { id: "r1", repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("r1"), repo_path: repoPath, project: "alpha" },
     ]);
     worktreeFixtures.listWorktrees.mockResolvedValue([
       worktreeOf(repoPath, "feature/x"),
@@ -762,7 +765,7 @@ describe("useRegistry refresh", () => {
     expect(snapshot).not.toBeNull();
     expect(snapshot).toHaveLength(1);
     expect(snapshot?.[0]).toMatchObject({
-      id: "r1",
+      id: RegistrationId("r1"),
       repoPath,
       project: "alpha",
       worktrees: [expect.objectContaining({ branch: "feature/x" })],
@@ -793,7 +796,7 @@ describe("useRegistry refresh", () => {
 
   test("resolves null and keeps the previous repos when the load fails", async () => {
     registryFixtures.listRepos.mockResolvedValue([
-      { id: "r1", repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("r1"), repo_path: repoPath, project: "alpha" },
     ]);
     worktreeFixtures.listWorktrees.mockResolvedValue([
       worktreeOf(repoPath, "feature/x"),

@@ -1,4 +1,8 @@
 import { describe, expect, test } from "vitest";
+import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+} from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   HEADER_OFFSET,
@@ -44,7 +48,7 @@ function openLifecycle(
   return new Map([[workspaceIdentityKey(repoPath, branch), entry]]);
 }
 
-function repo(overrides: Partial<RepoInfo> & { id: string }): RepoInfo {
+function repo(overrides: Partial<RepoInfo> & { id: RegistrationId }): RepoInfo {
   return {
     id: overrides.id,
     repoPath: overrides.repoPath ?? `/tmp/${overrides.id}`,
@@ -64,7 +68,7 @@ describe("buildTreeRows", () => {
   test("a collapsed worktree maps each row 1:1 to its item", () => {
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -79,13 +83,13 @@ describe("buildTreeRows", () => {
     ];
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
     });
 
     // items: [repo, worktree]; sync is clean so no stats row even if expanded.
@@ -97,7 +101,7 @@ describe("buildTreeRows", () => {
     const branch = "feature/x";
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -136,7 +140,7 @@ describe("buildTreeRows", () => {
     const branch = "feature/clean";
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -165,16 +169,18 @@ describe("buildTreeRows", () => {
   });
 
   test("a repo with no worktrees emits a (no worktrees) row", () => {
-    const repos = [repo({ id: "repo-1", project: "empty", worktrees: [] })];
+    const repos = [
+      repo({ id: RegistrationId("repo-1"), project: "empty", worktrees: [] }),
+    ];
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
     });
 
     expect(rows.map((r) => ({ itemIndex: r.itemIndex, kind: r.kind }))).toEqual(
@@ -188,7 +194,7 @@ describe("buildTreeRows", () => {
   test("pending-workspace rows for a populated repo follow its worktree block", () => {
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -204,13 +210,13 @@ describe("buildTreeRows", () => {
     const lifecycle = openLifecycle("/tmp/repo-1", "alpha", "feature/new");
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       lifecycle,
     });
 
@@ -228,7 +234,7 @@ describe("buildTreeRows", () => {
     const branch = "feature/pr";
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -293,7 +299,7 @@ describe("buildTreeRows", () => {
     const branch = "feature/pr";
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -357,7 +363,7 @@ describe("buildTreeRows", () => {
   test("pending-workspace rows for an empty repo are appended at the bottom of the whole tree", () => {
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -369,18 +375,18 @@ describe("buildTreeRows", () => {
           },
         ],
       }),
-      repo({ id: "repo-2", project: "empty", worktrees: [] }),
+      repo({ id: RegistrationId("repo-2"), project: "empty", worktrees: [] }),
     ];
     const lifecycle = openLifecycle("/tmp/repo-2", "empty", "feature/seed");
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       ...emptyOpts,
     });
     const rows = buildTreeRows({
       items,
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       lifecycle,
     });
 
@@ -401,7 +407,7 @@ describe("buildTreeRows", () => {
     const branch = "feature/pr";
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         worktrees: [
           {
@@ -455,7 +461,7 @@ describe("buildTreeRows", () => {
     (maxWidth) => {
       const repos = [
         repo({
-          id: "repo-1",
+          id: RegistrationId("repo-1"),
           worktrees: [
             {
               branch: "feature",
@@ -492,7 +498,7 @@ describe("buildTreeRows", () => {
   test("an expanded PR title wraps before the following worktree with shared item identity", () => {
     const repos = [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         worktrees: ["feature", "main"].map((branch) => ({
           branch,
           path: "/tmp/" + branch,
@@ -587,7 +593,7 @@ describe("scrollToKeepVisible", () => {
 describe("anchored confirmation rows", () => {
   const repos = [
     repo({
-      id: "repo-1",
+      id: RegistrationId("repo-1"),
       project: "alpha",
       worktrees: [
         {
@@ -602,7 +608,7 @@ describe("anchored confirmation rows", () => {
   ];
   const items = buildTreeItems({
     repos,
-    expandedWorkspaceKeys: new Set<string>(),
+    expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
     ...emptyOpts,
   });
 
@@ -667,7 +673,7 @@ describe("lifecycle rows", () => {
   function repoWithWorktree(branch: string): RepoInfo[] {
     return [
       repo({
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         project: "alpha",
         repoPath,
         worktrees: [
@@ -686,7 +692,7 @@ describe("lifecycle rows", () => {
   function rowsFor(repos: RepoInfo[], lifecycle: LifecycleState) {
     const items = buildTreeItems({
       repos,
-      expandedWorkspaceKeys: new Set<string>(),
+      expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
       lifecycle,
       prData: new Map(),
       panes: new Map(),
@@ -697,7 +703,7 @@ describe("lifecycle rows", () => {
       rows: buildTreeRows({
         items,
         repos,
-        expandedWorkspaceKeys: new Set<string>(),
+        expandedWorkspaceKeys: new Set<WorkspaceIdentityKey>(),
         lifecycle,
         maxWidth: 80,
       }),
@@ -761,7 +767,7 @@ describe("lifecycle rows", () => {
     const branch = "feature/x";
     const pendingBranch = "feature/new";
     const repos = repoWithWorktree(branch);
-    const lifecycle = new Map<string, LifecycleEntry>([
+    const lifecycle = new Map<WorkspaceIdentityKey, LifecycleEntry>([
       ...openLifecycle(repoPath, "alpha", branch, {
         _tag: "CopyingFiles",
       }).entries(),

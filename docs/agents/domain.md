@@ -41,6 +41,12 @@ constructor at trusted registration creation or hydration boundaries; it adds
 no runtime validation and preserves the stored string. Do not recreate these
 encodings or cast strings to the brands in consumers.
 
+Identity-keyed service and TUI collections and action targets carry the matching
+brand. Repository-path indexes, branch indexes, tmux pane/session IDs, and
+composite presentation keys retain their own string types. Registry rows become
+branded when hydrated by `RegistryService`; its generated IDs use the same
+constructor before insertion.
+
 If a concept is missing, check whether an existing term covers it before adding
 another. Document a distinct concept when its meaning is settled.
 

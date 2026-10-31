@@ -1,4 +1,5 @@
 import type { Key } from "ink";
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import {
   isLifecycleActive,
   type LifecycleState,
@@ -11,7 +12,7 @@ import {
 
 export interface NavigateContext extends CommonNavigationContext {
   lifecycle: LifecycleState;
-  expandWorktree: (workspaceKey: string) => void;
+  expandWorktree: (workspaceKey: WorkspaceIdentityKey) => void;
   navigateTree: (dir: 1 | -1) => void;
   handleCloseSelectedWorktree: () => void;
 }

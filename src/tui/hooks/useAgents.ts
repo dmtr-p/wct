@@ -13,6 +13,7 @@ import {
   type AgentSnapshot,
   emptyAgentSnapshot,
 } from "../../services/agent-service";
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import { formatSessionName } from "../../services/tmux";
 import { workspaceIdentityKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
@@ -33,14 +34,14 @@ export function sameAgentSnapshot(a: AgentSnapshot, b: AgentSnapshot): boolean {
 }
 
 export interface WorkspaceAgentSnapshot extends AgentSnapshot {
-  summaries: Map<string, string>;
+  summaries: Map<WorkspaceIdentityKey, string>;
 }
 
 export function workspaceAgentSummaries(
   repos: readonly RepoInfo[],
   snapshot: AgentSnapshot,
-): Map<string, string> {
-  const summaries = new Map<string, string>();
+): Map<WorkspaceIdentityKey, string> {
+  const summaries = new Map<WorkspaceIdentityKey, string>();
   for (const repo of repos)
     for (const worktree of repo.worktrees) {
       const ids = snapshot.memberships.get(

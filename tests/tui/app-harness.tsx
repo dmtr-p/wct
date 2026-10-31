@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import type React from "react";
 import { vi } from "vitest";
 import type { WctError } from "../../src/errors";
+import { RegistrationId } from "../../src/services/identities";
 import type { PrFacts } from "../../src/services/pr-model";
 import type {
   WorkspacePhase,
@@ -144,7 +145,11 @@ vi.mock("../../src/tui/components/tree-row", async () => {
 });
 
 const registryItems = vi.hoisted(() => ({
-  items: [] as Array<{ id: string; repo_path: string; project: string }>,
+  items: [] as Array<{
+    id: RegistrationId;
+    repo_path: string;
+    project: string;
+  }>,
 }));
 
 const worktreeFixtures = vi.hoisted(() => ({
@@ -450,7 +455,7 @@ export function setTallWorktrees(repoPath: string, n: number): void {
     ),
   ]);
   registryItems.items = [
-    { id: "repo-1", repo_path: repoPath, project: "alpha" },
+    { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
   ];
 }
 

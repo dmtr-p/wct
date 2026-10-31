@@ -1,3 +1,4 @@
+import type { WorkspaceIdentityKey } from "../services/identities";
 /** Expansion-related targets carry opaque Workspace Identity Keys. */
 export type Mode =
   | { type: "Navigate" }
@@ -9,25 +10,25 @@ export type Mode =
   | {
       type: "UpModal";
       worktreePath: string;
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
       repoPath: string;
       branch: string;
       project: string;
       profileNames: string[];
     }
-  | { type: "Expanded"; workspaceKey: string }
+  | { type: "Expanded"; workspaceKey: WorkspaceIdentityKey }
   | {
       type: "ConfirmKill";
       paneId: string;
       label: string;
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
     }
   | {
       type: "ConfirmDown";
       sessionName: string;
       branch: string;
       worktreePath: string;
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
       repoPath: string;
       project: string;
     }
@@ -36,7 +37,7 @@ export type Mode =
       sessionName: string;
       branch: string;
       worktreePath: string;
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
       repoPath: string;
       project: string;
       changedFiles: number;
@@ -46,7 +47,7 @@ export type Mode =
       sessionName: string;
       branch: string;
       worktreePath: string;
-      workspaceKey: string;
+      workspaceKey: WorkspaceIdentityKey;
       repoPath: string;
       project: string;
     }
@@ -79,11 +80,15 @@ export const Mode = {
     project,
     profileNames,
   }),
-  Expanded: (workspaceKey: string): Mode => ({
+  Expanded: (workspaceKey: WorkspaceIdentityKey): Mode => ({
     type: "Expanded",
     workspaceKey,
   }),
-  ConfirmKill: (paneId: string, label: string, workspaceKey: string): Mode => ({
+  ConfirmKill: (
+    paneId: string,
+    label: string,
+    workspaceKey: WorkspaceIdentityKey,
+  ): Mode => ({
     type: "ConfirmKill",
     paneId,
     label,
@@ -109,7 +114,7 @@ export const Mode = {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    workspaceKey: string,
+    workspaceKey: WorkspaceIdentityKey,
     repoPath: string,
     project: string,
     changedFiles: number,
@@ -127,7 +132,7 @@ export const Mode = {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    workspaceKey: string,
+    workspaceKey: WorkspaceIdentityKey,
     repoPath: string,
     project: string,
   ): Mode => ({

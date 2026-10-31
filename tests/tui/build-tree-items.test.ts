@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { describe, expect, test } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import { formatSessionName } from "../../src/services/tmux";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
@@ -16,7 +17,7 @@ describe("buildTreeItems", () => {
   test("PR and pane details and confirmations belong to the selected Workspace when display names collide", () => {
     const branch = "feature/shared";
     const repos = ["a", "b"].map((name) => ({
-      id: name,
+      id: RegistrationId(name),
       repoPath: `/repos/${name}`,
       project: "org/shared",
       worktrees: [
@@ -111,7 +112,7 @@ describe("buildTreeItems", () => {
     const previous = new Set([alphaKey, betaKey]);
     const repos = [
       {
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         repoPath: "/tmp/alpha",
         project: "alpha",
         worktrees: [],
@@ -119,7 +120,7 @@ describe("buildTreeItems", () => {
         error: "Failed to inspect repository",
       },
       {
-        id: "repo-2",
+        id: RegistrationId("repo-2"),
         repoPath: "/tmp/beta",
         project: "beta",
         worktrees: [],
@@ -135,7 +136,7 @@ describe("buildTreeItems", () => {
   test("keeps detail rows for multiple expanded worktrees", () => {
     const repos = [
       {
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         repoPath: "/tmp/example-repo",
         project: "example",
         worktrees: ["main", "feature"].map((branch) => ({
@@ -215,7 +216,7 @@ describe("buildTreeItems", () => {
     const items = buildTreeItems({
       repos: [
         {
-          id: "repo-1",
+          id: RegistrationId("repo-1"),
           repoPath,
           project: "example",
           worktrees: [
@@ -276,7 +277,7 @@ describe("buildTreeItems", () => {
     const items = buildTreeItems({
       repos: [
         {
-          id: "repo-1",
+          id: RegistrationId("repo-1"),
           repoPath,
           project: "example",
           worktrees: [
@@ -307,7 +308,7 @@ describe("buildTreeItems", () => {
     const resolved = resolveSelectedPane({
       repos: [
         {
-          id: "repo-1",
+          id: RegistrationId("repo-1"),
           repoPath,
           project: "example",
           worktrees: [
@@ -391,7 +392,7 @@ describe("buildTreeItems", () => {
     const resolved = resolveSelectedPane({
       repos: [
         {
-          id: "repo-1",
+          id: RegistrationId("repo-1"),
           repoPath: "/tmp/example-repo",
           project: "example",
           worktrees: [

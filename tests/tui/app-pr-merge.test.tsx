@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { MergeSnapshot } from "../../src/services/pr-merge-service";
 import {
   githubFixtures,
@@ -83,7 +84,7 @@ describe("PR merge confirmation", () => {
       configurationError: null,
     };
     registryItems.items = [
-      { id: "repo", repo_path: repoPath, project: "project" },
+      { id: RegistrationId("repo"), repo_path: repoPath, project: "project" },
     ];
     const main = makeWorktree(repoPath, "main");
     const feature = makeWorktree(repoPath, "feature");

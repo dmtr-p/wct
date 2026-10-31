@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError, type WctError } from "../../src/errors";
+import { RegistrationId } from "../../src/services/identities";
 import type { ProjectActionDeps } from "../../src/tui/hooks/useProjectActions";
 import {
   createExecuteRemoveProject,
@@ -38,7 +39,7 @@ vi.mock("../../src/services/pr-cache-service", () => ({
 }));
 
 const repo: RepoInfo = {
-  id: "repo-id",
+  id: RegistrationId("repo-id"),
   repoPath: "/repos/project",
   project: "project",
   worktrees: [
@@ -140,7 +141,7 @@ describe("createExecuteRemoveProject", () => {
     if (!mainWorktree) throw new Error("missing main worktree fixture");
     const sibling = {
       ...repo,
-      id: "sibling-id",
+      id: RegistrationId("sibling-id"),
       repoPath: "/repos/sibling",
       worktrees: [{ ...mainWorktree, path: "/repos/sibling" }],
     };

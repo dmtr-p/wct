@@ -1,5 +1,6 @@
 import type { Key } from "ink";
 import { describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   type ExpandedContext,
@@ -62,7 +63,7 @@ function makeCtx(overrides?: Partial<ExpandedContext>): ExpandedContext {
 }
 
 const repos: RepoInfo[] = ["/repos/a", "/repos/b"].map((repoPath) => ({
-  id: repoPath,
+  id: RegistrationId(repoPath),
   repoPath,
   project: "same-name",
   profileNames: [],

@@ -1,5 +1,9 @@
 import React from "react";
 import { describe, expect, test } from "vitest";
+import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+} from "../../src/services/identities";
 import { LifecycleProgressRow } from "../../src/tui/components/LifecycleProgressRow";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
@@ -145,7 +149,7 @@ describe("forced expansion is presentation-only", () => {
     const branch = "feature/x";
     const repos: RepoInfo[] = [
       {
-        id: "repo-1",
+        id: RegistrationId("repo-1"),
         repoPath,
         project: "alpha",
         worktrees: [
@@ -160,7 +164,7 @@ describe("forced expansion is presentation-only", () => {
         profileNames: [],
       },
     ];
-    const stored = new Set<string>();
+    const stored = new Set<WorkspaceIdentityKey>();
     const lifecycle = lifecycleOf(repoPath, "alpha", branch, {
       _tag: "CreatingWorktree",
     });
@@ -208,7 +212,7 @@ describe("forced expansion is presentation-only", () => {
 describe("Workspace expansion preferences", () => {
   const branch = "feature/a";
   const repos: RepoInfo[] = ["a", "b"].map((name) => ({
-    id: name,
+    id: RegistrationId(name),
     repoPath: `/repos/${name}`,
     project: "org/same-name",
     worktrees: [

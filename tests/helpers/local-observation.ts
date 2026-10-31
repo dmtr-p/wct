@@ -1,6 +1,7 @@
 import { Deferred, Effect, Fiber, Sink, Stream } from "effect";
 import { ChildProcessSpawner } from "effect/process";
 import { commandError } from "../../src/errors";
+import { RegistrationId } from "../../src/services/identities";
 import { makeLocalObservationService } from "../../src/services/local-observation-service";
 import { execProcess } from "../../src/services/process";
 import {
@@ -92,7 +93,7 @@ export const measureObservationOverlap = Effect.gen(function* () {
       ...liveRegistryService,
       listRepos: Effect.succeed(
         Array.from({ length: 6 }, (_, index) => ({
-          id: String(index),
+          id: RegistrationId(String(index)),
           repo_path: "/tmp",
           project: String(index),
           created_at: 0,

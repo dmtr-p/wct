@@ -3,6 +3,10 @@ import type { SetStateAction } from "react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
 import {
+  RegistrationId,
+  type WorkspaceIdentityKey,
+} from "../../src/services/identities";
+import {
   type WorkspaceCloseResult,
   type WorkspacePhase,
   type WorkspaceReporter,
@@ -382,7 +386,7 @@ describe("createHandleSpaceSwitch", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -422,7 +426,7 @@ describe("createHandleSpaceSwitch", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -486,7 +490,7 @@ describe("createHandleSpaceSwitch", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -533,7 +537,7 @@ describe("createHandleSpaceSwitch", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -1154,7 +1158,7 @@ describe("createHandleDownSelectedWorktree", () => {
       ];
       const repos = [
         {
-          id: "r1",
+          id: RegistrationId("r1"),
           project: "proj",
           repoPath: "/repo",
           profileNames: [],
@@ -1226,7 +1230,7 @@ describe("createHandleDownSelectedWorktree", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -1273,7 +1277,7 @@ describe("createHandleDownSelectedWorktree", () => {
     ];
     const repos = [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath: "/repo",
         profileNames: [],
@@ -1311,7 +1315,7 @@ describe("a Workspace under an active lifecycle", () => {
   function repos(): RepoInfo[] {
     return [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath,
         profileNames: [],
@@ -1501,7 +1505,7 @@ describe("up and down lifecycle progress", () => {
   function repos(): RepoInfo[] {
     return [
       {
-        id: "r1",
+        id: RegistrationId("r1"),
         project: "proj",
         repoPath,
         profileNames: [],
@@ -1822,7 +1826,10 @@ describe("up and down lifecycle progress", () => {
     expect(tracker.phases[tracker.phases.length - 1]).toBeNull();
 
     expect(deps).not.toHaveProperty("setExpandedWorkspaceKeys");
-    for (const stored of [new Set<string>(), new Set([workspaceKey])]) {
+    for (const stored of [
+      new Set<WorkspaceIdentityKey>(),
+      new Set([workspaceKey]),
+    ]) {
       expect(
         isWorktreeEffectivelyExpanded({
           expandedWorkspaceKeys: stored,

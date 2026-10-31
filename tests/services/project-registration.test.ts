@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { Effect } from "effect";
 import { describe, expect, test, vi } from "vitest";
 import { runBunPromise } from "../../src/effect/runtime";
+import { RegistrationId } from "../../src/services/identities";
 import { registerProject } from "../../src/services/project-registration";
 import type {
   RegistryItem,
@@ -19,7 +20,7 @@ function fakeRegistry(calls: Array<{ path: string; project: string }>) {
       Effect.sync(() => {
         calls.push({ path: repoPath, project });
         const item = {
-          id: "registry-item",
+          id: RegistrationId("registry-item"),
           repo_path: repoPath,
           project,
           created_at: 1,

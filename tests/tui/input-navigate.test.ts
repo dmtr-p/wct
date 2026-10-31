@@ -1,5 +1,6 @@
 import type { Key } from "ink";
 import { describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   handleNavigateInput,
@@ -130,7 +131,7 @@ describe("handleNavigateInput", () => {
 
   test("left arrow on repo row does nothing", () => {
     const repos = [
-      { id: "repo1", project: "myproj", worktrees: [] },
+      { id: RegistrationId("repo1"), project: "myproj", worktrees: [] },
     ] as unknown as RepoInfo[];
     const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
     const ctx = makeCtx({
@@ -144,7 +145,7 @@ describe("handleNavigateInput", () => {
 
   test("right arrow on repo row does nothing", () => {
     const repos = [
-      { id: "repo1", project: "myproj", worktrees: [] },
+      { id: RegistrationId("repo1"), project: "myproj", worktrees: [] },
     ] as unknown as RepoInfo[];
     const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
     const ctx = makeCtx({
@@ -159,7 +160,7 @@ describe("handleNavigateInput", () => {
   test("right arrow expands the selected worktree", () => {
     const repos = [
       {
-        id: "repo1",
+        id: RegistrationId("repo1"),
         project: "myproj",
         repoPath: "/repos/myproj",
         worktrees: [{ branch: "feat", path: "/tmp/feat" }],
@@ -182,7 +183,7 @@ describe("handleNavigateInput", () => {
   test("right arrow leaves an active Workspace's expansion preference unchanged", () => {
     const repos = [
       {
-        id: "repo1",
+        id: RegistrationId("repo1"),
         project: "myproj",
         repoPath: "/repos/myproj",
         worktrees: [{ branch: "feat", path: "/tmp/feat" }],
@@ -218,7 +219,7 @@ describe("handleNavigateInput", () => {
   test("c fires handleCloseSelectedWorktree when selected item is worktree type", () => {
     const repos = [
       {
-        id: "repo1",
+        id: RegistrationId("repo1"),
         project: "myproj",
         worktrees: [{ branch: "feat", path: "/tmp/feat" }],
       },
@@ -237,7 +238,7 @@ describe("handleNavigateInput", () => {
 
   test("c does NOT fire handleCloseSelectedWorktree when selected item is repo type", () => {
     const repos = [
-      { id: "repo1", project: "myproj", worktrees: [] },
+      { id: RegistrationId("repo1"), project: "myproj", worktrees: [] },
     ] as unknown as RepoInfo[];
     const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
     const ctx = makeCtx({
@@ -251,8 +252,18 @@ describe("handleNavigateInput", () => {
 
   test("r refreshes the focused repository path when display names collide", () => {
     const repos = [
-      { id: "repo1", repoPath: "/repos/a", project: "myproj", worktrees: [] },
-      { id: "repo2", repoPath: "/repos/b", project: "myproj", worktrees: [] },
+      {
+        id: RegistrationId("repo1"),
+        repoPath: "/repos/a",
+        project: "myproj",
+        worktrees: [],
+      },
+      {
+        id: RegistrationId("repo2"),
+        repoPath: "/repos/b",
+        project: "myproj",
+        worktrees: [],
+      },
     ] as unknown as RepoInfo[];
     const items: TreeItem[] = [{ type: "repo", repoIndex: 0 }];
     const ctx = makeCtx({
@@ -267,7 +278,7 @@ describe("handleNavigateInput", () => {
   test("r refreshes a worktree's parent repository path", () => {
     const repos = [
       {
-        id: "repo1",
+        id: RegistrationId("repo1"),
         repoPath: "/repos/myproj",
         project: "myproj",
         worktrees: [{ branch: "feat", path: "/tmp/feat" }],

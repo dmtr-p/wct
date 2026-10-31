@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { runMigrations } from "../../src/services/db";
+import { RegistrationId } from "../../src/services/identities";
 import {
   livePrCacheService,
   sqlGetDiscovery,
@@ -314,12 +315,16 @@ describe("PrCacheService SQL helpers", { concurrent: false }, () => {
         "repo",
         1,
       ]);
-      expect(sqlSetDiscovery(db, "/a", snapshot, null, "original")).toBe(true);
+      expect(
+        sqlSetDiscovery(db, "/a", snapshot, null, RegistrationId("original")),
+      ).toBe(true);
       db.run("DELETE FROM registry WHERE repo_path = ?", ["/a"]);
       sqlInvalidate(db, "/a");
-      expect(sqlSetDiscovery(db, "/a", snapshot, null, "original")).toBe(false);
       expect(
-        sqlOwnedWrite(db, "/a", "original", () =>
+        sqlSetDiscovery(db, "/a", snapshot, null, RegistrationId("original")),
+      ).toBe(false);
+      expect(
+        sqlOwnedWrite(db, "/a", RegistrationId("original"), () =>
           sqlSetOpenPrs(db, "/a", [PR_A]),
         ),
       ).toBe(false);
@@ -330,8 +335,12 @@ describe("PrCacheService SQL helpers", { concurrent: false }, () => {
         "repo",
         2,
       ]);
-      expect(sqlSetDiscovery(db, "/a", snapshot, null, "original")).toBe(false);
-      expect(sqlSetDiscovery(db, "/a", snapshot, null, "new")).toBe(true);
+      expect(
+        sqlSetDiscovery(db, "/a", snapshot, null, RegistrationId("original")),
+      ).toBe(false);
+      expect(
+        sqlSetDiscovery(db, "/a", snapshot, null, RegistrationId("new")),
+      ).toBe(true);
     } finally {
       db.close();
     }

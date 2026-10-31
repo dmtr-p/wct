@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
+import type { WorkspaceIdentityKey } from "../../services/identities";
 import type { TmuxClient } from "../../services/tmux";
 import { formatSessionName } from "../../services/tmux";
 import {
@@ -315,7 +316,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
     sessionName: string,
     branch: string,
     worktreePath: string,
-    workspaceKey: string,
+    workspaceKey: WorkspaceIdentityKey,
     repoPath: string,
     project: string,
     force: boolean,

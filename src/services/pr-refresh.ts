@@ -1,6 +1,7 @@
 import { Clock, Effect } from "effect";
 import { commandError } from "../errors";
 import { GitHubService } from "./github-service";
+import type { PrIdentity } from "./identities";
 import type {
   ExplicitPrAssociation,
   PrDiscoverySnapshot,
@@ -132,8 +133,8 @@ export function refreshWorkspacePrs(
           .filter((pr) => explicitIdentities.has(prIdentity(pr)))
           .map((pr) => [prIdentity(pr), pr]),
       );
-      const needed = new Map<string, ExplicitPrAssociation>();
-      const failed = new Map<string, string>();
+      const needed = new Map<PrIdentity, ExplicitPrAssociation>();
+      const failed = new Map<PrIdentity, string>();
       for (const workspace of workspaces) {
         if (workspace.explicit) {
           const identity = prIdentity(workspace.explicit);
@@ -249,7 +250,7 @@ export function refreshWorkspacePrs(
           };
         entries.set(workspace.branch, entry);
       }
-      const detailTargets = new Map<string, PrFacts>();
+      const detailTargets = new Map<PrIdentity, PrFacts>();
       for (const entry of entries.values()) {
         for (const pr of [entry.pr, ...entry.candidates])
           if (

@@ -1,5 +1,9 @@
 import { Deferred, Effect } from "effect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  RegistrationId,
+  WorkspaceIdentityKey,
+} from "../../services/identities";
 import {
   PrCacheService,
   type WorkspacePrEntry,
@@ -16,7 +20,7 @@ import type { RepoInfo } from "./useRegistry";
 const GITHUB_POLL_INTERVAL = 120_000;
 
 interface HydratedRegistration {
-  id: string;
+  id: RegistrationId;
   branches: Set<string>;
   openPrs: boolean;
 }
@@ -30,7 +34,7 @@ function hydrate(
   repos: RepoInfo[],
   processed: Map<string, HydratedRegistration>,
 ) {
-  const associations = new Map<string, WorkspacePrEntry>();
+  const associations = new Map<WorkspaceIdentityKey, WorkspacePrEntry>();
   const openPrs = new Map<string, OpenPrChoice[]>();
   const reset = new Set<string>();
   const present = new Set(repos.map((repo) => repo.repoPath));
@@ -228,7 +232,7 @@ export function useGitHub(repos: RepoInfo[]) {
     [runWithSession],
   );
   const prData = useMemo(() => {
-    const data = new Map<string, PrFacts>();
+    const data = new Map<WorkspaceIdentityKey, PrFacts>();
     for (const [key, entry] of associations)
       if (entry.pr)
         data.set(key, {

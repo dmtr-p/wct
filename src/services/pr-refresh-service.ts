@@ -14,7 +14,11 @@ import {
 import { bunServiceKeys } from "../effect/service-context";
 import type { WctError } from "../errors";
 import { GitHubService } from "./github-service";
-import { workspaceIdentityKey } from "./identities";
+import {
+  type RegistrationId,
+  type WorkspaceIdentityKey,
+  workspaceIdentityKey,
+} from "./identities";
 import {
   PrCacheService,
   type PrCacheServiceApi,
@@ -26,7 +30,7 @@ import type { OpenPrChoice, PrFacts } from "./pr-model";
 import { refreshPrDiscovery, refreshWorkspacePrs } from "./pr-refresh";
 
 export interface PrRefreshRepository {
-  id: string;
+  id: RegistrationId;
   repoPath: string;
   error?: string;
   worktrees: readonly {
@@ -38,7 +42,7 @@ export interface PrRefreshRepository {
 export type RefreshKind = "poll" | "manual" | "action";
 type Update<A> = (update: (previous: A) => A) => void;
 export interface PrRefreshObserver {
-  associations: Update<Map<string, WorkspacePrEntry>>;
+  associations: Update<Map<WorkspaceIdentityKey, WorkspacePrEntry>>;
   openPrs: Update<Map<string, OpenPrChoice[]>>;
   errors: Update<Map<string, string>>;
   refreshing: Update<Set<string>>;
@@ -69,7 +73,7 @@ export const PrRefreshService = Context.Service<PrRefreshServiceApi>(
 const DISCOVERY_RETRY_DELAY = 600_000;
 const CACHE_FRESH_WINDOW = 30_000;
 const BASE_REPO_CACHE_WINDOW = 600_000;
-function baseRepositoryKey(repoPath: string, registrationId: string) {
+function baseRepositoryKey(repoPath: string, registrationId: RegistrationId) {
   return `${repoPath}\0${registrationId}`;
 }
 function causeMessage<E>(cause: Cause.Cause<E>): string {
@@ -100,7 +104,7 @@ interface RefreshFlight {
   discovered: boolean;
   succeeded: boolean;
   failed: boolean;
-  registrationId: string;
+  registrationId: RegistrationId;
   signature: string;
 }
 
@@ -212,7 +216,7 @@ function publishOpenPrs(
 function publishWorkspaceEntries(
   observer: PrRefreshObserver,
   repoPath: string,
-  found: Map<string, WorkspacePrEntry>,
+  found: Map<WorkspaceIdentityKey, WorkspacePrEntry>,
   cacheError: string | null,
 ) {
   observer.associations(
@@ -460,7 +464,7 @@ export const makePrRefreshService = Effect.gen(function* () {
       const currentRepo = (path: string) =>
         repos.find((repo) => repo.repoPath === path);
       const observed = new Map<string, string>();
-      const registrations = new Map<string, string>();
+      const registrations = new Map<string, RegistrationId>();
       const discovery = new Map<string, PrDiscoverySnapshot>();
       const persisted = new Map<string, PrDiscoverySnapshot>();
       const loaded = new Set<string>();

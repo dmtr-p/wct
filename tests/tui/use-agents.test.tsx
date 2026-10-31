@@ -9,6 +9,7 @@ import {
   type AgentSnapshot,
   emptyAgentSnapshot,
 } from "../../src/services/agent-service";
+import { RegistrationId } from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 
 const runPromise = vi.hoisted(() => vi.fn());
@@ -16,7 +17,7 @@ vi.mock("../../src/tui/runtime", () => ({ tuiRuntime: { runPromise } }));
 const observe = vi.fn<AgentServiceApi["observe"]>();
 const { useAgents } = await import("../../src/tui/hooks/useAgents");
 const repo: RepoInfo = {
-  id: "repo",
+  id: RegistrationId("repo"),
   repoPath: "/repo",
   project: "repo",
   profileNames: [],

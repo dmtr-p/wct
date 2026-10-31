@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { resolveStatusBarProps } from "../../src/tui/tree-helpers";
@@ -6,7 +7,7 @@ import { Mode, type TreeItem } from "../../src/tui/types";
 
 function makeRepo(project: string): RepoInfo {
   return {
-    id: project,
+    id: RegistrationId(project),
     repoPath: `/tmp/${project}`,
     project,
     worktrees: [],

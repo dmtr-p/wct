@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { initCommand } from "../src/commands/init";
 import { CONFIG_FILENAME } from "../src/config/loader";
 import { runBunPromise } from "../src/effect/runtime";
+import { RegistrationId } from "../src/services/identities";
 import {
   liveRegistryService,
   type RegistryServiceApi,
@@ -43,7 +44,7 @@ describe("init command", () => {
                 return {
                   status: "registered" as const,
                   item: {
-                    id: "registry-item",
+                    id: RegistrationId("registry-item"),
                     repo_path: path,
                     project: "init-project",
                     created_at: 1,

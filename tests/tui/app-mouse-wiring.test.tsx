@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import {
   githubFixtures,
   makeWorktree,
@@ -50,7 +51,7 @@ describe("App mouse selection and viewport behavior", () => {
 
   test("keyboard input breaks a pending double-click pair", async () => {
     registryItems.items = [
-      { id: "repo-1", repo_path: repoPath, project: "alpha" },
+      { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
     ];
     worktreeFixtures.byRepoPath.set(repoPath, [
       worktree("main"),
@@ -78,7 +79,7 @@ describe("App mouse selection and viewport behavior", () => {
   describe("clicking a sibling while another worktree is expanded", () => {
     test("without a detail row on the expanded worktree", async () => {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
@@ -118,7 +119,7 @@ describe("App mouse selection and viewport behavior", () => {
 
     test("with a detail row on the expanded worktree (PR row shifts every later index)", async () => {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
@@ -175,7 +176,7 @@ describe("App mouse selection and viewport behavior", () => {
 
     test("selects the next sibling after navigating past expanded PR details", async () => {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
@@ -408,7 +409,7 @@ describe("App mouse selection and viewport behavior", () => {
   describe("viewport shrink preserves selection visibility", () => {
     test("resizing the terminal shorter keeps a bottom-row selection visible", async () => {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
@@ -441,7 +442,7 @@ describe("App mouse selection and viewport behavior", () => {
 
     test("a shrink with the selection already wheel-scrolled off-screen leaves the viewport alone", async () => {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
@@ -488,7 +489,7 @@ describe("App mouse selection and viewport behavior", () => {
 
     function setupRepoWithPr(featureCount: number) {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),
@@ -615,7 +616,7 @@ describe("App mouse selection and viewport behavior", () => {
   describe("narrow terminals keep bottom chrome on one line", () => {
     test("the frame stays within terminal rows when an error exceeds the width", async () => {
       registryItems.items = [
-        { id: "repo-1", repo_path: repoPath, project: "alpha" },
+        { id: RegistrationId("repo-1"), repo_path: repoPath, project: "alpha" },
       ];
       worktreeFixtures.byRepoPath.set(repoPath, [
         worktree("main"),

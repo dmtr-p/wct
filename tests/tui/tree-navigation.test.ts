@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest";
 import { Arbitrary, Schema } from "effect";
 import { describe, expect, test } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   type LifecycleState,
@@ -19,7 +20,7 @@ import { prRowMeta } from "../helpers/pr";
 
 const repos: RepoInfo[] = [
   {
-    id: "one",
+    id: RegistrationId("one"),
     repoPath: "/one",
     project: "shared",
     profileNames: [],
@@ -41,7 +42,7 @@ const repos: RepoInfo[] = [
     ],
   },
   {
-    id: "two",
+    id: RegistrationId("two"),
     repoPath: "/two",
     project: "shared",
     profileNames: [],

@@ -1,7 +1,10 @@
 import { Effect } from "effect";
 import type { Dispatch, SetStateAction } from "react";
 import { toWctError } from "../errors";
-import { workspaceIdentityKey } from "../services/identities";
+import {
+  type WorkspaceIdentityKey,
+  workspaceIdentityKey,
+} from "../services/identities";
 import type {
   WorkspaceOperation,
   WorkspacePhase,
@@ -23,7 +26,7 @@ export interface LifecycleEntry {
   phase: LifecyclePhase;
 }
 
-export type LifecycleState = ReadonlyMap<string, LifecycleEntry>;
+export type LifecycleState = ReadonlyMap<WorkspaceIdentityKey, LifecycleEntry>;
 
 export function lifecycleEntryFor(
   lifecycle: LifecycleState,
@@ -52,7 +55,7 @@ export function createLifecycleClaims(): LifecycleClaims {
   // scope to the operation that actually claimed it; `current` tracks phase
   // updates independently.
   const held = new Map<
-    string,
+    WorkspaceIdentityKey,
     { owner: LifecycleEntry; current: LifecycleEntry }
   >();
   return {

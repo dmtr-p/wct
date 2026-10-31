@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { RegistrationId } from "../../src/services/identities";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
   type LifecycleState,
@@ -49,7 +50,7 @@ function detail(
 
 function fakeRepo(id: string, branches: string[]): RepoInfo {
   return {
-    id,
+    id: RegistrationId(id),
     repoPath: `/tmp/${id}`,
     project: id,
     worktrees: branches.map((b) => ({
@@ -85,7 +86,7 @@ function lifecycleFor(
 
 describe("resolveTreeReturnMode", () => {
   test("preserves Expanded mode across temporary interactions", () => {
-    const expanded = Mode.Expanded("repo-a/main");
+    const expanded = Mode.Expanded(workspaceIdentityKey("/tmp/repo-a", "main"));
     expect(resolveTreeReturnMode(expanded)).toEqual(expanded);
   });
 

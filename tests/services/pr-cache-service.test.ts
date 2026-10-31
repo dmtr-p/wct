@@ -10,15 +10,20 @@ import {
   livePrCacheService,
   sqlGetDiscovery,
   sqlGetDiscoveryEffect,
+  sqlGetExplicit,
   sqlGetOpenPrs,
+  sqlGetWorkspace,
   sqlInvalidate,
   sqlOwnedWrite,
   sqlSetDiscovery,
+  sqlSetExplicit,
   sqlSetOpenPrs,
   sqlSetWorkspace,
+  sqlSetWorkspaceError,
 } from "../../src/services/pr-cache-service";
 import { normalizeGhPr } from "../../src/services/pr-discovery";
 import type { OpenPrChoice } from "../../src/services/pr-model";
+import { prFacts } from "../helpers/pr";
 
 function makeDb(): Database {
   const db = new Database(":memory:");
@@ -42,6 +47,78 @@ const PR_B: OpenPrChoice = {
 };
 
 describe("PrCacheService SQL helpers", { concurrent: false }, () => {
+  it.each(["null", "42", '"cached"', "true", "[]", "{invalid"])(
+    "treats an invalid Workspace envelope as a miss: %s",
+    (payload) => {
+      const db = makeDb();
+      try {
+        sqlSetExplicit(db, "/a", "feature", {
+          baseRepository: "base/repo",
+          number: 42,
+        });
+        db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
+          "/a",
+          "feature",
+          payload,
+          123,
+          "offline",
+        ]);
+        expect(sqlGetWorkspace(db, "/a", "feature")).toBeNull();
+        sqlSetWorkspaceError(db, "/a", "feature", "retry failed");
+        expect(sqlGetWorkspace(db, "/a", "feature")).toBeNull();
+        expect(sqlGetExplicit(db, "/a", "feature")).toEqual({
+          baseRepository: "base/repo",
+          number: 42,
+        });
+        const entry = {
+          pr: prFacts(),
+          candidates: [],
+          newerOpenPr: null,
+          explicit: true,
+          fetchedAt: 456,
+          lastError: null,
+        };
+        sqlSetWorkspace(db, "/a", "feature", entry);
+        expect(sqlGetWorkspace(db, "/a", "feature")).toEqual(entry);
+      } finally {
+        db.close();
+      }
+    },
+  );
+
+  it("hydrates malformed candidates conservatively without losing valid facts or metadata", () => {
+    const db = makeDb();
+    try {
+      const pr = prFacts();
+      db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
+        "/a",
+        "feature",
+        JSON.stringify({
+          pr: { ...pr, checks: [null] },
+          candidates: [null, [], 42, "candidate", {}, pr],
+          explicit: true,
+          newerOpenPr: 43,
+        }),
+        123,
+        "offline",
+      ]);
+      expect(sqlGetWorkspace(db, "/a", "feature")).toMatchObject({
+        pr: {
+          number: pr.number,
+          checks: [{ name: "unknown", outcome: "unknown", required: null }],
+          checksComplete: false,
+        },
+        candidates: [pr],
+        explicit: true,
+        newerOpenPr: 43,
+        fetchedAt: 123,
+        lastError: "offline",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it("hydrates requested Workspaces and modal choices through one connection per batch", () => {
     const home = mkdtempSync(join(tmpdir(), "wct-hydration-"));
     const originalHome = process.env.HOME;
@@ -68,6 +145,17 @@ describe("PrCacheService SQL helpers", { concurrent: false }, () => {
           fetchedAt: 456,
         });
         sqlSetOpenPrs(db, "/a", [PR_A, PR_B]);
+        db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
+          "/a",
+          "broken",
+          "null",
+          123,
+          "offline",
+        ]);
+        sqlSetExplicit(db, "/a", "broken", {
+          baseRepository: "base/repo",
+          number: 42,
+        });
       } finally {
         db.close();
       }
@@ -110,6 +198,25 @@ describe("PrCacheService SQL helpers", { concurrent: false }, () => {
             sql.includes("FROM workspace_pr_cache"),
           ),
         ).toHaveLength(1);
+        expect(
+          Effect.runSync(
+            livePrCacheService.getWorkspaceInputs("/a", [
+              "broken",
+              branches[0] ?? "",
+            ]),
+          ),
+        ).toEqual([
+          {
+            branch: "broken",
+            cached: null,
+            explicit: { baseRepository: "base/repo", number: 42 },
+          },
+          {
+            branch: branches[0],
+            cached: { ...entry, explicit: false },
+            explicit: null,
+          },
+        ]);
       } finally {
         query.mockRestore();
         close.mockRestore();

@@ -1,12 +1,16 @@
+import { Database } from "bun:sqlite";
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Exit, Fiber, Scheduler, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { commandError, type WctError } from "../../src/errors";
+import { runMigrations } from "../../src/services/db";
 import { RegistrationId } from "../../src/services/identities";
 import {
   livePrCacheService,
   type PrCacheServiceApi,
+  sqlGetWorkspace,
+  sqlSetWorkspace,
 } from "../../src/services/pr-cache-service";
 import {
   type PrRefreshRepository,
@@ -28,6 +32,8 @@ function fixture(
     cleanup?: Deferred.Deferred<void>;
     resolveBaseRepo?: () => Effect.Effect<string, WctError>;
     prCache?: Partial<PrCacheServiceApi>;
+    repository?: PrRefreshRepository;
+    discoveryPrs?: unknown[];
   } = {},
 ) {
   return Effect.gen(function* () {
@@ -69,7 +75,7 @@ function fixture(
             }
             if (fail)
               return yield* commandError("pr_error", "discovery failed");
-            return [];
+            return options.discoveryPrs ?? [];
           }),
         getRawPrs: () => Effect.succeed([]),
         findRemoteForRepo: () => Effect.succeed(null),
@@ -108,7 +114,7 @@ function fixture(
       });
     const { session, close } = yield* openSession();
     const initial = yield* Effect.forkChild(
-      session.updateRepositories([repo]),
+      session.updateRepositories([options.repository ?? repo]),
       {
         startImmediately: true,
       },
@@ -130,6 +136,77 @@ function fixture(
     };
   });
 }
+
+it.effect(
+  "refresh replaces corrupt Workspace caches without blocking healthy branches",
+  () =>
+    Effect.gen(function* () {
+      const db = yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const db = new Database(":memory:");
+          runMigrations(db);
+          return db;
+        }),
+        (db) => Effect.sync(() => db.close()),
+      );
+      const branches = ["broken", "healthy"];
+      db.run("INSERT INTO workspace_pr_cache VALUES (?, ?, ?, ?, ?)", [
+        repo.repoPath,
+        "broken",
+        "null",
+        123,
+        "offline",
+      ]);
+      sqlSetWorkspace(db, repo.repoPath, "healthy", {
+        pr: null,
+        candidates: [],
+        newerOpenPr: null,
+        fetchedAt: 123,
+        lastError: null,
+      });
+      const f = yield* fixture(false, {
+        repository: {
+          ...repo,
+          worktrees: branches.map((branch) => ({
+            branch,
+            path: `/missing-wct-cache-fixture/${branch}`,
+            isMainWorktree: false,
+          })),
+        },
+        discoveryPrs: branches.map((branch, index) => ({
+          number: index + 1,
+          title: branch,
+          state: "MERGED",
+          headRefName: branch,
+          updatedAt: "2026-10-15T00:00:00Z",
+        })),
+        prCache: {
+          getWorkspaceInputs: (path, requested) =>
+            Effect.sync(() =>
+              requested.map((branch) => ({
+                branch,
+                explicit: null,
+                cached: sqlGetWorkspace(db, path, branch),
+              })),
+            ),
+          setWorkspace: (path, branch, entry) =>
+            Effect.sync(() => sqlSetWorkspace(db, path, branch, entry)),
+        },
+      });
+      yield* Deferred.succeed(f.release, undefined);
+      yield* Fiber.join(f.initial);
+      expect(f.errors.size).toBe(0);
+      for (const branch of branches) {
+        expect(sqlGetWorkspace(db, repo.repoPath, branch)).toMatchObject({
+          candidates: [{ title: branch }],
+          lastError: null,
+        });
+      }
+      yield* f.session.refresh("manual");
+      expect(f.errors.size).toBe(0);
+      expect(f.scans()).toBe(2);
+    }),
+);
 
 it.effect(
   "manual requests run behind failed automatic discovery and share a failed manual attempt",

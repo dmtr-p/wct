@@ -125,8 +125,8 @@ export function checkSummary(
 
 /** Cache hydration never turns omitted fields into success or readiness. */
 export function hydratePrFacts(value: unknown): PrFacts | null {
-  if (!value || typeof value !== "object") return null;
-  const p = value as Partial<PrFacts>;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const p = value as Record<string, unknown>;
   if (
     typeof p.baseRepository !== "string" ||
     typeof p.number !== "number" ||
@@ -136,6 +136,34 @@ export function hydratePrFacts(value: unknown): PrFacts | null {
     return null;
   if (p.state !== "OPEN" && p.state !== "MERGED" && p.state !== "CLOSED")
     return null;
+  let checksComplete = p.checksComplete === true && Array.isArray(p.checks);
+  const checks: PrCheck[] | null = Array.isArray(p.checks)
+    ? p.checks.map((value: unknown): PrCheck => {
+        const check =
+          value && typeof value === "object" && !Array.isArray(value)
+            ? (value as Record<string, unknown>)
+            : {};
+        const outcome =
+          check.outcome === "passed" ||
+          check.outcome === "failed" ||
+          check.outcome === "pending" ||
+          check.outcome === "cancelled" ||
+          check.outcome === "unknown"
+            ? check.outcome
+            : "unknown";
+        if (
+          typeof check.name !== "string" ||
+          check.outcome !== outcome ||
+          (check.required !== null && typeof check.required !== "boolean")
+        )
+          checksComplete = false;
+        return {
+          name: typeof check.name === "string" ? check.name : "unknown",
+          outcome,
+          required: typeof check.required === "boolean" ? check.required : null,
+        };
+      })
+    : null;
   return {
     baseRepository: p.baseRepository,
     number: p.number,
@@ -157,20 +185,8 @@ export function hydratePrFacts(value: unknown): PrFacts | null {
       typeof p.isMergeQueueEnabled === "boolean" ? p.isMergeQueueEnabled : null,
     isQueued: typeof p.isQueued === "boolean" ? p.isQueued : null,
     updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : null,
-    checks: Array.isArray(p.checks)
-      ? p.checks.map((check) => ({
-          name: typeof check.name === "string" ? check.name : "unknown",
-          outcome:
-            check.outcome === "passed" ||
-            check.outcome === "failed" ||
-            check.outcome === "pending" ||
-            check.outcome === "cancelled"
-              ? check.outcome
-              : "unknown",
-          required: typeof check.required === "boolean" ? check.required : null,
-        }))
-      : null,
-    checksComplete: p.checksComplete === true,
+    checks,
+    checksComplete,
     fetchedAt: typeof p.fetchedAt === "number" ? p.fetchedAt : 0,
     lastError: typeof p.lastError === "string" ? p.lastError : null,
   };

@@ -377,7 +377,7 @@ function setupWarning(result: SetupResult): WorkspaceWarning | undefined {
         result._tag === "OptionalFailed"
           ? "optional_setup_failed"
           : "setup_failed",
-      message: result.error ?? "Unknown error",
+      message: result.error,
     },
   };
 }
@@ -1126,7 +1126,7 @@ function runDownScripts(
         .filter((result) => result._tag !== "Succeeded")
         .map(
           (result) =>
-            `${result.name}${result._tag === "OptionalFailed" ? " (optional)" : ""}: ${result.error ?? "Unknown error"}`,
+            `${result.name}${result._tag === "OptionalFailed" ? " (optional)" : ""}: ${result.error}`,
         )
         .join("; ");
       return yield* commandError(
@@ -1143,7 +1143,7 @@ function runDownScripts(
           optional: true,
           error: {
             code: "optional_down_failed",
-            message: result.error ?? "Unknown error",
+            message: result.error,
           },
         });
       }

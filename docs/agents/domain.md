@@ -30,6 +30,17 @@ unrelated subsystems part of the same documentation topic.
 Use the glossary's terms in code, documentation, issue titles, and proposals.
 Avoid the synonyms explicitly listed under `_Avoid_`.
 
+[`src/services/identities.ts`](../../src/services/identities.ts) owns the shared
+Effect brands `WorkspaceIdentityKey`, `PrIdentity`, and `RegistrationId`,
+independently of React and the TUI. Use `workspaceIdentityKey(mainRepoPath, branch)`
+and `prIdentity({ baseRepository, number })` to construct encoded identities.
+Workspace keys join the Main Repository path and branch with NUL, including an
+empty branch used for tree prefixes. PR identities join the lowercase base
+GitHub repository and PR number with `#`. Use the nominal `RegistrationId(value)`
+constructor at trusted registration creation or hydration boundaries; it adds
+no runtime validation and preserves the stored string. Do not recreate these
+encodings or cast strings to the brands in consumers.
+
 If a concept is missing, check whether an existing term covers it before adding
 another. Document a distinct concept when its meaning is settled.
 

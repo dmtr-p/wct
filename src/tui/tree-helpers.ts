@@ -293,7 +293,7 @@ export function reconcileExpandedWorkspaceKeys(
   previous: Set<string>,
   repos: RepoInfo[],
 ): Set<string> {
-  const available = new Set(
+  const available = new Set<string>(
     repos.flatMap((repo) =>
       repo.worktrees.map((worktree) =>
         workspaceIdentityKey(repo.repoPath, worktree.branch),

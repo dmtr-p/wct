@@ -1,3 +1,5 @@
+export { prIdentity } from "./identities";
+
 export type PrLifecycle = "OPEN" | "MERGED" | "CLOSED";
 export type CheckOutcome =
   "passed" | "failed" | "pending" | "cancelled" | "unknown";
@@ -52,12 +54,6 @@ export type OpenPrChoice = Pick<
   PrFacts,
   "number" | "title" | "state" | "headRefName"
 >;
-
-export function prIdentity(
-  pr: Pick<PrFacts, "baseRepository" | "number">,
-): string {
-  return `${pr.baseRepository.toLowerCase()}#${pr.number}`;
-}
 
 export interface CheckCounts {
   passed: number;

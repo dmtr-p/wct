@@ -14,6 +14,7 @@ import {
 import { bunServiceKeys } from "../effect/service-context";
 import type { WctError } from "../errors";
 import { GitHubService } from "./github-service";
+import { workspaceIdentityKey } from "./identities";
 import {
   PrCacheService,
   type PrCacheServiceApi,
@@ -81,9 +82,6 @@ function worktreeSignature(repo: PrRefreshRepository) {
     repo.error,
     repo.worktrees.map((wt) => [wt.branch, wt.path, wt.isMainWorktree]),
   ]);
-}
-function workspaceIdentityKey(path: string, branch: string) {
-  return `${path}\0${branch}`;
 }
 function openPrChoice(pr: PrFacts): OpenPrChoice {
   return {
@@ -221,7 +219,9 @@ function publishWorkspaceEntries(
     (previous) =>
       new Map(
         [...previous]
-          .filter(([key]) => !key.startsWith(`${repoPath}\0`))
+          .filter(
+            ([key]) => !key.startsWith(workspaceIdentityKey(repoPath, "")),
+          )
           .concat([...found]),
       ),
   );
@@ -418,7 +418,7 @@ function recoverRefreshFailure<E>(
       (previous) =>
         new Map(
           [...previous].map(([key, entry]) =>
-            key.startsWith(`${repoPath}\0`)
+            key.startsWith(workspaceIdentityKey(repoPath, ""))
               ? [key, { ...entry, lastError: message }]
               : [key, entry],
           ),

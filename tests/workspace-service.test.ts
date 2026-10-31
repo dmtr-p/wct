@@ -1,8 +1,9 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { JsonFlag } from "../src/cli/json-flag";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError, WctCommandError } from "../src/errors";
 import {
@@ -1582,6 +1583,50 @@ describe("WorkspaceService semantic phases", () => {
     };
   }
 
+  test("open preserves caller settings through captured workspace and setup services", async () => {
+    await writeConfig(
+      repoDir,
+      `copy: []
+setup:
+  - name: bootstrap
+    command: "true"
+`,
+    );
+    const workspace = await runBunPromise(
+      withTestServices(
+        WorkspaceService.use((service) => Effect.succeed(service)),
+        {
+          json: false,
+          worktree: openWorktreeService(),
+          setup: {
+            runSetupCommands: () =>
+              Effect.gen(function* () {
+                const json = Option.getOrElse(
+                  yield* Effect.serviceOption(JsonFlag),
+                  () => false,
+                );
+                return [
+                  { _tag: "Succeeded" as const, name: json ? "json" : "human" },
+                ];
+              }),
+          },
+        },
+      ),
+    );
+    const open = workspace.open({ branch: "caller-settings", cwd: repoDir });
+
+    for (const json of [true, false]) {
+      const result = await runBunPromise(
+        open.pipe(Effect.provideService(JsonFlag, json)),
+      );
+      expect(result.attempts.setup).toEqual({
+        attempted: true,
+        ok: true,
+        value: [{ _tag: "Succeeded", name: json ? "json" : "human" }],
+      });
+    }
+  });
+
   test.each(["open", "up"] as const)(
     "%s preserves tmux attempts, reporter order, and startup arguments",
     async (operation) => {
@@ -1732,6 +1777,113 @@ project_name: "myapp"
           }
         }
       }
+    },
+  );
+
+  test.each(["command", "service"] as const)(
+    "open starts tmux after a required setup %s failure and preserves warning order",
+    async (failure) => {
+      await writeConfig(
+        repoDir,
+        `copy: []
+setup:
+  - name: bootstrap
+    command: "false"
+`,
+      );
+      const events: WorkspaceReporterEvent[] = [];
+      const setupResult: SetupResult = {
+        _tag: "Failed",
+        name: "bootstrap",
+        error: "bootstrap failed",
+      };
+      const setupError = {
+        code: failure === "service" ? "unexpected_error" : "setup_failed",
+        message: "bootstrap failed",
+      };
+      const tmuxError = { code: "tmux_error", message: "startup failed" };
+      const result = await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.open({
+              branch: "setup-failure",
+              cwd: repoDir,
+              reporter: recordingReporter(events),
+            }),
+          ),
+          {
+            worktree: openWorktreeService(),
+            setup: {
+              runSetupCommands: (_commands, _workingDir, _env, reporter) =>
+                Effect.gen(function* () {
+                  if (reporter)
+                    yield* reporter.commandStarted("bootstrap", 1, 1);
+                  if (failure === "service") {
+                    return yield* commandError(
+                      "unexpected_error",
+                      "bootstrap failed",
+                    );
+                  }
+                  if (reporter) yield* reporter.commandCompleted(setupResult);
+                  return [setupResult];
+                }),
+            },
+            tmux: {
+              ...noopTmuxService,
+              createSession: () =>
+                Effect.gen(function* () {
+                  expect(events.slice(-3)).toEqual([
+                    failure === "command"
+                      ? {
+                          operation: "open",
+                          _tag: "SetupCommandCompleted",
+                          result: setupResult,
+                        }
+                      : {
+                          operation: "open",
+                          _tag: "SetupCommandStarted",
+                          name: "bootstrap",
+                          current: 1,
+                          total: 1,
+                        },
+                    {
+                      operation: "open",
+                      _tag: "PhaseStarted",
+                      phase: { _tag: "StartingTmuxSession" },
+                    },
+                    {
+                      operation: "open",
+                      _tag: "AttemptStarted",
+                      attempt: "tmux",
+                    },
+                  ]);
+                  return yield* commandError("tmux_error", "startup failed");
+                }),
+            },
+          },
+        ),
+      );
+
+      expect(result.attempts.setup).toEqual(
+        failure === "command"
+          ? { attempted: true, ok: true, value: [setupResult] }
+          : { attempted: true, ok: false, error: setupError },
+      );
+      expect(result.attempts.tmux).toEqual({
+        attempted: true,
+        ok: false,
+        error: tmuxError,
+      });
+      expect(result.warnings).toEqual([
+        {
+          _tag: "SetupFailed",
+          operation: "open",
+          name: failure === "command" ? "bootstrap" : "setup",
+          optional: false,
+          error: setupError,
+        },
+        { _tag: "TmuxStartFailed", operation: "open", error: tmuxError },
+      ]);
     },
   );
 

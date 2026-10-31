@@ -5,6 +5,8 @@ import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   compactPrSegments,
   derivePrPresentation,
+  type PrPrimaryStatus,
+  type PrTone,
 } from "../../src/tui/pr-status";
 import {
   buildTreeItems,
@@ -52,33 +54,196 @@ function facts(overrides: Partial<PrFacts> = {}): PrFacts {
 
 describe("PR status derivation", () => {
   test.each([
+    [{ state: "MERGED" }, "merged", "mauve", true, "merged"],
+    [{ state: "CLOSED" }, "closed", "muted", false, "closed"],
+    [{ isDraft: true }, "draft", "muted", false, "blocked (draft)"],
+    [
+      { mergeable: "CONFLICTING" },
+      "conflicts",
+      "red",
+      true,
+      "blocked (conflicts)",
+    ],
+    [
+      { reviewDecision: "CHANGES_REQUESTED" },
+      "changes requested",
+      "yellow",
+      true,
+      "blocked (changes requested)",
+    ],
+    [{ isQueued: true }, "queued", "yellow", false, "queued"],
+    [
+      { checks: [{ name: "test", outcome: "failed", required: true }] },
+      "checks failed",
+      "red",
+      true,
+      "blocked (required checks failed)",
+    ],
+    [
+      { mergeStateStatus: "BEHIND" },
+      "behind base",
+      "yellow",
+      false,
+      "blocked (behind base)",
+    ],
+    [
+      { reviewDecision: "REVIEW_REQUIRED" },
+      "awaiting review",
+      "yellow",
+      false,
+      "blocked (review required)",
+    ],
+    [
+      { checks: [{ name: "test", outcome: "pending", required: true }] },
+      "checks pending",
+      "yellow",
+      false,
+      "checks pending",
+    ],
+    [{ checksComplete: false }, "unknown", "muted", false, "unknown"],
+    [{ checks: null }, "unknown", "muted", false, "unknown"],
+    [
+      { checksComplete: false, mergeStateStatus: "BLOCKED" },
+      "blocked",
+      "muted",
+      false,
+      "blocked",
+    ],
+    [{ mergeStateStatus: "BLOCKED" }, "blocked", "muted", false, "blocked"],
+    [{}, "ready", "green", true, "ready"],
+    [{ checks: [] }, "ready", "green", true, "ready"],
+    [
+      { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" },
+      "checking…",
+      "yellow",
+      false,
+      "checking…",
+    ],
+    [{ mergeStateStatus: "UNKNOWN" }, "unknown", "muted", false, "unknown"],
+    [{ mergeStateStatus: null }, "unknown", "muted", false, "unknown"],
+    [{ isDraft: null }, "open", "muted", false, "open"],
+  ] satisfies [Partial<PrFacts>, PrPrimaryStatus, PrTone, boolean, string][])(
+    "selects primary status for %j",
+    (overrides: Partial<PrFacts>, primary, tone, bold, merge) => {
+      const status = derivePrPresentation(facts(overrides));
+      expect(status).toMatchObject({ primary, tone, bold });
+      expect(status.stale).toBe(overrides.checksComplete === false);
+      expect(
+        status.details.find((detail) => detail.key === "merge")?.text,
+      ).toBe(`Merge: ${merge}`);
+    },
+  );
+
+  test.each([
+    [
+      {
+        state: "MERGED",
+        isDraft: true,
+        mergeable: "CONFLICTING",
+        isQueued: true,
+      },
+      "merged",
+    ],
+    [{ state: "CLOSED", isDraft: true, mergeable: "CONFLICTING" }, "closed"],
+    [
+      {
+        isDraft: true,
+        mergeable: "CONFLICTING",
+        reviewDecision: "CHANGES_REQUESTED",
+      },
+      "draft",
+    ],
+    [
+      {
+        mergeStateStatus: "DIRTY",
+        reviewDecision: "CHANGES_REQUESTED",
+        isQueued: true,
+      },
+      "conflicts",
+    ],
+    [
+      {
+        reviewDecision: "CHANGES_REQUESTED",
+        isQueued: true,
+        checks: [{ name: "test", outcome: "failed", required: true }],
+      },
+      "changes requested",
+    ],
+    [
+      {
+        mergeStateStatus: "BEHIND",
+        reviewDecision: "REVIEW_REQUIRED",
+        checks: [{ name: "test", outcome: "failed", required: true }],
+      },
+      "checks failed",
+    ],
+    [
+      {
+        mergeStateStatus: "BEHIND",
+        reviewDecision: "REVIEW_REQUIRED",
+        checks: [{ name: "test", outcome: "pending", required: true }],
+      },
+      "behind base",
+    ],
+    [
+      {
+        reviewDecision: "REVIEW_REQUIRED",
+        checks: [{ name: "test", outcome: "pending", required: true }],
+      },
+      "awaiting review",
+    ],
+    [
+      {
+        mergeStateStatus: "BLOCKED",
+        checks: [{ name: "test", outcome: "pending", required: true }],
+      },
+      "checks pending",
+    ],
+    [
+      {
+        mergeStateStatus: "BLOCKED",
+        checks: [{ name: "optional", outcome: "pending", required: false }],
+      },
+      "checks pending",
+    ],
+    [
+      { checks: null, mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" },
+      "unknown",
+    ],
+  ] satisfies [Partial<PrFacts>, PrPrimaryStatus][])(
+    "preserves primary precedence for overlapping facts %j",
+    (overrides: Partial<PrFacts>, primary) => {
+      expect(derivePrPresentation(facts(overrides)).primary).toBe(primary);
+    },
+  );
+
+  test.each([
     [{ state: "MERGED" }, "merged"],
-    [{ state: "CLOSED" }, "closed"],
-    [{ isDraft: true }, "draft"],
-    [{ mergeable: "CONFLICTING" }, "conflicts"],
-    [{ reviewDecision: "CHANGES_REQUESTED" }, "changes requested"],
     [{ isQueued: true }, "queued"],
+    [{ mergeable: "CONFLICTING" }, "conflicts"],
     [
       { checks: [{ name: "test", outcome: "failed", required: true }] },
       "checks failed",
     ],
-    [{ mergeStateStatus: "BEHIND" }, "behind base"],
-    [{ reviewDecision: "REVIEW_REQUIRED" }, "awaiting review"],
     [
       { checks: [{ name: "test", outcome: "pending", required: true }] },
       "checks pending",
     ],
-    [{ checksComplete: false }, "unknown"],
-    [{ checks: null }, "unknown"],
-    [{ checksComplete: false, mergeStateStatus: "BLOCKED" }, "blocked"],
-    [{ mergeStateStatus: "BLOCKED" }, "blocked"],
-    [{}, "ready"],
-    [{ mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" }, "checking…"],
-  ] as const)("selects primary status for %j", (overrides, expected) => {
-    expect(
-      derivePrPresentation(facts(overrides as Partial<PrFacts>)).primary,
-    ).toBe(expected);
-  });
+  ] satisfies [Partial<PrFacts>, PrPrimaryStatus][])(
+    "retains primary status with incomplete checks for %j",
+    (overrides: Partial<PrFacts>, primary) => {
+      const status = derivePrPresentation(
+        facts({ ...overrides, checksComplete: false }),
+      );
+      expect(status).toMatchObject({ primary, stale: true });
+      expect(status.checks).toBe(
+        overrides.state === "MERGED" ? null : "unknown",
+      );
+      expect(
+        status.details.find((detail) => detail.key === "checks")?.text,
+      ).toBe("Checks: unknown");
+    },
+  );
 
   test("optional failure stays secondary when GitHub reports mergeable", () => {
     const status = derivePrPresentation(

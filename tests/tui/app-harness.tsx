@@ -339,7 +339,6 @@ vi.mock("../../src/services/pr-cache-service", async () => {
     getHydration: () => Effect.succeed({ workspaces: [], openPrs: null }),
     getDiscovery: () => Effect.succeed(null),
     setDiscovery: () => Effect.succeed(true),
-    getWorkspace: () => Effect.succeed(null),
     getWorkspaceInputs: (_path: string, branches: readonly string[]) =>
       Effect.succeed(
         branches.map((branch) => ({
@@ -348,7 +347,6 @@ vi.mock("../../src/services/pr-cache-service", async () => {
           cached: null,
         })),
       ),
-    getOpenPrs: () => Effect.succeed(null),
     setWorkspace: () => Effect.void,
     setOpenPrs: () => Effect.void,
     pruneWorkspaces: () => Effect.void,

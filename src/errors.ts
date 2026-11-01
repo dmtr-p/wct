@@ -11,7 +11,6 @@ export type ErrorCode =
   | "down_failed"
   | "tmux_error"
   | "detached_head"
-  | "missing_main_worktree"
   | "missing_branch_arg"
   | "unknown_command"
   | "init_error"

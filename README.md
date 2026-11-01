@@ -187,6 +187,10 @@ for fetching, overrides, and retry handling.
 
 Tmux window names must match `[A-Za-z][A-Za-z0-9_-]*` and be unique within each `windows` list, including lists in profiles. Names start with an ASCII letter and contain only ASCII letters, digits, underscores, or hyphens, such as `dev`, `CI-logs`, and `test_runner`.
 
+Each pane supports an optional `command`; `{}` opens an empty shell. A pane-level
+`name` is accepted as an unknown configuration key and ignored, including in
+profiles. It does not name or title the pane.
+
 Environment variables `WCT_WORKTREE_DIR`, `WCT_WORK_DIR`, `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_PROJECT` are available in `setup` and `down` commands and tmux panes. `WCT_WORK_DIR` is the absolute path obtained by resolving `work_dir` against the worktree.
 
 Tmux session names come from the checkout directory's basename, with characters

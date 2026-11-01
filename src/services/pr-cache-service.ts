@@ -75,10 +75,6 @@ export interface PrCacheServiceApi {
   ) => Effect.Effect<boolean, WctError>;
   /** Clear a repository's cached PR payloads, retaining Explicit PR Associations. */
   invalidate: (repoPath: string) => Effect.Effect<void, WctError>;
-  getWorkspace: (
-    repoPath: string,
-    branch: string,
-  ) => Effect.Effect<WorkspacePrEntry | null, WctError>;
   setWorkspace: (
     repoPath: string,
     branch: string,
@@ -105,9 +101,6 @@ export interface PrCacheServiceApi {
     repoPath: string,
     branch: string,
   ) => Effect.Effect<void, WctError>;
-  getOpenPrs: (
-    repoPath: string,
-  ) => Effect.Effect<CachedPrEntry | null, WctError>;
   setOpenPrs: (
     repoPath: string,
     prs: OpenPrChoice[],
@@ -583,8 +576,6 @@ export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
     ),
   invalidate: (repoPath) =>
     prCacheDb("invalidate", (db) => sqlInvalidate(db, repoPath)),
-  getWorkspace: (repoPath, branch) =>
-    prCacheDb("getWorkspace", (db) => sqlGetWorkspace(db, repoPath, branch)),
   setWorkspace: (repoPath, branch, entry, registrationId) =>
     prCacheDb("setWorkspace", (db) => {
       sqlOwnedWrite(db, repoPath, registrationId, () =>
@@ -609,8 +600,6 @@ export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
     ),
   clearExplicit: (repoPath, branch) =>
     prCacheDb("clearExplicit", (db) => sqlClearExplicit(db, repoPath, branch)),
-  getOpenPrs: (repoPath) =>
-    prCacheDb("getOpenPrs", (db) => sqlGetOpenPrs(db, repoPath)),
   setOpenPrs: (repoPath, prs, registrationId) =>
     prCacheDb("setOpenPrs", (db) => {
       sqlOwnedWrite(db, repoPath, registrationId, () =>

@@ -8,6 +8,7 @@ import {
   DEFAULT_CONFIG,
   expandTilde,
   loadConfig,
+  resolveProfile,
   resolveWorktreePath,
   slugifyBranch,
 } from "../src/config/loader";
@@ -18,6 +19,7 @@ import {
 } from "../src/config/schema";
 import { resolveConfig, validateConfig } from "../src/config/validator";
 import { runBunPromise } from "../src/effect/runtime";
+import { buildWindowsPaneCommands } from "../src/services/tmux";
 
 function expectValidationError(errors: string[], expected: string): void {
   expect(errors.some((error) => error.includes(expected))).toBe(true);
@@ -78,7 +80,7 @@ describe("validateConfig", () => {
           {
             name: "dev",
             split: "horizontal",
-            panes: [{ command: "bun run dev" }, { name: "shell" }],
+            panes: [{ command: "bun run dev" }, {}],
           },
         ],
       },
@@ -184,10 +186,7 @@ describe("validateConfig", () => {
           {
             name: "dev",
             split: "horizontal",
-            panes: [
-              { command: "bun run dev" },
-              { name: "watch", command: "bun run watch" },
-            ],
+            panes: [{ command: "bun run dev" }, { command: "bun run watch" }],
           },
           {
             name: "testing",
@@ -329,19 +328,6 @@ describe("validateConfig", () => {
     expectValidationError(
       result.errors,
       "tmux.windows[0].command: Expected string",
-    );
-  });
-
-  test("rejects invalid tmux pane name type", () => {
-    const result = validateConfig({
-      tmux: {
-        windows: [{ name: "dev", panes: [{ name: 123 }] }],
-      },
-    });
-    expect(result.valid).toBe(false);
-    expectValidationError(
-      result.errors,
-      "tmux.windows[0].panes[0].name: Expected string",
     );
   });
 
@@ -640,7 +626,77 @@ describe("DEFAULT_CONFIG", () => {
   });
 });
 
-describe("config loading", () => {
+describe("config loading", { concurrent: false }, () => {
+  test.each([
+    ["base", "shell"],
+    ["base", 123],
+    ["profile", "shell"],
+    ["profile", 123],
+  ] as const)(
+    "%s config ignores pane name %j without changing tmux commands",
+    async (scope, name) => {
+      const home = mkdtempSync(join(tmpdir(), "wct-pane-name-home-"));
+      const projectDir = mkdtempSync(join(tmpdir(), "wct-pane-name-project-"));
+      vi.stubEnv("HOME", home);
+      try {
+        const tmux = {
+          windows: [
+            {
+              name: "dev",
+              split: "vertical",
+              layout: "even-vertical",
+              panes: [{ name }, { name: "watch", command: "bun run watch" }],
+            },
+          ],
+        };
+        await Bun.write(
+          join(projectDir, ".wct.yaml"),
+          JSON.stringify(
+            scope === "base" ? { tmux } : { profiles: { dev: { tmux } } },
+          ),
+        );
+        const loaded = await runBunPromise(loadConfig(projectDir));
+        const { config } = resolveProfile(
+          loaded,
+          "feature/test",
+          scope === "profile" ? "dev" : undefined,
+        );
+        expect(
+          buildWindowsPaneCommands(
+            "test-session",
+            "/work",
+            config.tmux?.windows ?? [],
+          ),
+        ).toEqual([
+          {
+            type: "new-session",
+            args: ["-d", "-s", "test-session", "-n", "dev", "-c", "/work"],
+          },
+          {
+            type: "split-window",
+            args: ["-v", "-t", "test-session:dev", "-c", "/work"],
+          },
+          {
+            type: "send-keys",
+            args: ["-t", "test-session:dev", "bun run watch", "Enter"],
+          },
+          {
+            type: "select-layout",
+            args: ["-t", "test-session:dev", "even-vertical"],
+          },
+          {
+            type: "select-window",
+            args: ["-t", "test-session:dev"],
+          },
+        ]);
+      } finally {
+        vi.unstubAllEnvs();
+        rmSync(home, { recursive: true, force: true });
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("preserves unknown fields in returned base and profile configuration", async () => {
     const home = mkdtempSync(join(tmpdir(), "wct-config-home-"));
     const projectDir = mkdtempSync(join(tmpdir(), "wct-config-project-"));

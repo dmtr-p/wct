@@ -221,8 +221,6 @@ const cache = PrCacheService.of({
       discoveryCache.set(path, snapshot);
       return true;
     }),
-  getWorkspace: (path, branch) =>
-    Effect.sync(() => workspaceCache.get(key(path, branch)) ?? null),
   setWorkspace: (path, branch, entry) =>
     Effect.sync(() => {
       workspaceCache.set(key(path, branch), entry);
@@ -241,7 +239,6 @@ const cache = PrCacheService.of({
     Effect.sync(() => {
       explicitCache.delete(key(path, branch));
     }),
-  getOpenPrs: () => Effect.succeed(null),
   setOpenPrs: (path, prs) =>
     Effect.sync(() => {
       openCache.set(path, prs);

@@ -15,7 +15,6 @@ export const SetupCommandSchema = Schema.Struct({
 });
 
 export const TmuxPaneSchema = Schema.Struct({
-  name: Schema.optional(Schema.String),
   command: Schema.optional(Schema.String),
 });
 

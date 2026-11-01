@@ -129,12 +129,11 @@ export function withDb<A>(
   });
 }
 
-/** Keep a connection alive across cooperative, interruptible database reads. */
-export function withDbEffect<A>(
+export function withDbEffect<A, E, R>(
   errorCode: ErrorCode,
   operation: string,
-  f: (db: Database) => Effect.Effect<A, WctError>,
-): Effect.Effect<A, WctError> {
+  f: (db: Database) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | WctError, R> {
   const failure = (error: unknown) =>
     commandError(
       errorCode,

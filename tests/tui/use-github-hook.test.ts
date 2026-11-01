@@ -202,6 +202,7 @@ const hydrationRead = vi.fn<PrCacheServiceApi["getHydration"]>(
 );
 const cache = PrCacheService.of({
   ...livePrCacheService,
+  withWriteBatch: (writes) => writes,
   getHydration: hydrationRead,
   getWorkspaceInputs: (path, branches) =>
     Effect.sync(() =>

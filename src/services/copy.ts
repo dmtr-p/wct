@@ -1,5 +1,5 @@
 import { dirname, join, normalize } from "node:path";
-import { Effect, FileSystem } from "effect";
+import { Effect, FileSystem, Option } from "effect";
 import { commandError } from "../errors";
 import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
 
@@ -182,8 +182,35 @@ export function copyFiles(
           const targetDirPath = dirname(targetPath);
           yield* fs.makeDirectory(targetDirPath, { recursive: true });
 
-          const content = yield* fs.readFile(sourcePath);
-          yield* fs.writeFile(targetPath, content);
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const source = yield* fs.open(sourcePath, { flag: "r" });
+              // Destination links can reference the source; defer truncation.
+              const target = yield* fs.open(targetPath, { flag: "a" });
+              const sourceInfo = yield* source.stat;
+              const targetInfo = yield* target.stat;
+              if (
+                Option.isNone(sourceInfo.ino) ||
+                Option.isNone(targetInfo.ino)
+              )
+                return yield* commandError(
+                  "worktree_error",
+                  "Unable to verify source and destination file identities",
+                );
+              if (
+                sourceInfo.dev === targetInfo.dev &&
+                sourceInfo.ino.value === targetInfo.ino.value
+              )
+                return;
+              yield* target.truncate(0);
+              const buffer = new Uint8Array(1024 * 1024);
+              while (true) {
+                const count = yield* source.read(buffer);
+                if (count === 0) break;
+                yield* target.writeAll(buffer.subarray(0, count));
+              }
+            }),
+          );
 
           return { file, success: true as const };
         }),

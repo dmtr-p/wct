@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { runMigrations } from "../../src/services/db";
 import { RegistrationId } from "../../src/services/identities";
@@ -539,6 +539,158 @@ describe("PrCacheService SQL helpers", { concurrent: false }, () => {
       } catch {
         /* ignore */
       }
+    }
+  });
+});
+
+describe("scoped PR cache write batches", { concurrent: false }, () => {
+  it("shares one connection while isolating failed writes and fencing replacement registrations", () => {
+    const home = mkdtempSync(join(tmpdir(), "wct-write-batch-"));
+    const originalHome = process.env.HOME;
+    const entry = {
+      pr: null,
+      candidates: [],
+      newerOpenPr: null,
+      fetchedAt: 123,
+      lastError: null,
+    };
+    try {
+      process.env.HOME = home;
+      mkdirSync(join(home, ".wct"));
+      const db = new Database(join(home, ".wct", "wct.db"));
+      try {
+        runMigrations(db);
+        db.run("INSERT INTO registry VALUES ('one', '/repo', 'repo', 0)");
+        sqlSetWorkspace(db, "/repo", "survivor", entry);
+        sqlSetExplicit(db, "/repo", "survivor", {
+          baseRepository: "owner/repo",
+          number: 42,
+        });
+        db.run(
+          "CREATE TRIGGER fail_workspace BEFORE INSERT ON workspace_pr_cache WHEN NEW.branch = 'broken' BEGIN SELECT RAISE(FAIL, 'broken Workspace write'); END",
+        );
+        const close = vi.spyOn(Database.prototype, "close");
+        try {
+          const errors = Effect.runSync(
+            livePrCacheService.withWriteBatch(
+              Effect.gen(function* () {
+                yield* livePrCacheService.setOpenPrs(
+                  "/repo",
+                  [PR_A],
+                  RegistrationId("one"),
+                );
+                const failures: string[] = [];
+                for (const branch of ["before", "broken", "after"]) {
+                  yield* livePrCacheService
+                    .setWorkspace("/repo", branch, entry, RegistrationId("one"))
+                    .pipe(
+                      Effect.catch((error) =>
+                        Effect.sync(() => {
+                          failures.push(error.message);
+                        }),
+                      ),
+                    );
+                }
+                yield* Effect.sync(() => {
+                  db.run(
+                    "UPDATE registry SET id = 'two' WHERE repo_path = '/repo'",
+                  );
+                });
+                yield* livePrCacheService.setWorkspace(
+                  "/repo",
+                  "obsolete",
+                  entry,
+                  RegistrationId("one"),
+                );
+                yield* livePrCacheService.pruneWorkspaces(
+                  "/repo",
+                  [],
+                  RegistrationId("one"),
+                );
+                return failures;
+              }),
+            ),
+          );
+          expect(close).toHaveBeenCalledTimes(1);
+          expect(errors).toHaveLength(1);
+          expect(errors[0]).toContain("setWorkspace");
+          expect(sqlGetOpenPrs(db, "/repo")?.payload).toEqual([PR_A]);
+          for (const branch of ["before", "after", "survivor"])
+            expect(sqlGetWorkspace(db, "/repo", branch)).not.toBeNull();
+          for (const branch of ["broken", "obsolete"])
+            expect(sqlGetWorkspace(db, "/repo", branch)).toBeNull();
+          expect(sqlGetExplicit(db, "/repo", "survivor")).not.toBeNull();
+        } finally {
+          close.mockRestore();
+        }
+      } finally {
+        db.close();
+      }
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("closes the shared connection when the batch fails", () => {
+    const home = mkdtempSync(join(tmpdir(), "wct-write-batch-failure-"));
+    const originalHome = process.env.HOME;
+    try {
+      process.env.HOME = home;
+      const close = vi.spyOn(Database.prototype, "close");
+      try {
+        const failure = Effect.runSync(
+          Effect.flip(
+            livePrCacheService.withWriteBatch(Effect.fail("batch failed")),
+          ),
+        );
+        expect(failure).toBe("batch failed");
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        close.mockRestore();
+      }
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("PR batch interruption", { concurrent: false }, () => {
+  it("closes the shared connection before interruption completes", async () => {
+    const home = mkdtempSync(join(tmpdir(), "wct-write-batch-cancel-"));
+    const originalHome = process.env.HOME;
+    try {
+      process.env.HOME = home;
+      const close = vi.spyOn(Database.prototype, "close");
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const started = yield* Deferred.make<void>();
+              const fiber = yield* Effect.forkChild(
+                livePrCacheService.withWriteBatch(
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                  ),
+                ),
+              );
+              yield* Deferred.await(started);
+              expect(close).not.toHaveBeenCalled();
+              yield* Fiber.interrupt(fiber);
+              expect(close).toHaveBeenCalledTimes(1);
+            }),
+          ),
+        );
+      } finally {
+        close.mockRestore();
+      }
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });

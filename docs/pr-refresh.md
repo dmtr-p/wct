@@ -43,6 +43,11 @@ for live associated PRs and open PR Candidates; terminal associations reuse
 complete checks for the same PR and known head. External facts are retained only
 while a Workspace explicitly references them.
 
+Complete checks require every page to identify the same PR and known head.
+If discovery lacks a node ID, the first detail response establishes it for later
+pages. Missing identities, malformed pagination, and unfinished connections leave
+checks incomplete. An explicitly null check rollup represents no checks.
+
 Failed detail reads retain the latest discovered lifecycle and head facts;
 cached checks are reused only for the same PR, lifecycle state, and known head.
 A failed associated PR retains stale data or an unresolved association without
@@ -52,9 +57,7 @@ do not mark a healthy associated PR as stale.
 Push Destination reads run with at most four concurrent Workspaces per
 repository. Each Workspace reads its push reference, batches the relevant Git
 configuration into one NUL-delimited read, and resolves push URLs sequentially.
-This uses at most three subprocesses in total and one at a time per Workspace;
-repositories and refresh owners retain their existing concurrency. Each
-repository loads its Workspace cache inputs through one database connection.
+This uses at most three subprocesses in total and one at a time per Workspace.
 
 ## Refresh coordination and failures
 
@@ -67,12 +70,6 @@ callers share a readiness Deferred. The shared TUI runtime remains available to
 other services. React hydrates cached presentation state, triggers polling, and
 receives results through a callback bridge.
 
-Flight reservation, scoped task startup, and completion cleanup stay together in
-`refreshOne`. Named task phases prepare discovery, reconcile and persist Workspace
-facts, publish observer updates, and recover failures. They receive session cache
-state and the task's registration guard explicitly; storage errors are retained
-on the task separately from discovery failures.
-
 Discovery belongs to the repository: modal cancellation and worktree changes do
 not cancel it. Worktree changes reconcile against its completed results.
 Repository removal, replacement registration, and TUI shutdown cancel owned
@@ -84,29 +81,42 @@ terminal and external fact reads. Automatic waiters share a failed request's
 error; a manual refresh queued behind a failed automatic request still runs.
 Concurrent manual waiters share a failed manual attempt.
 
-Discovery has a ten-minute timeout. Failed discovery without a usable snapshot
-delays automatic requests for ten minutes without flashing a refresh indicator.
-Manual refresh, post-merge reads, and explicit association changes bypass the
-delay. Base-repository resolution failures also delay automatic requests.
+GitHub reads have two-minute request deadlines, including repository resolution,
+PR checkout metadata, summary batches, check detail pages, and merge-preflight
+facts and configuration. Full paginated history has a ten-minute deadline instead.
+Incremental discovery, summary batches, check details, and merge preflight each
+have a ten-minute total read budget. Detail and summary operations retain earlier
+successful results when their remaining budget expires. Timeout interrupts the
+owned request and waits for scoped process cleanup before settling. Merge and
+queue mutations do not use these read deadlines.
+
+Failed discovery without a usable snapshot delays automatic requests for ten
+minutes without flashing a refresh indicator. Manual refresh, post-merge reads,
+and explicit association changes bypass the delay. Base-repository resolution
+failures also delay automatic requests.
 
 ## Persistence
 
-Initial modal and Workspace cache reads are batched per repository in one
-connection and transaction. Successful reads, including cache misses, are
-remembered for each registration and Workspace Identity. Unchanged registry
-polls skip hydration; failed reads retry on a later update. Removal or a new
-registration ID resets hydration state, and rediscovered Workspaces can hydrate
-again. Hydration preserves facts already in memory.
+Hydration batches modal choices and Workspace caches per repository in one read
+transaction. Refresh also batches Workspace inputs per repository. Successful
+reads, including cache misses, are remembered for each registration and Workspace
+Identity. Unchanged registry polls skip hydration; failed reads retry on a later
+update. Removal or a new registration ID resets hydration state, and rediscovered
+Workspaces can hydrate again. Hydration preserves facts already in memory.
 
 Malformed Workspace cache envelopes are cache misses. Invalid PR Candidates are
 ignored, and malformed or missing checks remain unknown and incomplete. These
 entries cannot block healthy Workspaces from refreshing; a successful refresh
 replaces the cached payload while preserving Explicit PR Associations.
 
-Cache writes are fenced by the project registration identity so removed projects
-cannot regain cached rows from old refreshes. Discovery stores changed PR records
-and a small checkpoint separately, once per refresh; unchanged records are
-retained. History hydration streams records and yields every 128 records within
-one read transaction, allowing the TUI to process input during large cache loads.
-Database write errors leave fetched discovery available in memory and report a
-storage error without applying GitHub discovery backoff.
+Repository refresh writes share one scoped SQLite connection for discovery,
+Open PR choices, Workspace entries, and pruning. Each write uses an independent
+transaction fenced by registration identity, preventing old refreshes from
+restoring removed projects' cache rows. A failed write does not roll back healthy
+siblings or prevent publication. Pruning only follows a complete repository scan.
+Storage errors leave fetched results in memory without applying GitHub discovery
+backoff.
+
+Discovery stores changed PR records and its checkpoint separately; unchanged
+records are retained. History hydration streams records within one read
+transaction, yielding to keep the TUI responsive during large cache loads.

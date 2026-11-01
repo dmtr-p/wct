@@ -73,7 +73,7 @@ export function fetchMergeSnapshot(
         GITHUB_PR_JSON_FIELDS,
       ],
       { cwd },
-    );
+    ).pipe(Effect.timeout("2 minutes"));
     const raw: unknown = yield* Effect.try({
       try: () => decodeJson(viewed.stdout),
       catch: (error) =>
@@ -115,10 +115,11 @@ export function fetchMergeSnapshot(
         configurationError: "base repository unreadable",
       } satisfies MergeSnapshot;
     const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed mergeQueue(branch: ${JSON.stringify(detailed.baseRefName)}) { id } } }`;
-    const configuration = yield* Effect.orElseSucceed(
+    const configuration = yield* Effect.catch(
       execProcess("gh", ["api", "graphql", "-f", `query=${query}`], {
         cwd,
       }).pipe(
+        Effect.timeout("2 minutes"),
         Effect.flatMap((result) =>
           Effect.try({
             try: () =>
@@ -131,19 +132,38 @@ export function fetchMergeSnapshot(
           }),
         ),
       ),
-      () => null,
+      (error) =>
+        error._tag === "TimeoutError"
+          ? Effect.fail(
+              commandError(
+                "pr_error",
+                "Merge configuration read timed out",
+                error,
+              ),
+            )
+          : Effect.succeed(null),
     );
     const settings = configuration?.data?.repository;
     const path = `repos/${owner}/${repo}/rules/branches/${encodeURIComponent(detailed.baseRefName)}`;
-    const rules = yield* Effect.orElseSucceed(
+    const rules = yield* Effect.catch(
       execProcess("gh", ["api", path, "--paginate", "--jq", ".[].type"], {
         cwd,
       }).pipe(
+        Effect.timeout("2 minutes"),
         Effect.map((result) =>
           result.stdout.trim().split("\n").filter(Boolean),
         ),
       ),
-      () => null,
+      (error) =>
+        error._tag === "TimeoutError"
+          ? Effect.fail(
+              commandError(
+                "pr_error",
+                "Merge configuration read timed out",
+                error,
+              ),
+            )
+          : Effect.succeed(null),
     );
     return {
       pr: detailed,
@@ -153,7 +173,16 @@ export function fetchMergeSnapshot(
         rules,
       ),
     } satisfies MergeSnapshot;
-  });
+  }).pipe(
+    Effect.timeout("10 minutes"),
+    Effect.mapError((error) =>
+      commandError(
+        "pr_error",
+        `Unable to read merge preflight for PR #${number}: ${error.message}`,
+        error,
+      ),
+    ),
+  );
 }
 
 export function resolveMergeConfiguration(
@@ -230,7 +259,6 @@ export function mergeEligibility(snapshot: MergeSnapshot): MergeEligibility {
   return { route: "direct", methods: snapshot.methods };
 }
 
-/** Detect changes since confirmation; submission also rechecks current eligibility. */
 export function mergeSnapshotFingerprint(snapshot: MergeSnapshot): string {
   const p = snapshot.pr;
   return JSON.stringify({

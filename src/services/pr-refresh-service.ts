@@ -308,39 +308,78 @@ function reconcileWorkspaces(
       const latest = currentRepo(repoPath);
       if (!latest) return;
       if (worktreeSignature(latest) !== signature) continue;
-      if (persisted.get(repoPath) !== refreshed.snapshot) {
-        const saved = yield* writeRefreshCache(
-          task,
-          PrCacheService.use((s) =>
-            s.setDiscovery(
-              repoPath,
-              refreshed.snapshot,
-              persisted.get(repoPath),
-              registrationId,
-            ),
-          ),
-          null as boolean | null,
-        );
-        if (saved === false) {
-          discovery.delete(repoPath);
-          persisted.delete(repoPath);
-          loaded.delete(repoPath);
-          flight.cancelled = true;
-          return;
-        }
-        if (saved) persisted.set(repoPath, refreshed.snapshot);
-      }
-      if (!isCurrent()) continue;
       const refreshedOpen = refreshed.snapshot.prs
         .filter((pr) => pr.state === "OPEN")
         .map(openPrChoice);
-      yield* writeRefreshCache(
+      const cache = yield* PrCacheService;
+      const savedCurrent = yield* writeRefreshCache(
         task,
-        PrCacheService.use((s) =>
-          s.setOpenPrs(repoPath, refreshedOpen, registrationId),
+        cache.withWriteBatch(
+          Effect.gen(function* () {
+            if (persisted.get(repoPath) !== refreshed.snapshot) {
+              const saved = yield* writeRefreshCache(
+                task,
+                PrCacheService.use((s) =>
+                  s.setDiscovery(
+                    repoPath,
+                    refreshed.snapshot,
+                    persisted.get(repoPath),
+                    registrationId,
+                  ),
+                ),
+                null as boolean | null,
+              );
+              if (saved === false) {
+                discovery.delete(repoPath);
+                persisted.delete(repoPath);
+                loaded.delete(repoPath);
+                flight.cancelled = true;
+                return false;
+              }
+              if (saved) persisted.set(repoPath, refreshed.snapshot);
+            }
+            if (!isCurrent()) return false;
+            yield* writeRefreshCache(
+              task,
+              PrCacheService.use((s) =>
+                s.setOpenPrs(repoPath, refreshedOpen, registrationId),
+              ),
+              undefined,
+            );
+            if (!isCurrent()) return false;
+            yield* Effect.forEach(
+              [...refreshed.entries],
+              ([branch, entry]) =>
+                writeRefreshCache(
+                  task,
+                  PrCacheService.use((s) =>
+                    s.setWorkspace(repoPath, branch, entry, registrationId),
+                  ),
+                  undefined,
+                ),
+              { discard: true },
+            );
+            if (!isCurrent()) return false;
+            if (!repo.error)
+              yield* writeRefreshCache(
+                task,
+                PrCacheService.use((s) =>
+                  s.pruneWorkspaces(
+                    repoPath,
+                    workspaces.map((wt) => wt.branch),
+                    registrationId,
+                  ),
+                ),
+                undefined,
+              );
+            if (!isCurrent()) return false;
+
+            return true;
+          }),
         ),
-        undefined,
+        true,
       );
+      if (!savedCurrent) continue;
       if (!isCurrent()) continue;
       publishOpenPrs(observer, repoPath, refreshedOpen);
       const found = new Map(
@@ -349,32 +388,6 @@ function reconcileWorkspaces(
           entry,
         ]),
       );
-      yield* Effect.forEach(
-        [...refreshed.entries],
-        ([branch, entry]) =>
-          writeRefreshCache(
-            task,
-            PrCacheService.use((s) =>
-              s.setWorkspace(repoPath, branch, entry, registrationId),
-            ),
-            undefined,
-          ),
-        { concurrency: "unbounded", discard: true },
-      );
-      if (!isCurrent()) continue;
-      if (!repo.error)
-        yield* writeRefreshCache(
-          task,
-          PrCacheService.use((s) =>
-            s.pruneWorkspaces(
-              repoPath,
-              workspaces.map((wt) => wt.branch),
-              registrationId,
-            ),
-          ),
-          undefined,
-        );
-      if (!isCurrent()) continue;
       publishWorkspaceEntries(observer, repoPath, found, task.cacheError);
       flight.signature = signature;
       flight.succeeded = true;

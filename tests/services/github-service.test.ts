@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { provideBunServices, runBunPromise } from "../../src/effect/runtime";
@@ -20,6 +20,8 @@ vi.mock("../../src/services/process", async () => ({
 }));
 const { liveGitHubService } = await import("../../src/services/github-service");
 const { fetchPrDetails } = await import("../../src/services/pr-details");
+const { fetchMergeSnapshot } =
+  await import("../../src/services/pr-merge-service");
 
 function page(nodes: unknown[], hasNextPage = false, endCursor?: string) {
   return {
@@ -37,7 +39,11 @@ describe("GitHub raw PR fetching", () => {
   test.each(prFactEnumCases)(
     "detail fetch normalizes enum fields %j without resetting other facts",
     async (fields, expected) => {
-      const pr = prFacts({ fetchedAt: 123, lastError: "old error" });
+      const pr = prFacts({
+        id: "detail-id",
+        fetchedAt: 123,
+        lastError: "old error",
+      });
       exec.mockReturnValueOnce(
         Effect.succeed({
           stdout: JSON.stringify({
@@ -45,11 +51,18 @@ describe("GitHub raw PR fetching", () => {
               repository: {
                 p0: {
                   id: "detail-id",
+                  number: pr.number,
+                  baseRepository: { nameWithOwner: pr.baseRepository },
+                  headRefOid: pr.headOid,
                   ...fields,
                   mergeStateStatus: "BLOCKED",
                   isMergeQueueEnabled: true,
                   mergeQueueEntry: { id: "queue-entry" },
-                  commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+                  commits: {
+                    nodes: [
+                      { commit: { oid: "abc123", statusCheckRollup: null } },
+                    ],
+                  },
                 },
               },
             },
@@ -298,7 +311,7 @@ describe("GitHub raw PR fetching", () => {
 
   it.effect.each([
     ["all", "10 minutes"],
-    ["updated", "10 minutes"],
+    ["updated", "2 minutes"],
   ] as const)("bounds %s pagination at %s", ([state, duration]) =>
     Effect.gen(function* () {
       exec.mockReturnValueOnce(Effect.never);
@@ -480,7 +493,13 @@ describe("GitHub raw PR fetching", () => {
     async (exitCode) => {
       const prs = [1, 2].map((number) =>
         normalizeGhPr(
-          { number, title: "PR", headRefName: "feature", state: "OPEN" },
+          {
+            number,
+            title: "PR",
+            headRefName: "feature",
+            state: "OPEN",
+            headRefOid: "abc123",
+          },
           "base/repo",
           1,
         ),
@@ -488,12 +507,17 @@ describe("GitHub raw PR fetching", () => {
       if (!prs[0] || !prs[1]) throw new Error("Invalid fixture");
       const healthy = {
         id: "PR-1",
+        number: 1,
+        baseRepository: { nameWithOwner: "base/repo" },
+        headRefOid: "abc123",
         mergeable: "MERGEABLE",
         mergeStateStatus: "CLEAN",
         reviewDecision: "APPROVED",
         isMergeQueueEnabled: false,
         mergeQueueEntry: null,
-        commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+        commits: {
+          nodes: [{ commit: { oid: "abc123", statusCheckRollup: null } }],
+        },
       };
       const stdout = JSON.stringify({
         data: { repository: { p0: healthy, p1: null } },
@@ -553,3 +577,371 @@ describe("GitHub raw PR fetching", () => {
     ).rejects.toMatchObject({ code: "pr_error" });
   });
 });
+
+function detail(
+  contexts: unknown = { nodes: [], pageInfo: { hasNextPage: false } },
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: "PR_42",
+    number: 42,
+    baseRepository: { nameWithOwner: "owner/repo" },
+    headRefOid: "abc123",
+    mergeable: "MERGEABLE",
+    isMergeQueueEnabled: false,
+    mergeQueueEntry: null,
+    commits: {
+      nodes: [{ commit: { oid: "abc123", statusCheckRollup: { contexts } } }],
+    },
+    ...overrides,
+  };
+}
+function respond(repository: Record<string, unknown>) {
+  return Effect.succeed({
+    stdout: JSON.stringify({ data: { repository } }),
+    stderr: "",
+    exitCode: 0,
+  });
+}
+
+describe("verified PR check pages", () => {
+  beforeEach(() => exec.mockReset());
+
+  test.each([
+    {},
+    { nodes: [] },
+    { pageInfo: { hasNextPage: false } },
+    { nodes: null, pageInfo: { hasNextPage: false } },
+    { nodes: {}, pageInfo: { hasNextPage: false } },
+    { nodes: [], pageInfo: null },
+    { nodes: [], pageInfo: {} },
+    { nodes: [], pageInfo: { hasNextPage: "false" } },
+    { nodes: [], pageInfo: { hasNextPage: true } },
+    { nodes: [], pageInfo: { hasNextPage: true, endCursor: 1 } },
+    { nodes: [], pageInfo: { hasNextPage: true, endCursor: " " } },
+    { nodes: [], pageInfo: { hasNextPage: false, endCursor: {} } },
+  ])(
+    "rejects malformed connection on initial and later pages: %j",
+    async (contexts) => {
+      for (const followUp of [false, true]) {
+        exec.mockReset();
+        if (followUp)
+          exec.mockReturnValueOnce(
+            respond({
+              p0: detail({
+                nodes: [],
+                pageInfo: { hasNextPage: true, endCursor: "next" },
+              }),
+            }),
+          );
+        exec.mockReturnValueOnce(
+          respond({ [followUp ? "p" : "p0"]: detail(contexts) }),
+        );
+        const [result] = await runBunPromise(
+          fetchPrDetails("/repo", "owner/repo", [prFacts()]),
+        );
+        expect(result?.checksComplete).toBe(false);
+        expect(result?.lastError).toContain("Incomplete");
+        expect(exec).toHaveBeenCalledTimes(followUp ? 2 : 1);
+      }
+    },
+  );
+
+  test.each([
+    { nodes: [], pageInfo: { hasNextPage: false } },
+    {
+      nodes: [
+        null,
+        { name: "future", conclusion: "FUTURE", status: "COMPLETED" },
+      ],
+      pageInfo: { hasNextPage: false },
+    },
+  ])(
+    "accepts explicit complete pages and preserves unknown outcomes %j",
+    async (contexts) => {
+      exec.mockReturnValueOnce(respond({ p0: detail(contexts) }));
+      const [result] = await runBunPromise(
+        fetchPrDetails("/repo", "owner/repo", [prFacts()]),
+      );
+      expect(result?.checksComplete).toBe(true);
+      expect(
+        result?.checks?.every((check) => check.outcome === "unknown"),
+      ).toBe(true);
+    },
+  );
+
+  test.each([
+    { headRefOid: "new-head" },
+    { headRefOid: null },
+    { number: 43 },
+    { id: "other-pr" },
+    { baseRepository: { nameWithOwner: "other/repo" } },
+    {
+      commits: {
+        nodes: [{ commit: { oid: "other-head", statusCheckRollup: null } }],
+      },
+    },
+    { commits: { nodes: [{ commit: { statusCheckRollup: null } }] } },
+  ])(
+    "rejects mismatched identities on initial and later pages: %j",
+    async (overrides) => {
+      for (const followUp of [false, true]) {
+        exec.mockReset();
+        if (followUp)
+          exec.mockReturnValueOnce(
+            respond({
+              p0: detail({
+                nodes: [],
+                pageInfo: { hasNextPage: true, endCursor: "next" },
+              }),
+            }),
+          );
+        exec.mockReturnValueOnce(
+          respond({ [followUp ? "p" : "p0"]: detail(undefined, overrides) }),
+        );
+        const pr = prFacts({ state: "MERGED" });
+        const [result] = await runBunPromise(
+          fetchPrDetails("/repo", "owner/repo", [pr]),
+        );
+        expect(result).toMatchObject({
+          state: "MERGED",
+          headOid: "abc123",
+          checks: null,
+          checksComplete: false,
+          lastError: expect.any(String),
+        });
+      }
+    },
+  );
+
+  test("combines unchanged-head pages and detects repeated cursors", async () => {
+    const first = detail({
+      nodes: [{ name: "one", conclusion: "SUCCESS", status: "COMPLETED" }],
+      pageInfo: { hasNextPage: true, endCursor: "next" },
+    });
+    exec
+      .mockReturnValueOnce(respond({ p0: first }))
+      .mockReturnValueOnce(respond({ p: detail() }));
+    expect(
+      (
+        await runBunPromise(fetchPrDetails("/repo", "owner/repo", [prFacts()]))
+      )[0],
+    ).toMatchObject({
+      checksComplete: true,
+      checks: [{ name: "one", outcome: "passed" }],
+    });
+    exec.mockReset();
+    exec
+      .mockReturnValueOnce(respond({ p0: first }))
+      .mockReturnValueOnce(respond({ p: first }));
+    expect(
+      (
+        await runBunPromise(fetchPrDetails("/repo", "owner/repo", [prFacts()]))
+      )[0],
+    ).toMatchObject({
+      checks: null,
+      checksComplete: false,
+      lastError: "Check pagination limit reached",
+    });
+    expect(exec).toHaveBeenCalledTimes(2);
+  });
+
+  it.effect(
+    "a timed-out detail page cleans up before returning and leaves its sibling healthy",
+    () =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const stopping = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const cleaned = yield* Deferred.make<void>();
+        exec.mockReturnValueOnce(
+          respond({
+            p0: detail({
+              nodes: [],
+              pageInfo: { hasNextPage: true, endCursor: "next" },
+            }),
+            p1: detail(undefined, { id: "PR_43", number: 43 }),
+          }),
+        );
+        exec.mockReturnValueOnce(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }).pipe(
+            Effect.ensuring(
+              Effect.gen(function* () {
+                yield* Deferred.succeed(stopping, undefined);
+                yield* Deferred.await(release);
+                yield* Deferred.succeed(cleaned, undefined);
+              }),
+            ),
+          ),
+        );
+        const fiber = yield* Effect.forkChild(
+          provideBunServices(
+            fetchPrDetails("/repo", "owner/repo", [
+              prFacts(),
+              prFacts({ number: 43 }),
+            ]),
+          ),
+        );
+        yield* Deferred.await(started);
+        const clock = yield* Effect.forkChild(TestClock.adjust("2 minutes"));
+        yield* Deferred.await(stopping);
+        expect(yield* Deferred.isDone(cleaned)).toBe(false);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(clock);
+        const result = yield* Fiber.join(fiber);
+        expect(yield* Deferred.isDone(cleaned)).toBe(true);
+        expect(result[0]).toMatchObject({
+          checksComplete: false,
+          lastError: expect.any(String),
+        });
+        expect(result[1]).toMatchObject({
+          checksComplete: true,
+          lastError: null,
+        });
+      }),
+  );
+
+  it.effect("base resolution has a finite deadline and can be retried", () =>
+    Effect.gen(function* () {
+      const stopped = yield* Deferred.make<void>();
+      exec.mockReturnValueOnce(
+        Effect.never.pipe(
+          Effect.ensuring(Deferred.succeed(stopped, undefined)),
+        ),
+      );
+      const fiber = yield* Effect.forkChild(
+        provideBunServices(
+          Effect.flip(liveGitHubService.resolveBaseRepo("/repo")),
+        ),
+      );
+      yield* TestClock.adjust("2 minutes");
+      expect(yield* Fiber.join(fiber)).toMatchObject({
+        code: "pr_error",
+        message: expect.stringContaining("timed out"),
+      });
+      expect(yield* Deferred.isDone(stopped)).toBe(true);
+      exec.mockReturnValueOnce(
+        Effect.succeed({
+          stdout: JSON.stringify({ nameWithOwner: "owner/repo" }),
+          stderr: "",
+          exitCode: 0,
+        }),
+      );
+      expect(
+        yield* provideBunServices(liveGitHubService.resolveBaseRepo("/repo")),
+      ).toBe("owner/repo");
+    }),
+  );
+});
+
+describe("merge preflight read deadlines", () => {
+  beforeEach(() => exec.mockReset());
+  it.effect.each(["facts", "configuration", "rules"] as const)(
+    "bounds hung %s reads before any mutation",
+    (stage) =>
+      Effect.gen(function* () {
+        if (stage !== "facts") {
+          const pr = prFacts();
+          exec.mockReturnValueOnce(
+            Effect.succeed({
+              stdout: JSON.stringify({ ...pr, headRefOid: pr.headOid }),
+              stderr: "",
+              exitCode: 0,
+            }),
+          );
+          exec.mockReturnValueOnce(respond({ p0: detail() }));
+          if (stage === "rules")
+            exec.mockReturnValueOnce(
+              respond({
+                mergeQueue: null,
+                squashMergeAllowed: true,
+                mergeCommitAllowed: true,
+                rebaseMergeAllowed: true,
+              }),
+            );
+        }
+        const stopped = yield* Deferred.make<void>();
+        exec.mockReturnValueOnce(
+          Effect.never.pipe(
+            Effect.ensuring(Deferred.succeed(stopped, undefined)),
+          ),
+        );
+        const fiber = yield* Effect.forkChild(
+          provideBunServices(
+            Effect.flip(fetchMergeSnapshot("/repo", "owner/repo", 42)),
+          ),
+        );
+        yield* TestClock.adjust("2 minutes");
+        expect(yield* Fiber.join(fiber)).toMatchObject({
+          code: "pr_error",
+          message: expect.stringContaining("timed out"),
+        });
+        expect(yield* Deferred.isDone(stopped)).toBe(true);
+        expect(
+          exec.mock.calls.every(
+            ([, args]) => !args?.some((arg) => arg.includes("mutation")),
+          ),
+        ).toBe(true);
+      }),
+  );
+});
+
+it.effect(
+  "detail pagination uses a total budget even when each individual page is within its deadline",
+  () =>
+    Effect.gen(function* () {
+      exec.mockReset();
+      let pages = 0;
+      exec.mockImplementation(() =>
+        Effect.sleep("110 seconds").pipe(
+          Effect.andThen(() => {
+            const alias = pages++ === 0 ? "p0" : "p";
+            return respond({
+              [alias]: detail({
+                nodes: [],
+                pageInfo: { hasNextPage: true, endCursor: String(pages) },
+              }),
+            });
+          }),
+        ),
+      );
+      const fiber = yield* Effect.forkChild(
+        provideBunServices(fetchPrDetails("/repo", "owner/repo", [prFacts()])),
+      );
+      yield* TestClock.adjust("10 minutes");
+      const [result] = yield* Fiber.join(fiber);
+      expect(result).toMatchObject({
+        checksComplete: false,
+        checks: null,
+        lastError: expect.any(String),
+      });
+      expect(exec).toHaveBeenCalledTimes(6);
+    }),
+);
+
+test.each(["PR_42", "replacement"])(
+  "pagination retains the established node identity when discovery has no id: %s",
+  async (nextId) => {
+    exec.mockReset();
+    exec.mockReturnValueOnce(
+      respond({
+        p0: detail({
+          nodes: [],
+          pageInfo: { hasNextPage: true, endCursor: "next" },
+        }),
+      }),
+    );
+    exec.mockReturnValueOnce(respond({ p: detail(undefined, { id: nextId }) }));
+    const [result] = await runBunPromise(
+      fetchPrDetails("/repo", "owner/repo", [prFacts({ id: "" })]),
+    );
+    expect(result).toMatchObject({
+      id: "PR_42",
+      checksComplete: nextId === "PR_42",
+      lastError: nextId === "PR_42" ? null : "PR detail identity mismatch",
+    });
+  },
+);

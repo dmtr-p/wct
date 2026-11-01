@@ -78,6 +78,11 @@ checkouts of existing branches. If initial include resolution or copying fails,
 retrying Open uses the current configuration and include rules before setup.
 After successful copy processing, reopening skips the include source. YAML copy
 lists run on every Open and can overwrite previously copied files.
+
+Copying uses bounded memory. Existing targets keep their permissions; new targets
+use 0666 filtered by the process umask. Source permissions and timestamps are not
+copied. Paths that refer to the same file succeed without rewriting it.
+
 `wct up` does not copy files.
 Unreadable include files, Git discovery failures, and copy failures stop Open
 before setup; empty selections skip copying.

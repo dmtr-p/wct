@@ -51,7 +51,7 @@ export interface PrCacheHydration {
 }
 
 export interface PrCacheServiceApi {
-  /** Share a scoped connection; each write retains its own fenced transaction. */
+  /** Each write keeps an independent registration-fenced transaction. */
   withWriteBatch: <A, E, R>(
     writes: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | WctError, R>;

@@ -79,13 +79,9 @@ retrying Open uses the current configuration and include rules before setup.
 After successful copy processing, reopening skips the include source. YAML copy
 lists run on every Open and can overwrite previously copied files.
 
-Files copy sequentially through scoped file handles using a reusable 1 MiB
-buffer. Existing targets are truncated and keep their permissions; new targets
-use normal creation permissions (0666 filtered by the process umask). Source
-permissions and timestamps are not copied. Interrupted or failed copies do not
-report success, and incomplete include copying retains its retry marker.
-Source and destination handles are checked before truncation; paths that refer
-to the same file (including destination links) succeed without rewriting it.
+Copying uses bounded memory. Existing targets keep their permissions; new targets
+use 0666 filtered by the process umask. Source permissions and timestamps are not
+copied. Paths that refer to the same file succeed without rewriting it.
 
 `wct up` does not copy files.
 Unreadable include files, Git discovery failures, and copy failures stop Open

@@ -182,13 +182,10 @@ export function copyFiles(
           const targetDirPath = dirname(targetPath);
           yield* fs.makeDirectory(targetDirPath, { recursive: true });
 
-          // Native copyFile replaces destination permissions and timestamps.
-          // Scoped handles retain writeFile semantics with a bounded buffer.
           yield* Effect.scoped(
             Effect.gen(function* () {
               const source = yield* fs.open(sourcePath, { flag: "r" });
-              // Compare open handles before truncation: a destination link can
-              // reference the source even when the paths differ.
+              // Destination links can reference the source; defer truncation.
               const target = yield* fs.open(targetPath, { flag: "a" });
               const sourceInfo = yield* source.stat;
               const targetInfo = yield* target.stat;

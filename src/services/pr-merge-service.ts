@@ -259,7 +259,6 @@ export function mergeEligibility(snapshot: MergeSnapshot): MergeEligibility {
   return { route: "direct", methods: snapshot.methods };
 }
 
-/** Detect changes since confirmation; submission also rechecks current eligibility. */
 export function mergeSnapshotFingerprint(snapshot: MergeSnapshot): string {
   const p = snapshot.pr;
   return JSON.stringify({

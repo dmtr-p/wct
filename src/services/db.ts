@@ -129,7 +129,6 @@ export function withDb<A>(
   });
 }
 
-/** Keep a connection scoped across cooperative database operations. */
 export function withDbEffect<A, E, R>(
   errorCode: ErrorCode,
   operation: string,

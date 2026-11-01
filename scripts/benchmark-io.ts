@@ -23,7 +23,6 @@ import {
   sqlSetWorkspace,
 } from "../src/services/pr-cache-service.ts";
 
-// Run with Bun; fixtures and SQLite databases stay in an isolated temporary directory.
 const [mode, root] = Bun.argv.slice(2);
 if (mode && root) {
   const started = performance.now();

@@ -128,7 +128,6 @@ function identityError(
   return null;
 }
 
-/** Batch detail fetches; a failed or capped connection never looks complete. */
 export function fetchPrDetails(
   cwd: string,
   baseRepository: string,

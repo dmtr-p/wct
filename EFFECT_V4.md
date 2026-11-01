@@ -10,25 +10,9 @@ versions in `package.json`, without `^` or `~`. Resolved transitive Effect runti
 packages in `bun.lock`, including `@effect/platform-node-shared`, must match too.
 Update the Effect runtime packages together. `package.json` is the source of
 truth for dependency versions. The `@effect/tsgo` development tool has its own
-version and must support the pinned `typescript`, `oxlint`, and
-`oxlint-tsgolint` versions. Check its installed `README.md` for the supported
-versions before changing any of these tools.
+version; see [development tooling](docs/development.md) for compatible tool
+versions, preparation, diagnostics, formatting, hooks, and editor setup.
 
-Lifecycle scripts are disabled in `bunfig.toml`. Run `bun run prepare` after
-`bun install` to patch TypeScript, Oxlint, and oxlint-tsgolint with Effect tsgo;
-worktree setup and CI run this step explicitly.
-CI uses `bun run lint` and the stop hooks use `mise run lint:fix` to report
-TypeScript errors, lint issues, and Effect diagnostics in one Oxlint run.
-Errors and warnings fail the check; suggestions are shown only in the editor.
-Oxlint's strict Effect preset and repository overrides in
-[.oxlintrc.json](.oxlintrc.json) enforce Effect and TypeScript conventions.
-Language service diagnostics in `tsconfig.json` configure editor feedback
-independently of Oxlint's severities.
-Bun's built-in formatter owns formatting and import sorting through the
-`[fmt]` and `[fmt.sortImports]` sections in `bunfig.toml`.
-The React Compiler rules for refs, state updates in effects, globals, and
-immutability are disabled. The Ink TUI uses explicit mutable refs and Effect
-polling without React Compiler.
 Unstable APIs from `effect`, `@effect/platform-bun`, and `@effect/vitest` are
 allowed by the language service configuration.
 

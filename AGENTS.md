@@ -5,12 +5,10 @@ bun run src/index.ts     # Run the CLI
 bun run test             # Run tests (vitest)
 ```
 
-**Do not run tests or linting manually.** Codex and Claude stop hooks run
-`mise run lint:fix`, `mise run format`, and `mise run test`. Each task caches
-successful runs separately using source content hashes. If a check fails or
-the tools modify files, the hooks block completion so the agent can fix or
-review the changes. Git pre-commit runs `mise run pre-commit` to check lint,
-formatting, and tests without applying fixes.
+**Do not run tests or linting manually.** Agent stop hooks own these checks.
+If a hook blocks completion, fix failures or review its changes before finishing.
+See [development tooling](docs/development.md) for check commands, caching,
+and hook behavior.
 
 ## Documentation and comments
 

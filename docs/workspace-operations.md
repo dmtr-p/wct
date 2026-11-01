@@ -91,6 +91,21 @@ The include-copy retry marker lives in worktree-local Git metadata and is
 cleared after successful processing, including an explicit YAML override or an
 empty selection.
 
+## Setup
+
+Open runs `setup` commands sequentially from `work_dir` after copying files and
+before starting tmux. Every command is attempted, including after an earlier
+command fails. Setup runs again when reopening an existing worktree, so commands
+should be safe to repeat. A project or profile `setup` list replaces its inherited
+list; `setup: []` disables inherited commands. `wct up` does not run setup.
+
+Required and optional setup failures are recorded as warnings in the Open result
+and reported by the CLI and TUI. They do not fail Open or prevent it from
+attempting tmux startup when configured. `optional: true` marks a failure as
+optional in the warning and command result. JSON callers can inspect
+`data.workspace.attempts.setup` and `data.workspace.warnings` in the
+`open --json` success envelope for command results and failures.
+
 ## Shutdown
 
 Both `wct down` and `wct close` run `down` scripts after stopping the tmux session,

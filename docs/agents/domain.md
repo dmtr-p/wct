@@ -13,7 +13,10 @@ files in `docs/adr/` for engineering decisions.
   refresh coordination belong in [PR refresh](../pr-refresh.md). Workspace
   startup, copying, and shutdown belong in
   [Workspace Operations](../workspace-operations.md); repository and tmux
-  polling belong in [TUI refresh](../tui-refresh.md).
+  polling belong in [TUI refresh](../tui-refresh.md). Dependency preparation,
+  checks, caching, hooks, and editor setup belong in
+  [development tooling](../development.md); test helpers and isolation belong
+  in [testing](../testing.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine
   behavior descriptions belong in topic documents.
 - `docs/agents/` owns agent workflow and repository instructions.

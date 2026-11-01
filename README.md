@@ -35,8 +35,10 @@ aborted result unless `--yes` is supplied; it never opens a confirmation prompt.
 When shutdown destroys the invoking tmux pane, the caller cannot emit its
 final envelope. The detached runner saves the outcome in `result.json`.
 
-Human-readable logs use styling only when their destination stream is a
-terminal. A nonempty `NO_COLOR` disables color and bold styling.
+Human-readable logs use styling when their destination stream is a terminal
+by default. `FORCE_COLOR=1` also enables styling on redirected streams.
+A nonempty `NO_COLOR` or `TERM=dumb` disables color and bold styling,
+including when `FORCE_COLOR` is set.
 
 ## Installation
 
@@ -204,6 +206,12 @@ project/profile list disables copying. Start (`wct up`) does not copy files.
 See [copying local files](docs/workspace-operations.md#copying-local-files) for
 include patterns, file eligibility, and retry behavior.
 
+### Setup commands
+
+Open runs `setup` commands before starting tmux. See
+[setup behavior](docs/workspace-operations.md#setup) for command ordering,
+repeated setup, and failure reporting.
+
 ### Down scripts
 
 Both `wct down` and `wct close` run `down` scripts after stopping tmux,
@@ -220,19 +228,8 @@ Profiles let you override `work_dir`, `copy`, `setup`, `down`, and `tmux` sectio
 
 Profile names must match `[A-Za-z0-9][A-Za-z0-9._-]*`: start with an ASCII letter or digit, followed by ASCII letters, digits, dots, underscores, or hyphens. For example, `dev`, `ci-linux`, and `team.local` are valid names.
 
-```yaml
-profiles:
-  ci:
-    match: "ci/*"
-    setup:
-      - name: "Install (CI)"
-        command: "bun install --frozen-lockfile"
-  hotfix:
-    match: ["hotfix/*", "fix/*"]
-    copy:
-      - .env
-      - .env.production
-```
+The [configuration example](#configuration) shows `ci` and `hotfix` profiles
+with branch patterns and section overrides.
 
 **Auto-matching:** When you run `wct open <branch>`, `wct up`, `wct down`, or `wct close`, profiles are matched against the workspace's branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
 
@@ -292,50 +289,7 @@ To run:
 bun run src/index.ts
 ```
 
-Use [Bun](https://bun.com) for development and builds. See [AGENTS.md](./AGENTS.md) for repository conventions and automated checks.
-
-`bun run prepare` patches the pinned TypeScript compiler, Oxlint, and
-oxlint-tsgolint with [@effect/tsgo](https://github.com/Effect-TS/tsgo/blob/main/docs/README.md).
-Lifecycle scripts are disabled in `bunfig.toml`, so run it explicitly after
-installing dependencies. Worktree setup and CI include this step. Keep the
-Oxlint and oxlint-tsgolint versions within the supported versions listed by
-the installed `@effect/tsgo` package.
-
-`bun run lint` runs Oxlint with type-aware Effect rules and TypeScript compiler
-checks; `bun run lint:fix` runs the same checks and applies safe lint fixes.
-`bun run format` runs Bun's built-in formatter with import sorting, and
-`bun run format:check` checks formatting without writing files. Formatting
-rules live in the `[fmt]` and `[fmt.sortImports]` sections of `bunfig.toml`. CI checks
-lint, types, formatting, and tests. CI and hooks use Oxlint's
-`options.typeCheck` instead of running the TypeScript compiler separately.
-
-Mise tasks cache successful lint, format, and test runs separately using source
-content hashes and automatic output markers. Source additions, deletions, and
-content changes invalidate the relevant task; configuration and dependency
-inputs are included. A documentation edit reruns formatting while lint and tests
-can stay cached. Use `mise run --force <task>` to bypass a task's cache. The
-underlying `bun run` scripts always run their tools directly.
-
-`mise run hooks:install` configures Git to use the versioned `.githooks` directory.
-The pre-commit hook clears Git's repository-specific environment variables so
-checks can create independent temporary repositories and worktrees.
-It runs `mise run pre-commit`, which checks lint, formatting, and the full test
-suite against the working tree without applying fixes or staging files. The
-check tasks have separate caches from their fixing counterparts; tests share
-one cache across pre-commit and agent hooks. Mise and the pinned Bun version
-must be installed and available to the hooks.
-
-Codex and Claude use the same stop script to run `mise run lint:fix`,
-`mise run format`, and `mise run test` in order. Formatting runs on stop.
-Failures block completion with the tool output. If lint or formatting changes
-files, completion is blocked for review before tests run. The test task runs
-the full suite with Vitest's compact agent reporter.
-
-Oxlint and the TypeScript compiler enforce the same Effect error and warning
-diagnostics. Suggestions remain available in the editor. `.oxlintrc.json`
-configures Effect rules explicitly to keep suggestion-level refactors out of
-the lint gate; `tsconfig.json` retains compiler and editor diagnostics.
-
-For VS Code-based editors, install the TypeScript 7 extension and select the
-workspace TypeScript version when prompted. The workspace settings point to
-the patched compiler for Effect diagnostics, quick fixes, and refactors.
+Use [Bun](https://bun.com) for development and builds. See
+[development tooling](docs/development.md) for dependency preparation, automated
+checks, caching, hooks, and editor setup; [testing](docs/testing.md) for service
+fixtures and isolation; and [AGENTS.md](AGENTS.md) for repository conventions.

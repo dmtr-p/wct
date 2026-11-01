@@ -1,5 +1,5 @@
 import type { BunServices } from "@effect/platform-bun";
-import { Context, Effect } from "effect";
+import { Clock, Context, Effect } from "effect";
 import {
   captureBunService,
   type ServiceImplementation,
@@ -274,6 +274,7 @@ function getRawPrsImpl(
       numbers.some((number) => !Number.isSafeInteger(number) || number < 1)
     )
       return yield* commandError("pr_error", "Invalid PR identities");
+    const deadline = (yield* Clock.currentTimeMillis) + 10 * 60_000;
     const result: RawPrResult[] = [];
     for (let start = 0; start < numbers.length; start += 20) {
       const batch = numbers.slice(start, start + 20);
@@ -286,8 +287,14 @@ function getRawPrsImpl(
       const query = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { ${aliases} } }`;
       const fetched = yield* Effect.gen(function* () {
         const batchResult: RawPrResult[] = [];
+        const remaining = deadline - (yield* Clock.currentTimeMillis);
+        if (remaining <= 0)
+          return yield* commandError(
+            "pr_error",
+            "PR batch work deadline exceeded",
+          );
         const parsed = yield* queryGitHub(cwd, query).pipe(
-          Effect.timeout("2 minutes"),
+          Effect.timeout(remaining),
         );
         for (const [index, number] of batch.entries()) {
           const alias = `p${index}`;
@@ -330,6 +337,10 @@ export type GitHubServiceImplementation = ServiceImplementation<
 
 export const liveGitHubService: GitHubServiceImplementation = {
   isGhInstalled: runProcess("gh", ["--version"]).pipe(
+    Effect.timeout("2 minutes"),
+    Effect.mapError((error) =>
+      commandError("pr_error", extractShellError(error), error),
+    ),
     Effect.map((r) => r.success),
   ),
   resolvePr: (prNumber, cwd) =>
@@ -345,7 +356,7 @@ export const liveGitHubService: GitHubServiceImplementation = {
             "headRefName,isCrossRepository,headRepositoryOwner,headRepository",
           ],
           cwd ? { cwd } : undefined,
-        );
+        ).pipe(Effect.timeout("2 minutes"));
         const data = yield* Effect.try({
           try: () => JSON.parse(result.stdout.trim()),
           catch: () =>
@@ -443,6 +454,7 @@ export const liveGitHubService: GitHubServiceImplementation = {
       execProcess("gh", ["repo", "view", "--json", "nameWithOwner"], {
         cwd,
       }).pipe(
+        Effect.timeout("2 minutes"),
         Effect.flatMap((result) =>
           Effect.try({
             try: () => {
@@ -465,7 +477,7 @@ export const liveGitHubService: GitHubServiceImplementation = {
       (error) =>
         commandError(
           "pr_error",
-          "Unable to resolve base repository; run gh repo set-default in the main repository",
+          `Unable to resolve base repository: ${extractShellError(error)}; run gh repo set-default in the main repository`,
           error,
         ),
     ),

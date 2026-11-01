@@ -1,6 +1,22 @@
-import { mkdir, rm, symlink } from "node:fs/promises";
+import {
+  chmod,
+  link,
+  mkdir,
+  rm,
+  stat,
+  symlink,
+  utimes,
+} from "node:fs/promises";
 import { join } from "node:path";
-import { Cause, Effect, Exit, FileSystem, PlatformError } from "effect";
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  PlatformError,
+} from "effect";
 import { describe, expect } from "vitest";
 import {
   type BunServices as BunServicesType,
@@ -507,3 +523,136 @@ describe("copyEntries", { concurrent: false }, () => {
     ).rejects.toThrow("Failed to discover gitignored files");
   });
 });
+
+describe("bounded Workspace file copying", () => {
+  test("copies binary chunks and truncates existing targets while retaining destination permissions", async ({
+    tempDir,
+  }) => {
+    const sourceDir = join(tempDir, "source");
+    const targetDir = join(tempDir, "target");
+    await mkdir(sourceDir);
+    await mkdir(targetDir);
+    const bytes = new Uint8Array(1024 * 1024 + 257);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
+    const source = join(sourceDir, "binary");
+    const target = join(targetDir, "binary");
+    await Bun.write(source, bytes);
+    await chmod(source, 0o600);
+    await utimes(source, 946684800, 946684800);
+    await Bun.write(target, new Uint8Array(bytes.length + 100));
+    await chmod(target, 0o640);
+    expect(
+      await runEffect(copyFiles(["binary"], sourceDir, targetDir)),
+    ).toEqual([{ file: "binary", success: true }]);
+    expect(
+      Buffer.from(await Bun.file(target).arrayBuffer()).equals(bytes),
+    ).toBe(true);
+    const info = await stat(target);
+    expect(info.mode & 0o777).toBe(0o640);
+    expect(info.mtimeMs).toBeGreaterThan(946684800000);
+    await rm(target);
+    expect(
+      await runEffect(copyFiles(["binary"], sourceDir, targetDir)),
+    ).toEqual([{ file: "binary", success: true }]);
+    const reference = join(targetDir, "creation-mode");
+    await runBunPromise(
+      FileSystem.FileSystem.use((fs) => fs.writeFile(reference, bytes)),
+    );
+    expect((await stat(target)).mode & 0o777).toBe(
+      (await stat(reference)).mode & 0o777,
+    );
+    expect(
+      Buffer.from(await Bun.file(target).arrayBuffer()).equals(bytes),
+    ).toBe(true);
+  });
+});
+
+test("cancelled partial copies release both handles without reporting success", async ({
+  tempDir,
+}) => {
+  const sourceDir = join(tempDir, "source");
+  const targetDir = join(tempDir, "target");
+  await mkdir(sourceDir);
+  await mkdir(targetDir);
+  await Bun.write(
+    join(sourceDir, "large"),
+    new Uint8Array(2 * 1024 * 1024).fill(7),
+  );
+  await runBunPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const reading = yield* Deferred.make<void>();
+        let reads = 0;
+        let released = 0;
+        let completed = false;
+        const override = {
+          ...fs,
+          open: (path: string, options?: Parameters<typeof fs.open>[1]) =>
+            fs.open(path, options).pipe(
+              Effect.tap(() =>
+                Effect.addFinalizer(() =>
+                  Effect.sync(() => {
+                    released++;
+                  }),
+                ),
+              ),
+              Effect.map((handle) =>
+                path === join(sourceDir, "large")
+                  ? {
+                      ...handle,
+                      stat: handle.stat,
+                      read: (buffer: Uint8Array) =>
+                        Effect.suspend(() =>
+                          ++reads === 1
+                            ? handle.read(buffer)
+                            : Deferred.succeed(reading, undefined).pipe(
+                                Effect.andThen(Effect.never),
+                              ),
+                        ),
+                    }
+                  : handle,
+              ),
+            ),
+        };
+        const fiber = yield* Effect.forkChild(
+          copyFiles(["large"], sourceDir, targetDir).pipe(
+            Effect.provideService(FileSystem.FileSystem, override),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                completed = true;
+              }),
+            ),
+          ),
+        );
+        yield* Effect.raceFirst(Deferred.await(reading), Fiber.join(fiber));
+        yield* Fiber.interrupt(fiber);
+        expect(released).toBe(2);
+        expect(completed).toBe(false);
+      }),
+    ),
+  );
+  expect((await stat(join(targetDir, "large"))).size).toBe(1024 * 1024);
+});
+
+test.for(["same path", "hard link", "symlink"] as const)(
+  "copying to the source through %s preserves its contents",
+  async (alias, { tempDir }) => {
+    const sourceDir = join(tempDir, "source");
+    const targetDir =
+      alias === "same path" ? sourceDir : join(tempDir, "target");
+    await mkdir(sourceDir);
+    if (targetDir !== sourceDir) await mkdir(targetDir);
+    const source = join(sourceDir, "file");
+    const target = join(targetDir, "file");
+    const content = "source data must survive copying";
+    await Bun.write(source, content);
+    if (alias === "hard link") await link(source, target);
+    if (alias === "symlink") await symlink(source, target);
+    expect(await runEffect(copyFiles(["file"], sourceDir, targetDir))).toEqual([
+      { file: "file", success: true },
+    ]);
+    expect(await Bun.file(source).text()).toBe(content);
+    expect(await Bun.file(target).text()).toBe(content);
+  },
+);

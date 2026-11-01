@@ -44,6 +44,8 @@ function fixture(
     let resolutions = 0;
     const scanModes: string[] = [];
     let publications = 0;
+    let workspacePublications = 0;
+    const openPublications: number[][] = [];
     const errors = new Map<string, string>();
     const layer = wctTestLayer({
       github: {
@@ -82,6 +84,7 @@ function fixture(
       },
       prCache: {
         ...livePrCacheService,
+        withWriteBatch: (writes) => writes,
         getDiscovery: () => Effect.succeed(null),
         getWorkspaceInputs: () => Effect.succeed([]),
         setDiscovery: () => Effect.succeed(true),
@@ -97,10 +100,14 @@ function fixture(
         const session = yield* service
           .openSession({
             associations: () => {
+              workspacePublications++;
               publications++;
             },
-            openPrs: () => {
+            openPrs: (update) => {
               publications++;
+              openPublications.push(
+                [...update(new Map()).values()].flat().map((pr) => pr.number),
+              );
             },
             refreshing: () => {},
             errors: (update) => {
@@ -133,6 +140,8 @@ function fixture(
       resolutions: () => resolutions,
       scanModes,
       publications: () => publications,
+      workspacePublications: () => workspacePublications,
+      openPublications,
     };
   });
 }
@@ -657,4 +666,114 @@ it.effect("independent services own independent base resolution caches", () =>
     expect(first.resolutions()).toBe(1);
     expect(second.resolutions()).toBe(1);
   }),
+);
+
+it.effect(
+  "a timed-out base lookup settles the owned flight and permits a queued manual retry",
+  () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const stopped = yield* Deferred.make<void>();
+      let attempts = 0;
+      const f = yield* fixture(false, {
+        waitForStart: false,
+        resolveBaseRepo: () =>
+          Effect.suspend(() =>
+            ++attempts === 1
+              ? Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(Deferred.succeed(stopped, undefined)),
+                  Effect.timeout("2 minutes"),
+                  Effect.mapError((error) =>
+                    commandError("pr_error", error.message, error),
+                  ),
+                )
+              : Effect.succeed("owner/repo"),
+          ),
+      });
+      yield* Deferred.await(started);
+      const cancelled = yield* Effect.forkChild(f.session.refresh("manual"), {
+        startImmediately: true,
+      });
+      yield* Fiber.interrupt(cancelled);
+      expect(yield* Deferred.isDone(stopped)).toBe(false);
+      const manual = yield* Effect.forkChild(f.session.refresh("manual"), {
+        startImmediately: true,
+      });
+      yield* Deferred.succeed(f.release, undefined);
+      yield* TestClock.adjust("2 minutes");
+      yield* Fiber.join(f.initial);
+      yield* Fiber.join(manual);
+      expect(yield* Deferred.isDone(stopped)).toBe(true);
+      expect(f.resolutions()).toBe(2);
+      expect(f.scans()).toBe(1);
+      expect(f.errors.size).toBe(0);
+    }),
+);
+
+it.effect(
+  "one failed Workspace cache write does not discard healthy siblings or publication",
+  () =>
+    Effect.gen(function* () {
+      const writes: string[] = [];
+      const f = yield* fixture(false, {
+        repository: {
+          ...repo,
+          worktrees: ["before", "broken", "after"].map((branch) => ({
+            branch,
+            path: "/missing-cache-batch-fixture/" + branch,
+            isMainWorktree: false,
+          })),
+        },
+        prCache: {
+          setWorkspace: (_path, branch) =>
+            Effect.suspend(() => {
+              writes.push(branch);
+              return branch === "broken"
+                ? commandError("pr_cache_error", "broken Workspace write")
+                : Effect.void;
+            }),
+        },
+      });
+      yield* Deferred.succeed(f.release, undefined);
+      yield* Fiber.join(f.initial);
+      expect(writes).toEqual(["before", "broken", "after"]);
+      expect(f.workspacePublications()).toBe(1);
+      expect(f.errors.get(repo.repoPath)).toContain("broken Workspace write");
+      expect(f.scans()).toBe(1);
+    }),
+);
+
+it.effect(
+  "batch acquisition failure still publishes fetched PRs and retries without discovery backoff",
+  () =>
+    Effect.gen(function* () {
+      let failing = true;
+      const f = yield* fixture(false, {
+        discoveryPrs: [
+          {
+            number: 1,
+            title: "Open PR",
+            state: "OPEN",
+            headRefName: "feature",
+            updatedAt: "2026-10-15T00:00:00Z",
+          },
+        ],
+        prCache: {
+          withWriteBatch: (writes) =>
+            failing
+              ? commandError("pr_cache_error", "batch acquisition failed")
+              : writes,
+        },
+      });
+      yield* Deferred.succeed(f.release, undefined);
+      yield* Fiber.join(f.initial);
+      expect(f.openPublications).toEqual([[1], [1]]);
+      expect(f.workspacePublications()).toBe(1);
+      expect(f.errors.get(repo.repoPath)).toContain("batch acquisition failed");
+      failing = false;
+      yield* f.session.refresh("poll");
+      expect(f.errors.size).toBe(0);
+      expect(f.scans()).toBe(1);
+    }),
 );

@@ -55,12 +55,13 @@ export function queryGitHub(
     ]),
   ];
   return execProcess("gh", args, { cwd }).pipe(
+    Effect.timeout("2 minutes"),
     Effect.map((result) => ({
       stdout: result.stdout,
       transportError: null as string | null,
     })),
     Effect.catchIf(
-      (error) =>
+      (error): error is ProcessExitError =>
         error instanceof ProcessExitError && error.stdout.trim().length > 0,
       (error) =>
         Effect.succeed({

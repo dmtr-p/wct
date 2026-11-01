@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { Context, Effect } from "effect";
-import type { WctError } from "../errors";
+import { commandError, type WctError } from "../errors";
 import { withDb, withDbEffect } from "./db";
 import type { PrIdentity, RegistrationId } from "./identities";
 import {
@@ -51,6 +51,10 @@ export interface PrCacheHydration {
 }
 
 export interface PrCacheServiceApi {
+  /** Share a scoped connection; each write retains its own fenced transaction. */
+  withWriteBatch: <A, E, R>(
+    writes: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | WctError, R>;
   getHydration: (
     repoPath: string,
     branches: readonly string[],
@@ -113,6 +117,13 @@ export interface PrCacheServiceApi {
 
 export const PrCacheService =
   Context.Service<PrCacheServiceApi>("wct/PrCacheService");
+
+const WriteConnection = Context.Reference<Database | undefined>(
+  "wct/PrCacheWriteConnection",
+  {
+    defaultValue: () => undefined,
+  },
+);
 
 const discoveryVersions = new WeakMap<PrDiscoverySnapshot, string>();
 
@@ -518,10 +529,26 @@ function prCacheDb<A>(
   operation: string,
   f: (db: Database) => A,
 ): Effect.Effect<A, WctError> {
-  return withDb("pr_cache_error", operation, f);
+  return Effect.flatMap(WriteConnection, (db) =>
+    db
+      ? Effect.try({
+          try: () => f(db),
+          catch: (error) =>
+            commandError(
+              "pr_cache_error",
+              "Database operation failed during " + operation,
+              error,
+            ),
+        })
+      : withDb("pr_cache_error", operation, f),
+  );
 }
 
 export const livePrCacheService: PrCacheServiceApi = PrCacheService.of({
+  withWriteBatch: (writes) =>
+    withDbEffect("pr_cache_error", "write batch", (db) =>
+      Effect.provideService(writes, WriteConnection, db),
+    ),
   getHydration: (repoPath, branches, includeOpenPrs) =>
     prCacheDb("getHydration", (db) =>
       db

@@ -468,7 +468,9 @@ export const liveGitHubService: GitHubServiceImplementation = {
             catch: (error) =>
               commandError(
                 "pr_error",
-                "Unable to resolve base repository; run gh repo set-default in the main repository",
+                error instanceof Error
+                  ? error.message
+                  : "Invalid repository identity",
                 error,
               ),
           }),

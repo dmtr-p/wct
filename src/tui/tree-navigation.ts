@@ -4,11 +4,11 @@ import type { LifecycleState } from "./lifecycle";
 import {
   clampScrollOffset,
   confirmationRowRange,
+  findOwningWorktreeIndex,
   firstRowForItem,
   isInertTreeItem,
   resolveLifecycleReveal,
   resolveRecoveredSelectionIndex,
-  resolveSelectedWorktreeIndex,
   scrollRangeToKeepVisible,
   scrollToKeepVisible,
   treeItemId,
@@ -221,7 +221,7 @@ export function transitionTreeNavigation(
     }
     case "capture": {
       const saved = state.savedPositions[intent.slot];
-      const owningWorktreeIndex = resolveSelectedWorktreeIndex(
+      const owningWorktreeIndex = findOwningWorktreeIndex(
         snapshot.items,
         state.selectedIndex,
       );

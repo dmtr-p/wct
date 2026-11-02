@@ -5,7 +5,7 @@ import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import { type PrFacts, prIdentity } from "../services/pr-model";
 import { formatSessionName } from "../services/tmux";
 import { formatSync } from "../services/worktree-service";
-import type { RepoInfo } from "./hooks/useRegistry";
+import type { RepoInfo, WorktreeInfo } from "./hooks/useRegistry";
 import {
   isLifecycleActive,
   type LifecycleEntry,
@@ -910,26 +910,6 @@ export function resolveRecoveredSelectionIndex({
   return null;
 }
 
-export function resolveSelectedWorktreeIndex(
-  items: TreeItem[],
-  selectedIndex: number,
-): number | null {
-  const selected = items[selectedIndex];
-  if (!selected) {
-    return null;
-  }
-
-  if (selected.type === "worktree") {
-    return selectedIndex;
-  }
-
-  if (selected.type === "detail") {
-    return findOwningWorktreeIndex(items, selectedIndex);
-  }
-
-  return null;
-}
-
 export function resolveExpandedRightArrowAction({
   repos,
   items,
@@ -986,6 +966,24 @@ export function findOwningWorktreeIndex(
   }
 
   return null;
+}
+
+export function resolveSelectedWorktreeTarget(
+  repos: RepoInfo[],
+  items: TreeItem[],
+  selectedIndex: number,
+): { repo: RepoInfo; worktree: WorktreeInfo } | null {
+  const worktreeIndex = findOwningWorktreeIndex(items, selectedIndex);
+  if (worktreeIndex === null) return null;
+
+  const item = items[worktreeIndex];
+  if (item?.type !== "worktree") return null;
+
+  const repo = repos[item.repoIndex];
+  const worktree = repo?.worktrees[item.worktreeIndex];
+  if (!repo || !worktree) return null;
+
+  return { repo, worktree };
 }
 
 export function resolveSelectedPane({

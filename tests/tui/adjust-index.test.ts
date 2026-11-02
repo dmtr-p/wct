@@ -7,9 +7,10 @@ import {
 } from "../../src/tui/lifecycle";
 import { resolveSessionsHandoff } from "../../src/tui/session-utils";
 import {
+  findOwningWorktreeIndex,
   resolveExpandedRightArrowAction,
   resolveRecoveredSelectionIndex,
-  resolveSelectedWorktreeIndex,
+  resolveSelectedWorktreeTarget,
   resolveTreeReturnMode,
   treeItemId,
 } from "../../src/tui/tree-helpers";
@@ -423,20 +424,53 @@ describe("resolveRecoveredSelectionIndex", () => {
   });
 });
 
-describe("resolveSelectedWorktreeIndex", () => {
+describe("findOwningWorktreeIndex", () => {
   test("returns the same index for a selected worktree row", () => {
     const items: TreeItem[] = [repo(0), worktree(0, 0)];
-    expect(resolveSelectedWorktreeIndex(items, 1)).toBe(1);
+    expect(findOwningWorktreeIndex(items, 1)).toBe(1);
   });
 
   test("returns the parent worktree index for a selected detail row", () => {
     const items: TreeItem[] = [repo(0), worktree(0, 0), detail(0, 0, "pr")];
-    expect(resolveSelectedWorktreeIndex(items, 2)).toBe(1);
+    expect(findOwningWorktreeIndex(items, 2)).toBe(1);
   });
 
   test("returns null for a selected repo row", () => {
     const items: TreeItem[] = [repo(0), worktree(0, 0)];
-    expect(resolveSelectedWorktreeIndex(items, 0)).toBeNull();
+    expect(findOwningWorktreeIndex(items, 0)).toBeNull();
+  });
+
+  test("returns null for missing selections and orphan details", () => {
+    const items: TreeItem[] = [repo(0), detail(0, 0, "pr")];
+    expect(findOwningWorktreeIndex(items, -1)).toBeNull();
+    expect(findOwningWorktreeIndex(items, 2)).toBeNull();
+    expect(findOwningWorktreeIndex(items, 1)).toBeNull();
+  });
+});
+
+describe("resolveSelectedWorktreeTarget", () => {
+  test("resolves a worktree and its details within the selected repository", () => {
+    const repos = [fakeRepo("repo-a", ["main"]), fakeRepo("repo-b", ["feat"])];
+    const items: TreeItem[] = [
+      repo(0),
+      worktree(0, 0),
+      repo(1),
+      worktree(1, 0),
+      detail(1, 0, "pr"),
+    ];
+    const expected = { repo: repos[1], worktree: repos[1]?.worktrees[0] };
+    expect(resolveSelectedWorktreeTarget(repos, items, 3)).toEqual(expected);
+    expect(resolveSelectedWorktreeTarget(repos, items, 4)).toEqual(expected);
+  });
+
+  test("refuses repository, missing, and stale worktree selections", () => {
+    const repos = [fakeRepo("repo-a", ["main"])];
+    const items: TreeItem[] = [repo(0), worktree(1, 0), worktree(0, 1)];
+    for (const selectedIndex of [-1, 0, 1, 2, 3]) {
+      expect(
+        resolveSelectedWorktreeTarget(repos, items, selectedIndex),
+      ).toBeNull();
+    }
   });
 });
 

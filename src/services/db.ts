@@ -103,6 +103,23 @@ export function runMigrations(db: Database): void {
   apply.immediate();
 }
 
+function openDatabase(): Database {
+  mkdirSync(getWctDir(), { recursive: true });
+  const db = new Database(getDbPath(), { create: true });
+  try {
+    db.run("PRAGMA journal_mode=WAL");
+    runMigrations(db);
+    return db;
+  } catch (error) {
+    try {
+      db.close();
+    } catch {
+      // Preserve the initialization failure if closing also fails.
+    }
+    throw error;
+  }
+}
+
 export function withDb<A>(
   errorCode: ErrorCode,
   operation: string,
@@ -110,11 +127,8 @@ export function withDb<A>(
 ): Effect.Effect<A, WctError> {
   return Effect.try({
     try: () => {
-      mkdirSync(getWctDir(), { recursive: true });
-      const db = new Database(getDbPath(), { create: true });
+      const db = openDatabase();
       try {
-        db.run("PRAGMA journal_mode=WAL");
-        runMigrations(db);
         return f(db);
       } finally {
         db.close();
@@ -142,18 +156,7 @@ export function withDbEffect<A, E, R>(
     );
   return Effect.acquireUseRelease(
     Effect.try({
-      try: () => {
-        mkdirSync(getWctDir(), { recursive: true });
-        const db = new Database(getDbPath(), { create: true });
-        try {
-          db.run("PRAGMA journal_mode=WAL");
-          runMigrations(db);
-          return db;
-        } catch (error) {
-          db.close();
-          throw error;
-        }
-      },
+      try: openDatabase,
       catch: (error) => failure(error),
     }),
     (db) =>

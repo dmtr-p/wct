@@ -26,7 +26,7 @@ import {
   resolveSessionsHandoff,
   resolveStartActionMessage,
 } from "../session-utils";
-import { resolveSelectedWorktreeIndex } from "../tree-helpers";
+import { resolveSelectedWorktreeTarget } from "../tree-helpers";
 import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";
 import { formatWorkspaceWarning } from "../workspace-warning";
@@ -181,18 +181,13 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
       return;
     }
 
-    const worktreeIndex = resolveSelectedWorktreeIndex(
+    const target = resolveSelectedWorktreeTarget(
+      deps.filteredRepos,
       deps.treeItems,
       deps.selectedIndex,
     );
-    if (worktreeIndex === null) return;
-
-    const resolvedItem = deps.treeItems[worktreeIndex];
-    if (resolvedItem?.type !== "worktree") return;
-    const repo = deps.filteredRepos[resolvedItem.repoIndex];
-    if (!repo) return;
-    const wt = repo.worktrees[resolvedItem.worktreeIndex];
-    if (!wt) return;
+    if (!target) return;
+    const { repo, worktree: wt } = target;
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
     const sessionName = formatSessionName(basename(wt.path));
     const hasSession = deps.sessions.some((s) => s.name === sessionName);
@@ -273,18 +268,13 @@ export function createExecuteDown(deps: SessionActionDeps) {
 
 export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
   return () => {
-    const worktreeIndex = resolveSelectedWorktreeIndex(
+    const target = resolveSelectedWorktreeTarget(
+      deps.filteredRepos,
       deps.treeItems,
       deps.selectedIndex,
     );
-    if (worktreeIndex === null) return;
-
-    const item = deps.treeItems[worktreeIndex];
-    if (item?.type !== "worktree") return;
-
-    const repo = deps.filteredRepos[item.repoIndex];
-    const wt = repo?.worktrees[item.worktreeIndex];
-    if (!repo || !wt) return;
+    if (!target) return;
+    const { repo, worktree: wt } = target;
 
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
@@ -384,18 +374,13 @@ export function createExecuteClose(deps: SessionActionDeps) {
 
 export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
   return () => {
-    const worktreeIndex = resolveSelectedWorktreeIndex(
+    const target = resolveSelectedWorktreeTarget(
+      deps.filteredRepos,
       deps.treeItems,
       deps.selectedIndex,
     );
-    if (worktreeIndex === null) return;
-
-    const item = deps.treeItems[worktreeIndex];
-    if (item?.type !== "worktree") return;
-
-    const repo = deps.filteredRepos[item.repoIndex];
-    const wt = repo?.worktrees[item.worktreeIndex];
-    if (!repo || !wt) return;
+    if (!target) return;
+    const { repo, worktree: wt } = target;
 
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 

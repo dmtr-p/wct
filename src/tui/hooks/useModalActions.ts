@@ -22,7 +22,7 @@ import {
   type SessionHandoffDeps,
 } from "../session-handoff";
 import {
-  resolveSelectedWorktreeIndex,
+  resolveSelectedWorktreeTarget,
   resolveTreeReturnMode,
 } from "../tree-helpers";
 import type { ReturnSlot } from "../tree-navigation";
@@ -170,18 +170,13 @@ export function createHandleOpen(deps: ModalActionDeps) {
 
 export function createPrepareUpModal(deps: ModalActionDeps) {
   return () => {
-    const worktreeIndex = resolveSelectedWorktreeIndex(
+    const target = resolveSelectedWorktreeTarget(
+      deps.filteredRepos,
       deps.treeItems,
       deps.selectedIndex,
     );
-    if (worktreeIndex === null) return;
-
-    const item = deps.treeItems[worktreeIndex];
-    if (item?.type !== "worktree") return;
-
-    const repo = deps.filteredRepos[item.repoIndex];
-    const wt = repo?.worktrees[item.worktreeIndex];
-    if (!repo || !wt) return;
+    if (!target) return;
+    const { repo, worktree: wt } = target;
 
     if (
       rejectIfLifecycleActive({

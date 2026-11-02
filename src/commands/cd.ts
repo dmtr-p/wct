@@ -3,8 +3,8 @@ import { loadRuntimeConfig } from "../effect/config";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
 import { spawnInteractive } from "../services/process";
-import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
+import { resolveWorktreeTarget } from "./worktree-target";
 
 export { cdCommandDef as commandDef } from "../cli/command-metadata";
 
@@ -12,20 +12,7 @@ export function cdCommand(
   branch: string,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
-    const repo = yield* WorktreeService.use((service) => service.isGitRepo());
-    if (!repo) {
-      return yield* commandError("not_git_repo", "Not a git repository");
-    }
-
-    const worktree = yield* WorktreeService.use((service) =>
-      service.findWorktreeByBranch(branch),
-    );
-    if (!worktree) {
-      return yield* commandError(
-        "worktree_not_found",
-        `No worktree found for branch '${branch}'. Try: wct open ${branch}`,
-      );
-    }
+    const worktree = yield* resolveWorktreeTarget(branch);
 
     const shell = yield* loadRuntimeConfig(
       Config.String("SHELL").pipe(Config.withDefault("/bin/sh")),

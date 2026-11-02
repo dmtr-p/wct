@@ -11,7 +11,7 @@ import {
 } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
-import { maybeAttachSession } from "./session";
+import { logTmuxResult, maybeAttachSession } from "./session";
 
 export { openCommandDef as commandDef } from "../cli/command-metadata";
 
@@ -62,17 +62,7 @@ function logWorkspaceOpenResult(result: WorkspaceOpenResult) {
       );
     }
 
-    if (result.attempts.tmux.attempted) {
-      if (result.attempts.tmux.ok) {
-        yield* result.attempts.tmux.value._tag === "AlreadyExists"
-          ? logger.info(`Tmux session '${result.sessionName}' already exists`)
-          : logger.success(`Created tmux session '${result.sessionName}'`);
-      } else {
-        yield* logger.warn(
-          `Failed to create tmux session: ${result.attempts.tmux.error.message}`,
-        );
-      }
-    }
+    yield* logTmuxResult(result);
 
     yield* logger.success(`Worktree '${result.branch}' is ready`);
   });

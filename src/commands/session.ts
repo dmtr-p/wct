@@ -3,6 +3,7 @@ import { loadRuntimeConfig } from "../effect/config";
 import type { WctServices } from "../effect/services";
 import { toWctError, type WctError } from "../errors";
 import { TmuxService } from "../services/tmux";
+import type { WorkspaceUpResult } from "../services/workspace-service";
 import * as logger from "../utils/logger";
 
 function canAutoAttachTmux() {
@@ -51,5 +52,23 @@ export function maybeAttachSession(
           `Failed to attach session: ${toWctError(error).message}\nAttach manually with: ${styles.bold(`tmux attach -t ${sessionName}`)}`,
         ),
     );
+  });
+}
+
+export function logTmuxResult(
+  result: Pick<WorkspaceUpResult, "sessionName" | "attempts">,
+) {
+  return Effect.gen(function* () {
+    if (result.attempts.tmux.attempted) {
+      if (result.attempts.tmux.ok) {
+        yield* result.attempts.tmux.value._tag === "AlreadyExists"
+          ? logger.info(`Tmux session '${result.sessionName}' already exists`)
+          : logger.success(`Created tmux session '${result.sessionName}'`);
+      } else {
+        yield* logger.warn(
+          `Failed to create tmux session: ${result.attempts.tmux.error.message}`,
+        );
+      }
+    }
   });
 }

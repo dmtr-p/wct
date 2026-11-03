@@ -64,6 +64,8 @@ export function AgentsView({
     () => buildAgentList(repos, agents, panes),
     [repos, agents, panes],
   );
+  // Reserve the modal's borders, spacer, and action row before wrapping copy.
+  const maxQuestionRows = Math.max(1, viewportRows - 4);
   const rows = useMemo(() => {
     if (!confirmation) return baseRows;
     const targetIndex = items.findIndex(
@@ -72,9 +74,13 @@ export function AgentsView({
     return insertAgentConfirmationRows(
       baseRows,
       targetIndex,
-      confirmModalRowCount(confirmation.mode, confirmation.width),
+      confirmModalRowCount(
+        confirmation.mode,
+        confirmation.width,
+        maxQuestionRows,
+      ),
     );
-  }, [baseRows, items, confirmation]);
+  }, [baseRows, items, confirmation, maxQuestionRows]);
   const { selectedIndex, offset, hoveredItemIndex } = useAgentNavigation(
     items,
     rows,
@@ -98,7 +104,13 @@ export function AgentsView({
       {rows.slice(offset, offset + viewportRows).map((row) => {
         if (row.kind === "confirmation") {
           if (row.partIndex !== 0 || !confirmation) return null;
-          return <ConfirmModal key="confirmation" {...confirmation} />;
+          return (
+            <ConfirmModal
+              key="confirmation"
+              {...confirmation}
+              maxQuestionRows={maxQuestionRows}
+            />
+          );
         }
         if (row.kind === "project") {
           return (

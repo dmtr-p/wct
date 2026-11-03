@@ -442,6 +442,55 @@ describe("App agents view", () => {
     }
   });
 
+  test.each([8, 12])(
+    "long kill questions keep mouse actions visible at 32×8 (initial height %i)",
+    async (initialRows) => {
+      tmuxFixtures.panes.set("alpha-branch", [
+        pane("%1", `Review ${"x".repeat(100)}`),
+        pane("%2", "Fix navigation"),
+      ]);
+      const app = await renderApp(<App />, initialRows, 32);
+      const clickAction = async (label: string) => {
+        const frame = app.lines();
+        const row = frame.findIndex((line) => line.includes(label));
+        expect(row).toBeGreaterThanOrEqual(2);
+        expect(row).toBeLessThan(8);
+        await sendKeys(
+          app.stdin,
+          sgrPress((frame[row] ?? "").indexOf(label) + 1, row + 1),
+        );
+      };
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "g");
+        const before = app.lines();
+        await sendKeys(app.stdin, "x");
+        if (initialRows !== 8) {
+          app.stdout.rows = 8;
+          app.stdout.emit("resize");
+          await tick(5);
+        }
+        const frame = app.lines();
+        expect(frame.join("\n")).toContain("Kill pane alpha-branch");
+        expect(frame.join("\n")).toContain("Review …");
+        expect(frame.join("\n")).toContain("enter:confirm");
+        expect(frame.join("\n")).toContain("esc:cancel");
+        expect(frame.slice(8).every((line) => !line.trim())).toBe(true);
+        await clickAction("esc:cancel");
+        expect(tmuxFixtures.killCalls).toHaveLength(0);
+        expect(app.lines().join("\n")).not.toContain("Kill Pane");
+        expect(app.lines().join("\n")).toContain("alpha-branch");
+        if (initialRows === 8) expect(app.lines()).toEqual(before);
+        await sendKeys(app.stdin, "x");
+        await clickAction("enter:confirm");
+        expect(tmuxFixtures.killCalls).toEqual(["%1"]);
+        expect(app.lines().join("\n")).not.toContain("Kill Pane");
+      } finally {
+        app.unmount();
+      }
+    },
+  );
+
   test("a pending kill keeps its confirmation and ignores duplicate submissions; failures allow retry", async () => {
     let finishKill: (() => void) | undefined;
     const pending = new Promise<void>((resolve) => {

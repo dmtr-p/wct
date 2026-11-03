@@ -53,6 +53,9 @@ scrolls into view; canceling restores the prior list position. For linked panes
 shown under multiple projects, it stays below the selected project's
 occurrence.
 
+Long confirmation questions are truncated with an ellipsis to keep the action
+controls visible within the agent viewport.
+
 The confirmation names the branch and pane title, keeps its target fixed
 across refreshes, and closes if that foreground agent exits or is replaced
 before submission. A pending kill keeps the confirmation until it settles;

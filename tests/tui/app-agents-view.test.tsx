@@ -8,10 +8,12 @@ import type {
 } from "../../src/services/agent-model";
 import { RegistrationId } from "../../src/services/identities";
 import type { TmuxPaneInfo } from "../../src/services/tmux";
+import type { WorkspaceCloseResult } from "../../src/services/workspace-service";
 import { buildAgentList } from "../../src/tui/agent-view";
 import type { WorkspaceAgentSnapshot } from "../../src/tui/hooks/useAgents";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
+  lastWorkspaceCall,
   makeWorktree,
   registryItems,
   renderApp,
@@ -146,6 +148,60 @@ describe("App agents view", () => {
       app.unmount();
     }
   });
+
+  test.each(["keyboard", "mouse"] as const)(
+    "%s view changes invalidate a pending close's force confirmation",
+    async (input) => {
+      const app = await renderApp(<App />);
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "\x1b[B");
+        await sendKeys(app.stdin, "c");
+        await sendKeys(app.stdin, "\r");
+        const close = lastWorkspaceCall("close");
+        expect(close.options.force).toBeUndefined();
+
+        // Switching away and back must not restore the old prompt's ownership.
+        for (let index = 0; index < 3; index += 1) {
+          if (input === "keyboard") await sendKeys(app.stdin, "g");
+          else {
+            const header = app.lines()[0] ?? "";
+            const label = header.includes("[Agents]")
+              ? "[Agents]"
+              : "[Worktrees]";
+            await sendKeys(app.stdin, sgrPress(header.indexOf(label) + 1, 1));
+          }
+        }
+        expect(app.lines()[0]).toContain("[Worktrees]");
+        const worktreePath = join(root, "alpha", "alpha-branch");
+        close.resolve({
+          operation: "close",
+          worktreePath,
+          sessionName: "alpha-branch",
+          existed: true,
+          status: "blocked_by_changes",
+          attempts: {
+            down: { attempted: false, reason: "down_not_configured" },
+            kill: { attempted: true, ok: true, value: null },
+            remove: {
+              attempted: true,
+              ok: true,
+              value: { _tag: "BlockedByChanges", path: worktreePath },
+            },
+          },
+          warnings: [],
+        } satisfies WorkspaceCloseResult);
+        await tick(20);
+        expect(app.lines().join("\n")).not.toContain("Force Close Worktree");
+        expect(app.lines().join("\n")).toContain("uncommitted changes");
+        await sendKeys(app.stdin, "\r");
+        expect(workspaceCalls("close")).toHaveLength(1);
+        expect(tmuxFixtures.switchCalls.at(-1)?.target).toBe("%1");
+      } finally {
+        app.unmount();
+      }
+    },
+  );
 
   test("header hit targets and both agent lines support mouse input; modals suspend the view", async () => {
     const app = await renderApp(<App />);
@@ -528,6 +584,50 @@ describe("App agents view", () => {
       app.unmount();
     }
   });
+
+  test.each(["exits", "is replaced"] as const)(
+    "a failed pending kill dismisses confirmation when its target %s",
+    async (change) => {
+      let rejectKill: ((error: Error) => void) | undefined;
+      const pending = new Promise<void>((_resolve, reject) => {
+        rejectKill = reject;
+      });
+      pending.catch(() => {});
+      tmuxFixtures.onKill = () => pending;
+      const app = await renderApp(<App />);
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "g");
+        await sendKeys(app.stdin, "x");
+        await sendKeys(app.stdin, "\r");
+        expect(tmuxFixtures.killCalls).toEqual(["%1"]);
+        const observations = new Map(fixtures.snapshot.observations);
+        if (change === "exits") observations.delete("%1");
+        else
+          observations.set("%1", {
+            ...observation("%1"),
+            generation: "replacement",
+          });
+        fixtures.snapshot = { ...fixtures.snapshot, observations };
+        await triggerRefresh();
+        await tick(10);
+        expect(app.lines().join("\n")).toContain("Kill Pane");
+
+        rejectKill?.(new Error("tmux unavailable"));
+        await tick(10);
+        expect(app.lines().join("\n")).toContain("Failed to kill pane");
+        expect(app.lines().join("\n")).not.toContain("Kill Pane");
+        await sendKeys(app.stdin, "\r");
+        expect(tmuxFixtures.killCalls).toEqual(["%1"]);
+        expect(tmuxFixtures.switchCalls.at(-1)?.target).toBe(
+          change === "exits" ? "%2" : "%1",
+        );
+      } finally {
+        rejectKill?.(new Error("test cleanup"));
+        app.unmount();
+      }
+    },
+  );
 
   test("keyboard reveals offscreen agents and wheel scrolling preserves the target", async () => {
     tmuxFixtures.panes.set(

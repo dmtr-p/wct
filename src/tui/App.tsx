@@ -222,6 +222,7 @@ export function App() {
   const shortcutsReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmPendingRef = useRef(false);
+  const [isPaneKillPending, setIsPaneKillPending] = useState(false);
   const confirmKillAttemptRef = useRef(0);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
@@ -267,6 +268,7 @@ export function App() {
       ) {
         confirmKillAttemptRef.current += 1;
         confirmPendingRef.current = false;
+        setIsPaneKillPending(false);
       }
       setMode(context.returnMode);
     },
@@ -514,10 +516,10 @@ export function App() {
   }, [confirmationMode, confirmationAnchorItemIndex, returnFromConfirmation]);
 
   useEffect(() => {
-    if (mode.type !== "ConfirmAgentKill" || confirmPendingRef.current) return;
+    if (mode.type !== "ConfirmAgentKill" || isPaneKillPending) return;
     if (agents.observations.get(mode.paneId)?.generation !== mode.generation)
       returnFromConfirmation(mode);
-  }, [agents.observations, mode, returnFromConfirmation]);
+  }, [agents.observations, mode, isPaneKillPending, returnFromConfirmation]);
 
   const refreshAll = useCallback(async (): Promise<RepoInfo[] | null> => {
     const [refreshedRepos] = await Promise.all([
@@ -775,6 +777,7 @@ export function App() {
       case "ConfirmKill": {
         if (confirmPendingRef.current) return;
         confirmPendingRef.current = true;
+        setIsPaneKillPending(true);
         const attempt = ++confirmKillAttemptRef.current;
         const target = mode;
         clearActionError();
@@ -795,6 +798,7 @@ export function App() {
         }).finally(() => {
           if (confirmKillAttemptRef.current === attempt) {
             confirmPendingRef.current = false;
+            setIsPaneKillPending(false);
           }
         });
         return;
@@ -852,6 +856,15 @@ export function App() {
     else if (key.return) submitConfirm();
   }
 
+  function toggleView() {
+    // A view change ends ownership of deferred prompts even when the mode's
+    // tag remains Navigate or Expanded. Async continuations compare identity.
+    const nextMode = { ...mode };
+    modeRef.current = nextMode;
+    setMode(nextMode);
+    setAgentsView((previous) => !previous);
+  }
+
   function handleMouse(event: MouseEvent) {
     if (event.kind === "move" || event.kind === "press") {
       setIsViewToggleHovered(
@@ -878,7 +891,7 @@ export function App() {
       isViewToggleButtonTarget(event, mode, termCols, agentsView)
     ) {
       lastMouseClickRef.current = null;
-      setAgentsView((previous) => !previous);
+      toggleView();
       return;
     }
 
@@ -1080,7 +1093,7 @@ export function App() {
 
       if (mode.type === "Navigate" || mode.type === "Expanded") {
         if (input === "g") {
-          setAgentsView((previous) => !previous);
+          toggleView();
           return;
         }
         if (agentsView) {

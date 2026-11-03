@@ -34,7 +34,6 @@ export function useAgentNavigation(
   );
   const [scrollOffset, setScrollOffset] = useState(0);
   const currentScrollOffset = useRef(scrollOffset);
-  currentScrollOffset.current = scrollOffset;
   const confirmationReturnOffset = useRef<number | null>(null);
   const confirmationStart = rows.findIndex(
     (row) => row.kind === "confirmation",
@@ -54,6 +53,10 @@ export function useAgentNavigation(
         : { id: selectedItem?.id ?? "", index: selectedIndex },
     );
   }, [selectedItem?.id, selectedIndex]);
+
+  useLayoutEffect(() => {
+    currentScrollOffset.current = scrollOffset;
+  }, [scrollOffset]);
 
   useLayoutEffect(() => {
     let restoreOffset: number | undefined;

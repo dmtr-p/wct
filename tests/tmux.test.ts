@@ -150,6 +150,25 @@ describe("parsePaneListOutput", () => {
   test("handles empty output", () => {
     expect(parsePaneListOutput("")).toEqual([]);
   });
+
+  test("keeps each pane title distinct from the shared window name", () => {
+    const panes = parsePaneListOutput(
+      "%1\t0\tclaude\tagents\t0\t1\tAdd agents view toggle | wct\n" +
+        "%2\t1\tcodex\tagents\t0\t0\tReview\tnavigation\n" +
+        "%3\t2\tclaude\tagents\t0\t0\t\n",
+    );
+    expect(panes.map((pane) => pane.window)).toEqual([
+      "agents",
+      "agents",
+      "agents",
+    ]);
+    expect(panes.map((pane) => pane.title)).toEqual([
+      "Add agents view toggle | wct",
+      "Review\tnavigation",
+      "",
+    ]);
+    expect(panes.map((pane) => pane.paneId)).toEqual(["%1", "%2", "%3"]);
+  });
 });
 
 describe("parseClientListOutput", () => {

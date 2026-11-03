@@ -9,6 +9,7 @@ import { vi } from "vitest";
 import type { WctError } from "../../src/errors";
 import { RegistrationId } from "../../src/services/identities";
 import type { PrFacts } from "../../src/services/pr-model";
+import type { TmuxPaneInfo } from "../../src/services/tmux";
 import type {
   WorkspacePhase,
   WorkspaceReporter,
@@ -55,6 +56,19 @@ vi.mock("../../src/tui/runtime", async () => {
     ...noopTmuxService,
     listClients: Effect.sync(() => tmuxFixtures.clients),
     listSessions: Effect.sync(() => tmuxFixtures.sessions),
+    listPanes: (session: string) =>
+      Effect.sync(() => tmuxFixtures.panes.get(session) ?? []),
+    killPane: (paneId: string) =>
+      Effect.promise(async () => {
+        tmuxFixtures.killCalls.push(paneId);
+        await tmuxFixtures.onKill?.(paneId);
+        for (const [session, panes] of tmuxFixtures.panes) {
+          tmuxFixtures.panes.set(
+            session,
+            panes.filter((pane) => pane.paneId !== paneId),
+          );
+        }
+      }),
     switchClientToPane: (clientTty: string, target: string) =>
       Effect.sync(() => {
         tmuxFixtures.switchCalls.push({ clientTty, target });
@@ -157,6 +171,9 @@ const worktreeFixtures = vi.hoisted(() => ({
 }));
 
 const tmuxFixtures = vi.hoisted(() => ({
+  panes: new Map<string, TmuxPaneInfo[]>(),
+  killCalls: [] as string[],
+  onKill: null as ((paneId: string) => Promise<void>) | null,
   clients: [] as Array<{ tty: string; session: string }>,
   sessions: null as Array<{
     name: string;
@@ -410,6 +427,9 @@ export function resetHarnessFixtures(): void {
   githubFixtures.listRequests.length = 0;
   tmuxFixtures.clients = [];
   tmuxFixtures.sessions = null;
+  tmuxFixtures.panes.clear();
+  tmuxFixtures.killCalls.length = 0;
+  tmuxFixtures.onKill = null;
   tmuxFixtures.switchCalls.length = 0;
   tmuxFixtures.onSwitch = null;
   workspaceHarness.calls.length = 0;

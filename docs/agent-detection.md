@@ -150,13 +150,12 @@ server: missing fields leave title/screen rules operational. Progress is not
 used alone to classify state. Live compatibility on Linux and with tmux 3.2
 and 3.7 is unverified.
 
-Pane rows support jump, zoom, and kill actions. Workspace counts use Workspace
-Identity and include collapsed/detached sessions. Counts appear in blocked,
-working, idle, unknown order; retained counts explicitly say stale. Each linked
-pane counts once per Workspace. Rows remain single-line with width-aware
-truncation. Only semantic/membership/freshness changes update presentation.
+Only semantic, membership, and freshness changes update presentation.
 Repository and tmux state use the separate
 [TUI refresh loop](tui-refresh.md).
+
+See [TUI views and controls](tui.md) for agent lists, Workspace counts,
+navigation, pane actions, and inline confirmations.
 
 ## Compatibility validation
 

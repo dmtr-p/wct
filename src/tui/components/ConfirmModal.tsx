@@ -10,6 +10,7 @@ export type ConfirmMode = Extract<
   {
     type:
       | "ConfirmKill"
+      | "ConfirmAgentKill"
       | "ConfirmDown"
       | "ConfirmClose"
       | "ConfirmCloseForce"
@@ -20,6 +21,7 @@ export type ConfirmMode = Extract<
 export function isConfirmMode(mode: Mode): mode is ConfirmMode {
   return (
     mode.type === "ConfirmKill" ||
+    mode.type === "ConfirmAgentKill" ||
     mode.type === "ConfirmDown" ||
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce" ||
@@ -41,6 +43,7 @@ export function copyFor(mode: ConfirmMode): {
 } {
   switch (mode.type) {
     case "ConfirmKill":
+    case "ConfirmAgentKill":
       return {
         title: "Kill Pane",
         question: `Kill pane ${mode.label}?`,

@@ -12,9 +12,10 @@ files in `docs/adr/` for engineering decisions.
   [agent detection](../agent-detection.md); GitHub PR discovery, caching, and
   refresh coordination belong in [PR refresh](../pr-refresh.md). Workspace
   startup, copying, and shutdown belong in
-  [Workspace Operations](../workspace-operations.md); repository and tmux
-  polling belong in [TUI refresh](../tui-refresh.md). Dependency preparation,
-  checks, caching, hooks, and editor setup belong in
+  [Workspace Operations](../workspace-operations.md). View navigation, pane
+  actions, and inline confirmations belong in [TUI views and controls](../tui.md);
+  repository and tmux polling belong in [TUI refresh](../tui-refresh.md).
+  Dependency preparation, checks, caching, hooks, and editor setup belong in
   [development tooling](../development.md); test helpers and isolation belong
   in [testing](../testing.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine

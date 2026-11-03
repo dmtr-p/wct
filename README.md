@@ -247,6 +247,8 @@ Use `--profile ""` to select the base configuration without automatic matching.
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.
 
+Click **Agents** before **+Add**, or press `g`, for running agents grouped by project. See [TUI views and controls](docs/tui.md) for switching views, agent navigation, pane actions, and inline confirmations.
+
 Repository and tmux state refresh every five seconds and on database changes.
 See [TUI refresh](docs/tui-refresh.md) for publication and failure behavior.
 

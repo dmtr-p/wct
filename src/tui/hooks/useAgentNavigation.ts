@@ -20,15 +20,19 @@ export function useAgentNavigation(
   onJump: (paneId: string) => void,
   onKill: (item: AgentListItem) => void,
 ) {
-  const [selection, setSelection] = useState({ id: "", index: 0 });
-  const retainedIndex = items.findIndex((item) => item.id === selection.id);
-  const selectedIndex = Math.max(
-    0,
-    retainedIndex < 0
-      ? Math.min(selection.index, items.length - 1)
-      : retainedIndex,
+  // Undefined allows initial selection once agents arrive; null keeps a lost
+  // foreground generation deselected until the user explicitly selects a row.
+  const [selection, setSelection] = useState<string | null | undefined>(
+    undefined,
   );
+  const selectedIndex =
+    selection === undefined
+      ? items.length
+        ? 0
+        : -1
+      : items.findIndex((item) => item.id === selection);
   const selectedItem = items[selectedIndex];
+  const selectedId = selectedItem?.id;
   const selectedRow = rows.findIndex(
     (row) => row.kind === "agent" && row.itemIndex === selectedIndex,
   );
@@ -46,13 +50,10 @@ export function useAgentNavigation(
   const lastClick = useRef<MouseClickHistory | null>(null);
 
   useEffect(() => {
-    setSelection((previous) =>
-      previous.id === (selectedItem?.id ?? "") &&
-      previous.index === selectedIndex
-        ? previous
-        : { id: selectedItem?.id ?? "", index: selectedIndex },
-    );
-  }, [selectedItem?.id, selectedIndex]);
+    if (selectedId !== undefined) setSelection(selectedId);
+    else
+      setSelection((previous) => (previous === undefined ? undefined : null));
+  }, [selectedId]);
 
   useLayoutEffect(() => {
     currentScrollOffset.current = scrollOffset;
@@ -69,12 +70,14 @@ export function useAgentNavigation(
     setScrollOffset((previous) => {
       const offset =
         restoreOffset === undefined
-          ? scrollToRevealListItem(
-              previous,
-              Math.max(0, selectedRow),
-              rows.length,
-              viewportRows,
-            )
+          ? selectedRow < 0
+            ? clampListScrollOffset(previous, rows.length, viewportRows)
+            : scrollToRevealListItem(
+                previous,
+                selectedRow,
+                rows.length,
+                viewportRows,
+              )
           : clampListScrollOffset(restoreOffset, rows.length, viewportRows);
       return confirmationStart < 0
         ? offset
@@ -100,7 +103,7 @@ export function useAgentNavigation(
   function select(index: number) {
     const item = items[index];
     if (!item) return;
-    setSelection({ id: item.id, index });
+    setSelection(item.id);
     const start = rows.findIndex(
       (row) => row.kind === "agent" && row.itemIndex === index,
     );

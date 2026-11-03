@@ -332,6 +332,93 @@ describe("App agents view", () => {
     }
   });
 
+  test.each(["exits", "is replaced"] as const)(
+    "clears selection when the selected agent %s until explicit reselection",
+    async (change) => {
+      const app = await renderApp(<App />);
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "g");
+        await sendKeys(app.stdin, "\x1b[B");
+        expect(selectedLine(app.lines())).toContain("Fix navigation");
+        const observations = new Map(fixtures.snapshot.observations);
+        if (change === "exits") observations.delete("%2");
+        else
+          observations.set("%2", {
+            ...observation("%2"),
+            generation: "replacement",
+          });
+        fixtures.snapshot = { ...fixtures.snapshot, observations };
+        await triggerRefresh();
+        await tick(10);
+        expect(selectedLine(app.lines())).toBeUndefined();
+        for (const key of ["\r", " ", "x"]) await sendKeys(app.stdin, key);
+        expect(tmuxFixtures.switchCalls).toHaveLength(0);
+        expect(tmuxFixtures.killCalls).toHaveLength(0);
+        expect(app.lines().join("\n")).not.toContain("Kill Pane");
+        await triggerRefresh();
+        await tick(10);
+        expect(selectedLine(app.lines())).toBeUndefined();
+
+        await sendKeys(app.stdin, "\x1b[B");
+        expect(selectedLine(app.lines())).toContain(
+          "Add agents view toggle | wct",
+        );
+        await sendKeys(app.stdin, "\r");
+        expect(tmuxFixtures.switchCalls.at(-1)?.target).toBe("%1");
+
+        const title = change === "exits" ? "Review changes" : "Fix navigation";
+        const row = app.lines().findIndex((line) => line.includes(title));
+        expect(row).toBeGreaterThanOrEqual(0);
+        await sendKeys(app.stdin, sgrPress(8, row + 1));
+        expect(selectedLine(app.lines())).toContain(title);
+        await sendKeys(app.stdin, "x");
+        expect(app.lines().join("\n")).toContain("Kill Pane");
+        await sendKeys(app.stdin, "\r");
+        expect(tmuxFixtures.killCalls).toEqual([
+          change === "exits" ? "%3" : "%2",
+        ]);
+      } finally {
+        app.unmount();
+      }
+    },
+  );
+
+  test("selects initial arrivals but keeps a cleared selection empty when agents return", async () => {
+    const populated = fixtures.snapshot;
+    const empty: WorkspaceAgentSnapshot = {
+      observations: new Map(),
+      memberships: new Map(),
+      summaries: new Map(),
+    };
+    fixtures.snapshot = empty;
+    const app = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(app.stdin, "g");
+      fixtures.snapshot = populated;
+      await triggerRefresh();
+      await tick(10);
+      expect(selectedLine(app.lines())).toContain(
+        "Add agents view toggle | wct",
+      );
+      fixtures.snapshot = empty;
+      await triggerRefresh();
+      await tick(10);
+      expect(selectedLine(app.lines())).toBeUndefined();
+      fixtures.snapshot = populated;
+      await triggerRefresh();
+      await tick(10);
+      expect(selectedLine(app.lines())).toBeUndefined();
+      for (const key of ["\r", " ", "x"]) await sendKeys(app.stdin, key);
+      expect(tmuxFixtures.switchCalls).toHaveLength(0);
+      expect(tmuxFixtures.killCalls).toHaveLength(0);
+      expect(app.lines().join("\n")).not.toContain("Kill Pane");
+    } finally {
+      app.unmount();
+    }
+  });
+
   test("x confirms the selected agent pane, supports cancel, and returns to agents after killing", async () => {
     const app = await renderApp(<App />);
     tmuxFixtures.onKill = async (paneId) => {
@@ -619,6 +706,10 @@ describe("App agents view", () => {
         expect(app.lines().join("\n")).not.toContain("Kill Pane");
         await sendKeys(app.stdin, "\r");
         expect(tmuxFixtures.killCalls).toEqual(["%1"]);
+        expect(tmuxFixtures.switchCalls).toHaveLength(0);
+        expect(selectedLine(app.lines())).toBeUndefined();
+        await sendKeys(app.stdin, "\x1b[B");
+        await sendKeys(app.stdin, "\r");
         expect(tmuxFixtures.switchCalls.at(-1)?.target).toBe(
           change === "exits" ? "%2" : "%1",
         );

@@ -46,6 +46,8 @@ Use Up/Down to select an agent and Enter, Space, or a double-click to switch
 the selected tmux client to its pane. Home/End and Page Up/Page Down navigate
 the list; wheel scrolling preserves selection. Selection follows the pane's
 foreground generation across refreshes.
+If that generation disappears or is replaced, selection clears. Use navigation
+or click a row to select an agent before jumping to or killing its pane.
 
 Press `x` to kill the selected agent's pane, Enter to confirm, or Escape to
 cancel. The confirmation appears directly below that agent's status line and

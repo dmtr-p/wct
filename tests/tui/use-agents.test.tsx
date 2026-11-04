@@ -19,7 +19,8 @@ import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 const runPromise = vi.hoisted(() => vi.fn());
 vi.mock("../../src/tui/runtime", () => ({ tuiRuntime: { runPromise } }));
 const observe = vi.fn<AgentServiceApi["observe"]>();
-const { useAgents } = await import("../../src/tui/hooks/useAgents");
+const { useAgents, verifyAgentGeneration } =
+  await import("../../src/tui/hooks/useAgents");
 const repo: RepoInfo = {
   id: RegistrationId("repo"),
   repoPath: "/repo",
@@ -453,4 +454,19 @@ describe("scoped agent polling", () => {
       cancel.mockRestore();
     }
   });
+});
+
+test.each([
+  ["fresh_rule", true],
+  ["capture_timeout", false],
+  ["validation_unavailable", false],
+])("verifyAgentGeneration with reason %s returns %s", async (reason, ok) => {
+  const snapshot = workingSnapshot();
+  const observation = snapshot.observations.get("%1");
+  if (!observation) throw new Error("missing observation");
+  snapshot.observations.set("%1", { ...observation, reason });
+  runPromise.mockResolvedValueOnce(snapshot);
+  expect(await verifyAgentGeneration([repo], "%1", "g")).toBe(ok);
+  runPromise.mockResolvedValueOnce(snapshot);
+  expect(await verifyAgentGeneration([repo], "%1", "other")).toBe(false);
 });

@@ -101,9 +101,12 @@ export async function verifyAgentGeneration(
       ),
     );
     const observation = snapshot.observations.get(paneId);
+    // A capture error takes precedence over validation_unavailable in the
+    // reported reason, so it can hide a skipped post-capture recheck.
     return (
       observation?.generation === generation &&
-      !UNVERIFIED_REASONS.has(observation.reason)
+      !UNVERIFIED_REASONS.has(observation.reason) &&
+      !observation.reason.startsWith("capture_")
     );
   } catch {
     return false;

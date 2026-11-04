@@ -23,7 +23,7 @@ import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
 import { getHeaderLayout } from "./header";
 import { useActionError } from "./hooks/useActionError";
-import { useAgents } from "./hooks/useAgents";
+import { useAgents, verifyAgentGeneration } from "./hooks/useAgents";
 import { useGitHub } from "./hooks/useGitHub";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
@@ -779,23 +779,42 @@ export function App() {
         confirmPendingRef.current = true;
         setIsPaneKillPending(true);
         const attempt = ++confirmKillAttemptRef.current;
+        const isCurrent = () => confirmKillAttemptRef.current === attempt;
         const target = mode;
+        const targetRepos = repos;
         clearActionError();
-        void executeConfirmKill({
-          paneId: target.paneId,
-          killPane,
-          refreshSessions,
-          isCurrent: () => confirmKillAttemptRef.current === attempt,
-          showActionError,
-          onSuccess: () => {
-            if (target.type === "ConfirmAgentKill")
-              returnFromConfirmation(target);
-            else {
-              restoreTreeReturnPosition("kill", "owning-worktree");
-              setMode(Mode.Expanded(target.workspaceKey));
-            }
-          },
-        }).finally(() => {
+        void (async () => {
+          // The cached snapshot can lag a pane restart by a poll interval.
+          if (
+            target.type === "ConfirmAgentKill" &&
+            !(await verifyAgentGeneration(
+              targetRepos,
+              target.paneId,
+              target.generation,
+            ))
+          ) {
+            if (!isCurrent()) return;
+            returnFromConfirmation(target);
+            showActionError("Agent pane changed or could not be verified");
+            return;
+          }
+          if (!isCurrent()) return;
+          await executeConfirmKill({
+            paneId: target.paneId,
+            killPane,
+            refreshSessions,
+            isCurrent,
+            showActionError,
+            onSuccess: () => {
+              if (target.type === "ConfirmAgentKill")
+                returnFromConfirmation(target);
+              else {
+                restoreTreeReturnPosition("kill", "owning-worktree");
+                setMode(Mode.Expanded(target.workspaceKey));
+              }
+            },
+          });
+        })().finally(() => {
           if (confirmKillAttemptRef.current === attempt) {
             confirmPendingRef.current = false;
             setIsPaneKillPending(false);

@@ -43,6 +43,13 @@ export function insertAgentConfirmationRows(
   ];
 }
 
+// Pane titles are set by programs inside the pane. Control bytes would reach
+// the terminal as escape sequences, including inside OSC 8 hyperlink text.
+function sanitizePaneTitle(title: string): string {
+  // eslint-disable-next-line no-control-regex -- C0, DEL, and C1 must be matched
+  return toSingleLine(title).replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD");
+}
+
 export function buildAgentList(
   repos: readonly RepoInfo[],
   snapshot: AgentSnapshot,
@@ -66,7 +73,7 @@ export function buildAgentList(
           id: JSON.stringify([repo.repoPath, paneId, observation.generation]),
           paneId,
           branch: worktree.branch,
-          title: toSingleLine(sessionPanes.get(paneId)?.title ?? ""),
+          title: sanitizePaneTitle(sessionPanes.get(paneId)?.title ?? ""),
           observation,
         });
       }

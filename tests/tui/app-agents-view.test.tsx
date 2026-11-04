@@ -38,6 +38,10 @@ const fixtures = vi.hoisted((): { snapshot: WorkspaceAgentSnapshot } => ({
 
 vi.mock("../../src/tui/hooks/useAgents", () => ({
   useAgents: () => fixtures.snapshot,
+  verifyAgentGeneration: vi.fn(
+    async (_repos: unknown, paneId: string, generation: string) =>
+      fixtures.snapshot.observations.get(paneId)?.generation === generation,
+  ),
 }));
 
 const { App } = await import("../../src/tui/App");
@@ -414,6 +418,33 @@ describe("App agents view", () => {
       expect(tmuxFixtures.switchCalls).toHaveLength(0);
       expect(tmuxFixtures.killCalls).toHaveLength(0);
       expect(app.lines().join("\n")).not.toContain("Kill Pane");
+    } finally {
+      app.unmount();
+    }
+  });
+
+  test("a kill whose live generation check fails cancels without killing", async () => {
+    const { verifyAgentGeneration } =
+      await import("../../src/tui/hooks/useAgents");
+    vi.mocked(verifyAgentGeneration).mockResolvedValueOnce(false);
+    const app = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(app.stdin, "g");
+      await sendKeys(app.stdin, "\x1b[B");
+      await sendKeys(app.stdin, "x");
+      expect(app.lines().join("\n")).toContain("Kill Pane");
+      await sendKeys(app.stdin, "\r");
+      expect(verifyAgentGeneration).toHaveBeenLastCalledWith(
+        expect.anything(),
+        "%2",
+        "generation-%2",
+      );
+      expect(tmuxFixtures.killCalls).toHaveLength(0);
+      expect(app.lines().join("\n")).not.toContain("Kill Pane");
+      expect(app.lines().join("\n")).toContain(
+        "Agent pane changed or could not be verified",
+      );
     } finally {
       app.unmount();
     }
@@ -856,4 +887,33 @@ test("agent grouping deduplicates linked panes per project and keeps duplicate p
   expect(
     list.rows.filter((row) => row.kind === "project").map((row) => row.id),
   ).toEqual(["/a", "/b"]);
+});
+
+test("agent pane titles replace C0, DEL, and C1 control characters", () => {
+  const repo: RepoInfo = {
+    id: RegistrationId("a"),
+    project: "p",
+    repoPath: "/a",
+    profileNames: [],
+    worktrees: [
+      {
+        branch: "one",
+        path: "/a/one",
+        isMainWorktree: false,
+        changedFiles: 0,
+        sync: null,
+      },
+    ],
+  };
+  const list = buildAgentList(
+    [repo],
+    {
+      observations: new Map([["%1", observation("%1")]]),
+      memberships: new Map([["one", new Set(["%1"])]]),
+    },
+    new Map([["one", [pane("%1", "a\x1b]8;;x\x07b\x7fc\x9b31md\tz")]]]),
+  );
+  expect(list.items[0]?.title).toBe(
+    "a\uFFFD]8;;x\uFFFDb\uFFFDc\uFFFD31md\uFFFDz",
+  );
 });

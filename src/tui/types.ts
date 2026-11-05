@@ -24,6 +24,13 @@ export type Mode =
       workspaceKey: WorkspaceIdentityKey;
     }
   | {
+      type: "ConfirmAgentKill";
+      itemId: string;
+      paneId: string;
+      generation: string;
+      label: string;
+    }
+  | {
       type: "ConfirmDown";
       sessionName: string;
       branch: string;
@@ -94,6 +101,12 @@ export const Mode = {
     label,
     workspaceKey,
   }),
+  ConfirmAgentKill: (
+    itemId: string,
+    paneId: string,
+    generation: string,
+    label: string,
+  ): Mode => ({ type: "ConfirmAgentKill", itemId, paneId, generation, label }),
   ConfirmDown: ({
     sessionName,
     branch,

@@ -72,6 +72,7 @@ function getHints(
         join("u:up", hasClient && "d:down", "c:close", "/:search", "q:quit"),
       ];
     case "ConfirmKill":
+    case "ConfirmAgentKill":
       return [`Kill pane ${mode.label}?`, "enter:confirm  esc:cancel"];
     case "ConfirmDown":
       return [`Stop session for ${mode.branch}?`, "enter:confirm  esc:cancel"];
@@ -93,11 +94,12 @@ function getHints(
 /**
  * App uses this count to budget the tree viewport. Truncated lines make it
  * independent of terminal width. Form modals retain navigation's virtual count
- * to preserve scroll position; confirmations are counted in the tree model.
+ * to preserve scroll position. App budgets confirmation rows separately.
  */
 export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
   switch (mode.type) {
     case "ConfirmKill":
+    case "ConfirmAgentKill":
     case "ConfirmDown":
     case "ConfirmClose":
     case "ConfirmCloseForce":
@@ -146,6 +148,7 @@ export function StatusBar({
 
   if (
     mode.type === "ConfirmKill" ||
+    mode.type === "ConfirmAgentKill" ||
     mode.type === "ConfirmDown" ||
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce" ||

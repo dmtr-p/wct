@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { WorkspaceIdentityKey } from "../services/identities";
 import { AddProjectModal } from "./components/AddProjectModal";
+import { AgentsView } from "./components/AgentsView";
 import {
   confirmModalRowCount,
   type ConfirmMode,
@@ -20,8 +21,9 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatusBar, statusBarRowCount } from "./components/StatusBar";
 import { TreeView } from "./components/TreeView";
 import { UpModal } from "./components/UpModal";
+import { getHeaderLayout } from "./header";
 import { useActionError } from "./hooks/useActionError";
-import { useAgents } from "./hooks/useAgents";
+import { useAgents, verifyAgentGeneration } from "./hooks/useAgents";
 import { useGitHub } from "./hooks/useGitHub";
 import { useGuardedInput } from "./hooks/useGuardedInput";
 import { useModalActions } from "./hooks/useModalActions";
@@ -39,11 +41,11 @@ import { executeConfirmKill } from "./input/confirm-kill";
 import type { ExpandedContext } from "./input/expanded";
 import { handleExpandedInput } from "./input/expanded";
 import {
-  ADD_PROJECT_BUTTON_LABEL,
   detectDoubleClick,
   HEADER_OFFSET,
   isAddProjectButtonPress,
   isAddProjectButtonTarget,
+  isViewToggleButtonTarget,
   type MouseClickHistory,
   mouseClickTargetId,
   type MouseEvent,
@@ -120,6 +122,8 @@ export function App() {
     discoverClient,
   } = useTmux();
   const agents = useAgents(repos);
+  const [agentsView, setAgentsView] = useState(false);
+  const [isViewToggleHovered, setIsViewToggleHovered] = useState(false);
 
   const navigation = useTreeNavigation(() => navigationSnapshot);
   const dispatchTreeNavigation = navigation.dispatch;
@@ -210,6 +214,7 @@ export function App() {
   const lifecycleClaimsRef = useRef(createLifecycleClaims());
   const lifecycleClaims = lifecycleClaimsRef.current;
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
+  const agentKillReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmRemoveProjectReturnModeRef = useRef<Mode>(Mode.Navigate);
   const upModalReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -217,12 +222,15 @@ export function App() {
   const shortcutsReturnModeRef = useRef<Mode>(Mode.Navigate);
   const modalReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmPendingRef = useRef(false);
+  const [isPaneKillPending, setIsPaneKillPending] = useState(false);
   const confirmKillAttemptRef = useRef(0);
   const lastMouseClickRef = useRef<MouseClickHistory | null>(null);
 
   const confirmationReturnContext = useCallback(
     (confirmMode: ConfirmMode): ConfirmationReturnContext => {
       switch (confirmMode.type) {
+        case "ConfirmAgentKill":
+          return { slot: "kill", returnMode: agentKillReturnModeRef.current };
         case "ConfirmKill":
           return {
             slot: "kill",
@@ -252,10 +260,15 @@ export function App() {
   const returnFromConfirmation = useCallback(
     (confirmMode: ConfirmMode) => {
       const context = confirmationReturnContext(confirmMode);
-      restoreTreeReturnPosition(context.slot);
-      if (confirmMode.type === "ConfirmKill") {
+      if (confirmMode.type !== "ConfirmAgentKill")
+        restoreTreeReturnPosition(context.slot);
+      if (
+        confirmMode.type === "ConfirmKill" ||
+        confirmMode.type === "ConfirmAgentKill"
+      ) {
         confirmKillAttemptRef.current += 1;
         confirmPendingRef.current = false;
+        setIsPaneKillPending(false);
       }
       setMode(context.returnMode);
     },
@@ -383,12 +396,13 @@ export function App() {
     }),
   );
 
-  const repoError = statusBarProps.selectedProject
-    ? githubErrors.get(
-        filteredRepos[treeItems[selectedIndex]?.repoIndex ?? -1]?.repoPath ??
-          "",
-      )
-    : undefined;
+  const repoError =
+    !agentsView && statusBarProps.selectedProject
+      ? githubErrors.get(
+          filteredRepos[treeItems[selectedIndex]?.repoIndex ?? -1]?.repoPath ??
+            "",
+        )
+      : undefined;
 
   // The shared visual-row model drives both windowing here and the row-by-row
   // render in TreeView. Logical items are not 1:1 with terminal rows.
@@ -404,7 +418,9 @@ export function App() {
     [treeItems, filteredRepos, expandedWorkspaceKeys, lifecycle, termCols],
   );
 
-  const confirmationMode = isConfirmMode(mode) ? mode : null;
+  const agentKillMode = mode.type === "ConfirmAgentKill" ? mode : null;
+  const confirmationMode =
+    isConfirmMode(mode) && mode.type !== "ConfirmAgentKill" ? mode : null;
   const confirmationWidth = Math.min(termCols, 60);
   const confirmationAnchorItemIndex = useMemo(
     () => resolveConfirmationAnchorItemIndex(mode, treeItems, filteredRepos),
@@ -430,7 +446,7 @@ export function App() {
   // owns its row count so viewport budgeting follows its render branches.
   // Form modals retain the navigation footer's virtual count to preserve wheel
   // scroll position on cancel; the tree box clips any excess modal height.
-  // Confirmation rows are counted inside the tree model instead.
+  // Confirmations live in each view's visual row model.
   const bottomChromeRowsForRepoError = (hasRepoError: boolean) =>
     statusBarRowCount(mode, hasRepoError) +
     (tmuxError || actionError ? 1 : 0) +
@@ -498,6 +514,12 @@ export function App() {
     if (!confirmationMode || confirmationAnchorItemIndex !== null) return;
     returnFromConfirmation(confirmationMode);
   }, [confirmationMode, confirmationAnchorItemIndex, returnFromConfirmation]);
+
+  useEffect(() => {
+    if (mode.type !== "ConfirmAgentKill" || isPaneKillPending) return;
+    if (agents.observations.get(mode.paneId)?.generation !== mode.generation)
+      returnFromConfirmation(mode);
+  }, [agents.observations, mode, isPaneKillPending, returnFromConfirmation]);
 
   const refreshAll = useCallback(async (): Promise<RepoInfo[] | null> => {
     const [refreshedRepos] = await Promise.all([
@@ -742,30 +764,60 @@ export function App() {
 
   function submitConfirm() {
     if (!isConfirmMode(mode)) return;
-    if (confirmationAnchorItemIndex === null) {
+    if (
+      mode.type === "ConfirmAgentKill"
+        ? agents.observations.get(mode.paneId)?.generation !== mode.generation
+        : confirmationAnchorItemIndex === null
+    ) {
       cancelConfirm();
       return;
     }
     switch (mode.type) {
+      case "ConfirmAgentKill":
       case "ConfirmKill": {
         if (confirmPendingRef.current) return;
         confirmPendingRef.current = true;
+        setIsPaneKillPending(true);
         const attempt = ++confirmKillAttemptRef.current;
-        const { paneId, workspaceKey } = mode;
+        const isCurrent = () => confirmKillAttemptRef.current === attempt;
+        const target = mode;
+        const targetRepos = repos;
         clearActionError();
-        void executeConfirmKill({
-          paneId,
-          killPane,
-          refreshSessions,
-          isCurrent: () => confirmKillAttemptRef.current === attempt,
-          showActionError,
-          onSuccess: () => {
-            restoreTreeReturnPosition("kill", "owning-worktree");
-            setMode(Mode.Expanded(workspaceKey));
-          },
-        }).finally(() => {
+        void (async () => {
+          // The cached snapshot can lag a pane restart by a poll interval.
+          if (
+            target.type === "ConfirmAgentKill" &&
+            !(await verifyAgentGeneration(
+              targetRepos,
+              target.paneId,
+              target.generation,
+            ))
+          ) {
+            if (!isCurrent()) return;
+            returnFromConfirmation(target);
+            showActionError("Agent pane changed or could not be verified");
+            return;
+          }
+          if (!isCurrent()) return;
+          await executeConfirmKill({
+            paneId: target.paneId,
+            killPane,
+            refreshSessions,
+            isCurrent,
+            showActionError,
+            onSuccess: () => {
+              if (target.type === "ConfirmAgentKill")
+                returnFromConfirmation(target);
+              else {
+                restoreTreeReturnPosition("kill", "owning-worktree");
+                setMode(Mode.Expanded(target.workspaceKey));
+              }
+            },
+          });
+        })().finally(() => {
           if (confirmKillAttemptRef.current === attempt) {
             confirmPendingRef.current = false;
+            setIsPaneKillPending(false);
           }
         });
         return;
@@ -823,10 +875,22 @@ export function App() {
     else if (key.return) submitConfirm();
   }
 
+  function toggleView() {
+    // A view change ends ownership of deferred prompts even when the mode's
+    // tag remains Navigate or Expanded. Async continuations compare identity.
+    const nextMode = { ...mode };
+    modeRef.current = nextMode;
+    setMode(nextMode);
+    setAgentsView((previous) => !previous);
+  }
+
   function handleMouse(event: MouseEvent) {
     if (event.kind === "move" || event.kind === "press") {
+      setIsViewToggleHovered(
+        isViewToggleButtonTarget(event, mode, termCols, agentsView),
+      );
       setIsAddProjectButtonHovered(
-        isAddProjectButtonTarget(event, mode, termCols),
+        isAddProjectButtonTarget(event, mode, termCols, agentsView),
       );
     }
 
@@ -834,11 +898,23 @@ export function App() {
       setLastHoverPosition({ col: event.col, row: event.row });
     }
 
-    if (isAddProjectButtonPress(event, mode, termCols)) {
+    if (isAddProjectButtonPress(event, mode, termCols, agentsView)) {
       lastMouseClickRef.current = null;
       modalActions.prepareAddProjectModal();
       return;
     }
+
+    if (
+      event.kind === "press" &&
+      event.button === "left" &&
+      isViewToggleButtonTarget(event, mode, termCols, agentsView)
+    ) {
+      lastMouseClickRef.current = null;
+      toggleView();
+      return;
+    }
+
+    if (agentsView) return;
 
     const action = resolveMouseAction(event, {
       mode,
@@ -926,7 +1002,10 @@ export function App() {
       // Double-clicks require consecutive mouse presses. Any keyboard event
       // breaks the pair, even when it leaves the same row selected.
       lastMouseClickRef.current = null;
-      if (mode.type === "Navigate" || mode.type === "Expanded") {
+      if (
+        !agentsView &&
+        (mode.type === "Navigate" || mode.type === "Expanded")
+      ) {
         const item = treeItems[selectedIndex];
         if (item?.type === "detail") {
           if (input === "p") {
@@ -1011,6 +1090,7 @@ export function App() {
         mode.type !== "AddProjectModal" &&
         mode.type !== "Search" &&
         mode.type !== "ConfirmKill" &&
+        mode.type !== "ConfirmAgentKill" &&
         mode.type !== "ConfirmDown" &&
         mode.type !== "ConfirmClose" &&
         mode.type !== "ConfirmCloseForce" &&
@@ -1028,6 +1108,17 @@ export function App() {
         shortcutsReturnModeRef.current = mode;
         setMode(Mode.Shortcuts);
         return;
+      }
+
+      if (mode.type === "Navigate" || mode.type === "Expanded") {
+        if (input === "g") {
+          toggleView();
+          return;
+        }
+        if (agentsView) {
+          if (input === "a") modalActions.prepareAddProjectModal();
+          return;
+        }
       }
 
       switch (mode.type) {
@@ -1049,6 +1140,7 @@ export function App() {
         case "Expanded":
           return handleExpandedInput(expCtx, input, key);
         case "ConfirmKill":
+        case "ConfirmAgentKill":
         case "ConfirmDown":
         case "ConfirmClose":
         case "ConfirmCloseForce":
@@ -1068,15 +1160,46 @@ export function App() {
     );
   }
 
+  const header = getHeaderLayout(termCols, agentsView);
+
   return (
     <Box flexDirection="column" height={termRows}>
       {/* Only the tree may shrink; otherwise rows can overwrite the header. */}
       <Box flexDirection="column" flexShrink={0}>
-        <Box justifyContent="space-between">
-          <Text bold>wct</Text>
-          <Text bold color="cyan" inverse={isAddProjectButtonHovered}>
-            {ADD_PROJECT_BUTTON_LABEL}
-          </Text>
+        <Box
+          justifyContent="space-between"
+          height={1}
+          flexShrink={0}
+          overflowX="hidden"
+          overflowY="hidden"
+        >
+          <Box width={header.title.length} flexShrink={0}>
+            <Text bold wrap="truncate">
+              {header.title}
+            </Text>
+          </Box>
+          <Box gap={header.gap} width={header.controlsWidth} flexShrink={0}>
+            <Box width={header.viewToggle.label.length} flexShrink={0}>
+              <Text
+                bold
+                color="cyan"
+                inverse={isViewToggleHovered}
+                wrap="truncate"
+              >
+                {header.viewToggle.label}
+              </Text>
+            </Box>
+            <Box width={header.addProject.label.length} flexShrink={0}>
+              <Text
+                bold
+                color="cyan"
+                inverse={isAddProjectButtonHovered}
+                wrap="truncate"
+              >
+                {header.addProject.label}
+              </Text>
+            </Box>
+          </Box>
         </Box>
         <Text> </Text>
       </Box>
@@ -1089,41 +1212,86 @@ export function App() {
         overflowY="hidden"
       >
         <Box flexDirection="column" flexShrink={0}>
-          <TreeView
-            repos={filteredRepos}
-            sessions={sessions}
-            selectedIndex={selectedIndex}
-            items={treeItems}
-            rows={rows}
-            hoveredItemIndex={hoveredItemIndex}
-            lifecycle={lifecycle}
-            prData={prData}
-            associations={associations}
-            panes={panes}
-            agents={agents}
-            expandedWorkspaceKeys={expandedWorkspaceKeys}
-            maxWidth={termCols}
-            refreshingProjects={refreshingProjects}
-            errors={githubErrors}
-            scrollOffset={effectiveScrollOffset}
-            viewportRows={viewportRows}
-            confirmation={
-              confirmationMode
-                ? {
-                    mode: confirmationMode,
-                    width: confirmationWidth,
-                    onConfirm: submitConfirm,
-                    onCancel: cancelConfirm,
-                  }
-                : undefined
-            }
-          />
+          {agentsView ? (
+            <AgentsView
+              repos={repos}
+              agents={agents}
+              panes={panes}
+              maxWidth={termCols}
+              viewportRows={viewportRows}
+              isActive={mode.type === "Navigate" || mode.type === "Expanded"}
+              confirmation={
+                agentKillMode
+                  ? {
+                      mode: agentKillMode,
+                      width: confirmationWidth,
+                      onConfirm: submitConfirm,
+                      onCancel: cancelConfirm,
+                    }
+                  : undefined
+              }
+              onKill={(item) => {
+                agentKillReturnModeRef.current = mode;
+                clearActionError();
+                setMode(
+                  Mode.ConfirmAgentKill(
+                    item.id,
+                    item.paneId,
+                    item.observation.generation,
+                    `${toSingleLine(item.branch)}${item.title ? ` · ${item.title}` : ""}`,
+                  ),
+                );
+              }}
+              onJump={(paneId) => {
+                clearActionError();
+                void jumpToPane(paneId).then((success) => {
+                  if (!success)
+                    showActionError(
+                      tmuxClient
+                        ? "Could not switch to agent pane"
+                        : "No tmux client selected",
+                    );
+                });
+              }}
+            />
+          ) : (
+            <TreeView
+              repos={filteredRepos}
+              sessions={sessions}
+              selectedIndex={selectedIndex}
+              items={treeItems}
+              rows={rows}
+              hoveredItemIndex={hoveredItemIndex}
+              lifecycle={lifecycle}
+              prData={prData}
+              associations={associations}
+              panes={panes}
+              agents={agents}
+              expandedWorkspaceKeys={expandedWorkspaceKeys}
+              maxWidth={termCols}
+              refreshingProjects={refreshingProjects}
+              errors={githubErrors}
+              scrollOffset={effectiveScrollOffset}
+              viewportRows={viewportRows}
+              confirmation={
+                confirmationMode
+                  ? {
+                      mode: confirmationMode,
+                      width: confirmationWidth,
+                      onConfirm: submitConfirm,
+                      onCancel: cancelConfirm,
+                    }
+                  : undefined
+              }
+            />
+          )}
         </Box>
       </Box>
       {/* Keep footer and form heights fixed while the tree shrinks. */}
       <Box flexDirection="column" flexShrink={0}>
         {mode.type === "Shortcuts" ? (
           <ShortcutsModal
+            agentsView={agentsView}
             width={Math.min(termCols, 60)}
             onHide={() => setMode(shortcutsReturnModeRef.current)}
           />
@@ -1184,7 +1352,7 @@ export function App() {
                 {prOutcome}
               </Text>
             ) : null}
-            {!confirmationMode ? (
+            {!confirmationMode && !agentKillMode ? (
               <StatusBar
                 {...statusBarProps}
                 searchQuery={searchQuery}

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { Mode } from "../types";
-import { toSingleLine } from "../utils/truncate";
+import { toSingleLine, truncateBranch } from "../utils/truncate";
 import { wrapText } from "../utils/wrap-text";
 import { Modal } from "./Modal";
 import { MouseClickable } from "./MouseClickable";
@@ -10,6 +10,7 @@ export type ConfirmMode = Extract<
   {
     type:
       | "ConfirmKill"
+      | "ConfirmAgentKill"
       | "ConfirmDown"
       | "ConfirmClose"
       | "ConfirmCloseForce"
@@ -20,6 +21,7 @@ export type ConfirmMode = Extract<
 export function isConfirmMode(mode: Mode): mode is ConfirmMode {
   return (
     mode.type === "ConfirmKill" ||
+    mode.type === "ConfirmAgentKill" ||
     mode.type === "ConfirmDown" ||
     mode.type === "ConfirmClose" ||
     mode.type === "ConfirmCloseForce" ||
@@ -30,6 +32,7 @@ export function isConfirmMode(mode: Mode): mode is ConfirmMode {
 interface Props {
   mode: ConfirmMode;
   width?: number;
+  maxQuestionRows?: number;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -41,6 +44,7 @@ export function copyFor(mode: ConfirmMode): {
 } {
   switch (mode.type) {
     case "ConfirmKill":
+    case "ConfirmAgentKill":
       return {
         title: "Kill Pane",
         question: `Kill pane ${mode.label}?`,
@@ -76,12 +80,24 @@ export function copyFor(mode: ConfirmMode): {
 export function confirmationQuestionLines(
   mode: ConfirmMode,
   width: number,
+  maxQuestionRows?: number,
 ): string[] {
-  return wrapText(copyFor(mode).question, Math.max(1, width - 4));
+  const contentWidth = Math.max(1, width - 4);
+  const lines = wrapText(copyFor(mode).question, contentWidth);
+  if (maxQuestionRows === undefined || lines.length <= maxQuestionRows)
+    return lines;
+  const visible = lines.slice(0, Math.max(1, maxQuestionRows));
+  const last = visible.length - 1;
+  visible[last] = truncateBranch(`${visible[last] ?? ""} …`, contentWidth);
+  return visible;
 }
 
-export function confirmModalRowCount(mode: ConfirmMode, width: number): number {
-  return confirmationQuestionLines(mode, width).length + 4;
+export function confirmModalRowCount(
+  mode: ConfirmMode,
+  width: number,
+  maxQuestionRows?: number,
+): number {
+  return confirmationQuestionLines(mode, width, maxQuestionRows).length + 4;
 }
 
 function Action({
@@ -109,10 +125,20 @@ function Action({
   );
 }
 
-export function ConfirmModal({ mode, width, onConfirm, onCancel }: Props) {
+export function ConfirmModal({
+  mode,
+  width,
+  maxQuestionRows,
+  onConfirm,
+  onCancel,
+}: Props) {
   const modalWidth = width ?? 40;
   const { title, confirmLabel } = copyFor(mode);
-  const questionLines = confirmationQuestionLines(mode, modalWidth);
+  const questionLines = confirmationQuestionLines(
+    mode,
+    modalWidth,
+    maxQuestionRows,
+  );
 
   return (
     <Modal title={title} visible width={width} accentColor="red" dimAccent>

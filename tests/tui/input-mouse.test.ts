@@ -3,9 +3,9 @@ import {
   RegistrationId,
   type WorkspaceIdentityKey,
 } from "../../src/services/identities";
+import { ADD_PROJECT_BUTTON_LABEL } from "../../src/tui/header";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
-  ADD_PROJECT_BUTTON_LABEL,
   detectDoubleClick,
   HEADER_OFFSET,
   isAddProjectButtonPress,

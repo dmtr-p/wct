@@ -27,6 +27,7 @@ export interface TmuxPaneInfo {
   paneIndex: number;
   command: string;
   window: string;
+  title?: string;
   zoomed: boolean;
   active: boolean;
 }
@@ -203,7 +204,7 @@ export function parsePaneListOutput(output: string): TmuxPaneInfo[] {
     .split("\n")
     .filter(Boolean)
     .flatMap((line) => {
-      const [pid, pIdx, cmd, win, zoom, active] = line.split("\t");
+      const [pid, pIdx, cmd, win, zoom, active, ...title] = line.split("\t");
       return pid
         ? [
             {
@@ -211,6 +212,7 @@ export function parsePaneListOutput(output: string): TmuxPaneInfo[] {
               paneIndex: Number(pIdx),
               command: cmd || "",
               window: win || "",
+              ...(title.length ? { title: title.join("\t") } : {}),
               zoomed: zoom === "1",
               active: active === "1",
             },
@@ -541,8 +543,8 @@ function listPanesImpl(sessionName: string) {
       "-t",
       `=${sessionName}`,
       "-F",
-      "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}\t#{window_zoomed_flag}\t#{pane_active}",
-    ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout.trim()))),
+      "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}\t#{window_zoomed_flag}\t#{pane_active}\t#{pane_title}",
+    ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout))),
     () => [] as TmuxPaneInfo[],
   );
 }

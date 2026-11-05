@@ -59,18 +59,62 @@ export function workspaceAgentSummaries(
   return summaries;
 }
 
-export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
-  const sessionsKey = JSON.stringify(
-    [
-      ...new Set(
-        repos.flatMap((repo) =>
-          repo.worktrees.map((worktree) =>
-            formatSessionName(basename(worktree.path)),
-          ),
+function agentSessionNames(repos: readonly RepoInfo[]): string[] {
+  return [
+    ...new Set(
+      repos.flatMap((repo) =>
+        repo.worktrees.map((worktree) =>
+          formatSessionName(basename(worktree.path)),
         ),
       ),
-    ].sort(),
-  );
+    ),
+  ].sort();
+}
+
+// Reasons that mean the generation was not re-established by process
+// inspection during this observation.
+const UNVERIFIED_REASONS = new Set([
+  "discovery_unavailable",
+  "process_inspection_unavailable",
+  "validation_unavailable",
+  "arguments_unavailable",
+  "runtime_unavailable",
+]);
+
+/**
+ * One-shot live check that `paneId` still runs `generation`. Observes from an
+ * empty snapshot so a retained observation cannot vouch for a pane whose
+ * inspection failed. This narrows, but cannot close, the race with a kill.
+ */
+export async function verifyAgentGeneration(
+  repos: readonly RepoInfo[],
+  paneId: string,
+  generation: string,
+): Promise<boolean> {
+  // Observe every registered session: the service evicts cached evidence for
+  // panes outside the requested set.
+  const sessions = new Set(agentSessionNames(repos));
+  try {
+    const snapshot = await tuiRuntime.runPromise(
+      AgentService.use((service) =>
+        service.observe(sessions, emptyAgentSnapshot()),
+      ),
+    );
+    const observation = snapshot.observations.get(paneId);
+    // A capture error takes precedence over validation_unavailable in the
+    // reported reason, so it can hide a skipped post-capture recheck.
+    return (
+      observation?.generation === generation &&
+      !UNVERIFIED_REASONS.has(observation.reason) &&
+      !observation.reason.startsWith("capture_")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
+  const sessionsKey = JSON.stringify(agentSessionNames(repos));
   const sessions = useMemo(
     () => new Set<string>(JSON.parse(sessionsKey)),
     [sessionsKey],

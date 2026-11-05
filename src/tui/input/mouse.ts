@@ -1,4 +1,5 @@
 import type { WorkspaceIdentityKey } from "../../services/identities";
+import { getHeaderLayout } from "../header";
 import type { RepoInfo } from "../hooks/useRegistry";
 import { workspaceIdentityKey } from "../lifecycle";
 import { isInertTreeItem, type TreeRow } from "../tree-helpers";
@@ -10,7 +11,18 @@ import type { Mode, TreeItem } from "../types";
  * this offset (and the 1-based → 0-based conversion).
  */
 export const HEADER_OFFSET = 2;
-export const ADD_PROJECT_BUTTON_LABEL = "[+Add]";
+
+export function isViewToggleButtonTarget(
+  event: MouseEvent,
+  mode: Mode,
+  terminalColumns: number,
+  agentsView: boolean,
+): boolean {
+  if (mode.type !== "Navigate" && mode.type !== "Expanded") return false;
+  if (event.kind === "wheel" || event.row !== 1) return false;
+  const button = getHeaderLayout(terminalColumns, agentsView).viewToggle;
+  return event.col >= button.firstColumn && event.col <= button.lastColumn;
+}
 
 /** SGR extended mouse event (DECSET ?1006), with an optional stripped ESC. */
 // eslint-disable-next-line no-control-regex -- the ESC (\x1b) byte is the literal start of an SGR mouse sequence and must be matched
@@ -54,28 +66,27 @@ export function isAddProjectButtonTarget(
   event: MouseEvent,
   mode: Mode,
   terminalColumns: number,
+  agentsView = false,
 ): boolean {
   if (mode.type !== "Navigate" && mode.type !== "Expanded") return false;
   if (event.kind === "wheel" || event.row !== 1) {
     return false;
   }
 
-  const firstButtonColumn = Math.max(
-    1,
-    terminalColumns - ADD_PROJECT_BUTTON_LABEL.length + 1,
-  );
-  return event.col >= firstButtonColumn && event.col <= terminalColumns;
+  const button = getHeaderLayout(terminalColumns, agentsView).addProject;
+  return event.col >= button.firstColumn && event.col <= button.lastColumn;
 }
 
 export function isAddProjectButtonPress(
   event: MouseEvent,
   mode: Mode,
   terminalColumns: number,
+  agentsView = false,
 ): boolean {
   return (
     event.kind === "press" &&
     event.button === "left" &&
-    isAddProjectButtonTarget(event, mode, terminalColumns)
+    isAddProjectButtonTarget(event, mode, terminalColumns, agentsView)
   );
 }
 

@@ -72,6 +72,32 @@ function pane(paneId: string, title: string): TmuxPaneInfo {
   };
 }
 
+function closeResult(
+  path: string,
+  status: WorkspaceCloseResult["status"] = "removed",
+): WorkspaceCloseResult {
+  return {
+    operation: "close",
+    worktreePath: path,
+    sessionName: path.split("/").at(-1) ?? "",
+    existed: true,
+    status,
+    attempts: {
+      down: { attempted: false, reason: "down_not_configured" },
+      kill: { attempted: true, ok: true, value: null },
+      remove: {
+        attempted: true,
+        ok: true,
+        value: {
+          _tag: status === "removed" ? "Removed" : "BlockedByChanges",
+          path,
+        },
+      },
+    },
+    warnings: [],
+  };
+}
+
 describe("App agents view", () => {
   let root: string;
 
@@ -142,12 +168,176 @@ describe("App agents view", () => {
         "%1",
         "%2",
       ]);
-      for (const key of ["c", "d", "u", "o", "\x7f"])
-        await sendKeys(app.stdin, key);
+      for (const key of ["d", "u", "o", "\x7f"]) await sendKeys(app.stdin, key);
       expect(workspaceCalls()).toHaveLength(0);
       expect(app.lines().join("\n")).not.toContain("Confirm");
       await sendKeys(app.stdin, "g");
       expect(selectedLine(app.lines())).toBe(worktreeSelection);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  test.each(["keyboard", "mouse"] as const)(
+    "%s close confirmation targets the selected agent's Workspace and preserves the Worktrees selection",
+    async (input) => {
+      const app = await renderApp(<App />, 14, 50);
+      const act = async (label: string, key: string) => {
+        if (input === "keyboard") {
+          await sendKeys(app.stdin, key);
+          if (key === "\x1b") await tick(30);
+        } else {
+          const row = app.lines().findIndex((line) => line.includes(label));
+          expect(row).toBeGreaterThanOrEqual(0);
+          await sendKeys(
+            app.stdin,
+            sgrPress((app.lines()[row] ?? "").indexOf(label) + 1, row + 1),
+          );
+        }
+      };
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "\x1b[B");
+        const worktreeSelection = selectedLine(app.lines());
+        await sendKeys(app.stdin, "g");
+        await sendKeys(app.stdin, "\x1b[F");
+        expect(selectedLine(app.lines())).toContain("beta-branch");
+        await sendKeys(app.stdin, "c");
+        const frame = app.lines();
+        expect(frame.join("\n")).toContain("Close worktree beta-branch?");
+        expect(frame.findIndex((line) => line.includes("Close Worktree"))).toBe(
+          frame.findIndex((line) => line.includes("idle · claude")) + 1,
+        );
+        expect(workspaceCalls()).toHaveLength(0);
+        await act("esc:cancel", "\x1b");
+        expect(app.lines().join("\n")).not.toContain("Close Worktree");
+        expect(selectedLine(app.lines())).toContain("beta-branch");
+
+        await sendKeys(app.stdin, "c");
+        await act("enter:confirm", "\r");
+        await sendKeys(app.stdin, "\r");
+        expect(workspaceCalls("close")).toHaveLength(1);
+        const close = lastWorkspaceCall("close");
+        const repoPath = join(root, "beta");
+        const path = join(repoPath, "beta-branch");
+        expect(close.options).toMatchObject({ path, cwd: repoPath });
+        expect(close.options.force).toBeUndefined();
+        expect(tmuxFixtures.killCalls).toHaveLength(0);
+        worktreeFixtures.byRepoPath.set(repoPath, []);
+        close.resolve(closeResult(path));
+        await tick(20);
+        expect(app.lines()[0]).toContain("[Worktrees]");
+        expect(app.lines().join("\n")).not.toContain("beta-branch");
+        await sendKeys(app.stdin, "g");
+        expect(selectedLine(app.lines())).toBe(worktreeSelection);
+      } finally {
+        app.unmount();
+      }
+    },
+  );
+
+  test.each(["cancel", "confirm"] as const)(
+    "can %s force close after shutdown removes every agent",
+    async (action) => {
+      const app = await renderApp(<App />, 8, 32);
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "g");
+        await sendKeys(app.stdin, "\x1b[F");
+        await sendKeys(app.stdin, "c");
+        await sendKeys(app.stdin, "\r");
+        const close = lastWorkspaceCall("close");
+        const path = join(root, "beta", "beta-branch");
+        await sendKeys(app.stdin, "c");
+        expect(workspaceCalls("close")).toHaveLength(1);
+        expect(app.lines().join("\n")).toContain("is busy");
+
+        fixtures.snapshot = {
+          observations: new Map(),
+          memberships: new Map(),
+          summaries: new Map(),
+        };
+        tmuxFixtures.panes.clear();
+        close.resolve(closeResult(path, "blocked_by_changes"));
+        await tick(20);
+        const frame = app.lines();
+        expect(frame.join("\n")).toContain("Force Close Worktree");
+        expect(frame.join("\n")).toContain("enter:force close");
+        expect(frame.join("\n")).toContain("esc:cancel");
+        expect(frame.slice(8).every((line) => !line.trim())).toBe(true);
+        if (action === "cancel") {
+          await sendKeys(app.stdin, "\x1b");
+          await tick(30);
+          expect(workspaceCalls("close")).toHaveLength(1);
+        } else {
+          await sendKeys(app.stdin, "\r");
+          await sendKeys(app.stdin, "\r");
+          expect(workspaceCalls("close")).toHaveLength(2);
+          const forced = lastWorkspaceCall("close");
+          expect(forced.options).toMatchObject({
+            path,
+            cwd: join(root, "beta"),
+            force: true,
+          });
+          worktreeFixtures.byRepoPath.set(join(root, "beta"), []);
+          forced.resolve(closeResult(path));
+          await tick(20);
+        }
+        expect(app.lines().join("\n")).not.toContain("Force Close Worktree");
+        expect(app.lines().join("\n")).toContain("No running agents");
+        expect(tmuxFixtures.killCalls).toHaveLength(0);
+      } finally {
+        app.unmount();
+      }
+    },
+  );
+
+  test("linked agent close keeps the selected project's Workspace across reordering and filtering", async () => {
+    fixtures.snapshot = {
+      observations: new Map([["%1", observation("%1")]]),
+      memberships: new Map([
+        ["alpha-branch", new Set(["%1"])],
+        ["beta-branch", new Set(["%1"])],
+      ]),
+      summaries: new Map(),
+    };
+    const app = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(app.stdin, "/");
+      await sendKeys(app.stdin, "alpha");
+      await sendKeys(app.stdin, "\r");
+      await sendKeys(app.stdin, "g");
+      await sendKeys(app.stdin, "\x1b[F");
+      await sendKeys(app.stdin, "c");
+      registryItems.items = registryItems.items.toReversed();
+      await triggerRefresh();
+      await tick(10);
+      expect(app.lines().join("\n")).toContain("Close worktree beta-branch?");
+      await sendKeys(app.stdin, "\r");
+      const close = lastWorkspaceCall("close");
+      const path = join(root, "beta", "beta-branch");
+      expect(close.options).toMatchObject({ path, cwd: join(root, "beta") });
+      close.resolve(closeResult(path));
+      await tick(20);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  test("dismisses agent close when its Workspace disappears before confirmation", async () => {
+    const app = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(app.stdin, "g");
+      await sendKeys(app.stdin, "c");
+      expect(app.lines().join("\n")).toContain("Close Worktree");
+      worktreeFixtures.byRepoPath.set(join(root, "alpha"), []);
+      await triggerRefresh();
+      await tick(10);
+      expect(app.lines().join("\n")).not.toContain("Close Worktree");
+      await sendKeys(app.stdin, "\r");
+      expect(workspaceCalls("close")).toHaveLength(0);
     } finally {
       app.unmount();
     }
@@ -356,9 +546,10 @@ describe("App agents view", () => {
         await triggerRefresh();
         await tick(10);
         expect(selectedLine(app.lines())).toBeUndefined();
-        for (const key of ["\r", " ", "x"]) await sendKeys(app.stdin, key);
+        for (const key of ["\r", " ", "x", "c"]) await sendKeys(app.stdin, key);
         expect(tmuxFixtures.switchCalls).toHaveLength(0);
         expect(tmuxFixtures.killCalls).toHaveLength(0);
+        expect(workspaceCalls()).toHaveLength(0);
         expect(app.lines().join("\n")).not.toContain("Kill Pane");
         await triggerRefresh();
         await tick(10);
@@ -414,9 +605,10 @@ describe("App agents view", () => {
       await triggerRefresh();
       await tick(10);
       expect(selectedLine(app.lines())).toBeUndefined();
-      for (const key of ["\r", " ", "x"]) await sendKeys(app.stdin, key);
+      for (const key of ["\r", " ", "x", "c"]) await sendKeys(app.stdin, key);
       expect(tmuxFixtures.switchCalls).toHaveLength(0);
       expect(tmuxFixtures.killCalls).toHaveLength(0);
+      expect(workspaceCalls()).toHaveLength(0);
       expect(app.lines().join("\n")).not.toContain("Kill Pane");
     } finally {
       app.unmount();

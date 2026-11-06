@@ -30,7 +30,7 @@ import { resolveSelectedWorktreeTarget } from "../tree-helpers";
 import type { ReturnDestination, ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";
 import { formatWorkspaceWarning } from "../workspace-warning";
-import type { RepoInfo } from "./useRegistry";
+import type { RepoInfo, WorktreeInfo } from "./useRegistry";
 import type { TmuxClientDiscovery, TmuxSessionInfo } from "./useTmux";
 
 export interface SessionActionDeps extends SessionHandoffDeps {
@@ -267,6 +267,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
 }
 
 export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
+  const handleCloseWorktree = createHandleCloseWorktree(deps);
   return () => {
     const target = resolveSelectedWorktreeTarget(
       deps.filteredRepos,
@@ -274,15 +275,20 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
       deps.selectedIndex,
     );
     if (!target) return;
-    const { repo, worktree: wt } = target;
+    handleCloseWorktree(target.repo, target.worktree);
+  };
+}
 
+export function createHandleCloseWorktree(deps: SessionActionDeps) {
+  return (repo: RepoInfo, wt: WorktreeInfo, agentItemId?: string) => {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
     const sessionName = formatSessionName(basename(wt.path));
     const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
-    deps.captureTreeReturnPosition("close");
-    deps.confirmCloseReturnModeRef.current =
-      deps.mode.type === "Expanded"
+    if (!agentItemId) deps.captureTreeReturnPosition("close");
+    deps.confirmCloseReturnModeRef.current = agentItemId
+      ? deps.mode
+      : deps.mode.type === "Expanded"
         ? Mode.Expanded(workspaceKey)
         : Mode.Navigate;
     deps.setMode(
@@ -294,6 +300,7 @@ export function createHandleCloseSelectedWorktree(deps: SessionActionDeps) {
         repo.repoPath,
         repo.project,
         wt.changedFiles,
+        agentItemId,
       ),
     );
   };
@@ -310,6 +317,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
     repoPath: string,
     project: string,
     force: boolean,
+    agentItemId?: string,
   ) => {
     deps.clearActionError();
     const restoredMode = deps.confirmCloseReturnModeRef.current;
@@ -335,7 +343,8 @@ export function createExecuteClose(deps: SessionActionDeps) {
           );
         }
 
-        deps.restoreTreeReturnPosition("close", "owning-worktree");
+        if (!agentItemId)
+          deps.restoreTreeReturnPosition("close", "owning-worktree");
         deps.setMode(restoredMode);
 
         return tuiRuntime.runPromise(
@@ -355,7 +364,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }
-        deps.captureTreeReturnPosition("close", true);
+        if (!agentItemId) deps.captureTreeReturnPosition("close", true);
         deps.setMode(
           Mode.ConfirmCloseForce(
             sessionName,
@@ -364,6 +373,7 @@ export function createExecuteClose(deps: SessionActionDeps) {
             workspaceKey,
             repoPath,
             project,
+            agentItemId,
           ),
         );
         return undefined;
@@ -410,6 +420,7 @@ export function useSessionActions(deps: SessionActionDeps) {
     startWorkspace: createStartWorkspace(deps),
     handleSpaceSwitch: createHandleSpaceSwitch(deps),
     handleCloseSelectedWorktree: createHandleCloseSelectedWorktree(deps),
+    handleCloseWorktree: createHandleCloseWorktree(deps),
     executeClose: createExecuteClose(deps),
     handleDownSelectedWorktree: createHandleDownSelectedWorktree(deps),
     executeDown: createExecuteDown(deps),

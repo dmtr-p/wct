@@ -41,6 +41,7 @@ export type Mode =
     }
   | {
       type: "ConfirmClose";
+      agentItemId?: string;
       sessionName: string;
       branch: string;
       worktreePath: string;
@@ -51,6 +52,7 @@ export type Mode =
     }
   | {
       type: "ConfirmCloseForce";
+      agentItemId?: string;
       sessionName: string;
       branch: string;
       worktreePath: string;
@@ -131,6 +133,7 @@ export const Mode = {
     repoPath: string,
     project: string,
     changedFiles: number,
+    agentItemId?: string,
   ): Mode => ({
     type: "ConfirmClose",
     sessionName,
@@ -140,6 +143,7 @@ export const Mode = {
     repoPath,
     project,
     changedFiles,
+    ...(agentItemId ? { agentItemId } : {}),
   }),
   ConfirmCloseForce: (
     sessionName: string,
@@ -148,8 +152,10 @@ export const Mode = {
     workspaceKey: WorkspaceIdentityKey,
     repoPath: string,
     project: string,
+    agentItemId?: string,
   ): Mode => ({
     type: "ConfirmCloseForce",
+    ...(agentItemId ? { agentItemId } : {}),
     sessionName,
     branch,
     worktreePath,

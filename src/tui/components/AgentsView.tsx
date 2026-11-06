@@ -10,9 +10,12 @@ import {
 } from "../agent-view";
 import { useAgentNavigation } from "../hooks/useAgentNavigation";
 import type { RepoInfo } from "../hooks/useRegistry";
-import type { Mode } from "../types";
 import { toSingleLine, truncateBranch } from "../utils/truncate";
-import { ConfirmModal, confirmModalRowCount } from "./ConfirmModal";
+import {
+  ConfirmModal,
+  confirmModalRowCount,
+  type ConfirmMode,
+} from "./ConfirmModal";
 import {
   SELECTED_ROW_BACKGROUND,
   SELECTED_ROW_FOREGROUND,
@@ -28,8 +31,10 @@ interface Props {
   isActive: boolean;
   onJump: (paneId: string) => void;
   onKill: (item: AgentListItem) => void;
+  onClose: (item: AgentListItem) => void;
   confirmation?: {
-    mode: Extract<Mode, { type: "ConfirmAgentKill" }>;
+    mode: ConfirmMode;
+    itemId: string;
     width: number;
     onConfirm: () => void;
     onCancel: () => void;
@@ -58,6 +63,7 @@ export function AgentsView({
   isActive,
   onJump,
   onKill,
+  onClose,
   confirmation,
 }: Props) {
   const { items, rows: baseRows } = useMemo(
@@ -69,7 +75,7 @@ export function AgentsView({
   const rows = useMemo(() => {
     if (!confirmation) return baseRows;
     const targetIndex = items.findIndex(
-      (item) => item.id === confirmation.mode.itemId,
+      (item) => item.id === confirmation.itemId,
     );
     return insertAgentConfirmationRows(
       baseRows,
@@ -88,6 +94,7 @@ export function AgentsView({
     isActive,
     onJump,
     onKill,
+    onClose,
   );
 
   if (!rows.length) {

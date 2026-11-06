@@ -35,7 +35,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.6",
+    "@effect/platform-bun": "4.1.2",
     "effect": "4.0.6",
     "ink": "8.0.0",
     "react": "19.3.1"

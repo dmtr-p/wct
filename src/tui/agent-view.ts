@@ -8,6 +8,8 @@ import { toSingleLine } from "./utils/truncate";
 export interface AgentListItem {
   id: string;
   paneId: string;
+  repoPath: string;
+  worktreePath: string;
   branch: string;
   title: string;
   observation: AgentObservation;
@@ -29,8 +31,8 @@ export function insertAgentConfirmationRows(
       row.itemIndex === itemIndex &&
       row.part === "status",
   );
-  // Keep an in-flight confirmation visible if its target disappears before
-  // tmux acknowledges the kill; App owns closing it when the action settles.
+  // Keep confirmations visible when their agent disappears: a pane kill can
+  // still be pending, and a Workspace close can require force after shutdown.
   const insertionIndex = anchor < 0 ? rows.length : anchor + 1;
   const confirmationRows: AgentListRow[] = Array.from(
     { length: rowCount },
@@ -72,6 +74,8 @@ export function buildAgentList(
         projectItems.push({
           id: JSON.stringify([repo.repoPath, paneId, observation.generation]),
           paneId,
+          repoPath: repo.repoPath,
+          worktreePath: worktree.path,
           branch: worktree.branch,
           title: sanitizePaneTitle(sessionPanes.get(paneId)?.title ?? ""),
           observation,

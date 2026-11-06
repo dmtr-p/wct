@@ -260,7 +260,14 @@ export function App() {
   const returnFromConfirmation = useCallback(
     (confirmMode: ConfirmMode) => {
       const context = confirmationReturnContext(confirmMode);
-      if (confirmMode.type !== "ConfirmAgentKill")
+      if (
+        confirmMode.type !== "ConfirmAgentKill" &&
+        !(
+          (confirmMode.type === "ConfirmClose" ||
+            confirmMode.type === "ConfirmCloseForce") &&
+          confirmMode.agentItemId
+        )
+      )
         restoreTreeReturnPosition(context.slot);
       if (
         confirmMode.type === "ConfirmKill" ||
@@ -419,8 +426,27 @@ export function App() {
   );
 
   const agentKillMode = mode.type === "ConfirmAgentKill" ? mode : null;
+  const agentCloseMode =
+    (mode.type === "ConfirmClose" || mode.type === "ConfirmCloseForce") &&
+    mode.agentItemId
+      ? mode
+      : null;
+  const agentConfirmationMode = agentKillMode ?? agentCloseMode;
+  const agentConfirmationItemId =
+    agentKillMode?.itemId ?? agentCloseMode?.agentItemId;
   const confirmationMode =
-    isConfirmMode(mode) && mode.type !== "ConfirmAgentKill" ? mode : null;
+    isConfirmMode(mode) && !agentConfirmationMode ? mode : null;
+  const agentCloseTargetExists = agentCloseMode
+    ? repos.some(
+        (repo) =>
+          repo.repoPath === agentCloseMode.repoPath &&
+          repo.worktrees.some(
+            (wt) =>
+              wt.path === agentCloseMode.worktreePath &&
+              wt.branch === agentCloseMode.branch,
+          ),
+      )
+    : false;
   const confirmationWidth = Math.min(termCols, 60);
   const confirmationAnchorItemIndex = useMemo(
     () => resolveConfirmationAnchorItemIndex(mode, treeItems, filteredRepos),
@@ -514,6 +540,11 @@ export function App() {
     if (!confirmationMode || confirmationAnchorItemIndex !== null) return;
     returnFromConfirmation(confirmationMode);
   }, [confirmationMode, confirmationAnchorItemIndex, returnFromConfirmation]);
+
+  useEffect(() => {
+    if (agentCloseMode && !agentCloseTargetExists && !confirmPendingRef.current)
+      returnFromConfirmation(agentCloseMode);
+  }, [agentCloseMode, agentCloseTargetExists, returnFromConfirmation]);
 
   useEffect(() => {
     if (mode.type !== "ConfirmAgentKill" || isPaneKillPending) return;
@@ -767,7 +798,9 @@ export function App() {
     if (
       mode.type === "ConfirmAgentKill"
         ? agents.observations.get(mode.paneId)?.generation !== mode.generation
-        : confirmationAnchorItemIndex === null
+        : agentCloseMode
+          ? !agentCloseTargetExists
+          : confirmationAnchorItemIndex === null
     ) {
       cancelConfirm();
       return;
@@ -851,6 +884,7 @@ export function App() {
             mode.repoPath,
             mode.project,
             mode.type === "ConfirmCloseForce",
+            mode.agentItemId,
           )
           .finally(() => {
             confirmPendingRef.current = false;
@@ -1221,15 +1255,29 @@ export function App() {
               viewportRows={viewportRows}
               isActive={mode.type === "Navigate" || mode.type === "Expanded"}
               confirmation={
-                agentKillMode
+                agentConfirmationMode && agentConfirmationItemId
                   ? {
-                      mode: agentKillMode,
+                      mode: agentConfirmationMode,
+                      itemId: agentConfirmationItemId,
                       width: confirmationWidth,
                       onConfirm: submitConfirm,
                       onCancel: cancelConfirm,
                     }
                   : undefined
               }
+              onClose={(item) => {
+                const repo = repos.find(
+                  (repo) => repo.repoPath === item.repoPath,
+                );
+                const worktree = repo?.worktrees.find(
+                  (wt) =>
+                    wt.path === item.worktreePath && wt.branch === item.branch,
+                );
+                if (repo && worktree) {
+                  clearActionError();
+                  sessionActions.handleCloseWorktree(repo, worktree, item.id);
+                }
+              }}
               onKill={(item) => {
                 agentKillReturnModeRef.current = mode;
                 clearActionError();
@@ -1352,7 +1400,7 @@ export function App() {
                 {prOutcome}
               </Text>
             ) : null}
-            {!confirmationMode && !agentKillMode ? (
+            {!confirmationMode && !agentConfirmationMode ? (
               <StatusBar
                 {...statusBarProps}
                 searchQuery={searchQuery}

@@ -33,6 +33,7 @@ const AGENT_SHORTCUTS = [
   ["enter", "switch to agent pane"],
   ["space", "switch to agent pane"],
   ["x", "kill agent pane (confirm)"],
+  ["c", "close agent workspace (confirm)"],
   ["home / end", "first / last agent"],
   ["pgup / pgdn", "navigate by page"],
   ["g", "switch to worktrees view"],

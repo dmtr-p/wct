@@ -63,6 +63,14 @@ across refreshes, and closes if that foreground agent exits or is replaced
 before submission. A pending kill keeps the confirmation until it settles;
 failed kills can be retried.
 
+Press `c` to close the selected agent's Workspace, Enter to confirm, or Escape
+to cancel. The confirmation appears below that agent and targets the Workspace
+shown under its project. Closing uses the shared
+[Workspace shutdown flow](workspace-operations.md), including moving the tmux
+client away and asking separately before force-removing uncommitted changes.
+The force confirmation remains available after shutdown removes the agent pane.
+The Agents view stays open, and the Worktrees view retains its selection.
+
 Repository and tmux metadata follow the [TUI refresh loop](tui-refresh.md).
 PR discovery and updates follow [PR refresh](pr-refresh.md). Agent observations
 use the separate loop described in [agent detection](agent-detection.md#observation-and-presentation).

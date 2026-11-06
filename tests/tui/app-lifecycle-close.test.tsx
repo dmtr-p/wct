@@ -50,6 +50,21 @@ const PROJECT = "proj";
 const WORKTREE_PATH = "/repo/feat";
 const WORKTREE_KEY = workspaceIdentityKey(REPO_PATH, BRANCH);
 
+async function selectFeatureWorkspace(
+  app: Awaited<ReturnType<typeof renderApp>>,
+) {
+  await vi.waitFor(() => {
+    expect(app.lines().join("\n")).toContain("feature/x");
+    expect(selectedLine(app.lines())).toContain("alpha");
+  });
+  await sendKeys(app.stdin, ARROW_DOWN);
+  await vi.waitFor(() => expect(selectedLine(app.lines())).toContain("main"));
+  await sendKeys(app.stdin, ARROW_DOWN);
+  await vi.waitFor(() =>
+    expect(selectedLine(app.lines())).toContain("feature/x"),
+  );
+}
+
 /** A live `setLifecycle` stand-in: applies updates exactly as React would. */
 function trackLifecycle() {
   const tracker = {
@@ -206,9 +221,7 @@ describe("TUI close lifecycle", () => {
         const { App } = await import("../../src/tui/App");
         const app = await renderApp(<App />);
         try {
-          await tick(6);
-          await sendKeys(app.stdin, ARROW_DOWN);
-          await sendKeys(app.stdin, ARROW_DOWN);
+          await selectFeatureWorkspace(app);
           await sendKeys(app.stdin, "c");
           expect(app.lines().join("\n")).toContain("Close worktree feature/x?");
 
@@ -262,11 +275,7 @@ describe("TUI close lifecycle", () => {
 
       const { App } = await import("../../src/tui/App");
       const app = await renderApp(<App />);
-      await tick(6);
-
-      await sendKeys(app.stdin, ARROW_DOWN);
-      await sendKeys(app.stdin, ARROW_DOWN);
-      expect(selectedLine(app.lines())).toContain("feature/x");
+      await selectFeatureWorkspace(app);
       await sendKeys(app.stdin, "r");
       await tick(6);
       await sendKeys(app.stdin, ARROW_RIGHT);
@@ -291,11 +300,7 @@ describe("TUI close lifecycle", () => {
     test("shows shutdown and down-script progress before worktree removal", async () => {
       const { App } = await import("../../src/tui/App");
       const app = await renderApp(<App />);
-      await tick(6);
-
-      await sendKeys(app.stdin, ARROW_DOWN);
-      await sendKeys(app.stdin, ARROW_DOWN);
-      expect(selectedLine(app.lines())).toContain("feature/x");
+      await selectFeatureWorkspace(app);
 
       await sendKeys(app.stdin, "c");
       expect(app.lines().join("\n")).toContain("Close worktree feature/x?");
@@ -361,9 +366,7 @@ describe("TUI close lifecycle", () => {
         makeWorktree(repoPath, "feature/x"),
       ]);
       const second = await renderApp(<App />);
-      await tick(6);
-      await sendKeys(second.stdin, ARROW_DOWN);
-      await sendKeys(second.stdin, ARROW_DOWN);
+      await selectFeatureWorkspace(second);
       await sendKeys(second.stdin, "c");
       await sendKeys(second.stdin, ENTER);
       await tick(8);
@@ -380,14 +383,11 @@ describe("TUI close lifecycle", () => {
     test("presents forced expansion across a mid-operation poll and writes no stored preference", async () => {
       const { App } = await import("../../src/tui/App");
       const app = await renderApp(<App />);
-      await tick(6);
+      await selectFeatureWorkspace(app);
 
       const workspaceLine = () =>
         app.lines().find((line) => line.includes("feature/x")) ?? "";
 
-      await sendKeys(app.stdin, ARROW_DOWN);
-      await sendKeys(app.stdin, ARROW_DOWN);
-      expect(selectedLine(app.lines())).toContain("feature/x");
       expect(workspaceLine()).not.toContain("▼");
 
       await sendKeys(app.stdin, "c");

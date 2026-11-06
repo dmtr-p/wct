@@ -19,6 +19,7 @@ export function useAgentNavigation(
   isActive: boolean,
   onJump: (paneId: string) => void,
   onKill: (item: AgentListItem) => void,
+  onClose: (item: AgentListItem) => void,
 ) {
   // Undefined allows initial selection once agents arrive; null keeps a lost
   // foreground generation deselected until the user explicitly selects a row.
@@ -143,6 +144,7 @@ export function useAgentNavigation(
       } else if ((key.return || input === " ") && selectedItem)
         onJump(selectedItem.paneId);
       else if (input === "x" && selectedItem) onKill(selectedItem);
+      else if (input === "c" && selectedItem) onClose(selectedItem);
     },
     {
       isActive,

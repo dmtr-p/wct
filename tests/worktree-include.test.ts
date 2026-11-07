@@ -184,13 +184,13 @@ describe(".worktreeinclude resolver", { concurrent: false }, () => {
     expect((await resolve(fixture))?.sort()).toEqual(selected.sort());
   });
 
-  test("reports selected files that disappear during inspection as include resolution errors", async ({
+  test("retains selected files that disappear during inspection for copy failure reporting", async ({
     includeRepo: fixture,
   }) => {
     await fixture.write(".gitignore", ".env\n");
     await fixture.write(".env");
     await fixture.write(".worktreeinclude", ".env\n");
-    const result = await runBunPromise(
+    const selected = await runBunPromise(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         return yield* resolveWorktreeInclude(fixture.repo).pipe(
@@ -199,13 +199,23 @@ describe(".worktreeinclude resolver", { concurrent: false }, () => {
             lstat: (path) =>
               fs.remove(path).pipe(Effect.andThen(fs.lstat(path))),
           }),
-          Effect.flip,
         );
       }),
     );
-    expect(result.code).toBe("worktree_error");
-    expect(result.message).toContain("Failed to resolve");
-    expect(result.message).toContain(".env");
+    expect(selected).toEqual([".env"]);
+    const failures: string[] = [];
+    const results = await runBunPromise(
+      copyFiles(selected ?? [], fixture.repo, join(fixture.root, "target"), {
+        entryFailed: ({ reason }) =>
+          Effect.sync(() => {
+            failures.push(reason);
+          }),
+      }),
+    );
+    expect(results).toEqual([
+      { file: ".env", success: false, error: "File not found" },
+    ]);
+    expect(failures).toEqual(["source_not_found"]);
   });
 
   test("supports escapes, CRLF, character classes, and unusual filenames without glob reinterpretation", async ({

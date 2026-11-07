@@ -20,6 +20,7 @@ import {
   copyFiles,
   detectEntryType,
   expandEntry,
+  parseEntry,
 } from "../src/services/copy";
 import { test as repoTest } from "./helpers/include-repo";
 import { test } from "./helpers/temp-dir";
@@ -135,7 +136,7 @@ describe("expandEntry", () => {
     ["**/secrets/", ["secrets/token", "config/secrets/nested/token"]],
     ["*/cache/", ["config/cache/data"]],
   ] as const)("selects %s from Git's candidate paths", (entry, expected) => {
-    expect(expandEntry(entry, candidates)).toEqual(expected);
+    expect(expandEntry(parseEntry(entry), candidates)).toEqual(expected);
   });
 });
 
@@ -419,8 +420,10 @@ describe("copyEntries", { concurrent: false }, () => {
     candidates[Symbol.iterator] = () => {
       throw new Error("Literal lookup must not scan candidates");
     };
-    expect(expandEntry("config/../.env", candidates)).toEqual([".env"]);
-    expect(expandEntry("missing.env", candidates)).toEqual([]);
+    expect(expandEntry(parseEntry("config/../.env"), candidates)).toEqual([
+      ".env",
+    ]);
+    expect(expandEntry(parseEntry("missing.env"), candidates)).toEqual([]);
   });
 
   test.for([

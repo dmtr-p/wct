@@ -37,27 +37,19 @@ export function discoverIgnoredFiles(sourceDir: string) {
 export function filterRegularFiles(
   files: ReadonlyArray<string>,
   sourceDir: string,
-  options?: { keepMissing?: boolean },
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const paths = yield* Effect.forEach(
       files,
-      (file) => {
-        const inspected = fs
-          .lstat(join(sourceDir, file))
-          .pipe(
-            Effect.map((info) => (info.type === "File" ? file : undefined)),
-          );
-        return options?.keepMissing
-          ? inspected.pipe(
-              Effect.catchIf(
-                (error) => error.reason._tag === "NotFound",
-                () => Effect.succeed(file),
-              ),
-            )
-          : inspected;
-      },
+      (file) =>
+        fs.lstat(join(sourceDir, file)).pipe(
+          Effect.map((info) => (info.type === "File" ? file : undefined)),
+          Effect.catchIf(
+            (error) => error.reason._tag === "NotFound",
+            () => Effect.succeed(file),
+          ),
+        ),
       { concurrency: 16 },
     );
     return paths.filter((path): path is string => path !== undefined);

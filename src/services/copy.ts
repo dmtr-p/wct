@@ -34,10 +34,12 @@ export function detectEntryType(entry: string): CopyEntryType {
   return "file";
 }
 
-function parseEntry(entry: string) {
-  const entryType = detectEntryType(entry);
+export function parseEntry(entry: string) {
+  const excluded = entry.startsWith("!");
+  const value = excluded ? entry.slice(1) : entry;
+  const entryType = detectEntryType(value);
   const pattern = normalize(
-    entryType === "glob" ? entry : entry.replace(/^\\!/, "!"),
+    entryType === "glob" ? value : value.replace(/^\\!/, "!"),
   );
   // An empty prefix indexes root files; undefined leaves the pattern unrestricted.
   let prefix: string | undefined;
@@ -51,18 +53,25 @@ function parseEntry(entry: string) {
     if (slash !== -1) prefix = literal.slice(0, slash + 1);
     else if (!pattern.includes("/") && !pattern.includes("**")) prefix = "";
   }
-  return { entryType, pattern, prefix };
+  return {
+    entry,
+    excluded,
+    entryType,
+    pattern,
+    prefix,
+    absolute: isAbsolute(value),
+  };
 }
 
+type ParsedEntry = ReturnType<typeof parseEntry>;
+
 function indexDirectories(
-  entries: ReadonlyArray<string>,
+  entries: ReadonlyArray<ParsedEntry>,
   files: ReadonlySet<string>,
 ) {
   const directories = new Map<string, string[]>();
-  for (const entry of entries) {
-    const pattern = entry.startsWith("!") ? entry.slice(1) : entry;
-    if (isAbsolute(pattern)) continue;
-    const { prefix } = parseEntry(pattern);
+  for (const { absolute, prefix } of entries) {
+    if (absolute) continue;
     if (prefix !== undefined) directories.set(prefix, []);
   }
   if (directories.size === 0) return directories;
@@ -80,12 +89,12 @@ function indexDirectories(
 }
 
 export function expandEntry(
-  entry: string,
+  entry: ParsedEntry,
   candidates: ReadonlySet<string>,
   directories?: ReadonlyMap<string, ReadonlyArray<string>>,
 ): string[] {
-  if (isAbsolute(entry)) return [];
-  const { entryType, pattern, prefix } = parseEntry(entry);
+  if (entry.absolute) return [];
+  const { entryType, pattern, prefix } = entry;
   if (entryType === "file") {
     return candidates.has(pattern) ? [pattern] : [];
   }
@@ -115,8 +124,9 @@ export function copyEntries(
   reporter?: CopyReporter,
 ) {
   return Effect.gen(function* () {
-    if (entries.every((entry) => entry.startsWith("!"))) {
-      for (const entry of entries) {
+    const rules = entries.map(parseEntry);
+    if (rules.every((rule) => rule.excluded)) {
+      for (const { entry } of rules) {
         if (reporter?.entrySkipped) {
           yield* reporter.entrySkipped({
             entry,
@@ -127,13 +137,13 @@ export function copyEntries(
       return [];
     }
     const ignoredFiles = new Set(yield* discoverIgnoredFiles(sourceDir));
-    const directories = indexDirectories(entries, ignoredFiles);
+    const directories = indexDirectories(rules, ignoredFiles);
     const selected = new Set<string>();
 
-    for (const entry of entries) {
-      const excluded = entry.startsWith("!");
+    for (const rule of rules) {
+      const { entry, excluded, entryType } = rule;
       const expanded = expandEntry(
-        excluded ? entry.slice(1) : entry,
+        rule,
         excluded ? selected : ignoredFiles,
         directories,
       );
@@ -148,7 +158,6 @@ export function copyEntries(
         continue;
       }
       if (expanded.length === 0) {
-        const entryType = detectEntryType(entry);
         if (entryType === "directory") {
           if (reporter?.entrySkipped) {
             yield* reporter.entrySkipped({
@@ -168,9 +177,7 @@ export function copyEntries(
       for (const file of expanded) selected.add(file);
     }
 
-    const regularFiles = yield* filterRegularFiles([...selected], sourceDir, {
-      keepMissing: true,
-    });
+    const regularFiles = yield* filterRegularFiles([...selected], sourceDir);
     return yield* copyFiles(regularFiles, sourceDir, targetDir, reporter);
   });
 }
@@ -186,7 +193,7 @@ function reportCopyFailure(
     reason,
     error,
   };
-  const result = { file, success: false as const, error: failure.error };
+  const result = { file, success: false as const, error };
   return reporter?.entryFailed
     ? reporter.entryFailed(failure).pipe(Effect.as(result))
     : Effect.succeed(result);

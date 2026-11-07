@@ -1,5 +1,4 @@
 import { Effect, FileSystem } from "effect";
-import { decodeText } from "../effect/stream";
 import { commandError } from "../errors";
 import {
   type AgentName,
@@ -7,6 +6,7 @@ import {
   identifyAgentArgv,
 } from "./agent-model";
 import { execProcess } from "./process";
+import { decodeText } from "./process-output";
 
 export interface ForegroundProcess {
   pid: number;

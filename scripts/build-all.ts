@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
-import { BunCrypto } from "@effect/platform-bun";
+import { BunCrypto, BunRuntime, BunServices } from "@effect/platform-bun";
 import { Console, Effect, FileSystem, Layer, Path } from "effect";
 import { Digest } from "effect/crypto";
-import { BunRuntime, BunServices } from "../src/effect/runtime";
 import { commandError, toWctError } from "../src/errors";
 import { execProcess, getProcessErrorMessage } from "../src/services/process";
 
@@ -38,7 +37,7 @@ function buildPlatform(
       ],
       {
         cwd: projectDir,
-        stdin: "inherit",
+        stdin: "ignore",
         stdout: "inherit",
         stderr: "inherit",
       },

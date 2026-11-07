@@ -116,6 +116,7 @@ describe("release builds", () => {
         for (const command of f.commands) {
           expect(command.command).toBe(process.execPath);
           expect(command.options).toMatchObject({
+            stdin: "ignore",
             stdout: "inherit",
             stderr: "inherit",
           });

@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Semaphore } from "effect";
 import { ChildProcess } from "effect/process";
-import { decodeText } from "../effect/stream";
 import { commandError } from "../errors";
+import { decodeText } from "./process-output";
 
 export const ObservationProcessBudget = Context.Reference<
   Semaphore.Semaphore | undefined

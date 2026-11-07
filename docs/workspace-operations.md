@@ -49,8 +49,7 @@ starting with `!`, escape the marker, for example `copy: ['\!important.local']`.
 Paths and glob patterns normalize `.` and `..` segments. Plain file paths are
 looked up literally, including backslashes in filenames. Glob rules use Effect's
 syntax, including escaped literals and brace alternatives. Directory globs such
-as `!**/secrets/` exclude all matching
-directories' descendants.
+as `!**/secrets/` exclude all matching directories' descendants.
 YAML paths and globs are relative to the repository root for both selection and
 exclusion: `!settings.local.json` excludes only the root file; use
 `!**/settings.local.json` to exclude that name at any depth. This differs from
@@ -93,7 +92,6 @@ have this restriction.
 The include source applies to newly created worktrees, including new
 checkouts of existing branches. If initial include resolution or copying fails,
 retrying Open uses the current configuration and include rules before setup.
-Open also fails if a selected file disappears during include resolution.
 After successful copy processing, reopening skips the include source. YAML copy
 lists run on every Open and can overwrite previously copied files.
 

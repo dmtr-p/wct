@@ -1,8 +1,9 @@
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Cause, Context, Effect } from "effect";
+import { Cause, Context, Effect, FileSystem, PlatformError } from "effect";
 import { afterEach, expect, test, vi } from "vitest";
+import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import {
   runDetachedShutdown,
@@ -72,7 +73,7 @@ test.each(["success", "failure", "defect", "mixed"])(
       options.ipc(message, child);
     }
 
-    const outcome = await Effect.runPromise(
+    const outcome = await runBunPromise(
       runDetachedShutdown(
         { operation: "down", worktreePath: result.worktreePath },
         {
@@ -118,3 +119,30 @@ test.each(["success", "failure", "defect", "mixed"])(
     ]);
   },
 );
+
+test("failed shutdown request writes remove the staging directory through FileSystem", async () => {
+  const failure = PlatformError.systemError({
+    _tag: "PermissionDenied",
+    module: "FileSystem",
+    method: "writeFileString",
+  });
+  const remove = vi.fn(() => Effect.void);
+  const fs = FileSystem.makeNoop({
+    realPath: (path) => Effect.succeed(path),
+    makeTempDirectory: () => Effect.succeed("/tmp/wct-shutdown-staged"),
+    writeFileString: () => Effect.fail(failure),
+    remove,
+  });
+  const result = await runBunPromise(
+    runDetachedShutdown({
+      operation: "down",
+      worktreePath: "/project/worktree",
+    }).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.flip),
+  );
+  expect(result.message).toBe("Failed to prepare independent shutdown");
+  expect(result.cause).toBe(failure);
+  expect(remove).toHaveBeenCalledExactlyOnceWith("/tmp/wct-shutdown-staged", {
+    recursive: true,
+    force: true,
+  });
+});

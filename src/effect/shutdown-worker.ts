@@ -1,7 +1,6 @@
 import type { EventEmitter } from "node:events";
-import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Cause, Effect } from "effect";
+import { Cause, Effect, FileSystem } from "effect";
 import { commandError, type WctError } from "../errors";
 import type {
   ShutdownMessage,
@@ -78,18 +77,21 @@ export function runShutdownWorker(directory: string) {
         "Shutdown worker requires a parent IPC channel",
       );
     }
-    const request = yield* Effect.tryPromise({
-      try: async () =>
-        JSON.parse(
-          await Bun.file(join(directory, "request.json")).text(),
-        ) as ShutdownRequest,
-      catch: (error) =>
-        commandError(
-          "unexpected_error",
-          "Failed to read shutdown request",
-          error,
+    const fs = yield* FileSystem.FileSystem;
+    const request = yield* fs
+      .readFileString(join(directory, "request.json"))
+      .pipe(
+        Effect.flatMap((content) =>
+          Effect.try(() => JSON.parse(content) as ShutdownRequest),
         ),
-    });
+        Effect.mapError((error) =>
+          commandError(
+            "unexpected_error",
+            "Failed to read shutdown request",
+            error,
+          ),
+        ),
+      );
     // Bun's Process overloads hide the inherited IPC event signatures.
     const ipcEvents: EventEmitter = process;
     yield* waitForShutdownStart(ipcEvents, () => send({ _tag: "Ready" }));
@@ -110,21 +112,19 @@ export function runShutdownWorker(directory: string) {
         }),
       ),
     );
-    yield* Effect.tryPromise({
-      try: async () => {
-        await Bun.write(
-          join(directory, "result.json"),
-          JSON.stringify(outcome, null, 2),
-        );
-        await rm(join(directory, "request.json"), { force: true });
-      },
-      catch: (error) =>
+    yield* Effect.gen(function* () {
+      const content = yield* Effect.try(() => JSON.stringify(outcome, null, 2));
+      yield* fs.writeFileString(join(directory, "result.json"), content);
+      yield* fs.remove(join(directory, "request.json"), { force: true });
+    }).pipe(
+      Effect.mapError((error) =>
         commandError(
           "unexpected_error",
           "Failed to save shutdown result",
           error,
         ),
-    });
+      ),
+    );
     send({ _tag: "Completed", outcome });
     if (process.connected) process.disconnect?.();
   });

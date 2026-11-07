@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
-import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
+import { FileSystem } from "effect";
+import { runBunPromise } from "../src/effect/runtime";
 
 const platforms = [
   { target: "bun-darwin-x64", outfile: "wct-darwin-x64" },
@@ -13,9 +14,10 @@ const platforms = [
 const distDir = join(import.meta.dir, "..", "dist");
 
 async function build(): Promise<void> {
+  const fs = await runBunPromise(FileSystem.FileSystem);
   console.log("Building wct for all platforms...\n");
 
-  await mkdir(distDir, { recursive: true });
+  await runBunPromise(fs.makeDirectory(distDir, { recursive: true }));
 
   const checksums: string[] = [];
 
@@ -27,12 +29,11 @@ async function build(): Promise<void> {
     try {
       await $`bun build src/index.ts --compile --target ${target} --outfile ${outpath}`;
 
-      const stat = await Bun.file(outpath).stat();
-      const sizeMB = (stat.size / 1024 / 1024).toFixed(2);
+      const stat = await runBunPromise(fs.stat(outpath));
+      const sizeMB = (Number(stat.size) / 1024 / 1024).toFixed(2);
       console.log(`  ✓ Built ${outfile} (${sizeMB} MB)`);
 
-      const file = Bun.file(outpath);
-      const buffer = await file.arrayBuffer();
+      const buffer = await runBunPromise(fs.readFile(outpath));
       const hash = new Bun.CryptoHasher("sha256");
       hash.update(buffer);
       const checksum = hash.digest("hex");
@@ -45,7 +46,9 @@ async function build(): Promise<void> {
   }
 
   const checksumsPath = join(distDir, "checksums.txt");
-  await Bun.write(checksumsPath, `${checksums.join("\n")}\n`);
+  await runBunPromise(
+    fs.writeFileString(checksumsPath, `${checksums.join("\n")}\n`),
+  );
   console.log(`\n✓ Checksums written to ${checksumsPath}`);
 
   console.log("\n✓ Build complete! Binaries available in dist/");

@@ -152,6 +152,7 @@ describe("release builds", () => {
         const f = fixture("bun-darwin-arm64");
         const error = yield* Effect.flip(f.run);
         expect(error.message).toContain("Failed to build wct-darwin-arm64");
+        expect(error.message).not.toContain("Build failed: Failed to build");
         expect(error.message).toContain("Command exited with code 7");
         expect(f.commands).toHaveLength(2);
         expect(f.writes.size).toBe(0);

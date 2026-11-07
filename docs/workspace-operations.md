@@ -41,8 +41,13 @@ A project or selected profile `copy: []` disables copying. An existing empty,
 comments-only, or no-match `.worktreeinclude` also overrides global copying.
 A missing include file falls through to global configuration. YAML copy lists
 support file paths, directory paths ending in `/`, and globs with dotfile
-matching enabled. A leading `!` negates a copy glob: `!*.local` selects paths
-that do not match `*.local`. Missing files and ineligible matches are skipped.
+matching enabled. Rules run in order: positive entries select files, `!` entries
+remove earlier selections, and later positive entries can select them again.
+For example, `["**/.env*", "!**/.env.local"]` copies matching environment files
+except `.env.local`. A negative-only list selects nothing. All rules use the same
+Effect glob syntax, including escaped literals and brace alternatives.
+Missing files and ineligible matches are skipped. Selection matches Git's ignored
+file list without a separate filesystem walk.
 
 All copy sources select only **untracked, gitignored regular files**. Git's
 repository ignore files, `.git/info/exclude`, and global ignore configuration

@@ -8,15 +8,7 @@ import {
   utimes,
 } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  Cause,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  FileSystem,
-  PlatformError,
-} from "effect";
+import { Deferred, Effect, Fiber, FileSystem } from "effect";
 import { describe, expect } from "vitest";
 import {
   type BunServices as BunServicesType,
@@ -73,170 +65,57 @@ describe("detectEntryType", () => {
 });
 
 describe("expandEntry", () => {
-  test("returns single file for file entry", async ({ tempDir }) => {
-    await Bun.write(join(tempDir, ".env"), "TEST=1");
+  const candidates = [
+    ".env",
+    ".env.local",
+    ".settings/settings.json",
+    ".settings/.hidden",
+    ".claude/config.json",
+    ".claude/nested/settings.json",
+    ".claude/readme.md",
+    "config/a.json",
+    "config/nested/b.json",
+    "config/nested/deep/c.json",
+    "config/.hidden",
+    "config/app1.env",
+    "config/app2.env",
+    "literal[1].env",
+    "!literal.env",
+  ];
 
-    const files = await runEffect<string[]>(expandEntry(".env", tempDir));
-    expect(files).toEqual([".env"]);
-  });
-
-  test("returns file path even if file does not exist", async ({ tempDir }) => {
-    const files = await runEffect<string[]>(
-      expandEntry("nonexistent.txt", tempDir),
-    );
-    expect(files).toEqual(["nonexistent.txt"]);
-  });
-
-  test("expands directory to all files recursively", async ({ tempDir }) => {
-    await mkdir(join(tempDir, ".settings"), { recursive: true });
-    await Bun.write(join(tempDir, ".settings/settings.json"), "{}");
-    await Bun.write(join(tempDir, ".settings/extensions.json"), "[]");
-
-    const files = await runEffect<string[]>(expandEntry(".settings/", tempDir));
-    expect(files.sort()).toEqual(
-      [".settings/settings.json", ".settings/extensions.json"].sort(),
-    );
-  });
-
-  test("returns empty array for non-existent directory", async ({
-    tempDir,
-  }) => {
-    const files = await runEffect<string[]>(
-      expandEntry("nonexistent/", tempDir),
-    );
-    expect(files).toEqual([]);
-  });
-
-  test("recovers stat failures while preserving mixed failure defects", async ({
-    tempDir,
-  }) => {
-    const failure = PlatformError.systemError({
-      _tag: "NotFound",
-      module: "FileSystem",
-      method: "stat",
-    });
-    const expand = expandEntry("missing/", tempDir);
-    expect(
-      await runBunPromise(
-        expand.pipe(
-          Effect.provideService(
-            FileSystem.FileSystem,
-            FileSystem.makeNoop({
-              stat: () => Effect.fail(failure),
-            }),
-          ),
-        ),
-      ),
-    ).toEqual([]);
-
-    const exit = await runBunPromise(
-      expand.pipe(
-        Effect.provideService(
-          FileSystem.FileSystem,
-          FileSystem.makeNoop({
-            stat: () =>
-              Effect.failCause(
-                Cause.combine(
-                  Cause.fail(failure),
-                  Cause.die(new Error("filesystem defect")),
-                ),
-              ),
-          }),
-        ),
-        Effect.exit,
-      ),
-    );
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) expect(Cause.hasDies(exit.cause)).toBe(true);
-  });
-
-  test("expands glob pattern to matching files", async ({ tempDir }) => {
-    await mkdir(join(tempDir, ".claude/nested"), { recursive: true });
-    await Bun.write(join(tempDir, ".claude/config.json"), "{}");
-    await Bun.write(join(tempDir, ".claude/nested/settings.json"), "{}");
-    await Bun.write(join(tempDir, ".claude/readme.md"), "# README");
-
-    const files = await runEffect<string[]>(
-      expandEntry(".claude/**/*.json", tempDir),
-    );
-    expect(files.sort()).toEqual(
-      [".claude/config.json", ".claude/nested/settings.json"].sort(),
-    );
-  });
-
-  test("returns empty array for glob with no matches", async ({ tempDir }) => {
-    const files = await runEffect<string[]>(
-      expandEntry("**/*.nonexistent", tempDir),
-    );
-    expect(files).toEqual([]);
-  });
-
-  test("glob expansion returns candidates including hidden paths, directories, and links", async ({
-    tempDir,
-  }) => {
-    await mkdir(join(tempDir, ".config/empty"), { recursive: true });
-    await Bun.write(join(tempDir, ".env"), "SECRET=1");
-    await Bun.write(join(tempDir, ".config/settings.json"), "{}");
-    await symlink(join(tempDir, ".env"), join(tempDir, "linked.env"));
-
-    const files = await runEffect(expandEntry("**/*", tempDir));
-    expect(files.sort()).toEqual([
-      ".config",
-      ".config/empty",
-      ".config/settings.json",
-      ".env",
-      "linked.env",
-    ]);
-  });
-
-  test("maps glob failures to worktree errors", async ({ tempDir }) => {
-    const failure = PlatformError.systemError({
-      _tag: "PermissionDenied",
-      module: "FileSystem",
-      method: "glob",
-    });
-    const result = await runBunPromise(
-      expandEntry("**/*", tempDir).pipe(
-        Effect.provideService(
-          FileSystem.FileSystem,
-          FileSystem.makeNoop({ glob: () => Effect.fail(failure) }),
-        ),
-        Effect.flip,
-      ),
-    );
-    expect(result.code).toBe("worktree_error");
-    expect(result.message).toBe(failure.message);
-    expect(result.cause).toBe(failure);
-  });
-
-  test("expands nested directory structure", async ({ tempDir }) => {
-    await mkdir(join(tempDir, "config/nested/deep"), { recursive: true });
-    await Bun.write(join(tempDir, "config/a.json"), "{}");
-    await Bun.write(join(tempDir, "config/nested/b.json"), "{}");
-    await Bun.write(join(tempDir, "config/nested/deep/c.json"), "{}");
-
-    const files = await runEffect<string[]>(expandEntry("config/", tempDir));
-    expect(files.sort()).toEqual(
+  test.each([
+    [".env", [".env"]],
+    ["missing.env", []],
+    [".settings/", [".settings/settings.json", ".settings/.hidden"]],
+    ["missing/", []],
+    [
+      ".claude/**/*.json",
+      [".claude/config.json", ".claude/nested/settings.json"],
+    ],
+    ["**/*.nonexistent", []],
+    [
+      "config/",
       [
         "config/a.json",
-        "config/nested",
         "config/nested/b.json",
-        "config/nested/deep",
         "config/nested/deep/c.json",
-      ].sort(),
-    );
-  });
-
-  test("includes dotfiles inside directories", async ({ tempDir }) => {
-    await mkdir(join(tempDir, "config"), { recursive: true });
-    await Bun.write(join(tempDir, "config/.hidden"), "secret");
-    await Bun.write(join(tempDir, "config/.env.local"), "KEY=value");
-    await Bun.write(join(tempDir, "config/visible.json"), "{}");
-
-    const files = await runEffect<string[]>(expandEntry("config/", tempDir));
-    expect(files.sort()).toEqual(
-      ["config/.hidden", "config/.env.local", "config/visible.json"].sort(),
-    );
+        "config/.hidden",
+        "config/app1.env",
+        "config/app2.env",
+      ],
+    ],
+    [
+      "config/*.{env,json}",
+      ["config/a.json", "config/app1.env", "config/app2.env"],
+    ],
+    ["config/app[[:digit:]].env", ["config/app1.env", "config/app2.env"]],
+    ["literal\\[1\\].env", ["literal[1].env"]],
+    ["\\!literal.env", ["!literal.env"]],
+    ["./config/a.json", ["config/a.json"]],
+    ["/source/*.env", []],
+    ["../*.env", []],
+  ] as const)("selects %s from Git's candidate paths", (entry, expected) => {
+    expect(expandEntry(entry, candidates)).toEqual(expected);
   });
 });
 
@@ -368,20 +247,96 @@ describe("copyEntries", { concurrent: false }, () => {
     expect(results[0]?.success).toBe(true);
   });
 
-  test("negated copy globs include dotfiles and exclude matching files", async ({
+  test.for([
+    { entries: ["**/.env*", "!**/.env.local"], files: [".env"] },
+    { entries: ["!*.local"], files: [] },
+    { entries: ["**/.env*", "!.env.local"], files: [".env"] },
+    {
+      entries: ["**/.env*", "!**/.env.local", ".env.local"],
+      files: [".env", ".env.local"],
+    },
+    {
+      entries: ["**/*", "!node_modules/", "!dist/", "!cache/"],
+      files: [".env", ".env.local"],
+    },
+  ])(
+    "applies ordered copy rules $entries without adding unrelated files",
+    async ({ entries, files }, { sourceDir, targetDir, includeRepo }) => {
+      await includeRepo.git("add", "--force", ".gitignore");
+      await Bun.write(join(sourceDir, ".env"), "keep");
+      await Bun.write(join(sourceDir, ".env.local"), "skip");
+      await includeRepo.write("node_modules/pkg/large.js", "unrelated");
+      await includeRepo.write("dist/bundle.js", "unrelated");
+      await includeRepo.write("cache/data", "unrelated");
+      const results = await runEffect(
+        copyEntries(entries, sourceDir, targetDir),
+      );
+      expect(results.map((result) => result.file).sort()).toEqual(files);
+      expect(results.every((result) => result.success)).toBe(true);
+      for (const file of [
+        "node_modules/pkg/large.js",
+        "dist/bundle.js",
+        "cache/data",
+      ])
+        expect(await Bun.file(join(targetDir, file)).exists()).toBe(false);
+    },
+  );
+
+  test("uses one syntax for character classes, brace alternatives, and escaped exclusions", async ({
     sourceDir,
     targetDir,
     includeRepo,
   }) => {
-    await includeRepo.git("add", "--force", ".gitignore");
-    await Bun.write(join(sourceDir, ".env"), "keep");
-    await Bun.write(join(sourceDir, ".env.local"), "skip");
+    for (const file of [
+      "config/app1.env",
+      "config/app2.env",
+      "config/appA.env",
+      "literal[1].env",
+    ])
+      await includeRepo.write(file, "content");
     const results = await runEffect(
-      copyEntries(["!*.local"], sourceDir, targetDir),
+      copyEntries(
+        [
+          "config/app[[:digit:]].env",
+          "!config/app{2,3}.env",
+          "literal\\[1\\].env",
+          "!literal\\[1\\].env",
+        ],
+        sourceDir,
+        targetDir,
+      ),
+    );
+    expect(results).toEqual([{ file: "config/app1.env", success: true }]);
+  });
+
+  test("selects from Git's file list without filesystem glob or directory reads", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    await includeRepo.write(".env", "keep");
+    await includeRepo.write("secrets/secret.env", "unselected");
+    const results = await runEffect(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const forbiddenWalk = () =>
+          Effect.die(new Error("Copy selection must not walk the filesystem"));
+        return yield* copyEntries(
+          ["secrets/missing*", ".env"],
+          sourceDir,
+          targetDir,
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            glob: forbiddenWalk,
+            stat: forbiddenWalk,
+            readDirectory: forbiddenWalk,
+            readDirectoryEntries: forbiddenWalk,
+          }),
+        );
+      }),
     );
     expect(results).toEqual([{ file: ".env", success: true }]);
-    expect(await Bun.file(join(targetDir, ".env")).text()).toBe("keep");
-    expect(await Bun.file(join(targetDir, ".env.local")).exists()).toBe(false);
   });
 
   test("filters absolute and ineligible candidates before inspecting each ignored file once", async ({

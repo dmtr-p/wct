@@ -3,7 +3,7 @@ import { BunCrypto } from "@effect/platform-bun";
 import { Console, Effect, FileSystem, Layer, Path } from "effect";
 import { Digest } from "effect/crypto";
 import { BunRuntime, BunServices } from "../src/effect/runtime";
-import { commandError } from "../src/errors";
+import { commandError, toWctError } from "../src/errors";
 import { execProcess, getProcessErrorMessage } from "../src/services/process";
 
 const platforms = [
@@ -80,11 +80,7 @@ export const buildAll = Effect.gen(function* () {
   yield* fs.writeFileString(checksumsPath, `${checksums.join("\n")}\n`);
   yield* Console.log(`\n✓ Checksums written to ${checksumsPath}`);
   yield* Console.log("\n✓ Build complete! Binaries available in dist/");
-}).pipe(
-  Effect.mapError((error) =>
-    commandError("unexpected_error", `Build failed: ${error.message}`, error),
-  ),
-);
+}).pipe(Effect.mapError((error) => toWctError(error, "Build failed")));
 
 if (import.meta.main) {
   const buildLayer = Layer.mergeAll(

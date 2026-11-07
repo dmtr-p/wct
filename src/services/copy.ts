@@ -1,5 +1,5 @@
-import { dirname, join, normalize } from "node:path";
-import { Effect, FileSystem, Option } from "effect";
+import { dirname, isAbsolute, join, normalize } from "node:path";
+import { Effect, FileSystem, Glob, Option } from "effect";
 import { commandError } from "../errors";
 import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
 
@@ -33,53 +33,20 @@ export function detectEntryType(entry: string): CopyEntryType {
   return "file";
 }
 
-function expandDirectory(dirPath: string, baseDir: string) {
-  const normalizedDir = dirPath.endsWith("/") ? dirPath.slice(0, -1) : dirPath;
-  const fullPath = join(baseDir, normalizedDir);
-
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const info = yield* Effect.orElseSucceed(fs.stat(fullPath), () => null);
-    if (info?.type !== "Directory") {
-      return [];
-    }
-
-    const files = yield* expandGlob("**/*", fullPath);
-    return files.map((file) => join(normalizedDir, file));
-  });
-}
-
-function expandGlob(pattern: string, baseDir: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const negated = pattern.startsWith("!");
-    const paths = yield* fs
-      .glob(negated ? "**/*" : pattern, {
-        root: baseDir,
-        dot: true,
-      })
-      .pipe(
-        Effect.mapError((error) =>
-          commandError("worktree_error", error.message, error),
-        ),
-      );
-    if (!negated) return paths;
-    const glob = new Bun.Glob(pattern);
-    return paths.filter((path) => glob.match(path));
-  });
-}
-
-export function expandEntry(entry: string, baseDir: string) {
-  const entryType = detectEntryType(entry);
-
-  switch (entryType) {
-    case "directory":
-      return expandDirectory(entry, baseDir);
-    case "glob":
-      return expandGlob(entry, baseDir);
-    case "file":
-      return Effect.succeed([entry]);
+export function expandEntry(
+  entry: string,
+  candidates: ReadonlyArray<string>,
+): string[] {
+  if (isAbsolute(entry)) return [];
+  if (detectEntryType(entry) === "directory") {
+    const directory = normalize(entry).replace(/\/+$/, "");
+    const prefix = directory === "." ? "" : `${directory}/`;
+    return candidates.filter((file) => file.startsWith(prefix));
   }
+  // oxlint-disable effecttsgo/experimental-api-usage -- Use one glob syntax for both copy selection and exclusions.
+  const glob = Glob.make(entry, { dot: true });
+  return candidates.filter((file) => Glob.match(glob, file));
+  // oxlint-enable effecttsgo/experimental-api-usage
 }
 
 export function copyEntries(
@@ -90,13 +57,19 @@ export function copyEntries(
 ) {
   return Effect.gen(function* () {
     if (entries.length === 0) return [];
-    const ignoredFiles = new Set(yield* discoverIgnoredFiles(sourceDir));
-    const allFiles: string[] = [];
+    const ignoredFiles = yield* discoverIgnoredFiles(sourceDir);
+    const selected = new Set<string>();
 
     for (const entry of entries) {
-      const expanded = (yield* expandEntry(entry, sourceDir))
-        .map((file) => normalize(file))
-        .filter((file) => ignoredFiles.has(file));
+      const excluded = entry.startsWith("!");
+      const expanded = expandEntry(
+        excluded ? entry.slice(1) : entry,
+        ignoredFiles,
+      );
+      if (excluded) {
+        for (const file of expanded) selected.delete(file);
+        continue;
+      }
       if (expanded.length === 0) {
         const entryType = detectEntryType(entry);
         if (entryType === "directory") {
@@ -115,12 +88,10 @@ export function copyEntries(
           }
         }
       }
-      allFiles.push(...expanded);
+      for (const file of expanded) selected.add(file);
     }
 
-    const uniqueFiles = [...new Set(allFiles)];
-
-    const regularFiles = yield* filterRegularFiles(uniqueFiles, sourceDir);
+    const regularFiles = yield* filterRegularFiles([...selected], sourceDir);
     return yield* copyFiles(regularFiles, sourceDir, targetDir, reporter);
   });
 }

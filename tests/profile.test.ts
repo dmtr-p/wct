@@ -129,6 +129,19 @@ describe("resolveProfile", () => {
     expect(profileName).toBe("specific");
   });
 
+  test.each([
+    ["main", false],
+    ["develop", false],
+    ["feature/auth", true],
+  ] as const)("combined profile exclusions match %s: %s", (branch, matches) => {
+    const config = baseConfig({
+      profiles: { feature: { match: "!{main,develop}", work_dir: "feature" } },
+    });
+    expect(resolveProfile(config, branch).profileName).toBe(
+      matches ? "feature" : undefined,
+    );
+  });
+
   test("explicit profile selection by name", () => {
     const config = baseConfig({
       profiles: {

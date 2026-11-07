@@ -150,7 +150,6 @@ export function App() {
   const [mode, setMode] = useState<Mode>(Mode.Navigate);
   // Async continuations must read the current mode after awaiting.
   const modeRef = useRef<Mode>(mode);
-  // Manual and validated Open expansion share Workspace Identity Keys.
   const [expandedWorkspaceKeys, setExpandedWorkspaceKeys] = useState<
     Set<WorkspaceIdentityKey>
   >(new Set());
@@ -468,11 +467,6 @@ export function App() {
     confirmationWidth,
   ]);
 
-  // Errors and PR outcomes each occupy one truncated terminal row. StatusBar
-  // owns its row count so viewport budgeting follows its render branches.
-  // Form modals retain the navigation footer's virtual count to preserve wheel
-  // scroll position on cancel; the tree box clips any excess modal height.
-  // Confirmations live in each view's visual row model.
   const bottomChromeRowsForRepoError = (hasRepoError: boolean) =>
     statusBarRowCount(mode, hasRepoError) +
     (tmuxError || actionError ? 1 : 0) +

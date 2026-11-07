@@ -88,7 +88,6 @@ export function makeWctServicesLayer(overrides: WctServiceOverrides = {}) {
   ).pipe(Layer.provideMerge(dependencies));
 }
 
-// Platform services must be supplied when building the application layers.
 export const WctServicesLayer = makeWctServicesLayer();
 
 export function provideWctServices<A, E, R>(effect: Effect.Effect<A, E, R>) {

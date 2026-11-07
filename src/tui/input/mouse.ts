@@ -6,9 +6,7 @@ import { isInertTreeItem, type TreeRow } from "../tree-helpers";
 import type { Mode, TreeItem } from "../types";
 
 /**
- * Rows of fixed chrome above the tree viewport: the `wct` header line + a blank
- * spacer line. A 1-based SGR mouse `row` maps to a viewport row by subtracting
- * this offset (and the 1-based → 0-based conversion).
+ * The header and blank spacer occupy two rows above the tree viewport.
  */
 export const HEADER_OFFSET = 2;
 
@@ -230,10 +228,6 @@ function hitTestTreeRow(
   return { itemIndex, rowIndex };
 }
 
-/**
- * Wheel scrolling preserves selection. Click activation follows separate
- * double-click detection; modal components route their own mouse events.
- */
 export function resolveMouseAction(
   event: MouseEvent,
   ctx: MouseActionContext,

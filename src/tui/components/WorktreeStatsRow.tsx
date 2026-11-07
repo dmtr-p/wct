@@ -5,7 +5,6 @@ interface Props {
   changedFiles: number;
 }
 
-/** Keep one terminal row so tree windowing and mouse hit-testing agree. */
 export function WorktreeStatsRow({ sync, changedFiles }: Props) {
   const hasSync = sync && sync !== "✓";
   return (

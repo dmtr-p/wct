@@ -1,5 +1,4 @@
 import type { WorkspaceIdentityKey } from "../services/identities";
-/** Expansion-related targets carry opaque Workspace Identity Keys. */
 export type Mode =
   | { type: "Navigate" }
   | { type: "Search" }

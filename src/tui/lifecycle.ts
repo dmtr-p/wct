@@ -144,7 +144,6 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   }
 }
 
-/** A failed validation is not treated as a failed operation — the previous tree stays on screen. */
 export function lifecycleValidationWarning(
   operation: WorkspaceOperation,
 ): string {
@@ -153,9 +152,6 @@ export function lifecycleValidationWarning(
 
 export const LIFECYCLE_ROW_PREFIX = "     └ ";
 
-/**
- * Keep progress to one terminal row so windowing and mouse hit-testing agree.
- */
 export function lifecycleProgressContent(
   phase: LifecyclePhase,
   maxWidth: number,

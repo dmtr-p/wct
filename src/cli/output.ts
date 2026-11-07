@@ -27,7 +27,6 @@ export function provideCliOutput<A, E, R>(
         Object.assign(Object.create(output) as Console.Console, {
           log: (...messages: ReadonlyArray<unknown>) => {
             if (messages.length === 1 && typeof messages[0] === "string") {
-              if (suppressHelp && messages[0] === "") return;
               process.stdout.write(`${messages[0]}\n`);
             } else {
               output.log(...messages);
@@ -47,11 +46,11 @@ export function provideCliOutput<A, E, R>(
     return suppressHelp
       ? withConsole.pipe(
           Effect.provide(
-            CliOutput.layer({
-              // eslint-disable-next-line typescript/no-misused-spread -- defaultFormatter returns a plain object with own formatter functions
-              ...CliOutput.defaultFormatter({ colors: false }),
-              formatHelpDoc: () => "",
-              formatErrors: () => "",
+            CliOutput.layerPresenter({
+              present: (event) =>
+                event._tag === "Version"
+                  ? CliOutput.defaultPresenter.present(event)
+                  : Effect.void,
             }),
           ),
         )

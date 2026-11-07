@@ -549,7 +549,6 @@ describe("clampScrollOffset", () => {
   });
 
   test("clamps above the max scrollable offset", () => {
-    // max = rowsLength - viewportRows = 10 - 4 = 6
     expect(clampScrollOffset(99, 10, 4)).toBe(6);
   });
 
@@ -565,23 +564,18 @@ describe("clampScrollOffset", () => {
 
 describe("scrollToKeepVisible", () => {
   test("leaves the offset unchanged when the row is already inside the window", () => {
-    // window covers rows [2..6]
     expect(scrollToKeepVisible(4, 2, 5)).toBe(2);
     expect(scrollToKeepVisible(2, 2, 5)).toBe(2); // top edge
     expect(scrollToKeepVisible(6, 2, 5)).toBe(2); // bottom edge
   });
 
   test("scrolls up by exactly the gap when the row is just above the window", () => {
-    // window [5..9]; selecting row 4 nudges offset to 4 (gap of 1)
     expect(scrollToKeepVisible(4, 5, 5)).toBe(4);
-    // selecting row 1 nudges offset to 1
     expect(scrollToKeepVisible(1, 5, 5)).toBe(1);
   });
 
   test("scrolls down minimally when the row is just below the window", () => {
-    // window [0..4]; selecting row 5 → offset = 5 - 5 + 1 = 1
     expect(scrollToKeepVisible(5, 0, 5)).toBe(1);
-    // selecting row 7 → offset = 7 - 5 + 1 = 3
     expect(scrollToKeepVisible(7, 0, 5)).toBe(3);
   });
 

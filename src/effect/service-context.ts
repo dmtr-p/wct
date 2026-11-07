@@ -1,13 +1,5 @@
 import type { BunServices } from "@effect/platform-bun";
-import {
-  Context,
-  Crypto,
-  Effect,
-  FileSystem,
-  Path,
-  Stdio,
-  Terminal,
-} from "effect";
+import { Context, Effect, FileSystem, Path, Stdio, Terminal } from "effect";
 import { ChildProcessSpawner } from "effect/process";
 
 export type ServiceImplementation<Service, Requirements> = {
@@ -30,7 +22,6 @@ type ServiceEffects<Service> = {
 
 export const bunServiceKeys = [
   ChildProcessSpawner.ChildProcessSpawner,
-  Crypto.Crypto,
   FileSystem.FileSystem,
   Path.Path,
   Stdio.Stdio,

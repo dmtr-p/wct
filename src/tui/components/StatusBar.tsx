@@ -108,8 +108,6 @@ export function statusBarRowCount(mode: Mode, hasRepoError: boolean): number {
     // divider + query line + hint line
     case "Search":
       return 3;
-    // Shortcut and form modals replace the footer. Their virtual count matches
-    // the normal tree footer so opening one does not disturb scroll position.
     case "Shortcuts":
     case "OpenModal":
     case "PrMenu":

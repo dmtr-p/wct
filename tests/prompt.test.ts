@@ -40,6 +40,11 @@ function runConfirmation(key: string, json = false) {
       const terminal = Terminal.make({
         columns: Effect.succeed(80),
         rows: Effect.succeed(24),
+        size: Effect.gen(function* () {
+          const sizes = yield* Queue.make<Terminal.Size>();
+          yield* Queue.offer(sizes, { columns: 80, rows: 24 });
+          return sizes;
+        }),
         readLine: Effect.die("confirmation must use key input"),
         readInput: Effect.sync(() => {
           inputAcquisitions++;

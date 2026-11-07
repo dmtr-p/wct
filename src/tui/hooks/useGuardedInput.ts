@@ -9,19 +9,13 @@ import {
 import { subscribeMouseInput } from "../input/terminal-input";
 
 export interface GuardedInputOptions {
-  /** Enable both keyboard and mouse callbacks. Defaults to true. */
   isActive?: boolean;
-  /**
-   * Receives actionable mouse reports in terminal input order.
-   */
   onMouseEvent?: (event: MouseEvent) => void;
 }
 
 /**
- * Shared keyboard and mouse input hook (ADR 0002). Ink handles keyboard events;
- * the terminal adapter supplies mouse reports. The string guard covers Ink's
- * paste fallback when no usePaste listener is registered. Oxlint restricts
- * direct useInput imports to this file.
+ * Mouse-only paste fallback must be swallowed when no usePaste listener is
+ * registered; otherwise Ink delivers mouse reports as keyboard input.
  */
 export function useGuardedInput(
   handler: (input: string, key: Key) => void,

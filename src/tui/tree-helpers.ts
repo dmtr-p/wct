@@ -113,7 +113,6 @@ export type TreeRow =
       pieceIndex: number;
       prLine: string;
     }
-  /** A Pending Workspace, before Git exposes its worktree during `open`. */
   | {
       itemIndex: null;
       kind: "pending-workspace";
@@ -745,7 +744,6 @@ function prTreeItemId(repoId: string, branch: string, prKey: string): string {
   return `detail:${repoId}/${branch}/pr/${prKey}`;
 }
 
-/** Stable identity string so selection can be recovered after a refresh shifts indices. */
 export function treeItemId(item: TreeItem, repos: RepoInfo[]): string | null {
   const repo = repos[item.repoIndex];
   if (!repo) return null;

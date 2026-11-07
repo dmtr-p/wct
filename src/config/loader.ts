@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { Data, Effect, FileSystem } from "effect";
+import { Data, Effect, FileSystem, Glob } from "effect";
 import type { Profile, ResolvedConfig, WctConfig } from "./schema";
 import { resolveConfig, validateConfig } from "./validator";
 
@@ -199,8 +199,8 @@ export interface ProfileResult {
 }
 
 function matchesGlob(branch: string, pattern: string): boolean {
-  const glob = new Bun.Glob(pattern);
-  return glob.match(branch);
+  // oxlint-disable-next-line effecttsgo/experimental-api-usage -- Use Effect's native glob syntax for profile matching.
+  return Glob.match(Glob.make(pattern, { dot: true }), branch);
 }
 
 function profileMatchesBranch(profile: Profile, branch: string): boolean {

@@ -171,6 +171,38 @@ describe("expandEntry", () => {
     expect(files).toEqual([]);
   });
 
+  test("glob expansion includes hidden files and excludes directories and links", async ({
+    tempDir,
+  }) => {
+    await mkdir(join(tempDir, ".config/empty"), { recursive: true });
+    await Bun.write(join(tempDir, ".env"), "SECRET=1");
+    await Bun.write(join(tempDir, ".config/settings.json"), "{}");
+    await symlink(join(tempDir, ".env"), join(tempDir, "linked.env"));
+
+    const files = await runEffect(expandEntry("**/*", tempDir));
+    expect(files.sort()).toEqual([".config/settings.json", ".env"]);
+  });
+
+  test("maps glob failures to worktree errors", async ({ tempDir }) => {
+    const failure = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "glob",
+    });
+    const result = await runBunPromise(
+      expandEntry("**/*", tempDir).pipe(
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.makeNoop({ glob: () => Effect.fail(failure) }),
+        ),
+        Effect.flip,
+      ),
+    );
+    expect(result.code).toBe("worktree_error");
+    expect(result.message).toBe(failure.message);
+    expect(result.cause).toBe(failure);
+  });
+
   test("expands nested directory structure", async ({ tempDir }) => {
     await mkdir(join(tempDir, "config/nested/deep"), { recursive: true });
     await Bun.write(join(tempDir, "config/a.json"), "{}");

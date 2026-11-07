@@ -44,54 +44,22 @@ function expandDirectory(dirPath: string, baseDir: string) {
       return [];
     }
 
-    const files = yield* Effect.tryPromise({
-      try: async () => {
-        const glob = new Bun.Glob("**/*");
-        const files: string[] = [];
-
-        for await (const file of glob.scan({
-          cwd: fullPath,
-          onlyFiles: true,
-          dot: true,
-        })) {
-          files.push(join(normalizedDir, file));
-        }
-
-        return files;
-      },
-      catch: (error) =>
-        commandError(
-          "worktree_error",
-          error instanceof Error ? error.message : String(error),
-          error,
-        ),
-    });
-    return files;
+    const files = yield* expandGlob("**/*", fullPath);
+    return files.map((file) => join(normalizedDir, file));
   });
 }
 
 function expandGlob(pattern: string, baseDir: string) {
-  return Effect.tryPromise({
-    try: async () => {
-      const glob = new Bun.Glob(pattern);
-      const files: string[] = [];
-
-      for await (const file of glob.scan({
-        cwd: baseDir,
-        onlyFiles: true,
-        dot: true,
-      })) {
-        files.push(file);
-      }
-
-      return files;
-    },
-    catch: (error) =>
-      commandError(
-        "worktree_error",
-        error instanceof Error ? error.message : String(error),
-        error,
-      ),
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const paths = yield* fs
+      .glob(pattern, { root: baseDir, dot: true })
+      .pipe(
+        Effect.mapError((error) =>
+          commandError("worktree_error", error.message, error),
+        ),
+      );
+    return yield* filterRegularFiles(paths, baseDir);
   });
 }
 

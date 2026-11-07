@@ -40,8 +40,8 @@ creating a worktree, the first available copy source wins:
 A project or selected profile `copy: []` disables copying. An existing empty,
 comments-only, or no-match `.worktreeinclude` also overrides global copying.
 A missing include file falls through to global configuration. YAML copy lists
-support file paths, directory paths ending in `/`, and Bun globs. Missing files
-and ineligible matches are skipped.
+support file paths, directory paths ending in `/`, and Effect globs with dotfile
+matching enabled. Missing files and ineligible matches are skipped.
 
 All copy sources select only **untracked, gitignored regular files**. Git's
 repository ignore files, `.git/info/exclude`, and global ignore configuration

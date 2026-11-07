@@ -61,8 +61,10 @@ Leverage Bun built-in APIs where they are still the right primitive:
 
 - `Bun.YAML.parse()` for config parsing
 - `Bun.spawn(...)` for interactive inherited-stdio process handoff
-- `Bun.Glob` for copy pattern expansion
 - `Bun.which` for executable lookup
+
+Use Effect's `Glob` for path matching and `FileSystem.glob` for copy pattern
+expansion.
 
 The runtime dependencies are `effect`, `@effect/platform-bun`, `ink`, and `react`. No other runtime dependencies should be added. `ink` and `react` are used exclusively by the `wct tui` subcommand and are lazy-imported so they are never loaded for other commands. The only dev dependencies are `oxlint`, `oxlint-tsgolint`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`, and `@effect/tsgo`.
 

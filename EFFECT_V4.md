@@ -12,7 +12,8 @@ versions in `package.json`, without `^` or `~`. Resolved transitive Effect runti
 packages in `bun.lock`, including `@effect/platform-node-shared`, must match too.
 Update these packages together. `@effect/tsgo` versions independently.
 
-Import Bun runtime services through `src/effect/runtime.ts`. Use the exported
+Application code imports Bun runtime services through `src/effect/runtime.ts`;
+standalone scripts can import platform adapters directly. Use the exported
 `JsonFlag` from `src/cli/json-flag.ts`; `GlobalFlag.Setting` generates runtime
 service keys with unique suffixes, so reconstructing its key loses the setting.
 
@@ -84,3 +85,5 @@ Use `FileSystem.lstat` when selecting regular files without following symlinks.
 Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
 Workspace reporter failures and defects are discarded with `Effect.ignoreCause`
 so reporting cannot fail an operation.
+
+`Effect.partition` returns `[successes, failures]`.

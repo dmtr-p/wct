@@ -100,7 +100,7 @@ export function runDetachedShutdown(
         Effect.onError(() =>
           fs
             .remove(directory, { recursive: true, force: true })
-            .pipe(Effect.orDie),
+            .pipe(Effect.ignore),
         ),
       );
       return directory;
@@ -174,7 +174,7 @@ export function runDetachedShutdown(
       Effect.onError(() =>
         fs
           .remove(directory, { recursive: true, force: true })
-          .pipe(Effect.orDie),
+          .pipe(Effect.ignore),
       ),
     );
     yield* Effect.tryPromise({

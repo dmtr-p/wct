@@ -1,4 +1,5 @@
-import { Effect, FileSystem, Stream } from "effect";
+import { Effect, FileSystem } from "effect";
+import { decodeText } from "../effect/stream";
 import { commandError } from "../errors";
 import {
   type AgentName,
@@ -116,21 +117,14 @@ export function readProcArguments(pid: number) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const limit = 64 * 1024;
-    let bytes = 0;
-    const content = yield* fs
-      .stream(`/proc/${pid}/cmdline`, { bytesToRead: limit + 1 })
-      .pipe(
-        Stream.mapEffect((chunk) => {
-          bytes += chunk.byteLength;
-          return bytes > limit
-            ? Effect.fail(
-                commandError("unexpected_error", "Argument limit exceeded"),
-              )
-            : Effect.succeed(chunk);
-        }),
-        Stream.decodeText,
-        Stream.mkString,
-      );
+    const content = yield* decodeText(
+      fs.stream(`/proc/${pid}/cmdline`, { bytesToRead: limit + 1 }),
+      {
+        maxBytes: limit,
+        onLimit: () =>
+          commandError("unexpected_error", "Argument limit exceeded"),
+      },
+    );
     return content.split("\0").filter(Boolean);
   });
 }

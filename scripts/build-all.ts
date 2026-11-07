@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
+import { BunCrypto } from "@effect/platform-bun";
 import { Console, Effect, FileSystem, Layer, Path } from "effect";
 import { Digest } from "effect/crypto";
-import { BunCrypto, BunRuntime, BunServices } from "../src/effect/runtime";
+import { BunRuntime, BunServices } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
 import { execProcess, getProcessErrorMessage } from "../src/services/process";
 
@@ -43,10 +44,11 @@ function buildPlatform(
       },
     );
 
-    const buffer = yield* fs.readFile(outpath);
-    const sizeMB = (buffer.byteLength / 1024 / 1024).toFixed(2);
+    const info = yield* fs.stat(outpath);
+    const sizeMB = (Number(info.size) / 1024 / 1024).toFixed(2);
     yield* Console.log(`  ✓ Built ${outfile} (${sizeMB} MB)`);
 
+    const buffer = yield* fs.readFile(outpath);
     const checksum = yield* digest.digestHex(Digest.sha256, buffer);
     yield* Console.log(`  ✓ Checksum: ${checksum}\n`);
     return `${checksum}  ${outfile}`;

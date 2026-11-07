@@ -52,14 +52,20 @@ function expandDirectory(dirPath: string, baseDir: string) {
 function expandGlob(pattern: string, baseDir: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    const negated = pattern.startsWith("!");
     const paths = yield* fs
-      .glob(pattern, { root: baseDir, dot: true })
+      .glob(negated ? "**/*" : pattern, {
+        root: baseDir,
+        dot: true,
+      })
       .pipe(
         Effect.mapError((error) =>
           commandError("worktree_error", error.message, error),
         ),
       );
-    return yield* filterRegularFiles(paths, baseDir);
+    if (!negated) return paths;
+    const glob = new Bun.Glob(pattern);
+    return paths.filter((path) => glob.match(path));
   });
 }
 

@@ -120,17 +120,58 @@ test.each(["success", "failure", "defect", "mixed"])(
   },
 );
 
-test("failed shutdown request writes remove the staging directory through FileSystem", async () => {
-  const failure = PlatformError.systemError({
+test.each([false, true])(
+  "failed shutdown request writes preserve the command error when cleanup fails: %s",
+  async (cleanupFails) => {
+    const failure = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "writeFileString",
+    });
+    const cleanupFailure = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "remove",
+    });
+    const remove = vi.fn(() =>
+      cleanupFails ? Effect.fail(cleanupFailure) : Effect.void,
+    );
+    const fs = FileSystem.makeNoop({
+      realPath: (path) => Effect.succeed(path),
+      makeTempDirectory: () => Effect.succeed("/tmp/wct-shutdown-staged"),
+      writeFileString: () => Effect.fail(failure),
+      remove,
+    });
+    const result = await runBunPromise(
+      runDetachedShutdown({
+        operation: "down",
+        worktreePath: "/project/worktree",
+      }).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.flip),
+    );
+    expect(result.message).toBe("Failed to prepare independent shutdown");
+    expect(result.cause).toBe(failure);
+    expect(remove).toHaveBeenCalledExactlyOnceWith("/tmp/wct-shutdown-staged", {
+      recursive: true,
+      force: true,
+    });
+  },
+);
+
+test("spawn failures remain command errors when staging cleanup fails", async () => {
+  const failure = new Error("worker could not start");
+  vi.spyOn(Bun, "spawn").mockImplementation(() => {
+    throw failure;
+  });
+  const cleanupFailure = PlatformError.systemError({
     _tag: "PermissionDenied",
     module: "FileSystem",
-    method: "writeFileString",
+    method: "remove",
   });
-  const remove = vi.fn(() => Effect.void);
+  const remove = vi.fn(() => Effect.fail(cleanupFailure));
   const fs = FileSystem.makeNoop({
     realPath: (path) => Effect.succeed(path),
     makeTempDirectory: () => Effect.succeed("/tmp/wct-shutdown-staged"),
-    writeFileString: () => Effect.fail(failure),
+    writeFileString: () => Effect.void,
     remove,
   });
   const result = await runBunPromise(
@@ -139,10 +180,7 @@ test("failed shutdown request writes remove the staging directory through FileSy
       worktreePath: "/project/worktree",
     }).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.flip),
   );
-  expect(result.message).toBe("Failed to prepare independent shutdown");
+  expect(result.message).toBe("Failed to start independent shutdown");
   expect(result.cause).toBe(failure);
-  expect(remove).toHaveBeenCalledExactlyOnceWith("/tmp/wct-shutdown-staged", {
-    recursive: true,
-    force: true,
-  });
+  expect(remove).toHaveBeenCalledOnce();
 });

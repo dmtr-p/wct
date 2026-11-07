@@ -1,5 +1,6 @@
 import { Context, Data, Effect, Semaphore, Stream } from "effect";
 import { ChildProcess } from "effect/process";
+import { decodeText } from "../effect/stream";
 import { commandError } from "../errors";
 
 export const ObservationProcessBudget = Context.Reference<
@@ -56,17 +57,15 @@ function decodeOutput<E>(
   stream: Stream.Stream<Uint8Array, E>,
   maxBytes?: number,
 ): Effect.Effect<string, E | ProcessOutputLimitError> {
-  let bounded: Stream.Stream<Uint8Array, E | ProcessOutputLimitError> = stream;
-  if (maxBytes !== undefined) {
-    let bytes = 0;
-    bounded = Stream.mapEffect(stream, (chunk) => {
-      bytes += chunk.byteLength;
-      return bytes > maxBytes
-        ? Effect.fail(new ProcessOutputLimitError())
-        : Effect.succeed(chunk);
-    });
-  }
-  return Stream.mkString(Stream.decodeText(bounded));
+  return decodeText(
+    stream,
+    maxBytes === undefined
+      ? undefined
+      : {
+          maxBytes,
+          onLimit: () => new ProcessOutputLimitError(),
+        },
+  );
 }
 
 function makeCommand(

@@ -1,13 +1,24 @@
 import { it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, Path, Sink, Stream } from "effect";
+import {
+  ByteSize,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Sink,
+  Stream,
+} from "effect";
 import { Digest } from "effect/crypto";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { TestConsole } from "effect/testing";
 import { describe, expect } from "vitest";
 import { buildAll } from "../scripts/build-all";
 
 function fixture(failTarget?: string) {
   const commands: ChildProcess.StandardCommand[] = [];
   const writes = new Map<string, string>();
+  const reads: string[] = [];
   let active = 0;
   let peak = 0;
   let released = 0;
@@ -46,7 +57,31 @@ function fixture(failTarget?: string) {
   });
   const fs = FileSystem.makeNoop({
     makeDirectory: () => Effect.void,
-    readFile: () => Effect.succeed(new TextEncoder().encode("abc")),
+    stat: () =>
+      Effect.sync((): FileSystem.File.Info => {
+        reads.push("stat");
+        return {
+          type: "File",
+          mtime: Option.none(),
+          atime: Option.none(),
+          birthtime: Option.none(),
+          dev: 0n,
+          ino: Option.none(),
+          mode: 0,
+          nlink: Option.none(),
+          uid: Option.none(),
+          gid: Option.none(),
+          rdev: Option.none(),
+          size: ByteSize.bytes(64 * 1024 * 1024),
+          blksize: Option.none(),
+          blocks: Option.none(),
+        };
+      }),
+    readFile: () =>
+      Effect.sync(() => {
+        reads.push("read");
+        return new TextEncoder().encode("abc");
+      }),
     writeFileString: (path, content) =>
       Effect.sync(() => {
         writes.set(path, content);
@@ -55,6 +90,7 @@ function fixture(failTarget?: string) {
   return {
     commands,
     writes,
+    reads,
     resources: () => ({ active, peak, released }),
     run: buildAll.pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
@@ -93,6 +129,19 @@ describe("release builds", () => {
           `${hash}  wct-darwin-x64\n${hash}  wct-darwin-arm64\n${hash}  wct-linux-x64\n${hash}  wct-linux-arm64\n`,
         ]);
         expect(f.resources()).toEqual({ active: 0, peak: 1, released: 4 });
+        expect(f.reads).toEqual([
+          "stat",
+          "read",
+          "stat",
+          "read",
+          "stat",
+          "read",
+          "stat",
+          "read",
+        ]);
+        expect(yield* TestConsole.logLines).toContain(
+          "  ✓ Built wct-darwin-x64 (64.00 MB)",
+        );
       }),
   );
 

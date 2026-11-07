@@ -29,8 +29,13 @@ See [documentation placement](docs/agents/domain.md) for ownership and discovery
   shutdown worker entry point.
 - `src/cli/` owns native Effect CLI parameters, command metadata, shell
   completions, global flags, and terminal output.
+  `command-metadata.ts` shares definitions between parameters and completions;
+  `root-command.ts` binds handlers; `global-options.ts` owns global options
+  and supported completion shells.
 - `src/commands/` adapts CLI input and output to services.
 - `src/config/` owns configuration schemas, validation, loading, and profiles.
+  Schemas live in `schema.ts`; validation and resolution helpers live in
+  `validator.ts`.
 - `src/effect/` constructs service layers, captures dependencies, and provides
   Bun runtime and shutdown worker boundaries.
 - `src/services/` owns Git worktrees, Workspace Operations, tmux, setup/down

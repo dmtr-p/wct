@@ -171,7 +171,7 @@ describe("expandEntry", () => {
     expect(files).toEqual([]);
   });
 
-  test("glob expansion includes hidden files and excludes directories and links", async ({
+  test("glob expansion returns candidates including hidden paths, directories, and links", async ({
     tempDir,
   }) => {
     await mkdir(join(tempDir, ".config/empty"), { recursive: true });
@@ -180,7 +180,13 @@ describe("expandEntry", () => {
     await symlink(join(tempDir, ".env"), join(tempDir, "linked.env"));
 
     const files = await runEffect(expandEntry("**/*", tempDir));
-    expect(files.sort()).toEqual([".config/settings.json", ".env"]);
+    expect(files.sort()).toEqual([
+      ".config",
+      ".config/empty",
+      ".config/settings.json",
+      ".env",
+      "linked.env",
+    ]);
   });
 
   test("maps glob failures to worktree errors", async ({ tempDir }) => {
@@ -213,7 +219,9 @@ describe("expandEntry", () => {
     expect(files.sort()).toEqual(
       [
         "config/a.json",
+        "config/nested",
         "config/nested/b.json",
+        "config/nested/deep",
         "config/nested/deep/c.json",
       ].sort(),
     );
@@ -358,6 +366,59 @@ describe("copyEntries", { concurrent: false }, () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.success).toBe(true);
+  });
+
+  test("negated copy globs include dotfiles and exclude matching files", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    await includeRepo.git("add", "--force", ".gitignore");
+    await Bun.write(join(sourceDir, ".env"), "keep");
+    await Bun.write(join(sourceDir, ".env.local"), "skip");
+    const results = await runEffect(
+      copyEntries(["!*.local"], sourceDir, targetDir),
+    );
+    expect(results).toEqual([{ file: ".env", success: true }]);
+    expect(await Bun.file(join(targetDir, ".env")).text()).toBe("keep");
+    expect(await Bun.file(join(targetDir, ".env.local")).exists()).toBe(false);
+  });
+
+  test("filters absolute and ineligible candidates before inspecting each ignored file once", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    await includeRepo.write(".gitignore", "*.env\n");
+    await includeRepo.write("keep.env", "keep");
+    await includeRepo.write("vanished.env", "gone");
+    await includeRepo.write("nonignored.json", "skip");
+    const inspected: string[] = [];
+    const results = await runEffect(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        return yield* copyEntries(
+          [join(sourceDir, "*.env"), "**/*", "*.env"],
+          sourceDir,
+          targetDir,
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            lstat: (path) =>
+              Effect.gen(function* () {
+                inspected.push(path);
+                if (path === join(sourceDir, "vanished.env"))
+                  yield* fs.remove(path);
+                return yield* fs.lstat(path);
+              }),
+          }),
+        );
+      }),
+    );
+    expect(results).toEqual([{ file: "keep.env", success: true }]);
+    expect(inspected.sort()).toEqual(
+      [join(sourceDir, "keep.env"), join(sourceDir, "vanished.env")].sort(),
+    );
   });
 
   test("handles missing file gracefully", async ({ sourceDir, targetDir }) => {
@@ -530,7 +591,7 @@ describe("copyEntries", { concurrent: false }, () => {
     ]);
   });
 
-  test("YAML Bun globs reach wholly ignored directories", async ({
+  test("YAML copy globs reach wholly ignored directories", async ({
     sourceDir,
     targetDir,
     includeRepo: fixture,

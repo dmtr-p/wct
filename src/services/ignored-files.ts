@@ -37,7 +37,7 @@ export function discoverIgnoredFiles(sourceDir: string) {
 export function filterRegularFiles(
   files: ReadonlyArray<string>,
   sourceDir: string,
-  onMissing?: (file: string) => Effect.Effect<void>,
+  options?: { keepMissing?: boolean },
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -49,11 +49,11 @@ export function filterRegularFiles(
           .pipe(
             Effect.map((info) => (info.type === "File" ? file : undefined)),
           );
-        return onMissing
+        return options?.keepMissing
           ? inspected.pipe(
               Effect.catchIf(
                 (error) => error.reason._tag === "NotFound",
-                () => onMissing(file).pipe(Effect.as(undefined)),
+                () => Effect.succeed(file),
               ),
             )
           : inspected;

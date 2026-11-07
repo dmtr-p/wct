@@ -34,23 +34,64 @@ export function detectEntryType(entry: string): CopyEntryType {
   return "file";
 }
 
-export function expandEntry(
-  entry: string,
-  candidates: ReadonlySet<string>,
-): string[] {
-  if (isAbsolute(entry)) return [];
+function parseEntry(entry: string) {
   const entryType = detectEntryType(entry);
   const pattern = normalize(
     entryType === "glob" ? entry : entry.replace(/^\\!/, "!"),
   );
+  // An empty prefix indexes root files; undefined leaves the pattern unrestricted.
+  let prefix: string | undefined;
+  if (entryType === "directory") {
+    const directory = pattern.replace(/\/+$/, "");
+    prefix = directory === "." ? undefined : `${directory}/`;
+  } else if (entryType === "glob") {
+    // Stop before escapes too, so a literal prefix never includes glob syntax.
+    const literal = pattern.slice(0, pattern.search(/[*?[\]{}\\]/));
+    const slash = literal.lastIndexOf("/");
+    if (slash !== -1) prefix = literal.slice(0, slash + 1);
+    else if (!pattern.includes("/") && !pattern.includes("**")) prefix = "";
+  }
+  return { entryType, pattern, prefix };
+}
+
+function indexDirectories(
+  entries: ReadonlyArray<string>,
+  files: ReadonlySet<string>,
+) {
+  const directories = new Map<string, string[]>();
+  for (const entry of entries) {
+    const pattern = entry.startsWith("!") ? entry.slice(1) : entry;
+    if (isAbsolute(pattern)) continue;
+    const { prefix } = parseEntry(pattern);
+    if (prefix !== undefined) directories.set(prefix, []);
+  }
+  if (directories.size === 0) return directories;
+  for (const file of files) {
+    if (!file.includes("/")) directories.get("")?.push(file);
+    for (
+      let slash = file.indexOf("/");
+      slash !== -1;
+      slash = file.indexOf("/", slash + 1)
+    ) {
+      directories.get(file.slice(0, slash + 1))?.push(file);
+    }
+  }
+  return directories;
+}
+
+export function expandEntry(
+  entry: string,
+  candidates: ReadonlySet<string>,
+  directories?: ReadonlyMap<string, ReadonlyArray<string>>,
+): string[] {
+  if (isAbsolute(entry)) return [];
+  const { entryType, pattern, prefix } = parseEntry(entry);
   if (entryType === "file") {
     return candidates.has(pattern) ? [pattern] : [];
   }
   let matches: (file: string) => boolean;
   if (entryType === "directory") {
-    const directory = pattern.replace(/\/+$/, "");
-    const prefix = directory === "." ? "" : `${directory}/`;
-    matches = (file) => file.startsWith(prefix);
+    matches = (file) => file.startsWith(prefix ?? "");
   } else {
     // oxlint-disable effecttsgo/experimental-api-usage -- Use one glob syntax for both copy selection and exclusions.
     const glob = Glob.make(pattern.endsWith("/") ? `${pattern}**/*` : pattern, {
@@ -60,8 +101,9 @@ export function expandEntry(
     // oxlint-enable effecttsgo/experimental-api-usage
   }
   const expanded: string[] = [];
-  for (const file of candidates) {
-    if (matches(file)) expanded.push(file);
+  const scoped = prefix === undefined ? undefined : directories?.get(prefix);
+  for (const file of scoped ?? candidates) {
+    if (candidates.has(file) && matches(file)) expanded.push(file);
   }
   return expanded;
 }
@@ -73,8 +115,19 @@ export function copyEntries(
   reporter?: CopyReporter,
 ) {
   return Effect.gen(function* () {
-    if (entries.length === 0) return [];
+    if (entries.every((entry) => entry.startsWith("!"))) {
+      for (const entry of entries) {
+        if (reporter?.entrySkipped) {
+          yield* reporter.entrySkipped({
+            entry,
+            reason: "exclusion_no_matches",
+          });
+        }
+      }
+      return [];
+    }
     const ignoredFiles = new Set(yield* discoverIgnoredFiles(sourceDir));
+    const directories = indexDirectories(entries, ignoredFiles);
     const selected = new Set<string>();
 
     for (const entry of entries) {
@@ -82,6 +135,7 @@ export function copyEntries(
       const expanded = expandEntry(
         excluded ? entry.slice(1) : entry,
         excluded ? selected : ignoredFiles,
+        directories,
       );
       if (excluded) {
         if (expanded.length === 0 && reporter?.entrySkipped) {
@@ -114,37 +168,10 @@ export function copyEntries(
       for (const file of expanded) selected.add(file);
     }
 
-    const missing = new Set<string>();
-    const regularFiles = yield* filterRegularFiles(
-      [...selected],
-      sourceDir,
-      (file) =>
-        Effect.sync(() => {
-          missing.add(file);
-        }),
-    );
-    const copied = yield* copyFiles(
-      regularFiles,
-      sourceDir,
-      targetDir,
-      reporter,
-    );
-    const results = new Map(copied.map((result) => [result.file, result]));
-    for (const file of selected) {
-      if (missing.has(file)) {
-        const result = yield* reportCopyFailure(
-          file,
-          "source_not_found",
-          "File not found",
-          reporter,
-        );
-        results.set(file, result);
-      }
-    }
-    return [...selected].flatMap((file) => {
-      const result = results.get(file);
-      return result ? [result] : [];
+    const regularFiles = yield* filterRegularFiles([...selected], sourceDir, {
+      keepMissing: true,
     });
+    return yield* copyFiles(regularFiles, sourceDir, targetDir, reporter);
   });
 }
 
@@ -172,7 +199,9 @@ export function copyFiles(
   reporter?: CopyReporter,
 ) {
   return Effect.gen(function* () {
+    if (files.length === 0) return [];
     const results: CopyResult[] = [];
+    const buffer = new Uint8Array(1024 * 1024);
 
     for (const file of files) {
       const sourcePath = join(sourceDir, file);
@@ -214,7 +243,6 @@ export function copyFiles(
             )
               return { file, success: true as const };
             yield* target.truncate(0);
-            const buffer = new Uint8Array(1024 * 1024);
             while (true) {
               const count = yield* source.read(buffer);
               if (count === 0) break;

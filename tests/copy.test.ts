@@ -8,8 +8,8 @@ import {
   utimes,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { Deferred, Effect, Fiber, FileSystem, PlatformError } from "effect";
-import { describe, expect } from "vitest";
+import { Deferred, Effect, Fiber, FileSystem, Glob } from "effect";
+import { describe, expect, vi } from "vitest";
 import {
   type BunServices as BunServicesType,
   runBunPromise,
@@ -23,6 +23,11 @@ import {
 } from "../src/services/copy";
 import { test as repoTest } from "./helpers/include-repo";
 import { test } from "./helpers/temp-dir";
+
+vi.mock("effect", async () => {
+  const actual = await vi.importActual<typeof import("effect")>("effect");
+  return { ...actual, Glob: { ...actual.Glob } };
+});
 
 function runEffect<A>(
   effect: Effect.Effect<A, WctError, BunServicesType.BunServices>,
@@ -145,6 +150,53 @@ describe("copyEntries", { concurrent: false }, () => {
       await mkdir(target, { recursive: true });
       await use(target);
     },
+  });
+
+  test("limits glob matching to literal directory prefixes and root files", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    await includeRepo.git("add", "--force", ".gitignore");
+    for (const file of [
+      ".claude/a.json",
+      ".claude/nested/b.json",
+      ".config/c.json",
+      "node_modules/package/unrelated.json",
+      "other/d.json",
+      "root.json",
+    ])
+      await includeRepo.write(file, "{}");
+    const match = vi.spyOn(Glob, "match");
+    try {
+      const results = await runEffect(
+        copyEntries(
+          [
+            ".claude/**/*.json",
+            ".config/**/*.json",
+            "*.json",
+            "!node_modules/**/*.json",
+            "!.claude/nested/*.json",
+          ],
+          sourceDir,
+          targetDir,
+        ),
+      );
+      expect(results.map((result) => result.file)).toEqual([
+        ".claude/a.json",
+        ".config/c.json",
+        "root.json",
+      ]);
+      expect(match.mock.calls.map(([, path]) => path)).toEqual([
+        ".claude/a.json",
+        ".claude/nested/b.json",
+        ".config/c.json",
+        "root.json",
+        ".claude/nested/b.json",
+      ]);
+    } finally {
+      match.mockRestore();
+    }
   });
 
   test("copies single file", async ({ sourceDir, targetDir }) => {
@@ -428,7 +480,7 @@ describe("copyEntries", { concurrent: false }, () => {
   }) => {
     for (const file of ["first.env", "keep.env", "second.env"])
       await includeRepo.write(file, "content");
-    const failures: string[] = [];
+    const events: string[] = [];
     const results = await runEffect(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -440,7 +492,7 @@ describe("copyEntries", { concurrent: false }, () => {
           {
             entryFailed: ({ file }) =>
               Effect.sync(() => {
-                failures.push(file);
+                events.push(file);
               }),
           },
         ).pipe(
@@ -448,14 +500,9 @@ describe("copyEntries", { concurrent: false }, () => {
             ...fs,
             lstat: (path) => {
               if (path.endsWith("keep.env")) return fs.lstat(path);
-              const missing = Effect.fail(
-                PlatformError.systemError({
-                  _tag: "NotFound",
-                  module: "FileSystem",
-                  method: "lstat",
-                  pathOrDescriptor: path,
-                }),
-              );
+              const missing = fs
+                .remove(path)
+                .pipe(Effect.andThen(fs.lstat(path)));
               return path.endsWith("first.env")
                 ? Deferred.await(secondInspected).pipe(Effect.andThen(missing))
                 : missing.pipe(
@@ -464,6 +511,15 @@ describe("copyEntries", { concurrent: false }, () => {
                     ),
                   );
             },
+            open: (path, options) =>
+              fs.open(path, options).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    if (path === join(targetDir, "keep.env"))
+                      events.push("copy:keep.env");
+                  }),
+                ),
+              ),
           }),
         );
       }),
@@ -473,7 +529,7 @@ describe("copyEntries", { concurrent: false }, () => {
       { file: "keep.env", success: true },
       { file: "second.env", success: false, error: "File not found" },
     ]);
-    expect(failures).toEqual(["first.env", "second.env"]);
+    expect(events).toEqual(["first.env", "copy:keep.env", "second.env"]);
   });
 
   test("reports a source removed after inspection without an existence precheck", async ({
@@ -787,6 +843,23 @@ describe("copyEntries", { concurrent: false }, () => {
     ).rejects.toThrow("Failed to discover gitignored files");
   });
 });
+
+test.for([[], ["!*.local", "!cache/"]])(
+  "skips Git discovery for exclusion-only copy lists: %s",
+  async (entries, { tempDir }) => {
+    const notices: string[] = [];
+    const results = await runEffect(
+      copyEntries(entries, tempDir, join(tempDir, "target"), {
+        entrySkipped: ({ entry }) =>
+          Effect.sync(() => {
+            notices.push(entry);
+          }),
+      }),
+    );
+    expect(results).toEqual([]);
+    expect(notices).toEqual(entries);
+  },
+);
 
 describe("bounded Workspace file copying", () => {
   test("copies binary chunks and truncates existing targets while retaining destination permissions", async ({

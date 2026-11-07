@@ -104,7 +104,7 @@ describe("ignored file inspection", () => {
     }),
   );
 
-  it.effect("fails on missing files unless the caller handles them", () =>
+  it.effect("fails on missing files unless they are retained for copying", () =>
     Effect.gen(function* () {
       const failure = PlatformError.systemError({
         _tag: "NotFound",
@@ -118,14 +118,10 @@ describe("ignored file inspection", () => {
         Effect.flip,
       );
       expect(error.cause).toBe(failure);
-      const missing: string[] = [];
-      const selected = yield* filterRegularFiles(["gone"], "/source", (file) =>
-        Effect.sync(() => {
-          missing.push(file);
-        }),
-      ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
-      expect(selected).toEqual([]);
-      expect(missing).toEqual(["gone"]);
+      const selected = yield* filterRegularFiles(["gone"], "/source", {
+        keepMissing: true,
+      }).pipe(Effect.provideService(FileSystem.FileSystem, fs));
+      expect(selected).toEqual(["gone"]);
     }),
   );
 

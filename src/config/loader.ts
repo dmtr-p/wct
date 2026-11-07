@@ -199,7 +199,8 @@ export interface ProfileResult {
 }
 
 function matchesGlob(branch: string, pattern: string): boolean {
-  return new Bun.Glob(pattern).match(branch);
+  const glob = new Bun.Glob(pattern);
+  return glob.match(branch);
 }
 
 function profileMatchesBranch(profile: Profile, branch: string): boolean {

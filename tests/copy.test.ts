@@ -8,7 +8,7 @@ import {
   utimes,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { Deferred, Effect, Fiber, FileSystem } from "effect";
+import { Deferred, Effect, Fiber, FileSystem, PlatformError } from "effect";
 import { describe, expect } from "vitest";
 import {
   type BunServices as BunServicesType,
@@ -61,6 +61,10 @@ describe("detectEntryType", () => {
   test("detects glob patterns with braces", () => {
     expect(detectEntryType("*.{js,ts}")).toBe("glob");
     expect(detectEntryType("{src,lib}/**/*.ts")).toBe("glob");
+  });
+
+  test("detects directory glob patterns", () => {
+    expect(detectEntryType("**/secrets/")).toBe("glob");
   });
 });
 
@@ -119,6 +123,7 @@ describe("expandEntry", () => {
     ["\\!literal.env", ["!literal.env"]],
     ["back\\slash.env", ["back\\slash.env"]],
     ["config/../.env", [".env"]],
+    ["config/../.claude/*.json", [".claude/config.json"]],
     ["./config/a.json", ["config/a.json"]],
     ["/source/*.env", []],
     ["../*.env", []],
@@ -364,6 +369,149 @@ describe("copyEntries", { concurrent: false }, () => {
     };
     expect(expandEntry("config/../.env", candidates)).toEqual([".env"]);
     expect(expandEntry("missing.env", candidates)).toEqual([]);
+  });
+
+  test.for([
+    {
+      exclude: "!settings.local.json",
+      files: [".claude/keep.json", ".claude/settings.local.json"],
+      warned: true,
+    },
+    {
+      exclude: "!**/settings.local.json",
+      files: [".claude/keep.json"],
+      warned: false,
+    },
+    {
+      exclude: "!config/../.claude/*.local.json",
+      files: [".claude/keep.json"],
+      warned: false,
+    },
+    {
+      exclude: "!missing/",
+      files: [".claude/keep.json", ".claude/settings.local.json"],
+      warned: true,
+    },
+    {
+      exclude: "!**/*.missing",
+      files: [".claude/keep.json", ".claude/settings.local.json"],
+      warned: true,
+    },
+  ])(
+    "reports no-op exclusions while keeping root-relative matching: $exclude",
+    async (
+      { exclude, files, warned },
+      { sourceDir, targetDir, includeRepo },
+    ) => {
+      await includeRepo.write(".claude/keep.json", "keep");
+      await includeRepo.write(".claude/settings.local.json", "local");
+      const notices: Array<{ entry: string; reason: string }> = [];
+      const results = await runEffect(
+        copyEntries([".claude/", exclude], sourceDir, targetDir, {
+          entrySkipped: (notice) =>
+            Effect.sync(() => {
+              notices.push(notice);
+            }),
+        }),
+      );
+      expect(results.map((result) => result.file).sort()).toEqual(files);
+      expect(notices).toEqual(
+        warned ? [{ entry: exclude, reason: "exclusion_no_matches" }] : [],
+      );
+    },
+  );
+
+  test("orders missing-file results and reports by selection despite concurrent inspection", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    for (const file of ["first.env", "keep.env", "second.env"])
+      await includeRepo.write(file, "content");
+    const failures: string[] = [];
+    const results = await runEffect(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const secondInspected = yield* Deferred.make<void>();
+        return yield* copyEntries(
+          ["first.env", "keep.env", "second.env"],
+          sourceDir,
+          targetDir,
+          {
+            entryFailed: ({ file }) =>
+              Effect.sync(() => {
+                failures.push(file);
+              }),
+          },
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            lstat: (path) => {
+              if (path.endsWith("keep.env")) return fs.lstat(path);
+              const missing = Effect.fail(
+                PlatformError.systemError({
+                  _tag: "NotFound",
+                  module: "FileSystem",
+                  method: "lstat",
+                  pathOrDescriptor: path,
+                }),
+              );
+              return path.endsWith("first.env")
+                ? Deferred.await(secondInspected).pipe(Effect.andThen(missing))
+                : missing.pipe(
+                    Effect.onExit(() =>
+                      Deferred.succeed(secondInspected, undefined),
+                    ),
+                  );
+            },
+          }),
+        );
+      }),
+    );
+    expect(results).toEqual([
+      { file: "first.env", success: false, error: "File not found" },
+      { file: "keep.env", success: true },
+      { file: "second.env", success: false, error: "File not found" },
+    ]);
+    expect(failures).toEqual(["first.env", "second.env"]);
+  });
+
+  test("reports a source removed after inspection without an existence precheck", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    await includeRepo.write("vanished.env", "gone");
+    await includeRepo.write("keep.env", "keep");
+    const results = await runEffect(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        return yield* copyEntries(
+          ["vanished.env", "keep.env"],
+          sourceDir,
+          targetDir,
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            exists: () =>
+              Effect.die(
+                new Error("Copying must not check existence separately"),
+              ),
+            open: (path, options) =>
+              path === join(sourceDir, "vanished.env")
+                ? fs.remove(path).pipe(Effect.andThen(fs.open(path, options)))
+                : fs.open(path, options),
+          }),
+        );
+      }),
+    );
+    expect(results).toEqual([
+      { file: "vanished.env", success: false, error: "File not found" },
+      { file: "keep.env", success: true },
+    ]);
+    expect(await Bun.file(join(targetDir, "vanished.env")).exists()).toBe(
+      false,
+    );
   });
 
   test("selects from Git's file list without filesystem glob or directory reads", async ({

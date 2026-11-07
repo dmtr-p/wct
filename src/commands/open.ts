@@ -83,6 +83,11 @@ function createOpenHumanReporter(
     }
 
     if (event._tag === "CopyEntrySkipped") {
+      if (event.reason === "exclusion_no_matches") {
+        return logger.warn(
+          `Exclusion matched no selected files: ${event.entry}`,
+        );
+      }
       return event.reason === "directory_not_found_or_empty"
         ? logger.warn(`Directory not found or empty: ${event.entry}`)
         : logger.warn(`No files matched pattern: ${event.entry}`);

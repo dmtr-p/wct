@@ -237,6 +237,8 @@ with branch patterns and section overrides.
 
 **Auto-matching:** When you run `wct open <branch>`, `wct up`, `wct down`, or `wct close`, profiles are matched against the workspace's branch name using glob patterns in `match`. The first matching profile wins. Only the sections defined in the profile are overridden — everything else falls through to the base config.
 
+Profile patterns use Bun's glob syntax, including leading `!` negation: `match: "!main"` matches branches other than `main`. Patterns in a `match` array are alternatives; any matching pattern selects the profile.
+
 During Open, a profile without `copy` uses the [copy-source precedence](#copying-local-files).
 
 **Explicit selection:** Use `--profile <name>` / `-P <name>` with `wct open`, `wct up`, `wct down`, or `wct close` to select a profile by name, bypassing auto-matching. This works even for profiles without a `match` pattern. An unknown name returns a configuration error before lifecycle work begins, including when no profiles are configured.

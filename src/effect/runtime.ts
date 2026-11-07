@@ -1,7 +1,7 @@
-import { BunRuntime, BunServices } from "@effect/platform-bun";
+import { BunCrypto, BunRuntime, BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 
-export { BunRuntime, BunServices };
+export { BunCrypto, BunRuntime, BunServices };
 
 export function provideBunServices<A, E>(
   effect: Effect.Effect<A, E, never>,

@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
-import { join } from "node:path";
-import { $ } from "bun";
-import { FileSystem } from "effect";
-import { runBunPromise } from "../src/effect/runtime";
+import { Console, Effect, FileSystem, Layer, Path } from "effect";
+import { Digest } from "effect/crypto";
+import { BunCrypto, BunRuntime, BunServices } from "../src/effect/runtime";
+import { commandError } from "../src/errors";
+import { execProcess, getProcessErrorMessage } from "../src/services/process";
 
 const platforms = [
   { target: "bun-darwin-x64", outfile: "wct-darwin-x64" },
@@ -11,50 +12,83 @@ const platforms = [
   { target: "bun-linux-arm64", outfile: "wct-linux-arm64" },
 ];
 
-const distDir = join(import.meta.dir, "..", "dist");
+function buildPlatform(
+  { target, outfile }: (typeof platforms)[number],
+  projectDir: string,
+  distDir: string,
+) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const digest = yield* Digest.Digest;
+    const outpath = path.join(distDir, outfile);
 
-async function build(): Promise<void> {
-  const fs = await runBunPromise(FileSystem.FileSystem);
-  console.log("Building wct for all platforms...\n");
+    yield* Console.log(`Building ${outfile} (${target})...`);
+    yield* execProcess(
+      process.execPath,
+      [
+        "build",
+        "src/index.ts",
+        "--compile",
+        "--target",
+        target,
+        "--outfile",
+        outpath,
+      ],
+      {
+        cwd: projectDir,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      },
+    );
 
-  await runBunPromise(fs.makeDirectory(distDir, { recursive: true }));
+    const buffer = yield* fs.readFile(outpath);
+    const sizeMB = (buffer.byteLength / 1024 / 1024).toFixed(2);
+    yield* Console.log(`  ✓ Built ${outfile} (${sizeMB} MB)`);
 
-  const checksums: string[] = [];
-
-  for (const { target, outfile } of platforms) {
-    const outpath = join(distDir, outfile);
-
-    console.log(`Building ${outfile} (${target})...`);
-
-    try {
-      await $`bun build src/index.ts --compile --target ${target} --outfile ${outpath}`;
-
-      const stat = await runBunPromise(fs.stat(outpath));
-      const sizeMB = (Number(stat.size) / 1024 / 1024).toFixed(2);
-      console.log(`  ✓ Built ${outfile} (${sizeMB} MB)`);
-
-      const buffer = await runBunPromise(fs.readFile(outpath));
-      const hash = new Bun.CryptoHasher("sha256");
-      hash.update(buffer);
-      const checksum = hash.digest("hex");
-      checksums.push(`${checksum}  ${outfile}`);
-      console.log(`  ✓ Checksum: ${checksum}\n`);
-    } catch (error) {
-      console.error(`  ✗ Failed to build ${outfile}:`, error);
-      process.exit(1);
-    }
-  }
-
-  const checksumsPath = join(distDir, "checksums.txt");
-  await runBunPromise(
-    fs.writeFileString(checksumsPath, `${checksums.join("\n")}\n`),
+    const checksum = yield* digest.digestHex(Digest.sha256, buffer);
+    yield* Console.log(`  ✓ Checksum: ${checksum}\n`);
+    return `${checksum}  ${outfile}`;
+  }).pipe(
+    Effect.mapError((error) =>
+      commandError(
+        "unexpected_error",
+        `Failed to build ${outfile}: ${getProcessErrorMessage(error)}`,
+        error,
+      ),
+    ),
   );
-  console.log(`\n✓ Checksums written to ${checksumsPath}`);
-
-  console.log("\n✓ Build complete! Binaries available in dist/");
 }
 
-build().catch((err) => {
-  console.error("Build failed:", err);
-  process.exit(1);
-});
+export const buildAll = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const projectDir = yield* path.fromFileUrl(new URL("..", import.meta.url));
+  const distDir = path.join(projectDir, "dist");
+
+  yield* Console.log("Building wct for all platforms...\n");
+  yield* fs.makeDirectory(distDir, { recursive: true });
+
+  const checksums = yield* Effect.forEach(platforms, (platform) =>
+    buildPlatform(platform, projectDir, distDir),
+  );
+
+  const checksumsPath = path.join(distDir, "checksums.txt");
+  yield* fs.writeFileString(checksumsPath, `${checksums.join("\n")}\n`);
+  yield* Console.log(`\n✓ Checksums written to ${checksumsPath}`);
+  yield* Console.log("\n✓ Build complete! Binaries available in dist/");
+}).pipe(
+  Effect.mapError((error) =>
+    commandError("unexpected_error", `Build failed: ${error.message}`, error),
+  ),
+);
+
+if (import.meta.main) {
+  const buildLayer = Layer.mergeAll(
+    BunServices.layer,
+    // oxlint-disable-next-line effecttsgo/unstable-api-usage -- BunCrypto re-exports this layer from the pinned shared platform package.
+    BunCrypto.layerDigest,
+  );
+  BunRuntime.runMain(buildAll.pipe(Effect.provide(buildLayer)));
+}

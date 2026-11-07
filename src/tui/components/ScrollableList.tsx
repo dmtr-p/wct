@@ -82,7 +82,6 @@ export function scrollToRevealListItem(
   return clamped;
 }
 
-/** Compute the start-inclusive/end-exclusive rows of a proportional thumb. */
 export function getScrollbarThumb(
   totalItems: number,
   visibleItems: number,

@@ -35,10 +35,8 @@ export function createMouseController(stdout: MouseWriter) {
 export type MouseController = ReturnType<typeof createMouseController>;
 
 /**
- * Own mouse reporting for the React mount/unmount lifecycle. Quit handlers
- * must call disableMouse before exit(): Ink releases raw mode before React
- * cleanup, allowing mouse bytes to echo during that gap.
- * Any non-empty WCT_DISABLE_MOUSE value disables reporting.
+ * Quit handlers must disable reporting before exit(): Ink releases raw mode
+ * before React cleanup, allowing mouse bytes to echo during that gap.
  */
 export function useMouse(): { disableMouse: () => void } {
   const { stdout } = useStdout();

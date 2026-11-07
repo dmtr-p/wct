@@ -112,11 +112,6 @@ describe("StatusBar", () => {
     rendered.unmount();
   });
 
-  // App.tsx budgets bottomChromeRows assuming every StatusBar line occupies
-  // exactly one terminal row — a hint or error line wrapping in a narrow
-  // terminal would silently overflow the viewport and misalign mouse
-  // hit-testing, so these pin the truncate behaviour at widths where the
-  // hint text is longer than the terminal.
   describe("narrow terminals (one row per chrome line)", () => {
     test("Navigate renders no footer without an error", async () => {
       const rendered = await renderStatusBar(
@@ -151,9 +146,6 @@ describe("StatusBar", () => {
         {
           mode: Mode.Navigate,
           hasClient: false,
-          // wrap="truncate" does not remove embedded newlines, so without
-          // toSingleLine this would render 2+ rows and break the viewport
-          // budget that counts every chrome line as exactly one row.
           repoError: "gh: HTTP 502\nadvice: try again later",
         },
         80,
@@ -169,9 +161,6 @@ describe("StatusBar", () => {
   });
 
   describe("statusBarRowCount stays true to the render", () => {
-    // The anti-drift contract: App.tsx budgets the tree viewport with
-    // statusBarRowCount, so for every renderable mode the helper must equal
-    // the row count StatusBar actually produces.
     const cases: Array<{
       name: string;
       mode: Mode;
@@ -189,7 +178,6 @@ describe("StatusBar", () => {
         repoError: "boom",
       },
       { name: "Search", mode: Mode.Search },
-      // Search's early return ignores repoError; the count must match that.
       { name: "Search + repoError", mode: Mode.Search, repoError: "boom" },
       {
         name: "ConfirmKill",

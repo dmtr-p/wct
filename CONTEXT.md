@@ -87,11 +87,7 @@ as lifecycle progress, PR Associations, worktree expansion, and expansion-relate
 mode and action targets. It uses the main repository path and branch, never a
 Project Display Name or registry ID.
 
-Manual expansion and Workspaces found during Open validation share one set of
-Workspace Identity Keys, including Workspaces discovered after a later Open
-phase fails. Active lifecycle operations temporarily force expansion without
-changing that set. Project Display Names are presentation labels only; renaming
-one does not change a Workspace's expansion or action target.
+See [TUI views and controls](docs/tui.md#worktrees-view) for expansion behavior.
 
 ### PR Identity
 
@@ -202,14 +198,5 @@ A Config Profile is a named set of overrides for `work_dir`, `copy`, `setup`,
 with `--profile` or use the first profile whose branch glob matches. Sections
 absent from the profile retain their base configuration.
 
-Unknown nonempty explicit profile names fail with `config_error` before lifecycle
-side effects, including Close cleanup of deleted Worktree directories. An empty
-explicit profile name disables profile selection and uses the base configuration.
-
-Profile names match `[A-Za-z0-9][A-Za-z0-9._-]*` so they work as shell completion
-candidates without quoting or completion delimiter conflicts.
-
-Shutdown resolves the current main-repository configuration rather than
-remembering the startup profile. The TUI selects shutdown profiles by branch
-matching. A profile script list replaces the inherited list; an empty list
-disables it.
+See [profile configuration](README.md#config-profiles) for naming and selection,
+and [Workspace shutdown](docs/workspace-operations.md#shutdown) for cleanup rules.

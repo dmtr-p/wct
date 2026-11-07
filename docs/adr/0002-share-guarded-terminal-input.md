@@ -5,9 +5,8 @@ status: accepted
 # Keyboard and mouse input use the shared guarded hook
 
 All TUI input listeners use `useGuardedInput` in
-`src/tui/hooks/useGuardedInput.ts`. Oxlint restricts direct `useInput` imports
-to this hook. Keyboard events use Ink's input channel; mouse events use
-`src/tui/input/terminal-input.ts` subscriptions.
+`src/tui/hooks/useGuardedInput.ts`. Keyboard events use Ink's input channel;
+mouse events use `src/tui/input/terminal-input.ts` subscriptions.
 
 Ink discards unrecognized control sequences before `useInput`, so the
 terminal adapter observes mouse reports before Ink parses them.

@@ -13,7 +13,7 @@ include this step.
 
 Before changing TypeScript, Oxlint, oxlint-tsgolint, or `@effect/tsgo`, check the
 installed `@effect/tsgo` package's `README.md` for compatible versions.
-The [Effect reference](../EFFECT_V4.md#packages-and-imports) defines version
+The [Effect conventions](../EFFECT_V4.md#dependencies-and-imports) define version
 pinning for the runtime and test packages.
 
 ## Checks and diagnostics

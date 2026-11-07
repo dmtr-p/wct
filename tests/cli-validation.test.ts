@@ -82,6 +82,27 @@ function runCli(args: string[], env: Record<string, string> = {}) {
 }
 
 describe("CLI input validation", () => {
+  test.each(["--base", "-b"])(
+    "rejects a repeated single-valued flag through %s before calling handlers",
+    async (flag) => {
+      const args = ["open", "feature", "--base", "main", flag, "develop"];
+      const result = await parseCommand(args);
+      expect(result.error).toMatchObject({
+        _tag: "ShowHelp",
+        errors: [{ _tag: "InvalidValue", option: "base" }],
+      });
+      expect(result.open).not.toHaveBeenCalled();
+
+      const cli = runCli([...args, "--json"]);
+      expect(cli.exitCode).toBe(1);
+      expect(cli.stdout.toString()).toBe("");
+      expect(JSON.parse(cli.stderr.toString())).toMatchObject({
+        ok: false,
+        error: { code: "invalid_options" },
+      });
+    },
+  );
+
   test.each(conflicts)(
     "rejects $args before calling workspace handlers",
     async ({ args, message }) => {

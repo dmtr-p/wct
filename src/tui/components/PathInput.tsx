@@ -17,7 +17,6 @@ import {
 } from "./ScrollableList";
 import { TitledBox } from "./TitledBox";
 
-/** Expand leading ~/ or bare ~ to $HOME. Does not expand ~user syntax. */
 export function expandTilde(path: string): string {
   if (path === "~" || path.startsWith("~/")) {
     const home = Bun.env.HOME ?? "/tmp";
@@ -40,7 +39,6 @@ export function getParentAndPrefix(input: string): {
   };
 }
 
-/** Apply a selected directory completion while preserving a leading tilde. */
 export function completePathValue(
   value: string,
   selectedValue: string,

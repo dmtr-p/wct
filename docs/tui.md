@@ -22,6 +22,11 @@ details, and Left to hide them. Multiple Workspaces can remain expanded.
 Pane rows support jumping to a pane, toggling its zoom, and killing it with
 confirmation.
 
+Open validation expands discovered Workspaces, including after a later phase
+fails. Active lifecycles temporarily force expansion without changing the user's
+stored preference. Renaming a Project Display Name leaves expansion and action
+targets intact because they use Workspace Identity Keys.
+
 Workspace rows show agent counts, including for collapsed Workspaces and
 detached sessions. Counts use Workspace Identity and appear in blocked,
 working, idle, unknown order; retained counts explicitly say stale. Each
@@ -74,3 +79,10 @@ The Agents view stays open, and the Worktrees view retains its selection.
 Repository and tmux metadata follow the [TUI refresh loop](tui-refresh.md).
 PR discovery and updates follow [PR refresh](pr-refresh.md). Agent observations
 use the separate loop described in [agent detection](agent-detection.md#observation-and-presentation).
+
+## Rendering constraints
+
+The shared visual row model drives rendering, windowing, and mouse hit-testing.
+Every model row must occupy one terminal row. Wrapping and truncation use
+`src/tui/utils/display-width.ts` for consistent whole-string and grapheme widths;
+its approximation can differ from Ink for complex Unicode clusters.

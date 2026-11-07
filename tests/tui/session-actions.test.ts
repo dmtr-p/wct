@@ -1348,7 +1348,6 @@ describe("a Workspace under an active lifecycle", () => {
     const repoList = repos();
     const workspaceKey = workspaceIdentityKey("/repo", branch);
 
-    // Presentation: expanded, but stats/PR/pane detail rows suppressed.
     const items = buildTreeItems({
       repos: repoList,
       expandedWorkspaceKeys: new Set([workspaceKey]),
@@ -1536,7 +1535,6 @@ describe("up and down lifecycle progress", () => {
   test("up shows Preparing, and Starting tmux session only when attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // tmux configured: the creation phase is emitted and rendered.
     const configured = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(
@@ -1569,7 +1567,6 @@ describe("up and down lifecycle progress", () => {
       null,
     ]);
 
-    // tmux not configured: no creation attempted, so no row for it.
     const skipped = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(workspaceUp, "up", [], () =>
@@ -1592,7 +1589,6 @@ describe("up and down lifecycle progress", () => {
   test("down shows Preparing, and Stopping tmux session only when a kill is attempted", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // A session exists: the kill phase is emitted and rendered.
     const killed = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(
@@ -1633,7 +1629,6 @@ describe("up and down lifecycle progress", () => {
       null,
     ]);
 
-    // No session: nothing is killed, so no row for it.
     const absent = trackLifecycle();
     (tuiRuntime.runPromise as Mock).mockImplementation(
       serviceEmitting(workspaceDown, "down", [], () =>
@@ -1671,7 +1666,6 @@ describe("up and down lifecycle progress", () => {
   test("a running up/down is inert, presented expanded without details, and validates on success and failure", async () => {
     const { tuiRuntime } = await import("../../src/tui/runtime");
 
-    // Presentation: expanded, but stats/PR/pane detail rows suppressed.
     const repoList = repos();
     const lifecycle: LifecycleState = new Map([
       [
@@ -1732,7 +1726,6 @@ describe("up and down lifecycle progress", () => {
       rows.filter((row) => row.kind === "lifecycle-progress"),
     ).toHaveLength(1);
 
-    // Actions targeting it are refused.
     const inertDeps = makeDeps({
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: repoList,

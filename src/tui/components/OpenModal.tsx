@@ -147,7 +147,6 @@ function BracketInput({
 
 type NewBranchField = "branch" | "base" | "profile" | "autoSwitch" | "submit";
 
-/** @internal */
 export function NewBranchForm({
   defaultBase,
   profileNames,
@@ -256,7 +255,6 @@ export function NewBranchForm({
 
 type FromPRField = "prList" | "profile" | "autoSwitch" | "submit";
 
-/** @internal */
 export function FromPRForm({
   prList,
   profileNames,
@@ -471,7 +469,6 @@ export function FromPRForm({
 
 type ExistingBranchField = "branchList" | "profile" | "autoSwitch" | "submit";
 
-/** @internal */
 export function ExistingBranchForm({
   repoPath,
   profileNames,

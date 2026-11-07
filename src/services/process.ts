@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Semaphore, Stream } from "effect";
+import { Context, Data, Effect, Semaphore } from "effect";
 import { ChildProcess } from "effect/process";
 import { decodeText } from "../effect/stream";
 import { commandError } from "../errors";
@@ -53,21 +53,6 @@ function formatCommand(command: string, args: ReadonlyArray<string>): string {
   return [command, ...args].join(" ");
 }
 
-function decodeOutput<E>(
-  stream: Stream.Stream<Uint8Array, E>,
-  maxBytes?: number,
-): Effect.Effect<string, E | ProcessOutputLimitError> {
-  return decodeText(
-    stream,
-    maxBytes === undefined
-      ? undefined
-      : {
-          maxBytes,
-          onLimit: () => new ProcessOutputLimitError(),
-        },
-  );
-}
-
 function makeCommand(
   command: string,
   args: ReadonlyArray<string>,
@@ -94,10 +79,17 @@ function collectOutput(
         stderr: options?.stderr ?? "pipe",
       });
 
+      const limit =
+        options?.maxOutputBytes === undefined
+          ? undefined
+          : {
+              maxBytes: options.maxOutputBytes,
+              onLimit: () => new ProcessOutputLimitError(),
+            };
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [
-          decodeOutput(handle.stdout, options?.maxOutputBytes),
-          decodeOutput(handle.stderr, options?.maxOutputBytes),
+          decodeText(handle.stdout, limit),
+          decodeText(handle.stderr, limit),
           Effect.map(handle.exitCode, (exitCode) => Number(exitCode)),
         ],
         { concurrency: "unbounded" },

@@ -1,6 +1,6 @@
 import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { describe, expect, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { copyFiles } from "../src/services/copy";
@@ -182,6 +182,30 @@ describe(".worktreeinclude resolver", { concurrent: false }, () => {
       "/root.env\nnested/**/secret.json\n/.settings/\n",
     );
     expect((await resolve(fixture))?.sort()).toEqual(selected.sort());
+  });
+
+  test("reports selected files that disappear during inspection as include resolution errors", async ({
+    includeRepo: fixture,
+  }) => {
+    await fixture.write(".gitignore", ".env\n");
+    await fixture.write(".env");
+    await fixture.write(".worktreeinclude", ".env\n");
+    const result = await runBunPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        return yield* resolveWorktreeInclude(fixture.repo).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            lstat: (path) =>
+              fs.remove(path).pipe(Effect.andThen(fs.lstat(path))),
+          }),
+          Effect.flip,
+        );
+      }),
+    );
+    expect(result.code).toBe("worktree_error");
+    expect(result.message).toContain("Failed to resolve");
+    expect(result.message).toContain(".env");
   });
 
   test("supports escapes, CRLF, character classes, and unusual filenames without glob reinterpretation", async ({

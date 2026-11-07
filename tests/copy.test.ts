@@ -65,7 +65,7 @@ describe("detectEntryType", () => {
 });
 
 describe("expandEntry", () => {
-  const candidates = [
+  const candidates = new Set([
     ".env",
     ".env.local",
     ".settings/settings.json",
@@ -81,7 +81,11 @@ describe("expandEntry", () => {
     "config/app2.env",
     "literal[1].env",
     "!literal.env",
-  ];
+    "back\\slash.env",
+    "secrets/token",
+    "config/secrets/nested/token",
+    "config/cache/data",
+  ]);
 
   test.each([
     [".env", [".env"]],
@@ -102,6 +106,8 @@ describe("expandEntry", () => {
         "config/.hidden",
         "config/app1.env",
         "config/app2.env",
+        "config/secrets/nested/token",
+        "config/cache/data",
       ],
     ],
     [
@@ -111,9 +117,13 @@ describe("expandEntry", () => {
     ["config/app[[:digit:]].env", ["config/app1.env", "config/app2.env"]],
     ["literal\\[1\\].env", ["literal[1].env"]],
     ["\\!literal.env", ["!literal.env"]],
+    ["back\\slash.env", ["back\\slash.env"]],
+    ["config/../.env", [".env"]],
     ["./config/a.json", ["config/a.json"]],
     ["/source/*.env", []],
     ["../*.env", []],
+    ["**/secrets/", ["secrets/token", "config/secrets/nested/token"]],
+    ["*/cache/", ["config/cache/data"]],
   ] as const)("selects %s from Git's candidate paths", (entry, expected) => {
     expect(expandEntry(entry, candidates)).toEqual(expected);
   });
@@ -251,6 +261,7 @@ describe("copyEntries", { concurrent: false }, () => {
     { entries: ["**/.env*", "!**/.env.local"], files: [".env"] },
     { entries: ["!*.local"], files: [] },
     { entries: ["**/.env*", "!.env.local"], files: [".env"] },
+    { entries: ["config/../.env"], files: [".env"] },
     {
       entries: ["**/.env*", "!**/.env.local", ".env.local"],
       files: [".env", ".env.local"],
@@ -309,6 +320,52 @@ describe("copyEntries", { concurrent: false }, () => {
     expect(results).toEqual([{ file: "config/app1.env", success: true }]);
   });
 
+  test("excludes globbed directories and copies literal leading markers and backslashes", async ({
+    sourceDir,
+    targetDir,
+    includeRepo,
+  }) => {
+    await includeRepo.git("add", "--force", ".gitignore");
+    for (const file of [
+      "secrets/token",
+      "config/secrets/nested/token",
+      "config/cache/data",
+      "config/keep",
+      "!important.local",
+      "back\\slash.env",
+    ])
+      await includeRepo.write(file, "content");
+    const results = await runEffect(
+      copyEntries(
+        [
+          "**/*",
+          "!**/secrets/",
+          "!*/cache/",
+          "!\\!important.local",
+          "\\!important.local",
+          "back\\slash.env",
+        ],
+        sourceDir,
+        targetDir,
+      ),
+    );
+    expect(results.map((result) => result.file).sort()).toEqual([
+      "!important.local",
+      "back\\slash.env",
+      "config/keep",
+    ]);
+    expect(results.every((result) => result.success)).toBe(true);
+  });
+
+  test("looks up plain file entries without iterating the ignored-file set", () => {
+    const candidates = new Set([".env"]);
+    candidates[Symbol.iterator] = () => {
+      throw new Error("Literal lookup must not scan candidates");
+    };
+    expect(expandEntry("config/../.env", candidates)).toEqual([".env"]);
+    expect(expandEntry("missing.env", candidates)).toEqual([]);
+  });
+
   test("selects from Git's file list without filesystem glob or directory reads", async ({
     sourceDir,
     targetDir,
@@ -349,6 +406,7 @@ describe("copyEntries", { concurrent: false }, () => {
     await includeRepo.write("vanished.env", "gone");
     await includeRepo.write("nonignored.json", "skip");
     const inspected: string[] = [];
+    const failures: string[] = [];
     const results = await runEffect(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -356,6 +414,12 @@ describe("copyEntries", { concurrent: false }, () => {
           [join(sourceDir, "*.env"), "**/*", "*.env"],
           sourceDir,
           targetDir,
+          {
+            entryFailed: (failure) =>
+              Effect.sync(() => {
+                failures.push(failure.reason);
+              }),
+          },
         ).pipe(
           Effect.provideService(FileSystem.FileSystem, {
             ...fs,
@@ -370,7 +434,11 @@ describe("copyEntries", { concurrent: false }, () => {
         );
       }),
     );
-    expect(results).toEqual([{ file: "keep.env", success: true }]);
+    expect(results).toEqual([
+      { file: "keep.env", success: true },
+      { file: "vanished.env", success: false, error: "File not found" },
+    ]);
+    expect(failures).toEqual(["source_not_found"]);
     expect(inspected.sort()).toEqual(
       [join(sourceDir, "keep.env"), join(sourceDir, "vanished.env")].sort(),
     );

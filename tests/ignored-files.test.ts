@@ -104,6 +104,31 @@ describe("ignored file inspection", () => {
     }),
   );
 
+  it.effect("fails on missing files unless the caller handles them", () =>
+    Effect.gen(function* () {
+      const failure = PlatformError.systemError({
+        _tag: "NotFound",
+        module: "FileSystem",
+        method: "lstat",
+        pathOrDescriptor: "/source/gone",
+      });
+      const fs = FileSystem.makeNoop({ lstat: () => Effect.fail(failure) });
+      const error = yield* filterRegularFiles(["gone"], "/source").pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.flip,
+      );
+      expect(error.cause).toBe(failure);
+      const missing: string[] = [];
+      const selected = yield* filterRegularFiles(["gone"], "/source", (file) =>
+        Effect.sync(() => {
+          missing.push(file);
+        }),
+      ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
+      expect(selected).toEqual([]);
+      expect(missing).toEqual(["gone"]);
+    }),
+  );
+
   it.effect("bounds concurrent lstat calls and preserves selection order", () =>
     Effect.gen(function* () {
       const saturated = yield* Deferred.make<void>();

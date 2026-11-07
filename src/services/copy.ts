@@ -35,17 +35,24 @@ export function detectEntryType(entry: string): CopyEntryType {
 
 export function expandEntry(
   entry: string,
-  candidates: ReadonlyArray<string>,
+  candidates: ReadonlySet<string>,
 ): string[] {
   if (isAbsolute(entry)) return [];
-  if (detectEntryType(entry) === "directory") {
-    const directory = normalize(entry).replace(/\/+$/, "");
+  const hasGlob = /[*?[\]{}]/.test(entry);
+  if (!hasGlob && detectEntryType(entry) === "directory") {
+    const directory = normalize(entry.replace(/^\\!/, "!")).replace(/\/+$/, "");
     const prefix = directory === "." ? "" : `${directory}/`;
-    return candidates.filter((file) => file.startsWith(prefix));
+    return [...candidates].filter((file) => file.startsWith(prefix));
+  }
+  if (!hasGlob) {
+    const file = normalize(entry.replace(/^\\!/, "!"));
+    return candidates.has(file) ? [file] : [];
   }
   // oxlint-disable effecttsgo/experimental-api-usage -- Use one glob syntax for both copy selection and exclusions.
-  const glob = Glob.make(entry, { dot: true });
-  return candidates.filter((file) => Glob.match(glob, file));
+  const glob = Glob.make(entry.endsWith("/") ? `${entry}**/*` : entry, {
+    dot: true,
+  });
+  return [...candidates].filter((file) => Glob.match(glob, file));
   // oxlint-enable effecttsgo/experimental-api-usage
 }
 
@@ -57,14 +64,14 @@ export function copyEntries(
 ) {
   return Effect.gen(function* () {
     if (entries.length === 0) return [];
-    const ignoredFiles = yield* discoverIgnoredFiles(sourceDir);
+    const ignoredFiles = new Set(yield* discoverIgnoredFiles(sourceDir));
     const selected = new Set<string>();
 
     for (const entry of entries) {
       const excluded = entry.startsWith("!");
       const expanded = expandEntry(
         excluded ? entry.slice(1) : entry,
-        ignoredFiles,
+        excluded ? selected : ignoredFiles,
       );
       if (excluded) {
         for (const file of expanded) selected.delete(file);
@@ -91,9 +98,36 @@ export function copyEntries(
       for (const file of expanded) selected.add(file);
     }
 
-    const regularFiles = yield* filterRegularFiles([...selected], sourceDir);
-    return yield* copyFiles(regularFiles, sourceDir, targetDir, reporter);
+    const missing: CopyResult[] = [];
+    const regularFiles = yield* filterRegularFiles(
+      [...selected],
+      sourceDir,
+      (file) =>
+        missingSource(file, reporter).pipe(
+          Effect.tap((result) => Effect.sync(() => missing.push(result))),
+          Effect.asVoid,
+        ),
+    );
+    const copied = yield* copyFiles(
+      regularFiles,
+      sourceDir,
+      targetDir,
+      reporter,
+    );
+    return [...copied, ...missing];
   });
+}
+
+function missingSource(file: string, reporter?: CopyReporter) {
+  const failure = {
+    file,
+    reason: "source_not_found" as const,
+    error: "File not found",
+  };
+  const result = { file, success: false as const, error: failure.error };
+  return reporter?.entryFailed
+    ? reporter.entryFailed(failure).pipe(Effect.as(result))
+    : Effect.succeed(result);
 }
 
 export function copyFiles(
@@ -113,15 +147,7 @@ export function copyFiles(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           if (!(yield* fs.exists(sourcePath))) {
-            const failure = {
-              file,
-              reason: "source_not_found" as const,
-              error: "File not found",
-            };
-            if (reporter?.entryFailed) {
-              yield* reporter.entryFailed(failure);
-            }
-            return { file, success: false as const, error: failure.error };
+            return yield* missingSource(file, reporter);
           }
 
           const targetDirPath = dirname(targetPath);

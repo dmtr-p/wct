@@ -38,9 +38,17 @@ export function parseEntry(entry: string) {
   const excluded = entry.startsWith("!");
   const value = excluded ? entry.slice(1) : entry;
   const entryType = detectEntryType(value);
-  const pattern = normalize(
+  const normalized = normalize(
     entryType === "glob" ? value : value.replace(/^\\!/, "!"),
   );
+  // Bun.Glob negates a leading `!`; markers are already consumed above.
+  const pattern =
+    entryType === "glob" && normalized.startsWith("!")
+      ? `\\${normalized}`
+      : normalized;
+  // Directory names may contain glob syntax, so also match the literal path.
+  const literalDirectory =
+    entryType === "glob" && normalized.endsWith("/") ? normalized : undefined;
   // An empty prefix indexes root files; undefined leaves the pattern unrestricted.
   let prefix: string | undefined;
   if (entryType === "directory") {
@@ -59,6 +67,7 @@ export function parseEntry(entry: string) {
     entryType,
     pattern,
     prefix,
+    literalDirectory,
     absolute: isAbsolute(value),
   };
 }
@@ -94,7 +103,7 @@ export function expandEntry(
   directories?: ReadonlyMap<string, ReadonlyArray<string>>,
 ): string[] {
   if (entry.absolute) return [];
-  const { entryType, pattern, prefix } = entry;
+  const { entryType, pattern, prefix, literalDirectory } = entry;
   if (entryType === "file") {
     return candidates.has(pattern) ? [pattern] : [];
   }
@@ -105,7 +114,9 @@ export function expandEntry(
     const glob = new Bun.Glob(
       pattern.endsWith("/") ? `${pattern}**/*` : pattern,
     );
-    matches = (file) => glob.match(file);
+    matches = (file) =>
+      glob.match(file) ||
+      (literalDirectory !== undefined && file.startsWith(literalDirectory));
   }
   const expanded: string[] = [];
   const scoped = prefix === undefined ? undefined : directories?.get(prefix);

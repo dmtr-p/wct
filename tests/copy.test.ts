@@ -90,6 +90,7 @@ describe("expandEntry", () => {
     "secrets/token",
     "config/secrets/nested/token",
     "config/cache/data",
+    "cache[v1]/data",
   ]);
 
   test.each([
@@ -130,6 +131,8 @@ describe("expandEntry", () => {
     ["../*.env", []],
     ["**/secrets/", ["secrets/token", "config/secrets/nested/token"]],
     ["*/cache/", ["config/cache/data"]],
+    ["cache[v1]/", ["cache[v1]/data"]],
+    ["./!lit*", ["!literal.env"]],
   ] as const)("selects %s from Git's candidate paths", (entry, expected) => {
     expect(expandEntry(parseEntry(entry), candidates)).toEqual(expected);
   });

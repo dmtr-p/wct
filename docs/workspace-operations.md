@@ -49,7 +49,9 @@ starting with `!`, escape the marker, for example `copy: ['\!important.local']`.
 Paths and glob patterns normalize `.` and `..` segments. Plain file paths are
 looked up literally, including backslashes in filenames. Glob rules use
 `Bun.Glob` syntax, including escaped literals and brace alternatives. Directory
-globs such as `!**/secrets/` exclude all matching directories' descendants.
+globs such as `!**/secrets/` exclude all matching directories' descendants; a
+directory rule whose name contains glob syntax, such as `cache[v1]/`, also
+matches that literal directory.
 YAML paths and globs are relative to the repository root for both selection and
 exclusion: `!settings.local.json` excludes only the root file; use
 `!**/settings.local.json` to exclude that name at any depth. This differs from

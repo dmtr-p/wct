@@ -912,14 +912,6 @@ project_name: "myapp"
                     yield* Effect.ignore(
                       reporter.event({
                         operation: "open",
-                        _tag: "CopyEntrySkipped",
-                        entry: "!settings.local.json",
-                        reason: "exclusion_no_matches",
-                      }),
-                    );
-                    yield* Effect.ignore(
-                      reporter.event({
-                        operation: "open",
                         _tag: "CopyEntryFailed",
                         file: ".env",
                         reason: "source_not_found",
@@ -982,13 +974,6 @@ project_name: "myapp"
       expect(
         loggedLines.some((line) =>
           line.includes("Directory not found or empty: .settings/"),
-        ),
-      ).toBe(true);
-      expect(
-        loggedLines.some((line) =>
-          line.includes(
-            "Exclusion matched no selected files: !settings.local.json",
-          ),
         ),
       ).toBe(true);
       expect(

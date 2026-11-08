@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join, normalize } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { Effect, FileSystem, Option } from "effect";
 import { commandError } from "../errors";
 import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
@@ -11,8 +11,7 @@ export interface CopyResult {
 
 export interface CopyEntrySkipped {
   entry: string;
-  reason:
-    "directory_not_found_or_empty" | "glob_no_matches" | "exclusion_no_matches";
+  reason: "directory_not_found_or_empty" | "glob_no_matches";
 }
 
 export interface CopyEntryFailed {
@@ -29,116 +28,30 @@ export interface CopyReporter {
 export type CopyEntryType = "file" | "directory" | "glob";
 
 export function detectEntryType(entry: string): CopyEntryType {
-  if (/[*?[\]{}]/.test(entry)) return "glob";
   if (entry.endsWith("/")) return "directory";
+  if (/[*?[\]{}]/.test(entry)) return "glob";
   return "file";
 }
 
-export function parseEntry(entry: string) {
-  const excluded = entry.startsWith("!");
-  const value = excluded ? entry.slice(1) : entry;
-  const entryType = detectEntryType(value);
-  const normalized = normalize(
-    entryType === "glob" ? value : value.replace(/^\\!/, "!"),
-  );
-  // Bun.Glob negates a leading `!`; markers are already consumed above.
-  const pattern =
-    entryType === "glob" && normalized.startsWith("!")
-      ? `\\${normalized}`
-      : normalized;
-  // Names may contain glob syntax, so globs also match their unescaped path.
-  const literal =
-    entryType === "glob" ? normalized.replace(/\\(.)/g, "$1") : undefined;
-  // An empty prefix indexes root files; undefined leaves the pattern unrestricted.
-  let prefix: string | undefined;
-  if (entryType === "directory") {
-    const directory = pattern.replace(/\/+$/, "");
-    prefix = directory === "." ? undefined : `${directory}/`;
-  } else if (entryType === "glob") {
-    // Stop before escapes too, so a literal prefix never includes glob syntax.
-    const syntax = pattern.search(/[*?[\]{}\\]/);
-    const head = syntax === -1 ? pattern : pattern.slice(0, syntax);
-    const slash = head.lastIndexOf("/");
-    if (slash !== -1) prefix = head.slice(0, slash + 1);
-    else if (!excluded && !pattern.includes("/") && !pattern.includes("**"))
-      prefix = "";
-  }
-  return {
-    entry,
-    excluded,
-    entryType,
-    pattern,
-    prefix,
-    literal,
-    absolute: isAbsolute(value),
-  };
-}
-
-type ParsedEntry = ReturnType<typeof parseEntry>;
-
-function indexDirectories(
-  entries: ReadonlyArray<ParsedEntry>,
-  files: ReadonlySet<string>,
-) {
-  const directories = new Map<string, string[]>();
-  for (const { absolute, prefix } of entries) {
-    if (absolute) continue;
-    if (prefix !== undefined) directories.set(prefix, []);
-  }
-  if (directories.size === 0) return directories;
-  for (const file of files) {
-    if (!file.includes("/")) directories.get("")?.push(file);
-    for (
-      let slash = file.indexOf("/");
-      slash !== -1;
-      slash = file.indexOf("/", slash + 1)
-    ) {
-      directories.get(file.slice(0, slash + 1))?.push(file);
+/** Selects entry matches from Git's ignored files instead of walking the disk. */
+export function expandEntry(
+  entry: string,
+  candidates: ReadonlySet<string>,
+): string[] {
+  const path = normalize(entry);
+  switch (detectEntryType(entry)) {
+    case "file":
+      return candidates.has(path) ? [path] : [];
+    case "directory": {
+      const directory = path.replace(/\/+$/, "");
+      const prefix = directory === "." ? "" : `${directory}/`;
+      return [...candidates].filter((file) => file.startsWith(prefix));
+    }
+    case "glob": {
+      const glob = new Bun.Glob(path);
+      return [...candidates].filter((file) => glob.match(file));
     }
   }
-  return directories;
-}
-
-export function expandEntry(
-  entry: ParsedEntry,
-  candidates: ReadonlySet<string>,
-  directories?: ReadonlyMap<string, ReadonlyArray<string>>,
-): string[] {
-  if (entry.absolute) return [];
-  const { entryType, excluded, pattern, prefix, literal } = entry;
-  // Like gitignore, an exclusion without a trailing slash also covers a
-  // directory of that name.
-  const covers = (path: string, file: string) =>
-    path.endsWith("/")
-      ? file.startsWith(path)
-      : file === path || (excluded && file.startsWith(`${path}/`));
-  if (entryType === "file" && !excluded) {
-    return candidates.has(pattern) ? [pattern] : [];
-  }
-  let matches: (file: string) => boolean;
-  if (entryType === "file") {
-    matches = (file) => covers(pattern, file);
-  } else if (entryType === "directory") {
-    matches = (file) => file.startsWith(prefix ?? "");
-  } else {
-    const glob = new Bun.Glob(
-      pattern.endsWith("/") ? `${pattern}**/*` : pattern,
-    );
-    const descendants =
-      excluded && !pattern.endsWith("/")
-        ? new Bun.Glob(`${pattern}/**`)
-        : undefined;
-    matches = (file) =>
-      glob.match(file) ||
-      descendants?.match(file) === true ||
-      (literal !== undefined && covers(literal, file));
-  }
-  const expanded: string[] = [];
-  const scoped = prefix === undefined ? undefined : directories?.get(prefix);
-  for (const file of scoped ?? candidates) {
-    if (candidates.has(file) && matches(file)) expanded.push(file);
-  }
-  return expanded;
 }
 
 export function copyEntries(
@@ -148,55 +61,21 @@ export function copyEntries(
   reporter?: CopyReporter,
 ) {
   return Effect.gen(function* () {
-    const rules = entries.map(parseEntry);
-    if (rules.every((rule) => rule.excluded)) {
-      for (const { entry } of rules) {
-        if (reporter?.entrySkipped) {
-          yield* reporter.entrySkipped({
-            entry,
-            reason: "exclusion_no_matches",
-          });
-        }
-      }
-      return [];
-    }
+    if (entries.length === 0) return [];
     const ignoredFiles = new Set(yield* discoverIgnoredFiles(sourceDir));
-    const directories = indexDirectories(rules, ignoredFiles);
     const selected = new Set<string>();
 
-    for (const rule of rules) {
-      const { entry, excluded, entryType } = rule;
-      const expanded = expandEntry(
-        rule,
-        excluded ? selected : ignoredFiles,
-        directories,
-      );
-      if (excluded) {
-        if (expanded.length === 0 && reporter?.entrySkipped) {
-          yield* reporter.entrySkipped({
-            entry,
-            reason: "exclusion_no_matches",
-          });
-        }
-        for (const file of expanded) selected.delete(file);
-        continue;
-      }
-      if (expanded.length === 0) {
-        if (entryType === "directory") {
-          if (reporter?.entrySkipped) {
-            yield* reporter.entrySkipped({
-              entry,
-              reason: "directory_not_found_or_empty",
-            });
-          }
-        } else if (entryType === "glob") {
-          if (reporter?.entrySkipped) {
-            yield* reporter.entrySkipped({
-              entry,
-              reason: "glob_no_matches",
-            });
-          }
-        }
+    for (const entry of entries) {
+      const expanded = expandEntry(entry, ignoredFiles);
+      const entryType = detectEntryType(entry);
+      if (expanded.length === 0 && entryType !== "file") {
+        yield* reporter?.entrySkipped?.({
+          entry,
+          reason:
+            entryType === "directory"
+              ? "directory_not_found_or_empty"
+              : "glob_no_matches",
+        }) ?? Effect.void;
       }
       for (const file of expanded) selected.add(file);
     }

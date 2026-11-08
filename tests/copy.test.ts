@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { Deferred, Effect, Fiber, FileSystem } from "effect";
-import { describe, expect, vi } from "vitest";
+import { describe, expect } from "vitest";
 import {
   type BunServices as BunServicesType,
   runBunPromise,
@@ -20,7 +20,6 @@ import {
   copyFiles,
   detectEntryType,
   expandEntry,
-  parseEntry,
 } from "../src/services/copy";
 import { test as repoTest } from "./helpers/include-repo";
 import { test } from "./helpers/temp-dir";
@@ -64,8 +63,9 @@ describe("detectEntryType", () => {
     expect(detectEntryType("{src,lib}/**/*.ts")).toBe("glob");
   });
 
-  test("detects directory glob patterns", () => {
-    expect(detectEntryType("**/secrets/")).toBe("glob");
+  test("treats a trailing slash as a directory even with glob syntax", () => {
+    expect(detectEntryType("cache[v1]/")).toBe("directory");
+    expect(detectEntryType("**/secrets/")).toBe("directory");
   });
 });
 
@@ -85,13 +85,8 @@ describe("expandEntry", () => {
     "config/app1.env",
     "config/app2.env",
     "literal[1].env",
-    "!literal.env",
     "back\\slash.env",
-    "secrets/token",
-    "config/secrets/nested/token",
-    "config/cache/data",
     "cache[v1]/data",
-    "!cache[v1]/data",
     "file[1].txt",
     "file1.txt",
   ]);
@@ -115,8 +110,6 @@ describe("expandEntry", () => {
         "config/.hidden",
         "config/app1.env",
         "config/app2.env",
-        "config/secrets/nested/token",
-        "config/cache/data",
       ],
     ],
     [
@@ -125,22 +118,19 @@ describe("expandEntry", () => {
     ],
     ["config/app[0-9].env", ["config/app1.env", "config/app2.env"]],
     ["literal\\[1\\].env", ["literal[1].env"]],
-    ["\\!literal.env", ["!literal.env"]],
     ["back\\slash.env", ["back\\slash.env"]],
     ["config/../.env", [".env"]],
     ["config/../.claude/*.json", [".claude/config.json"]],
     ["./config/a.json", ["config/a.json"]],
     ["/source/*.env", []],
     ["../*.env", []],
-    ["**/secrets/", ["secrets/token", "config/secrets/nested/token"]],
-    ["*/cache/", ["config/cache/data"]],
     ["cache[v1]/", ["cache[v1]/data"]],
-    ["./!lit*", ["!literal.env"]],
-    ["\\!cache[v1]/", ["!cache[v1]/data"]],
-    ["file[1].txt", ["file[1].txt", "file1.txt"]],
+    ["file[1].txt", ["file1.txt"]],
+    ["file\\[1\\].txt", ["file[1].txt"]],
+    ["**/secrets/", []],
     ["config/[x]/../a.json", ["config/a.json"]],
   ] as const)("selects %s from Git's candidate paths", (entry, expected) => {
-    expect(expandEntry(parseEntry(entry), candidates)).toEqual(expected);
+    expect(expandEntry(entry, candidates)).toEqual(expected);
   });
 });
 
@@ -155,53 +145,6 @@ describe("copyEntries", { concurrent: false }, () => {
       await mkdir(target, { recursive: true });
       await use(target);
     },
-  });
-
-  test("limits glob matching to literal directory prefixes and root files", async ({
-    sourceDir,
-    targetDir,
-    includeRepo,
-  }) => {
-    await includeRepo.git("add", "--force", ".gitignore");
-    for (const file of [
-      ".claude/a.json",
-      ".claude/nested/b.json",
-      ".config/c.json",
-      "node_modules/package/unrelated.json",
-      "other/d.json",
-      "root.json",
-    ])
-      await includeRepo.write(file, "{}");
-    const match = vi.spyOn(Bun.Glob.prototype, "match");
-    try {
-      const results = await runEffect(
-        copyEntries(
-          [
-            ".claude/**/*.json",
-            ".config/**/*.json",
-            "*.json",
-            "!node_modules/**/*.json",
-            "!.claude/nested/*.json",
-          ],
-          sourceDir,
-          targetDir,
-        ),
-      );
-      expect(results.map((result) => result.file)).toEqual([
-        ".claude/a.json",
-        ".config/c.json",
-        "root.json",
-      ]);
-      expect(match.mock.calls.map(([path]) => path)).toEqual([
-        ".claude/a.json",
-        ".claude/nested/b.json",
-        ".config/c.json",
-        "root.json",
-        ".claude/nested/b.json",
-      ]);
-    } finally {
-      match.mockRestore();
-    }
   });
 
   test("copies single file", async ({ sourceDir, targetDir }) => {
@@ -319,174 +262,14 @@ describe("copyEntries", { concurrent: false }, () => {
     expect(results[0]?.success).toBe(true);
   });
 
-  test.for([
-    { entries: ["**/.env*", "!**/.env.local"], files: [".env"] },
-    { entries: ["!*.local"], files: [] },
-    { entries: ["**/.env*", "!.env.local"], files: [".env"] },
-    { entries: ["config/../.env"], files: [".env"] },
-    {
-      entries: ["**/.env*", "!**/.env.local", ".env.local"],
-      files: [".env", ".env.local"],
-    },
-    {
-      entries: ["**/*", "!node_modules/", "!dist/", "!cache/"],
-      files: [".env", ".env.local"],
-    },
-    {
-      entries: ["**/*", "!node_modules", "!dist*", "!cache"],
-      files: [".env", ".env.local"],
-    },
-    {
-      entries: ["**/*", "!**/node_modules", "!**/dist", "!**/cache"],
-      files: [".env", ".env.local"],
-    },
-  ])(
-    "applies ordered copy rules $entries without adding unrelated files",
-    async ({ entries, files }, { sourceDir, targetDir, includeRepo }) => {
-      await includeRepo.git("add", "--force", ".gitignore");
-      await Bun.write(join(sourceDir, ".env"), "keep");
-      await Bun.write(join(sourceDir, ".env.local"), "skip");
-      await includeRepo.write("node_modules/pkg/large.js", "unrelated");
-      await includeRepo.write("dist/bundle.js", "unrelated");
-      await includeRepo.write("cache/data", "unrelated");
-      const results = await runEffect(
-        copyEntries(entries, sourceDir, targetDir),
-      );
-      expect(results.map((result) => result.file).sort()).toEqual(files);
-      expect(results.every((result) => result.success)).toBe(true);
-      for (const file of [
-        "node_modules/pkg/large.js",
-        "dist/bundle.js",
-        "cache/data",
-      ])
-        expect(await Bun.file(join(targetDir, file)).exists()).toBe(false);
-    },
-  );
-
-  test("uses one syntax for character classes, brace alternatives, and escaped exclusions", async ({
-    sourceDir,
-    targetDir,
-    includeRepo,
-  }) => {
-    for (const file of [
-      "config/app1.env",
-      "config/app2.env",
-      "config/appA.env",
-      "literal[1].env",
-    ])
-      await includeRepo.write(file, "content");
-    const results = await runEffect(
-      copyEntries(
-        [
-          "config/app[0-9].env",
-          "!config/app{2,3}.env",
-          "literal\\[1\\].env",
-          "!literal\\[1\\].env",
-        ],
-        sourceDir,
-        targetDir,
-      ),
-    );
-    expect(results).toEqual([{ file: "config/app1.env", success: true }]);
-  });
-
-  test("excludes globbed directories and copies literal leading markers and backslashes", async ({
-    sourceDir,
-    targetDir,
-    includeRepo,
-  }) => {
-    await includeRepo.git("add", "--force", ".gitignore");
-    for (const file of [
-      "secrets/token",
-      "config/secrets/nested/token",
-      "config/cache/data",
-      "config/keep",
-      "!important.local",
-      "back\\slash.env",
-    ])
-      await includeRepo.write(file, "content");
-    const results = await runEffect(
-      copyEntries(
-        [
-          "**/*",
-          "!**/secrets/",
-          "!*/cache/",
-          "!\\!important.local",
-          "\\!important.local",
-          "back\\slash.env",
-        ],
-        sourceDir,
-        targetDir,
-      ),
-    );
-    expect(results.map((result) => result.file).sort()).toEqual([
-      "!important.local",
-      "back\\slash.env",
-      "config/keep",
-    ]);
-    expect(results.every((result) => result.success)).toBe(true);
-  });
-
   test("looks up plain file entries without iterating the ignored-file set", () => {
     const candidates = new Set([".env"]);
     candidates[Symbol.iterator] = () => {
       throw new Error("Literal lookup must not scan candidates");
     };
-    expect(expandEntry(parseEntry("config/../.env"), candidates)).toEqual([
-      ".env",
-    ]);
-    expect(expandEntry(parseEntry("missing.env"), candidates)).toEqual([]);
+    expect(expandEntry("config/../.env", candidates)).toEqual([".env"]);
+    expect(expandEntry("missing.env", candidates)).toEqual([]);
   });
-
-  test.for([
-    {
-      exclude: "!settings.local.json",
-      files: [".claude/keep.json", ".claude/settings.local.json"],
-      warned: true,
-    },
-    {
-      exclude: "!**/settings.local.json",
-      files: [".claude/keep.json"],
-      warned: false,
-    },
-    {
-      exclude: "!config/../.claude/*.local.json",
-      files: [".claude/keep.json"],
-      warned: false,
-    },
-    {
-      exclude: "!missing/",
-      files: [".claude/keep.json", ".claude/settings.local.json"],
-      warned: true,
-    },
-    {
-      exclude: "!**/*.missing",
-      files: [".claude/keep.json", ".claude/settings.local.json"],
-      warned: true,
-    },
-  ])(
-    "reports no-op exclusions while keeping root-relative matching: $exclude",
-    async (
-      { exclude, files, warned },
-      { sourceDir, targetDir, includeRepo },
-    ) => {
-      await includeRepo.write(".claude/keep.json", "keep");
-      await includeRepo.write(".claude/settings.local.json", "local");
-      const notices: Array<{ entry: string; reason: string }> = [];
-      const results = await runEffect(
-        copyEntries([".claude/", exclude], sourceDir, targetDir, {
-          entrySkipped: (notice) =>
-            Effect.sync(() => {
-              notices.push(notice);
-            }),
-        }),
-      );
-      expect(results.map((result) => result.file).sort()).toEqual(files);
-      expect(notices).toEqual(
-        warned ? [{ entry: exclude, reason: "exclusion_no_matches" }] : [],
-      );
-    },
-  );
 
   test("orders missing-file results and reports by selection despite concurrent inspection", async ({
     sourceDir,
@@ -859,22 +642,12 @@ describe("copyEntries", { concurrent: false }, () => {
   });
 });
 
-test.for([[], ["!*.local", "!cache/"]])(
-  "skips Git discovery for exclusion-only copy lists: %s",
-  async (entries, { tempDir }) => {
-    const notices: string[] = [];
-    const results = await runEffect(
-      copyEntries(entries, tempDir, join(tempDir, "target"), {
-        entrySkipped: ({ entry }) =>
-          Effect.sync(() => {
-            notices.push(entry);
-          }),
-      }),
-    );
-    expect(results).toEqual([]);
-    expect(notices).toEqual(entries);
-  },
-);
+test("skips Git discovery for empty copy lists", async ({ tempDir }) => {
+  const results = await runEffect(
+    copyEntries([], tempDir, join(tempDir, "target")),
+  );
+  expect(results).toEqual([]);
+});
 
 describe("bounded Workspace file copying", () => {
   test("copies binary chunks and truncates existing targets while retaining destination permissions", async ({

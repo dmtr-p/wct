@@ -71,19 +71,6 @@ function validateTmuxWindowNames(
   return errors;
 }
 
-function validateCopy(
-  copy: ReadonlyArray<string> | undefined,
-  path: string,
-): string[] {
-  if (!copy || copy.length === 0) return [];
-  if (copy.every((entry) => entry.startsWith("!"))) {
-    return [
-      `${path} contains only exclusions, which select nothing; add positive entries or use [] to disable copying.`,
-    ];
-  }
-  return [];
-}
-
 function validateWorkDir(workDir: string | undefined, path: string): string[] {
   if (workDir === undefined) return [];
   if (isAbsolute(workDir) || win32.isAbsolute(workDir)) {
@@ -114,7 +101,6 @@ export function validateConfig(config: unknown): ValidationResult {
     }
   }
   errors.push(...validateWorkDir(decoded.work_dir, "work_dir"));
-  errors.push(...validateCopy(decoded.copy, "copy"));
   if (decoded.tmux?.windows) {
     errors.push(
       ...validateTmuxWindowNames(decoded.tmux.windows, "tmux.windows"),
@@ -133,9 +119,6 @@ export function validateConfig(config: unknown): ValidationResult {
           profile.work_dir,
           `profiles.${profileName}.work_dir`,
         ),
-      );
-      errors.push(
-        ...validateCopy(profile.copy, `profiles.${profileName}.copy`),
       );
       if (profile.tmux?.windows) {
         errors.push(

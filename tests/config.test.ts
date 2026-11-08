@@ -171,24 +171,6 @@ describe("validateConfig", () => {
     expectValidationError(result.errors, "copy[1]: Expected string");
   });
 
-  test("rejects copy lists that contain only exclusions", () => {
-    const result = validateConfig({
-      copy: ["!.env.local"],
-      profiles: { api: { copy: ["!**/secrets/", "!cache"] } },
-    });
-    expect(result.valid).toBe(false);
-    expectValidationError(result.errors, "copy contains only exclusions");
-    expectValidationError(
-      result.errors,
-      "profiles.api.copy contains only exclusions",
-    );
-  });
-
-  test("accepts empty and mixed copy lists", () => {
-    expect(validateConfig({ copy: [] }).valid).toBe(true);
-    expect(validateConfig({ copy: [".env*", "!.env.local"] }).valid).toBe(true);
-  });
-
   test("rejects invalid setup command", () => {
     const result = validateConfig({
       setup: [{ name: "Install" }],

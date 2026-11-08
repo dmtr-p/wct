@@ -40,29 +40,11 @@ creating a worktree, the first available copy source wins:
 A project or selected profile `copy: []` disables copying. An existing empty,
 comments-only, or no-match `.worktreeinclude` also overrides global copying.
 A missing include file falls through to global configuration. YAML copy lists
-support file paths, directory paths ending in `/`, and globs with dotfile
-matching enabled. Rules run in order: positive entries select files, `!` entries
-remove earlier selections, and later positive entries can select them again.
-For example, `["**/.env*", "!**/.env.local"]` copies matching environment files
-except `.env.local`. A non-empty list of only exclusions fails validation. To
-select a filename starting with `!`, escape the marker, for example
-`copy: ['\!important.local']`.
-Paths and glob patterns normalize `.` and `..` segments. Plain file paths are
-looked up literally, including backslashes in filenames. Glob rules use
-`Bun.Glob` syntax, including escaped literals and brace alternatives. A glob
-also matches the path it spells literally, so `file[1].txt` and `cache[v1]/`
-select those names as well as their glob matches. Directory globs such as
-`!**/secrets/` exclude all matching directories' descendants. Like gitignore, an
-exclusion without a trailing slash also excludes a directory of that name:
-`!cache/tmp` and `!**/node_modules` remove everything beneath them.
-YAML paths and globs are relative to the repository root for both selection and
-exclusion: `!settings.local.json` excludes only the root path; use
-`!**/settings.local.json` to exclude that name at any depth. This differs from
-`.worktreeinclude`'s gitignore rules, where names without `/` match at any depth.
-An exclusion that removes no selected files produces a warning.
-Missing and ineligible matches are skipped during selection; a selected source
-that disappears before copying is reported as `source_not_found`. Selection
-matches Git's ignored file list without a separate filesystem walk.
+support file paths, directory paths ending in `/`, and `Bun.Glob` patterns,
+relative to the repository root. Entries select from Git's ignored-file list
+without a separate filesystem walk. Missing files and ineligible matches are
+skipped; a selected source that disappears before copying is reported as
+`source_not_found`. Use `.worktreeinclude` for gitignore-style `!` exclusions.
 
 All copy sources select only **untracked, gitignored regular files**. Git's
 repository ignore files, `.git/info/exclude`, and global ignore configuration

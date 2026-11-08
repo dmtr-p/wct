@@ -17,12 +17,7 @@ import {
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { type CommandResult, runShellCommands } from "./command-runner";
-import {
-  copyEntries,
-  type CopyEntrySkipped,
-  copyFiles,
-  type CopyResult,
-} from "./copy";
+import { copyEntries, copyFiles, type CopyResult } from "./copy";
 import {
   GitHubService,
   type GitHubService as GitHubServiceApi,
@@ -122,7 +117,7 @@ export type WorkspaceReporterEvent =
       operation: "open";
       _tag: "CopyEntrySkipped";
       entry: string;
-      reason: CopyEntrySkipped["reason"];
+      reason: "directory_not_found_or_empty" | "glob_no_matches";
     }
   | {
       operation: "open";

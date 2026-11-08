@@ -54,27 +54,28 @@ function createShutdownDirectory(worktreePath: string) {
     let lastError: unknown;
     // TMPDIR can point into the checkout, including through a symlink.
     for (const candidate of new Set([tmpdir(), "/tmp", "/var/tmp"])) {
-      const result = yield* Effect.gen(function* () {
-        const stagingRoot = yield* fs.realPath(candidate);
-        if (worktreeRoot) {
-          const path = relative(worktreeRoot, stagingRoot);
-          if (
-            path === "" ||
-            (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`))
-          )
-            return undefined;
-        }
-        // The worker owns cleanup after handoff, beyond the caller's scope.
-        return yield* fs.makeTempDirectory({
-          directory: stagingRoot,
-          prefix: "wct-shutdown-",
-        });
-      }).pipe(Effect.result);
-      if (Result.isSuccess(result)) {
-        if (result.success !== undefined) return result.success;
-      } else {
-        lastError = result.failure;
+      const stagingRoot = yield* Effect.result(fs.realPath(candidate));
+      if (Result.isFailure(stagingRoot)) {
+        lastError = stagingRoot.failure;
+        continue;
       }
+      if (worktreeRoot) {
+        const path = relative(worktreeRoot, stagingRoot.success);
+        if (
+          path === "" ||
+          (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`))
+        )
+          continue;
+      }
+      // The worker owns cleanup after handoff, beyond the caller's scope.
+      const directory = yield* Effect.result(
+        fs.makeTempDirectory({
+          directory: stagingRoot.success,
+          prefix: "wct-shutdown-",
+        }),
+      );
+      if (Result.isSuccess(directory)) return directory.success;
+      lastError = directory.failure;
     }
     return yield* commandError(
       "unexpected_error",

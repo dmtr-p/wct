@@ -47,9 +47,9 @@ For example, `["**/.env*", "!**/.env.local"]` copies matching environment files
 except `.env.local`. A negative-only list selects nothing. To select a filename
 starting with `!`, escape the marker, for example `copy: ['\!important.local']`.
 Paths and glob patterns normalize `.` and `..` segments. Plain file paths are
-looked up literally, including backslashes in filenames. Glob rules use Effect's
-syntax, including escaped literals and brace alternatives. Directory globs such
-as `!**/secrets/` exclude all matching directories' descendants.
+looked up literally, including backslashes in filenames. Glob rules use
+`Bun.Glob` syntax, including escaped literals and brace alternatives. Directory
+globs such as `!**/secrets/` exclude all matching directories' descendants.
 YAML paths and globs are relative to the repository root for both selection and
 exclusion: `!settings.local.json` excludes only the root file; use
 `!**/settings.local.json` to exclude that name at any depth. This differs from

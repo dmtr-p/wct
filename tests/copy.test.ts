@@ -8,7 +8,7 @@ import {
   utimes,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { Deferred, Effect, Fiber, FileSystem, Glob } from "effect";
+import { Deferred, Effect, Fiber, FileSystem } from "effect";
 import { describe, expect, vi } from "vitest";
 import {
   type BunServices as BunServicesType,
@@ -24,11 +24,6 @@ import {
 } from "../src/services/copy";
 import { test as repoTest } from "./helpers/include-repo";
 import { test } from "./helpers/temp-dir";
-
-vi.mock("effect", async () => {
-  const actual = await vi.importActual<typeof import("effect")>("effect");
-  return { ...actual, Glob: { ...actual.Glob } };
-});
 
 function runEffect<A>(
   effect: Effect.Effect<A, WctError, BunServicesType.BunServices>,
@@ -124,7 +119,7 @@ describe("expandEntry", () => {
       "config/*.{env,json}",
       ["config/a.json", "config/app1.env", "config/app2.env"],
     ],
-    ["config/app[[:digit:]].env", ["config/app1.env", "config/app2.env"]],
+    ["config/app[0-9].env", ["config/app1.env", "config/app2.env"]],
     ["literal\\[1\\].env", ["literal[1].env"]],
     ["\\!literal.env", ["!literal.env"]],
     ["back\\slash.env", ["back\\slash.env"]],
@@ -168,7 +163,7 @@ describe("copyEntries", { concurrent: false }, () => {
       "root.json",
     ])
       await includeRepo.write(file, "{}");
-    const match = vi.spyOn(Glob, "match");
+    const match = vi.spyOn(Bun.Glob.prototype, "match");
     try {
       const results = await runEffect(
         copyEntries(
@@ -188,7 +183,7 @@ describe("copyEntries", { concurrent: false }, () => {
         ".config/c.json",
         "root.json",
       ]);
-      expect(match.mock.calls.map(([, path]) => path)).toEqual([
+      expect(match.mock.calls.map(([path]) => path)).toEqual([
         ".claude/a.json",
         ".claude/nested/b.json",
         ".config/c.json",
@@ -366,7 +361,7 @@ describe("copyEntries", { concurrent: false }, () => {
     const results = await runEffect(
       copyEntries(
         [
-          "config/app[[:digit:]].env",
+          "config/app[0-9].env",
           "!config/app{2,3}.env",
           "literal\\[1\\].env",
           "!literal\\[1\\].env",

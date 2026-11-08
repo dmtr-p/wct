@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, join, normalize } from "node:path";
-import { Effect, FileSystem, Glob, Option } from "effect";
+import { Effect, FileSystem, Option } from "effect";
 import { commandError } from "../errors";
 import { discoverIgnoredFiles, filterRegularFiles } from "./ignored-files";
 
@@ -102,12 +102,10 @@ export function expandEntry(
   if (entryType === "directory") {
     matches = (file) => file.startsWith(prefix ?? "");
   } else {
-    // oxlint-disable effecttsgo/experimental-api-usage -- Use one glob syntax for both copy selection and exclusions.
-    const glob = Glob.make(pattern.endsWith("/") ? `${pattern}**/*` : pattern, {
-      dot: true,
-    });
-    matches = (file) => Glob.match(glob, file);
-    // oxlint-enable effecttsgo/experimental-api-usage
+    const glob = new Bun.Glob(
+      pattern.endsWith("/") ? `${pattern}**/*` : pattern,
+    );
+    matches = (file) => glob.match(file);
   }
   const expanded: string[] = [];
   const scoped = prefix === undefined ? undefined : directories?.get(prefix);

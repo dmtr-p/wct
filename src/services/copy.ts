@@ -37,21 +37,23 @@ export function detectEntryType(entry: string): CopyEntryType {
 export function expandEntry(
   entry: string,
   candidates: ReadonlySet<string>,
+  entryType = detectEntryType(entry),
 ): string[] {
   const path = normalize(entry);
-  switch (detectEntryType(entry)) {
-    case "file":
-      return candidates.has(path) ? [path] : [];
-    case "directory": {
-      const directory = path.replace(/\/+$/, "");
-      const prefix = directory === "." ? "" : `${directory}/`;
-      return [...candidates].filter((file) => file.startsWith(prefix));
-    }
-    case "glob": {
-      const glob = new Bun.Glob(path);
-      return [...candidates].filter((file) => glob.match(file));
-    }
+  if (entryType === "file") return candidates.has(path) ? [path] : [];
+  let matches: (file: string) => boolean;
+  if (entryType === "directory") {
+    // normalize() leaves exactly one trailing slash.
+    const prefix = path === "./" ? "" : path;
+    matches = (file) => file.startsWith(prefix);
+  } else {
+    // Bun.Glob negates a leading `!`, which would select every other file.
+    const glob = new Bun.Glob(path.startsWith("!") ? `\\${path}` : path);
+    matches = (file) => glob.match(file);
   }
+  const expanded: string[] = [];
+  for (const file of candidates) if (matches(file)) expanded.push(file);
+  return expanded;
 }
 
 export function copyEntries(
@@ -66,8 +68,8 @@ export function copyEntries(
     const selected = new Set<string>();
 
     for (const entry of entries) {
-      const expanded = expandEntry(entry, ignoredFiles);
       const entryType = detectEntryType(entry);
+      const expanded = expandEntry(entry, ignoredFiles, entryType);
       if (expanded.length === 0 && entryType !== "file") {
         yield* reporter?.entrySkipped?.({
           entry,

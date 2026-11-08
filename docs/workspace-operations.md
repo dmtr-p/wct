@@ -41,10 +41,12 @@ A project or selected profile `copy: []` disables copying. An existing empty,
 comments-only, or no-match `.worktreeinclude` also overrides global copying.
 A missing include file falls through to global configuration. YAML copy lists
 support file paths, directory paths ending in `/`, and `Bun.Glob` patterns,
-relative to the repository root. Entries select from Git's ignored-file list
-without a separate filesystem walk. Missing files and ineligible matches are
-skipped; a selected source that disappears before copying is reported as
-`source_not_found`. Use `.worktreeinclude` for gitignore-style `!` exclusions.
+relative to the repository root. A leading `!` is matched literally rather than
+negating the pattern. Entries select from Git's ignored-file list without a
+separate filesystem walk. Missing files and ineligible matches are skipped. A
+selected source that disappears before copying is reported as
+`source_not_found` and fails Open. Use `.worktreeinclude` for gitignore-style
+`!` exclusions.
 
 All copy sources select only **untracked, gitignored regular files**. Git's
 repository ignore files, `.git/info/exclude`, and global ignore configuration

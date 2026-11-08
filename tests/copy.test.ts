@@ -91,6 +91,9 @@ describe("expandEntry", () => {
     "config/secrets/nested/token",
     "config/cache/data",
     "cache[v1]/data",
+    "!cache[v1]/data",
+    "file[1].txt",
+    "file1.txt",
   ]);
 
   test.each([
@@ -133,6 +136,9 @@ describe("expandEntry", () => {
     ["*/cache/", ["config/cache/data"]],
     ["cache[v1]/", ["cache[v1]/data"]],
     ["./!lit*", ["!literal.env"]],
+    ["\\!cache[v1]/", ["!cache[v1]/data"]],
+    ["file[1].txt", ["file[1].txt", "file1.txt"]],
+    ["config/[x]/../a.json", ["config/a.json"]],
   ] as const)("selects %s from Git's candidate paths", (entry, expected) => {
     expect(expandEntry(parseEntry(entry), candidates)).toEqual(expected);
   });
@@ -324,6 +330,14 @@ describe("copyEntries", { concurrent: false }, () => {
     },
     {
       entries: ["**/*", "!node_modules/", "!dist/", "!cache/"],
+      files: [".env", ".env.local"],
+    },
+    {
+      entries: ["**/*", "!node_modules", "!dist*", "!cache"],
+      files: [".env", ".env.local"],
+    },
+    {
+      entries: ["**/*", "!**/node_modules", "!**/dist", "!**/cache"],
       files: [".env", ".env.local"],
     },
   ])(

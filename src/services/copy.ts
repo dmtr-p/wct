@@ -46,9 +46,9 @@ export function parseEntry(entry: string) {
     entryType === "glob" && normalized.startsWith("!")
       ? `\\${normalized}`
       : normalized;
-  // Directory names may contain glob syntax, so also match the literal path.
-  const literalDirectory =
-    entryType === "glob" && normalized.endsWith("/") ? normalized : undefined;
+  // Names may contain glob syntax, so globs also match their unescaped path.
+  const literal =
+    entryType === "glob" ? normalized.replace(/\\(.)/g, "$1") : undefined;
   // An empty prefix indexes root files; undefined leaves the pattern unrestricted.
   let prefix: string | undefined;
   if (entryType === "directory") {
@@ -56,10 +56,12 @@ export function parseEntry(entry: string) {
     prefix = directory === "." ? undefined : `${directory}/`;
   } else if (entryType === "glob") {
     // Stop before escapes too, so a literal prefix never includes glob syntax.
-    const literal = pattern.slice(0, pattern.search(/[*?[\]{}\\]/));
-    const slash = literal.lastIndexOf("/");
-    if (slash !== -1) prefix = literal.slice(0, slash + 1);
-    else if (!pattern.includes("/") && !pattern.includes("**")) prefix = "";
+    const syntax = pattern.search(/[*?[\]{}\\]/);
+    const head = syntax === -1 ? pattern : pattern.slice(0, syntax);
+    const slash = head.lastIndexOf("/");
+    if (slash !== -1) prefix = head.slice(0, slash + 1);
+    else if (!excluded && !pattern.includes("/") && !pattern.includes("**"))
+      prefix = "";
   }
   return {
     entry,
@@ -67,7 +69,7 @@ export function parseEntry(entry: string) {
     entryType,
     pattern,
     prefix,
-    literalDirectory,
+    literal,
     absolute: isAbsolute(value),
   };
 }
@@ -103,20 +105,33 @@ export function expandEntry(
   directories?: ReadonlyMap<string, ReadonlyArray<string>>,
 ): string[] {
   if (entry.absolute) return [];
-  const { entryType, pattern, prefix, literalDirectory } = entry;
-  if (entryType === "file") {
+  const { entryType, excluded, pattern, prefix, literal } = entry;
+  // Like gitignore, an exclusion without a trailing slash also covers a
+  // directory of that name.
+  const covers = (path: string, file: string) =>
+    path.endsWith("/")
+      ? file.startsWith(path)
+      : file === path || (excluded && file.startsWith(`${path}/`));
+  if (entryType === "file" && !excluded) {
     return candidates.has(pattern) ? [pattern] : [];
   }
   let matches: (file: string) => boolean;
-  if (entryType === "directory") {
+  if (entryType === "file") {
+    matches = (file) => covers(pattern, file);
+  } else if (entryType === "directory") {
     matches = (file) => file.startsWith(prefix ?? "");
   } else {
     const glob = new Bun.Glob(
       pattern.endsWith("/") ? `${pattern}**/*` : pattern,
     );
+    const descendants =
+      excluded && !pattern.endsWith("/")
+        ? new Bun.Glob(`${pattern}/**`)
+        : undefined;
     matches = (file) =>
       glob.match(file) ||
-      (literalDirectory !== undefined && file.startsWith(literalDirectory));
+      descendants?.match(file) === true ||
+      (literal !== undefined && covers(literal, file));
   }
   const expanded: string[] = [];
   const scoped = prefix === undefined ? undefined : directories?.get(prefix);

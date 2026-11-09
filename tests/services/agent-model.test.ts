@@ -356,6 +356,39 @@ describe("agent classifier", () => {
       });
     },
   );
+  test("Claude's live thinking suffix keeps the Actioning status working", () => {
+    const status = "● Actioning… (2m 1s · ↓ 9.4k tokens · thinking)";
+    const composer = [
+      "────────────────────────────────────────",
+      "❯",
+      "────────────────────────────────────────",
+      "Fable 5.2 | 116.7k | 5h: 26.0% | main | Reset: 34m",
+      "⏵⏵ auto mode on (shift+tab to cycle)",
+    ].join("\n");
+    const screen = [
+      "● Reading both artifacts is done; now checking their claims.",
+      "● Running 4 shell commands…",
+      "  └ $ rg hook_name scratchpad/runs/floor.jsonl",
+      "",
+      status,
+      "",
+      composer,
+    ].join("\n");
+    const classified = classifyAgent("claude", screen);
+    expect(classified).toMatchObject({
+      state: "working",
+      rule: "live_turn_dot_working",
+      source: "screen",
+      strong: true,
+    });
+    expect(
+      agentSummary([reconcileAgent(undefined, "claude", "job", classified, 0)]),
+    ).toBe("1 working");
+    expect(
+      classifyAgent("claude", `${status}\n● Finished the review.\n${composer}`)
+        .state,
+    ).toBe("idle");
+  });
   test("Claude response bullets and completed timers do not establish live dot activity", () => {
     const composer = "──────\n❯\n──────\n? for shortcuts";
     for (const response of [
@@ -363,6 +396,9 @@ describe("agent classifier", () => {
       "● Flummoxing…",
       "● Flummoxing… (50s)",
       "● Flummoxing (50s · ↓ 3.7k tokens)",
+      "● Actioning… (2m 1s · thinking)",
+      "● Actioning… (↓ 9.4k tokens · thinking)",
+      "● Actioning (2m 1s · ↓ 9.4k tokens · thinking)",
       "* Cooked for 1h 57m 48s · done 12:52 PM",
       "● Flummoxing… (50s · ↓ 3.7k tokens)\n● Finished creating the worktree.",
     ])
@@ -694,6 +730,7 @@ describe("agent classifier", () => {
     for (const draft of [
       "✻ Thinking… (2s · tokens)",
       "● Flummoxing… (50s · ↓ 3.7k tokens)",
+      "● Actioning… (2m 1s · ↓ 9.4k tokens · thinking)",
       "⏸ esc to interrupt",
       "✻ Waiting for 2 background agents to finish",
       "* Waiting for 2 dynamic workflows to finish",

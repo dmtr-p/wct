@@ -62,7 +62,8 @@ its borders and readiness marker remain available. Live activity outside the
 box, title spinners, and approval-dialog controls retain their priorities.
 Claude's filled-circle spinner requires an ellipsis, elapsed time, and token
 progress on the live row above the prompt box; ordinary response bullets and
-completed-turn timers do not establish activity.
+completed-turn timers do not establish activity. The live row can include a
+trailing `· thinking` indicator inside its progress parentheses.
 Claude's waiting indicator for background agents, dynamic workflows, or both
 establishes working on the last nonempty row above the prompt box, ignoring the
 `new task? /clear to save … tokens` and `Image in clipboard · ctrl+v to paste`

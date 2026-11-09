@@ -53,7 +53,7 @@ export const agentRules: Record<"claude" | "codex", readonly AgentRule[]> = {
       visible_working: true,
       // The dot also marks responses; require live elapsed/token progress.
       line_regex: [
-        "^\\s*[●⏺•]\\s+\\S.*(?:…|\\.{3})\\s+\\((?:\\d+[hm]\\s+)*\\d+s\\s+·\\s+[↑↓]\\s+\\d+(?:\\.\\d+)?[km]?\\s+tokens?\\)\\s*$",
+        "^\\s*[●⏺•]\\s+\\S.*(?:…|\\.{3})\\s+\\((?:\\d+[hm]\\s+)*\\d+s\\s+·\\s+[↑↓]\\s+\\d+(?:\\.\\d+)?[km]?\\s+tokens?(?:\\s+·\\s+thinking)?\\)\\s*$",
       ],
     },
     {

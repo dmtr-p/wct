@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { commandError } from "../errors";
 import {
   type AgentName,
@@ -6,6 +6,7 @@ import {
   identifyAgentArgv,
 } from "./agent-model";
 import { execProcess } from "./process";
+import { decodeText } from "./process-output";
 
 export interface ForegroundProcess {
   pid: number;
@@ -112,6 +113,22 @@ export function parsePsArgv(output: string): Map<number, readonly string[]> {
   return result;
 }
 
+export function readProcArguments(pid: number) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const limit = 64 * 1024;
+    const content = yield* decodeText(
+      fs.stream(`/proc/${pid}/cmdline`, { bytesToRead: limit + 1 }),
+      {
+        maxBytes: limit,
+        onLimit: () =>
+          commandError("unexpected_error", "Argument limit exceeded"),
+      },
+    );
+    return content.split("\0").filter(Boolean);
+  });
+}
+
 export function readRuntimeArguments(processes: readonly ForegroundProcess[]) {
   const runtimes = processes.filter((process) =>
     ["node", "bun"].includes(process.command.split("/").at(-1) ?? ""),
@@ -122,41 +139,10 @@ export function readRuntimeArguments(processes: readonly ForegroundProcess[]) {
     return Effect.forEach(
       runtimes,
       (item) =>
-        Effect.tryPromise({
-          try: async (signal) => {
-            const reader = Bun.file(`/proc/${item.pid}/cmdline`)
-              .stream()
-              .getReader();
-            const decoder = new TextDecoder();
-            let bytes = 0;
-            let text = "";
-            const abort = () => {
-              void reader.cancel().catch(() => {});
-            };
-            signal.addEventListener("abort", abort, { once: true });
-            try {
-              while (true) {
-                if (signal.aborted) throw new Error("Arguments interrupted");
-                const chunk = await reader.read();
-                if (chunk.done) break;
-                bytes += chunk.value.byteLength;
-                if (bytes > 64 * 1024)
-                  throw new Error("Argument limit exceeded");
-                text += decoder.decode(chunk.value, { stream: true });
-              }
-              return [
-                item.pid,
-                (text + decoder.decode()).split("\0").filter(Boolean),
-              ] as const;
-            } finally {
-              signal.removeEventListener("abort", abort);
-              await reader.cancel().catch(() => {});
-              reader.releaseLock();
-            }
-          },
-          catch: (error) =>
-            commandError("unexpected_error", "Arguments unavailable", error),
-        }).pipe(Effect.orElseSucceed(() => [item.pid, []] as const)),
+        readProcArguments(item.pid).pipe(
+          Effect.map((argv) => [item.pid, argv] as const),
+          Effect.orElseSucceed(() => [item.pid, []] as const),
+        ),
       { concurrency: 4 },
     ).pipe(
       Effect.map((entries) => new Map<number, readonly string[]>(entries)),

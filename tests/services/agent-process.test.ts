@@ -1,9 +1,12 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Fiber, FileSystem, Result, Stream } from "effect";
 import { describe, expect, test } from "vitest";
 import {
   foregroundProcesses,
   inspectForegroundAgent,
   parseProcessSnapshot,
   parsePsArgv,
+  readProcArguments,
 } from "../../src/services/agent-process";
 
 describe("foreground process identity", () => {
@@ -79,4 +82,88 @@ describe("foreground process identity", () => {
     expect(args.get(20)?.[1]).toContain("@openai/codex");
     expect(args.has(21)).toBe(false);
   });
+});
+
+describe("Linux runtime arguments", () => {
+  it.effect(
+    "decodes NUL-delimited arguments across UTF-8 chunk boundaries",
+    () =>
+      Effect.gen(function* () {
+        const content = new TextEncoder().encode("bun\0/app/café.js\0--flag\0");
+        const split = content.indexOf(0xc3) + 1;
+        let closed = false;
+        const fs = FileSystem.makeNoop({
+          stream: () =>
+            Stream.fromIterable([
+              content.slice(0, split),
+              content.slice(split),
+            ]).pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  closed = true;
+                }),
+              ),
+            ),
+        });
+        const argv = yield* readProcArguments(20).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+        );
+        expect(argv).toEqual(["bun", "/app/café.js", "--flag"]);
+        expect(closed).toBe(true);
+      }),
+  );
+
+  it.effect.each([64 * 1024, 64 * 1024 + 1])(
+    "bounds argument reads at 64 KiB and closes the stream for %i bytes",
+    (size) =>
+      Effect.gen(function* () {
+        let closed = false;
+        const fs = FileSystem.makeNoop({
+          stream: () =>
+            Stream.succeed(new Uint8Array(size).fill(97)).pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  closed = true;
+                }),
+              ),
+            ),
+        });
+        const result = yield* readProcArguments(20).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.result,
+        );
+        if (size === 64 * 1024) {
+          expect(Result.isSuccess(result)).toBe(true);
+          if (Result.isSuccess(result))
+            expect(result.success).toEqual(["a".repeat(size)]);
+        } else {
+          expect(Result.isFailure(result)).toBe(true);
+          if (Result.isFailure(result))
+            expect(result.failure.message).toBe("Argument limit exceeded");
+        }
+        expect(closed).toBe(true);
+      }),
+  );
+
+  it.effect("closes a pending argument stream when interrupted", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const closed = yield* Deferred.make<void>();
+      const fs = FileSystem.makeNoop({
+        stream: () =>
+          Stream.fromEffect(
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+            ),
+          ).pipe(Stream.ensuring(Deferred.succeed(closed, undefined))),
+      });
+      const fiber = yield* readProcArguments(20).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(fiber);
+      yield* Deferred.await(closed);
+    }),
+  );
 });

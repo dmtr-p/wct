@@ -83,6 +83,31 @@ describe("resolveProfile", () => {
     expect(profileName).toBe("docs");
   });
 
+  test.each([
+    ["feature/auth", true],
+    ["main", false],
+  ] as const)(
+    "negated profile patterns select overrides for %s: %s",
+    (branch, matches) => {
+      const overrides = {
+        setup: [{ name: "Install feature", command: "bun install" }],
+        down: [{ name: "Cleanup feature", command: "bun run cleanup" }],
+        copy: [".env.feature"],
+        tmux: { windows: [{ name: "feature" }] },
+      };
+      const config = baseConfig({
+        profiles: { feature: { match: "!main", ...overrides } },
+      });
+      const { profiles: _, ...base } = config;
+
+      expect(resolveProfile(config, branch)).toEqual(
+        matches
+          ? { profileName: "feature", config: { ...base, ...overrides } }
+          : { config: base },
+      );
+    },
+  );
+
   test("first match wins when multiple profiles match", () => {
     const config = baseConfig({
       profiles: {
@@ -102,6 +127,19 @@ describe("resolveProfile", () => {
     );
     expect(result.tmux).toEqual({ windows: [{ name: "specific" }] });
     expect(profileName).toBe("specific");
+  });
+
+  test.each([
+    ["main", false],
+    ["develop", false],
+    ["feature/auth", true],
+  ] as const)("combined profile exclusions match %s: %s", (branch, matches) => {
+    const config = baseConfig({
+      profiles: { feature: { match: "!{main,develop}", work_dir: "feature" } },
+    });
+    expect(resolveProfile(config, branch).profileName).toBe(
+      matches ? "feature" : undefined,
+    );
   });
 
   test("explicit profile selection by name", () => {

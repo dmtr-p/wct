@@ -1,6 +1,7 @@
-import { Context, Data, Effect, Semaphore, Stream } from "effect";
+import { Context, Data, Effect, Semaphore } from "effect";
 import { ChildProcess } from "effect/process";
 import { commandError } from "../errors";
+import { decodeText } from "./process-output";
 
 export const ObservationProcessBudget = Context.Reference<
   Semaphore.Semaphore | undefined
@@ -52,23 +53,6 @@ function formatCommand(command: string, args: ReadonlyArray<string>): string {
   return [command, ...args].join(" ");
 }
 
-function decodeOutput<E>(
-  stream: Stream.Stream<Uint8Array, E>,
-  maxBytes?: number,
-): Effect.Effect<string, E | ProcessOutputLimitError> {
-  let bounded: Stream.Stream<Uint8Array, E | ProcessOutputLimitError> = stream;
-  if (maxBytes !== undefined) {
-    let bytes = 0;
-    bounded = Stream.mapEffect(stream, (chunk) => {
-      bytes += chunk.byteLength;
-      return bytes > maxBytes
-        ? Effect.fail(new ProcessOutputLimitError())
-        : Effect.succeed(chunk);
-    });
-  }
-  return Stream.mkString(Stream.decodeText(bounded));
-}
-
 function makeCommand(
   command: string,
   args: ReadonlyArray<string>,
@@ -95,10 +79,17 @@ function collectOutput(
         stderr: options?.stderr ?? "pipe",
       });
 
+      const limit =
+        options?.maxOutputBytes === undefined
+          ? undefined
+          : {
+              maxBytes: options.maxOutputBytes,
+              onLimit: () => new ProcessOutputLimitError(),
+            };
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [
-          decodeOutput(handle.stdout, options?.maxOutputBytes),
-          decodeOutput(handle.stderr, options?.maxOutputBytes),
+          decodeText(handle.stdout, limit),
+          decodeText(handle.stderr, limit),
           Effect.map(handle.exitCode, (exitCode) => Number(exitCode)),
         ],
         { concurrency: "unbounded" },

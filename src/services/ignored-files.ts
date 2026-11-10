@@ -43,11 +43,13 @@ export function filterRegularFiles(
     const paths = yield* Effect.forEach(
       files,
       (file) =>
-        fs
-          .lstat(join(sourceDir, file))
-          .pipe(
-            Effect.map((info) => (info.type === "File" ? file : undefined)),
+        fs.lstat(join(sourceDir, file)).pipe(
+          Effect.map((info) => (info.type === "File" ? file : undefined)),
+          Effect.catchIf(
+            (error) => error.reason._tag === "NotFound",
+            () => Effect.succeed(file),
           ),
+        ),
       { concurrency: 16 },
     );
     return paths.filter((path): path is string => path !== undefined);

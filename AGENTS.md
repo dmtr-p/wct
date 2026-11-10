@@ -29,8 +29,13 @@ See [documentation placement](docs/agents/domain.md) for ownership and discovery
   shutdown worker entry point.
 - `src/cli/` owns native Effect CLI parameters, command metadata, shell
   completions, global flags, and terminal output.
+  `command-metadata.ts` shares definitions between parameters and completions;
+  `root-command.ts` binds handlers; `global-options.ts` owns global options
+  and supported completion shells.
 - `src/commands/` adapts CLI input and output to services.
 - `src/config/` owns configuration schemas, validation, loading, and profiles.
+  Schemas live in `schema.ts`; validation and resolution helpers live in
+  `validator.ts`.
 - `src/effect/` constructs service layers, captures dependencies, and provides
   Bun runtime and shutdown worker boundaries.
 - `src/services/` owns Git worktrees, Workspace Operations, tmux, setup/down
@@ -61,7 +66,7 @@ Leverage Bun built-in APIs where they are still the right primitive:
 
 - `Bun.YAML.parse()` for config parsing
 - `Bun.spawn(...)` for interactive inherited-stdio process handoff
-- `Bun.Glob` for copy pattern expansion
+- `Bun.Glob` for copy rules and branch profile matching
 - `Bun.which` for executable lookup
 
 The runtime dependencies are `effect`, `@effect/platform-bun`, `ink`, and `react`. No other runtime dependencies should be added. `ink` and `react` are used exclusively by the `wct tui` subcommand and are lazy-imported so they are never loaded for other commands. The only dev dependencies are `oxlint`, `oxlint-tsgolint`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`, and `@effect/tsgo`.

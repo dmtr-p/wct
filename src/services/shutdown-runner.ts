@@ -1,8 +1,7 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import { Effect, FileSystem, Result } from "effect";
 import type { ResolvedConfig } from "../config/schema";
 import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
@@ -43,32 +42,46 @@ export function shutdownWorkerCommand(directory: string) {
     : [process.execPath, "run", entry, SHUTDOWN_WORKER_FLAG, directory];
 }
 
-async function createShutdownDirectory(worktreePath: string) {
-  const worktreeRoot = await realpath(worktreePath).catch((error: unknown) => {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT")
-      return undefined;
-    throw error;
-  });
-  let lastError: unknown;
-  // TMPDIR can point into the checkout, including through a symlink.
-  for (const candidate of new Set([tmpdir(), "/tmp", "/var/tmp"])) {
-    try {
-      const stagingRoot = await realpath(candidate);
+function createShutdownDirectory(worktreePath: string) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const worktreeRoot = yield* fs.realPath(worktreePath).pipe(
+      Effect.catchIf(
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.undefined,
+      ),
+    );
+    let lastError: unknown;
+    // TMPDIR can point into the checkout, including through a symlink.
+    for (const candidate of new Set([tmpdir(), "/tmp", "/var/tmp"])) {
+      const stagingRoot = yield* Effect.result(fs.realPath(candidate));
+      if (Result.isFailure(stagingRoot)) {
+        lastError = stagingRoot.failure;
+        continue;
+      }
       if (worktreeRoot) {
-        const path = relative(worktreeRoot, stagingRoot);
+        const path = relative(worktreeRoot, stagingRoot.success);
         if (
           path === "" ||
           (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`))
         )
           continue;
       }
-      return await mkdtemp(join(stagingRoot, "wct-shutdown-"));
-    } catch (error) {
-      lastError = error;
+      // The worker owns cleanup after handoff, beyond the caller's scope.
+      const directory = yield* Effect.result(
+        fs.makeTempDirectory({
+          directory: stagingRoot.success,
+          prefix: "wct-shutdown-",
+        }),
+      );
+      if (Result.isSuccess(directory)) return directory.success;
+      lastError = directory.failure;
     }
-  }
-  throw new Error("Cannot stage shutdown outside the target worktree", {
-    cause: lastError,
+    return yield* commandError(
+      "unexpected_error",
+      "Cannot stage shutdown outside the target worktree",
+      lastError,
+    );
   });
 }
 
@@ -77,28 +90,30 @@ export function runDetachedShutdown(
   reporter?: WorkspaceReporter,
 ) {
   return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
     const context = yield* Effect.context();
-    const directory = yield* Effect.tryPromise({
-      try: async () => {
-        const directory = await createShutdownDirectory(request.worktreePath);
-        try {
-          await Bun.write(
-            join(directory, "request.json"),
-            JSON.stringify(request),
-          );
-          return directory;
-        } catch (error) {
-          await rm(directory, { recursive: true, force: true });
-          throw error;
-        }
-      },
-      catch: (error) =>
+    const directory = yield* Effect.gen(function* () {
+      const directory = yield* createShutdownDirectory(request.worktreePath);
+      yield* Effect.try(() => JSON.stringify(request)).pipe(
+        Effect.flatMap((content) =>
+          fs.writeFileString(join(directory, "request.json"), content),
+        ),
+        Effect.onError(() =>
+          fs
+            .remove(directory, { recursive: true, force: true })
+            .pipe(Effect.ignore),
+        ),
+      );
+      return directory;
+    }).pipe(
+      Effect.mapError((error) =>
         commandError(
           "unexpected_error",
           "Failed to prepare independent shutdown",
           error,
         ),
-    });
+      ),
+    );
     const resultPath = join(directory, "result.json");
     const ready = Promise.withResolvers<void>();
     const completed = Promise.withResolvers<ShutdownOutcome>();
@@ -140,7 +155,9 @@ export function runDetachedShutdown(
             try {
               completed.resolve(
                 JSON.parse(
-                  await Bun.file(resultPath).text(),
+                  await Effect.runPromiseWith(context)(
+                    fs.readFileString(resultPath),
+                  ),
                 ) as ShutdownOutcome,
               );
             } catch {
@@ -156,7 +173,9 @@ export function runDetachedShutdown(
         ),
     }).pipe(
       Effect.onError(() =>
-        Effect.promise(() => rm(directory, { recursive: true, force: true })),
+        fs
+          .remove(directory, { recursive: true, force: true })
+          .pipe(Effect.ignore),
       ),
     );
     yield* Effect.tryPromise({

@@ -6,6 +6,8 @@ runners. All three default to `noopTmuxService`, including when the tmux
 override is `undefined`. Defined overrides take precedence; other services
 remain live.
 
+Use `FileSystem.makeNoop` for partial test filesystems.
+
 [Test setup](../tests/setup.ts) blocks bare tmux commands through application
 process helpers. Use fake services or mocked process results. CLI subprocess
 tests that exercise tmux must provide a fixture executable, as in the

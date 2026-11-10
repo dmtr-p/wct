@@ -12,15 +12,12 @@ versions in `package.json`, without `^` or `~`. Resolved transitive Effect runti
 packages in `bun.lock`, including `@effect/platform-node-shared`, must match too.
 Update these packages together. `@effect/tsgo` versions independently.
 
-Import Bun runtime services through `src/effect/runtime.ts`. Use the exported
+Application code imports Bun runtime services through `src/effect/runtime.ts`;
+standalone scripts can import platform adapters directly. Use the exported
 `JsonFlag` from `src/cli/json-flag.ts`; `GlobalFlag.Setting` generates runtime
 service keys with unique suffixes, so reconstructing its key loses the setting.
 
 ## CLI integration
-
-`src/cli/command-metadata.ts` shares command definitions between native Effect
-parameters and custom completions. `src/cli/root-command.ts` binds handlers;
-`src/cli/global-options.ts` owns global options and supported completion shells.
 
 Use `Command.validate` for input-only constraints before handlers run. Keep
 service validation for callers such as the TUI. Optional empty strings retain
@@ -58,17 +55,15 @@ Service identifiers are runtime identities; use distinct `wct/<ServiceName>`
 keys. Keep the `live<ServiceName>Service` naming convention for concrete
 implementations and `make<ServiceName>Service` for their factories.
 
-Service factories capture dependencies during layer construction, leaving
-public methods without service requirements. Capture only service dependencies
-so caller settings such as `JsonFlag` and `Console` remain effective.
+Service factories capture dependencies during layer construction. Capture only
+service dependencies so caller settings such as `JsonFlag` and `Console` remain
+effective.
 `makeWctServicesLayer` applies overrides before constructing the Workspace
 service. Platform services must be present during construction.
 
-Composed layers share their inner dependencies. Wrap the complete composition
-in `Layer.fresh` only when independent instances are required; CLI, TUI, and
-test bundles intentionally share platform dependencies within each construction.
+CLI, TUI, and test bundles share platform dependencies within each construction.
+Use `Layer.fresh` only for independent bundle instances.
 
-`src/effect/runtime.ts` provides Bun services and imperative runners.
 Imperative callbacks that execute Effects use `Effect.runPromiseWith` or
 `Effect.runSyncWith` to preserve caller services and settings. The TUI owns a
 process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
@@ -84,14 +79,11 @@ including empty strings. Subprocess inheritance uses `processEnvironment` from
 `src/services/process.ts` independently of Config overrides.
 
 Use `FileSystem.lstat` when selecting regular files without following symlinks.
-Partial test filesystems use `FileSystem.makeNoop`.
 
-## Errors and schemas
+## Errors
 
 Use `WctCommandError` and the constructors in `src/errors.ts` for command errors.
 Workspace reporter failures and defects are discarded with `Effect.ignoreCause`
-so reporting cannot fail an operation. `Effect.partition` returns successes
-first and failures second.
+so reporting cannot fail an operation.
 
-Configuration schemas belong in `src/config/schema.ts`; their validation and
-resolution helpers live in `src/config/validator.ts`.
+`Effect.partition` returns `[successes, failures]`.

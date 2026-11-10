@@ -1,5 +1,5 @@
 import type { BunServices } from "@effect/platform-bun";
-import { Config, Context, Effect } from "effect";
+import { Config, Context, Effect, PlatformError } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import { loadRuntimeConfig } from "../effect/config";
 import {
@@ -296,8 +296,17 @@ function readSessionOwnership(id: string) {
 }
 
 function noTmuxSessions(error: unknown): boolean {
+  if (!(error instanceof ProcessExitError)) return false;
+  if (
+    error.exitCode === null &&
+    PlatformError.isPlatformError(error.cause) &&
+    error.cause.reason._tag === "NotFound" &&
+    error.cause.reason.module === "ChildProcess" &&
+    error.cause.reason.method === "spawn" &&
+    Bun.which("tmux") === null
+  )
+    return true;
   return (
-    error instanceof ProcessExitError &&
     error.exitCode === 1 &&
     error.cause === undefined &&
     /^(?:no sessions|no server running on [^\r\n]+|error connecting to [^\r\n]+ \((?:No such file or directory|Connection refused)\))$/.test(

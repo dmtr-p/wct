@@ -1,6 +1,6 @@
 import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, PlatformError } from "effect";
 import { beforeEach, describe, expect, vi } from "vitest";
 import { switchCommand } from "../../src/commands/switch";
 import { runBunPromise } from "../../src/effect/runtime";
@@ -235,6 +235,116 @@ describe("verified tmux session lifecycle", () => {
     ).rejects.toThrow("permission denied");
     expect(killed).toEqual([]);
   });
+
+  test.for(["down", "close"] as const)(
+    "%s runs cleanup without a tmux executable or configuration",
+    async (operation, { tempDir: root }) => {
+      const mainRepoPath = join(root, "repo");
+      const worktreePath = join(root, "feature");
+      await mkdir(mainRepoPath);
+      await mkdir(worktreePath);
+      await Bun.write(
+        join(mainRepoPath, ".wct.yaml"),
+        JSON.stringify({
+          project_name: "api",
+          down: [{ name: "cleanup", command: "printf cleaned > cleanup.txt" }],
+        }),
+      );
+      const removeWorktree = vi.fn((path: string) =>
+        Effect.succeed({ _tag: "Removed" as const, path }),
+      );
+      const which = vi.spyOn(Bun, "which").mockReturnValue(null);
+      try {
+        exec.mockReturnValue(
+          Effect.fail(
+            new ProcessExitError({
+              command: "tmux",
+              args: ["list-sessions"],
+              stdout: "",
+              stderr: "",
+              exitCode: null,
+              cause: PlatformError.systemError({
+                _tag: "NotFound",
+                module: "ChildProcess",
+                method: "spawn",
+              }),
+            }),
+          ),
+        );
+        const result = await runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              Effect.gen(function* () {
+                return operation === "down"
+                  ? yield* service.down({ path: worktreePath })
+                  : yield* service.close({ path: worktreePath });
+              }),
+            ),
+            {
+              worktree: {
+                ...shutdownWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(mainRepoPath),
+                removeWorktree,
+              },
+              tmux: liveTmuxService,
+            },
+          ),
+        );
+        expect(result.attempts.kill).toEqual({
+          attempted: false,
+          reason: "session_absent",
+        });
+        expect(result.attempts.down).toMatchObject({
+          attempted: true,
+          ok: true,
+        });
+        expect(await Bun.file(join(worktreePath, "cleanup.txt")).text()).toBe(
+          "cleaned",
+        );
+        expect(removeWorktree).toHaveBeenCalledTimes(
+          operation === "close" ? 1 : 0,
+        );
+        expect(killed).toEqual([]);
+      } finally {
+        which.mockRestore();
+      }
+    },
+  );
+
+  test.each([
+    { tag: "PermissionDenied" as const, executable: null },
+    { tag: "NotFound" as const, executable: "/usr/bin/tmux" },
+  ])(
+    "does not hide other spawn failures: $tag",
+    async ({ tag, executable }) => {
+      const which = vi.spyOn(Bun, "which").mockReturnValue(executable);
+      try {
+        exec.mockReturnValueOnce(
+          Effect.fail(
+            new ProcessExitError({
+              command: "tmux",
+              args: ["list-sessions"],
+              stdout: "",
+              stderr: "",
+              exitCode: null,
+              cause: PlatformError.systemError({
+                _tag: tag,
+                module: "ChildProcess",
+                method: "spawn",
+              }),
+            }),
+          ),
+        );
+        await expect(
+          runBunPromise(liveTmuxService.resolveSession(target)),
+        ).rejects.toThrow("Failed to run tmux");
+        expect(killed).toEqual([]);
+      } finally {
+        which.mockRestore();
+      }
+    },
+  );
 
   test("unreadable ownership prevents legacy adoption", async () => {
     sessions.set("$1", { name: "api", env: { ...environment() } });

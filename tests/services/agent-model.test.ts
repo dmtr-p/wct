@@ -389,6 +389,47 @@ describe("agent classifier", () => {
         .state,
     ).toBe("idle");
   });
+  test("Claude's rewind tip does not hide live dot progress", () => {
+    const status = "● Quantumizing… (18s · ↓ 635 tokens · thinking)";
+    const tip =
+      "  └ Tip: Double-tap esc to rewind the code and/or conversation to a previous point in time";
+    const composer = [
+      "────────────────────────────────────────",
+      "❯",
+      "────────────────────────────────────────",
+      "Fable 5.2 | 157.6k | 5h: 28.0% | main | Reset: 18m",
+      "⏵⏵ auto mode on (shift+tab to cycle)",
+    ].join("\n");
+    const classified = classifyAgent(
+      "claude",
+      `● Background command completed (exit code 0)\n\n${status}\n${tip}\n\n${composer}`,
+    );
+    expect(classified).toMatchObject({
+      state: "working",
+      rule: "live_turn_dot_working",
+      source: "screen",
+      strong: true,
+    });
+    expect(
+      agentSummary([reconcileAgent(undefined, "claude", "job", classified, 0)]),
+    ).toBe("1 working");
+    for (const response of [
+      tip,
+      `● Quantumizing… (18s · thinking)\n${tip}`,
+      `● Quantumizing… (↓ 635 tokens · thinking)\n${tip}`,
+      `${status}\n${tip}\n● Finished the review.`,
+      `${status}\n  └ Tip: Review the result before continuing.`,
+    ])
+      expect(classifyAgent("claude", `${response}\n\n${composer}`).state).toBe(
+        "idle",
+      );
+    expect(
+      classifyAgent(
+        "claude",
+        `──────\n❯ Explain:\n${status}\n${tip}\n──────\n? for shortcuts`,
+      ).state,
+    ).toBe("idle");
+  });
   test("Claude response bullets and completed timers do not establish live dot activity", () => {
     const composer = "──────\n❯\n──────\n? for shortcuts";
     for (const response of [

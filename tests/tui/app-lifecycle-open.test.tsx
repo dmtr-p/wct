@@ -50,9 +50,7 @@ describe("TUI open lifecycle", () => {
   test("shows an inert Pending Workspace reading 'Preparing Workspace…' before the worktree exists", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
-
-    expect(app.lines().join("\n")).toContain("main");
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
     expect(app.lines().join("\n")).not.toContain("feature/new");
 
     await openBranchFromModal(app.stdin, "feature/new");

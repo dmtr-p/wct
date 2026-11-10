@@ -132,8 +132,9 @@ working directory or inherited global environment is insufficient evidence.
 Missing or conflicting ownership and multiple owned sessions produce a conflict
 diagnostic. Inspect the sessions and stop or rename conflicting sessions manually
 before retrying. Stop and Close stop before down scripts or worktree removal on
-an ownership conflict. An unrelated legacy name does not interfere once an
-unambiguous, verified session with the new name exists.
+an ownership conflict. A legacy session verified as belonging to another
+repository or checkout does not interfere. An ambiguous legacy name can coexist
+with an unambiguous, verified session with the new name.
 
 Session mutations use the verified tmux session ID. Construction rollback only
 targets the ID returned by successful creation. A failed acquisition never

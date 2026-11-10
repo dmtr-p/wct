@@ -1,4 +1,4 @@
-import { Config, Console, Effect } from "effect";
+import { Config, Console, Effect, Result } from "effect";
 import { loadRuntimeConfig } from "../effect/config";
 import type { WctServices } from "../effect/services";
 import { toWctError, type WctError } from "../errors";
@@ -25,17 +25,31 @@ export function maybeAttachSession(
       return;
     }
 
-    const session = env
-      ? yield* TmuxService.use((service) =>
-          service.resolveSession({
-            mainRepoPath: env.WCT_MAIN_DIR,
-            worktreePath: env.WCT_WORKTREE_DIR,
-            branch: env.WCT_BRANCH,
-          }),
-        )
-      : null;
-    const id = session?.id;
-    if (!id) return;
+    const resolution = yield* (
+      env
+        ? TmuxService.use((service) =>
+            service.resolveSession({
+              mainRepoPath: env.WCT_MAIN_DIR,
+              worktreePath: env.WCT_WORKTREE_DIR,
+              branch: env.WCT_BRANCH,
+            }),
+          )
+        : Effect.succeed(null)
+    ).pipe(Effect.result);
+    const manualAttach = `Attach manually with: ${styles.bold(`tmux attach -t ${sessionName}`)}`;
+    if (Result.isFailure(resolution)) {
+      yield* logger.warn(
+        `Failed to resolve session: ${toWctError(resolution.failure).message}\n${manualAttach}`,
+      );
+      return;
+    }
+    const id = resolution.success?.id;
+    if (!id) {
+      yield* logger.warn(
+        `No verified tmux session ID is available for '${sessionName}'.\n${manualAttach}`,
+      );
+      return;
+    }
     const tmux = yield* loadRuntimeConfig(
       Config.String("TMUX").pipe(Config.withDefault("")),
     );

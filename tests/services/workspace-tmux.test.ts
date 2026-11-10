@@ -134,6 +134,22 @@ describe("Workspace session identity", () => {
       ).type,
     ).toBe("conflict");
   });
+
+  test.each([
+    { mainRepoPath: "/repos/b" },
+    { worktreePath: "/work/b/api" },
+    {
+      mainRepoPath: "/repos/b",
+      worktreePath: "/work/b/api",
+      branch: target.branch,
+      identity: "corrupt",
+    },
+  ])("does not ignore unverified foreign legacy metadata", (ownership) => {
+    expect(
+      selectWorkspaceSession([{ ...owned(), name: "api", ownership }], target)
+        .type,
+    ).toBe("conflict");
+  });
 });
 
 describe("verified tmux session lifecycle", () => {
@@ -407,6 +423,58 @@ describe("verified tmux session lifecycle", () => {
       exec.mock.calls.some(([, args = []]) => args[0] === "new-session"),
     ).toBe(false);
   });
+
+  test.each([
+    { ...target, mainRepoPath: "/repos/b", worktreePath: "/work/b/api" },
+    { ...target, worktreePath: "/work/b/api" },
+  ])(
+    "ignores a verified legacy session belonging to another Workspace",
+    async (foreign) => {
+      const foreignEnv = { ...environment(foreign) };
+      sessions.set("$1", { name: "api", env: { ...foreignEnv } });
+      expect(
+        await runBunPromise(liveTmuxService.resolveSession(target)),
+      ).toBeNull();
+      const worktree = {
+        ...shutdownWorktreeService,
+        isGitRepo: () => Effect.succeed(true),
+        getMainRepoPath: () => Effect.succeed(target.mainRepoPath),
+        getCurrentBranch: () => Effect.succeed(target.branch),
+        removeWorktree: (path: string) =>
+          Effect.succeed({ _tag: "Removed" as const, path }),
+      };
+      const down = await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.down({ path: target.worktreePath }),
+          ),
+          { worktree, tmux: liveTmuxService },
+        ),
+      );
+      expect(down.status).toBe("absent");
+      const close = await runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.close({ path: target.worktreePath }),
+          ),
+          { worktree, tmux: liveTmuxService },
+        ),
+      );
+      expect(close.status).toBe("removed");
+      expect(
+        await runBunPromise(
+          liveTmuxService.createSession(
+            workspaceSessionName(target),
+            target.worktreePath,
+            undefined,
+            environment(),
+          ),
+        ),
+      ).toEqual({ _tag: "Created", sessionName: workspaceSessionName(target) });
+      expect(sessions.get("$1")).toEqual({ name: "api", env: foreignEnv });
+      expect(killed).toEqual([]);
+    },
+  );
 
   test.each([
     {},

@@ -119,10 +119,26 @@ export function selectWorkspaceSession<S extends WorkspaceSession>(
   | { type: "conflict"; message: string } {
   const name = workspaceSessionName(target);
   const legacy = formatSessionName(basename(target.worktreePath));
+  // Partial or corrupt metadata cannot prove that a legacy name is unrelated.
+  const verifiedForeignLegacy = (session: S) => {
+    const owner = session.ownership;
+    return (
+      owner?.mainRepoPath !== undefined &&
+      owner.worktreePath !== undefined &&
+      owner.branch !== undefined &&
+      (owner.mainRepoPath !== target.mainRepoPath ||
+        owner.worktreePath !== target.worktreePath) &&
+      ownsWorkspaceSession(session, {
+        mainRepoPath: owner.mainRepoPath,
+        worktreePath: owner.worktreePath,
+        branch: owner.branch,
+      })
+    );
+  };
   const candidates = sessions.filter(
     (session) =>
       session.name === name ||
-      session.name === legacy ||
+      (session.name === legacy && !verifiedForeignLegacy(session)) ||
       session.ownership?.identity === sessionIdentity(target) ||
       (target.branch === "" && ownsWorkspaceSession(session, target)),
   );

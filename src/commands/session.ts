@@ -4,6 +4,7 @@ import type { WctServices } from "../effect/services";
 import { toWctError, type WctError } from "../errors";
 import { TmuxService } from "../services/tmux";
 import type { WorkspaceUpResult } from "../services/workspace-service";
+import type { WctEnv } from "../types/env";
 import * as logger from "../utils/logger";
 
 function canAutoAttachTmux() {
@@ -13,6 +14,7 @@ function canAutoAttachTmux() {
 export function maybeAttachSession(
   sessionName: string,
   noAttach?: boolean,
+  env?: WctEnv,
 ): Effect.Effect<void, WctError, WctServices> {
   return Effect.gen(function* () {
     const styles = yield* logger.stdoutStyles;
@@ -23,12 +25,23 @@ export function maybeAttachSession(
       return;
     }
 
+    const session = env
+      ? yield* TmuxService.use((service) =>
+          service.resolveSession({
+            mainRepoPath: env.WCT_MAIN_DIR,
+            worktreePath: env.WCT_WORKTREE_DIR,
+            branch: env.WCT_BRANCH,
+          }),
+        )
+      : null;
+    const id = session?.id;
+    if (!id) return;
     const tmux = yield* loadRuntimeConfig(
       Config.String("TMUX").pipe(Config.withDefault("")),
     );
     if (tmux) {
       yield* Effect.catch(
-        TmuxService.use((service) => service.switchSession(sessionName)).pipe(
+        TmuxService.use((service) => service.switchSession(id)).pipe(
           Effect.tap(() =>
             logger.success(`Switched to tmux session '${sessionName}'`),
           ),
@@ -42,7 +55,7 @@ export function maybeAttachSession(
     yield* Console.log("");
     yield* logger.info(`Attaching to tmux session '${sessionName}'...`);
     yield* Effect.catch(
-      TmuxService.use((service) => service.attachSession(sessionName)).pipe(
+      TmuxService.use((service) => service.attachSession(id)).pipe(
         Effect.tap(() =>
           logger.success(`Attached to tmux session '${sessionName}'`),
         ),

@@ -43,6 +43,7 @@ import {
 } from "../../src/tui/tree-helpers";
 import { Mode, type TreeItem } from "../../src/tui/types";
 import { prFacts, prRowMeta } from "../helpers/pr";
+import { legacySession } from "../helpers/session-projections";
 
 const workspaceUp = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
 const workspaceDown = vi.hoisted(() => vi.fn(() => "mock-workspace-effect"));
@@ -405,14 +406,24 @@ describe("createHandleSpaceSwitch", () => {
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
-      sessions: [{ name: "main", attached: false }],
+      sessions: [
+        legacySession({
+          mainRepoPath: "/repo",
+          worktreePath: "/repo/main",
+          branch: "main",
+        }),
+      ],
       switchSession: vi.fn().mockResolvedValue(true),
     });
     const handleSpace = createHandleSpaceSwitch(deps);
 
     handleSpace();
     expect(deps.clearActionError).toHaveBeenCalled();
-    expect(deps.switchSession).toHaveBeenCalledWith("main");
+    expect(deps.switchSession).toHaveBeenCalledWith("main", undefined, {
+      mainRepoPath: "/repo",
+      worktreePath: "/repo/main",
+      branch: "main",
+    });
   });
 
   test("starts new session through the shared up lifecycle when none exists", async () => {
@@ -521,10 +532,14 @@ describe("createHandleSpaceSwitch", () => {
     handleSpace();
 
     await vi.waitFor(() => {
-      expect(deps.switchSession).toHaveBeenCalledWith("wt-feat", {
-        tty: "/dev/pts/0",
-        session: "other",
-      });
+      expect(deps.switchSession).toHaveBeenCalledWith(
+        "wt-feat",
+        {
+          tty: "/dev/pts/0",
+          session: "other",
+        },
+        { mainRepoPath: "/repo", worktreePath: "/repo/feat", branch: "feat" },
+      );
     });
   });
 
@@ -1201,7 +1216,7 @@ describe("createHandleDownSelectedWorktree", () => {
       expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("down");
       expect(deps.setMode).toHaveBeenCalledWith(
         Mode.ConfirmDown({
-          sessionName: "feat",
+          sessionName: expect.stringMatching(/^feat-[0-9a-f]{10}$/),
           branch: "feat",
           worktreePath: "/repo/feat",
           workspaceKey: workspaceIdentityKey("/repo", "feat"),
@@ -1250,7 +1265,13 @@ describe("createHandleDownSelectedWorktree", () => {
       treeItems: items,
       filteredRepos: repos,
       selectedIndex: 0,
-      sessions: [{ name: "feat", attached: false }],
+      sessions: [
+        legacySession({
+          mainRepoPath: "/repo",
+          worktreePath: "/repo/feat",
+          branch: "feat",
+        }),
+      ],
       confirmDownReturnModeRef: returnModeRef,
     });
     const handleDown = createHandleDownSelectedWorktree(deps);
@@ -1298,7 +1319,13 @@ describe("createHandleDownSelectedWorktree", () => {
       filteredRepos: repos,
       selectedIndex: 0,
       mode: Mode.Expanded(workspaceKey),
-      sessions: [{ name: "feat", attached: false }],
+      sessions: [
+        legacySession({
+          mainRepoPath: "/repo",
+          worktreePath: "/repo/feat",
+          branch: "feat",
+        }),
+      ],
       confirmDownReturnModeRef: returnModeRef,
     });
     const handleDown = createHandleDownSelectedWorktree(deps);
@@ -1411,7 +1438,13 @@ describe("a Workspace under an active lifecycle", () => {
       treeItems,
       filteredRepos: repoList,
       selectedIndex: 0,
-      sessions: [{ name: "main", attached: false }],
+      sessions: [
+        legacySession({
+          mainRepoPath: "/repo",
+          worktreePath: "/repo/main",
+          branch: "main",
+        }),
+      ],
       lifecycle,
       switchSession: vi.fn().mockResolvedValue(true),
     });
@@ -1432,7 +1465,13 @@ describe("a Workspace under an active lifecycle", () => {
       treeItems,
       filteredRepos: repoList,
       selectedIndex: 0,
-      sessions: [{ name: "main", attached: false }],
+      sessions: [
+        legacySession({
+          mainRepoPath: "/repo",
+          worktreePath: "/repo/main",
+          branch: "main",
+        }),
+      ],
       switchSession: vi.fn().mockResolvedValue(true),
     });
     createHandleSpaceSwitch(free)();
@@ -1730,7 +1769,13 @@ describe("up and down lifecycle progress", () => {
       treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
       filteredRepos: repoList,
       selectedIndex: 0,
-      sessions: [{ name: "feat", attached: false }],
+      sessions: [
+        legacySession({
+          mainRepoPath: "/repo",
+          worktreePath: "/repo/feat",
+          branch: "feat",
+        }),
+      ],
       lifecycle,
     });
     createHandleSpaceSwitch(inertDeps)();

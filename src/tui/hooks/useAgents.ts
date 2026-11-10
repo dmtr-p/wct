@@ -1,4 +1,3 @@
-import { basename } from "node:path";
 import { Clock, Effect, Queue } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,10 +13,16 @@ import {
   emptyAgentSnapshot,
 } from "../../services/agent-service";
 import type { WorkspaceIdentityKey } from "../../services/identities";
-import { formatSessionName } from "../../services/tmux";
+import {
+  findWorkspaceSession,
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../../services/session-identity";
+import { TmuxService } from "../../services/tmux";
 import { workspaceIdentityKey } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
 import type { RepoInfo } from "./useRegistry";
+import type { TmuxSessionInfo } from "./useTmux";
 
 export function sameAgentSnapshot(a: AgentSnapshot, b: AgentSnapshot): boolean {
   return (
@@ -45,7 +50,7 @@ export function workspaceAgentSummaries(
   for (const repo of repos)
     for (const worktree of repo.worktrees) {
       const ids = snapshot.memberships.get(
-        formatSessionName(basename(worktree.path)),
+        workspaceSessionName(workspaceSessionTarget(repo.repoPath, worktree)),
       );
       const observations = [...(ids ?? [])].flatMap((id) => {
         const observation = snapshot.observations.get(id);
@@ -59,16 +64,41 @@ export function workspaceAgentSummaries(
   return summaries;
 }
 
-function agentSessionNames(repos: readonly RepoInfo[]): string[] {
+function agentSessionNames(
+  repos: readonly RepoInfo[],
+  sessions: readonly TmuxSessionInfo[],
+): string[] {
   return [
     ...new Set(
       repos.flatMap((repo) =>
-        repo.worktrees.map((worktree) =>
-          formatSessionName(basename(worktree.path)),
-        ),
+        repo.worktrees.flatMap((worktree) => {
+          const session = findWorkspaceSession(
+            sessions,
+            workspaceSessionTarget(repo.repoPath, worktree),
+          );
+          return session ? [session.name] : [];
+        }),
       ),
     ),
   ].sort();
+}
+
+export function projectWorkspaceAgents(
+  repos: readonly RepoInfo[],
+  sessions: readonly TmuxSessionInfo[],
+  snapshot: AgentSnapshot,
+): AgentSnapshot {
+  const memberships = new Map<string, Set<string>>();
+  for (const repo of repos)
+    for (const worktree of repo.worktrees) {
+      const target = workspaceSessionTarget(repo.repoPath, worktree);
+      const session = findWorkspaceSession(sessions, target);
+      const members = session
+        ? snapshot.memberships.get(session.name)
+        : undefined;
+      if (members) memberships.set(workspaceSessionName(target), members);
+    }
+  return { ...snapshot, memberships };
 }
 
 // Reasons that mean the generation was not re-established by process
@@ -93,8 +123,11 @@ export async function verifyAgentGeneration(
 ): Promise<boolean> {
   // Observe every registered session: the service evicts cached evidence for
   // panes outside the requested set.
-  const sessions = new Set(agentSessionNames(repos));
   try {
+    const ownedSessions = await tuiRuntime.runPromise(
+      TmuxService.use((service) => service.listSessions),
+    );
+    const sessions = new Set(agentSessionNames(repos, ownedSessions ?? []));
     const snapshot = await tuiRuntime.runPromise(
       AgentService.use((service) =>
         service.observe(sessions, emptyAgentSnapshot()),
@@ -113,8 +146,11 @@ export async function verifyAgentGeneration(
   }
 }
 
-export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
-  const sessionsKey = JSON.stringify(agentSessionNames(repos));
+export function useAgents(
+  repos: readonly RepoInfo[],
+  ownedSessions: readonly TmuxSessionInfo[] = [],
+): WorkspaceAgentSnapshot {
+  const sessionsKey = JSON.stringify(agentSessionNames(repos, ownedSessions));
   const sessions = useMemo(
     () => new Set<string>(JSON.parse(sessionsKey)),
     [sessionsKey],
@@ -237,9 +273,13 @@ export function useAgents(repos: readonly RepoInfo[]): WorkspaceAgentSnapshot {
     requestedTargets.current = sessions;
     request.current?.();
   }, [sessions]);
-  const summaries = useMemo(
-    () => workspaceAgentSummaries(repos, snapshot),
-    [repos, snapshot],
+  const projected = useMemo(
+    () => projectWorkspaceAgents(repos, ownedSessions, snapshot),
+    [repos, ownedSessions, snapshot],
   );
-  return useMemo(() => ({ ...snapshot, summaries }), [snapshot, summaries]);
+  const summaries = useMemo(
+    () => workspaceAgentSummaries(repos, projected),
+    [repos, projected],
+  );
+  return useMemo(() => ({ ...projected, summaries }), [projected, summaries]);
 }

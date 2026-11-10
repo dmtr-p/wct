@@ -1,9 +1,13 @@
-import { basename } from "node:path";
 import { Effect, Stdio } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { formatSessionName, TmuxService } from "../services/tmux";
+import {
+  canonicalSessionTarget,
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../services/session-identity";
+import { TmuxService } from "../services/tmux";
 import {
   type WorkspaceCloseResult,
   WorkspaceService,
@@ -62,6 +66,14 @@ export function closeCommand(
     const currentSession = yield* TmuxService.use(
       (service) => service.getCurrentSession,
     );
+    const mainRepoPath = yield* WorktreeService.use((service) =>
+      service.getMainRepoPath(),
+    );
+    if (!mainRepoPath)
+      return yield* commandError(
+        "worktree_error",
+        "Could not determine repository root",
+      );
     let processedCount = 0;
 
     while (branchQueue.length > 0) {
@@ -81,7 +93,13 @@ export function closeCommand(
       }
 
       const worktreePath = worktree.path;
-      const sessionName = formatSessionName(basename(worktreePath));
+      const target = yield* canonicalSessionTarget(
+        workspaceSessionTarget(mainRepoPath, worktree),
+      );
+      const session = yield* TmuxService.use((service) =>
+        service.resolveSession(target),
+      );
+      const sessionName = session?.name ?? workspaceSessionName(target);
 
       if (
         currentSession &&

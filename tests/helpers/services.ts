@@ -9,6 +9,8 @@ import {
   type WorktreeServiceImplementation as WorktreeServiceApi,
 } from "../../src/services/worktree-service";
 
+export { legacySession } from "./session-projections";
+
 export const shutdownWorktreeService: WorktreeServiceApi = {
   ...liveWorktreeService,
   getWorktreeRoot: (cwd) => Effect.succeed(cwd),
@@ -20,6 +22,7 @@ export type ServiceOverrides = WctServiceOverrides;
 
 export const noopTmuxService: TmuxServiceApi = {
   listSessions: Effect.succeed(null),
+  resolveSession: () => Effect.succeed(null),
   sessionExists: () => Effect.succeed(false),
   createSession: (_name, _workingDir) =>
     Effect.succeed({ _tag: "Created", sessionName: _name }),

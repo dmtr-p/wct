@@ -7,6 +7,10 @@ import { commandError, toWctError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { processEnvironment } from "./process";
 import type {
+  WorkspaceSession,
+  WorkspaceSessionTarget,
+} from "./session-identity";
+import type {
   WorkspaceCloseResult,
   WorkspaceDownResult,
   WorkspaceReporter,
@@ -16,6 +20,8 @@ import type {
 export const SHUTDOWN_WORKER_FLAG = "--wct-shutdown-worker";
 
 export interface ShutdownRequest {
+  sessionTarget?: WorkspaceSessionTarget;
+  session?: WorkspaceSession | null;
   operation: "down" | "close";
   worktreePath: string;
   shutdown?: { config: ResolvedConfig; env: WctEnv };

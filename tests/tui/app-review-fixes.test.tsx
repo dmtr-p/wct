@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -24,8 +24,10 @@ describe("App.tsx review fixes (real App)", () => {
   let repoPath: string;
 
   beforeEach(() => {
-    homeDir = mkdtempSync(join(tmpdir(), "wct-app-review-home-"));
-    repoPath = mkdtempSync(join(tmpdir(), "wct-app-review-repo-"));
+    homeDir = realpathSync(mkdtempSync(join(tmpdir(), "wct-app-review-home-")));
+    repoPath = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-app-review-repo-")),
+    );
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
     resetHarnessFixtures();

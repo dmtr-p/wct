@@ -1,7 +1,6 @@
-import { basename } from "node:path";
 import { describe, expect, test } from "vitest";
 import { RegistrationId } from "../../src/services/identities";
-import { formatSessionName } from "../../src/services/tmux";
+import { workspaceSessionName } from "../../src/services/session-identity";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
@@ -40,7 +39,16 @@ describe("buildTreeItems", () => {
       zoomed: false,
       active: true,
     };
-    const panes = new Map([["b-shared", [pane]]]);
+    const panes = new Map([
+      [
+        workspaceSessionName({
+          mainRepoPath: "/repos/b",
+          branch,
+          worktreePath: "/repos/b-shared",
+        }),
+        [pane],
+      ],
+    ]);
     const items = buildTreeItems({
       repos,
       expandedWorkspaceKeys: new Set([workspaceKey]),
@@ -77,7 +85,11 @@ describe("buildTreeItems", () => {
     ).toBe(paneIndex);
     for (const mode of [
       Mode.ConfirmDown({
-        sessionName: "b-shared",
+        sessionName: workspaceSessionName({
+          mainRepoPath: "/repos/b",
+          branch,
+          worktreePath: "/repos/b-shared",
+        }),
         branch,
         worktreePath: "/repos/b-shared",
         workspaceKey,
@@ -201,7 +213,11 @@ describe("buildTreeItems", () => {
   test("passes zoomed and active pane metadata into pane detail rows", () => {
     const repoPath = "/tmp/example-repo";
     const branch = "feature/zoomed-pane";
-    const sessionName = formatSessionName(basename("/tmp/worktree-one"));
+    const sessionName = workspaceSessionName({
+      mainRepoPath: repoPath,
+      branch,
+      worktreePath: "/tmp/worktree-one",
+    });
     const panes: PaneInfo[] = [
       {
         paneId: "%1",
@@ -255,7 +271,11 @@ describe("buildTreeItems", () => {
     const branch = "feature/pane-actions";
     const repoPath = "/tmp/example-repo";
     const worktreePath = "/tmp/worktree-pane-actions";
-    const sessionName = formatSessionName(basename(worktreePath));
+    const sessionName = workspaceSessionName({
+      mainRepoPath: repoPath,
+      branch,
+      worktreePath,
+    });
     const pane0: PaneInfo = {
       paneId: "%1",
       paneIndex: 0,
@@ -410,7 +430,11 @@ describe("buildTreeItems", () => {
       items,
       panes: new Map([
         [
-          formatSessionName(basename("/tmp/worktree-duplicate-labels")),
+          workspaceSessionName({
+            mainRepoPath: "/tmp/example-repo",
+            branch: "feature/duplicate-labels",
+            worktreePath: "/tmp/worktree-duplicate-labels",
+          }),
           [
             {
               paneId: "%1",

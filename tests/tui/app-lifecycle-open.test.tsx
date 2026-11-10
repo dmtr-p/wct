@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RegistrationId } from "../../src/services/identities";
+import { sessionIdentity } from "../../src/services/session-identity";
+import { legacySession } from "../helpers/session-projections";
 import {
   emitWorkspacePhase,
   lastWorkspaceCall,
@@ -24,8 +26,12 @@ describe("TUI open lifecycle", () => {
   let repoPath: string;
 
   beforeEach(() => {
-    homeDir = mkdtempSync(join(tmpdir(), "wct-app-lifecycle-home-"));
-    repoPath = mkdtempSync(join(tmpdir(), "wct-app-lifecycle-repo-"));
+    homeDir = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-app-lifecycle-home-")),
+    );
+    repoPath = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-app-lifecycle-repo-")),
+    );
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
     resetHarnessFixtures();
@@ -236,6 +242,14 @@ describe("TUI open lifecycle", () => {
       makeWorktree(repoPath, "main"),
       makeWorktree(repoPath, "feature/new"),
     ]);
+    tmuxFixtures.sessions?.push({
+      ...legacySession({
+        mainRepoPath: repoPath,
+        worktreePath: join(repoPath, "feature-new"),
+        branch: "feature/new",
+      }),
+      id: "$2",
+    });
     call.resolve({
       operation: "open",
       worktreePath: join(repoPath, "feature-new"),
@@ -260,7 +274,7 @@ describe("TUI open lifecycle", () => {
     await tick(16);
 
     expect(tmuxFixtures.switchCalls).toEqual([
-      { clientTty: "/dev/pts/1", target: "=feature-new" },
+      { clientTty: "/dev/pts/1", target: "$2" },
     ]);
     expect(frameAtSwitch).toContain("feature/new");
     expect(frameAtSwitch).not.toContain("Preparing Workspace…");
@@ -322,6 +336,17 @@ describe("TUI open lifecycle", () => {
           app.lines().filter((line) => line.includes("Preparing Workspace…")),
         ).toHaveLength(2);
 
+        const startTarget = {
+          mainRepoPath: repoPath,
+          worktreePath: join(repoPath, "main"),
+          branch: "main",
+        };
+        tmuxFixtures.sessions?.push({
+          ...legacySession(startTarget),
+          name: "alpha-main",
+          id: "$2",
+          ownership: { ...startTarget, identity: sessionIdentity(startTarget) },
+        });
         start.resolve({
           operation: "up",
           worktreePath: join(repoPath, "main"),
@@ -341,7 +366,7 @@ describe("TUI open lifecycle", () => {
         });
         await tick(16);
         expect(tmuxFixtures.switchCalls).toEqual([
-          { clientTty: "/dev/pts/1", target: "=alpha-main" },
+          { clientTty: "/dev/pts/1", target: "$2" },
         ]);
         expect(
           framesAtSwitch[0]
@@ -353,6 +378,17 @@ describe("TUI open lifecycle", () => {
         if (switchFails)
           expect(app.lines().join("\n")).toContain("failed to switch client");
 
+        const openTarget = {
+          mainRepoPath: otherRepoPath,
+          worktreePath: join(otherRepoPath, "main"),
+          branch: "main",
+        };
+        tmuxFixtures.sessions?.push({
+          ...legacySession(openTarget),
+          name: "beta-main",
+          id: "$3",
+          ownership: { ...openTarget, identity: sessionIdentity(openTarget) },
+        });
         open.resolve({
           operation: "open",
           worktreePath: join(otherRepoPath, "main"),
@@ -377,7 +413,7 @@ describe("TUI open lifecycle", () => {
         await tick(16);
         expect(tmuxFixtures.switchCalls.at(-1)).toEqual({
           clientTty: "/dev/pts/1",
-          target: "=beta-main",
+          target: "$3",
         });
         expect(framesAtSwitch).toHaveLength(2);
         expect(framesAtSwitch[1]).not.toContain("Preparing Workspace…");

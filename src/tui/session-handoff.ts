@@ -1,3 +1,4 @@
+import type { WorkspaceSessionTarget } from "../services/session-identity";
 import type { TmuxClient } from "../services/tmux";
 import type { WorkspaceUpResult } from "../services/workspace-service";
 import type { TmuxClientDiscovery } from "./hooks/useTmux";
@@ -9,7 +10,11 @@ export interface SessionHandoffDeps {
     branch: string,
   ) => Promise<void>;
   discoverClient: () => Promise<TmuxClientDiscovery>;
-  switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
+  switchSession: (
+    name: string,
+    client?: TmuxClient | null,
+    target?: WorkspaceSessionTarget,
+  ) => Promise<boolean>;
   refreshSessions?: () => Promise<unknown>;
 }
 
@@ -17,6 +22,7 @@ interface SessionHandoffOptions {
   repoPath: string;
   branch: string;
   sessionName: string;
+  target?: WorkspaceSessionTarget;
   tmux: WorkspaceUpResult["attempts"]["tmux"];
   autoSwitch: boolean;
   wording: { action: "open" | "start"; completed: "Opened" | "Started" };
@@ -29,6 +35,7 @@ export function createSessionHandoff(deps: SessionHandoffDeps) {
     repoPath,
     branch,
     sessionName,
+    target,
     tmux,
     autoSwitch,
     wording,
@@ -38,7 +45,9 @@ export function createSessionHandoff(deps: SessionHandoffDeps) {
     await deps.waitForLifecyclePresentationCleanup(repoPath, branch);
     const liveClient = await deps.discoverClient();
     if (liveClient.type === "single") {
-      const switched = await deps.switchSession(sessionName, liveClient.client);
+      const switched = target
+        ? await deps.switchSession(sessionName, liveClient.client, target)
+        : await deps.switchSession(sessionName, liveClient.client);
       await deps.refreshSessions?.();
       return switched
         ? undefined

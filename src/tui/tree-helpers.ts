@@ -1,9 +1,11 @@
-import { basename } from "node:path";
 import type { AgentObservation } from "../services/agent-model";
 import type { WorkspaceIdentityKey } from "../services/identities";
 import type { WorkspacePrEntry } from "../services/pr-cache-service";
 import { type PrFacts, prIdentity } from "../services/pr-model";
-import { formatSessionName } from "../services/tmux";
+import {
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../services/session-identity";
 import { formatSync } from "../services/worktree-service";
 import type { RepoInfo, WorktreeInfo } from "./hooks/useRegistry";
 import {
@@ -351,7 +353,9 @@ export function buildTreeItems({
       });
       if (!isExpanded) continue;
 
-      const sessionName = formatSessionName(basename(wt.path));
+      const sessionName = workspaceSessionName(
+        workspaceSessionTarget(repo.repoPath, wt),
+      );
 
       const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
       const association = associations?.get(workspaceKey);
@@ -1001,7 +1005,9 @@ export function resolveSelectedPane({
     return null;
   }
 
-  const sessionName = formatSessionName(basename(worktree.path));
+  const sessionName = workspaceSessionName(
+    workspaceSessionTarget(repo.repoPath, worktree),
+  );
   const sessionPanes = panes.get(sessionName);
   if (!sessionPanes) {
     return null;

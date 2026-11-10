@@ -111,6 +111,39 @@ optional in the warning and command result. JSON callers can inspect
 `data.workspace.attempts.setup` and `data.workspace.warnings` in the
 `open --json` success envelope for command results and failures.
 
+## Tmux sessions
+
+New sessions use `<sanitized-checkout-basename>-<identity-hash>`. The suffix is
+the first ten lowercase hexadecimal characters of SHA-256 over the Workspace
+Identity Key: canonical Main Repository path, NUL, and the exact branch name.
+Canonical paths resolve symlinks, including existing ancestors of deleted
+checkouts. Session names remain readable and distinguish repositories or
+branches whose readable prefixes collide.
+
+The session-scoped `WCT_WORKSPACE_ID` environment entry stores the full identity
+in Base64. A name or hash alone never establishes ownership. Open, Start,
+Stop, Close, switching, and CLI/TUI discovery share ownership resolution.
+Pane and agent discovery attributes only verified sessions to Workspaces.
+
+Basename-only sessions can be reused in place when their session-scoped
+`WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_WORKTREE_DIR` match the canonical target.
+Resolution tags these verified legacy sessions with the full identity. A pane's
+working directory or inherited global environment is insufficient evidence.
+Missing or conflicting ownership and multiple owned sessions produce a conflict
+diagnostic. Inspect the sessions and stop or rename conflicting sessions manually
+before retrying. Stop and Close stop before down scripts or worktree removal on
+an ownership conflict. An unrelated legacy name does not interfere once an
+unambiguous, verified session with the new name exists.
+
+Session mutations use the verified tmux session ID. Construction rollback only
+targets the ID returned by successful creation. A failed acquisition never
+authorizes cleanup of an existing session. Shutdown carries the resolved
+Workspace identity and session ID/server generation to its detached worker and
+revalidates them before stopping the session. A replacement requires retrying
+the operation. When HEAD is detached, shutdown can identify the session through
+its canonical repository and checkout paths and verify its recorded branch
+identity.
+
 ## Shutdown
 
 Both `wct down` and `wct close` run `down` scripts after stopping the tmux session,

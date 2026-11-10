@@ -1,3 +1,28 @@
+import {
+  findWorkspaceSession,
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../services/session-identity";
+import type { TmuxPaneInfo } from "../services/tmux";
+import type { RepoInfo } from "./hooks/useRegistry";
+import type { TmuxSessionInfo } from "./hooks/useTmux";
+
+export function workspacePaneMap(
+  repos: readonly RepoInfo[],
+  sessions: readonly TmuxSessionInfo[],
+  panes: ReadonlyMap<string, TmuxPaneInfo[]>,
+): Map<string, TmuxPaneInfo[]> {
+  const result = new Map<string, TmuxPaneInfo[]>();
+  for (const repo of repos)
+    for (const worktree of repo.worktrees) {
+      const target = workspaceSessionTarget(repo.repoPath, worktree);
+      const session = findWorkspaceSession(sessions, target);
+      const ownedPanes = session ? panes.get(session.name) : undefined;
+      if (ownedPanes) result.set(workspaceSessionName(target), ownedPanes);
+    }
+  return result;
+}
+
 import type { WorkspaceUpResult } from "../services/workspace-service";
 import type { TmuxClientDiscovery } from "./hooks/useTmux";
 

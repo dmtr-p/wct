@@ -6,10 +6,15 @@ import { Command } from "effect/cli";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { rootCommand } from "../src/cli/root-command";
 import { runBunPromise } from "../src/effect/runtime";
+import type { WorkspaceSessionTarget } from "../src/services/session-identity";
 import { liveSetupService } from "../src/services/setup-service";
 import { WorkspaceService } from "../src/services/workspace-service";
 import { liveWorktreeService } from "../src/services/worktree-service";
-import { noopTmuxService, withTestServices } from "./helpers/services";
+import {
+  legacySession,
+  noopTmuxService,
+  withTestServices,
+} from "./helpers/services";
 
 describe("Workspace Operation profile validation", () => {
   let root: string;
@@ -77,7 +82,8 @@ ${profiles}`,
       setup: { ...liveSetupService, runSetupCommands },
       tmux: {
         ...noopTmuxService,
-        sessionExists: () => Effect.succeed(true),
+        resolveSession: (target: WorkspaceSessionTarget) =>
+          Effect.succeed(legacySession(target)),
         createSession,
         killSession,
       },

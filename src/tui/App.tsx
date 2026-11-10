@@ -62,6 +62,7 @@ import {
   isLifecycleActive,
   workspaceIdentityKey,
 } from "./lifecycle";
+import { workspacePaneMap } from "./session-utils";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -111,7 +112,7 @@ export function App() {
   const {
     client: tmuxClient,
     sessions,
-    panes,
+    panes: sessionPanes,
     error: tmuxError,
     switchSession,
     detachClient,
@@ -121,7 +122,11 @@ export function App() {
     refreshSessions,
     discoverClient,
   } = useTmux();
-  const agents = useAgents(repos);
+  const panes = useMemo(
+    () => workspacePaneMap(repos, sessions, sessionPanes),
+    [repos, sessions, sessionPanes],
+  );
+  const agents = useAgents(repos, sessions);
   const [agentsView, setAgentsView] = useState(false);
   const [isViewToggleHovered, setIsViewToggleHovered] = useState(false);
 

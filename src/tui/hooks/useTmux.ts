@@ -1,20 +1,22 @@
 import type { Effect } from "effect";
 import { useCallback, useEffect, useState } from "react";
 import { LocalObservationService } from "../../services/local-observation-service";
+import type { WorkspaceSessionTarget } from "../../services/session-identity";
 import {
+  sessionTarget,
   type TmuxClient,
   type TmuxPaneInfo,
   TmuxService,
+  type TmuxSession,
 } from "../../services/tmux";
 import { tuiRuntime } from "../runtime";
 import { useRefreshGeneration } from "./useRefreshGeneration";
 
 const EMPTY_PANES: Map<string, TmuxPaneInfo[]> = new Map();
 
-export interface TmuxSessionInfo {
-  name: string;
-  attached: boolean;
-}
+export type TmuxSessionInfo = Omit<TmuxSession, "windows"> & {
+  windows?: number;
+};
 
 export type TmuxClientDiscovery =
   | { type: "none" }
@@ -116,18 +118,34 @@ export function useTmux() {
   );
 
   const switchSession = useCallback(
-    async (sessionName: string, activeClient: TmuxClient | null = client) => {
+    async (
+      sessionName: string,
+      activeClient: TmuxClient | null = client,
+      target?: WorkspaceSessionTarget,
+    ) => {
       if (!activeClient) return false;
       const request = beginClient();
       if (!request.isActive()) return false;
       try {
+        const resolved = target
+          ? await tuiRuntime.runPromise(
+              TmuxService.use((service) => service.resolveSession(target)),
+            )
+          : undefined;
+        if (target && !resolved?.id) return false;
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>
-            service.switchClientToPane(activeClient.tty, `=${sessionName}`),
+            service.switchClientToPane(
+              activeClient.tty,
+              sessionTarget(resolved?.id ?? sessionName),
+            ),
           ),
         );
         if (request.isActive() && invalidateClient()) {
-          setClient({ ...activeClient, session: sessionName });
+          setClient({
+            ...activeClient,
+            session: resolved?.name ?? sessionName,
+          });
           setError(null);
         }
         return true;

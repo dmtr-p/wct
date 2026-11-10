@@ -14,7 +14,9 @@ import {
   emptyAgentSnapshot,
 } from "../../src/services/agent-service";
 import { RegistrationId } from "../../src/services/identities";
+import { TmuxService } from "../../src/services/tmux";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { legacySession, noopTmuxService } from "../helpers/services";
 
 const runPromise = vi.hoisted(() => vi.fn());
 vi.mock("../../src/tui/runtime", () => ({ tuiRuntime: { runPromise } }));
@@ -76,7 +78,18 @@ async function renderHook() {
   let renders = 0;
   const commits = new Set<(next: HookValue) => void>();
   function Wrapper() {
-    const next = useAgents(repos);
+    const next = useAgents(
+      repos,
+      repos.flatMap((repo) =>
+        repo.worktrees.map((tree) =>
+          legacySession({
+            mainRepoPath: repo.repoPath,
+            worktreePath: tree.path,
+            branch: tree.branch,
+          }),
+        ),
+      ),
+    );
     value = next;
     renders++;
     useLayoutEffect(() => {
@@ -156,6 +169,16 @@ describe("scoped agent polling", () => {
         Effect.runPromise(
           effect.pipe(
             Effect.provideService(AgentService, { observe }),
+            Effect.provideService(TmuxService, {
+              ...noopTmuxService,
+              listSessions: Effect.succeed([
+                legacySession({
+                  mainRepoPath: repo.repoPath,
+                  worktreePath: "/work/workspace",
+                  branch: "feature",
+                }),
+              ]),
+            }),
             Effect.provideService(
               Scheduler.Scheduler,
               new Scheduler.MixedScheduler("sync"),
@@ -465,8 +488,22 @@ test.each([
   const observation = snapshot.observations.get("%1");
   if (!observation) throw new Error("missing observation");
   snapshot.observations.set("%1", { ...observation, reason });
+  runPromise.mockResolvedValueOnce([
+    legacySession({
+      mainRepoPath: repo.repoPath,
+      worktreePath: "/work/workspace",
+      branch: "feature",
+    }),
+  ]);
   runPromise.mockResolvedValueOnce(snapshot);
   expect(await verifyAgentGeneration([repo], "%1", "g")).toBe(ok);
+  runPromise.mockResolvedValueOnce([
+    legacySession({
+      mainRepoPath: repo.repoPath,
+      worktreePath: "/work/workspace",
+      branch: "feature",
+    }),
+  ]);
   runPromise.mockResolvedValueOnce(snapshot);
   expect(await verifyAgentGeneration([repo], "%1", "other")).toBe(false);
 });

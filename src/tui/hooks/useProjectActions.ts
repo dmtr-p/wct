@@ -1,10 +1,10 @@
-import { basename } from "node:path";
 import { Effect } from "effect";
 import type { RefObject } from "react";
 import { toWctError } from "../../errors";
 import { PrCacheService } from "../../services/pr-cache-service";
 import { RegistryService } from "../../services/registry-service";
-import { formatSessionName } from "../../services/tmux";
+import { workspaceSessionTarget } from "../../services/session-identity";
+import { TmuxService } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
 import { lifecycleBusyMessage, type LifecycleState } from "../lifecycle";
 import { tuiRuntime } from "../runtime";
@@ -82,13 +82,14 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
         );
       }
 
-      const sessionNames = [
-        ...new Set(
-          repo.worktrees.map((worktree) =>
-            formatSessionName(basename(worktree.path)),
-          ),
+      const resolved = yield* Effect.forEach(repo.worktrees, (worktree) =>
+        TmuxService.use((service) =>
+          service.resolveSession(workspaceSessionTarget(repoPath, worktree)),
         ),
-      ];
+      );
+      const sessionNames = resolved.flatMap((session) =>
+        session ? [session.name] : [],
+      );
       const canProceed = yield* Effect.tryPromise({
         try: () => deps.switchClientAwayFromSessions(sessionNames),
         catch: (error) => toWctError(error),

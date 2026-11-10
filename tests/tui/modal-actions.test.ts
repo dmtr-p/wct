@@ -450,10 +450,14 @@ describe("createPrepareOpenModal", () => {
 
     await vi.waitFor(() => {
       expect(discoverClient).toHaveBeenCalled();
-      expect(switchSession).toHaveBeenCalledWith("feat", {
-        tty: "/dev/pts/1",
-        session: "main",
-      });
+      expect(switchSession).toHaveBeenCalledWith(
+        "feat",
+        {
+          tty: "/dev/pts/1",
+          session: "main",
+        },
+        { mainRepoPath: "/repo", worktreePath: "/repo/feat", branch: "feat" },
+      );
     });
   });
 

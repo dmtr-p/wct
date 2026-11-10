@@ -260,7 +260,7 @@ describe("open workflow", () => {
       worktreePath: join(fixture.worktreeDir, "myapp-feature-branch"),
       mainRepoPath: fixture.repoDir,
       branch: "feature-branch",
-      sessionName: "myapp-feature-branch",
+      sessionName: expect.stringMatching(/^myapp-feature-branch-[0-9a-f]{10}$/),
       projectName: "myapp",
       created: false,
       warnings: [],
@@ -507,7 +507,9 @@ describe("open workflow", () => {
       worktreePath: "/tmp/myapp-no-registration",
       mainRepoPath: fixture.repoDir,
       branch: "no-registration",
-      sessionName: "myapp-no-registration",
+      sessionName: expect.stringMatching(
+        /^myapp-no-registration-[0-9a-f]{10}$/,
+      ),
       projectName: "myapp",
       created: true,
       env: {

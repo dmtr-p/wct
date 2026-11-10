@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -387,8 +393,12 @@ describe("useRegistry refresh", () => {
     worktreeFixtures.getAheadBehind
       .mockReset()
       .mockResolvedValue({ ahead: 0, behind: 0 });
-    repoPath = mkdtempSync(join(tmpdir(), "wct-use-registry-repo-"));
-    homeDir = mkdtempSync(join(tmpdir(), "wct-use-registry-home-"));
+    repoPath = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-use-registry-repo-")),
+    );
+    homeDir = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-use-registry-home-")),
+    );
     vi.stubEnv("HOME", homeDir);
     registryFixtures.listRepos.mockResolvedValue([
       { id: RegistrationId("r1"), repo_path: repoPath, project: "alpha" },

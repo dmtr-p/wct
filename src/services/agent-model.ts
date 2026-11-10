@@ -58,11 +58,15 @@ export function identifyAgentArgv(
 const isRule = (line: string) => /^─{3,}/u.test(line.trim());
 const isPrompt = (line: string) => line === "›" || line.startsWith("› ");
 const isResponse = (line: string) => /^[•■✗✓]/u.test(line);
-// Composer hints can sit between live activity and the prompt box.
-const isClaudeComposerHint = (line: string) =>
+// Known hints can sit between live activity and the prompt box.
+const isClaudeActivityHint = (line: string) =>
   /^\s*new task\?\s+\/clear to save \d+(?:\.\d+)?[km]? tokens\s*$/iu.test(
     line,
-  ) || /^\s*Image in clipboard\s+·\s+ctrl\+v to paste\s*$/iu.test(line);
+  ) ||
+  /^\s*Image in clipboard\s+·\s+ctrl\+v to paste\s*$/iu.test(line) ||
+  /^\s*└\s+Tip: Double-tap esc to rewind the code and\/or conversation to a previous point in time\s*$/iu.test(
+    line,
+  );
 export function agentRegion(
   screen: string,
   region: string,
@@ -91,7 +95,7 @@ export function agentRegion(
     case "last_non_empty_above_prompt_box":
       return (
         (top === undefined ? lines : lines.slice(0, top)).findLast(
-          (line) => line.trim() && !isClaudeComposerHint(line),
+          (line) => line.trim() && !isClaudeActivityHint(line),
         ) ?? ""
       );
     case "after_last_horizontal_rule":

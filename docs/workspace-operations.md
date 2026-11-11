@@ -124,6 +124,10 @@ The session-scoped `WCT_WORKSPACE_ID` environment entry stores the full identity
 in Base64. A name or hash alone never establishes ownership. Open, Start,
 Stop, Close, switching, and CLI/TUI discovery share ownership resolution.
 Pane and agent discovery attributes only verified sessions to Workspaces.
+Recorded repository, branch, and checkout fields must agree with the target
+even when the full identity matches. Failed ownership inspection blocks
+lifecycle actions; observation can show the session without attributing it to
+a Workspace.
 
 Basename-only sessions can be reused in place when their session-scoped
 `WCT_MAIN_DIR`, `WCT_BRANCH`, and `WCT_WORKTREE_DIR` match the canonical target.

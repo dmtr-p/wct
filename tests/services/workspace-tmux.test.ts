@@ -137,6 +137,45 @@ describe("Workspace session identity", () => {
 
   test.each([
     { mainRepoPath: "/repos/b" },
+    { branch: "other" },
+    { worktreePath: "/work/old/api" },
+  ])(
+    "rejects a matching identity with contradictory recorded ownership",
+    (recorded) => {
+      const contradictory = {
+        ...owned(),
+        name: "renamed",
+        ownership: { identity: sessionIdentity(target), ...recorded },
+      };
+      expect(selectWorkspaceSession([contradictory], target).type).toBe(
+        "conflict",
+      );
+      expect(findWorkspaceSession([contradictory], target)).toBeUndefined();
+      expect(
+        selectWorkspaceSession(
+          [owned(), { ...contradictory, id: "$2" }],
+          target,
+        ).type,
+      ).toBe("conflict");
+    },
+  );
+
+  test.each([{}, { ...target }])(
+    "accepts matching identity metadata without contradictions",
+    (recorded) => {
+      const session = {
+        ...owned(),
+        ownership: { identity: sessionIdentity(target), ...recorded },
+      };
+      expect(selectWorkspaceSession([session], target)).toEqual({
+        type: "owned",
+        session,
+      });
+    },
+  );
+
+  test.each([
+    { mainRepoPath: "/repos/b" },
     { worktreePath: "/work/b/api" },
     {
       mainRepoPath: "/repos/b",
@@ -376,6 +415,157 @@ describe("verified tmux session lifecycle", () => {
     ).rejects.toThrow("ownership");
     expect(sessions.get("$1")?.env.WCT_WORKSPACE_ID).toBeUndefined();
     expect(killed).toEqual([]);
+  });
+
+  test("observes sessions without IDs but cannot resolve lifecycle ownership", async () => {
+    exec.mockReturnValue(
+      Effect.succeed({ stdout: "renamed:0:1", stderr: "", exitCode: 0 }),
+    );
+    expect(await runBunPromise(liveTmuxService.listSessions)).toMatchObject([
+      { name: "renamed" },
+    ]);
+    await expect(
+      runBunPromise(liveTmuxService.resolveSession(target)),
+    ).rejects.toThrow("without a session ID");
+    expect(killed).toEqual([]);
+  });
+
+  test.for(["down", "close"] as const)(
+    "%s blocks cleanup when a renamed session's ownership cannot be read",
+    async (operation, { tempDir: root }) => {
+      const mainRepoPath = join(root, "repo");
+      const worktreePath = join(root, "feature");
+      const workspace = { mainRepoPath, worktreePath, branch: "feature" };
+      await mkdir(mainRepoPath);
+      await mkdir(worktreePath);
+      await Bun.write(
+        join(mainRepoPath, ".wct.yaml"),
+        JSON.stringify({
+          project_name: "api",
+          down: [{ name: "cleanup", command: "printf cleaned > cleanup.txt" }],
+        }),
+      );
+      sessions.set("$1", {
+        name: "renamed",
+        env: {
+          ...environment(workspace),
+          WCT_WORKSPACE_ID: sessionIdentity(workspace),
+        },
+      });
+      const implementation = exec.getMockImplementation();
+      if (!implementation) throw new Error("missing tmux fixture");
+      exec.mockImplementation((command, args = []) =>
+        args[0] === "show-environment" && args[3] === "WCT_WORKSPACE_ID"
+          ? Effect.fail(commandError("tmux_error", "cannot inspect ownership"))
+          : implementation(command, args),
+      );
+      const listed = await runBunPromise(liveTmuxService.listSessions);
+      expect(listed).toMatchObject([{ name: "renamed", id: "$1" }]);
+      expect(listed?.[0]?.ownership).toBeUndefined();
+      const removeWorktree = vi.fn((path: string) =>
+        Effect.succeed({ _tag: "Removed" as const, path }),
+      );
+      await expect(
+        runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              Effect.gen(function* () {
+                return operation === "down"
+                  ? yield* service.down({ path: worktreePath })
+                  : yield* service.close({ path: worktreePath });
+              }),
+            ),
+            {
+              worktree: {
+                ...shutdownWorktreeService,
+                isGitRepo: () => Effect.succeed(true),
+                getMainRepoPath: () => Effect.succeed(mainRepoPath),
+                removeWorktree,
+              },
+              tmux: liveTmuxService,
+            },
+          ),
+        ),
+      ).rejects.toThrow("cannot inspect ownership");
+      expect(await Bun.file(join(worktreePath, "cleanup.txt")).exists()).toBe(
+        false,
+      );
+      expect(removeWorktree).not.toHaveBeenCalled();
+      expect(killed).toEqual([]);
+      expect(sessions.has("$1")).toBe(true);
+    },
+  );
+
+  test("canonicalizes individual recorded paths before checking tagged ownership", async ({
+    tempDir: root,
+  }) => {
+    await mkdir(join(root, "repo"));
+    await symlink(join(root, "repo"), join(root, "alias"));
+    const workspace = {
+      ...target,
+      mainRepoPath: join(root, "repo"),
+      worktreePath: join(root, "repo", "feature"),
+    };
+    sessions.set("$1", {
+      name: "renamed",
+      env: {
+        WCT_WORKSPACE_ID: sessionIdentity(workspace),
+        WCT_MAIN_DIR: join(root, "alias"),
+      },
+    });
+    expect(
+      await runBunPromise(liveTmuxService.resolveSession(workspace)),
+    ).toMatchObject({ id: "$1" });
+  });
+
+  test("does not reuse or kill a tagged session from a previous checkout path", async () => {
+    const relocated = { ...target, worktreePath: "/work/new/api" };
+    const original = {
+      name: workspaceSessionName(target),
+      env: { ...environment(), WCT_WORKSPACE_ID: sessionIdentity(target) },
+    };
+    sessions.set("$1", original);
+    await expect(
+      runBunPromise(liveTmuxService.resolveSession(relocated)),
+    ).rejects.toThrow("ownership");
+    await expect(
+      runBunPromise(
+        liveTmuxService.createSession(
+          workspaceSessionName(relocated),
+          relocated.worktreePath,
+          undefined,
+          environment(relocated),
+        ),
+      ),
+    ).rejects.toThrow("ownership");
+    const removeWorktree = vi.fn((path: string) =>
+      Effect.succeed({ _tag: "Removed" as const, path }),
+    );
+    await expect(
+      runBunPromise(
+        withTestServices(
+          WorkspaceService.use((service) =>
+            service.close({ path: relocated.worktreePath }),
+          ),
+          {
+            worktree: {
+              ...shutdownWorktreeService,
+              isGitRepo: () => Effect.succeed(true),
+              getMainRepoPath: () => Effect.succeed(target.mainRepoPath),
+              getCurrentBranch: () => Effect.succeed(target.branch),
+              removeWorktree,
+            },
+            tmux: liveTmuxService,
+          },
+        ),
+      ),
+    ).rejects.toThrow("ownership");
+    expect(removeWorktree).not.toHaveBeenCalled();
+    expect(killed).toEqual([]);
+    expect(sessions.get("$1")).toEqual(original);
+    expect(
+      exec.mock.calls.some(([, args = []]) => args[0] === "new-session"),
+    ).toBe(false);
   });
 
   test("creates a tagged session and subsequently resolves its ID", async () => {

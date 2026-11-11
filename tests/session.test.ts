@@ -99,8 +99,9 @@ describe("automatic session attachment", { concurrent: false }, () => {
       const output = logs.mock.calls.map((args) => String(args[0])).join("\n");
       expect(output).toContain(warning);
       expect(output).toContain(
-        `Attach manually with: tmux attach -t ${session.name}`,
+        "Inspect the tmux sessions and retry once Workspace ownership is verified.",
       );
+      expect(output).not.toContain("tmux attach");
       expect(attach).not.toHaveBeenCalled();
       expect(switchSession).not.toHaveBeenCalled();
     },

@@ -36,17 +36,18 @@ export function maybeAttachSession(
           )
         : Effect.succeed(null)
     ).pipe(Effect.result);
-    const manualAttach = `Attach manually with: ${styles.bold(`tmux attach -t ${sessionName}`)}`;
+    const inspectionGuidance =
+      "Inspect the tmux sessions and retry once Workspace ownership is verified.";
     if (Result.isFailure(resolution)) {
       yield* logger.warn(
-        `Failed to resolve session: ${toWctError(resolution.failure).message}\n${manualAttach}`,
+        `Failed to resolve session: ${toWctError(resolution.failure).message}\n${inspectionGuidance}`,
       );
       return;
     }
     const id = resolution.success?.id;
     if (!id) {
       yield* logger.warn(
-        `No verified tmux session ID is available for '${sessionName}'.\n${manualAttach}`,
+        `No verified tmux session ID is available for '${sessionName}'.\n${inspectionGuidance}`,
       );
       return;
     }

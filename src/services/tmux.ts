@@ -16,6 +16,7 @@ import {
   spawnInteractive,
 } from "./process";
 import {
+  canonicalSessionPath,
   canonicalSessionTarget,
   selectWorkspaceSession,
   sessionIdentity,
@@ -315,7 +316,7 @@ function noTmuxSessions(error: unknown): boolean {
   );
 }
 
-function listSessionsImpl() {
+function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
   return Effect.gen(function* () {
     const result = yield* execProcess("tmux", [
       "list-sessions",
@@ -324,28 +325,41 @@ function listSessionsImpl() {
     ]);
     return yield* Effect.forEach(
       parseSessionListOutput(result.stdout.trim()),
-      (session) =>
-        Effect.gen(function* () {
-          if (!session.id) return session;
+      (session) => {
+        const inspected = Effect.gen(function* () {
+          if (!session.id)
+            return yield* commandError(
+              "tmux_error",
+              "Cannot inspect tmux session ownership without a session ID",
+            );
           // Read keys separately: a different variable's multiline value must
           // never be interpreted as Workspace ownership evidence.
-          let ownership: SessionOwnership = yield* readSessionOwnership(
+          const ownership: SessionOwnership = yield* readSessionOwnership(
             session.id,
           );
-          if (
-            ownership.mainRepoPath &&
-            ownership.worktreePath &&
-            ownership.branch !== undefined
-          ) {
-            const target = yield* canonicalSessionTarget({
-              mainRepoPath: ownership.mainRepoPath,
-              worktreePath: ownership.worktreePath,
-              branch: ownership.branch,
-            });
-            ownership = { ...ownership, ...target };
-          }
-          return { ...session, ownership };
-        }).pipe(Effect.orElseSucceed(() => session)),
+          const paths = yield* Effect.all({
+            mainRepoPath:
+              ownership.mainRepoPath !== undefined
+                ? canonicalSessionPath(ownership.mainRepoPath)
+                : Effect.undefined,
+            worktreePath:
+              ownership.worktreePath !== undefined
+                ? canonicalSessionPath(ownership.worktreePath)
+                : Effect.undefined,
+          });
+          return {
+            ...session,
+            ownership: {
+              ...ownership,
+              ...paths,
+              branch: ownership.branch === "(detached)" ? "" : ownership.branch,
+            },
+          };
+        });
+        return tolerateOwnershipErrors
+          ? inspected.pipe(Effect.orElseSucceed(() => session))
+          : inspected;
+      },
       { concurrency: 4 },
     );
   });
@@ -775,7 +789,9 @@ export type TmuxServiceImplementation = ServiceImplementation<
 >;
 
 export const liveTmuxService: TmuxServiceImplementation = {
-  listSessions: listSessionsImpl().pipe(Effect.orElseSucceed(() => null)),
+  listSessions: listSessionsImpl({ tolerateOwnershipErrors: true }).pipe(
+    Effect.orElseSucceed(() => null),
+  ),
   sessionExists: sessionExistsImpl,
   resolveSession: resolveSessionImpl,
   createSession: (name, workingDir, config, env) =>

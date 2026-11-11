@@ -102,7 +102,14 @@ export function ownsWorkspaceSession(
     );
   }
   if (owner.identity !== undefined)
-    return owner.identity === sessionIdentity(target);
+    return (
+      owner.identity === sessionIdentity(target) &&
+      (owner.mainRepoPath === undefined ||
+        owner.mainRepoPath === target.mainRepoPath) &&
+      (owner.branch === undefined || owner.branch === target.branch) &&
+      (owner.worktreePath === undefined ||
+        owner.worktreePath === target.worktreePath)
+    );
   return (
     owner.mainRepoPath === target.mainRepoPath &&
     owner.branch === target.branch &&
@@ -119,6 +126,7 @@ export function selectWorkspaceSession<S extends WorkspaceSession>(
   | { type: "conflict"; message: string } {
   const name = workspaceSessionName(target);
   const legacy = formatSessionName(basename(target.worktreePath));
+  const identity = sessionIdentity(target);
   // Partial or corrupt metadata cannot prove that a legacy name is unrelated.
   const verifiedForeignLegacy = (session: S) => {
     const owner = session.ownership;
@@ -139,7 +147,7 @@ export function selectWorkspaceSession<S extends WorkspaceSession>(
     (session) =>
       session.name === name ||
       (session.name === legacy && !verifiedForeignLegacy(session)) ||
-      session.ownership?.identity === sessionIdentity(target) ||
+      session.ownership?.identity === identity ||
       (target.branch === "" && ownsWorkspaceSession(session, target)),
   );
   const owned = candidates.filter((session) =>
@@ -151,7 +159,8 @@ export function selectWorkspaceSession<S extends WorkspaceSession>(
     owned.length === 1 &&
     !candidates.some(
       (session) =>
-        session.name === name && !ownsWorkspaceSession(session, target),
+        (session.name === name || session.ownership?.identity === identity) &&
+        !ownsWorkspaceSession(session, target),
     )
   ) {
     const session = owned[0];

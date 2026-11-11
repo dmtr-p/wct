@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+reviews:
+  enable_prompt_for_ai_agents: false
+  in_progress_fortune: false
+  changed_files_summary: false
+  high_level_summary: false
+  suggested_labels: false
+  suggested_reviewers: false
+  related_prs: false
+  related_issues: false
+  estimate_code_review_effort: false
+  pre_merge_checks:
+    docstrings:
+      mode: off
+    title:
+      mode: off
+    description:
+      mode: off
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false

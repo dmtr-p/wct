@@ -9,7 +9,7 @@ import { vi } from "vitest";
 import type { WctError } from "../../src/errors";
 import { RegistrationId } from "../../src/services/identities";
 import type { PrFacts } from "../../src/services/pr-model";
-import type { TmuxPaneInfo } from "../../src/services/tmux";
+import type { TmuxPaneInfo, TmuxSession } from "../../src/services/tmux";
 import type {
   WorkspacePhase,
   WorkspaceReporter,
@@ -52,12 +52,48 @@ vi.mock("../../src/tui/runtime", async () => {
   const { noopTmuxService } = await import("../helpers/services");
   const { LocalObservationService, makeLocalObservationService } =
     await import("../../src/services/local-observation-service");
+  const { findWorkspaceSession, formatSessionName } =
+    await import("../../src/services/session-identity");
+  const { basename } = await import("node:path");
+  const ownedSessions = () =>
+    tmuxFixtures.sessions?.map((session, index) => {
+      if (session.ownership) return session;
+      const targets = [...worktreeFixtures.byRepoPath].flatMap(
+        ([mainRepoPath, worktrees]) =>
+          worktrees.flatMap((tree) =>
+            formatSessionName(basename(tree.path)) === session.name
+              ? [{ mainRepoPath, worktreePath: tree.path, branch: tree.branch }]
+              : [],
+          ),
+      );
+      const target = targets.length === 1 ? targets[0] : undefined;
+      return target
+        ? {
+            ...session,
+            id: `$${index + 1}`,
+            server: "test-server",
+            ownership: target,
+          }
+        : session;
+    }) ?? null;
   const tmux = {
     ...noopTmuxService,
     listClients: Effect.sync(() => tmuxFixtures.clients),
-    listSessions: Effect.sync(() => tmuxFixtures.sessions),
+    listSessions: Effect.sync(ownedSessions),
+    resolveSession: (
+      target: import("../../src/services/session-identity").WorkspaceSessionTarget,
+    ) =>
+      Effect.sync(
+        () => findWorkspaceSession(ownedSessions() ?? [], target) ?? null,
+      ),
     listPanes: (session: string) =>
-      Effect.sync(() => tmuxFixtures.panes.get(session) ?? []),
+      Effect.sync(
+        () =>
+          tmuxFixtures.panes.get(
+            ownedSessions()?.find((item) => "id" in item && item.id === session)
+              ?.name ?? session,
+          ) ?? [],
+      ),
     killPane: (paneId: string) =>
       Effect.promise(async () => {
         tmuxFixtures.killCalls.push(paneId);
@@ -175,11 +211,7 @@ const tmuxFixtures = vi.hoisted(() => ({
   killCalls: [] as string[],
   onKill: null as ((paneId: string) => Promise<void>) | null,
   clients: [] as Array<{ tty: string; session: string }>,
-  sessions: null as Array<{
-    name: string;
-    attached: boolean;
-    windows: number;
-  }> | null,
+  sessions: null as TmuxSession[] | null,
   switchCalls: [] as Array<{ clientTty: string; target: string }>,
   onSwitch: null as ((clientTty: string, target: string) => void) | null,
 }));

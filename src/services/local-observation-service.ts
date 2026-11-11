@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { Context, Effect, FileSystem, Semaphore } from "effect";
 import { loadConfig } from "../config/loader";
 import type { ResolvedConfig } from "../config/schema";
-import type { WctError } from "../errors";
+import { commandError, type WctError } from "../errors";
 import type { RegistrationId } from "./identities";
 import { ObservationProcessBudget } from "./process";
 import { RegistryService } from "./registry-service";
+import { canonicalSessionPath } from "./session-identity";
 import { TmuxService } from "./tmux";
 import { WorktreeService } from "./worktree-service";
 
@@ -43,21 +44,56 @@ export const makeLocalObservationService = Effect.gen(function* () {
   const budget = yield* Semaphore.make(LOCAL_OBSERVATION_LIMIT);
   const fs = yield* FileSystem.FileSystem;
   const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.provideService(effect, ObservationProcessBudget, budget);
+    effect.pipe(
+      Effect.provideService(ObservationProcessBudget, budget),
+      Effect.provideService(FileSystem.FileSystem, fs),
+    );
   return {
     repositories: bounded(
       Effect.flatMap(registry.listRepos, (items) =>
         Effect.forEach(
           items,
           (item) =>
-            inspectRepository(item, {
-              ...worktree,
-              pathExists: existsSync,
-              getConfig: (path) =>
-                loadConfig(path).pipe(
-                  Effect.provideService(FileSystem.FileSystem, fs),
+            canonicalSessionPath(item.repo_path).pipe(
+              Effect.orElseSucceed(() => item.repo_path),
+              Effect.flatMap((repoPath) =>
+                inspectRepository(
+                  { ...item, repo_path: repoPath },
+                  {
+                    ...worktree,
+                    listWorktrees: (path) =>
+                      worktree.listWorktrees(path).pipe(
+                        Effect.flatMap((trees) =>
+                          Effect.forEach(
+                            trees,
+                            (tree) =>
+                              canonicalSessionPath(tree.path).pipe(
+                                Effect.map((canonical) => ({
+                                  ...tree,
+                                  path: canonical,
+                                })),
+                              ),
+                            { concurrency: LOCAL_OBSERVATION_LIMIT },
+                          ),
+                        ),
+                        Effect.provideService(FileSystem.FileSystem, fs),
+                        Effect.mapError((error) =>
+                          commandError(
+                            "worktree_error",
+                            "Cannot canonicalize worktree paths",
+                            error,
+                          ),
+                        ),
+                      ),
+                    pathExists: existsSync,
+                    getConfig: (path) =>
+                      loadConfig(path).pipe(
+                        Effect.provideService(FileSystem.FileSystem, fs),
+                      ),
+                  },
                 ),
-            }),
+              ),
+            ),
           { concurrency: LOCAL_OBSERVATION_LIMIT },
         ),
       ),
@@ -68,14 +104,14 @@ export const makeLocalObservationService = Effect.gen(function* () {
         const entries = yield* Effect.forEach(
           sessions,
           (session) =>
-            tmux.listPanes(session.name).pipe(
+            tmux.listPanes(session.id ?? session.name).pipe(
               Effect.map((panes) => [session.name, panes] as const),
               Effect.orElseSucceed(() => null),
             ),
           { concurrency: LOCAL_OBSERVATION_LIMIT },
         );
         return {
-          sessions: sessions.map(({ name, attached }) => ({ name, attached })),
+          sessions,
           panes: new Map(entries.filter((entry) => entry !== null)),
         };
       }),

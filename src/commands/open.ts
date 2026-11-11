@@ -160,7 +160,7 @@ export function openCommand(
     yield* logWorkspaceOpenResult(result);
 
     if (result.attempts.tmux.attempted && result.attempts.tmux.ok) {
-      yield* maybeAttachSession(result.sessionName, noAttach);
+      yield* maybeAttachSession(result.sessionName, noAttach, result.env);
     }
   });
 }

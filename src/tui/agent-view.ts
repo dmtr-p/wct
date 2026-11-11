@@ -1,7 +1,10 @@
-import { basename } from "node:path";
 import type { AgentObservation } from "../services/agent-model";
 import type { AgentSnapshot } from "../services/agent-service";
-import { formatSessionName, type TmuxPaneInfo } from "../services/tmux";
+import {
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../services/session-identity";
+import type { TmuxPaneInfo } from "../services/tmux";
 import type { RepoInfo } from "./hooks/useRegistry";
 import { toSingleLine } from "./utils/truncate";
 
@@ -63,7 +66,9 @@ export function buildAgentList(
     const seen = new Set<string>();
     const projectItems: AgentListItem[] = [];
     for (const worktree of repo.worktrees) {
-      const session = formatSessionName(basename(worktree.path));
+      const session = workspaceSessionName(
+        workspaceSessionTarget(repo.repoPath, worktree),
+      );
       const sessionPanes = new Map(
         panes.get(session)?.map((pane) => [pane.paneId, pane]),
       );

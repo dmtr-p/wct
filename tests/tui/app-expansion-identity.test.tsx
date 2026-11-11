@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -30,7 +30,7 @@ describe("App Workspace Identity expansion", () => {
   let b: string;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "wct-expansion-identity-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "wct-expansion-identity-")));
     a = join(root, "a");
     b = join(root, "b");
     mkdirSync(join(root, ".wct"), { recursive: true });

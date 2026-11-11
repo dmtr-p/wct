@@ -10,6 +10,7 @@ import {
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { workspaceIdentityKey } from "../../src/tui/lifecycle";
 import { Mode } from "../../src/tui/types";
+import { legacySession } from "../helpers/session-projections";
 
 vi.mock("../../src/tui/runtime", async () => {
   const { Effect } = await vi.importActual<typeof import("effect")>("effect");
@@ -36,6 +37,20 @@ vi.mock("../../src/services/registry-service", () => ({
 }));
 vi.mock("../../src/services/pr-cache-service", () => ({
   PrCacheService: { use: vi.fn((f) => f({ invalidate })) },
+}));
+
+vi.mock("../../src/services/tmux", () => ({
+  TmuxService: {
+    use: (
+      f: (
+        service: Pick<
+          import("../../src/services/tmux").TmuxService,
+          "resolveSession"
+        >,
+      ) => unknown,
+    ) =>
+      f({ resolveSession: (target) => Effect.succeed(legacySession(target)) }),
+  },
 }));
 
 const repo: RepoInfo = {

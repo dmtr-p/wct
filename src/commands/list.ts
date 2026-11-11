@@ -1,9 +1,15 @@
-import { basename, relative } from "node:path";
+import { relative } from "node:path";
 import { Console, Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import type { WctServices } from "../effect/services";
 import { commandError, type WctError } from "../errors";
-import { formatSessionName, TmuxService } from "../services/tmux";
+import {
+  canonicalSessionTarget,
+  findWorkspaceSession,
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../services/session-identity";
+import { TmuxService } from "../services/tmux";
 import {
   formatChanges,
   formatSync,
@@ -56,8 +62,14 @@ export function listCommand(opts?: {
       Effect.forEach(nonBareWorktrees, (wt) =>
         Effect.gen(function* () {
           const branch = wt.branch || "(unknown)";
-          const sessionName = formatSessionName(basename(wt.path));
-          const session = sessions.find((s) => s.name === sessionName);
+          const target = yield* canonicalSessionTarget(
+            workspaceSessionTarget(
+              mainRepoPath ?? worktrees[0]?.path ?? wt.path,
+              wt,
+            ),
+          );
+          const session = findWorkspaceSession(sessions, target);
+          const sessionName = session?.name ?? workspaceSessionName(target);
           const statusOptions = json ? { logWarnings: false } : undefined;
           const [changesCount, syncStatus] = yield* Effect.all([
             WorktreeService.use((service) =>

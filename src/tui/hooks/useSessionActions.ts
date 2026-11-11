@@ -1,9 +1,13 @@
-import { basename } from "node:path";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import type { WorkspaceIdentityKey } from "../../services/identities";
+import {
+  findWorkspaceSession,
+  workspaceSessionName,
+  type WorkspaceSessionTarget,
+  workspaceSessionTarget,
+} from "../../services/session-identity";
 import type { TmuxClient } from "../../services/tmux";
-import { formatSessionName } from "../../services/tmux";
 import {
   type WorkspaceCloseResult,
   type WorkspaceDownResult,
@@ -57,7 +61,6 @@ export interface SessionActionDeps extends SessionHandoffDeps {
   showActionError: (msg: string) => void;
   clearActionError: () => void;
 
-  switchSession: (name: string, client?: TmuxClient | null) => Promise<boolean>;
   detachClient: (client?: TmuxClient | null) => Promise<boolean>;
   discoverClient: (signal?: AbortSignal) => Promise<TmuxClientDiscovery>;
   refreshSessions: (signal?: AbortSignal) => Promise<TmuxSessionInfo[]>;
@@ -82,11 +85,15 @@ function rejectIfLifecycleActive(
 
 export function createSwitchClientAway(deps: SessionActionDeps) {
   const switchAwayFromSessions = createSwitchClientAwayFromSessions(deps);
-  return (sessionName: string) => switchAwayFromSessions([sessionName]);
+  return (sessionName: string, target?: WorkspaceSessionTarget) =>
+    switchAwayFromSessions([sessionName], target ? [target] : undefined);
 }
 
 export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
-  return async (sessionNames: readonly string[]): Promise<boolean> => {
+  return async (
+    sessionNames: readonly string[],
+    targets?: readonly WorkspaceSessionTarget[],
+  ): Promise<boolean> => {
     try {
       // Attach both rejection handlers before a dependency can throw synchronously.
       const [client, latestSessions] = await Promise.all([
@@ -95,7 +102,14 @@ export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
       ]);
       const handoff = resolveSessionsHandoff({
         client,
-        targetSessions: sessionNames,
+        targetSessions: targets
+          ? targets.map(
+              (target, index) =>
+                findWorkspaceSession(latestSessions, target)?.name ??
+                sessionNames[index] ??
+                workspaceSessionName(target),
+            )
+          : sessionNames,
         sessions: latestSessions,
       });
 
@@ -162,6 +176,10 @@ export function createStartWorkspace(deps: SessionActionDeps) {
           repoPath: target.repoPath,
           branch: target.branch,
           sessionName: result.sessionName,
+          target: workspaceSessionTarget(target.repoPath, {
+            path: target.worktreePath,
+            branch: target.branch,
+          }),
           tmux: result.attempts.tmux,
           autoSwitch: target.autoSwitch,
           wording: { action: "start", completed: "Started" },
@@ -189,12 +207,24 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     if (!target) return;
     const { repo, worktree: wt } = target;
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
-    const sessionName = formatSessionName(basename(wt.path));
-    const hasSession = deps.sessions.some((s) => s.name === sessionName);
+    const sessionName =
+      findWorkspaceSession(
+        deps.sessions,
+        workspaceSessionTarget(repo.repoPath, wt),
+      )?.name ??
+      workspaceSessionName(workspaceSessionTarget(repo.repoPath, wt));
+    const hasSession = !!findWorkspaceSession(
+      deps.sessions,
+      workspaceSessionTarget(repo.repoPath, wt),
+    );
     if (hasSession) {
       deps.clearActionError();
       void deps
-        .switchSession(sessionName)
+        .switchSession(
+          sessionName,
+          undefined,
+          workspaceSessionTarget(repo.repoPath, wt),
+        )
         .then((switched) => {
           if (!switched) {
             deps.showActionError(
@@ -246,7 +276,11 @@ export function createExecuteDown(deps: SessionActionDeps) {
         phase: { _tag: "Preparing" },
       },
       run: async (reporter) => {
-        const canProceed = await switchClientAway(sessionName);
+        const canProceed = await switchClientAway(sessionName, {
+          mainRepoPath: repoPath,
+          worktreePath,
+          branch,
+        });
         if (!canProceed) {
           throw new Error(
             "Cannot safely stop the tmux session because the active client could not be moved away",
@@ -283,7 +317,12 @@ export function createHandleCloseWorktree(deps: SessionActionDeps) {
   return (repo: RepoInfo, wt: WorktreeInfo, agentItemId?: string) => {
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
-    const sessionName = formatSessionName(basename(wt.path));
+    const sessionName =
+      findWorkspaceSession(
+        deps.sessions,
+        workspaceSessionTarget(repo.repoPath, wt),
+      )?.name ??
+      workspaceSessionName(workspaceSessionTarget(repo.repoPath, wt));
     const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
     if (!agentItemId) deps.captureTreeReturnPosition("close");
     deps.confirmCloseReturnModeRef.current = agentItemId
@@ -336,7 +375,11 @@ export function createExecuteClose(deps: SessionActionDeps) {
         phase: { _tag: "Preparing" },
       },
       run: async (reporter) => {
-        const canProceed = await switchClientAway(sessionName);
+        const canProceed = await switchClientAway(sessionName, {
+          mainRepoPath: repoPath,
+          worktreePath,
+          branch,
+        });
         if (!canProceed) {
           throw new Error(
             "Cannot safely close the worktree because the active tmux client could not be moved away",
@@ -394,7 +437,12 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
 
     if (rejectIfLifecycleActive(deps, repo.repoPath, wt.branch)) return;
 
-    const sessionName = formatSessionName(basename(wt.path));
+    const sessionName =
+      findWorkspaceSession(
+        deps.sessions,
+        workspaceSessionTarget(repo.repoPath, wt),
+      )?.name ??
+      workspaceSessionName(workspaceSessionTarget(repo.repoPath, wt));
     const workspaceKey = workspaceIdentityKey(repo.repoPath, wt.branch);
     deps.captureTreeReturnPosition("down");
     deps.confirmDownReturnModeRef.current =

@@ -126,6 +126,16 @@ if (command === "display-message") {
   if (!process.argv.includes("%42")) process.exit(90);
   await Bun.write(root + "/caller", String(process.ppid));
   console.log(process.env.WCT_TEST_SESSION);
+} else if (command === "list-sessions") {
+  if (await Bun.file(root + "/session").exists()) console.log((await Bun.file(root + "/started-session").exists() ? await Bun.file(root + "/started-session").text() : process.env.WCT_TEST_SESSION) + ":0:1\\t$1\\t/fake/socket|1|0");
+} else if (command === "show-environment") {
+  const key = process.argv[process.argv.indexOf("-t") + 2];
+  const values = {
+    WCT_MAIN_DIR: root + "/project",
+    WCT_WORKTREE_DIR: root + (process.env.WCT_TEST_SESSION === "project" ? "/project" : "/demo-feature"),
+    WCT_BRANCH: process.env.WCT_TEST_SESSION === "project" ? "main" : "feature",
+  };
+  console.log(key in values ? key + "=" + values[key] : "-" + key);
 } else if (command === "has-session") {
   process.exit(await Bun.file(root + "/session").exists() ? 0 : 1);
 } else if (command === "new-session") {
@@ -134,10 +144,11 @@ if (command === "display-message") {
   await Bun.write(root + "/started-session", name);
   await Bun.write(root + "/started-directory", cwd);
   await Bun.write(root + "/session", "exists");
+  console.log("$1");
 } else if (command === "set-environment" || command === "select-window") {
   process.exit(0);
 } else if (command === "kill-session") {
-  if (!process.argv.includes("=" + process.env.WCT_TEST_SESSION)) process.exit(91);
+  if (!process.argv.includes("$1")) process.exit(91);
   await appendFile(root + "/trace", "kill\\n");
   await rm(root + "/session", { force: true });
   if (await Bun.file(root + "/caller").exists()) {
@@ -466,7 +477,7 @@ if (command === "display-message") {
         ok: true,
         data: {
           worktreePath: worktree,
-          sessionName: session,
+          sessionName: expect.stringMatching(/^demo-feature-[0-9a-f]{10}$/),
           env: { WCT_WORKTREE_DIR: worktree, WCT_WORK_DIR: workingDir },
           attempts: {
             tmux: {
@@ -477,8 +488,8 @@ if (command === "display-message") {
           },
         },
       });
-      expect(await Bun.file(join(root, "started-session")).text()).toBe(
-        session,
+      expect(await Bun.file(join(root, "started-session")).text()).toMatch(
+        /^demo-feature-[0-9a-f]{10}$/,
       );
       expect(await Bun.file(join(root, "started-directory")).text()).toBe(
         workingDir,
@@ -493,7 +504,7 @@ if (command === "display-message") {
         ok: true,
         data: {
           worktreePath: worktree,
-          sessionName: session,
+          sessionName: expect.stringMatching(/^demo-feature-[0-9a-f]{10}$/),
           status: "killed",
         },
       });

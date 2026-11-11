@@ -38,7 +38,7 @@ export function upCommand(
     yield* logTmuxResult(result);
 
     if (result.attempts.tmux.attempted && result.attempts.tmux.ok) {
-      yield* maybeAttachSession(result.sessionName, noAttach);
+      yield* maybeAttachSession(result.sessionName, noAttach, result.env);
     }
 
     yield* logger.success(`Environment ready for '${result.branch}'`);

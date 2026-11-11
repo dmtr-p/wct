@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { $ } from "bun";
@@ -52,7 +52,9 @@ describe("getChangedFilesCount", { concurrent: false }, () => {
   let repoDir: string;
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-status-changes-"));
+    repoDir = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-status-changes-")),
+    );
     await $`git init -b main`.quiet().cwd(repoDir);
     await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
     await $`git config user.name "Test"`.quiet().cwd(repoDir);
@@ -118,8 +120,10 @@ describe("getAheadBehind", { concurrent: false }, () => {
   let worktreeDir: string;
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-status-sync-"));
-    worktreeDir = await mkdtemp(join(tmpdir(), "wct-status-wt-"));
+    repoDir = await realpath(await mkdtemp(join(tmpdir(), "wct-status-sync-")));
+    worktreeDir = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-status-wt-")),
+    );
 
     await $`git init -b main`.quiet().cwd(repoDir);
     await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
@@ -194,7 +198,9 @@ describe("getDefaultBranch", () => {
   let repoDir: string;
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-status-default-"));
+    repoDir = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-status-default-")),
+    );
     await $`git init -b main`.quiet().cwd(repoDir);
     await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
     await $`git config user.name "Test"`.quiet().cwd(repoDir);
@@ -212,7 +218,9 @@ describe("getDefaultBranch", () => {
   });
 
   test("detects master branch via fallback", async () => {
-    const masterRepoDir = await mkdtemp(join(tmpdir(), "wct-status-master-"));
+    const masterRepoDir = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-status-master-")),
+    );
     await $`git init -b master`.quiet().cwd(masterRepoDir);
     await $`git config user.email "test@test.com"`.quiet().cwd(masterRepoDir);
     await $`git config user.name "Test"`.quiet().cwd(masterRepoDir);
@@ -228,7 +236,9 @@ describe("getDefaultBranch", () => {
   });
 
   test("returns null when no default branch candidate is available", async () => {
-    const trunkRepoDir = await mkdtemp(join(tmpdir(), "wct-status-trunk-"));
+    const trunkRepoDir = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-status-trunk-")),
+    );
     await $`git init -b trunk`.quiet().cwd(trunkRepoDir);
     await $`git config user.email "test@test.com"`.quiet().cwd(trunkRepoDir);
     await $`git config user.name "Test"`.quiet().cwd(trunkRepoDir);
@@ -262,8 +272,10 @@ describe("listCommand integration", { concurrent: false }, () => {
   const originalDir = process.cwd();
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "wct-status-int-"));
-    worktreeDir = await mkdtemp(join(tmpdir(), "wct-status-int-wt-"));
+    repoDir = await realpath(await mkdtemp(join(tmpdir(), "wct-status-int-")));
+    worktreeDir = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-status-int-wt-")),
+    );
 
     await $`git init -b main`.quiet().cwd(repoDir);
     await $`git config user.email "test@test.com"`.quiet().cwd(repoDir);
@@ -397,7 +409,18 @@ describe("listCommand integration", { concurrent: false }, () => {
             tmux: {
               ...noopTmuxService,
               listSessions: Effect.succeed([
-                { name: sessionName, attached: true, windows: 1 },
+                {
+                  name: sessionName,
+                  attached: true,
+                  windows: 1,
+                  id: "$1",
+                  server: "test-server",
+                  ownership: {
+                    mainRepoPath: repoDir,
+                    branch: "feature-test",
+                    worktreePath: join(worktreeDir, "feature-test"),
+                  },
+                },
               ]),
             },
           }),
@@ -553,7 +576,9 @@ describe("listCommand integration", { concurrent: false }, () => {
   });
 
   test("shows main worktree when no secondary worktrees exist", async () => {
-    const emptyRepo = await mkdtemp(join(tmpdir(), "wct-list-single-"));
+    const emptyRepo = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-list-single-")),
+    );
     await $`git init -b main`.quiet().cwd(emptyRepo);
     await $`git config user.email "test@test.com"`.quiet().cwd(emptyRepo);
     await $`git config user.name "Test"`.quiet().cwd(emptyRepo);

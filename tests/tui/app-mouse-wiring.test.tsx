@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -28,8 +28,8 @@ describe("App mouse selection and viewport behavior", () => {
   let repoPath: string;
 
   beforeEach(() => {
-    homeDir = mkdtempSync(join(tmpdir(), "wct-app-mouse-home-"));
-    repoPath = mkdtempSync(join(tmpdir(), "wct-app-mouse-repo-"));
+    homeDir = realpathSync(mkdtempSync(join(tmpdir(), "wct-app-mouse-home-")));
+    repoPath = realpathSync(mkdtempSync(join(tmpdir(), "wct-app-mouse-repo-")));
     // fs.watch requires the directory to exist when App mounts.
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
@@ -237,7 +237,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Scroll the selection off-screen to distinguish viewport preservation
         // from automatic selection reveal.
@@ -275,7 +275,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Selection stays on the repo row (index 0, never moved). Wheel-scroll
         // the viewport away so the selected row is off-screen.
@@ -306,7 +306,7 @@ describe("App mouse selection and viewport behavior", () => {
       try {
         await tick(20);
         // Rows: repo-1(0), main(1), feature/0(2), feature/1(3), …
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Write BOTH wheel-down sequences in ONE stdin chunk. The adapter
         // observes both reports before Ink 8 discards them. Each event must
@@ -330,7 +330,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 20);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         await sendKeys(rendered.stdin, "/"); // enter Search
         // A real click always emits press + release; write both in one stdin
@@ -357,7 +357,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Select the top visible row at offset 5. The click changes selection
         // without needing to move the viewport.
@@ -419,7 +419,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Twelve downs put feature/10 on the bottom visible row.
         for (let i = 0; i < 12; i++) {
@@ -452,7 +452,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Scroll the selection off-screen before resizing.
         for (let i = 0; i < 15; i++) {
@@ -515,7 +515,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14, 100);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         // Put the PR detail row in the tree: select feature/0, fetch PRs via
         // the real Navigate-only "r" path, then expand it. Items while
@@ -572,7 +572,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14, 100);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         await sendKeys(rendered.stdin, "\x1b[B"); // repo -> main
         await sendKeys(rendered.stdin, "\x1b[B"); // main -> feature/0
@@ -631,7 +631,7 @@ describe("App mouse selection and viewport behavior", () => {
       const rendered = await renderApp(<App />, 14, 45);
       try {
         await tick(20);
-        expect(rendered.output()).toContain("main");
+        await vi.waitFor(() => expect(rendered.output()).toContain("main"));
 
         const frame = rendered.lines();
         while (

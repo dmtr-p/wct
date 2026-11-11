@@ -2,6 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import type { WorkspaceIdentityKey } from "../../services/identities";
 import { registerProject } from "../../services/project-registration";
+import { workspaceSessionTarget } from "../../services/session-identity";
 import {
   type WorkspaceOpenResult,
   WorkspaceService,
@@ -160,6 +161,10 @@ export function createHandleOpen(deps: ModalActionDeps) {
           repoPath,
           branch: opts.branch,
           sessionName: result.sessionName,
+          target: workspaceSessionTarget(result.mainRepoPath, {
+            path: result.worktreePath,
+            branch: result.branch,
+          }),
           tmux: result.attempts.tmux,
           autoSwitch: !opts.noAttach,
           wording: { action: "open", completed: "Opened" },

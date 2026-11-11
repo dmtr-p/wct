@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -301,8 +301,12 @@ describe("TUI lifecycle viewport reveal", () => {
   let repoPath: string;
 
   beforeEach(() => {
-    homeDir = mkdtempSync(join(tmpdir(), "wct-app-concurrency-home-"));
-    repoPath = mkdtempSync(join(tmpdir(), "wct-app-concurrency-repo-"));
+    homeDir = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-app-concurrency-home-")),
+    );
+    repoPath = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-app-concurrency-repo-")),
+    );
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
     resetHarnessFixtures();
@@ -318,6 +322,7 @@ describe("TUI lifecycle viewport reveal", () => {
   test("reveals an off-screen lifecycle once and leaves a visible one alone", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 14);
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
     await tick(8);
 
     // Taller than the window: the repo row is on screen, the last worktrees
@@ -350,6 +355,7 @@ describe("TUI lifecycle viewport reveal", () => {
     // A lifecycle that starts already visible must not move the viewport at
     // all, not even to centre itself.
     const app2 = await renderApp(<App />, 14);
+    await vi.waitFor(() => expect(app2.lines().join("\n")).toContain("main"));
     await tick(8);
     await sendKeys(app2.stdin, sgrWheel(1).repeat(4));
     await sendKeys(app2.stdin, DOWN);
@@ -396,6 +402,7 @@ describe("TUI lifecycle viewport reveal", () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 14);
     try {
+      await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
       await tick(8);
 
       await openBranchFromModal(app.stdin, "feature/new");
@@ -427,6 +434,7 @@ describe("TUI lifecycle viewport reveal", () => {
   test("never touches the offset again after the one reveal", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 14);
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
     await tick(8);
 
     await openBranchFromModal(app.stdin, "feature/new");

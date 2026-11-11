@@ -13,10 +13,12 @@ import { rootCommand } from "../src/cli/root-command";
 import { downCommand, type DownOptions } from "../src/commands/down";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
+import type { WorkspaceSessionTarget } from "../src/services/session-identity";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import type { WorkspaceService } from "../src/services/workspace-service";
 import type { WorktreeServiceImplementation as WorktreeService } from "../src/services/worktree-service";
 import {
+  legacySession,
   noopTmuxService,
   shutdownWorktreeService,
   withTestServices,
@@ -52,7 +54,7 @@ describe("downCommand", () => {
   });
 });
 
-describe("down session name derivation", () => {
+describe("down readable session prefix", () => {
   test("derives session name from directory basename", () => {
     const sessionName = formatSessionName("myapp-feature-auth");
     expect(sessionName).toBe("myapp-feature-auth");
@@ -78,7 +80,8 @@ describe("downCommand behavior", () => {
     };
     tmuxOverrides = {
       ...noopTmuxService,
-      sessionExists: () => Effect.succeed(true),
+      resolveSession: (target: WorkspaceSessionTarget) =>
+        Effect.succeed(legacySession(target)),
       killSession: () => Effect.void,
     };
   });
@@ -87,7 +90,7 @@ describe("downCommand behavior", () => {
     cwdSpy.mockRestore();
   });
 
-  test("kills tmux session derived from cwd basename", async () => {
+  test("kills the verified tmux session ID for the current checkout", async () => {
     const killCalls: string[] = [];
     let isGitRepoArg: string | undefined;
     tmuxOverrides = {
@@ -114,7 +117,7 @@ describe("downCommand behavior", () => {
       }),
     ).resolves.toBeUndefined();
     expect(isGitRepoArg).toBe("/tmp/myapp-feature-auth");
-    expect(killCalls).toEqual(["myapp-feature-auth"]);
+    expect(killCalls).toEqual(["$1"]);
   });
 
   test("kills tmux session for worktree specified by --path", async () => {
@@ -123,7 +126,8 @@ describe("downCommand behavior", () => {
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const pathOverrides: TmuxService = {
       ...noopTmuxService,
-      sessionExists: () => Effect.succeed(true),
+      resolveSession: (target: WorkspaceSessionTarget) =>
+        Effect.succeed(legacySession(target)),
       killSession: (name: string) =>
         Effect.sync(() => {
           killCalls.push(name);
@@ -144,7 +148,7 @@ describe("downCommand behavior", () => {
     );
 
     expect(isGitRepoArg).toBe("/tmp/myproject-feature-x");
-    expect(killCalls).toEqual(["myproject-feature-x"]);
+    expect(killCalls).toEqual(["$1"]);
   });
 
   test("parses down --path through the root command", async () => {
@@ -153,7 +157,8 @@ describe("downCommand behavior", () => {
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const tmuxOverridesViaRoot: TmuxService = {
       ...noopTmuxService,
-      sessionExists: () => Effect.succeed(true),
+      resolveSession: (target: WorkspaceSessionTarget) =>
+        Effect.succeed(legacySession(target)),
       killSession: (name: string) =>
         Effect.sync(() => {
           killCalls.push(name);
@@ -174,7 +179,7 @@ describe("downCommand behavior", () => {
     });
 
     expect(isGitRepoArg).toBe("/tmp/myproject-feature-x");
-    expect(killCalls).toEqual(["myproject-feature-x"]);
+    expect(killCalls).toEqual(["$1"]);
   });
 
   test("kills tmux session for worktree resolved by --branch", async () => {
@@ -183,7 +188,8 @@ describe("downCommand behavior", () => {
     cwdSpy.mockReturnValue("/tmp/outside-git-repo");
     const tmuxOverridesByBranch: TmuxService = {
       ...noopTmuxService,
-      sessionExists: () => Effect.succeed(true),
+      resolveSession: (target: WorkspaceSessionTarget) =>
+        Effect.succeed(legacySession(target)),
       killSession: (name: string) =>
         Effect.sync(() => {
           killCalls.push(name);
@@ -215,7 +221,7 @@ describe("downCommand behavior", () => {
     );
 
     expect(isGitRepoArg).toBe("/tmp/myproject-feat-y");
-    expect(killCalls).toEqual(["myproject-feat-y"]);
+    expect(killCalls).toEqual(["$1"]);
   });
 
   test("propagates tmux kill failures", async () => {
@@ -236,7 +242,7 @@ describe("downCommand behavior", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     tmuxOverrides = {
       ...tmuxOverrides,
-      sessionExists: () => Effect.succeed(false),
+      resolveSession: () => Effect.succeed(null),
     };
     cwdSpy.mockReturnValue("/tmp/myapp-feature-auth");
 
@@ -249,7 +255,7 @@ describe("downCommand behavior", () => {
       const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
       expect(
         loggedLines.some((line) =>
-          line.includes("No tmux session 'myapp-feature-auth' found"),
+          /No tmux session 'myapp-feature-auth-[0-9a-f]{10}' found/.test(line),
         ),
       ).toBe(true);
       expect(loggedLines.some((line) => line.includes("warn"))).toBe(false);

@@ -1,13 +1,17 @@
-import { basename } from "node:path";
 import { Box } from "ink";
 import { useMemo } from "react";
 import type { WorkspaceIdentityKey } from "../../services/identities";
 import type { WorkspacePrEntry } from "../../services/pr-cache-service";
 import type { PrFacts } from "../../services/pr-model";
-import { formatSessionName } from "../../services/tmux";
+import {
+  findWorkspaceSession,
+  workspaceSessionName,
+  workspaceSessionTarget,
+} from "../../services/session-identity";
 import { formatSync } from "../../services/worktree-service";
 import type { WorkspaceAgentSnapshot } from "../hooks/useAgents";
 import type { RepoInfo } from "../hooks/useRegistry";
+import type { TmuxSessionInfo } from "../hooks/useTmux";
 import { type LifecycleState, workspaceIdentityKey } from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
 import type { PaneInfo, TreeItem } from "../types";
@@ -22,7 +26,7 @@ import { WorktreeStatsRow } from "./WorktreeStatsRow";
 interface Props {
   agents?: WorkspaceAgentSnapshot;
   repos: RepoInfo[];
-  sessions: Array<{ name: string; attached: boolean }>;
+  sessions: TmuxSessionInfo[];
   selectedIndex: number;
   items: TreeItem[];
   /** Share App's row model so rendering and mouse hit-testing agree. */
@@ -80,8 +84,19 @@ export function TreeView({
   confirmation,
 }: Props) {
   const sessionMap = useMemo(
-    () => new Map(sessions.map((s) => [s.name, s])),
-    [sessions],
+    () =>
+      new Map(
+        repos.flatMap((repo) =>
+          repo.worktrees.flatMap((worktree) => {
+            const target = workspaceSessionTarget(repo.repoPath, worktree);
+            const session = findWorkspaceSession(sessions, target);
+            return session
+              ? [[workspaceSessionName(target), session] as const]
+              : [];
+          }),
+        ),
+      ),
+    [repos, sessions],
   );
 
   const selectedItem = items[selectedIndex];
@@ -242,7 +257,9 @@ function renderWorktreeRow(
   const wt = repo.worktrees[item.worktreeIndex];
   if (!wt) return null;
 
-  const sessionName = formatSessionName(basename(wt.path));
+  const sessionName = workspaceSessionName(
+    workspaceSessionTarget(repo.repoPath, wt),
+  );
   const session = ctx.sessionMap.get(sessionName);
   const wtPr = ctx.prData.get(workspaceIdentityKey(repo.repoPath, wt.branch));
   const wtPanes = ctx.panes.get(sessionName);

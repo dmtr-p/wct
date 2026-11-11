@@ -1,5 +1,5 @@
 import type { BunServices } from "@effect/platform-bun";
-import { Config, Context, Effect } from "effect";
+import { Config, Context, Effect, PlatformError } from "effect";
 import type { TmuxConfig, TmuxWindow } from "../config/schema";
 import { loadRuntimeConfig } from "../effect/config";
 import {
@@ -15,8 +15,19 @@ import {
   runProcess,
   spawnInteractive,
 } from "./process";
+import {
+  canonicalSessionPath,
+  canonicalSessionTarget,
+  selectWorkspaceSession,
+  sessionIdentity,
+  type SessionOwnership,
+  type WorkspaceSession,
+  workspaceSessionName,
+  type WorkspaceSessionTarget,
+} from "./session-identity";
+export { formatSessionName } from "./session-identity";
 
-export interface TmuxSession {
+export interface TmuxSession extends WorkspaceSession {
   name: string;
   attached: boolean;
   windows: number;
@@ -159,6 +170,10 @@ export type CreateSessionResult =
 
 export interface TmuxService {
   listSessions: Effect.Effect<TmuxSession[] | null, WctError>;
+  resolveSession: (
+    target: WorkspaceSessionTarget,
+    expected?: WorkspaceSession | null,
+  ) => Effect.Effect<TmuxSession | null, WctError>;
   sessionExists: (name: string) => Effect.Effect<boolean, WctError>;
   createSession: (
     name: string,
@@ -189,11 +204,13 @@ export function parseSessionListOutput(output: string): TmuxSession[] {
   }
 
   return output.split("\n").map((line) => {
-    const [name = "", attached, windows] = line.split(":");
+    const [summary = "", id, server] = line.split("\t");
+    const [name = "", attached, windows] = summary.split(":");
     return {
       name,
       attached: attached === "1",
       windows: parseInt(windows ?? "0", 10),
+      ...(id && /^\$\d+$/.test(id) && server ? { id, server } : {}),
     };
   });
 }
@@ -232,21 +249,169 @@ export function parseClientListOutput(output: string): TmuxClient[] {
     });
 }
 
-function listSessionsImpl() {
-  return Effect.orElseSucceed(
-    execProcess("tmux", [
+export function parseSessionVariable(
+  key: string,
+  output: string,
+): string | undefined {
+  if (output === `-${key}\n`) return undefined;
+  const prefix = `${key}=`;
+  if (!output.startsWith(prefix) || !output.endsWith("\n"))
+    throw commandError(
+      "tmux_error",
+      `Malformed tmux session environment entry '${key}'`,
+    );
+  return output.slice(prefix.length, -1);
+}
+
+function readSessionVariable(id: string, key: string) {
+  return execProcess("tmux", ["show-environment", "-t", id, key]).pipe(
+    Effect.flatMap(({ stdout }) =>
+      Effect.try({
+        try: () => parseSessionVariable(key, stdout),
+        catch: (error) =>
+          commandError(
+            "tmux_error",
+            `Cannot read session environment '${key}'`,
+            error,
+          ),
+      }),
+    ),
+    Effect.catchIf(
+      (error) =>
+        error instanceof ProcessExitError &&
+        error.exitCode === 1 &&
+        error.cause === undefined &&
+        error.stderr.trim() === `unknown variable: ${key}`,
+      () => Effect.undefined,
+    ),
+  );
+}
+
+function readSessionOwnership(id: string) {
+  return Effect.all({
+    identity: readSessionVariable(id, "WCT_WORKSPACE_ID"),
+    mainRepoPath: readSessionVariable(id, "WCT_MAIN_DIR"),
+    branch: readSessionVariable(id, "WCT_BRANCH"),
+    worktreePath: readSessionVariable(id, "WCT_WORKTREE_DIR"),
+  });
+}
+
+function noTmuxSessions(error: unknown): boolean {
+  if (!(error instanceof ProcessExitError)) return false;
+  if (
+    error.exitCode === null &&
+    PlatformError.isPlatformError(error.cause) &&
+    error.cause.reason._tag === "NotFound" &&
+    error.cause.reason.module === "ChildProcess" &&
+    error.cause.reason.method === "spawn" &&
+    Bun.which("tmux") === null
+  )
+    return true;
+  return (
+    error.exitCode === 1 &&
+    error.cause === undefined &&
+    /^(?:no sessions|no server running on [^\r\n]+|error connecting to [^\r\n]+ \((?:No such file or directory|Connection refused)\))$/.test(
+      error.stderr.trim(),
+    )
+  );
+}
+
+function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
+  return Effect.gen(function* () {
+    const result = yield* execProcess("tmux", [
       "list-sessions",
       "-F",
-      "#{session_name}:#{session_attached}:#{session_windows}",
-    ]).pipe(
-      Effect.map((result) => parseSessionListOutput(result.stdout.trim())),
+      "#{session_name}:#{session_attached}:#{session_windows}\t#{session_id}\t#{socket_path}|#{pid}|#{start_time}",
+    ]);
+    return yield* Effect.forEach(
+      parseSessionListOutput(result.stdout.trim()),
+      (session) => {
+        const inspected = Effect.gen(function* () {
+          if (!session.id)
+            return yield* commandError(
+              "tmux_error",
+              "Cannot inspect tmux session ownership without a session ID",
+            );
+          // Read keys separately: a different variable's multiline value must
+          // never be interpreted as Workspace ownership evidence.
+          const ownership: SessionOwnership = yield* readSessionOwnership(
+            session.id,
+          );
+          const paths = yield* Effect.all({
+            mainRepoPath:
+              ownership.mainRepoPath !== undefined
+                ? canonicalSessionPath(ownership.mainRepoPath)
+                : Effect.undefined,
+            worktreePath:
+              ownership.worktreePath !== undefined
+                ? canonicalSessionPath(ownership.worktreePath)
+                : Effect.undefined,
+          });
+          return {
+            ...session,
+            ownership: {
+              ...ownership,
+              ...paths,
+              branch: ownership.branch === "(detached)" ? "" : ownership.branch,
+            },
+          };
+        });
+        return tolerateOwnershipErrors
+          ? inspected.pipe(Effect.orElseSucceed(() => session))
+          : inspected;
+      },
+      { concurrency: 4 },
+    );
+  });
+}
+
+function resolveSessionImpl(
+  target: WorkspaceSessionTarget,
+  expected?: WorkspaceSession | null,
+) {
+  return Effect.gen(function* () {
+    const canonical = yield* canonicalSessionTarget(target);
+    const sessions = yield* listSessionsImpl().pipe(
+      Effect.catchIf(noTmuxSessions, () => Effect.succeed([] as TmuxSession[])),
+    );
+    const selection = selectWorkspaceSession(sessions, canonical);
+    if (selection.type === "conflict")
+      return yield* commandError("tmux_error", selection.message);
+    const session = selection.type === "owned" ? selection.session : null;
+    if (
+      session &&
+      expected !== undefined &&
+      (!expected ||
+        session.id !== expected.id ||
+        session.server !== expected.server)
+    ) {
+      return yield* commandError(
+        "tmux_error",
+        "Workspace tmux session changed after resolution; retry the operation",
+      );
+    }
+    if (session && session.ownership?.identity === undefined && session.id) {
+      yield* execProcess("tmux", [
+        "set-environment",
+        "-t",
+        session.id,
+        "WCT_WORKSPACE_ID",
+        sessionIdentity({
+          ...canonical,
+          branch: session.ownership?.branch ?? canonical.branch,
+        }),
+      ]);
+    }
+    return session;
+  }).pipe(
+    Effect.mapError((error) =>
+      commandError("tmux_error", getProcessErrorMessage(error), error),
     ),
-    () => null,
   );
 }
 
 function sessionExistsImpl(name: string) {
-  return runProcess("tmux", ["has-session", "-t", `=${name}`]).pipe(
+  return runProcess("tmux", ["has-session", "-t", sessionTarget(name)]).pipe(
     Effect.map((result) => result.success),
   );
 }
@@ -435,16 +600,6 @@ export function buildWindowsPaneCommands(
   return commands;
 }
 
-function createSessionWithWindows(
-  name: string,
-  workingDir: string,
-  windows: ReadonlyArray<TmuxWindow>,
-  env?: WctEnv,
-) {
-  const commands = buildWindowsPaneCommands(name, workingDir, windows, env);
-  return executeCommands(commands);
-}
-
 function createSessionImpl(
   name: string,
   workingDir: string,
@@ -452,29 +607,79 @@ function createSessionImpl(
   env?: WctEnv,
 ) {
   return Effect.gen(function* () {
-    if (yield* sessionExistsImpl(name)) {
-      return { _tag: "AlreadyExists" as const, sessionName: name };
-    }
-
-    const windows = config?.windows ?? [];
-    yield* Effect.catch(
-      createSessionWithWindows(name, workingDir, windows, env),
-      (error) =>
-        Effect.gen(function* () {
-          yield* Effect.ignore(killSessionImpl(name));
-          return yield* error;
-        }),
+    if (!env)
+      return yield* commandError(
+        "tmux_error",
+        "Workspace environment is required to create a tmux session",
+      );
+    const target = yield* canonicalSessionTarget({
+      mainRepoPath: env.WCT_MAIN_DIR,
+      branch: env.WCT_BRANCH,
+      worktreePath: env.WCT_WORKTREE_DIR,
+    });
+    const existing = yield* resolveSessionImpl(target);
+    if (existing)
+      return { _tag: "AlreadyExists" as const, sessionName: existing.name };
+    if (name !== workspaceSessionName(target))
+      return yield* commandError(
+        "tmux_error",
+        "Tmux session name does not match Workspace identity",
+      );
+    const ownedEnv = {
+      ...env,
+      WCT_MAIN_DIR: target.mainRepoPath,
+      WCT_WORKTREE_DIR: target.worktreePath,
+      WCT_WORKSPACE_ID: sessionIdentity(target),
+    };
+    const commands = buildWindowsPaneCommands(
+      name,
+      workingDir,
+      config?.windows ?? [],
+      ownedEnv,
+    );
+    const first = commands[0];
+    if (!first)
+      return yield* commandError(
+        "tmux_error",
+        "Missing tmux session creation command",
+      );
+    // Only a successful new-session may authorize rollback. Keep all later
+    // construction commands on that acquired ID, even if its name is reused.
+    const created = yield* execProcess("tmux", [
+      first.type,
+      ...first.args,
+      "-P",
+      "-F",
+      "#{session_id}",
+    ]);
+    const id = created.stdout.trim();
+    if (!/^\$\d+$/.test(id))
+      return yield* commandError(
+        "tmux_error",
+        "Tmux did not return the acquired session ID",
+      );
+    const remaining = commands.slice(1).map((command) => ({
+      ...command,
+      args: command.args.map((argument, index) =>
+        command.args[index - 1] === "-t" &&
+        (argument === name || argument.startsWith(`${name}:`))
+          ? id + argument.slice(name.length)
+          : argument,
+      ),
+    }));
+    yield* executeCommands(remaining).pipe(
+      Effect.onError(() => Effect.ignore(killSessionImpl(id))),
     );
     return { _tag: "Created" as const, sessionName: name };
   });
 }
 
-export function formatSessionName(dirName: string): string {
-  return dirName.replace(/[^a-zA-Z0-9_-]/g, "-");
+export function sessionTarget(name: string): string {
+  return /^\$\d+$/.test(name) ? name : `=${name}`;
 }
 
 function killSessionImpl(name: string) {
-  return execProcess("tmux", ["kill-session", "-t", `=${name}`]).pipe(
+  return execProcess("tmux", ["kill-session", "-t", sessionTarget(name)]).pipe(
     Effect.asVoid,
   );
 }
@@ -510,7 +715,7 @@ const getCurrentSessionImpl = Effect.gen(function* () {
 });
 
 function switchSessionImpl(name: string) {
-  return execProcess("tmux", ["switch-client", "-t", `=${name}`]).pipe(
+  return execProcess("tmux", ["switch-client", "-t", sessionTarget(name)]).pipe(
     Effect.asVoid,
   );
 }
@@ -520,13 +725,13 @@ function attachSessionImpl(name: string) {
     const exitCode = yield* spawnInteractive("tmux", [
       "attach-session",
       "-t",
-      `=${name}`,
+      sessionTarget(name),
     ]);
 
     if (exitCode !== 0) {
       return yield* new ProcessExitError({
         command: "tmux",
-        args: ["attach-session", "-t", `=${name}`],
+        args: ["attach-session", "-t", sessionTarget(name)],
         stdout: "",
         stderr: "",
         exitCode,
@@ -541,7 +746,7 @@ function listPanesImpl(sessionName: string) {
       "list-panes",
       "-s",
       "-t",
-      `=${sessionName}`,
+      sessionTarget(sessionName),
       "-F",
       "#{pane_id}\t#{pane_index}\t#{pane_current_command}\t#{window_name}\t#{window_zoomed_flag}\t#{pane_active}\t#{pane_title}",
     ]).pipe(Effect.map((result) => parsePaneListOutput(result.stdout))),
@@ -584,8 +789,11 @@ export type TmuxServiceImplementation = ServiceImplementation<
 >;
 
 export const liveTmuxService: TmuxServiceImplementation = {
-  listSessions: listSessionsImpl(),
+  listSessions: listSessionsImpl({ tolerateOwnershipErrors: true }).pipe(
+    Effect.orElseSucceed(() => null),
+  ),
   sessionExists: sessionExistsImpl,
+  resolveSession: resolveSessionImpl,
   createSession: (name, workingDir, config, env) =>
     Effect.mapError(createSessionImpl(name, workingDir, config, env), (error) =>
       commandError(

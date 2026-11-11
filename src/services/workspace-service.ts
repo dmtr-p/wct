@@ -1,4 +1,4 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { BunServices } from "@effect/platform-bun";
 import { Config, Context, Effect, FileSystem } from "effect";
 import {
@@ -26,6 +26,10 @@ import {
 import { getIncludeCopyState } from "./include-copy-state";
 import { PrCacheService, type PrCacheServiceApi } from "./pr-cache-service";
 import {
+  canonicalSessionTarget,
+  workspaceSessionName,
+} from "./session-identity";
+import {
   type SetupResult,
   SetupService,
   type SetupService as SetupServiceApi,
@@ -33,7 +37,6 @@ import {
 import { runDetachedShutdown, type ShutdownRequest } from "./shutdown-runner";
 import {
   type CreateSessionResult,
-  formatSessionName,
   TmuxService,
   type TmuxService as TmuxServiceApi,
 } from "./tmux";
@@ -773,7 +776,9 @@ function openImpl(
       branch,
       ...(base ? { base } : {}),
     });
-    const sessionName = formatSessionName(basename(worktreePath));
+    const sessionName = workspaceSessionName(
+      yield* canonicalSessionTarget({ mainRepoPath, branch, worktreePath }),
+    );
     const env = createWctEnv(
       worktreePath,
       resolved.work_dir,
@@ -854,7 +859,8 @@ function openImpl(
       worktreePath,
       mainRepoPath,
       branch,
-      sessionName,
+      sessionName:
+        tmux.attempted && tmux.ok ? tmux.value.sessionName : sessionName,
       projectName: config.project_name,
       ...(profileName ? { profileName } : {}),
       created: worktreeResult._tag !== "AlreadyExists",
@@ -975,7 +981,9 @@ function upImpl(
       profile,
     );
 
-    const sessionName = formatSessionName(basename(worktreePath));
+    const sessionName = workspaceSessionName(
+      yield* canonicalSessionTarget({ mainRepoPath, branch, worktreePath }),
+    );
     const env = createWctEnv(
       worktreePath,
       resolved.work_dir,
@@ -998,7 +1006,8 @@ function upImpl(
       worktreePath,
       mainRepoPath,
       branch,
-      sessionName,
+      sessionName:
+        tmux.attempted && tmux.ok ? tmux.value.sessionName : sessionName,
       projectName: config.project_name,
       ...(profileName ? { profileName } : {}),
       env,
@@ -1047,19 +1056,24 @@ function prepareShutdown(worktreePath: string, profile?: string) {
   });
 }
 
-function stopSession(
-  worktreePath: string,
-  operation: "down" | "close",
-  reporter?: WorkspaceReporter,
-) {
+function stopSession(request: ShutdownRequest, reporter?: WorkspaceReporter) {
   return Effect.gen(function* () {
-    const sessionName = formatSessionName(basename(worktreePath));
-    const existed = yield* TmuxService.use((service) =>
-      service.sessionExists(sessionName),
+    const { operation } = request;
+    const target = yield* shutdownSessionTarget(request);
+    const session = yield* TmuxService.use((service) =>
+      service.resolveSession(target, request.session),
     );
-    if (existed) {
+    const sessionName = session?.name ?? workspaceSessionName(target);
+    const existed = session !== null;
+    if (session) {
+      const id = session.id;
+      if (!id)
+        return yield* commandError(
+          "tmux_error",
+          "Verified tmux session ID is missing",
+        );
       yield* emitPhase(reporter, operation, { _tag: "StoppingTmuxSession" });
-      yield* TmuxService.use((service) => service.killSession(sessionName));
+      yield* TmuxService.use((service) => service.killSession(id));
     }
     yield* emitReporter(reporter, {
       operation,
@@ -1168,8 +1182,7 @@ export function executeWorkspaceShutdown(
   return Effect.gen(function* () {
     const { operation, worktreePath } = request;
     const { sessionName, existed, kill } = yield* stopSession(
-      worktreePath,
-      operation,
+      request,
       reporter,
     );
     const { down, warnings } = yield* runDownScripts(
@@ -1219,29 +1232,69 @@ export function executeWorkspaceShutdown(
   });
 }
 
+function shutdownSessionTarget(request: ShutdownRequest) {
+  return Effect.gen(function* () {
+    if (request.sessionTarget) return request.sessionTarget;
+    if (request.shutdown) {
+      const env = request.shutdown.env;
+      return yield* canonicalSessionTarget({
+        mainRepoPath: env.WCT_MAIN_DIR,
+        branch: env.WCT_BRANCH,
+        worktreePath: request.worktreePath,
+      });
+    }
+    const mainRepoPath = yield* WorktreeService.use((service) =>
+      service.getMainRepoPath(request.cwd),
+    );
+    if (!mainRepoPath)
+      return yield* commandError(
+        "worktree_error",
+        "Cannot resolve repository for session shutdown",
+      );
+    const trees = yield* WorktreeService.use((service) =>
+      service.listWorktrees(request.cwd),
+    );
+    const tree = trees.find(
+      (tree) => resolve(tree.path) === resolve(request.worktreePath),
+    );
+    if (!tree)
+      return yield* commandError(
+        "worktree_error",
+        "Cannot resolve registered Workspace for session shutdown",
+      );
+    return yield* canonicalSessionTarget({
+      mainRepoPath,
+      worktreePath: tree.path,
+      branch: tree.branch,
+    });
+  });
+}
+
 function finishShutdown(
   request: ShutdownRequest,
   reporter?: WorkspaceReporter,
 ) {
   return Effect.gen(function* () {
+    const sessionTarget = yield* shutdownSessionTarget(request);
+    const session = yield* TmuxService.use((service) =>
+      service.resolveSession(sessionTarget),
+    );
+    const resolved = { ...request, sessionTarget, session };
     const { tmux, pane } = yield* loadRuntimeConfig(
       Config.all({
         tmux: Config.String("TMUX").pipe(Config.withDefault("")),
         pane: Config.String("TMUX_PANE").pipe(Config.withDefault("")),
       }),
     );
-    if (tmux && pane) {
+    if (tmux && pane && session) {
       const currentSession = yield* TmuxService.use(
         (service) => service.getCurrentSession,
       );
-      if (
-        currentSession === formatSessionName(basename(request.worktreePath))
-      ) {
-        return yield* runDetachedShutdown(request, reporter);
-      }
+      if (currentSession === session.name || currentSession === session.id)
+        return yield* runDetachedShutdown(resolved, reporter);
     }
     return yield* executeWorkspaceShutdown(
-      { ...request, retryWithForce: false },
+      { ...resolved, retryWithForce: false },
       reporter,
     );
   });

@@ -1,7 +1,7 @@
 // Lifecycle tests for `close`: "rendered progress rows" drive the real App
 // through Ink's input pipeline; the rest drive `createExecuteClose` directly
 // since a rendered frame can't observe a transition React coalesces.
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -193,8 +193,12 @@ describe("TUI close lifecycle", () => {
     let repoPath: string;
 
     beforeEach(() => {
-      homeDir = mkdtempSync(join(tmpdir(), "wct-app-close-home-"));
-      repoPath = mkdtempSync(join(tmpdir(), "wct-app-close-repo-"));
+      homeDir = realpathSync(
+        mkdtempSync(join(tmpdir(), "wct-app-close-home-")),
+      );
+      repoPath = realpathSync(
+        mkdtempSync(join(tmpdir(), "wct-app-close-repo-")),
+      );
       mkdirSync(join(homeDir, ".wct"), { recursive: true });
       vi.stubEnv("HOME", homeDir);
       worktreeFixtures.byRepoPath.set(repoPath, [

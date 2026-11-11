@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -6,12 +6,14 @@ import type {
   AgentObservation,
   AgentState,
 } from "../../src/services/agent-model";
+import type { AgentSnapshot } from "../../src/services/agent-service";
 import { RegistrationId } from "../../src/services/identities";
 import type { TmuxPaneInfo } from "../../src/services/tmux";
 import type { WorkspaceCloseResult } from "../../src/services/workspace-service";
-import { buildAgentList } from "../../src/tui/agent-view";
+import { buildAgentList as buildProjectedAgentList } from "../../src/tui/agent-view";
 import type { WorkspaceAgentSnapshot } from "../../src/tui/hooks/useAgents";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { projectFixtureSessions } from "../helpers/session-projections";
 import {
   lastWorkspaceCall,
   makeWorktree,
@@ -37,7 +39,10 @@ const fixtures = vi.hoisted((): { snapshot: WorkspaceAgentSnapshot } => ({
 }));
 
 vi.mock("../../src/tui/hooks/useAgents", () => ({
-  useAgents: () => fixtures.snapshot,
+  useAgents: (repos: readonly RepoInfo[]) => ({
+    ...fixtures.snapshot,
+    memberships: projectFixtureSessions(repos, fixtures.snapshot.memberships),
+  }),
   verifyAgentGeneration: vi.fn(
     async (_repos: unknown, paneId: string, generation: string) =>
       fixtures.snapshot.observations.get(paneId)?.generation === generation,
@@ -45,6 +50,21 @@ vi.mock("../../src/tui/hooks/useAgents", () => ({
 }));
 
 const { App } = await import("../../src/tui/App");
+
+function buildAgentList(
+  repos: readonly RepoInfo[],
+  snapshot: AgentSnapshot,
+  panes: ReadonlyMap<string, readonly TmuxPaneInfo[]>,
+) {
+  return buildProjectedAgentList(
+    repos,
+    {
+      ...snapshot,
+      memberships: projectFixtureSessions(repos, snapshot.memberships),
+    },
+    projectFixtureSessions(repos, panes),
+  );
+}
 
 function observation(
   pane: string,
@@ -102,7 +122,7 @@ describe("App agents view", () => {
   let root: string;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "wct-agents-view-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "wct-agents-view-")));
     mkdirSync(join(root, ".wct"));
     vi.stubEnv("HOME", root);
     resetHarnessFixtures();

@@ -3,12 +3,17 @@ import { describe, expect, test } from "vitest";
 import { commandDef, switchCommand } from "../src/commands/switch";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
+import type { WorkspaceSessionTarget } from "../src/services/session-identity";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import {
   liveWorktreeService,
   type WorktreeServiceImplementation as WorktreeService,
 } from "../src/services/worktree-service";
-import { noopTmuxService, withTestServices } from "./helpers/services";
+import {
+  legacySession,
+  noopTmuxService,
+  withTestServices,
+} from "./helpers/services";
 
 async function runCommand(
   branch: string,
@@ -35,6 +40,7 @@ describe("switchCommand", () => {
         runCommand("feature-auth", {
           worktree: {
             ...liveWorktreeService,
+            getMainRepoPath: () => Effect.succeed("/repos/main"),
             isGitRepo: () => Effect.succeed(true),
             findWorktreeByBranch: () =>
               Effect.succeed({
@@ -46,7 +52,8 @@ describe("switchCommand", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(true),
+            resolveSession: (target: WorkspaceSessionTarget) =>
+              Effect.succeed(legacySession(target)),
             switchSession: (name) =>
               Effect.sync(() => {
                 switchCalls.push(name);
@@ -54,7 +61,7 @@ describe("switchCommand", () => {
           },
         }),
       ).resolves.toBeUndefined();
-      expect(switchCalls).toEqual(["myapp-feature-auth"]);
+      expect(switchCalls).toEqual(["$1"]);
     } finally {
       if (origTmux === undefined) {
         delete process.env.TMUX;
@@ -73,6 +80,7 @@ describe("switchCommand", () => {
         runCommand("feature-auth", {
           worktree: {
             ...liveWorktreeService,
+            getMainRepoPath: () => Effect.succeed("/repos/main"),
             isGitRepo: () => Effect.succeed(true),
             findWorktreeByBranch: () =>
               Effect.succeed({
@@ -84,7 +92,8 @@ describe("switchCommand", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(true),
+            resolveSession: (target: WorkspaceSessionTarget) =>
+              Effect.succeed(legacySession(target)),
             attachSession: () =>
               Effect.fail(commandError("tmux_error", "attach failed")),
           },
@@ -118,7 +127,7 @@ describe("switch commandDef", () => {
   });
 });
 
-describe("switch session name derivation", () => {
+describe("switch readable session prefix", () => {
   test("derives session name from worktree directory basename", () => {
     const sessionName = formatSessionName("myapp-feature-auth");
     expect(sessionName).toBe("myapp-feature-auth");

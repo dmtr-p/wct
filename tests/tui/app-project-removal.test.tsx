@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -25,8 +25,10 @@ describe("TUI project removal", () => {
 
   beforeEach(() => {
     resetHarnessFixtures();
-    homeDir = mkdtempSync(join(tmpdir(), "wct-app-remove-home-"));
-    repoPath = mkdtempSync(join(tmpdir(), "wct-app-remove-repo-"));
+    homeDir = realpathSync(mkdtempSync(join(tmpdir(), "wct-app-remove-home-")));
+    repoPath = realpathSync(
+      mkdtempSync(join(tmpdir(), "wct-app-remove-repo-")),
+    );
     mkdirSync(join(homeDir, ".wct"), { recursive: true });
     vi.stubEnv("HOME", homeDir);
     worktreeFixtures.byRepoPath.set(repoPath, [makeWorktree(repoPath, "main")]);

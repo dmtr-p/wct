@@ -10,6 +10,7 @@ import {
 } from "vitest";
 import { closeCommand, commandDef } from "../src/commands/close";
 import { runBunPromise } from "../src/effect/runtime";
+import type { WorkspaceSessionTarget } from "../src/services/session-identity";
 import { formatSessionName, type TmuxService } from "../src/services/tmux";
 import type {
   WorkspaceCloseResult,
@@ -18,6 +19,7 @@ import type {
 import type { WorktreeServiceImplementation as WorktreeService } from "../src/services/worktree-service";
 import * as prompt from "../src/utils/prompt";
 import {
+  legacySession,
   noopTmuxService,
   shutdownWorktreeService,
   withTestServices,
@@ -89,7 +91,8 @@ function setupMocks(): CloseCommandSpies {
   const tmux = {
     ...noopTmuxService,
     getCurrentSession: Effect.succeed(null),
-    sessionExists: () => Effect.succeed(true),
+    resolveSession: (target: WorkspaceSessionTarget) =>
+      Effect.succeed(legacySession(target)),
     killSession: (name: string) =>
       Effect.sync(() => {
         tmuxCalls.push(name);
@@ -149,10 +152,7 @@ describe("closeCommand", () => {
       ),
     ).resolves.toBeUndefined();
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(2);
-    expect(mocks.tmuxCalls).toEqual([
-      formatSessionName("myapp-feature-a"),
-      formatSessionName("myapp-feature-b"),
-    ]);
+    expect(mocks.tmuxCalls).toEqual(["$1", "$1"]);
     expect(mocks.worktreeCalls).toEqual([
       "/tmp/myapp-feature-a",
       "/tmp/myapp-feature-b",
@@ -246,11 +246,7 @@ describe("closeCommand", () => {
       "Worktree has uncommitted changes. Force remove anyway?",
     );
     expect(forceRemoveCalled).toBe(true);
-    expect(mocks.tmuxCalls).toEqual([
-      "myapp-feature-a",
-      "myapp-feature-b",
-      "myapp-feature-c",
-    ]);
+    expect(mocks.tmuxCalls).toEqual(["$1", "$1", "$1"]);
     // feature-a, feature-b (blocked), feature-b (force), feature-c
     expect(mocks.worktreeCalls).toHaveLength(4);
   });
@@ -890,7 +886,7 @@ describe("closeCommand", () => {
         },
       ),
     ).resolves.toBeUndefined();
-    expect(mocks.tmuxCalls).toEqual(["myapp-feature-b", "myapp-feature-a"]);
+    expect(mocks.tmuxCalls).toEqual(["$1", "$1"]);
     expect(mocks.worktreeCalls).toEqual([
       "/tmp/myapp-feature-b",
       "/tmp/myapp-feature-a",

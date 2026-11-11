@@ -3,6 +3,7 @@ import {
   RegistrationId,
   type WorkspaceIdentityKey,
 } from "../../src/services/identities";
+import { workspaceSessionName } from "../../src/services/session-identity";
 import { ADD_PROJECT_BUTTON_LABEL } from "../../src/tui/header";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import {
@@ -618,10 +619,13 @@ describe("resolveMouseAction", () => {
 
   test("a click on an inert pane-header row resolves to none, but a pane row selects (keyboard parity)", () => {
     const key = workspaceIdentityKey("/tmp/repo-1", "feature/a");
-    // feature/a's session name is formatSessionName(basename("/tmp/a")) = "a".
     const panes = new Map<string, PaneInfo[]>([
       [
-        "a",
+        workspaceSessionName({
+          mainRepoPath: "/tmp/repo-1",
+          worktreePath: "/tmp/a",
+          branch: "feature/a",
+        }),
         [
           {
             paneId: "%1",
@@ -830,7 +834,11 @@ describe("resolveHoverItemIndex", () => {
     const key = workspaceIdentityKey("/tmp/repo-1", "feature/a");
     const panes = new Map<string, PaneInfo[]>([
       [
-        "a",
+        workspaceSessionName({
+          mainRepoPath: "/tmp/repo-1",
+          worktreePath: "/tmp/a",
+          branch: "feature/a",
+        }),
         [
           {
             paneId: "%1",

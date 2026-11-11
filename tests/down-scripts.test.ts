@@ -19,12 +19,14 @@ import type { WctConfig } from "../src/config/schema";
 import { validateConfig } from "../src/config/validator";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
+import type { WorkspaceSessionTarget } from "../src/services/session-identity";
 import {
   type WorkspaceCloseResult,
   type WorkspaceReporterEvent,
   WorkspaceService,
 } from "../src/services/workspace-service";
 import {
+  legacySession,
   noopTmuxService,
   shutdownWorktreeService,
   withTestServices,
@@ -112,7 +114,8 @@ describe("down scripts", () => {
       },
       tmux: {
         ...noopTmuxService,
-        sessionExists: () => Effect.succeed(sessionExists),
+        resolveSession: (target: WorkspaceSessionTarget) =>
+          Effect.succeed(sessionExists ? legacySession(target) : null),
         killSession: () =>
           record("kill").pipe(
             Effect.tap(() =>
@@ -330,6 +333,29 @@ describe("down scripts", () => {
     expect(await trace()).toEqual([]);
   });
 
+  test.each(["down", "close"] as const)(
+    "%s ownership conflict prevents scripts and removal",
+    async (kind) => {
+      await config({ down: [script("cleanup")] });
+      const services = overrides();
+      await expect(
+        runBunPromise(
+          withTestServices(operation(kind), {
+            ...services,
+            tmux: {
+              ...services.tmux,
+              resolveSession: () =>
+                Effect.fail(
+                  commandError("tmux_error", "Workspace ownership conflict"),
+                ),
+            },
+          }),
+        ),
+      ).rejects.toThrow("ownership conflict");
+      expect(await trace()).toEqual([]);
+    },
+  );
+
   test("invalid configuration and unknown profiles fail before tmux shutdown", async () => {
     await Bun.write(
       join(main, ".wct.yaml"),
@@ -476,8 +502,7 @@ describe("down scripts", () => {
             isBare: false,
           },
         ]);
-      services.worktree.getMainRepoPath = () =>
-        Effect.die("must not resolve missing worktree config");
+      await Bun.write(join(main, ".wct.yaml"), "version: [invalid");
       const result = await runBunPromise(
         withTestServices(operation("close", { profile }), services),
       );

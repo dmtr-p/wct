@@ -15,6 +15,7 @@ import {
   type PrCacheServiceApi,
 } from "../src/services/pr-cache-service";
 import { execProcess } from "../src/services/process";
+import type { WorkspaceSessionTarget } from "../src/services/session-identity";
 import {
   liveSetupService,
   type SetupResult,
@@ -35,6 +36,7 @@ import {
   type WorktreeServiceImplementation as WorktreeService,
 } from "../src/services/worktree-service";
 import {
+  legacySession,
   noopTmuxService,
   shutdownWorktreeService,
   withTestServices,
@@ -95,7 +97,7 @@ describe("WorkspaceService target resolution", () => {
 
     const tmux: TmuxService = {
       ...noopTmuxService,
-      sessionExists: () => Effect.succeed(false),
+      resolveSession: () => Effect.succeed(null),
     };
 
     const current = await runBunPromise(
@@ -1017,7 +1019,8 @@ describe("WorkspaceService down", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(true),
+            resolveSession: (target: WorkspaceSessionTarget) =>
+              Effect.succeed(legacySession(target)),
             killSession: (name) =>
               Effect.sync(() => {
                 killCalls.push(name);
@@ -1043,7 +1046,7 @@ describe("WorkspaceService down", () => {
       },
       warnings: [],
     });
-    expect(killCalls).toEqual(["myapp-feature"]);
+    expect(killCalls).toEqual(["$1"]);
   });
 
   test("treats an absent session as informational success", async () => {
@@ -1059,7 +1062,7 @@ describe("WorkspaceService down", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
             killSession: (name) =>
               Effect.sync(() => {
                 killCalls.push(name);
@@ -1100,7 +1103,8 @@ describe("WorkspaceService down", () => {
   test("treats tmux kill failure as fatal", async () => {
     const tmux: TmuxService = {
       ...noopTmuxService,
-      sessionExists: () => Effect.succeed(true),
+      resolveSession: (target: WorkspaceSessionTarget) =>
+        Effect.succeed(legacySession(target)),
       killSession: () => Effect.fail(commandError("tmux_error", "kill boom")),
     };
 
@@ -1150,7 +1154,7 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
             killSession: () => Effect.die("kill should not be called"),
           },
         },
@@ -1160,7 +1164,7 @@ describe("WorkspaceService close", () => {
     expect(result).toEqual({
       operation: "close",
       worktreePath: "/tmp/myapp-feature",
-      sessionName: "myapp-feature",
+      sessionName: expect.stringMatching(/^myapp-feature-[0-9a-f]{10}$/),
       existed: false,
       status: "removed",
       attempts: {
@@ -1206,7 +1210,8 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(true),
+            resolveSession: (target: WorkspaceSessionTarget) =>
+              Effect.succeed(legacySession(target)),
             killSession: (name) =>
               Effect.sync(() => {
                 calls.push(`kill:${name}`);
@@ -1218,7 +1223,7 @@ describe("WorkspaceService close", () => {
 
     expect(result.status).toBe("removed");
     expect(result.sessionName).toBe("myapp-feature");
-    expect(calls).toEqual(["kill:myapp-feature", "remove:/tmp/myapp-feature"]);
+    expect(calls).toEqual(["kill:$1", "remove:/tmp/myapp-feature"]);
   });
 
   test("resolves a relative branch path before closing a missing worktree", async () => {
@@ -1259,7 +1264,7 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
           },
         },
       ),
@@ -1291,14 +1296,14 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
           },
         },
       ),
     );
 
     expect(result.worktreePath).toBe("/tmp/myapp-explicit");
-    expect(result.sessionName).toBe("myapp-explicit");
+    expect(result.sessionName).toMatch(/^myapp-explicit-[0-9a-f]{10}$/);
     expect(result.attempts.remove).toEqual({
       attempted: true,
       ok: true,
@@ -1326,7 +1331,8 @@ describe("WorkspaceService close", () => {
             },
             tmux: {
               ...noopTmuxService,
-              sessionExists: () => Effect.succeed(true),
+              resolveSession: (target: WorkspaceSessionTarget) =>
+                Effect.succeed(legacySession(target)),
               killSession: () =>
                 Effect.fail(commandError("tmux_error", "kill boom")),
             },
@@ -1350,7 +1356,7 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
           },
         },
       ),
@@ -1383,7 +1389,7 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
           },
         },
       ),
@@ -1420,7 +1426,7 @@ describe("WorkspaceService close", () => {
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
           },
         },
       ),
@@ -1470,7 +1476,7 @@ describe("WorkspaceService reporter", () => {
             },
             tmux: {
               ...noopTmuxService,
-              sessionExists: () => Effect.succeed(false),
+              resolveSession: () => Effect.succeed(null),
             },
           },
         ),
@@ -1491,7 +1497,7 @@ describe("WorkspaceService reporter", () => {
       {
         operation: "down",
         _tag: "SessionAbsent",
-        sessionName: "myapp-feature",
+        sessionName: expect.stringMatching(/^myapp-feature-[0-9a-f]{10}$/),
       },
     ]);
     expect(JSON.parse(JSON.stringify(events))).toEqual(events);
@@ -1517,7 +1523,7 @@ describe("WorkspaceService reporter", () => {
             },
             tmux: {
               ...noopTmuxService,
-              sessionExists: () => Effect.succeed(false),
+              resolveSession: () => Effect.succeed(null),
             },
           },
         ),
@@ -1742,7 +1748,7 @@ project_name: "myapp"
           expect(result.warnings).toEqual([]);
         } else {
           expect(createSession).toHaveBeenCalledExactlyOnceWith(
-            "myapp-feature",
+            expect.stringMatching(/^myapp-feature-[0-9a-f]{10}$/),
             join(worktreePath, "app"),
             { windows: [{ name: "dev" }] },
             result.env,
@@ -1771,7 +1777,12 @@ project_name: "myapp"
             expect(result.attempts.tmux).toEqual({
               attempted: true,
               ok: true,
-              value: { _tag: outcome, sessionName: "myapp-feature" },
+              value: {
+                _tag: outcome,
+                sessionName: expect.stringMatching(
+                  /^myapp-feature-[0-9a-f]{10}$/,
+                ),
+              },
             });
             expect(result.warnings).toEqual([]);
           }
@@ -2104,7 +2115,8 @@ project_name: "myapp"
         worktree,
         tmux: {
           ...noopTmuxService,
-          sessionExists: () => Effect.succeed(sessionExists),
+          resolveSession: (target: WorkspaceSessionTarget) =>
+            Effect.succeed(sessionExists ? legacySession(target) : null),
           killSession: () =>
             Effect.sync(() => {
               trace.push("call:killSession");
@@ -2178,7 +2190,7 @@ project_name: "myapp"
           },
           tmux: {
             ...noopTmuxService,
-            sessionExists: () => Effect.succeed(false),
+            resolveSession: () => Effect.succeed(null),
           },
         },
       ),

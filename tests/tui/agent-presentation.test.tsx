@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { classifyAgent, reconcileAgent } from "../../src/services/agent-model";
 import { RegistrationId } from "../../src/services/identities";
+import { workspaceSessionName } from "../../src/services/session-identity";
 import { DetailRow } from "../../src/tui/components/DetailRow";
 import { WorktreeItem } from "../../src/tui/components/WorktreeItem";
 import {
@@ -48,7 +49,16 @@ describe("agent presentation", () => {
     };
     const summaries = workspaceAgentSummaries([repo, other], {
       observations: new Map([["%1", agent]]),
-      memberships: new Map([["workspace", new Set(["%1"])]]),
+      memberships: new Map([
+        [
+          workspaceSessionName({
+            mainRepoPath: "/repo",
+            worktreePath: "/work/workspace",
+            branch: "feature",
+          }),
+          new Set(["%1"]),
+        ],
+      ]),
     });
     expect(summaries.get(workspaceIdentityKey("/repo", "feature"))).toBe(
       "1 working",
@@ -66,7 +76,11 @@ describe("agent presentation", () => {
       agents: new Map([["%1", agent]]),
       panes: new Map([
         [
-          "workspace",
+          workspaceSessionName({
+            mainRepoPath: "/repo",
+            worktreePath: "/work/workspace",
+            branch: "feature",
+          }),
           [
             {
               paneId: "%1",
@@ -136,7 +150,16 @@ describe("agent presentation", () => {
   test("timestamps do not rerender, freshness/membership changes do", () => {
     const snapshot = {
       observations: new Map([["%1", agent]]),
-      memberships: new Map([["workspace", new Set(["%1"])]]),
+      memberships: new Map([
+        [
+          workspaceSessionName({
+            mainRepoPath: "/repo",
+            worktreePath: "/work/workspace",
+            branch: "feature",
+          }),
+          new Set(["%1"]),
+        ],
+      ]),
     };
     expect(
       sameAgentSnapshot(snapshot, {

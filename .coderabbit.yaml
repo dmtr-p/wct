@@ -4,6 +4,7 @@ reviews:
   enable_prompt_for_ai_agents: false
   in_progress_fortune: false
   changed_files_summary: false
+  high_level_summary: false
   suggested_labels: false
   suggested_reviewers: false
   related_prs: false
@@ -22,4 +23,8 @@ reviews:
     unit_tests:
       enabled: false
     autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
       enabled: false

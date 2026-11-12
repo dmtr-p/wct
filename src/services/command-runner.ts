@@ -1,6 +1,7 @@
 import type { BunServices } from "@effect/platform-bun";
 import { Effect } from "effect";
 import type { SetupCommand } from "../config/schema";
+import { WctCommandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import {
   execShell,
@@ -27,7 +28,7 @@ export function runShellCommands(
   workingDir: string,
   env: WctEnv,
   reporter?: CommandReporter,
-): Effect.Effect<CommandResult[], never, BunServices.BunServices> {
+): Effect.Effect<CommandResult[], WctError, BunServices.BunServices> {
   return Effect.gen(function* () {
     const results: CommandResult[] = [];
     const fullEnv = { ...(yield* processEnvironment), ...env };
@@ -40,22 +41,27 @@ export function runShellCommands(
           commands.length,
         );
       }
-      const result = yield* Effect.match(
+      const result = yield* Effect.matchEffect(
         execShell(command.command, {
           cwd: workingDir,
           env: fullEnv,
           extendEnv: false,
         }),
         {
-          onSuccess: (): CommandResult => ({
-            name: command.name,
-            _tag: "Succeeded",
-          }),
-          onFailure: (error): CommandResult => ({
-            name: command.name,
-            _tag: command.optional ? "OptionalFailed" : "Failed",
-            error: getProcessErrorMessage(error),
-          }),
+          onSuccess: () =>
+            Effect.succeed<CommandResult>({
+              name: command.name,
+              _tag: "Succeeded",
+            }),
+          onFailure: (error) =>
+            error instanceof WctCommandError &&
+            error.code === "workspace_coordination_error"
+              ? Effect.fail(error)
+              : Effect.succeed<CommandResult>({
+                  name: command.name,
+                  _tag: command.optional ? "OptionalFailed" : "Failed",
+                  error: getProcessErrorMessage(error),
+                }),
         },
       );
       results.push(result);

@@ -1,7 +1,8 @@
 import { Context, Data, Effect, Semaphore } from "effect";
 import { ChildProcess } from "effect/process";
-import { commandError } from "../errors";
+import { commandError, WctCommandError } from "../errors";
 import { decodeText } from "./process-output";
+import { CurrentWorkspaceLease } from "./workspace-coordination";
 
 export const ObservationProcessBudget = Context.Reference<
   Semaphore.Semaphore | undefined
@@ -56,7 +57,7 @@ function formatCommand(command: string, args: ReadonlyArray<string>): string {
 function makeCommand(
   command: string,
   args: ReadonlyArray<string>,
-  options?: ProcessOptions,
+  options?: ProcessOptions & { detached?: boolean },
 ) {
   const { maxOutputBytes: _limit, ...commandOptions } = options ?? {};
   return ChildProcess.make(command, [...args], {
@@ -72,12 +73,19 @@ function collectOutput(
 ) {
   const collected = Effect.scoped(
     Effect.gen(function* () {
+      const ownership = yield* CurrentWorkspaceLease;
       const handle = yield* makeCommand(command, args, {
         ...options,
+        // Effect's default detached group cleanup kills intentional background
+        // workloads even after a successful shell exit. Under custody, an
+        // interrupted command retains a durable fence instead of claiming that
+        // process-group cleanup proves descendant quiescence.
+        ...(ownership ? { detached: false } : {}),
         stdin: options?.stdin ?? "pipe",
         stdout: options?.stdout ?? "pipe",
         stderr: options?.stderr ?? "pipe",
       });
+      if (ownership) yield* ownership.childStarted(Number(handle.pid));
 
       const limit =
         options?.maxOutputBytes === undefined
@@ -102,9 +110,14 @@ function collectOutput(
       };
     }),
   );
-  return Effect.flatMap(ObservationProcessBudget, (budget) =>
-    budget ? budget.withPermits(1)(collected) : collected,
-  );
+  return Effect.flatMap(CurrentWorkspaceLease, (ownership) => {
+    const guarded = ownership
+      ? ownership.command(command, collected)
+      : collected;
+    return Effect.flatMap(ObservationProcessBudget, (budget) =>
+      budget ? budget.withPermits(1)(guarded) : guarded,
+    );
+  });
 }
 
 export function execProcess(
@@ -124,7 +137,9 @@ export function execProcess(
         }),
     ),
     (error) =>
-      error instanceof ProcessExitError
+      error instanceof ProcessExitError ||
+      (error instanceof WctCommandError &&
+        error.code === "workspace_coordination_error")
         ? error
         : new ProcessExitError({
             command,
@@ -147,7 +162,8 @@ export function runProcess(
       ...output,
       success: true as const,
     })),
-    (error): error is ProcessExitError => error instanceof ProcessExitError,
+    (error: ProcessExitError | WctCommandError): error is ProcessExitError =>
+      error instanceof ProcessExitError,
     (error: ProcessExitError) =>
       Effect.succeed({
         stdout: error.stdout,

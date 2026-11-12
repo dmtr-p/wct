@@ -16,11 +16,34 @@ import {
   resetHarnessFixtures,
   selectedLine,
   sendKeys,
-  tick,
   tmuxFixtures,
   triggerRefresh,
   worktreeFixtures,
 } from "./app-harness";
+
+async function waitForFrame(
+  app: Awaited<ReturnType<typeof renderApp>>,
+  assertion: (lines: string[]) => void,
+): Promise<void> {
+  await vi.waitFor(async () => {
+    await app.instance.waitUntilRenderFlush();
+    assertion(app.lines());
+  });
+}
+
+async function waitForText(
+  app: Awaited<ReturnType<typeof renderApp>>,
+  text: string,
+): Promise<void> {
+  await waitForFrame(app, (lines) => expect(lines.join("\n")).toContain(text));
+}
+
+async function waitForWorkspaceCall(
+  operation: Parameters<typeof lastWorkspaceCall>[0],
+) {
+  await vi.waitFor(() => expect(lastWorkspaceCall(operation)).toBeDefined());
+  return lastWorkspaceCall(operation);
+}
 
 describe("TUI open lifecycle", () => {
   let homeDir: string;
@@ -53,10 +76,10 @@ describe("TUI open lifecycle", () => {
     const dispose = vi.fn(async () => {});
     const lifetime = createTuiLifetime(dispose);
     const app = await renderApp(<App lifetime={lifetime} />);
-    await tick(6);
+    await waitForText(app, "main");
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
-    const call = lastWorkspaceCall("open");
+    await waitForText(app, "Preparing Workspace…");
+    const call = await waitForWorkspaceCall("open");
     app.unmount();
     expect(lifetime.closing).toBe(true);
     const done = lifetime.finalize();
@@ -160,8 +183,7 @@ describe("TUI open lifecycle", () => {
         await sendKeys(view.stdin, "c");
         await sendKeys(view.stdin, "\r");
       }
-      await tick(6);
-      const call = lastWorkspaceCall(operation);
+      const call = await waitForWorkspaceCall(operation);
       if (phase === "dialog") {
         call.resolve({ status: "blocked_by_changes", warnings: [] });
         await vi.waitFor(() =>
@@ -206,7 +228,7 @@ describe("TUI open lifecycle", () => {
     expect(app.lines().join("\n")).not.toContain("feature/new");
 
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
+    await waitForText(app, "Preparing Workspace…");
 
     const frame = app.lines();
     const text = frame.join("\n");
@@ -225,11 +247,11 @@ describe("TUI open lifecycle", () => {
     expect(mainRow).toBeLessThan(pendingRow);
     expect(progressRow).toBe(pendingRow + 1);
 
-    const call = lastWorkspaceCall("open");
+    const call = await waitForWorkspaceCall("open");
     expect(call.options.branch).toBe("feature/new");
     expect(call.options.cwd).toBe(repoPath);
     emitWorkspacePhase(call, { _tag: "CreatingWorktree" });
-    await tick(3);
+    await waitForText(app, "Creating worktree…");
     expect(app.lines().join("\n")).toContain("Creating worktree…");
     expect(app.lines().join("\n")).not.toContain("Preparing Workspace…");
 
@@ -248,9 +270,9 @@ describe("TUI open lifecycle", () => {
 
     // Fails before git creates anything, so validation's refresh finds the
     // repository exactly as it was.
-    const call = lastWorkspaceCall("open");
+    const call = await waitForWorkspaceCall("open");
     call.reject(new Error("worktree add failed"));
-    await tick(12);
+    await waitForText(app, "worktree add failed");
 
     const text = app.lines().join("\n");
     expect(text).not.toContain("feature/new");
@@ -265,14 +287,14 @@ describe("TUI open lifecycle", () => {
   test("replaces the Pending Workspace with the discovered Workspace when a later phase failed", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
+    await waitForText(app, "main");
 
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
+    await waitForText(app, "Preparing Workspace…");
 
-    const call = lastWorkspaceCall("open");
+    const call = await waitForWorkspaceCall("open");
     emitWorkspacePhase(call, { _tag: "CreatingWorktree" });
-    await tick(3);
+    await waitForText(app, "Creating worktree…");
     expect(app.lines().join("\n")).toContain("Creating worktree…");
 
     // The worktree was created; a later phase then failed fatally.
@@ -281,7 +303,7 @@ describe("TUI open lifecycle", () => {
       makeWorktree(repoPath, "feature/new"),
     ]);
     call.reject(new Error("setup command failed"));
-    await tick(12);
+    await waitForText(app, "setup command failed");
 
     const text = app.lines().join("\n");
     expect(text).toContain("feature/new");
@@ -312,7 +334,7 @@ describe("TUI open lifecycle", () => {
     ]);
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
+    await waitForText(app, "main");
 
     // `main` is collapsed, so expansion isn't simply on for every row.
     expect(app.lines().find((line) => line.includes("main"))).not.toContain(
@@ -320,10 +342,10 @@ describe("TUI open lifecycle", () => {
     );
 
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
+    await waitForText(app, "Preparing Workspace…");
     expect(app.lines().join("\n")).toContain("Preparing Workspace…");
 
-    const call = lastWorkspaceCall("open");
+    const call = await waitForWorkspaceCall("open");
     worktreeFixtures.byRepoPath.set(repoPath, [
       makeWorktree(repoPath, "main"),
       makeWorktree(repoPath, "feature/new"),
@@ -345,7 +367,11 @@ describe("TUI open lifecycle", () => {
         tmux: { attempted: false, reason: "not_configured" },
       },
     });
-    await tick(14);
+    await waitForFrame(app, (lines) => {
+      expect(lines.find((line) => line.includes("feature/new"))).toContain("▼");
+      expect(lines.join("\n")).not.toContain("Preparing Workspace…");
+      expect(lines.join("\n")).not.toContain("Validating Workspace…");
+    });
 
     const frame = app.lines();
     const text = frame.join("\n");
@@ -377,7 +403,7 @@ describe("TUI open lifecycle", () => {
 
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
+    await waitForText(app, "main");
 
     let frameAtSwitch = "";
     tmuxFixtures.onSwitch = () => {
@@ -385,10 +411,10 @@ describe("TUI open lifecycle", () => {
     };
 
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
+    await waitForText(app, "Preparing Workspace…");
     expect(app.lines().join("\n")).toContain("Preparing Workspace…");
 
-    const call = lastWorkspaceCall("open");
+    const call = await waitForWorkspaceCall("open");
     worktreeFixtures.byRepoPath.set(repoPath, [
       makeWorktree(repoPath, "main"),
       makeWorktree(repoPath, "feature/new"),
@@ -422,11 +448,11 @@ describe("TUI open lifecycle", () => {
         },
       },
     });
-    await tick(16);
-
-    expect(tmuxFixtures.switchCalls).toEqual([
-      { clientTty: "/dev/pts/1", target: "$2" },
-    ]);
+    await vi.waitFor(() =>
+      expect(tmuxFixtures.switchCalls).toEqual([
+        { clientTty: "/dev/pts/1", target: "$2" },
+      ]),
+    );
     expect(frameAtSwitch).toContain("feature/new");
     expect(frameAtSwitch).not.toContain("Preparing Workspace…");
     expect(frameAtSwitch).not.toContain("Validating Workspace…");
@@ -459,8 +485,7 @@ describe("TUI open lifecycle", () => {
         maxFps: 1,
       });
       try {
-        await tick(6);
-        await app.instance.waitUntilRenderFlush();
+        await waitForText(app, "main");
         const framesAtSwitch: string[] = [];
         tmuxFixtures.onSwitch = () => {
           framesAtSwitch.push(app.lines().join("\n"));
@@ -471,17 +496,19 @@ describe("TUI open lifecycle", () => {
         await app.instance.waitUntilRenderFlush();
         expect(selectedLine(app.lines())).toContain("main");
         await sendKeys(app.stdin, " ");
-        await tick(6);
-        const start = lastWorkspaceCall("up");
+        const start = await waitForWorkspaceCall("up");
         expect(start.options.path).toBe(join(repoPath, "main"));
 
         await sendKeys(app.stdin, "\x1b[B");
         await app.instance.waitUntilRenderFlush();
         expect(selectedLine(app.lines())).toContain("beta");
         await openBranchFromModal(app.stdin, "main");
-        await tick(6);
-        await app.instance.waitUntilRenderFlush();
-        const open = lastWorkspaceCall("open");
+        await waitForFrame(app, (lines) =>
+          expect(
+            lines.filter((line) => line.includes("Preparing Workspace…")),
+          ).toHaveLength(2),
+        );
+        const open = await waitForWorkspaceCall("open");
         expect(open.options.cwd).toBe(otherRepoPath);
         expect(
           app.lines().filter((line) => line.includes("Preparing Workspace…")),
@@ -515,10 +542,11 @@ describe("TUI open lifecycle", () => {
             },
           },
         });
-        await tick(16);
-        expect(tmuxFixtures.switchCalls).toEqual([
-          { clientTty: "/dev/pts/1", target: "$2" },
-        ]);
+        await vi.waitFor(() =>
+          expect(tmuxFixtures.switchCalls).toEqual([
+            { clientTty: "/dev/pts/1", target: "$2" },
+          ]),
+        );
         expect(
           framesAtSwitch[0]
             ?.split("\n")
@@ -526,8 +554,7 @@ describe("TUI open lifecycle", () => {
         ).toHaveLength(1);
         expect(framesAtSwitch[0]).not.toContain("Validating Workspace…");
         await app.instance.waitUntilRenderFlush();
-        if (switchFails)
-          expect(app.lines().join("\n")).toContain("failed to switch client");
+        if (switchFails) await waitForText(app, "failed to switch client");
 
         const openTarget = {
           mainRepoPath: otherRepoPath,
@@ -561,11 +588,12 @@ describe("TUI open lifecycle", () => {
             },
           },
         });
-        await tick(16);
-        expect(tmuxFixtures.switchCalls.at(-1)).toEqual({
-          clientTty: "/dev/pts/1",
-          target: "$3",
-        });
+        await vi.waitFor(() =>
+          expect(tmuxFixtures.switchCalls.at(-1)).toEqual({
+            clientTty: "/dev/pts/1",
+            target: "$3",
+          }),
+        );
         expect(framesAtSwitch).toHaveLength(2);
         expect(framesAtSwitch[1]).not.toContain("Preparing Workspace…");
         expect(framesAtSwitch[1]).not.toContain("Validating Workspace…");
@@ -573,7 +601,8 @@ describe("TUI open lifecycle", () => {
         expect(app.lines().join("\n")).not.toContain("Preparing Workspace…");
         expect(app.lines().join("\n")).not.toContain("Validating Workspace…");
         if (switchFails)
-          expect(app.lines().join("\n")).toContain(
+          await waitForText(
+            app,
             "Opened session 'beta-main', but failed to switch client",
           );
       } finally {

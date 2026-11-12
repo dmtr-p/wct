@@ -95,8 +95,9 @@ binding at a time; importing TUI runtime helpers does not acquire resources.
 
 Eligible `q` and Ctrl+C request the same coordinated quit. Input stops accepting
 new actions and the TUI displays a waiting message while active Open, Start,
-Stop, Close, Project Removal, Add Project, PR merge submissions, and direct tmux
-actions (pane kill, jump, zoom, and existing-session switch) drain. The drain includes validation and
+Stop, Close, Project Removal, Add Project, PR merge submissions, PR association
+writes, and direct tmux actions (pane kill, jump, zoom, and existing-session
+switch) drain. The drain includes validation and
 follow-up handoff. Repeated quit requests cannot force exit. There is no timeout
 or cancellation of mutations; a blocked script can therefore delay quit.
 Required down-script failures still keep the worktree, and self-session shutdown
@@ -114,6 +115,8 @@ unmount happens during client discovery or session ownership resolution. Skipped
 switches do not produce failure messages or start refreshes. Operation errors
 retain validation behavior; errors received while draining or after unmount are
 saved and printed to stderr after terminal restoration and runtime finalization.
+Association writes retain invocation ownership after observation unmount; their
+shutdown outcomes are reported even after the PR menu closes.
 Failure does not prevent draining. Close blocked by uncommitted changes during
 quit reports the retained worktree and asks for an explicit retry; it does not
 open an inaccessible force confirmation or authorize removal.

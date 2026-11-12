@@ -127,6 +127,22 @@ export function useGitHub(repos: RepoInfo[]) {
     [],
   );
 
+  // Association writes belong to the invocation drain. Observation teardown
+  // must not abort a write already accepted by its session.
+  const runMutationWithSession = useCallback(
+    async <E>(action: (value: PrRefreshSession) => Effect.Effect<void, E>) => {
+      const owned = session.current;
+      if (!owned) throw new Error("PR association session unavailable");
+      await tuiRuntime.runPromise(
+        Effect.gen(function* () {
+          const value = yield* Deferred.await(owned.ready);
+          yield* action(value);
+        }),
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     const cached = hydrate(repos, hydrated.current);
     if (
@@ -223,13 +239,13 @@ export function useGitHub(repos: RepoInfo[]) {
   );
   const setExplicit = useCallback(
     (path: string, branch: string, pr: PrFacts) =>
-      runWithSession((value) => value.setExplicit(path, branch, pr)),
-    [runWithSession],
+      runMutationWithSession((value) => value.setExplicit(path, branch, pr)),
+    [runMutationWithSession],
   );
   const clearExplicit = useCallback(
     (path: string, branch: string) =>
-      runWithSession((value) => value.clearExplicit(path, branch)),
-    [runWithSession],
+      runMutationWithSession((value) => value.clearExplicit(path, branch)),
+    [runMutationWithSession],
   );
   const prData = useMemo(() => {
     const data = new Map<WorkspaceIdentityKey, PrFacts>();

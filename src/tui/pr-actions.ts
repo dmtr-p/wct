@@ -325,6 +325,21 @@ export function createPrActionsController(deps: PrActionsDependencies) {
     }
   };
 
+  const writeAssociation = (write: () => Promise<void>, outcome: string) => {
+    if (deps.lifetime?.closing) return;
+    const run = async () => {
+      try {
+        await write();
+        if (deps.lifetime?.closing) deps.lifetime.report(outcome);
+      } catch (error) {
+        const message = String(error);
+        if (deps.lifetime?.closing) deps.lifetime.report(message);
+        else deps.showActionError(message);
+      }
+    };
+    void (deps.lifetime ? deps.lifetime.track(run) : run());
+  };
+
   return {
     getSnapshot: () => state,
     subscribe: (listener: () => void) => {
@@ -348,6 +363,7 @@ export function createPrActionsController(deps: PrActionsDependencies) {
       if (target.kind === "pr") void loadSnapshot(target, token);
     },
     choose: (id: string) => {
+      if (deps.lifetime?.closing) return;
       const menu = state.menu;
       if (!menu || menu.screen === "submitting") return;
       if (id === "cancel") {
@@ -422,9 +438,10 @@ export function createPrActionsController(deps: PrActionsDependencies) {
         void deps.refresh(target.repoPath);
         close();
       } else if (id === "clear") {
-        void deps
-          .clearExplicit(target.repoPath, target.branch)
-          .catch((error) => deps.showActionError(String(error)));
+        writeAssociation(
+          () => deps.clearExplicit(target.repoPath, target.branch),
+          `Cleared PR association for '${target.branch}'`,
+        );
         close();
       } else {
         const selected =
@@ -432,9 +449,10 @@ export function createPrActionsController(deps: PrActionsDependencies) {
             ? target.pr
             : target.candidates.find((pr) => `use:${pr.number}` === id);
         if (selected) {
-          void deps
-            .setExplicit(target.repoPath, target.branch, selected)
-            .catch((error) => deps.showActionError(String(error)));
+          writeAssociation(
+            () => deps.setExplicit(target.repoPath, target.branch, selected),
+            `Associated PR #${selected.number} with '${target.branch}'`,
+          );
           close();
         }
       }

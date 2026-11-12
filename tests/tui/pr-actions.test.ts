@@ -402,6 +402,51 @@ describe("PR actions controller", () => {
     expect(h.menu()).toBeNull();
   });
 
+  test.each([
+    { action: "set", success: true },
+    { action: "set", success: false },
+    { action: "clear", success: true },
+    { action: "clear", success: false },
+  ])(
+    "quit drains $action association write (success=$success) and reports after teardown",
+    async ({ action, success }) => {
+      const pending = deferred<void>();
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const write = vi.fn(() => pending.promise);
+      const h = harness({ lifetime, setExplicit: write, clearExplicit: write });
+      const candidate: PrActionTarget = {
+        ...target(),
+        kind: "candidate",
+        pr: snapshot().pr,
+        explicit: true,
+      };
+      h.controller.open(candidate);
+      h.controller.choose(action === "set" ? "use" : "clear");
+      expect(h.menu()).toBeNull();
+      expect(write).toHaveBeenCalledOnce();
+      const done = lifetime.finalize();
+      expect(lifetime.quit()).toBe(lifetime.quit());
+      h.controller.invalidate();
+      h.controller.open(candidate);
+      h.controller.choose(action === "set" ? "use" : "clear");
+      expect(write).toHaveBeenCalledOnce();
+      expect(dispose).not.toHaveBeenCalled();
+      if (success) pending.resolve();
+      else pending.reject(new Error("association failed"));
+      await done;
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(lifetime.messages).toEqual([
+        !success
+          ? "Error: association failed"
+          : action === "set"
+            ? "Associated PR #7 with 'feature'"
+            : "Cleared PR association for 'feature'",
+      ]);
+      expect(h.deps.showActionError).not.toHaveBeenCalled();
+    },
+  );
+
   test.each(["set", "clear"])(
     "reports %s association errors after closing",
     async (action) => {

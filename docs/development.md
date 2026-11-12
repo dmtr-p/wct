@@ -11,6 +11,11 @@ Lifecycle scripts are disabled in [bunfig.toml](../bunfig.toml). Run
 compiler, Oxlint, and oxlint-tsgolint with `@effect/tsgo`. Worktree setup and CI
 include this step.
 
+Prepare also builds the browser assets. `bun start` refreshes them before
+running the source CLI; `bun run build` and `bun run build:all` embed them in
+native and release binaries respectively. See [browser assets](browser-assets.md)
+for build inputs, licenses, and the runtime loading boundary.
+
 Before changing TypeScript, Oxlint, oxlint-tsgolint, or `@effect/tsgo`, check the
 installed `@effect/tsgo` package's `README.md` for compatible versions.
 The [Effect conventions](../EFFECT_V4.md#dependencies-and-imports) define version

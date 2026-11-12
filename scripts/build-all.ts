@@ -71,6 +71,13 @@ export const buildAll = Effect.gen(function* () {
   yield* Console.log("Building wct for all platforms...\n");
   yield* fs.makeDirectory(distDir, { recursive: true });
 
+  yield* execProcess(process.execPath, ["run", "scripts/build-browser.ts"], {
+    cwd: projectDir,
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
   const checksums = yield* Effect.forEach(platforms, (platform) =>
     buildPlatform(platform, projectDir, distDir),
   );

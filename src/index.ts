@@ -25,6 +25,9 @@ import { commandError, toWctError } from "./errors";
 import { SHUTDOWN_WORKER_FLAG } from "./services/shutdown-runner";
 import { jsonError } from "./utils/json-output";
 
+// Keep the browser bundle reachable by the compiler without loading it at startup.
+export { loadBrowserAssets } from "./browser/load-assets";
+
 const { version: VERSION } = require("../package.json");
 installCliOutputHandlers();
 const args = process.argv.slice(2);

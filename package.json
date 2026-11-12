@@ -9,16 +9,17 @@
     "wct": "src/index.ts"
   },
   "scripts": {
-    "start": "bun run src/index.ts",
+    "start": "bun run build:browser && bun run src/index.ts",
     "test": "bun --bun node_modules/.bin/vitest run",
     "lint": "bun run --bun oxlint --deny-warnings .",
     "lint:fix": "bun run --bun oxlint --fix --deny-warnings .",
     "typecheck": "bun --bun node_modules/.bin/tsc --noEmit",
     "format": "bun fmt .",
     "format:check": "bun fmt --check .",
-    "build": "bun build src/index.ts --compile --outfile dist/wct",
+    "build": "bun run scripts/build.ts",
+    "build:browser": "bun run scripts/build-browser.ts",
     "build:all": "bun run scripts/build-all.ts",
-    "prepare": "bun run --bun effect-tsgo patch --typescript --oxlint"
+    "prepare": "bun run --bun effect-tsgo patch --typescript --oxlint && bun run build:browser"
   },
   "devDependencies": {
     "@effect/tsgo": "0.64.1",
@@ -36,6 +37,8 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.1.2",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "effect": "4.1.2",
     "ink": "8.0.0",
     "react": "19.3.1"

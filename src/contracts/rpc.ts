@@ -5,6 +5,8 @@ import {
   AttachmentControlAck,
   AttachmentState,
   CreateAttachment,
+  IssueTerminalTicket,
+  TerminalTicket,
 } from "./attachments";
 import {
   COMMAND_PARSE_OPTIONS,
@@ -101,6 +103,11 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("ControlAttachment", {
     payload: AttachmentControl,
     success: AttachmentControlAck,
+    error: ContractError,
+  }).annotate(Rpc.ParseOptions, COMMAND_PARSE_OPTIONS),
+  Rpc.make("IssueTerminalTicket", {
+    payload: IssueTerminalTicket,
+    success: TerminalTicket,
     error: ContractError,
   }).annotate(Rpc.ParseOptions, COMMAND_PARSE_OPTIONS),
 );

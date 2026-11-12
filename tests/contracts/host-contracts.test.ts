@@ -1,12 +1,18 @@
 import { Schema } from "effect";
 import { describe, expect, test } from "vitest";
 import {
+  acceptsTerminalAck,
   acceptsTerminalFrame,
   AttachmentControl,
   AttachmentRef,
   AttachmentState,
   CreateAttachment,
+  IssueTerminalTicket,
+  TerminalAck,
+  TerminalConnectionRef,
   TerminalFrameHeader,
+  TerminalTargetChanged,
+  TerminalTicket,
 } from "../../src/contracts/attachments";
 import { ConnectorConfig, ConnectorHello } from "../../src/contracts/connector";
 import {
@@ -76,6 +82,10 @@ const attachment = Schema.decodeSync(AttachmentRef)({
   runtime,
   attachmentId: "attachment-a",
   generation: "generation-a",
+});
+const terminalConnection = Schema.decodeSync(TerminalConnectionRef)({
+  ref: attachment,
+  streamId: "stream-a",
 });
 const host = Schema.decodeSync(HostDescriptor)({
   ...runtime,
@@ -504,7 +514,7 @@ describe("sidebar stream fixtures", () => {
 
 describe("attachment and stdio fixtures", () => {
   const frame = Schema.decodeSync(TerminalFrameHeader)({
-    ref: attachment,
+    ...terminalConnection,
     session,
     sequence: 1,
     kind: "output",
@@ -512,7 +522,7 @@ describe("attachment and stdio fixtures", () => {
   });
 
   test("fences terminal frames by attachment, daemon, host runtime and tmux server", () => {
-    const current = { ref: attachment, session, nextSequence: 1 };
+    const current = { ...terminalConnection, session, nextSequence: 1 };
     expect(acceptsTerminalFrame(current, frame)).toBe(true);
     expect(acceptsTerminalFrame({ ...current, nextSequence: 2 }, frame)).toBe(
       false,
@@ -539,6 +549,183 @@ describe("attachment and stdio fixtures", () => {
     expect(
       acceptsTerminalFrame({ ...current, session: replacement }, frame),
     ).toBe(false);
+    expect(
+      acceptsTerminalFrame(
+        {
+          ...current,
+          streamId: Schema.decodeSync(TerminalConnectionRef)({
+            ...terminalConnection,
+            streamId: "stream-b",
+          }).streamId,
+        },
+        frame,
+      ),
+    ).toBe(false);
+  });
+
+  test("acknowledges rendered output independently of interleaved input numbering", () => {
+    const input = Schema.decodeSync(TerminalFrameHeader)({
+      ...terminalConnection,
+      session,
+      sequence: 0,
+      kind: "input",
+      byteLength: 1,
+    });
+    expect(
+      acceptsTerminalFrame(
+        { ...terminalConnection, session, nextSequence: 0 },
+        input,
+      ),
+    ).toBe(true);
+    const ack = Schema.decodeSync(TerminalAck)({
+      ...terminalConnection,
+      session,
+      sequence: 5,
+      kind: "ack",
+      byteLength: 0,
+    });
+    const sent = {
+      ...terminalConnection,
+      session,
+      lastAcknowledgedSequence: null,
+      lastOutputSequence: 5,
+    };
+    expect(acceptsTerminalAck(sent, ack)).toBe(true);
+    expect(
+      acceptsTerminalFrame(
+        { ...terminalConnection, session, nextSequence: 1 },
+        ack,
+      ),
+    ).toBe(false);
+    expect(acceptsTerminalAck({ ...sent, lastOutputSequence: 4 }, ack)).toBe(
+      false,
+    );
+    expect(
+      acceptsTerminalAck({ ...sent, lastAcknowledgedSequence: 5 }, ack),
+    ).toBe(false);
+    expect(acceptsTerminalAck({ ...sent, lastOutputSequence: null }, ack)).toBe(
+      false,
+    );
+    expect(
+      acceptsTerminalAck(
+        {
+          ...sent,
+          streamId: Schema.decodeSync(TerminalConnectionRef)({
+            ...terminalConnection,
+            streamId: "stream-b",
+          }).streamId,
+        },
+        ack,
+      ),
+    ).toBe(false);
+    expect(() =>
+      Schema.decodeUnknownSync(TerminalAck)({ ...ack, byteLength: 1 }),
+    ).toThrow();
+    const nextInput = Schema.decodeSync(TerminalFrameHeader)({
+      ...terminalConnection,
+      session,
+      sequence: 1,
+      kind: "input",
+      byteLength: 1,
+    });
+    expect(
+      acceptsTerminalFrame(
+        { ...terminalConnection, session, nextSequence: 1 },
+        nextInput,
+      ),
+    ).toBe(true);
+  });
+
+  test("tmux-side switching publishes an ordered target before accepting its output", () => {
+    const nextSession = Schema.decodeSync(SessionRef)({
+      ...session,
+      sessionId: "$2",
+    });
+    const nextTarget = { ...target, session: nextSession };
+    const changed = Schema.decodeSync(TerminalTargetChanged)({
+      ...terminalConnection,
+      target: nextTarget,
+      sequence: 2,
+      kind: "target",
+      byteLength: 0,
+    });
+    const current = { ...terminalConnection, session, nextSequence: 2 };
+    expect(acceptsTerminalFrame(current, changed)).toBe(true);
+    expect(acceptsTerminalFrame({ ...current, nextSequence: 1 }, changed)).toBe(
+      false,
+    );
+    const output = Schema.decodeSync(TerminalFrameHeader)({
+      ...terminalConnection,
+      session: nextSession,
+      sequence: 3,
+      kind: "output",
+      byteLength: 10,
+    });
+    expect(acceptsTerminalFrame({ ...current, nextSequence: 3 }, output)).toBe(
+      false,
+    );
+    expect(
+      acceptsTerminalFrame(
+        { ...current, session: changed.target.session, nextSequence: 3 },
+        output,
+      ),
+    ).toBe(true);
+    const restarted = Schema.decodeSync(TerminalTargetChanged)({
+      ...changed,
+      target: {
+        ...nextTarget,
+        session: {
+          ...nextSession,
+          server: {
+            ...nextSession.server,
+            serverGeneration: "/tmp/tmux/default\0" + "456\0" + "2000",
+          },
+        },
+      },
+    });
+    expect(acceptsTerminalFrame(current, restarted)).toBe(false);
+  });
+
+  test("issues expiring connector tickets for initial use and renewal with a new stream fence", () => {
+    const issue = Schema.decodeSync(IssueTerminalTicket)({
+      ref: attachment,
+      requestId: "ticket-request-a",
+    });
+    const ticket = Schema.decodeSync(TerminalTicket)({
+      connection: terminalConnection,
+      requestId: issue.requestId,
+      ticket: "single-use-secret-a",
+      expiresAt: 1000,
+    });
+    expect(
+      Schema.decodeSync(ConnectorHello)({
+        handshake,
+        channel: {
+          _tag: "Terminal",
+          attachment: { connection: ticket.connection, ticket: ticket.ticket },
+        },
+      }),
+    ).toMatchObject({
+      channel: { attachment: { connection: terminalConnection } },
+    });
+    const renewed = Schema.decodeSync(TerminalTicket)({
+      ...ticket,
+      connection: { ...terminalConnection, streamId: "stream-b" },
+      requestId: "ticket-request-b",
+      ticket: "single-use-secret-b",
+      expiresAt: 2000,
+    });
+    expect(renewed.connection.streamId).not.toBe(ticket.connection.streamId);
+    expect(renewed.connection.ref).toEqual(ticket.connection.ref);
+    expect(() =>
+      Schema.decodeSync(TerminalTicket)({ ...ticket, expiresAt: -1 }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(TerminalTicket)({
+        connection: terminalConnection,
+        ticket: "missing-expiry",
+      }),
+    ).toThrow();
   });
 
   test("requires positive dimensions and same-host attachment targets", () => {
@@ -607,7 +794,10 @@ describe("attachment and stdio fixtures", () => {
         handshake,
         channel: {
           _tag: "Terminal",
-          attachment: { ref: attachment, ticket: "short-lived-ticket" },
+          attachment: {
+            connection: terminalConnection,
+            ticket: "short-lived-ticket",
+          },
         },
       }),
     ).toMatchObject({ channel: { _tag: "Terminal" } });
@@ -629,6 +819,7 @@ describe("attachment and stdio fixtures", () => {
       "TransferExecutor",
       "CreateAttachment",
       "ControlAttachment",
+      "IssueTerminalTicket",
     ]);
     expect(
       HostRpcs.requests.get("SubmitOperation")?.payloadSchema,

@@ -8,7 +8,9 @@ import {
   RuntimeRef,
   sameRuntime,
   sameSession,
+  sameTmuxServer,
   SessionRef,
+  TerminalStreamId,
   Text,
   WorkspaceSessionRef,
 } from "./identity";
@@ -77,33 +79,94 @@ export function sameAttachment(a: AttachmentRef, b: AttachmentRef): boolean {
   );
 }
 
-// The separate terminal connector carries a header followed by raw payload bytes.
-// This is metadata only: there is deliberately no bytes field or RPC byte event.
-export const TerminalFrameHeader = Schema.Struct({
+export const TerminalConnectionRef = Schema.Struct({
   ref: AttachmentRef,
+  streamId: TerminalStreamId,
+});
+export type TerminalConnectionRef = typeof TerminalConnectionRef.Type;
+export const IssueTerminalTicket = Schema.Struct({
+  ref: AttachmentRef,
+  requestId: RequestId,
+});
+export const TerminalTicket = Schema.Struct({
+  connection: TerminalConnectionRef,
+  requestId: RequestId,
+  ticket: Text,
+  expiresAt: Counter,
+});
+
+// Terminal metadata/control is framed only on the per-attachment connector.
+const TerminalDataHeader = Schema.Struct({
+  ...TerminalConnectionRef.fields,
   session: SessionRef,
   sequence: Counter,
-  kind: Schema.Literals(["input", "output", "ack"]),
+  kind: Schema.Literals(["input", "output"]),
   byteLength: Counter,
+});
+export const TerminalAck = Schema.Struct({
+  ...TerminalConnectionRef.fields,
+  session: SessionRef,
+  sequence: Counter,
+  kind: Schema.Literal("ack"),
+  byteLength: Schema.Literal(0),
+});
+export type TerminalAck = typeof TerminalAck.Type;
+export const TerminalTargetChanged = Schema.Struct({
+  ...TerminalConnectionRef.fields,
+  target: WorkspaceSessionRef,
+  sequence: Counter,
+  kind: Schema.Literal("target"),
+  byteLength: Schema.Literal(0),
 }).check(
-  Schema.makeFilter((frame) => frame.kind !== "ack" || frame.byteLength === 0),
+  Schema.makeFilter(
+    (frame) =>
+      frame.ref.runtime.hostId === frame.target.workspace.hostId &&
+      frame.ref.runtime.runtimeGeneration ===
+        frame.target.session.server.runtimeGeneration,
+  ),
 );
+export const TerminalFrameHeader = Schema.Union([
+  TerminalDataHeader,
+  TerminalAck,
+  TerminalTargetChanged,
+]);
 export type TerminalFrameHeader = typeof TerminalFrameHeader.Type;
 export function acceptsTerminalFrame(
-  current: {
-    ref: AttachmentRef;
+  current: TerminalConnectionRef & {
     session: SessionRef;
     nextSequence: number;
   },
   frame: TerminalFrameHeader,
 ): boolean {
   return (
+    frame.kind !== "ack" &&
     sameAttachment(current.ref, frame.ref) &&
-    sameSession(current.session, frame.session) &&
+    current.streamId === frame.streamId &&
+    (frame.kind === "target"
+      ? sameTmuxServer(current.session.server, frame.target.session.server)
+      : sameSession(current.session, frame.session)) &&
     current.nextSequence === frame.sequence
   );
 }
+export function acceptsTerminalAck(
+  current: TerminalConnectionRef & {
+    session: SessionRef;
+    lastAcknowledgedSequence: number | null;
+    lastOutputSequence: number | null;
+  },
+  ack: TerminalAck,
+): boolean {
+  return (
+    sameAttachment(current.ref, ack.ref) &&
+    current.streamId === ack.streamId &&
+    sameSession(current.session, ack.session) &&
+    current.lastOutputSequence !== null &&
+    ack.sequence <= current.lastOutputSequence &&
+    (current.lastAcknowledgedSequence === null ||
+      ack.sequence > current.lastAcknowledgedSequence)
+  );
+}
 export const TerminalConnectorHello = Schema.Struct({
-  ref: AttachmentRef,
+  connection: TerminalConnectionRef,
   ticket: Text,
 });

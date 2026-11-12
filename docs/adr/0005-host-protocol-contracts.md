@@ -46,6 +46,10 @@ Use one framed stdio state connector per configured host and a separate framed
 binary connector per terminal attachment, with stderr reserved for diagnostics,
 an explicit execution user and no outer PTY. State frames use Effect's NDJSON
 codec; terminal framing carries bounded JSON metadata and raw bytes outside RPC.
+Owner-authorized RPC issues expiring single-use tickets; each activated connector
+has its own stream ID to fence replaced connections. Terminal target changes are
+ordered with output on that connector, while cumulative render acknowledgements
+are validated independently of input sequence numbering.
 Initial routing supports explicitly configured hosts, the default tmux server,
 and a laptop gateway, without a cloud service.
 

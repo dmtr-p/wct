@@ -247,17 +247,53 @@ require a fresh attachment and reset terminal with a tmux redraw. Scrollback is
 not replayed; tmux copy-mode retains history. Later implementation may retain a
 suspended attachment only within its advertised grace interval.
 
+After creation or resume, the owner calls `IssueTerminalTicket` with the current
+attachment reference and a new request ID. The reply includes the secret,
+absolute expiry and a `TerminalConnectionRef` with a fresh opaque `streamId`.
+Issuance checks the authenticated owner, attachment generation and current
+runtime. Repeating an issuance ID returns the same unconsumed/unexpired ticket;
+changed parameters conflict. A consumed/expired ticket request returns
+`PreconditionFailed`, requiring a new issuance ID. Never extend expiry on retry.
+Issuing a new ticket invalidates earlier pending tickets for that attachment but
+does not disturb its active stream. Successfully consuming the ticket atomically
+activates its stream ID and fences the old connector before accepting bytes.
+Ticket expiry/consumption and the owner binding are checked again at bootstrap.
+This exchange permits initial connection and renewal without creating another
+attachment or granting terminal access to another client.
+
 Terminal bytes never enter `HostRpcs`, sidebar events or operation progress.
 One state/command connector serves a host; each attachment has a separate
 connector so a terminal cannot block application state or another attachment.
-Each terminal direction starts its own sequence at zero. Output acknowledgements
+Each terminal direction starts its own data sequence at zero. Output acknowledgements
 carry the highest fully rendered output sequence, have zero payload, and release
-output credits only after rendering, not on socket receipt. Input/output queues,
+output credits only after rendering, not on socket receipt. ACKs do not consume
+input sequence numbers. `acceptsTerminalFrame` validates contiguous data/control
+ordering and rejects ACKs; `acceptsTerminalAck` separately requires a strictly
+advancing cumulative acknowledgement no greater than the last output sent.
+For example, output 0–5 can be acknowledged as ACK 5 while the next input is 0.
+ACKs release only bytes actually sent, with duplicate ACKs ignored and future
+ACKs rejected. Every frame/ACK also matches the active stream ID, so delayed
+callbacks from a replaced connector cannot affect the current connector.
+Input/output queues,
 frame lengths and dimensions obey the advertised limits before allocation.
 Sequence gaps, daemon/runtime changes, stale attachment generations or tmux server
-replacement invalidate the stream and require recovery. A tmux-side session
-change must publish a verified target update before frames for that new target
-can be accepted. Stale callbacks cannot close/resize a replacement attachment.
+replacement invalidate the stream and require recovery.
+
+The server sends a zero-payload `TerminalTargetChanged` header (`kind: target`)
+as output sequence zero on every new stream, establishing the verified current
+Workspace Session. It sends another whenever tmux-side switching or a client
+control changes the target. Target headers participate in the same contiguous
+output sequence as output bytes: drain old-target output, emit the verified
+target header, then emit bytes for that target. The client applies the header
+before advancing its expected output sequence and changing its current session.
+Thus a tmux key binding can switch sessions without a `SwitchWorkspace` RPC or
+dependence on state-connector delivery order. Sidebar updates and control replies
+are advisory about terminal targeting; only this stream's ordered target header
+changes its expected session. Input with an old target is rejected rather than
+routed to the new session. Target headers cannot cross a host/runtime/tmux server
+generation; that requires fresh attachment recovery. They are server-to-client
+only and have no terminal payload or application RPC event. Stale callbacks
+cannot close/resize a replacement attachment.
 
 ## Stdio transport
 
@@ -283,7 +319,7 @@ with the advertised state-frame bound; RPC handlers use the shared declarations.
 The terminal channel instead uses a four-byte unsigned big-endian header length,
 that many UTF-8 JSON bytes decoding as `TerminalFrameHeader`, then exactly
 `byteLength` raw bytes. Header and payload limits are checked before buffering;
-EOF mid-frame is disconnection. `ack` has no payload. Terminal tickets are
+EOF mid-frame is disconnection. `ack` and `target` have no payload. Terminal tickets are
 short-lived, single-use, owner-bound and attachment-generation-bound. Bootstrap
 never multiplexes terminal payload into state RPC. It uses no outer PTY; the
 attachment's PTY exists only on the execution host.

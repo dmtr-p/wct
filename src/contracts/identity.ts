@@ -25,6 +25,7 @@ export const ExecutionId = OpaqueId.pipe(Schema.brand("ExecutionId"));
 export const OperationGeneration = OpaqueId.pipe(
   Schema.brand("OperationGeneration"),
 );
+export const TerminalStreamId = OpaqueId.pipe(Schema.brand("TerminalStreamId"));
 
 // Host paths are POSIX paths, never gateway paths; NUL remains the local key separator.
 export const HostPath = Text.check(Schema.isPattern(/^\/[^\0]*$/));
@@ -64,6 +65,7 @@ export const SessionRef = Schema.Struct({
   server: TmuxServerRef,
   sessionId: Text.check(Schema.isPattern(/^\$\d+$/)),
 });
+export type TmuxServerRef = typeof TmuxServerRef.Type;
 export type SessionRef = typeof SessionRef.Type;
 export const WindowRef = Schema.Struct({
   session: SessionRef,
@@ -92,12 +94,15 @@ export function sameRuntime(a: RuntimeRef, b: RuntimeRef): boolean {
 }
 
 export function sameSession(a: SessionRef, b: SessionRef): boolean {
+  return sameTmuxServer(a.server, b.server) && a.sessionId === b.sessionId;
+}
+
+export function sameTmuxServer(a: TmuxServerRef, b: TmuxServerRef): boolean {
   return (
-    a.server.hostId === b.server.hostId &&
-    a.server.runtimeGeneration === b.server.runtimeGeneration &&
-    a.server.serverId === b.server.serverId &&
-    a.server.serverGeneration === b.server.serverGeneration &&
-    a.sessionId === b.sessionId
+    a.hostId === b.hostId &&
+    a.runtimeGeneration === b.runtimeGeneration &&
+    a.serverId === b.serverId &&
+    a.serverGeneration === b.serverGeneration
   );
 }
 

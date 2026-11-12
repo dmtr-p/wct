@@ -104,6 +104,14 @@ export function App({
   const [lifetime] = useState(
     () => suppliedLifetime ?? createTuiLifetime(async () => {}),
   );
+  const presentationMounted = useRef(true);
+  const presentationEnded = useRef<(() => void) | undefined>(undefined);
+  const [presentationEnd] = useState(
+    () =>
+      new Promise<void>((resolve) => {
+        presentationEnded.current = resolve;
+      }),
+  );
   const { exit, waitUntilRenderFlush } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
   const { disableMouse } = useMouse();
@@ -199,7 +207,19 @@ export function App({
     col: number;
     row: number;
   } | null>(null);
-  const { actionError, showActionError, clearActionError } = useActionError();
+  const {
+    actionError,
+    showActionError: displayActionError,
+    clearActionError,
+  } = useActionError();
+  const showActionError = useCallback(
+    (message: string) => {
+      if (lifetime.closing || !presentationMounted.current)
+        lifetime.report(message);
+      if (presentationMounted.current) displayActionError(message);
+    },
+    [lifetime, displayActionError],
+  );
   const prActions = usePrActions({
     mode,
     setMode,
@@ -217,7 +237,8 @@ export function App({
     Map<WorkspaceIdentityKey, Set<() => void>>
   >(new Map());
   const waitForLifecyclePresentationCleanup = useCallback(
-    async (repoPath: string, branch: string): Promise<void> => {
+    async (repoPath: string, branch: string): Promise<boolean> => {
+      if (!presentationMounted.current) return false;
       const key = workspaceIdentityKey(repoPath, branch);
       if (lifecycleRef.current.has(key)) {
         await new Promise<void>((resolve) => {
@@ -230,9 +251,22 @@ export function App({
         });
       }
       // A React commit can precede Ink's throttled stdout write.
-      await waitUntilRenderFlush();
+      if (!presentationMounted.current) return false;
+      await Promise.race([waitUntilRenderFlush(), presentationEnd]);
+      return presentationMounted.current;
     },
-    [waitUntilRenderFlush],
+    [waitUntilRenderFlush, presentationEnd],
+  );
+  useLayoutEffect(
+    () => () => {
+      presentationMounted.current = false;
+      presentationEnded.current?.();
+      for (const waiters of lifecycleCleanupWaitersRef.current.values()) {
+        for (const resolve of waiters) resolve();
+      }
+      lifecycleCleanupWaitersRef.current.clear();
+    },
+    [],
   );
   const lifecycleClaimsRef = useRef(createLifecycleClaims(lifetime));
   const lifecycleClaims = lifecycleClaimsRef.current;
@@ -1461,6 +1495,9 @@ export async function startTui(): Promise<void> {
         });
       },
       cleanup: () => input?.dispose(),
+      report: (message) => {
+        process.stderr.write(`${message}\n`);
+      },
     });
   } finally {
     unbind?.();

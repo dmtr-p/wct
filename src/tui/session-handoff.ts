@@ -8,7 +8,7 @@ export interface SessionHandoffDeps {
   waitForLifecyclePresentationCleanup: (
     repoPath: string,
     branch: string,
-  ) => Promise<void>;
+  ) => Promise<void | boolean>;
   discoverClient: () => Promise<TmuxClientDiscovery>;
   switchSession: (
     name: string,
@@ -42,7 +42,11 @@ export function createSessionHandoff(deps: SessionHandoffDeps) {
   }: SessionHandoffOptions): Promise<string | undefined> => {
     if (!autoSwitch || !tmux.attempted || !tmux.ok) return undefined;
 
-    await deps.waitForLifecyclePresentationCleanup(repoPath, branch);
+    if (
+      (await deps.waitForLifecyclePresentationCleanup(repoPath, branch)) ===
+      false
+    )
+      return undefined;
     const liveClient = await deps.discoverClient();
     if (liveClient.type === "single") {
       const switched = target

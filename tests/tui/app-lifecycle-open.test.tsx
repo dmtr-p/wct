@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RegistrationId } from "../../src/services/identities";
 import { sessionIdentity } from "../../src/services/session-identity";
+import { createTuiLifetime, runTuiInvocation } from "../../src/tui/lifetime";
 import { legacySession } from "../helpers/session-projections";
 import {
   emitWorkspacePhase,
@@ -46,6 +47,83 @@ describe("TUI open lifecycle", () => {
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(repoPath, { recursive: true, force: true });
   });
+
+  test("unmount during Open releases presentation handoff and drains", async () => {
+    const { App } = await import("../../src/tui/App");
+    const dispose = vi.fn(async () => {});
+    const lifetime = createTuiLifetime(dispose);
+    const app = await renderApp(<App lifetime={lifetime} />);
+    await tick(6);
+    await openBranchFromModal(app.stdin, "feature/new");
+    await tick(6);
+    const call = lastWorkspaceCall("open");
+    app.unmount();
+    const done = lifetime.finalize();
+    call.resolve({
+      operation: "open",
+      worktreePath: join(repoPath, "feature-new"),
+      mainRepoPath: repoPath,
+      branch: "feature/new",
+      sessionName: "feature-new",
+      projectName: "alpha",
+      created: true,
+      env: {},
+      warnings: [],
+      attempts: {
+        worktree: { attempted: true, ok: true, value: {} },
+        copy: { attempted: false, reason: "not_configured" },
+        setup: { attempted: false, reason: "not_configured" },
+        tmux: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", sessionName: "feature-new" },
+        },
+      },
+    });
+    await done;
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(tmuxFixtures.switchCalls).toEqual([]);
+  });
+
+  test.each(["q", "\x03"])(
+    "quit %j reports an operation failure after terminal cleanup",
+    async (key) => {
+      const { App } = await import("../../src/tui/App");
+      let app: Awaited<ReturnType<typeof renderApp>> | undefined;
+      const events: string[] = [];
+      const invocation = runTuiInvocation({
+        start: async (lifetime) => {
+          app = await renderApp(<App lifetime={lifetime} />);
+          return app.instance;
+        },
+        cleanup: () => {
+          app?.unmount();
+          events.push("terminal restored");
+        },
+        dispose: async () => {
+          events.push("disposed");
+        },
+        report: (message) => {
+          events.push(message);
+        },
+      });
+      await vi.waitFor(() => expect(app).toBeDefined());
+      const view = app;
+      if (!view) throw new Error("App did not render");
+      await tick(6);
+      await openBranchFromModal(view.stdin, "feature/new");
+      await tick(6);
+      const call = lastWorkspaceCall("open");
+      await sendKeys(view.stdin, key);
+      await sendKeys(view.stdin, key);
+      expect(events).toEqual([]);
+      call.reject(new Error("required script failed"));
+      await invocation;
+      expect(events[0]).toBe("terminal restored");
+      expect(events[1]).toBe("disposed");
+      expect(events.slice(2).join("\n")).toContain("required script failed");
+    },
+  );
 
   test("shows an inert Pending Workspace reading 'Preparing Workspace…' before the worktree exists", async () => {
     const { App } = await import("../../src/tui/App");

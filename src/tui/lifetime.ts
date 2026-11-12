@@ -1,10 +1,15 @@
 /** Own mutations independently of Ink so render failures can still drain them. */
 export function createTuiLifetime(dispose: () => Promise<void>) {
+  const messages: string[] = [];
   const active = new Set<Promise<unknown>>();
   let closing = false;
   let drain: Promise<void> | undefined;
   let finalization: Promise<void> | undefined;
   return {
+    messages,
+    report(message: string) {
+      messages.push(message);
+    },
     get closing() {
       return closing;
     },
@@ -45,16 +50,14 @@ export type TuiLifetime = ReturnType<typeof createTuiLifetime>;
 /** Keep the terminal and runtime boundaries ordered even when rendering fails. */
 export async function runTuiInvocation(options: {
   dispose: () => Promise<void>;
-  start: (lifetime: TuiLifetime) => {
-    waitUntilExit: () => Promise<unknown>;
-    unmount: () => void;
-  };
+  start: (lifetime: TuiLifetime) => TuiInstance | Promise<TuiInstance>;
+  report?: (message: string) => void;
   cleanup: () => void;
 }): Promise<void> {
   const lifetime = createTuiLifetime(options.dispose);
-  let instance: ReturnType<typeof options.start> | undefined;
+  let instance: TuiInstance | undefined;
   try {
-    instance = options.start(lifetime);
+    instance = await options.start(lifetime);
     await instance.waitUntilExit();
   } finally {
     await lifetime.quit();
@@ -64,8 +67,17 @@ export async function runTuiInvocation(options: {
       try {
         options.cleanup();
       } finally {
-        await lifetime.finalize();
+        try {
+          await lifetime.finalize();
+        } finally {
+          for (const message of lifetime.messages) options.report?.(message);
+        }
       }
     }
   }
+}
+
+interface TuiInstance {
+  waitUntilExit: () => Promise<unknown>;
+  unmount: () => void;
 }

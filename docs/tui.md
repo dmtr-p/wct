@@ -107,6 +107,9 @@ mode and the alternate screen. Unmount stops refresh timers, watchers, and
 observation publication; the input adapter is disposed before the runtime is
 disposed exactly once. Runtime disposal settles remaining background fibers.
 Startup and render failures use the same drain and finalization boundary, even
-when React has already unmounted. Operation errors retain the normal lifecycle
-error reporting and validation behavior; failure does not prevent draining.
+when React has already unmounted. Unmount releases presentation waiters and
+skips client handoff when its terminal presentation is gone. Operation errors
+retain validation behavior; errors received while draining or after unmount are
+saved and printed to stderr after terminal restoration and runtime finalization.
+Failure does not prevent draining.
 Ink and React remain lazy imports of the TUI command.

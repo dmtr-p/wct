@@ -1,0 +1,17 @@
+@import "@xterm/xterm/css/xterm.css";
+
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #101418;
+  color: #e5e7eb;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+}
+
+#terminal {
+  height: 24rem;
+}

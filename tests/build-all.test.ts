@@ -107,7 +107,11 @@ describe("release builds", () => {
       Effect.gen(function* () {
         const f = fixture();
         yield* f.run;
-        expect(f.commands.map((command) => command.args[4])).toEqual([
+        expect(f.commands[0]?.args).toEqual([
+          "run",
+          "scripts/build-browser.ts",
+        ]);
+        expect(f.commands.slice(1).map((command) => command.args[4])).toEqual([
           "bun-darwin-x64",
           "bun-darwin-arm64",
           "bun-linux-x64",
@@ -129,7 +133,7 @@ describe("release builds", () => {
         expect([...f.writes.values()]).toEqual([
           `${hash}  wct-darwin-x64\n${hash}  wct-darwin-arm64\n${hash}  wct-linux-x64\n${hash}  wct-linux-arm64\n`,
         ]);
-        expect(f.resources()).toEqual({ active: 0, peak: 1, released: 4 });
+        expect(f.resources()).toEqual({ active: 0, peak: 1, released: 5 });
         expect(f.reads).toEqual([
           "stat",
           "read",
@@ -155,9 +159,21 @@ describe("release builds", () => {
         expect(error.message).toContain("Failed to build wct-darwin-arm64");
         expect(error.message).not.toContain("Build failed: Failed to build");
         expect(error.message).toContain("Command exited with code 7");
-        expect(f.commands).toHaveLength(2);
+        expect(f.commands).toHaveLength(3);
         expect(f.writes.size).toBe(0);
-        expect(f.resources()).toEqual({ active: 0, peak: 1, released: 2 });
+        expect(f.resources()).toEqual({ active: 0, peak: 1, released: 3 });
       }),
+  );
+
+  it.effect("does not compile any target if browser preparation fails", () =>
+    Effect.gen(function* () {
+      const f = fixture("scripts/build-browser.ts");
+      const error = yield* Effect.flip(f.run);
+      expect(error.message).toContain("Command exited with code 7");
+      expect(f.commands).toHaveLength(1);
+      expect(f.writes.size).toBe(0);
+      expect(f.reads).toEqual([]);
+      expect(f.resources()).toEqual({ active: 0, peak: 1, released: 1 });
+    }),
   );
 });

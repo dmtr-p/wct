@@ -69,7 +69,21 @@ Leverage Bun built-in APIs where they are still the right primitive:
 - `Bun.Glob` for copy rules and branch profile matching
 - `Bun.which` for executable lookup
 
-The runtime dependencies are `effect`, `@effect/platform-bun`, `ink`, and `react`. No other runtime dependencies should be added. `ink` and `react` are used exclusively by the `wct tui` subcommand and are lazy-imported so they are never loaded for other commands. The only dev dependencies are `oxlint`, `oxlint-tsgolint`, `@types/bun`, `@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`, and `@effect/tsgo`.
+The server/CLI runtime dependencies are `effect`, `@effect/platform-bun`,
+`ink`, and `react`. Ink is exclusive to the lazy-loaded `wct tui` subcommand;
+non-TUI commands must not initialize Ink. React may also be used by the
+browser UI, bundled separately from server execution paths.
+
+Browser terminal dependencies are limited to `@xterm/xterm` and
+`@xterm/addon-fit` (container sizing). Additional browser libraries or addons
+require a concrete browser feature need and documented license/build inputs;
+this allowance does not permit unrelated runtime dependencies. Browser UI and
+terminal libraries must be bundled as embedded browser assets, never imported
+into server execution paths. See [browser assets](docs/browser-assets.md).
+
+The only dev dependencies are `oxlint`, `oxlint-tsgolint`, `@types/bun`,
+`@types/react`, `react-devtools-core`, `typescript`, `vitest`, `@effect/vitest`,
+and `@effect/tsgo`.
 
 Read [EFFECT_V4.md](./EFFECT_V4.md) for repository-specific Effect integration
 conventions.

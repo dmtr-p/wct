@@ -4,6 +4,7 @@ node_modules
 # output
 out
 dist
+src/browser/built.browser-assets
 *.tgz
 *.exe
 wct-*

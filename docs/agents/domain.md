@@ -18,6 +18,8 @@ files in `docs/adr/` for engineering decisions.
   Dependency preparation, checks, caching, hooks, and editor setup belong in
   [development tooling](../development.md); test helpers and isolation belong
   in [testing](../testing.md).
+  Browser bundling, embedded static assets and dependency notices belong in
+  [browser assets](../browser-assets.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine
   behavior descriptions belong in topic documents.
 - `docs/agents/` owns agent workflow and repository instructions.

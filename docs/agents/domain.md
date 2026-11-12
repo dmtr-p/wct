@@ -20,6 +20,8 @@ files in `docs/adr/` for engineering decisions.
   in [testing](../testing.md).
   Browser bundling, embedded static assets and dependency notices belong in
   [browser assets](../browser-assets.md).
+  Shared host schemas, RPC boundaries, identity and connector semantics belong
+  in [host contracts](../host-contracts.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine
   behavior descriptions belong in topic documents.
 - `docs/agents/` owns agent workflow and repository instructions.

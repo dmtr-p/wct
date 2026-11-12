@@ -15,6 +15,8 @@ files in `docs/adr/` for engineering decisions.
   [Workspace Operations](../workspace-operations.md). View navigation, pane
   actions, and inline confirmations belong in [TUI views and controls](../tui.md);
   repository and tmux polling belong in [TUI refresh](../tui-refresh.md).
+  Attachment ownership and native-client classification belong in
+  [terminal attachments](../terminal-attachments.md).
   Dependency preparation, checks, caching, hooks, and editor setup belong in
   [development tooling](../development.md); test helpers and isolation belong
   in [testing](../testing.md).

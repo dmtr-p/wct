@@ -32,6 +32,11 @@ export const noopTmuxService: TmuxServiceApi = {
   attachSession: () => Effect.void,
   listPanes: () => Effect.succeed([]),
   listClients: Effect.succeed([]),
+  prepareAttachment: () =>
+    Effect.die(new Error("Attachment launch is not configured")),
+  queryAttachment: () => Effect.succeed(null),
+  switchAttachment: () => Effect.succeed(null),
+  detachAttachment: () => Effect.void,
   detachClient: () => Effect.void,
   switchClientToPane: () => Effect.void,
   togglePaneZoom: () => Effect.void,

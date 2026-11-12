@@ -49,10 +49,10 @@ vi.mock("../../src/tui/runtime", async () => {
     ),
     listPanes: (name: string) =>
       read<TmuxPaneInfo[]>(() => tmuxServiceMock.listPanes(name)),
-    switchClientToPane: (tty: string, target: string) =>
-      read<void>(() => tmuxServiceMock.switchClientToPane(tty, target)),
-    detachClient: (tty: string) =>
-      read<void>(() => tmuxServiceMock.detachClient(tty)),
+    switchClientToPane: (client: TmuxClient, target: string) =>
+      read<void>(() => tmuxServiceMock.switchClientToPane(client.tty, target)),
+    detachClient: (client: TmuxClient) =>
+      read<void>(() => tmuxServiceMock.detachClient(client.tty)),
     togglePaneZoom: (pane: string) =>
       read<void>(() => tmuxServiceMock.togglePaneZoom(pane)),
     killPane: (pane: string) =>
@@ -208,6 +208,66 @@ describe("useTmux hook", () => {
 
     harness.unmount();
   });
+
+  test("selects one native client among verified browser attachments and observers", async () => {
+    const native = { tty: "/dev/ttys001", session: "main" };
+    const attachment = {
+      id: "browser",
+      generation: "one",
+      kind: "browser" as const,
+      server: "server",
+    };
+    mockRunPromise
+      .mockResolvedValueOnce([
+        native,
+        { tty: "/dev/ttys002", session: "main", attachment },
+        {
+          tty: "/dev/ttys003",
+          session: "main",
+          attachment: { ...attachment, id: "second" },
+        },
+        {
+          tty: "",
+          session: "main",
+          attachment: { ...attachment, id: "observer", kind: "observer" },
+        },
+      ])
+      .mockResolvedValueOnce(null);
+    const harness = await renderUseTmux();
+    try {
+      await vi.waitFor(() => expect(harness.value.client).toEqual(native));
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  test.each(["switch", "detach"])(
+    "rediscovers after a stale native %s without retrying the action",
+    async (action) => {
+      const harness = await renderWithSingleClient();
+      const replacement = { tty: "/dev/ttys001", session: "replacement" };
+      mockRunPromise
+        .mockRejectedValueOnce(new Error("client generation changed"))
+        .mockResolvedValueOnce([replacement]);
+      try {
+        const result =
+          action === "switch"
+            ? await harness.value.switchSession("other")
+            : await harness.value.detachClient();
+        expect(result).toBe(false);
+        await vi.waitFor(() =>
+          expect(harness.value.client).toEqual(replacement),
+        );
+        expect(
+          tmuxServiceMock[
+            action === "switch" ? "switchClientToPane" : "detachClient"
+          ],
+        ).toHaveBeenCalledOnce();
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
 
   test("discoverClient returns multiple when client ownership is ambiguous", async () => {
     const harness = await renderWithSingleClient();

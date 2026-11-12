@@ -40,6 +40,8 @@ produce repository-local errors; status failures use zero changed files and
 unknown sync status without printing CLI warnings. Failed session discovery
 clears the session and pane snapshot.
 
+Native client selection excludes verified [terminal attachments and observers](terminal-attachments.md#native-discovery).
+
 ## Other observation loops
 
 [GitHub PR refresh](pr-refresh.md) owns discovery, cache hydration, and

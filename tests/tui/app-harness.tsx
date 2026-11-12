@@ -105,10 +105,13 @@ vi.mock("../../src/tui/runtime", async () => {
           );
         }
       }),
-    switchClientToPane: (clientTty: string, target: string) =>
+    switchClientToPane: (
+      client: import("../../src/services/tmux").TmuxClient,
+      target: string,
+    ) =>
       Effect.promise(async () => {
-        tmuxFixtures.switchCalls.push({ clientTty, target });
-        await tmuxFixtures.onSwitch?.(clientTty, target);
+        tmuxFixtures.switchCalls.push({ clientTty: client.tty, target });
+        await tmuxFixtures.onSwitch?.(client.tty, target);
       }),
   };
   const worktree = await Effect.runPromise(

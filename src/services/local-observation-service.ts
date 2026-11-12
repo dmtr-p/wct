@@ -116,7 +116,11 @@ export const makeLocalObservationService = Effect.gen(function* () {
         };
       }),
     ),
-    clients: bounded(tmux.listClients),
+    clients: bounded(
+      tmux.listClients.pipe(
+        Effect.map((clients) => clients.filter((client) => !client.attachment)),
+      ),
+    ),
   };
 });
 

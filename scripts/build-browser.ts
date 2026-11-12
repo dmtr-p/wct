@@ -46,7 +46,9 @@ export async function buildBrowser() {
   const dependencies: Record<string, { version: string; license: string }> = {};
   const inputs = new Set([
     "bun.lock",
+    "bunfig.toml",
     "package.json",
+    "tsconfig.json",
     "scripts/build-browser.ts",
     ...Object.keys(result.metafile?.inputs ?? {}).map((input) =>
       relative(projectDir, resolve(input)),

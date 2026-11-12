@@ -91,6 +91,8 @@ console.log(JSON.stringify(bodies));`,
       /^[a-f0-9]{64}$/,
     );
     expect(info.inputs["bun.lock"]).toMatch(/^[a-f0-9]{64}$/);
+    expect(info.inputs["bunfig.toml"]).toMatch(/^[a-f0-9]{64}$/);
+    expect(info.inputs["tsconfig.json"]).toMatch(/^[a-f0-9]{64}$/);
     expect(
       Object.keys(info.inputs).every(
         (path) => !path.startsWith("/") && !path.startsWith(".."),

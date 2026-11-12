@@ -12,7 +12,7 @@ The packaging boundary is recorded in [ADR 0003](adr/0003-browser-assets.md).
 `src/browser/built.browser-assets` file. It contains only emitted HTML, JS
 and CSS, `/third-party-licenses.txt`, and `/build-info.json`. Build info records
 the Bun version, dependency versions/licenses and SHA-256 hashes for the lock,
-package manifest, build script, browser source, resolved bundle inputs and
+Bun/TypeScript configuration, package manifest, build script, browser source, resolved bundle inputs and
 dependency licenses. Source maps and arbitrary source files are not served.
 Binary output fails the build until its encoding and MIME policy is defined.
 

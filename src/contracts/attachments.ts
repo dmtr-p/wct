@@ -22,10 +22,21 @@ export const AttachmentRef = Schema.Struct({
   generation: AttachmentGeneration,
 });
 export type AttachmentRef = typeof AttachmentRef.Type;
+export const TerminalConnectionRef = Schema.Struct({
+  ref: AttachmentRef,
+  streamId: TerminalStreamId,
+});
+export type TerminalConnectionRef = typeof TerminalConnectionRef.Type;
+export const TerminalInputBarrier = Schema.Struct({
+  connection: TerminalConnectionRef,
+  throughSequence: Schema.NullOr(Counter),
+});
+export type TerminalInputBarrier = typeof TerminalInputBarrier.Type;
 export const AttachmentState = Schema.Struct({
   ref: AttachmentRef,
   target: WorkspaceSessionRef,
   dimensions: Dimensions,
+  nextControlSequence: Counter,
   status: Schema.Literals(["attached", "suspended", "closed"]),
 }).check(
   Schema.makeFilter(
@@ -48,22 +59,28 @@ export const CreateAttachment = Schema.Struct({
         request.target.session.server.runtimeGeneration,
   ),
 );
+const controlFields = {
+  ref: AttachmentRef,
+  requestId: RequestId,
+  controlSequence: Counter,
+  inputBarrier: Schema.NullOr(TerminalInputBarrier),
+};
 export const AttachmentControl = Schema.Union([
   Schema.TaggedStruct("Resize", {
-    ref: AttachmentRef,
-    requestId: RequestId,
+    ...controlFields,
     dimensions: Dimensions,
   }),
   Schema.TaggedStruct("SwitchWorkspace", {
-    ref: AttachmentRef,
-    requestId: RequestId,
+    ...controlFields,
     target: WorkspaceSessionRef,
   }),
-  Schema.TaggedStruct("Suspend", { ref: AttachmentRef, requestId: RequestId }),
-  Schema.TaggedStruct("Resume", { ref: AttachmentRef, requestId: RequestId }),
+  Schema.TaggedStruct("Suspend", controlFields),
+  Schema.TaggedStruct("Resume", {
+    ...controlFields,
+    inputBarrier: Schema.Null,
+  }),
   Schema.TaggedStruct("CloseAttachment", {
-    ref: AttachmentRef,
-    requestId: RequestId,
+    ...controlFields,
   }),
 ]);
 export const AttachmentControlAck = Schema.Struct({
@@ -79,11 +96,20 @@ export function sameAttachment(a: AttachmentRef, b: AttachmentRef): boolean {
   );
 }
 
-export const TerminalConnectionRef = Schema.Struct({
-  ref: AttachmentRef,
-  streamId: TerminalStreamId,
-});
-export type TerminalConnectionRef = typeof TerminalConnectionRef.Type;
+export function inputBarrierReached(
+  current: TerminalConnectionRef & {
+    lastProcessedInputSequence: number | null;
+  },
+  barrier: TerminalInputBarrier,
+): boolean {
+  return (
+    sameAttachment(current.ref, barrier.connection.ref) &&
+    current.streamId === barrier.connection.streamId &&
+    (barrier.throughSequence === null ||
+      (current.lastProcessedInputSequence !== null &&
+        current.lastProcessedInputSequence >= barrier.throughSequence))
+  );
+}
 export const IssueTerminalTicket = Schema.Struct({
   ref: AttachmentRef,
   requestId: RequestId,

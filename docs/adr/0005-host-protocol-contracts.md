@@ -50,6 +50,8 @@ Owner-authorized RPC issues expiring single-use tickets; each activated connecto
 has its own stream ID to fence replaced connections. Terminal target changes are
 ordered with output on that connector, while cumulative render acknowledgements
 are validated independently of input sequence numbering.
+State-connector controls carry a terminal input watermark and an attachment
+control sequence so they cannot overtake prior writes or earlier controls.
 Initial routing supports explicitly configured hosts, the default tmux server,
 and a laptop gateway, without a cloud service.
 

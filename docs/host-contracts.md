@@ -160,6 +160,11 @@ command's exit status and a bounded diagnostic reference. Repeated identical
 reports are harmless; differing reports for the same fence/step are rejected.
 The host validates step order and generation. Script output
 uses a bounded diagnostic sink, never the terminal byte stream.
+Plans and named phases reuse the existing setup/down command field schemas,
+including empty names and long script bodies. Transport adapters must measure
+the encoded canonical request and all resulting plans against advertised frame
+bounds before durable acceptance; a request cannot be accepted and then become
+unrepresentable as a plan. Chunking, if needed, requires an explicit capability.
 
 `TransferExecutor` binds the existing fence to a verified detached worker and
 returns a fresh execution ID after the worker acknowledges ownership. Transfer
@@ -239,8 +244,29 @@ deduplicated, connection-owner authorized and generation-fenced. Creation and
 switching reverify Workspace Session ownership on the host. Switching affects
 only the requesting tmux client; closing an attachment does not stop its session.
 
-Controls include resize, Workspace switch, suspend, resume and close. Resize and
-close acknowledge after prior writes/controls drain. Resume addresses a retained
+Controls include resize, Workspace switch, suspend, resume and close. Every
+control carries `controlSequence`, starting at zero per attachment generation;
+the host accepts only the next sequence, serializes execution and returns
+`nextControlSequence` in `AttachmentState`. A duplicate request returns its
+original acknowledgement without consuming another sequence. Out-of-order
+controls fail with `PreconditionFailed`; clients send controls in order and use
+owner-authorized `GetAttachment` to recover the next sequence after reconnect.
+
+An active-stream control also carries `inputBarrier`, naming its exact terminal
+connection/stream ID and highest input sequence sent before the control (null
+when none was sent). The client pauses new input until the control settles.
+Even if state RPC overtakes terminal frames, the host waits until input through
+that watermark has been processed and drained to the PTY before executing the
+control. `inputBarrierReached` supplies only the sequence/fence check; actual PTY
+draining remains host-owned. Null `inputBarrier` is allowed only when there is no
+active input stream, such as before first connection or for suspended controls.
+Resume requires null. A stale/replaced stream or disconnect before the watermark
+is reached fails the control; it cannot report drained success by discarding
+unseen input. Resize/close also drain queued output using renderer ACKs before
+completion, and missing ACKs fail rather than promise success. Thus separate
+connectors do not establish cross-stream ordering implicitly.
+
+Resume addresses a retained
 suspended attachment only; a lost ID returns `NotFound`/`StaleGeneration` and
 never silently creates a new session. Expired, lost or changed generations
 require a fresh attachment and reset terminal with a tmux redraw. Scrollback is
@@ -348,7 +374,7 @@ ready, their ADR/issue must record and validate:
   while work remains active. Diagnostic retention cannot silently extend receipt
   acceptance or shorten the promised deduplication window.
 - #351/#344: dimension/frame/queue caps, render acknowledgement credit accounting,
-  grace/expiry/heartbeat, attachment limits and sizing/shared-session policy.
+  ticket TTL, grace/expiry/heartbeat, drain timeouts, attachment limits and sizing/shared-session policy.
 - #355–#357: configured-host enrollment, route identity, container volume/clone
   rules and offline detection; SSH `MaxSessions` refusal versus additional
   connections, with a clear attachment-specific error at the chosen cap.

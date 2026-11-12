@@ -3,6 +3,7 @@ import { Rpc, RpcGroup } from "effect/rpc";
 import {
   AttachmentControl,
   AttachmentControlAck,
+  AttachmentRef,
   AttachmentState,
   CreateAttachment,
   IssueTerminalTicket,
@@ -110,4 +111,9 @@ export const HostRpcs = RpcGroup.make(
     success: TerminalTicket,
     error: ContractError,
   }).annotate(Rpc.ParseOptions, COMMAND_PARSE_OPTIONS),
+  Rpc.make("GetAttachment", {
+    payload: AttachmentRef,
+    success: AttachmentState,
+    error: ContractError,
+  }),
 );

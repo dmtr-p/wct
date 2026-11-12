@@ -7,10 +7,12 @@ import {
   AttachmentRef,
   AttachmentState,
   CreateAttachment,
+  inputBarrierReached,
   IssueTerminalTicket,
   TerminalAck,
   TerminalConnectionRef,
   TerminalFrameHeader,
+  TerminalInputBarrier,
   TerminalTargetChanged,
   TerminalTicket,
 } from "../../src/contracts/attachments";
@@ -29,10 +31,12 @@ import {
 import {
   compareReceipt,
   ExecutorMessage,
+  LifecyclePhase,
   OperationRecord,
   OperationRequest,
   ReconcileOperation,
   sameOperationFence,
+  ScriptPlan,
   WorkspaceOperationFence,
 } from "../../src/contracts/operations";
 import {
@@ -431,6 +435,43 @@ describe("operation receipt and executor fixtures", () => {
     ).toThrow();
   });
 
+  test("accepted empty names and long script bodies retain the existing config semantics", () => {
+    const command = { name: "", command: "echo " + "x".repeat(5120) };
+    const accepted = Schema.decodeSync(
+      OperationRequest,
+      COMMAND_PARSE_OPTIONS,
+    )({
+      ...request,
+      execution: {
+        ...request.execution,
+        configuration: {
+          ...request.execution.configuration,
+          resolved: {
+            ...request.execution.configuration.resolved,
+            setup: [command],
+          },
+        },
+      },
+    });
+    const plan = Schema.decodeSync(ScriptPlan)({
+      fence: { runtime, ownership, executionId: "executor-a" },
+      step: 0,
+      kind: "setup",
+      cwd: accepted.execution.cwd,
+      environment: accepted.execution.environment,
+      command,
+    });
+    expect(plan.command).toEqual(
+      accepted.execution.configuration.resolved.setup?.[0],
+    );
+    expect(
+      Schema.decodeSync(LifecyclePhase)({
+        _tag: "RunningSetup",
+        name: command.name,
+      }),
+    ).toEqual({ _tag: "RunningSetup", name: "" });
+  });
+
   test("explicit reconciliation identifies the uncertain operation and ownership generation", () => {
     const reconciliation = {
       runtime,
@@ -728,6 +769,69 @@ describe("attachment and stdio fixtures", () => {
     ).toThrow();
   });
 
+  test("controls wait for prior input despite overtaking it on the separate state connector", () => {
+    const barrier = Schema.decodeSync(TerminalInputBarrier)({
+      connection: terminalConnection,
+      throughSequence: 4,
+    });
+    const control = Schema.decodeSync(AttachmentControl)({
+      _tag: "Resize",
+      ref: attachment,
+      requestId: "resize-a",
+      controlSequence: 0,
+      inputBarrier: barrier,
+      dimensions: { cols: 80, rows: 24 },
+    });
+    expect(control.inputBarrier).toEqual(barrier);
+    expect(
+      inputBarrierReached(
+        { ...terminalConnection, lastProcessedInputSequence: 3 },
+        barrier,
+      ),
+    ).toBe(false);
+    expect(
+      inputBarrierReached(
+        { ...terminalConnection, lastProcessedInputSequence: null },
+        barrier,
+      ),
+    ).toBe(false);
+    expect(
+      inputBarrierReached(
+        { ...terminalConnection, lastProcessedInputSequence: 4 },
+        barrier,
+      ),
+    ).toBe(true);
+    expect(
+      inputBarrierReached(
+        {
+          ...terminalConnection,
+          lastProcessedInputSequence: 4,
+          streamId: Schema.decodeSync(TerminalConnectionRef)({
+            ...terminalConnection,
+            streamId: "stream-b",
+          }).streamId,
+        },
+        barrier,
+      ),
+    ).toBe(false);
+    expect(() =>
+      Schema.decodeUnknownSync(AttachmentControl)({
+        _tag: "CloseAttachment",
+        ref: attachment,
+        requestId: "close-a",
+      }),
+    ).toThrow();
+    expect(
+      Schema.decodeSync(AttachmentControl)({
+        _tag: "CloseAttachment",
+        ref: attachment,
+        requestId: "close-a",
+        controlSequence: 1,
+        inputBarrier: barrier,
+      }),
+    ).toMatchObject({ inputBarrier: barrier, controlSequence: 1 });
+  });
+
   test("requires positive dimensions and same-host attachment targets", () => {
     const create = {
       runtime,
@@ -756,6 +860,7 @@ describe("attachment and stdio fixtures", () => {
         target,
         dimensions: { cols: 80, rows: 24 },
         status: "attached",
+        nextControlSequence: 0,
       }),
     ).not.toThrow();
     expect(() =>
@@ -820,6 +925,7 @@ describe("attachment and stdio fixtures", () => {
       "CreateAttachment",
       "ControlAttachment",
       "IssueTerminalTicket",
+      "GetAttachment",
     ]);
     expect(
       HostRpcs.requests.get("SubmitOperation")?.payloadSchema,

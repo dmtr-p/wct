@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { ResolvedConfigSchema } from "../config/schema";
+import { ResolvedConfigSchema, SetupCommandSchema } from "../config/schema";
 import {
   Counter,
   ExecutionId,
@@ -63,8 +63,8 @@ export const LifecyclePhase = Schema.Union([
   Schema.TaggedStruct("Preparing", {}),
   Schema.TaggedStruct("CreatingWorktree", {}),
   Schema.TaggedStruct("CopyingFiles", {}),
-  Schema.TaggedStruct("RunningSetup", { name: Text }),
-  Schema.TaggedStruct("RunningDown", { name: Text }),
+  Schema.TaggedStruct("RunningSetup", { name: SetupCommandSchema.fields.name }),
+  Schema.TaggedStruct("RunningDown", { name: SetupCommandSchema.fields.name }),
   Schema.TaggedStruct("StartingTmuxSession", {}),
   Schema.TaggedStruct("StoppingTmuxSession", {}),
   Schema.TaggedStruct("RemovingWorktree", {}),
@@ -156,11 +156,7 @@ export const ScriptPlan = Schema.Struct({
   kind: Schema.Literals(["setup", "down"]),
   cwd: HostPath,
   environment: Environment,
-  command: Schema.Struct({
-    name: Text,
-    command: Text,
-    optional: Schema.Boolean,
-  }),
+  command: SetupCommandSchema,
 });
 export const ExecutorMessage = Schema.Union([
   Schema.TaggedStruct("ScriptStarted", {

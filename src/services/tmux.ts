@@ -25,6 +25,19 @@ import {
   workspaceSessionName,
   type WorkspaceSessionTarget,
 } from "./session-identity";
+import {
+  type AttachmentKind,
+  type AttachmentLaunch,
+  detachAttachment,
+  listAttachmentClients,
+  nativeClientAction,
+  prepareAttachment,
+  queryAttachment,
+  switchAttachment,
+  type TerminalAttachment,
+  type TmuxClient,
+} from "./terminal-attachments";
+export type { TmuxClient } from "./terminal-attachments";
 export { formatSessionName } from "./session-identity";
 
 export interface TmuxSession extends WorkspaceSession {
@@ -159,11 +172,6 @@ export function captureAgentPane(paneId: string) {
   );
 }
 
-export interface TmuxClient {
-  tty: string;
-  session: string;
-}
-
 export type CreateSessionResult =
   | { _tag: "Created"; sessionName: string }
   | { _tag: "AlreadyExists"; sessionName: string };
@@ -187,9 +195,23 @@ export interface TmuxService {
   attachSession: (name: string) => Effect.Effect<void, WctError>;
   listPanes: (sessionName: string) => Effect.Effect<TmuxPaneInfo[], WctError>;
   listClients: Effect.Effect<TmuxClient[], WctError>;
-  detachClient: (clientTty: string) => Effect.Effect<void, WctError>;
+  prepareAttachment: (
+    target: WorkspaceSessionTarget,
+    kind: AttachmentKind,
+  ) => Effect.Effect<AttachmentLaunch, WctError>;
+  queryAttachment: (
+    attachment: TerminalAttachment,
+  ) => Effect.Effect<TmuxClient | null, WctError>;
+  switchAttachment: (
+    attachment: TerminalAttachment,
+    target: WorkspaceSessionTarget,
+  ) => Effect.Effect<TmuxClient | null, WctError>;
+  detachAttachment: (
+    attachment: TerminalAttachment,
+  ) => Effect.Effect<void, WctError>;
+  detachClient: (client: TmuxClient) => Effect.Effect<void, WctError>;
   switchClientToPane: (
-    clientTty: string,
+    client: TmuxClient,
     target: string,
   ) => Effect.Effect<void, WctError>;
   togglePaneZoom: (paneId: string) => Effect.Effect<void, WctError>;
@@ -755,32 +777,9 @@ function listPanesImpl(sessionName: string) {
 }
 
 function listClientsImpl() {
-  return Effect.orElseSucceed(
-    execProcess("tmux", [
-      "list-clients",
-      "-F",
-      "#{client_tty}\t#{client_session}",
-    ]).pipe(
-      Effect.map((result) => parseClientListOutput(result.stdout.trim())),
-    ),
-    () => [] as TmuxClient[],
+  return listAttachmentClients.pipe(
+    Effect.orElseSucceed(() => [] as TmuxClient[]),
   );
-}
-
-function detachClientImpl(clientTty: string) {
-  return execProcess("tmux", ["detach-client", "-t", clientTty]).pipe(
-    Effect.asVoid,
-  );
-}
-
-function switchClientToPaneImpl(clientTty: string, target: string) {
-  return execProcess("tmux", [
-    "switch-client",
-    "-c",
-    clientTty,
-    "-t",
-    target,
-  ]).pipe(Effect.asVoid);
 }
 
 export type TmuxServiceImplementation = ServiceImplementation<
@@ -829,12 +828,18 @@ export const liveTmuxService: TmuxServiceImplementation = {
     ),
   listPanes: listPanesImpl,
   listClients: listClientsImpl(),
-  detachClient: (clientTty) =>
-    Effect.mapError(detachClientImpl(clientTty), (error) =>
+  prepareAttachment: (target, kind) =>
+    prepareAttachment(target, kind, resolveSessionImpl),
+  queryAttachment,
+  switchAttachment: (attachment, target) =>
+    switchAttachment(attachment, target, resolveSessionImpl),
+  detachAttachment,
+  detachClient: (client) =>
+    Effect.mapError(nativeClientAction(client), (error) =>
       commandError("tmux_error", "Failed to detach tmux client", error),
     ),
-  switchClientToPane: (clientTty, target) =>
-    Effect.mapError(switchClientToPaneImpl(clientTty, target), (error) =>
+  switchClientToPane: (client, target) =>
+    Effect.mapError(nativeClientAction(client, target), (error) =>
       commandError(
         "tmux_error",
         `Failed to switch client to '${target}'`,

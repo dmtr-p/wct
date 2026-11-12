@@ -177,6 +177,13 @@ metadata establishes this relationship. See
 [Workspace sessions](docs/workspace-operations.md#tmux-sessions) for naming and
 lifecycle behavior.
 
+### Terminal Attachment
+
+A Terminal Attachment is one wct-managed tmux client with an opaque ID and
+generation, independent of the Workspace Session it currently views. Browser
+attachments and observers are excluded from native discovery only after their
+live ownership evidence is verified. See [terminal attachments](docs/terminal-attachments.md).
+
 ### Explicit Project Registration
 
 Explicit Project Registration is the user action that adds a repository to the

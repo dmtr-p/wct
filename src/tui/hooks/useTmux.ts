@@ -139,7 +139,7 @@ export function useTmux() {
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>
             service.switchClientToPane(
-              activeClient.tty,
+              activeClient,
               sessionTarget(resolved?.id ?? sessionName),
             ),
           ),
@@ -153,10 +153,11 @@ export function useTmux() {
         }
         return true;
       } catch {
+        if (request.isActive()) await discoverClient();
         return false;
       }
     },
-    [client, beginClient, invalidateClient],
+    [client, beginClient, invalidateClient, discoverClient],
   );
 
   const detachClient = useCallback(
@@ -166,7 +167,7 @@ export function useTmux() {
       if (!request.isActive()) return false;
       try {
         await tuiRuntime.runPromise(
-          TmuxService.use((service) => service.detachClient(activeClient.tty)),
+          TmuxService.use((service) => service.detachClient(activeClient)),
         );
         if (request.isActive() && invalidateClient()) {
           setClient(null);
@@ -174,10 +175,11 @@ export function useTmux() {
         }
         return true;
       } catch {
+        if (request.isActive()) await discoverClient();
         return false;
       }
     },
-    [client, beginClient, invalidateClient],
+    [client, beginClient, invalidateClient, discoverClient],
   );
 
   const jumpToPane = useCallback(
@@ -186,12 +188,13 @@ export function useTmux() {
       try {
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>
-            service.switchClientToPane(client.tty, paneId),
+            service.switchClientToPane(client, paneId),
           ),
         );
         await discoverClient();
         return true;
       } catch {
+        await discoverClient();
         return false;
       }
     },

@@ -15,6 +15,7 @@ import {
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
 import {
+  closeRetentionMessage,
   type LifecycleClaims,
   type LifecycleState,
   rejectIfLifecycleActive as refuseWhenLifecycleActive,
@@ -409,25 +410,29 @@ export function createExecuteClose(deps: SessionActionDeps) {
       // Force confirmation needs a stable tree and a released lifecycle claim.
       afterCleanup: async (result) => {
         if (result.status !== "blocked_by_changes") return undefined;
-        if (deps.lifecycleClaims.lifetime?.closing) {
-          return `Worktree '${branch}' was retained because it has uncommitted changes — retry Close explicitly to confirm force removal`;
+        if (
+          deps.lifecycleClaims.lifetime?.closing ||
+          deps.isPresentationActive?.() === false
+        ) {
+          return closeRetentionMessage(branch);
         }
         // Avoid replacing a mode the user entered while validation was in flight.
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }
         if (!agentItemId) deps.captureTreeReturnPosition("close", true);
-        deps.setMode(
-          Mode.ConfirmCloseForce(
-            sessionName,
-            branch,
-            worktreePath,
-            workspaceKey,
-            repoPath,
-            project,
-            agentItemId,
-          ),
+        const forceMode = Mode.ConfirmCloseForce(
+          sessionName,
+          branch,
+          worktreePath,
+          workspaceKey,
+          repoPath,
+          project,
+          agentItemId,
         );
+        // Quit can arrive before React commits the deferred confirmation.
+        deps.modeRef.current = forceMode;
+        deps.setMode(forceMode);
         return undefined;
       },
     });

@@ -58,6 +58,7 @@ import { handleNavigateInput } from "./input/navigate";
 import { createTerminalInput } from "./input/terminal-input";
 import type { LifecycleState } from "./lifecycle";
 import {
+  closeRetentionMessage,
   createLifecycleClaims,
   isLifecycleActive,
   workspaceIdentityKey,
@@ -116,13 +117,6 @@ export function App({
   const { columns: termCols, rows: termRows } = useWindowSize();
   const { disableMouse } = useMouse();
   const [quitting, setQuitting] = useState(false);
-  const requestQuit = () => {
-    setQuitting(true);
-    void lifetime.quit().then(() => {
-      disableMouse();
-      exit();
-    });
-  };
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
@@ -273,8 +267,33 @@ export function App({
     },
     [waitUntilRenderFlush, presentationEnd],
   );
+  const lifecycleClaimsRef = useRef(createLifecycleClaims(lifetime));
+  const lifecycleClaims = lifecycleClaimsRef.current;
+  const reportedForceClose = useRef<Mode | undefined>(undefined);
+  const reportPendingForceClose = useCallback(() => {
+    const current = modeRef.current;
+    if (
+      current.type !== "ConfirmCloseForce" ||
+      reportedForceClose.current === current
+    )
+      return;
+    // A submitted force retry owns its own outcome; an idle dialog has none.
+    if (lifecycleClaims.active(current.repoPath, current.branch)) return;
+    reportedForceClose.current = current;
+    lifetime.report(closeRetentionMessage(current.branch));
+  }, [lifetime, lifecycleClaims]);
+  const requestQuit = () => {
+    reportPendingForceClose();
+    setQuitting(true);
+    void lifetime.quit().then(() => {
+      disableMouse();
+      exit();
+    });
+  };
   useLayoutEffect(
     () => () => {
+      void lifetime.quit();
+      reportPendingForceClose();
       presentationMounted.current = false;
       presentationEnded.current?.();
       for (const waiters of lifecycleCleanupWaitersRef.current.values()) {
@@ -282,10 +301,8 @@ export function App({
       }
       lifecycleCleanupWaitersRef.current.clear();
     },
-    [],
+    [lifetime, reportPendingForceClose],
   );
-  const lifecycleClaimsRef = useRef(createLifecycleClaims(lifetime));
-  const lifecycleClaims = lifecycleClaimsRef.current;
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const agentKillReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -373,7 +390,7 @@ export function App({
       );
   }, [repos, searchQuery]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     modeRef.current = mode;
   }, [mode]);
 

@@ -58,6 +58,7 @@ describe("TUI open lifecycle", () => {
     await tick(6);
     const call = lastWorkspaceCall("open");
     app.unmount();
+    expect(lifetime.closing).toBe(true);
     const done = lifetime.finalize();
     call.resolve({
       operation: "open",
@@ -86,15 +87,42 @@ describe("TUI open lifecycle", () => {
   });
 
   test.each([
-    { key: "q", operation: "open" as const, blocked: false },
-    { key: "\x03", operation: "open" as const, blocked: false },
-    { key: "q", operation: "close" as const, blocked: false },
-    { key: "\x03", operation: "close" as const, blocked: false },
-    { key: "q", operation: "close" as const, blocked: true },
-    { key: "\x03", operation: "close" as const, blocked: true },
+    { key: "q", operation: "open" as const, blocked: false, phase: "active" },
+    {
+      key: "\x03",
+      operation: "open" as const,
+      blocked: false,
+      phase: "active",
+    },
+    { key: "q", operation: "close" as const, blocked: false, phase: "active" },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: false,
+      phase: "active",
+    },
+    { key: "q", operation: "close" as const, blocked: true, phase: "active" },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: true,
+      phase: "active",
+    },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: true,
+      phase: "dialog",
+    },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: true,
+      phase: "unmount",
+    },
   ])(
-    "quit $key reports $operation outcome (blocked=$blocked) after terminal cleanup",
-    async ({ key, operation, blocked }) => {
+    "quit $key reports $operation outcome (blocked=$blocked, phase=$phase) after terminal cleanup",
+    async ({ key, operation, blocked, phase }) => {
       if (operation === "close") {
         worktreeFixtures.byRepoPath.set(repoPath, [
           makeWorktree(repoPath, "main"),
@@ -123,7 +151,7 @@ describe("TUI open lifecycle", () => {
       await vi.waitFor(() => expect(app).toBeDefined());
       const view = app;
       if (!view) throw new Error("App did not render");
-      await tick(6);
+      await vi.waitFor(() => expect(view.lines().join("\n")).toContain("main"));
       if (operation === "open") {
         await openBranchFromModal(view.stdin, "feature/new");
       } else {
@@ -134,13 +162,23 @@ describe("TUI open lifecycle", () => {
       }
       await tick(6);
       const call = lastWorkspaceCall(operation);
-      await sendKeys(view.stdin, key);
-      await sendKeys(view.stdin, key);
-      expect(events).toEqual([]);
-      if (blocked) {
+      if (phase === "dialog") {
         call.resolve({ status: "blocked_by_changes", warnings: [] });
+        await vi.waitFor(() =>
+          expect(view.lines().join("\n")).toContain("Force Close Worktree"),
+        );
+        await sendKeys(view.stdin, key);
+        await sendKeys(view.stdin, key);
       } else {
-        call.reject(new Error("required down script failed"));
+        if (phase === "unmount") view.unmount();
+        else {
+          await sendKeys(view.stdin, key);
+          await sendKeys(view.stdin, key);
+        }
+        expect(events).toEqual([]);
+        if (blocked)
+          call.resolve({ status: "blocked_by_changes", warnings: [] });
+        else call.reject(new Error("required down script failed"));
       }
       await invocation;
       if (operation === "close") {
@@ -152,6 +190,7 @@ describe("TUI open lifecycle", () => {
       }
       expect(events[0]).toBe("terminal restored");
       expect(events[1]).toBe("disposed");
+      expect(events.slice(2)).toHaveLength(1);
       expect(events.slice(2).join("\n")).toContain(
         blocked
           ? "was retained because it has uncommitted changes"

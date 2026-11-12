@@ -109,15 +109,18 @@ mode and the alternate screen. Unmount stops refresh timers, watchers, and
 observation publication; the input adapter is disposed before the runtime is
 disposed exactly once. Runtime disposal settles remaining background fibers.
 Startup and render failures use the same drain and finalization boundary, even
-when React has already unmounted. Unmount releases presentation waiters and
+when React has already unmounted. Unmount marks the lifetime as closing before
+operation continuations can run, releases presentation waiters, and
 skips client handoff when its terminal presentation is gone, including when
 unmount happens during client discovery or session ownership resolution. Skipped
-switches do not produce failure messages or start refreshes. Operation errors
+switches do not produce failure messages or start refreshes. An attempted switch
+that fails still reports its failure after unmount. Operation errors
 retain validation behavior; errors received while draining or after unmount are
 saved and printed to stderr after terminal restoration and runtime finalization.
 Association writes retain invocation ownership after observation unmount; their
 shutdown outcomes are reported even after the PR menu closes.
 Failure does not prevent draining. Close blocked by uncommitted changes during
 quit reports the retained worktree and asks for an explicit retry; it does not
-open an inaccessible force confirmation or authorize removal.
+open an inaccessible force confirmation or authorize removal. Quitting from an
+already visible force confirmation reports the retained worktree as well.
 Ink and React remain lazy imports of the TUI command.

@@ -147,6 +147,10 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   }
 }
 
+export function closeRetentionMessage(branch: string): string {
+  return `Worktree '${branch}' was retained because it has uncommitted changes — retry Close explicitly to confirm force removal`;
+}
+
 export function lifecycleValidationWarning(
   operation: WorkspaceOperation,
 ): string {

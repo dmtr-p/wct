@@ -46,10 +46,12 @@ describe("TUI project removal", () => {
   test("ignores Escape while confirmed removal is pending", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
 
     await sendKeys(app.stdin, MAC_DELETE);
-    expect(app.lines().join("\n")).toContain("Remove project alpha?");
+    await vi.waitFor(() =>
+      expect(app.lines().join("\n")).toContain("Remove project alpha?"),
+    );
     await sendKeys(app.stdin, ENTER);
     await tick(4);
     expect(lastWorkspaceCall("down")).toBeDefined();
@@ -63,9 +65,12 @@ describe("TUI project removal", () => {
   test("ignores the clickable cancel action while removal is pending", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />, 32, 100);
-    await tick(6);
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
 
     await sendKeys(app.stdin, MAC_DELETE);
+    await vi.waitFor(() =>
+      expect(app.lines().join("\n")).toContain("Remove project alpha?"),
+    );
     await sendKeys(app.stdin, ENTER);
     await tick(4);
     expect(lastWorkspaceCall("down")).toBeDefined();

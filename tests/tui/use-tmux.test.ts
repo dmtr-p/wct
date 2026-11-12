@@ -535,6 +535,25 @@ describe("useTmux hook", () => {
     }
   });
 
+  test("reports a real switch rejection after unmount as failure", async () => {
+    const harness = await renderWithSingleClient();
+    const pending = Promise.withResolvers<void>();
+    mockRunPromise.mockReturnValueOnce(pending.promise);
+    const switching = harness.value.switchSession("feature-a");
+    try {
+      await vi.waitFor(() =>
+        expect(tmuxServiceMock.switchClientToPane).toHaveBeenCalledOnce(),
+      );
+      harness.unmount();
+      pending.reject(new Error("tmux failed"));
+      await expect(switching).resolves.toBe(false);
+    } finally {
+      pending.resolve();
+      await switching;
+      harness.unmount();
+    }
+  });
+
   test("does not switch after unmount during session ownership resolution", async () => {
     const harness = await renderWithSingleClient();
     let resolve!: (value: unknown) => void;

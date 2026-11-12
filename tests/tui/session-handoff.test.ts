@@ -35,6 +35,25 @@ describe.each([
     wording,
   };
 
+  test.each([true, false])(
+    "presentation ending during an attempted switch preserves failure (success=%s)",
+    async (success) => {
+      const deps = makeDeps();
+      const pending = Promise.withResolvers<boolean>();
+      deps.switchSession.mockImplementation(() => pending.promise);
+      const handoff = createSessionHandoff(deps)(options);
+      await vi.waitFor(() => expect(deps.switchSession).toHaveBeenCalledOnce());
+      deps.isPresentationActive.mockReturnValue(false);
+      pending.resolve(success);
+      await expect(handoff).resolves.toBe(
+        success
+          ? undefined
+          : `${wording.completed} session 'wt-feat', but failed to switch client`,
+      );
+      expect(deps.refreshSessions).not.toHaveBeenCalled();
+    },
+  );
+
   test("skips refresh and failure reporting for an inactive switch", async () => {
     const deps = makeDeps();
     deps.switchSession.mockResolvedValue("inactive");

@@ -54,13 +54,14 @@ export function createSessionHandoff(deps: SessionHandoffDeps) {
       const switched = target
         ? await deps.switchSession(sessionName, liveClient.client, target)
         : await deps.switchSession(sessionName, liveClient.client);
-      if (switched === "inactive" || deps.isPresentationActive?.() === false)
-        return undefined;
+      if (switched === "inactive") return undefined;
+      const failure =
+        switched === false
+          ? `${wording.completed} session '${sessionName}', but failed to switch client`
+          : undefined;
+      if (deps.isPresentationActive?.() === false) return failure;
       await deps.refreshSessions?.();
-      if (deps.isPresentationActive?.() === false) return undefined;
-      return switched
-        ? undefined
-        : `${wording.completed} session '${sessionName}', but failed to switch client`;
+      return failure;
     }
     if (liveClient.type === "none") {
       return "No tmux client found — start tmux in the other pane";

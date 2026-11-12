@@ -153,7 +153,7 @@ export function useTmux() {
         }
         return true;
       } catch {
-        return request.isActive() ? false : "inactive";
+        return false;
       }
     },
     [client, beginClient, invalidateClient],

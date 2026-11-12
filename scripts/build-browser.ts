@@ -8,7 +8,10 @@ export const browserBundlePath = join(
   "src/browser/built.browser-assets",
 );
 
-const browserPackages = ["@xterm/xterm", "@xterm/addon-fit"];
+const browserPackages = [
+  { name: "@xterm/xterm", notice: "docs/licenses/xterm-MIT.txt" },
+  { name: "@xterm/addon-fit", notice: "docs/licenses/xterm-addon-fit-MIT.txt" },
+];
 
 export async function buildBrowser() {
   const outputDir = join(projectDir, ".cache/browser-build");
@@ -54,18 +57,20 @@ export async function buildBrowser() {
       relative(projectDir, resolve(input)),
     ),
   ]);
-  for (const name of browserPackages) {
+  for (const { name, notice } of browserPackages) {
     const packagePath = Bun.resolveSync(`${name}/package.json`, projectDir);
     const pkg = await Bun.file(packagePath).json();
     const licensePath = join(dirname(packagePath), "LICENSE");
     if (pkg.license !== "MIT")
       throw new Error(`Review changed license for ${name}`);
-    licenses.push(
-      `${name} ${pkg.version}\n\n${await Bun.file(licensePath).text()}`,
-    );
+    const licenseText = await Bun.file(licensePath).text();
+    if (licenseText !== (await Bun.file(join(projectDir, notice)).text()))
+      throw new Error(`Review changed license text for ${name}`);
+    licenses.push(`${name} ${pkg.version}\n\n${licenseText}`);
     dependencies[name] = { version: pkg.version, license: pkg.license };
     inputs.add(relative(projectDir, packagePath));
     inputs.add(relative(projectDir, licensePath));
+    inputs.add(notice);
   }
   assets["/third-party-licenses.txt"] = {
     body: licenses.join("\n\n"),

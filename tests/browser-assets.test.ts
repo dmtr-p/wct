@@ -69,13 +69,11 @@ console.log(JSON.stringify(bodies));`,
     const notices = assets["/third-party-licenses.txt"]?.body;
     expect(notices).toContain("@xterm/xterm 6.0.0");
     expect(notices).toContain("@xterm/addon-fit 0.11.0");
-    expect(notices).toContain(
-      await Bun.file(join(root, "docs/licenses/xterm-MIT.txt")).text(),
-    );
-    expect(notices).toContain(
-      await Bun.file(
-        join(root, "docs/licenses/xterm-addon-fit-MIT.txt"),
-      ).text(),
+    expect(notices).toBe(
+      [
+        `@xterm/xterm 6.0.0\n\n${await Bun.file(join(root, "docs/licenses/xterm-MIT.txt")).text()}`,
+        `@xterm/addon-fit 0.11.0\n\n${await Bun.file(join(root, "docs/licenses/xterm-addon-fit-MIT.txt")).text()}`,
+      ].join("\n\n"),
     );
     const info = JSON.parse(assets["/build-info.json"]?.body ?? "{}");
     expect(info.bun).toBe(Bun.version);

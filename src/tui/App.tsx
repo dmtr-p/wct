@@ -62,6 +62,12 @@ import {
   isLifecycleActive,
   workspaceIdentityKey,
 } from "./lifecycle";
+import {
+  createTuiLifetime,
+  runTuiInvocation,
+  type TuiLifetime,
+} from "./lifetime";
+import { bindTuiRuntime, createTuiRuntime } from "./runtime";
 import { workspacePaneMap } from "./session-utils";
 import {
   buildTreeItems,
@@ -92,10 +98,23 @@ interface ConfirmationReturnContext {
   returnMode: Mode;
 }
 
-export function App() {
+export function App({
+  lifetime: suppliedLifetime,
+}: { lifetime?: TuiLifetime } = {}) {
+  const [lifetime] = useState(
+    () => suppliedLifetime ?? createTuiLifetime(async () => {}),
+  );
   const { exit, waitUntilRenderFlush } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
   const { disableMouse } = useMouse();
+  const [quitting, setQuitting] = useState(false);
+  const requestQuit = () => {
+    setQuitting(true);
+    void lifetime.quit().then(() => {
+      disableMouse();
+      exit();
+    });
+  };
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
@@ -215,7 +234,7 @@ export function App() {
     },
     [waitUntilRenderFlush],
   );
-  const lifecycleClaimsRef = useRef(createLifecycleClaims());
+  const lifecycleClaimsRef = useRef(createLifecycleClaims(lifetime));
   const lifecycleClaims = lifecycleClaimsRef.current;
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const agentKillReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -665,6 +684,7 @@ export function App() {
   });
 
   const projectActions = useProjectActions({
+    lifetime,
     treeItems,
     filteredRepos,
     repos,
@@ -918,6 +938,7 @@ export function App() {
   }
 
   function handleMouse(event: MouseEvent) {
+    if (lifetime.closing) return;
     if (event.kind === "move" || event.kind === "press") {
       setIsViewToggleHovered(
         isViewToggleButtonTarget(event, mode, termCols, agentsView),
@@ -1032,6 +1053,7 @@ export function App() {
 
   useGuardedInput(
     (input, key) => {
+      if (lifetime.closing) return;
       // Double-clicks require consecutive mouse presses. Any keyboard event
       // breaks the pair, even when it leaves the same row selected.
       lastMouseClickRef.current = null;
@@ -1110,8 +1132,7 @@ export function App() {
       }
 
       if (key.ctrl && input === "c") {
-        disableMouse();
-        exit();
+        requestQuit();
         return;
       }
 
@@ -1129,8 +1150,7 @@ export function App() {
         mode.type !== "ConfirmCloseForce" &&
         mode.type !== "ConfirmRemoveProject"
       ) {
-        disableMouse();
-        exit();
+        requestQuit();
         return;
       }
 
@@ -1189,6 +1209,14 @@ export function App() {
       <Box flexDirection="column">
         <Text bold>wct</Text>
         <Text dimColor>Loading...</Text>
+      </Box>
+    );
+  }
+
+  if (quitting) {
+    return (
+      <Box flexDirection="column">
+        <Text>Waiting for active Workspace Operations to finish…</Text>
       </Box>
     );
   }
@@ -1417,16 +1445,24 @@ export function App() {
 }
 
 export async function startTui(): Promise<void> {
-  // App handles Ctrl+C so mouse reporting stops before Ink releases raw mode.
-  const input = createTerminalInput(process.stdin);
+  const runtime = createTuiRuntime();
+  let unbind: (() => void) | undefined;
+  let input: ReturnType<typeof createTerminalInput> | undefined;
   try {
-    const instance = render(<App />, {
-      stdin: input.stdin,
-      alternateScreen: true,
-      exitOnCtrlC: false,
+    await runTuiInvocation({
+      dispose: () => runtime.dispose(),
+      start: (lifetime) => {
+        unbind = bindTuiRuntime(runtime);
+        input = createTerminalInput(process.stdin);
+        return render(<App lifetime={lifetime} />, {
+          stdin: input.stdin,
+          alternateScreen: true,
+          exitOnCtrlC: false,
+        });
+      },
+      cleanup: () => input?.dispose(),
     });
-    await instance.waitUntilExit();
   } finally {
-    input.dispose();
+    unbind?.();
   }
 }

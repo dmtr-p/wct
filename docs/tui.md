@@ -86,3 +86,27 @@ The shared visual row model drives rendering, windowing, and mouse hit-testing.
 Every model row must occupy one terminal row. Wrapping and truncation use
 `src/tui/utils/display-width.ts` for consistent whole-string and grapheme widths;
 its approximation can differ from Ink for complex Unicode clusters.
+
+## Quit and runtime lifetime
+
+Each invocation acquires its own ManagedRuntime, shared by its imperative TUI
+adapters and WorkspaceService calls. Only one invocation can own the terminal
+binding at a time; importing TUI runtime helpers does not acquire resources.
+
+Eligible `q` and Ctrl+C request the same coordinated quit. Input stops accepting
+new actions and the TUI displays a waiting message while active Open, Start,
+Stop, Close, and Project Removal work drains. The drain includes validation and
+follow-up handoff. Repeated quit requests cannot force exit. There is no timeout
+or cancellation of mutations; a blocked script can therefore delay quit.
+Required down-script failures still keep the worktree, and self-session shutdown
+still uses the detached worker and its saved outcome described in
+[Workspace Operations](workspace-operations.md#shutdown).
+
+After draining, mouse reporting is disabled before Ink exits and restores raw
+mode and the alternate screen. Unmount stops refresh timers, watchers, and
+observation publication; the input adapter is disposed before the runtime is
+disposed exactly once. Runtime disposal settles remaining background fibers.
+Startup and render failures use the same drain and finalization boundary, even
+when React has already unmounted. Operation errors retain the normal lifecycle
+error reporting and validation behavior; failure does not prevent draining.
+Ink and React remain lazy imports of the TUI command.

@@ -2,7 +2,23 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useState } from "react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { bindTuiRuntime, createTuiRuntime } from "../../src/tui/runtime";
+
+let runtime: ReturnType<typeof createTuiRuntime>;
+let unbind: () => void;
+beforeEach(() => {
+  runtime = createTuiRuntime();
+  unbind = bindTuiRuntime(runtime);
+});
+afterEach(async () => {
+  vi.useRealTimers();
+  try {
+    await runtime.dispose();
+  } finally {
+    unbind();
+  }
+});
 
 // Force the regular blink phase off so movement visibility must come from
 // the editing hold, not from a conveniently visible animation frame.
@@ -20,8 +36,6 @@ const HOME = "\x1b[H";
 const END = "\x1b[F";
 const DELETE = "\x1b[3~";
 const DOWN = "\x1b[B";
-
-afterEach(() => vi.useRealTimers());
 
 function renderBranch(onSubmit: (result: unknown) => void) {
   return renderWithInput(

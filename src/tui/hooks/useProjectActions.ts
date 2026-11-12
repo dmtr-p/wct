@@ -7,6 +7,7 @@ import { workspaceSessionTarget } from "../../services/session-identity";
 import { TmuxService } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
 import { lifecycleBusyMessage, type LifecycleState } from "../lifecycle";
+import type { TuiLifetime } from "../lifetime";
 import { tuiRuntime } from "../runtime";
 import type { ReturnSlot } from "../tree-navigation";
 import { Mode, type TreeItem } from "../types";
@@ -14,6 +15,7 @@ import { formatWorkspaceWarning } from "../workspace-warning";
 import type { RepoInfo } from "./useRegistry";
 
 export interface ProjectActionDeps {
+  lifetime?: TuiLifetime;
   treeItems: TreeItem[];
   filteredRepos: RepoInfo[];
   repos: RepoInfo[];
@@ -158,7 +160,10 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
       ),
     );
 
-    return tuiRuntime.runPromise(program);
+    if (deps.lifetime?.closing) return Promise.resolve();
+    return deps.lifetime
+      ? deps.lifetime.track(() => tuiRuntime.runPromise(program))
+      : tuiRuntime.runPromise(program);
   };
 }
 

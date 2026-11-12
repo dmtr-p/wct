@@ -12,6 +12,7 @@ const tmux: WorkspaceUpResult["attempts"]["tmux"] = {
 
 function makeDeps() {
   return {
+    isPresentationActive: vi.fn(() => true),
     waitForLifecyclePresentationCleanup: vi.fn().mockResolvedValue(undefined),
     discoverClient: vi
       .fn<() => Promise<TmuxClientDiscovery>>()
@@ -33,6 +34,50 @@ describe.each([
     autoSwitch: true,
     wording,
   };
+
+  test.each([true, false])(
+    "presentation ending during an attempted switch preserves failure (success=%s)",
+    async (success) => {
+      const deps = makeDeps();
+      const pending = Promise.withResolvers<boolean>();
+      deps.switchSession.mockImplementation(() => pending.promise);
+      const handoff = createSessionHandoff(deps)(options);
+      await vi.waitFor(() => expect(deps.switchSession).toHaveBeenCalledOnce());
+      deps.isPresentationActive.mockReturnValue(false);
+      pending.resolve(success);
+      await expect(handoff).resolves.toBe(
+        success
+          ? undefined
+          : `${wording.completed} session 'wt-feat', but failed to switch client`,
+      );
+      expect(deps.refreshSessions).not.toHaveBeenCalled();
+    },
+  );
+
+  test("skips refresh and failure reporting for an inactive switch", async () => {
+    const deps = makeDeps();
+    deps.switchSession.mockResolvedValue("inactive");
+    await expect(createSessionHandoff(deps)(options)).resolves.toBeUndefined();
+    expect(deps.refreshSessions).not.toHaveBeenCalled();
+  });
+
+  test("skips switching when presentation ends during client discovery", async () => {
+    const deps = makeDeps();
+    let resolve!: (value: TmuxClientDiscovery) => void;
+    deps.discoverClient.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const handoff = createSessionHandoff(deps)(options);
+    await vi.waitFor(() => expect(deps.discoverClient).toHaveBeenCalledOnce());
+    deps.isPresentationActive.mockReturnValue(false);
+    resolve({ type: "single", client });
+    await expect(handoff).resolves.toBeUndefined();
+    expect(deps.switchSession).not.toHaveBeenCalled();
+    expect(deps.refreshSessions).not.toHaveBeenCalled();
+  });
 
   test("waits for presentation cleanup before discovering and switching the client", async () => {
     const deps = makeDeps();

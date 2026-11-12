@@ -58,10 +58,17 @@ import { handleNavigateInput } from "./input/navigate";
 import { createTerminalInput } from "./input/terminal-input";
 import type { LifecycleState } from "./lifecycle";
 import {
+  closeRetentionMessage,
   createLifecycleClaims,
   isLifecycleActive,
   workspaceIdentityKey,
 } from "./lifecycle";
+import {
+  createTuiLifetime,
+  runTuiInvocation,
+  type TuiLifetime,
+} from "./lifetime";
+import { bindTuiRuntime, createTuiRuntime } from "./runtime";
 import { workspacePaneMap } from "./session-utils";
 import {
   buildTreeItems,
@@ -92,10 +99,24 @@ interface ConfirmationReturnContext {
   returnMode: Mode;
 }
 
-export function App() {
+export function App({
+  lifetime: suppliedLifetime,
+}: { lifetime?: TuiLifetime } = {}) {
+  const [lifetime] = useState(
+    () => suppliedLifetime ?? createTuiLifetime(async () => {}),
+  );
+  const presentationMounted = useRef(true);
+  const presentationEnded = useRef<(() => void) | undefined>(undefined);
+  const [presentationEnd] = useState(
+    () =>
+      new Promise<void>((resolve) => {
+        presentationEnded.current = resolve;
+      }),
+  );
   const { exit, waitUntilRenderFlush } = useApp();
   const { columns: termCols, rows: termRows } = useWindowSize();
   const { disableMouse } = useMouse();
+  const [quitting, setQuitting] = useState(false);
   const { repos, loading, refresh: refreshRegistry } = useRegistry();
   const {
     prData,
@@ -116,12 +137,27 @@ export function App() {
     error: tmuxError,
     switchSession,
     detachClient,
-    jumpToPane,
-    zoomPane,
+    jumpToPane: untrackedJumpToPane,
+    zoomPane: untrackedZoomPane,
     killPane,
     refreshSessions,
     discoverClient,
   } = useTmux();
+  // Track direct input actions; lifecycle handoffs remain inside their existing drain.
+  const jumpToPane = useCallback(
+    (paneId: string) => {
+      if (lifetime.closing) return Promise.resolve(false);
+      return lifetime.track(() => untrackedJumpToPane(paneId));
+    },
+    [lifetime, untrackedJumpToPane],
+  );
+  const zoomPane = useCallback(
+    (paneId: string) => {
+      if (lifetime.closing) return Promise.resolve(false);
+      return lifetime.track(() => untrackedZoomPane(paneId));
+    },
+    [lifetime, untrackedZoomPane],
+  );
   const panes = useMemo(
     () => workspacePaneMap(repos, sessions, sessionPanes),
     [repos, sessions, sessionPanes],
@@ -180,8 +216,21 @@ export function App() {
     col: number;
     row: number;
   } | null>(null);
-  const { actionError, showActionError, clearActionError } = useActionError();
+  const {
+    actionError,
+    showActionError: displayActionError,
+    clearActionError,
+  } = useActionError();
+  const showActionError = useCallback(
+    (message: string) => {
+      if (lifetime.closing || !presentationMounted.current)
+        lifetime.report(message);
+      if (presentationMounted.current) displayActionError(message);
+    },
+    [lifetime, displayActionError],
+  );
   const prActions = usePrActions({
+    lifetime,
     mode,
     setMode,
     showActionError,
@@ -198,7 +247,8 @@ export function App() {
     Map<WorkspaceIdentityKey, Set<() => void>>
   >(new Map());
   const waitForLifecyclePresentationCleanup = useCallback(
-    async (repoPath: string, branch: string): Promise<void> => {
+    async (repoPath: string, branch: string): Promise<boolean> => {
+      if (!presentationMounted.current) return false;
       const key = workspaceIdentityKey(repoPath, branch);
       if (lifecycleRef.current.has(key)) {
         await new Promise<void>((resolve) => {
@@ -211,12 +261,48 @@ export function App() {
         });
       }
       // A React commit can precede Ink's throttled stdout write.
-      await waitUntilRenderFlush();
+      if (!presentationMounted.current) return false;
+      await Promise.race([waitUntilRenderFlush(), presentationEnd]);
+      return presentationMounted.current;
     },
-    [waitUntilRenderFlush],
+    [waitUntilRenderFlush, presentationEnd],
   );
-  const lifecycleClaimsRef = useRef(createLifecycleClaims());
+  const lifecycleClaimsRef = useRef(createLifecycleClaims(lifetime));
   const lifecycleClaims = lifecycleClaimsRef.current;
+  const reportedForceClose = useRef<Mode | undefined>(undefined);
+  const reportPendingForceClose = useCallback(() => {
+    const current = modeRef.current;
+    if (
+      current.type !== "ConfirmCloseForce" ||
+      reportedForceClose.current === current
+    )
+      return;
+    // A submitted force retry owns its own outcome; an idle dialog has none.
+    if (lifecycleClaims.active(current.repoPath, current.branch)) return;
+    reportedForceClose.current = current;
+    lifetime.report(closeRetentionMessage(current.branch));
+  }, [lifetime, lifecycleClaims]);
+  const requestQuit = () => {
+    reportPendingForceClose();
+    setQuitting(true);
+    void lifetime.quit().then(() => {
+      disableMouse();
+      exit();
+    });
+  };
+  useLayoutEffect(
+    () => () => {
+      void lifetime.quit();
+      reportPendingForceClose();
+      presentationMounted.current = false;
+      presentationEnded.current?.();
+      for (const waiters of lifecycleCleanupWaitersRef.current.values()) {
+        for (const resolve of waiters) resolve();
+      }
+      lifecycleCleanupWaitersRef.current.clear();
+    },
+    [lifetime, reportPendingForceClose],
+  );
   const confirmDownReturnModeRef = useRef<Mode>(Mode.Navigate);
   const agentKillReturnModeRef = useRef<Mode>(Mode.Navigate);
   const confirmCloseReturnModeRef = useRef<Mode>(Mode.Navigate);
@@ -304,7 +390,7 @@ export function App() {
       );
   }, [repos, searchQuery]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     modeRef.current = mode;
   }, [mode]);
 
@@ -624,6 +710,7 @@ export function App() {
     modeRef,
     setLifecycle,
     waitForLifecyclePresentationCleanup,
+    isPresentationActive: () => presentationMounted.current,
     showActionError,
     clearActionError,
     switchSession,
@@ -636,6 +723,7 @@ export function App() {
   });
 
   const modalActions = useModalActions({
+    lifetime,
     treeItems,
     filteredRepos,
     selectedIndex,
@@ -654,6 +742,7 @@ export function App() {
     setOpenModalRepoPath,
     markWorkspaceDiscovered,
     waitForLifecyclePresentationCleanup,
+    isPresentationActive: () => presentationMounted.current,
     showActionError,
     clearActionError,
     switchSession,
@@ -665,6 +754,7 @@ export function App() {
   });
 
   const projectActions = useProjectActions({
+    lifetime,
     treeItems,
     filteredRepos,
     repos,
@@ -815,43 +905,45 @@ export function App() {
         const target = mode;
         const targetRepos = repos;
         clearActionError();
-        void (async () => {
-          // The cached snapshot can lag a pane restart by a poll interval.
-          if (
-            target.type === "ConfirmAgentKill" &&
-            !(await verifyAgentGeneration(
-              targetRepos,
-              target.paneId,
-              target.generation,
-            ))
-          ) {
+        void lifetime
+          .track(async () => {
+            // The cached snapshot can lag a pane restart by a poll interval.
+            if (
+              target.type === "ConfirmAgentKill" &&
+              !(await verifyAgentGeneration(
+                targetRepos,
+                target.paneId,
+                target.generation,
+              ))
+            ) {
+              if (!isCurrent()) return;
+              returnFromConfirmation(target);
+              showActionError("Agent pane changed or could not be verified");
+              return;
+            }
             if (!isCurrent()) return;
-            returnFromConfirmation(target);
-            showActionError("Agent pane changed or could not be verified");
-            return;
-          }
-          if (!isCurrent()) return;
-          await executeConfirmKill({
-            paneId: target.paneId,
-            killPane,
-            refreshSessions,
-            isCurrent,
-            showActionError,
-            onSuccess: () => {
-              if (target.type === "ConfirmAgentKill")
-                returnFromConfirmation(target);
-              else {
-                restoreTreeReturnPosition("kill", "owning-worktree");
-                setMode(Mode.Expanded(target.workspaceKey));
-              }
-            },
+            await executeConfirmKill({
+              paneId: target.paneId,
+              killPane,
+              refreshSessions,
+              isCurrent,
+              showActionError,
+              onSuccess: () => {
+                if (target.type === "ConfirmAgentKill")
+                  returnFromConfirmation(target);
+                else {
+                  restoreTreeReturnPosition("kill", "owning-worktree");
+                  setMode(Mode.Expanded(target.workspaceKey));
+                }
+              },
+            });
+          })
+          .finally(() => {
+            if (confirmKillAttemptRef.current === attempt) {
+              confirmPendingRef.current = false;
+              setIsPaneKillPending(false);
+            }
           });
-        })().finally(() => {
-          if (confirmKillAttemptRef.current === attempt) {
-            confirmPendingRef.current = false;
-            setIsPaneKillPending(false);
-          }
-        });
         return;
       }
       case "ConfirmDown": {
@@ -918,6 +1010,7 @@ export function App() {
   }
 
   function handleMouse(event: MouseEvent) {
+    if (lifetime.closing) return;
     if (event.kind === "move" || event.kind === "press") {
       setIsViewToggleHovered(
         isViewToggleButtonTarget(event, mode, termCols, agentsView),
@@ -1032,6 +1125,7 @@ export function App() {
 
   useGuardedInput(
     (input, key) => {
+      if (lifetime.closing) return;
       // Double-clicks require consecutive mouse presses. Any keyboard event
       // breaks the pair, even when it leaves the same row selected.
       lastMouseClickRef.current = null;
@@ -1110,8 +1204,7 @@ export function App() {
       }
 
       if (key.ctrl && input === "c") {
-        disableMouse();
-        exit();
+        requestQuit();
         return;
       }
 
@@ -1129,8 +1222,7 @@ export function App() {
         mode.type !== "ConfirmCloseForce" &&
         mode.type !== "ConfirmRemoveProject"
       ) {
-        disableMouse();
-        exit();
+        requestQuit();
         return;
       }
 
@@ -1189,6 +1281,14 @@ export function App() {
       <Box flexDirection="column">
         <Text bold>wct</Text>
         <Text dimColor>Loading...</Text>
+      </Box>
+    );
+  }
+
+  if (quitting) {
+    return (
+      <Box flexDirection="column">
+        <Text>Waiting for active Workspace Operations to finish…</Text>
       </Box>
     );
   }
@@ -1417,16 +1517,27 @@ export function App() {
 }
 
 export async function startTui(): Promise<void> {
-  // App handles Ctrl+C so mouse reporting stops before Ink releases raw mode.
-  const input = createTerminalInput(process.stdin);
+  const runtime = createTuiRuntime();
+  let unbind: (() => void) | undefined;
+  let input: ReturnType<typeof createTerminalInput> | undefined;
   try {
-    const instance = render(<App />, {
-      stdin: input.stdin,
-      alternateScreen: true,
-      exitOnCtrlC: false,
+    await runTuiInvocation({
+      dispose: () => runtime.dispose(),
+      start: (lifetime) => {
+        unbind = bindTuiRuntime(runtime);
+        input = createTerminalInput(process.stdin);
+        return render(<App lifetime={lifetime} />, {
+          stdin: input.stdin,
+          alternateScreen: true,
+          exitOnCtrlC: false,
+        });
+      },
+      cleanup: () => input?.dispose(),
+      report: (message) => {
+        process.stderr.write(`${message}\n`);
+      },
     });
-    await instance.waitUntilExit();
   } finally {
-    input.dispose();
+    unbind?.();
   }
 }

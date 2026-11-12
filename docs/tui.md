@@ -86,3 +86,41 @@ The shared visual row model drives rendering, windowing, and mouse hit-testing.
 Every model row must occupy one terminal row. Wrapping and truncation use
 `src/tui/utils/display-width.ts` for consistent whole-string and grapheme widths;
 its approximation can differ from Ink for complex Unicode clusters.
+
+## Quit and runtime lifetime
+
+Each invocation acquires its own ManagedRuntime, shared by its imperative TUI
+adapters and WorkspaceService calls. Only one invocation can own the terminal
+binding at a time; importing TUI runtime helpers does not acquire resources.
+
+Eligible `q` and Ctrl+C request the same coordinated quit. Input stops accepting
+new actions and the TUI displays a waiting message while active Open, Start,
+Stop, Close, Project Removal, Add Project, PR merge submissions, PR association
+writes, and direct tmux actions (pane kill, jump, zoom, and existing-session
+switch) drain. The drain includes validation and
+follow-up handoff. Repeated quit requests cannot force exit. There is no timeout
+or cancellation of mutations; a blocked script can therefore delay quit.
+Required down-script failures still keep the worktree, and self-session shutdown
+still uses the detached worker and its saved outcome described in
+[Workspace Operations](workspace-operations.md#shutdown).
+
+After draining, mouse reporting is disabled before Ink exits and restores raw
+mode and the alternate screen. Unmount stops refresh timers, watchers, and
+observation publication; the input adapter is disposed before the runtime is
+disposed exactly once. Runtime disposal settles remaining background fibers.
+Startup and render failures use the same drain and finalization boundary, even
+when React has already unmounted. Unmount marks the lifetime as closing before
+operation continuations can run, releases presentation waiters, and
+skips client handoff when its terminal presentation is gone, including when
+unmount happens during client discovery or session ownership resolution. Skipped
+switches do not produce failure messages or start refreshes. An attempted switch
+that fails still reports its failure after unmount. Operation errors
+retain validation behavior; errors received while draining or after unmount are
+saved and printed to stderr after terminal restoration and runtime finalization.
+Association writes retain invocation ownership after observation unmount; their
+shutdown outcomes are reported even after the PR menu closes.
+Failure does not prevent draining. Close blocked by uncommitted changes during
+quit reports the retained worktree and asks for an explicit retry; it does not
+open an inaccessible force confirmation or authorize removal. Quitting from an
+already visible force confirmation reports the retained worktree as well.
+Ink and React remain lazy imports of the TUI command.

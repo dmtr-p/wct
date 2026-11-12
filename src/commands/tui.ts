@@ -10,7 +10,7 @@ export const tuiCommand: Effect.Effect<void, WctError, WctServices> =
       try: () => import("../tui/App"),
       catch: (error) => toWctError(error, "Failed to load TUI"),
     });
-    // Command exit tears down the process-scoped TUI runtime.
+    // startTui owns mutation draining, terminal cleanup, and runtime disposal.
     yield* Effect.tryPromise({
       try: () => startTui(),
       catch: (error) => toWctError(error, "Failed to start TUI"),

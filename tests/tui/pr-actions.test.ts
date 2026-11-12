@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { workspaceIdentityKey } from "../../src/services/identities";
 import type { MergeSnapshot } from "../../src/services/pr-merge-service";
+import { createTuiLifetime } from "../../src/tui/lifetime";
 import {
   createPrActionsController,
   type PrActionsDependencies,
@@ -100,6 +101,34 @@ async function confirmReady(h: ReturnType<typeof harness>, value = snapshot()) {
 }
 
 describe("PR actions controller", () => {
+  test.each(["success", "failure"])(
+    "quit drains merge submission %s after controller teardown",
+    async (outcome) => {
+      const pending = deferred<"merged" | "queued">();
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const h = harness({
+        lifetime,
+        submitMerge: vi.fn(() => pending.promise),
+      });
+      await confirmReady(h);
+      h.controller.choose("confirm");
+      const done = lifetime.finalize();
+      expect(lifetime.quit()).toBe(lifetime.quit());
+      h.controller.choose("confirm");
+      expect(h.deps.submitMerge).toHaveBeenCalledTimes(1);
+      h.controller.invalidate();
+      expect(dispose).not.toHaveBeenCalled();
+      if (outcome === "success") pending.resolve("merged");
+      else pending.reject(new Error("merge failed"));
+      await done;
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(lifetime.messages).toEqual([
+        outcome === "success" ? "PR #7 merged" : "merge failed",
+      ]);
+    },
+  );
+
   test.each(["success", "failure"])(
     "ignores delayed snapshot %s after dismissal",
     async (outcome) => {
@@ -372,6 +401,51 @@ describe("PR actions controller", () => {
     expect(h.deps.clearExplicit).toHaveBeenCalledWith("/repo", "feature");
     expect(h.menu()).toBeNull();
   });
+
+  test.each([
+    { action: "set", success: true },
+    { action: "set", success: false },
+    { action: "clear", success: true },
+    { action: "clear", success: false },
+  ])(
+    "quit drains $action association write (success=$success) and reports after teardown",
+    async ({ action, success }) => {
+      const pending = deferred<void>();
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const write = vi.fn(() => pending.promise);
+      const h = harness({ lifetime, setExplicit: write, clearExplicit: write });
+      const candidate: PrActionTarget = {
+        ...target(),
+        kind: "candidate",
+        pr: snapshot().pr,
+        explicit: true,
+      };
+      h.controller.open(candidate);
+      h.controller.choose(action === "set" ? "use" : "clear");
+      expect(h.menu()).toBeNull();
+      expect(write).toHaveBeenCalledOnce();
+      const done = lifetime.finalize();
+      expect(lifetime.quit()).toBe(lifetime.quit());
+      h.controller.invalidate();
+      h.controller.open(candidate);
+      h.controller.choose(action === "set" ? "use" : "clear");
+      expect(write).toHaveBeenCalledOnce();
+      expect(dispose).not.toHaveBeenCalled();
+      if (success) pending.resolve();
+      else pending.reject(new Error("association failed"));
+      await done;
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(lifetime.messages).toEqual([
+        !success
+          ? "Error: association failed"
+          : action === "set"
+            ? "Associated PR #7 with 'feature'"
+            : "Cleared PR association for 'feature'",
+      ]);
+      expect(h.deps.showActionError).not.toHaveBeenCalled();
+    },
+  );
 
   test.each(["set", "clear"])(
     "reports %s association errors after closing",

@@ -15,6 +15,7 @@ import type { Mode } from "../types";
 
 type PrActionsHookDependencies = Pick<
   PrActionsDependencies,
+  | "lifetime"
   | "setMode"
   | "showActionError"
   | "refresh"
@@ -28,6 +29,7 @@ export function usePrActions(deps: PrActionsHookDependencies) {
   current.current = deps;
   const [controller] = useState(() =>
     createPrActionsController({
+      lifetime: deps.lifetime,
       getMode: () => current.current.mode,
       setMode: (mode) => current.current.setMode(mode),
       showActionError: (message) => current.current.showActionError(message),

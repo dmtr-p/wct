@@ -17,6 +17,7 @@ import {
   runLifecycleOperation,
   workspaceIdentityKey,
 } from "../lifecycle";
+import type { TuiLifetime } from "../lifetime";
 import { runTuiSilentPromise, tuiRuntime } from "../runtime";
 import {
   createSessionHandoff,
@@ -48,6 +49,7 @@ function discoveredWorkspaceIdentityKey(
 }
 
 export interface ModalActionDeps extends SessionHandoffDeps {
+  lifetime?: TuiLifetime;
   treeItems: TreeItem[];
   filteredRepos: RepoInfo[];
   selectedIndex: number;
@@ -242,9 +244,10 @@ export function createPrepareAddProjectModal(deps: ModalActionDeps) {
 
 export function createHandleAddProject(deps: ModalActionDeps) {
   return (result: AddProjectModalResult) => {
+    if (deps.lifetime?.closing) return;
     deps.clearActionError();
     deps.setMode(deps.modalReturnModeRef.current);
-    void (async () => {
+    const run = async () => {
       try {
         await runTuiSilentPromise(
           registerProject({
@@ -255,10 +258,13 @@ export function createHandleAddProject(deps: ModalActionDeps) {
           }),
         );
         await deps.refreshAll();
+        if (deps.lifetime?.closing)
+          deps.lifetime.report(`Registered project at '${result.path}'`);
       } catch (error) {
         deps.showActionError(toWctError(error).message);
       }
-    })();
+    };
+    void (deps.lifetime ? deps.lifetime.track(run) : run());
   };
 }
 

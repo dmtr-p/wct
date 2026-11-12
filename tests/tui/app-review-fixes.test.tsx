@@ -44,8 +44,9 @@ describe("App.tsx review fixes (real App)", () => {
 
     const rendered = await renderApp(<App />, 14);
     try {
-      await tick(20);
-      expect(rendered.output()).toContain("main");
+      await vi.waitFor(() =>
+        expect(rendered.lines().join("\n")).toContain("main"),
+      );
 
       // Scroll the selection off-screen so an unwanted reveal is observable.
       for (let i = 0; i < 15; i++) {

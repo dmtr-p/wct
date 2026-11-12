@@ -18,6 +18,8 @@ export type TmuxSessionInfo = Omit<TmuxSession, "windows"> & {
   windows?: number;
 };
 
+export type TmuxSwitchResult = boolean | "inactive";
+
 export type TmuxClientDiscovery =
   | { type: "none" }
   | { type: "single"; client: TmuxClient }
@@ -122,16 +124,17 @@ export function useTmux() {
       sessionName: string,
       activeClient: TmuxClient | null = client,
       target?: WorkspaceSessionTarget,
-    ) => {
+    ): Promise<TmuxSwitchResult> => {
       if (!activeClient) return false;
       const request = beginClient();
-      if (!request.isActive()) return false;
+      if (!request.isActive()) return "inactive";
       try {
         const resolved = target
           ? await tuiRuntime.runPromise(
               TmuxService.use((service) => service.resolveSession(target)),
             )
           : undefined;
+        if (!request.isActive()) return "inactive";
         if (target && !resolved?.id) return false;
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RegistrationId } from "../../src/services/identities";
 import { sessionIdentity } from "../../src/services/session-identity";
+import { createTuiLifetime, runTuiInvocation } from "../../src/tui/lifetime";
 import { legacySession } from "../helpers/session-projections";
 import {
   emitWorkspacePhase,
@@ -47,6 +48,157 @@ describe("TUI open lifecycle", () => {
     rmSync(repoPath, { recursive: true, force: true });
   });
 
+  test("unmount during Open releases presentation handoff and drains", async () => {
+    const { App } = await import("../../src/tui/App");
+    const dispose = vi.fn(async () => {});
+    const lifetime = createTuiLifetime(dispose);
+    const app = await renderApp(<App lifetime={lifetime} />);
+    await tick(6);
+    await openBranchFromModal(app.stdin, "feature/new");
+    await tick(6);
+    const call = lastWorkspaceCall("open");
+    app.unmount();
+    expect(lifetime.closing).toBe(true);
+    const done = lifetime.finalize();
+    call.resolve({
+      operation: "open",
+      worktreePath: join(repoPath, "feature-new"),
+      mainRepoPath: repoPath,
+      branch: "feature/new",
+      sessionName: "feature-new",
+      projectName: "alpha",
+      created: true,
+      env: {},
+      warnings: [],
+      attempts: {
+        worktree: { attempted: true, ok: true, value: {} },
+        copy: { attempted: false, reason: "not_configured" },
+        setup: { attempted: false, reason: "not_configured" },
+        tmux: {
+          attempted: true,
+          ok: true,
+          value: { _tag: "Created", sessionName: "feature-new" },
+        },
+      },
+    });
+    await done;
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(tmuxFixtures.switchCalls).toEqual([]);
+  });
+
+  test.each([
+    { key: "q", operation: "open" as const, blocked: false, phase: "active" },
+    {
+      key: "\x03",
+      operation: "open" as const,
+      blocked: false,
+      phase: "active",
+    },
+    { key: "q", operation: "close" as const, blocked: false, phase: "active" },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: false,
+      phase: "active",
+    },
+    { key: "q", operation: "close" as const, blocked: true, phase: "active" },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: true,
+      phase: "active",
+    },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: true,
+      phase: "dialog",
+    },
+    {
+      key: "\x03",
+      operation: "close" as const,
+      blocked: true,
+      phase: "unmount",
+    },
+  ])(
+    "quit $key reports $operation outcome (blocked=$blocked, phase=$phase) after terminal cleanup",
+    async ({ key, operation, blocked, phase }) => {
+      if (operation === "close") {
+        worktreeFixtures.byRepoPath.set(repoPath, [
+          makeWorktree(repoPath, "main"),
+          makeWorktree(repoPath, "feature/new"),
+        ]);
+      }
+      const { App } = await import("../../src/tui/App");
+      let app: Awaited<ReturnType<typeof renderApp>> | undefined;
+      const events: string[] = [];
+      const invocation = runTuiInvocation({
+        start: async (lifetime) => {
+          app = await renderApp(<App lifetime={lifetime} />);
+          return app.instance;
+        },
+        cleanup: () => {
+          app?.unmount();
+          events.push("terminal restored");
+        },
+        dispose: async () => {
+          events.push("disposed");
+        },
+        report: (message) => {
+          events.push(message);
+        },
+      });
+      await vi.waitFor(() => expect(app).toBeDefined());
+      const view = app;
+      if (!view) throw new Error("App did not render");
+      await vi.waitFor(() => expect(view.lines().join("\n")).toContain("main"));
+      if (operation === "open") {
+        await openBranchFromModal(view.stdin, "feature/new");
+      } else {
+        await sendKeys(view.stdin, "\x1b[B");
+        await sendKeys(view.stdin, "\x1b[B");
+        await sendKeys(view.stdin, "c");
+        await sendKeys(view.stdin, "\r");
+      }
+      await tick(6);
+      const call = lastWorkspaceCall(operation);
+      if (phase === "dialog") {
+        call.resolve({ status: "blocked_by_changes", warnings: [] });
+        await vi.waitFor(() =>
+          expect(view.lines().join("\n")).toContain("Force Close Worktree"),
+        );
+        await sendKeys(view.stdin, key);
+        await sendKeys(view.stdin, key);
+      } else {
+        if (phase === "unmount") view.unmount();
+        else {
+          await sendKeys(view.stdin, key);
+          await sendKeys(view.stdin, key);
+        }
+        expect(events).toEqual([]);
+        if (blocked)
+          call.resolve({ status: "blocked_by_changes", warnings: [] });
+        else call.reject(new Error("required down script failed"));
+      }
+      await invocation;
+      if (operation === "close") {
+        expect(
+          worktreeFixtures.byRepoPath
+            .get(repoPath)
+            ?.some((tree) => tree.branch === "feature/new"),
+        ).toBe(true);
+      }
+      expect(events[0]).toBe("terminal restored");
+      expect(events[1]).toBe("disposed");
+      expect(events.slice(2)).toHaveLength(1);
+      expect(events.slice(2).join("\n")).toContain(
+        blocked
+          ? "was retained because it has uncommitted changes"
+          : "required down script failed",
+      );
+    },
+  );
+
   test("shows an inert Pending Workspace reading 'Preparing Workspace…' before the worktree exists", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
@@ -87,11 +239,12 @@ describe("TUI open lifecycle", () => {
   test("removes the Pending Workspace when validation finds no managed worktree", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
 
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
-    expect(app.lines().join("\n")).toContain("Preparing Workspace…");
+    await vi.waitFor(() =>
+      expect(app.lines().join("\n")).toContain("Preparing Workspace…"),
+    );
 
     // Fails before git creates anything, so validation's refresh finds the
     // repository exactly as it was.

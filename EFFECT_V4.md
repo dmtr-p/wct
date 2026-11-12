@@ -65,8 +65,9 @@ CLI, TUI, and test bundles share platform dependencies within each construction.
 Use `Layer.fresh` only for independent bundle instances.
 
 Imperative callbacks that execute Effects use `Effect.runPromiseWith` or
-`Effect.runSyncWith` to preserve caller services and settings. The TUI owns a
-process-scoped `ManagedRuntime` in `src/tui/runtime.ts`.
+`Effect.runSyncWith` to preserve caller services and settings. The TUI acquires a
+`ManagedRuntime` per invocation in `src/tui/runtime.ts` and drains mutations
+before disposal. See [TUI lifetime](docs/tui.md#quit-and-runtime-lifetime).
 
 Use `src/services/process.ts` for scoped stdout, stderr, and exit-code collection,
 and `execShell` for shell scripts. Interactive handoff uses inherited-stdio

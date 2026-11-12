@@ -1050,6 +1050,57 @@ describe("useGitHub", () => {
     }
   });
 
+  test.each(["set", "clear"] as const)(
+    "accepted %s association write survives observation unmount",
+    async (action) => {
+      const association = { baseRepository: "base/repo", number: 99 };
+      if (action === "clear")
+        explicitCache.set(key("/tmp/repo", "feature"), association);
+      const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
+      const gate = Promise.withResolvers<void>();
+      let operation: Promise<void> | undefined;
+      const originalSet = cache.setExplicit;
+      const originalClear = cache.clearExplicit;
+      const spy =
+        action === "set"
+          ? vi
+              .spyOn(cache, "setExplicit")
+              .mockImplementationOnce((...args) =>
+                Effect.promise(() => gate.promise).pipe(
+                  Effect.andThen(originalSet(...args)),
+                ),
+              )
+          : vi
+              .spyOn(cache, "clearExplicit")
+              .mockImplementationOnce((...args) =>
+                Effect.promise(() => gate.promise).pipe(
+                  Effect.andThen(originalClear(...args)),
+                ),
+              );
+      try {
+        await harness.waitForIdle();
+        operation =
+          action === "set"
+            ? harness.value.setExplicit("/tmp/repo", "feature", {
+                ...association,
+              } as PrFacts)
+            : harness.value.clearExplicit("/tmp/repo", "feature");
+        await harness.waitFor(() => expect(spy).toHaveBeenCalledOnce());
+        harness.unmount();
+        gate.resolve();
+        await operation;
+        expect(explicitCache.get(key("/tmp/repo", "feature"))).toEqual(
+          action === "set" ? association : undefined,
+        );
+      } finally {
+        gate.resolve();
+        await operation;
+        spy.mockRestore();
+        harness.unmount();
+      }
+    },
+  );
+
   test("a newly linked local OPEN PR reaches the Open list and snapshot immediately", async () => {
     const harness = await renderHook([repo("/tmp/repo", ["feature"])]);
     try {

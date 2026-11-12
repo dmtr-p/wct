@@ -11,6 +11,7 @@ import type {
   WorkspaceReporter,
 } from "../services/workspace-service";
 import type { RepoInfo } from "./hooks/useRegistry";
+import type { TuiLifetime } from "./lifetime";
 import { toSingleLine, truncateBranch } from "./utils/truncate";
 
 export { workspaceIdentityKey } from "../services/identities";
@@ -41,6 +42,7 @@ export function lifecycleEntryFor(
  * two starts in the same tick to observe the same Workspace as available.
  */
 export interface LifecycleClaims {
+  lifetime?: TuiLifetime;
   claim: (entry: LifecycleEntry) => boolean;
   record: (entry: LifecycleEntry) => void;
   /**
@@ -50,7 +52,7 @@ export interface LifecycleClaims {
   active: (mainRepoPath: string, branch: string) => LifecycleEntry | undefined;
 }
 
-export function createLifecycleClaims(): LifecycleClaims {
+export function createLifecycleClaims(lifetime?: TuiLifetime): LifecycleClaims {
   // `owner` is the object identity the claim was taken with, so `release` can
   // scope to the operation that actually claimed it; `current` tracks phase
   // updates independently.
@@ -59,6 +61,7 @@ export function createLifecycleClaims(): LifecycleClaims {
     { owner: LifecycleEntry; current: LifecycleEntry }
   >();
   return {
+    lifetime,
     claim: (entry) => {
       const key = workspaceIdentityKey(entry.repoPath, entry.branch);
       if (held.has(key)) return false;
@@ -142,6 +145,10 @@ export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
     case "Validating":
       return "Validating Workspace…";
   }
+}
+
+export function closeRetentionMessage(branch: string): string {
+  return `Worktree '${branch}' was retained because it has uncommitted changes — retry Close explicitly to confirm force removal`;
 }
 
 export function lifecycleValidationWarning(
@@ -281,6 +288,11 @@ export interface LifecycleRunOptions<T> {
 export async function runLifecycleOperation<T>(
   options: LifecycleRunOptions<T>,
 ): Promise<void> {
+  if (options.claims.lifetime) {
+    const { lifetime, ...claims } = options.claims;
+    if (lifetime.closing) return;
+    return lifetime.track(() => runLifecycleOperation({ ...options, claims }));
+  }
   const { entry } = options;
   const operation = entry.operation;
   const lifecycle = beginLifecycle({

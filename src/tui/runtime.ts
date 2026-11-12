@@ -16,7 +16,27 @@ const tuiLayer = Layer.effect(
   LocalObservationService,
   makeLocalObservationService,
 ).pipe(Layer.provideMerge(dependencies));
-export const tuiRuntime = ManagedRuntime.make(tuiLayer);
+export function createTuiRuntime() {
+  return ManagedRuntime.make(tuiLayer);
+}
+
+// A terminal has one active TUI. Bind existing imperative adapters only for
+// that invocation; importing this module never acquires runtime resources.
+let current: ReturnType<typeof createTuiRuntime> | undefined;
+export function bindTuiRuntime(runtime: ReturnType<typeof createTuiRuntime>) {
+  if (current) throw new Error("A TUI invocation is already active");
+  current = runtime;
+  return () => {
+    if (current === runtime) current = undefined;
+  };
+}
+export const tuiRuntime = new Proxy({} as ReturnType<typeof createTuiRuntime>, {
+  get(_target, key) {
+    if (!current) throw new Error("No active TUI invocation");
+    const value = Reflect.get(current, key);
+    return typeof value === "function" ? value.bind(current) : value;
+  },
+});
 
 const noop = () => {};
 

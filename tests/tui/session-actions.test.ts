@@ -36,6 +36,7 @@ import {
   type LifecycleState,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
+import { createTuiLifetime } from "../../src/tui/lifetime";
 import {
   buildTreeItems,
   buildTreeRows,
@@ -358,6 +359,57 @@ describe("createSwitchClientAwayFromSessions", () => {
 });
 
 describe("createHandleSpaceSwitch", () => {
+  test.each([true, false, "inactive"] as const)(
+    "quit drains existing-session switch (%s) and ignores inactivity",
+    async (outcome) => {
+      const pending = Promise.withResolvers<boolean | "inactive">();
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const deps = makeDeps({
+        lifecycleClaims: createLifecycleClaims(lifetime),
+        treeItems: [{ type: "worktree", repoIndex: 0, worktreeIndex: 0 }],
+        selectedIndex: 0,
+        filteredRepos: [
+          {
+            id: RegistrationId("r1"),
+            project: "proj",
+            repoPath: "/repo",
+            profileNames: [],
+            worktrees: [
+              {
+                branch: "main",
+                path: "/repo/main",
+                isMainWorktree: true,
+                changedFiles: 0,
+                sync: null,
+              },
+            ],
+          },
+        ],
+        sessions: [
+          legacySession({
+            mainRepoPath: "/repo",
+            worktreePath: "/repo/main",
+            branch: "main",
+          }),
+        ],
+        switchSession: vi.fn(() => pending.promise),
+      });
+      const run = createHandleSpaceSwitch(deps);
+      run();
+      const done = lifetime.finalize();
+      run();
+      expect(deps.switchSession).toHaveBeenCalledOnce();
+      expect(dispose).not.toHaveBeenCalled();
+      pending.resolve(outcome);
+      await done;
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(deps.showActionError).toHaveBeenCalledTimes(
+        outcome === false ? 1 : 0,
+      );
+    },
+  );
+
   test("fires detail item action when selected", () => {
     const action = vi.fn();
     const items: TreeItem[] = [

@@ -106,9 +106,9 @@ vi.mock("../../src/tui/runtime", async () => {
         }
       }),
     switchClientToPane: (clientTty: string, target: string) =>
-      Effect.sync(() => {
+      Effect.promise(async () => {
         tmuxFixtures.switchCalls.push({ clientTty, target });
-        tmuxFixtures.onSwitch?.(clientTty, target);
+        await tmuxFixtures.onSwitch?.(clientTty, target);
       }),
   };
   const worktree = await Effect.runPromise(
@@ -213,7 +213,8 @@ const tmuxFixtures = vi.hoisted(() => ({
   clients: [] as Array<{ tty: string; session: string }>,
   sessions: null as TmuxSession[] | null,
   switchCalls: [] as Array<{ clientTty: string; target: string }>,
-  onSwitch: null as ((clientTty: string, target: string) => void) | null,
+  onSwitch: null as
+    ((clientTty: string, target: string) => void | Promise<void>) | null,
 }));
 
 // Drive "r" to await Navigate mode's PR refresh deterministically.

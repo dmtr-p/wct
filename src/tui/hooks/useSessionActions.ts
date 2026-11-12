@@ -15,6 +15,7 @@ import {
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
 import {
+  closeRetentionMessage,
   type LifecycleClaims,
   type LifecycleState,
   rejectIfLifecycleActive as refuseWhenLifecycleActive,
@@ -125,7 +126,9 @@ export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
         return await deps.detachClient(client.client);
       }
 
-      return await deps.switchSession(handoff.sessionName, client.client);
+      return (
+        (await deps.switchSession(handoff.sessionName, client.client)) === true
+      );
     } catch {
       return false;
     }
@@ -219,24 +222,28 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     );
     if (hasSession) {
       deps.clearActionError();
-      void deps
-        .switchSession(
-          sessionName,
-          undefined,
-          workspaceSessionTarget(repo.repoPath, wt),
-        )
-        .then((switched) => {
-          if (!switched) {
+      const run = () =>
+        deps
+          .switchSession(
+            sessionName,
+            undefined,
+            workspaceSessionTarget(repo.repoPath, wt),
+          )
+          .then((switched) => {
+            if (switched === false) {
+              deps.showActionError(
+                `Failed to switch to tmux session '${sessionName}'`,
+              );
+            }
+          })
+          .catch((error) => {
             deps.showActionError(
-              `Failed to switch to tmux session '${sessionName}'`,
+              `Failed to switch to tmux session '${sessionName}': ${toWctError(error).message}`,
             );
-          }
-        })
-        .catch((error) => {
-          deps.showActionError(
-            `Failed to switch to tmux session '${sessionName}': ${toWctError(error).message}`,
-          );
-        });
+          });
+      const lifetime = deps.lifecycleClaims.lifetime;
+      if (lifetime?.closing) return;
+      void (lifetime ? lifetime.track(run) : run());
     } else {
       deps.clearActionError();
       void startWorkspace({
@@ -403,22 +410,29 @@ export function createExecuteClose(deps: SessionActionDeps) {
       // Force confirmation needs a stable tree and a released lifecycle claim.
       afterCleanup: async (result) => {
         if (result.status !== "blocked_by_changes") return undefined;
+        if (
+          deps.lifecycleClaims.lifetime?.closing ||
+          deps.isPresentationActive?.() === false
+        ) {
+          return closeRetentionMessage(branch);
+        }
         // Avoid replacing a mode the user entered while validation was in flight.
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;
         }
         if (!agentItemId) deps.captureTreeReturnPosition("close", true);
-        deps.setMode(
-          Mode.ConfirmCloseForce(
-            sessionName,
-            branch,
-            worktreePath,
-            workspaceKey,
-            repoPath,
-            project,
-            agentItemId,
-          ),
+        const forceMode = Mode.ConfirmCloseForce(
+          sessionName,
+          branch,
+          worktreePath,
+          workspaceKey,
+          repoPath,
+          project,
+          agentItemId,
         );
+        // Quit can arrive before React commits the deferred confirmation.
+        deps.modeRef.current = forceMode;
+        deps.setMode(forceMode);
         return undefined;
       },
     });

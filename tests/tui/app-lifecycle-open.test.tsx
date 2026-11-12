@@ -85,9 +85,20 @@ describe("TUI open lifecycle", () => {
     expect(tmuxFixtures.switchCalls).toEqual([]);
   });
 
-  test.each(["q", "\x03"])(
-    "quit %j reports an operation failure after terminal cleanup",
-    async (key) => {
+  test.each([
+    { key: "q", operation: "open" as const },
+    { key: "\x03", operation: "open" as const },
+    { key: "q", operation: "close" as const },
+    { key: "\x03", operation: "close" as const },
+  ])(
+    "quit $key reports a $operation failure after terminal cleanup",
+    async ({ key, operation }) => {
+      if (operation === "close") {
+        worktreeFixtures.byRepoPath.set(repoPath, [
+          makeWorktree(repoPath, "main"),
+          makeWorktree(repoPath, "feature/new"),
+        ]);
+      }
       const { App } = await import("../../src/tui/App");
       let app: Awaited<ReturnType<typeof renderApp>> | undefined;
       const events: string[] = [];
@@ -111,17 +122,33 @@ describe("TUI open lifecycle", () => {
       const view = app;
       if (!view) throw new Error("App did not render");
       await tick(6);
-      await openBranchFromModal(view.stdin, "feature/new");
+      if (operation === "open") {
+        await openBranchFromModal(view.stdin, "feature/new");
+      } else {
+        await sendKeys(view.stdin, "\x1b[B");
+        await sendKeys(view.stdin, "\x1b[B");
+        await sendKeys(view.stdin, "c");
+        await sendKeys(view.stdin, "\r");
+      }
       await tick(6);
-      const call = lastWorkspaceCall("open");
+      const call = lastWorkspaceCall(operation);
       await sendKeys(view.stdin, key);
       await sendKeys(view.stdin, key);
       expect(events).toEqual([]);
-      call.reject(new Error("required script failed"));
+      call.reject(new Error("required down script failed"));
       await invocation;
+      if (operation === "close") {
+        expect(
+          worktreeFixtures.byRepoPath
+            .get(repoPath)
+            ?.some((tree) => tree.branch === "feature/new"),
+        ).toBe(true);
+      }
       expect(events[0]).toBe("terminal restored");
       expect(events[1]).toBe("disposed");
-      expect(events.slice(2).join("\n")).toContain("required script failed");
+      expect(events.slice(2).join("\n")).toContain(
+        "required down script failed",
+      );
     },
   );
 

@@ -86,13 +86,15 @@ describe("TUI open lifecycle", () => {
   });
 
   test.each([
-    { key: "q", operation: "open" as const },
-    { key: "\x03", operation: "open" as const },
-    { key: "q", operation: "close" as const },
-    { key: "\x03", operation: "close" as const },
+    { key: "q", operation: "open" as const, blocked: false },
+    { key: "\x03", operation: "open" as const, blocked: false },
+    { key: "q", operation: "close" as const, blocked: false },
+    { key: "\x03", operation: "close" as const, blocked: false },
+    { key: "q", operation: "close" as const, blocked: true },
+    { key: "\x03", operation: "close" as const, blocked: true },
   ])(
-    "quit $key reports a $operation failure after terminal cleanup",
-    async ({ key, operation }) => {
+    "quit $key reports $operation outcome (blocked=$blocked) after terminal cleanup",
+    async ({ key, operation, blocked }) => {
       if (operation === "close") {
         worktreeFixtures.byRepoPath.set(repoPath, [
           makeWorktree(repoPath, "main"),
@@ -135,7 +137,11 @@ describe("TUI open lifecycle", () => {
       await sendKeys(view.stdin, key);
       await sendKeys(view.stdin, key);
       expect(events).toEqual([]);
-      call.reject(new Error("required down script failed"));
+      if (blocked) {
+        call.resolve({ status: "blocked_by_changes", warnings: [] });
+      } else {
+        call.reject(new Error("required down script failed"));
+      }
       await invocation;
       if (operation === "close") {
         expect(
@@ -147,7 +153,9 @@ describe("TUI open lifecycle", () => {
       expect(events[0]).toBe("terminal restored");
       expect(events[1]).toBe("disposed");
       expect(events.slice(2).join("\n")).toContain(
-        "required down script failed",
+        blocked
+          ? "was retained because it has uncommitted changes"
+          : "required down script failed",
       );
     },
   );

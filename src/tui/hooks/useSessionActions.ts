@@ -403,6 +403,9 @@ export function createExecuteClose(deps: SessionActionDeps) {
       // Force confirmation needs a stable tree and a released lifecycle claim.
       afterCleanup: async (result) => {
         if (result.status !== "blocked_by_changes") return undefined;
+        if (deps.lifecycleClaims.lifetime?.closing) {
+          return `Worktree '${branch}' was retained because it has uncommitted changes — retry Close explicitly to confirm force removal`;
+        }
         // Avoid replacing a mode the user entered while validation was in flight.
         if (deps.modeRef.current !== restoredMode) {
           return `Worktree '${branch}' has uncommitted changes — press c to close it with force`;

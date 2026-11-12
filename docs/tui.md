@@ -111,5 +111,7 @@ when React has already unmounted. Unmount releases presentation waiters and
 skips client handoff when its terminal presentation is gone. Operation errors
 retain validation behavior; errors received while draining or after unmount are
 saved and printed to stderr after terminal restoration and runtime finalization.
-Failure does not prevent draining.
+Failure does not prevent draining. Close blocked by uncommitted changes during
+quit reports the retained worktree and asks for an explicit retry; it does not
+open an inaccessible force confirmation or authorize removal.
 Ink and React remain lazy imports of the TUI command.

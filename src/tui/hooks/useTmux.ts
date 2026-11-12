@@ -132,7 +132,7 @@ export function useTmux() {
               TmuxService.use((service) => service.resolveSession(target)),
             )
           : undefined;
-        if (target && !resolved?.id) return false;
+        if (!request.isActive() || (target && !resolved?.id)) return false;
         await tuiRuntime.runPromise(
           TmuxService.use((service) =>
             service.switchClientToPane(

@@ -3,9 +3,11 @@ import type { Effect as EffectType } from "effect";
 import React, { type FC } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { commandError } from "../../src/errors";
+import { workspaceSessionTarget } from "../../src/services/session-identity";
 import type { TmuxClient, TmuxPaneInfo } from "../../src/services/tmux";
 
 const tmuxServiceMock = vi.hoisted(() => ({
+  resolveSession: vi.fn(),
   listClients: vi.fn(),
   listSessions: vi.fn(),
   listPanes: vi.fn(),
@@ -37,6 +39,10 @@ vi.mock("../../src/tui/runtime", async () => {
     });
   const tmux = {
     ...noopTmuxService,
+    resolveSession: () =>
+      read<import("../../src/services/tmux").TmuxSession | null>(() =>
+        tmuxServiceMock.resolveSession(),
+      ),
     listClients: read<TmuxClient[]>(() => tmuxServiceMock.listClients()),
     listSessions: read<import("../../src/services/tmux").TmuxSession[] | null>(
       () => tmuxServiceMock.listSessions(),
@@ -507,6 +513,32 @@ describe("useTmux hook", () => {
     expect(result).toBe(false);
 
     harness.unmount();
+  });
+
+  test("does not switch after unmount during session ownership resolution", async () => {
+    const harness = await renderWithSingleClient();
+    let resolve!: (value: unknown) => void;
+    mockRunPromise.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const switching = harness.value.switchSession(
+      "feature-a",
+      undefined,
+      workspaceSessionTarget("/repo", {
+        path: "/repo/feature-a",
+        branch: "feature-a",
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(tmuxServiceMock.resolveSession).toHaveBeenCalledOnce(),
+    );
+    harness.unmount();
+    resolve({ id: "$2", name: "feature-a" });
+    await expect(switching).resolves.toBe(false);
+    expect(tmuxServiceMock.switchClientToPane).not.toHaveBeenCalled();
   });
 
   test("switchSession updates the tracked client session after success", async () => {

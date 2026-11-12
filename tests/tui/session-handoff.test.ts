@@ -35,6 +35,13 @@ describe.each([
     wording,
   };
 
+  test("skips refresh and failure reporting for an inactive switch", async () => {
+    const deps = makeDeps();
+    deps.switchSession.mockResolvedValue("inactive");
+    await expect(createSessionHandoff(deps)(options)).resolves.toBeUndefined();
+    expect(deps.refreshSessions).not.toHaveBeenCalled();
+  });
+
   test("skips switching when presentation ends during client discovery", async () => {
     const deps = makeDeps();
     let resolve!: (value: TmuxClientDiscovery) => void;

@@ -125,7 +125,9 @@ export function createSwitchClientAwayFromSessions(deps: SessionActionDeps) {
         return await deps.detachClient(client.client);
       }
 
-      return await deps.switchSession(handoff.sessionName, client.client);
+      return (
+        (await deps.switchSession(handoff.sessionName, client.client)) === true
+      );
     } catch {
       return false;
     }
@@ -219,24 +221,28 @@ export function createHandleSpaceSwitch(deps: SessionActionDeps) {
     );
     if (hasSession) {
       deps.clearActionError();
-      void deps
-        .switchSession(
-          sessionName,
-          undefined,
-          workspaceSessionTarget(repo.repoPath, wt),
-        )
-        .then((switched) => {
-          if (!switched) {
+      const run = () =>
+        deps
+          .switchSession(
+            sessionName,
+            undefined,
+            workspaceSessionTarget(repo.repoPath, wt),
+          )
+          .then((switched) => {
+            if (switched === false) {
+              deps.showActionError(
+                `Failed to switch to tmux session '${sessionName}'`,
+              );
+            }
+          })
+          .catch((error) => {
             deps.showActionError(
-              `Failed to switch to tmux session '${sessionName}'`,
+              `Failed to switch to tmux session '${sessionName}': ${toWctError(error).message}`,
             );
-          }
-        })
-        .catch((error) => {
-          deps.showActionError(
-            `Failed to switch to tmux session '${sessionName}': ${toWctError(error).message}`,
-          );
-        });
+          });
+      const lifetime = deps.lifecycleClaims.lifetime;
+      if (lifetime?.closing) return;
+      void (lifetime ? lifetime.track(run) : run());
     } else {
       deps.clearActionError();
       void startWorkspace({

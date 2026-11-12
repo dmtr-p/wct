@@ -13,6 +13,7 @@ import type { WorkspaceCloseResult } from "../../src/services/workspace-service"
 import { buildAgentList as buildProjectedAgentList } from "../../src/tui/agent-view";
 import type { WorkspaceAgentSnapshot } from "../../src/tui/hooks/useAgents";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import { createTuiLifetime } from "../../src/tui/lifetime";
 import { projectFixtureSessions } from "../helpers/session-projections";
 import {
   lastWorkspaceCall,
@@ -873,6 +874,44 @@ describe("App agents view", () => {
         expect(app.lines().join("\n")).not.toContain("Kill Pane");
       } finally {
         app.unmount();
+      }
+    },
+  );
+
+  test.each(["kill", "jump"] as const)(
+    "Ctrl+C drains a pending agent %s before exit",
+    async (action) => {
+      const pending = Promise.withResolvers<void>();
+      if (action === "kill") tmuxFixtures.onKill = () => pending.promise;
+      else tmuxFixtures.onSwitch = () => pending.promise;
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const app = await renderApp(<App lifetime={lifetime} />);
+      try {
+        await tick(20);
+        await sendKeys(app.stdin, "g");
+        if (action === "kill") await sendKeys(app.stdin, "x");
+        await sendKeys(app.stdin, "\r");
+        expect(
+          action === "kill" ? tmuxFixtures.killCalls : tmuxFixtures.switchCalls,
+        ).toHaveLength(1);
+        let exited = false;
+        const exit = app.instance.waitUntilExit().then(() => {
+          exited = true;
+        });
+        await sendKeys(app.stdin, "\x03");
+        await sendKeys(app.stdin, "\x03");
+        expect(exited).toBe(false);
+        expect(dispose).not.toHaveBeenCalled();
+        pending.resolve();
+        await exit;
+        await lifetime.finalize();
+        expect(dispose).toHaveBeenCalledOnce();
+        expect(lifetime.messages).toEqual([]);
+      } finally {
+        pending.resolve();
+        app.unmount();
+        await lifetime.finalize();
       }
     },
   );

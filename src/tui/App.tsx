@@ -143,12 +143,27 @@ export function App({
     error: tmuxError,
     switchSession,
     detachClient,
-    jumpToPane,
-    zoomPane,
+    jumpToPane: untrackedJumpToPane,
+    zoomPane: untrackedZoomPane,
     killPane,
     refreshSessions,
     discoverClient,
   } = useTmux();
+  // Track direct input actions; lifecycle handoffs remain inside their existing drain.
+  const jumpToPane = useCallback(
+    (paneId: string) => {
+      if (lifetime.closing) return Promise.resolve(false);
+      return lifetime.track(() => untrackedJumpToPane(paneId));
+    },
+    [lifetime, untrackedJumpToPane],
+  );
+  const zoomPane = useCallback(
+    (paneId: string) => {
+      if (lifetime.closing) return Promise.resolve(false);
+      return lifetime.track(() => untrackedZoomPane(paneId));
+    },
+    [lifetime, untrackedZoomPane],
+  );
   const panes = useMemo(
     () => workspacePaneMap(repos, sessions, sessionPanes),
     [repos, sessions, sessionPanes],
@@ -873,43 +888,45 @@ export function App({
         const target = mode;
         const targetRepos = repos;
         clearActionError();
-        void (async () => {
-          // The cached snapshot can lag a pane restart by a poll interval.
-          if (
-            target.type === "ConfirmAgentKill" &&
-            !(await verifyAgentGeneration(
-              targetRepos,
-              target.paneId,
-              target.generation,
-            ))
-          ) {
+        void lifetime
+          .track(async () => {
+            // The cached snapshot can lag a pane restart by a poll interval.
+            if (
+              target.type === "ConfirmAgentKill" &&
+              !(await verifyAgentGeneration(
+                targetRepos,
+                target.paneId,
+                target.generation,
+              ))
+            ) {
+              if (!isCurrent()) return;
+              returnFromConfirmation(target);
+              showActionError("Agent pane changed or could not be verified");
+              return;
+            }
             if (!isCurrent()) return;
-            returnFromConfirmation(target);
-            showActionError("Agent pane changed or could not be verified");
-            return;
-          }
-          if (!isCurrent()) return;
-          await executeConfirmKill({
-            paneId: target.paneId,
-            killPane,
-            refreshSessions,
-            isCurrent,
-            showActionError,
-            onSuccess: () => {
-              if (target.type === "ConfirmAgentKill")
-                returnFromConfirmation(target);
-              else {
-                restoreTreeReturnPosition("kill", "owning-worktree");
-                setMode(Mode.Expanded(target.workspaceKey));
-              }
-            },
+            await executeConfirmKill({
+              paneId: target.paneId,
+              killPane,
+              refreshSessions,
+              isCurrent,
+              showActionError,
+              onSuccess: () => {
+                if (target.type === "ConfirmAgentKill")
+                  returnFromConfirmation(target);
+                else {
+                  restoreTreeReturnPosition("kill", "owning-worktree");
+                  setMode(Mode.Expanded(target.workspaceKey));
+                }
+              },
+            });
+          })
+          .finally(() => {
+            if (confirmKillAttemptRef.current === attempt) {
+              confirmPendingRef.current = false;
+              setIsPaneKillPending(false);
+            }
           });
-        })().finally(() => {
-          if (confirmKillAttemptRef.current === attempt) {
-            confirmPendingRef.current = false;
-            setIsPaneKillPending(false);
-          }
-        });
         return;
       }
       case "ConfirmDown": {

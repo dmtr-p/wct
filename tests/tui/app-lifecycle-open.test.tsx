@@ -200,11 +200,12 @@ describe("TUI open lifecycle", () => {
   test("removes the Pending Workspace when validation finds no managed worktree", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);
-    await tick(6);
+    await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
 
     await openBranchFromModal(app.stdin, "feature/new");
-    await tick(6);
-    expect(app.lines().join("\n")).toContain("Preparing Workspace…");
+    await vi.waitFor(() =>
+      expect(app.lines().join("\n")).toContain("Preparing Workspace…"),
+    );
 
     // Fails before git creates anything, so validation's refresh finds the
     // repository exactly as it was.

@@ -1,7 +1,7 @@
 import type { WorkspaceSessionTarget } from "../services/session-identity";
 import type { TmuxClient } from "../services/tmux";
 import type { WorkspaceUpResult } from "../services/workspace-service";
-import type { TmuxClientDiscovery } from "./hooks/useTmux";
+import type { TmuxClientDiscovery, TmuxSwitchResult } from "./hooks/useTmux";
 
 export interface SessionHandoffDeps {
   isPresentationActive?: () => boolean;
@@ -15,7 +15,7 @@ export interface SessionHandoffDeps {
     name: string,
     client?: TmuxClient | null,
     target?: WorkspaceSessionTarget,
-  ) => Promise<boolean>;
+  ) => Promise<TmuxSwitchResult>;
   refreshSessions?: () => Promise<unknown>;
 }
 
@@ -54,7 +54,10 @@ export function createSessionHandoff(deps: SessionHandoffDeps) {
       const switched = target
         ? await deps.switchSession(sessionName, liveClient.client, target)
         : await deps.switchSession(sessionName, liveClient.client);
+      if (switched === "inactive" || deps.isPresentationActive?.() === false)
+        return undefined;
       await deps.refreshSessions?.();
+      if (deps.isPresentationActive?.() === false) return undefined;
       return switched
         ? undefined
         : `${wording.completed} session '${sessionName}', but failed to switch client`;

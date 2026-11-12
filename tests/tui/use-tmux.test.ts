@@ -515,6 +515,26 @@ describe("useTmux hook", () => {
     harness.unmount();
   });
 
+  test("reports missing owned session as a failure while mounted", async () => {
+    const harness = await renderWithSingleClient();
+    try {
+      mockRunPromise.mockResolvedValueOnce(null);
+      await expect(
+        harness.value.switchSession(
+          "feature-a",
+          undefined,
+          workspaceSessionTarget("/repo", {
+            path: "/repo/feature-a",
+            branch: "feature-a",
+          }),
+        ),
+      ).resolves.toBe(false);
+      expect(tmuxServiceMock.switchClientToPane).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
   test("does not switch after unmount during session ownership resolution", async () => {
     const harness = await renderWithSingleClient();
     let resolve!: (value: unknown) => void;
@@ -537,7 +557,7 @@ describe("useTmux hook", () => {
     );
     harness.unmount();
     resolve({ id: "$2", name: "feature-a" });
-    await expect(switching).resolves.toBe(false);
+    await expect(switching).resolves.toBe("inactive");
     expect(tmuxServiceMock.switchClientToPane).not.toHaveBeenCalled();
   });
 

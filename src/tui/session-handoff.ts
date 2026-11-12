@@ -4,6 +4,7 @@ import type { WorkspaceUpResult } from "../services/workspace-service";
 import type { TmuxClientDiscovery } from "./hooks/useTmux";
 
 export interface SessionHandoffDeps {
+  isPresentationActive?: () => boolean;
   /** Resolves after removal of this Workspace's progress row is flushed to stdout. */
   waitForLifecyclePresentationCleanup: (
     repoPath: string,
@@ -48,6 +49,7 @@ export function createSessionHandoff(deps: SessionHandoffDeps) {
     )
       return undefined;
     const liveClient = await deps.discoverClient();
+    if (deps.isPresentationActive?.() === false) return undefined;
     if (liveClient.type === "single") {
       const switched = target
         ? await deps.switchSession(sessionName, liveClient.client, target)

@@ -7,6 +7,7 @@ import {
 } from "../services/pr-merge-service";
 import type { PrFacts } from "../services/pr-model";
 import type { PrMenuOption } from "./components/PrActionsModal";
+import type { TuiLifetime } from "./lifetime";
 import { candidatePrLabel } from "./pr-status";
 import { Mode } from "./types";
 
@@ -50,6 +51,7 @@ export type PrMenuState =
   | { screen: "submitting"; target: AssociatedTarget };
 
 export interface PrActionsDependencies {
+  lifetime?: TuiLifetime;
   getMode: () => Mode;
   setMode: (mode: Mode) => void;
   showActionError: (message: string) => void;
@@ -294,7 +296,9 @@ export function createPrActionsController(deps: PrActionsDependencies) {
     }
   };
 
-  const submit = async (menu: Extract<PrMenuState, { screen: "confirm" }>) => {
+  const submitOperation = async (
+    menu: Extract<PrMenuState, { screen: "confirm" }>,
+  ) => {
     const token = ++request;
     // Publish synchronously so input arriving before React renders cannot resubmit or dismiss.
     setMenu({ screen: "submitting", target: menu.target });
@@ -304,22 +308,20 @@ export function createPrActionsController(deps: PrActionsDependencies) {
         menu.snapshot,
         menu.route === "direct" ? menu.method : undefined,
       );
-      if (request === token)
-        update({
-          menu: null,
-          outcome: `PR #${menu.snapshot.pr.number} ${result}`,
-        });
+      const outcome = `PR #${menu.snapshot.pr.number} ${result}`;
+      if (deps.lifetime?.closing) deps.lifetime.report(outcome);
+      if (request === token) update({ menu: null, outcome });
     } catch (error) {
-      if (request === token) {
-        setMenu(null);
-        deps.showActionError(errorMessage(error));
-      }
+      if (deps.lifetime?.closing) deps.lifetime.report(errorMessage(error));
+      else if (request === token) deps.showActionError(errorMessage(error));
+      if (request === token) setMenu(null);
     } finally {
       if (request === token) {
         invalidate();
         deps.setMode(returnMode);
       }
-      void deps.refreshAfterCurrent(menu.target.repoPath);
+      if (!deps.lifetime?.closing)
+        void deps.refreshAfterCurrent(menu.target.repoPath);
     }
   };
 
@@ -360,7 +362,10 @@ export function createPrActionsController(deps: PrActionsDependencies) {
         return;
       const { target } = menu;
       if (menu.screen === "confirm") {
-        void submit(menu);
+        if (deps.lifetime?.closing) return;
+        void (deps.lifetime
+          ? deps.lifetime.track(() => submitOperation(menu))
+          : submitOperation(menu));
         return;
       }
       if (menu.screen === "methods") {

@@ -221,6 +221,7 @@ export function App({
     [lifetime, displayActionError],
   );
   const prActions = usePrActions({
+    lifetime,
     mode,
     setMode,
     showActionError,
@@ -677,6 +678,7 @@ export function App({
     modeRef,
     setLifecycle,
     waitForLifecyclePresentationCleanup,
+    isPresentationActive: () => presentationMounted.current,
     showActionError,
     clearActionError,
     switchSession,
@@ -689,6 +691,7 @@ export function App({
   });
 
   const modalActions = useModalActions({
+    lifetime,
     treeItems,
     filteredRepos,
     selectedIndex,
@@ -707,6 +710,7 @@ export function App({
     setOpenModalRepoPath,
     markWorkspaceDiscovered,
     waitForLifecyclePresentationCleanup,
+    isPresentationActive: () => presentationMounted.current,
     showActionError,
     clearActionError,
     switchSession,

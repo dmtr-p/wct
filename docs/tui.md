@@ -95,7 +95,7 @@ binding at a time; importing TUI runtime helpers does not acquire resources.
 
 Eligible `q` and Ctrl+C request the same coordinated quit. Input stops accepting
 new actions and the TUI displays a waiting message while active Open, Start,
-Stop, Close, and Project Removal work drains. The drain includes validation and
+Stop, Close, Project Removal, Add Project, and PR merge submissions drain. The drain includes validation and
 follow-up handoff. Repeated quit requests cannot force exit. There is no timeout
 or cancellation of mutations; a blocked script can therefore delay quit.
 Required down-script failures still keep the worktree, and self-session shutdown
@@ -108,7 +108,8 @@ observation publication; the input adapter is disposed before the runtime is
 disposed exactly once. Runtime disposal settles remaining background fibers.
 Startup and render failures use the same drain and finalization boundary, even
 when React has already unmounted. Unmount releases presentation waiters and
-skips client handoff when its terminal presentation is gone. Operation errors
+skips client handoff when its terminal presentation is gone, including when
+unmount happens during client discovery. Operation errors
 retain validation behavior; errors received while draining or after unmount are
 saved and printed to stderr after terminal restoration and runtime finalization.
 Failure does not prevent draining. Close blocked by uncommitted changes during

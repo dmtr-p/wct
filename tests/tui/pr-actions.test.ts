@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { workspaceIdentityKey } from "../../src/services/identities";
 import type { MergeSnapshot } from "../../src/services/pr-merge-service";
+import { createTuiLifetime } from "../../src/tui/lifetime";
 import {
   createPrActionsController,
   type PrActionsDependencies,
@@ -100,6 +101,34 @@ async function confirmReady(h: ReturnType<typeof harness>, value = snapshot()) {
 }
 
 describe("PR actions controller", () => {
+  test.each(["success", "failure"])(
+    "quit drains merge submission %s after controller teardown",
+    async (outcome) => {
+      const pending = deferred<"merged" | "queued">();
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const h = harness({
+        lifetime,
+        submitMerge: vi.fn(() => pending.promise),
+      });
+      await confirmReady(h);
+      h.controller.choose("confirm");
+      const done = lifetime.finalize();
+      expect(lifetime.quit()).toBe(lifetime.quit());
+      h.controller.choose("confirm");
+      expect(h.deps.submitMerge).toHaveBeenCalledTimes(1);
+      h.controller.invalidate();
+      expect(dispose).not.toHaveBeenCalled();
+      if (outcome === "success") pending.resolve("merged");
+      else pending.reject(new Error("merge failed"));
+      await done;
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(lifetime.messages).toEqual([
+        outcome === "success" ? "PR #7 merged" : "merge failed",
+      ]);
+    },
+  );
+
   test.each(["success", "failure"])(
     "ignores delayed snapshot %s after dismissal",
     async (outcome) => {

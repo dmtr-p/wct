@@ -18,6 +18,7 @@ import {
   type LifecycleState,
   workspaceIdentityKey,
 } from "../../src/tui/lifecycle";
+import { createTuiLifetime } from "../../src/tui/lifetime";
 import { Mode, type TreeItem } from "../../src/tui/types";
 
 // Applies functional updates like React would, so a test can read the phase
@@ -861,6 +862,41 @@ describe("createHandleAddProject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  test.each(["success", "failure"])(
+    "quit drains registration %s and its reporting",
+    async (outcome) => {
+      const { runTuiSilentPromise } = await import("../../src/tui/runtime");
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      const pending = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      (runTuiSilentPromise as Mock).mockReturnValueOnce(pending);
+      const dispose = vi.fn(async () => {});
+      const lifetime = createTuiLifetime(dispose);
+      const deps = makeDeps({ lifetime, refreshAll: vi.fn(async () => []) });
+      const handle = createHandleAddProject(deps);
+      handle({ path: "/repo", name: "proj", nameManuallyEdited: false });
+      const done = lifetime.finalize();
+      expect(lifetime.quit()).toBe(lifetime.quit());
+      handle({ path: "/other", name: "other", nameManuallyEdited: false });
+      expect(runTuiSilentPromise).toHaveBeenCalledTimes(1);
+      expect(dispose).not.toHaveBeenCalled();
+      if (outcome === "success") resolve();
+      else reject(new Error("registration failed"));
+      await done;
+      expect(dispose).toHaveBeenCalledOnce();
+      if (outcome === "success") {
+        expect(deps.refreshAll).toHaveBeenCalledOnce();
+        expect(lifetime.messages).toEqual(["Registered project at '/repo'"]);
+      } else
+        expect(deps.showActionError).toHaveBeenCalledWith(
+          "registration failed",
+        );
+    },
+  );
 
   test("calls register and refreshes on success", async () => {
     const { runTuiSilentPromise } = await import("../../src/tui/runtime");

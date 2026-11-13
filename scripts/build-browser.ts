@@ -11,6 +11,7 @@ export const browserBundlePath = join(
 const browserPackages = [
   { name: "@xterm/xterm", notice: "docs/licenses/xterm-MIT.txt" },
   { name: "@xterm/addon-fit", notice: "docs/licenses/xterm-addon-fit-MIT.txt" },
+  { name: "effect", notice: "docs/licenses/effect-MIT.txt" },
 ];
 
 export async function buildBrowser() {

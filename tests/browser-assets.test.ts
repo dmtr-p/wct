@@ -28,6 +28,7 @@ describe("browser build boundary", () => {
     await Bun.write(
       probe,
       `import { loadBrowserAssets } from ${JSON.stringify(loader)};
+import { startLocalTerminal } from ${JSON.stringify(join(root, "src/browser/server.ts"))};
 const { browserAssetPaths, browserAssetResponse } = await loadBrowserAssets();
 const bodies = {};
 for (const path of browserAssetPaths) {
@@ -37,6 +38,20 @@ for (const path of browserAssetPaths) {
 const rejected = ["/../package.json", "/%2e%2e/package.json", "/src/index.ts", "/package.json", "/__proto__", "/constructor", "/index.html/extra", "/index.html?x=1", "//index.html", "/missing.js"];
 if (rejected.some(path => browserAssetResponse(path) !== undefined)) throw new Error("Unlisted path served");
 if (await browserAssetResponse("/").text() !== bodies["/index.html"].body) throw new Error("Root alias mismatch");
+const endpoint = await startLocalTerminal({ env: {}, backend: {
+  prepare: async () => { throw new Error("No attachment in asset probe"); },
+  query: async () => null, detach: async () => {},
+  verify: async () => { throw new Error("No target in asset probe"); }
+} });
+try {
+  const page = await fetch(endpoint.url);
+  if (page.status !== 200 || await page.text() !== bodies["/index.html"].body) throw new Error("Compiled endpoint assets unavailable");
+  const auth = await fetch(new URL("/api/bootstrap", endpoint.url), {
+    method: "POST", headers: { origin: new URL(endpoint.url).origin, "content-type": "application/json" },
+    body: JSON.stringify({ secret: new URL(endpoint.bootstrapUrl).hash.slice(1) })
+  });
+  if (auth.status !== 204 || !auth.headers.get("set-cookie")?.includes("HttpOnly")) throw new Error("Compiled authentication endpoint unavailable");
+} finally { await endpoint.stop(); }
 console.log(JSON.stringify(bodies));`,
     );
     const source = await run([process.execPath, probe], tempDir);
@@ -69,10 +84,12 @@ console.log(JSON.stringify(bodies));`,
     const notices = assets["/third-party-licenses.txt"]?.body;
     expect(notices).toContain("@xterm/xterm 6.0.0");
     expect(notices).toContain("@xterm/addon-fit 0.11.0");
+    expect(notices).toContain("effect 4.1.2");
     expect(notices).toBe(
       [
         `@xterm/xterm 6.0.0\n\n${await Bun.file(join(root, "docs/licenses/xterm-MIT.txt")).text()}`,
         `@xterm/addon-fit 0.11.0\n\n${await Bun.file(join(root, "docs/licenses/xterm-addon-fit-MIT.txt")).text()}`,
+        `effect 4.1.2\n\n${await Bun.file(join(root, "docs/licenses/effect-MIT.txt")).text()}`,
       ].join("\n\n"),
     );
     const info = JSON.parse(assets["/build-info.json"]?.body ?? "{}");
@@ -106,7 +123,7 @@ console.log(JSON.stringify(bodies));`,
       guard,
       `import { plugin } from "bun";
 plugin({ name: "forbid-ui-execution", setup(build) {
-  build.onLoad({ filter: /(?:browser\\/assets\\.ts|built\\.browser-assets|node_modules\\/.*ink\\/)/ }, () => { throw new Error("UI loaded by ordinary CLI"); });
+  build.onLoad({ filter: /(?:browser\\/(?:assets|server)\\.ts|built\\.browser-assets|node_modules\\/.*ink\\/)/ }, () => { throw new Error("UI loaded by ordinary CLI"); });
 } });`,
     );
     const entry = join(root, "src/index.ts");
@@ -128,7 +145,7 @@ plugin({ name: "forbid-ui-execution", setup(build) {
   entrypoints: [${JSON.stringify(entry)}],
   compile: { outfile: ${JSON.stringify(binary)} },
   plugins: [{ name: "poison-ui", setup(build) {
-    build.onLoad({ filter: /(?:browser\\/assets\\.ts|node_modules\\/.*ink\\/.*\\.js)/ }, async args => ({ contents: 'throw new Error("UI initialized by ordinary CLI");\\n' + await Bun.file(args.path).text(), loader: args.path.endsWith(".ts") ? "ts" : "js" }));
+    build.onLoad({ filter: /(?:browser\\/(?:assets|server)\\.ts|node_modules\\/.*ink\\/.*\\.js)/ }, async args => ({ contents: 'throw new Error("UI initialized by ordinary CLI");\\n' + await Bun.file(args.path).text(), loader: args.path.endsWith(".ts") ? "ts" : "js" }));
   }}]
 });
 if (!result.success) throw new AggregateError(result.logs, "Compile failed");`,
@@ -136,6 +153,26 @@ if (!result.success) throw new AggregateError(result.logs, "Compile failed");`,
     await run([process.execPath, builder], tempDir);
     for (const args of [["--help"], ["--version"], ["--completions", "bash"]]) {
       expect(await run([binary, ...args], tempDir)).not.toBe("");
+    }
+    for (const command of [
+      [process.execPath, "--preload", guard, entry],
+      [binary],
+    ]) {
+      const child = Bun.spawn([...command, "browser", "--json"], {
+        cwd: tempDir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect(code).toBe(1);
+      expect(stdout).toBe("");
+      expect(stderr).toContain("strict per-session input fencing");
+      expect(stderr).not.toContain("UI initialized");
+      expect(stderr).not.toContain("UI loaded");
     }
   }, 30_000);
 });

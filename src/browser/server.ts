@@ -1,0 +1,681 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import type { ServerWebSocket } from "bun";
+import type {
+  AttachmentLaunch,
+  TerminalAttachment,
+  TmuxClient,
+} from "../services/terminal-attachments";
+import { boundedJson, LocalAuth, validRequestAuthority } from "./auth";
+import { loadBrowserAssets } from "./load-assets";
+import {
+  Bootstrap,
+  CreateLocalAttachment,
+  decode,
+  decodeFrame,
+  encodeFrame,
+  LocalControl,
+  type LocalHeader,
+  LocalHeader as LocalHeaderSchema,
+  type LocalRef,
+  LocalRef as LocalRefSchema,
+  type LocalTarget,
+  LocalTarget as LocalTargetSchema,
+  policy,
+  same,
+  TicketRequest,
+} from "./protocol";
+
+export interface AttachmentBackend {
+  prepare(): Promise<AttachmentLaunch>;
+  query(ref: TerminalAttachment): Promise<TmuxClient | null>;
+  detach(ref: TerminalAttachment): Promise<void>;
+  /** Must reverify both Workspace ownership and the exact tmux session generation. */
+  verify(client: TmuxClient): Promise<LocalTarget>;
+}
+interface Connection {
+  attachment: Attachment;
+  streamId: string;
+}
+interface Ticket extends Connection {
+  owner: string;
+  expires: number;
+}
+interface Attachment {
+  owner: string;
+  readyAt?: number;
+  ref: LocalRef;
+  launch: AttachmentLaunch;
+  terminal?: Bun.Terminal;
+  child?: Bun.Subprocess;
+  exited: boolean;
+  closing?: Promise<void>;
+  socket?: ServerWebSocket<Connection>;
+  streamId?: string;
+  activated: boolean;
+  target?: LocalTarget;
+  lastPong: number;
+  lastPing: number;
+  inputSequence: number;
+  outputSequence: number;
+  controlSequence: number;
+  inputBytes: number;
+  inputFrames: number;
+  ptyBytes: number;
+  output: Uint8Array[];
+  outputBytes: number;
+  pumping: boolean;
+  actions: Promise<void>;
+}
+
+function response(status: number, value: unknown) {
+  return Response.json(value, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+async function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Local terminal deadline exceeded")),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Imperative Bun callbacks are owned by the caller's Effect acquire/release scope. */
+export async function startLocalTerminal(options: {
+  backend: AttachmentBackend;
+  port?: number;
+  env: Record<string, string | undefined>;
+  now?: () => number;
+  diagnostic?: (message: string) => void;
+}) {
+  const now = options.now ?? (() => Date.now());
+  const auth = new LocalAuth(now);
+  const endpoint = randomUUID();
+  const assets = await loadBrowserAssets();
+  const attachments = new Map<string, Attachment>();
+  const tickets = new Map<string, Ticket>();
+  const preparations = new Set<Promise<unknown>>();
+  const inFlight = new Map<AbortController, Promise<void>>();
+  let reserved = 0;
+  let requests = 0;
+  let stopping = false;
+  const diagnostic = options.diagnostic ?? (() => {});
+  const forgetTickets = (a: Attachment) => {
+    for (const [key, ticket] of tickets)
+      if (ticket.attachment === a) tickets.delete(key);
+  };
+  const valid = (a: Attachment, ws?: ServerWebSocket<Connection>) =>
+    !stopping &&
+    !a.closing &&
+    auth.alive(a.owner) &&
+    (!ws || (a.socket === ws && a.streamId === ws.data.streamId));
+
+  async function verify(a: Attachment) {
+    const client = await options.backend.query(a.launch.attachment);
+    if (!client || client.server !== a.ref.server)
+      throw new Error("Attachment unavailable");
+    const target = decode(
+      LocalTargetSchema,
+      await options.backend.verify(client),
+    );
+    // This experiment fixes the CLI-selected Workspace. Native tmux navigation
+    // away closes the stream; #343 adds explicitly ordered navigation.
+    if (a.target && !same(a.target, target))
+      throw new Error("Attachment target changed; open a fresh attachment");
+    return target;
+  }
+  function send(a: Attachment, header: LocalHeader, bytes?: Uint8Array) {
+    const ws = a.socket;
+    if (!ws || !valid(a, ws)) throw new Error("Terminal stream closed");
+    const frame = encodeFrame(header, bytes);
+    // Bun checks its backpressure limit before adding a frame. Account for
+    // this frame and our application queue before calling send.
+    if (
+      ws.getBufferedAmount() + a.outputBytes + frame.length >
+      policy.outputBytes
+    )
+      throw new Error("Terminal output limit exceeded");
+    if (ws.sendBinary(frame) === 0)
+      throw new Error("Terminal transport unavailable");
+  }
+  function header(
+    a: Attachment,
+    kind: "target" | "output",
+    byteLength: number,
+  ): LocalHeader {
+    if (!a.target || !a.streamId)
+      throw new Error("Unestablished terminal target");
+    return decodeHeader({
+      ref: a.ref,
+      streamId: a.streamId,
+      target: a.target,
+      kind,
+      sequence: a.outputSequence++,
+      byteLength,
+    });
+  }
+  function decodeHeader(value: unknown): LocalHeader {
+    // The shared frame codec validates this on the browser as well.
+    return decode(LocalHeaderSchema, value);
+  }
+  async function pump(a: Attachment) {
+    if (a.pumping || !a.socket || !a.activated || a.closing) return;
+    a.pumping = true;
+    try {
+      await verify(a);
+      while (a.output.length && valid(a)) {
+        const bytes = a.output.shift();
+        if (!bytes) break;
+        a.outputBytes -= bytes.length;
+        send(a, header(a, "output", bytes.length), bytes);
+      }
+    } catch {
+      void close(a, "Terminal output or target validation failed");
+    } finally {
+      a.pumping = false;
+    }
+  }
+  function output(a: Attachment, data: Uint8Array) {
+    if (a.closing) return;
+    if (
+      a.output.length + Math.ceil(data.length / policy.dataBytes) > 256 ||
+      data.length + a.outputBytes + (a.socket?.getBufferedAmount() ?? 0) >
+        policy.outputBytes
+    ) {
+      void close(a, "Terminal output limit exceeded");
+      return;
+    }
+    for (let offset = 0; offset < data.length; offset += policy.dataBytes) {
+      const chunk = data.slice(offset, offset + policy.dataBytes);
+      a.output.push(chunk);
+      a.outputBytes += chunk.length;
+    }
+    void pump(a);
+  }
+  async function cleanup(a: Attachment, reason: string) {
+    forgetTickets(a);
+    a.socket?.close(1000, reason.slice(0, 100));
+    a.output = [];
+    a.outputBytes = 0;
+    // PTY buffers and the tmux reservation stay exclusive until confirmed exit.
+    const child = a.child;
+    if (child && !a.exited) {
+      try {
+        await within(
+          (async () => {
+            try {
+              await options.backend.detach(a.launch.attachment);
+            } catch {
+              diagnostic(
+                `Attachment ${a.ref.attachmentId}: detach unavailable; retaining ownership until child exit`,
+              );
+            }
+            await child.exited;
+          })(),
+          policy.drainMs,
+        );
+      } catch {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          diagnostic(
+            `Attachment ${a.ref.attachmentId}: TERM failed; retaining child ownership`,
+          );
+        }
+        try {
+          await within(child.exited, policy.termMs);
+        } catch {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            diagnostic(
+              `Attachment ${a.ref.attachmentId}: KILL failed; awaiting confirmed child exit`,
+            );
+          }
+        }
+        await child.exited;
+      }
+      a.exited = true;
+    }
+    a.terminal?.close();
+    try {
+      await options.backend.detach(a.launch.attachment);
+    } catch {
+      diagnostic(
+        `Attachment ${a.ref.attachmentId}: record cleanup failed after child exit`,
+      );
+    }
+    attachments.delete(a.ref.attachmentId);
+  }
+  function close(a: Attachment, reason = "Terminal disconnected") {
+    if (a.closing) return a.closing;
+    // Set the fence before cleanup performs its first asynchronous operation.
+    let finish!: () => void;
+    a.closing = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    void cleanup(a, reason)
+      .catch(() => {
+        diagnostic(
+          `Attachment ${a.ref.attachmentId}: cleanup failed; ownership and PTY retained`,
+        );
+      })
+      .finally(finish);
+    return a.closing;
+  }
+  async function launch(
+    owner: string,
+    dimensions: { cols: number; rows: number },
+  ) {
+    if (stopping) throw new Error("Endpoint stopped");
+    reserved++;
+    const started = now();
+    let pending = true;
+    let prepared: AttachmentLaunch | undefined;
+    let a: Attachment | undefined;
+    let expired = false;
+    const launchTimer = setTimeout(() => {
+      expired = true;
+      if (a) void close(a, "Attachment launch timed out");
+    }, policy.handshakeMs);
+    try {
+      prepared = await options.backend.prepare();
+      if (
+        stopping ||
+        expired ||
+        !auth.alive(owner) ||
+        now() - started >= policy.handshakeMs
+      )
+        throw new Error("Endpoint closed");
+      a = {
+        owner,
+        ref: decode(LocalRefSchema, {
+          endpoint,
+          attachmentId: prepared.attachment.id,
+          generation: prepared.attachment.generation,
+          server: prepared.attachment.server,
+        }),
+        launch: prepared,
+        exited: false,
+        activated: false,
+        lastPong: now(),
+        lastPing: now(),
+        inputSequence: 0,
+        outputSequence: 0,
+        controlSequence: 0,
+        inputBytes: 0,
+        inputFrames: 0,
+        ptyBytes: 0,
+        output: [],
+        outputBytes: 0,
+        pumping: false,
+        actions: Promise.resolve(),
+      };
+      const attachment = a;
+      attachments.set(a.ref.attachmentId, a);
+      reserved--;
+      pending = false;
+      a.terminal = new Bun.Terminal({
+        ...dimensions,
+        name: "xterm-256color",
+        data: (_terminal, bytes) => output(attachment, bytes),
+        drain: () => {
+          attachment.ptyBytes = 0;
+        },
+      });
+      a.child = Bun.spawn([prepared.command, ...prepared.args], {
+        terminal: a.terminal,
+        env: {
+          ...options.env,
+          TMUX: "",
+          TERM: "xterm-256color",
+          ...prepared.env,
+        },
+      });
+      void a.child.exited.then(() => {
+        attachment.exited = true;
+        return close(attachment, "Tmux client exited");
+      });
+      const deadline = started + policy.handshakeMs;
+      for (;;) {
+        if (!valid(a) || a.exited || now() >= deadline)
+          throw new Error("Attachment launch failed");
+        const client = await options.backend.query(prepared.attachment);
+        if (client) {
+          a.target = decode(
+            LocalTargetSchema,
+            await options.backend.verify(client),
+          );
+          break;
+        }
+        await delay(20);
+      }
+      if (!valid(a)) throw new Error("Attachment launch cancelled");
+      a.readyAt = now();
+      return a;
+    } catch (error) {
+      if (a) await close(a, "Attachment launch failed");
+      else if (prepared) await options.backend.detach(prepared.attachment);
+      throw error;
+    } finally {
+      clearTimeout(launchTimer);
+      if (pending) reserved--;
+    }
+  }
+  function receive(ws: ServerWebSocket<Connection>, message: string | Buffer) {
+    const a = ws.data.attachment;
+    if (!valid(a, ws)) {
+      void close(a);
+      return;
+    }
+    const length =
+      typeof message === "string" ? Buffer.byteLength(message) : message.length;
+    if (
+      a.inputFrames >= 256 ||
+      length + a.inputBytes + a.ptyBytes > policy.inputBytes ||
+      (typeof message === "string" && length > policy.controlBytes)
+    ) {
+      void close(a, "Terminal input limit exceeded");
+      return;
+    }
+    a.inputBytes += length;
+    a.inputFrames++;
+    // One bounded ordered queue per attachment; a busy attachment cannot hold
+    // another attachment's controls or output behind it.
+    a.actions = a.actions
+      .then(async () => {
+        if (!valid(a, ws)) return;
+        await verify(a);
+        if (!valid(a, ws)) return;
+        if (typeof message === "string") {
+          const control = decode(LocalControl, JSON.parse(message));
+          if (
+            !same(a.ref, control.ref) ||
+            control.streamId !== a.streamId ||
+            !same(a.target, control.target) ||
+            control.controlSequence !== a.controlSequence
+          )
+            throw new Error("Stale terminal control");
+          a.controlSequence++;
+          void close(a);
+          return;
+        } else {
+          const { header: input, bytes } = decodeFrame(message);
+          if (
+            input.kind !== "input" ||
+            !same(a.ref, input.ref) ||
+            input.streamId !== a.streamId ||
+            !same(a.target, input.target) ||
+            input.sequence !== a.inputSequence
+          )
+            throw new Error("Stale terminal input");
+          a.inputSequence++;
+          if (bytes.length + a.ptyBytes > policy.inputBytes)
+            throw new Error("PTY input limit exceeded");
+          a.ptyBytes += bytes.length;
+          a.terminal?.write(bytes);
+        }
+      })
+      .catch(() => {
+        void close(a, "Terminal input or control rejected");
+      })
+      .finally(() => {
+        a.inputBytes -= length;
+        a.inputFrames--;
+      });
+  }
+  const server = Bun.serve<Connection>({
+    hostname: "127.0.0.1",
+    port: options.port ?? 0,
+    maxRequestBodySize: policy.controlBytes,
+    idleTimeout: 10,
+    async fetch(request, bunServer) {
+      const authority = `127.0.0.1:${bunServer.port}`;
+      const url = new URL(request.url);
+      const privileged =
+        url.pathname.startsWith("/api/") || url.pathname === "/terminal";
+      if (stopping || !validRequestAuthority(request, authority, privileged))
+        return response(403, { error: "Request rejected" });
+      if (!privileged) {
+        if (request.method !== "GET" || url.search)
+          return response(404, { error: "Not found" });
+        const asset = assets.browserAssetResponse(url.pathname);
+        if (!asset) return response(404, { error: "Not found" });
+        asset.headers.set(
+          "content-security-policy",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        );
+        asset.headers.set("referrer-policy", "no-referrer");
+        return asset;
+      }
+      if (requests >= 32)
+        return response(429, { error: "Request capacity reached" });
+      requests++;
+      const controller = new AbortController();
+      let settled!: () => void;
+      inFlight.set(
+        controller,
+        new Promise<void>((resolve) => {
+          settled = resolve;
+        }),
+      );
+      try {
+        if (
+          url.pathname === "/api/bootstrap" &&
+          request.method === "POST" &&
+          !url.search
+        ) {
+          let body: typeof Bootstrap.Type;
+          try {
+            body = decode(
+              Bootstrap,
+              await boundedJson(request, controller.signal),
+            );
+          } catch {
+            auth.exchange("");
+            return response(400, { error: "Bootstrap rejected" });
+          }
+          if (stopping) return response(503, { error: "Endpoint stopped" });
+          const cookie = auth.exchange(body.secret);
+          return cookie
+            ? new Response(null, {
+                status: 204,
+                headers: { "set-cookie": cookie, "cache-control": "no-store" },
+              })
+            : response(403, { error: "Bootstrap rejected" });
+        }
+        const owner = auth.owner(request);
+        if (!owner)
+          return response(401, { error: "Browser authentication required" });
+        if (
+          url.pathname === "/api/attachments" &&
+          request.method === "POST" &&
+          !url.search
+        ) {
+          const body = decode(
+            CreateLocalAttachment,
+            await boundedJson(request, controller.signal),
+          );
+          if (stopping) return response(503, { error: "Endpoint stopped" });
+          if (attachments.size + reserved >= policy.maxAttachments)
+            return response(429, { error: "Attachment capacity reached" });
+          const task = launch(owner, body.dimensions);
+          preparations.add(task);
+          try {
+            const a = await within(task, policy.handshakeMs);
+            return response(201, { ref: a.ref, target: a.target, policy });
+          } finally {
+            void task.finally(() => preparations.delete(task)).catch(() => {});
+          }
+        }
+        if (
+          url.pathname === "/api/tickets" &&
+          request.method === "POST" &&
+          !url.search
+        ) {
+          const body = decode(
+            TicketRequest,
+            await boundedJson(request, controller.signal),
+          );
+          const a = attachments.get(body.ref.attachmentId);
+          if (
+            !a ||
+            a.owner !== owner ||
+            !same(a.ref, body.ref) ||
+            !valid(a) ||
+            a.activated
+          )
+            return response(409, { error: "Attachment unavailable" });
+          for (const [key, ticket] of tickets)
+            if (now() >= ticket.expires) tickets.delete(key);
+          forgetTickets(a);
+          if (tickets.size >= policy.maxTickets)
+            return response(429, { error: "Ticket capacity reached" });
+          const key = randomBytes(32).toString("base64url");
+          const ticket = {
+            attachment: a,
+            owner,
+            streamId: randomUUID(),
+            expires: now() + policy.ticketMs,
+          };
+          tickets.set(key, ticket);
+          return response(201, {
+            ticket: key,
+            streamId: ticket.streamId,
+            expiresAt: ticket.expires,
+          });
+        }
+        if (
+          url.pathname === "/terminal" &&
+          request.method === "GET" &&
+          request.headers.get("upgrade")?.toLowerCase() === "websocket"
+        ) {
+          if ([...url.searchParams.keys()].join() !== "ticket")
+            return response(403, { error: "Ticket rejected" });
+          const key = url.searchParams.get("ticket") ?? "";
+          const ticket = tickets.get(key);
+          if (
+            !ticket ||
+            ticket.owner !== owner ||
+            now() >= ticket.expires ||
+            !valid(ticket.attachment) ||
+            ticket.attachment.readyAt === undefined ||
+            now() - ticket.attachment.readyAt >= policy.handshakeMs ||
+            ticket.attachment.activated
+          )
+            return response(403, { error: "Ticket rejected" });
+          const a = ticket.attachment;
+          // No await between validation, consumption, and stream fencing.
+          forgetTickets(a);
+          a.activated = true;
+          a.streamId = ticket.streamId;
+          if (
+            bunServer.upgrade(request, {
+              data: { attachment: a, streamId: ticket.streamId },
+            })
+          )
+            return;
+          void close(a, "WebSocket upgrade failed");
+          return response(400, { error: "Upgrade failed" });
+        }
+        return response(404, { error: "Not found" });
+      } catch {
+        return response(400, { error: "Local terminal request rejected" });
+      } finally {
+        requests--;
+        inFlight.delete(controller);
+        settled();
+      }
+    },
+    websocket: {
+      maxPayloadLength: 4 + policy.controlBytes + policy.dataBytes,
+      backpressureLimit:
+        policy.outputBytes - policy.controlBytes - policy.dataBytes - 4,
+      closeOnBackpressureLimit: true,
+      perMessageDeflate: false,
+      idleTimeout: 0,
+      sendPings: false,
+      open(ws) {
+        const a = ws.data.attachment;
+        if (!valid(a) || a.streamId !== ws.data.streamId) {
+          ws.terminate();
+          return;
+        }
+        a.socket = ws;
+        a.lastPong = now();
+        try {
+          send(a, header(a, "target", 0));
+          void pump(a);
+        } catch {
+          void close(a);
+        }
+      },
+      message: receive,
+      pong(ws) {
+        if (valid(ws.data.attachment, ws)) ws.data.attachment.lastPong = now();
+      },
+      close(ws) {
+        if (ws.data.attachment.socket === ws) void close(ws.data.attachment);
+      },
+      drain(ws) {
+        void pump(ws.data.attachment);
+      },
+    },
+    error() {
+      return response(500, { error: "Local terminal failure" });
+    },
+  });
+  const timer = setInterval(() => {
+    for (const [key, ticket] of tickets)
+      if (now() >= ticket.expires) tickets.delete(key);
+    for (const a of attachments.values()) {
+      if (
+        !auth.alive(a.owner) ||
+        (!a.socket &&
+          a.readyAt !== undefined &&
+          now() - a.readyAt >= policy.handshakeMs) ||
+        (a.socket && now() - a.lastPong >= policy.heartbeatMs)
+      ) {
+        void close(a, "Terminal authentication or heartbeat expired");
+        continue;
+      }
+      if (a.socket && now() - a.lastPing >= policy.pingMs) {
+        a.lastPing = now();
+        a.socket.ping();
+      }
+    }
+  }, 1000);
+  return {
+    url: `http://127.0.0.1:${server.port}/`,
+    bootstrapUrl: `http://127.0.0.1:${server.port}/#${auth.bootstrap}`,
+    async stop() {
+      if (stopping) return;
+      stopping = true;
+      clearInterval(timer);
+      tickets.clear();
+      auth.clear();
+      for (const controller of inFlight.keys()) controller.abort();
+      await Promise.allSettled(inFlight.values());
+      await Promise.allSettled(
+        [...attachments.values()].map((a) => close(a, "Endpoint stopped")),
+      );
+      await Promise.allSettled(preparations);
+      await server.stop(true);
+    },
+  };
+}

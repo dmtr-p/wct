@@ -2,8 +2,9 @@
 
 `src/browser/client/index.html` is the browser entry point. Bun bundles its
 TypeScript and CSS, including xterm.js and the fit addon, for the browser.
-The shell renders an inactive terminal preview; there is no connection or
-attachment endpoint. Browser code must not import CLI, Ink or server services.
+The prototype shell targets the authenticated foreground
+[browser terminal](browser-terminal.md) endpoint; CLI launch remains unavailable
+until strict session input fencing is established. Browser code must not import CLI, Ink or server services.
 The packaging boundary is recorded in [ADR 0003](adr/0003-browser-assets.md).
 
 ## Build and loading
@@ -31,7 +32,7 @@ Unknown paths return `undefined`. Callers pass a URL pathname, not a query
 string or decoded filesystem path. The helper does no path normalization and
 offers no filesystem or SPA fallback. Responses carry explicit content types,
 `nosniff`, and `no-store` so shell and chunks stay from the same build.
-The eventual authenticated browser handler owns HTTP method and access checks.
+The browser terminal handler owns HTTP method and access checks.
 
 The text import embeds all bodies and metadata in the compiled executable.
 Loading needs neither the source checkout, installed dependencies nor a
@@ -45,12 +46,13 @@ initialize Ink.
 | ------------------ | ------- | ------- | ---------------------------------------- |
 | `@xterm/xterm`     | 6.0.0   | MIT     | Browser terminal renderer and stylesheet |
 | `@xterm/addon-fit` | 0.11.0  | MIT     | Size terminal to its containing element  |
+| `effect`           | 4.1.2   | MIT     | Shared strict boundary schemas           |
 
-The complete notices are tracked in `docs/licenses/xterm-MIT.txt` and
-`docs/licenses/xterm-addon-fit-MIT.txt`. The build includes the installed
-packages' complete license files in the embedded notice asset and rejects
+The complete notices are tracked in `docs/licenses/xterm-MIT.txt`,
+`docs/licenses/xterm-addon-fit-MIT.txt`, and `docs/licenses/effect-MIT.txt`.
+The build includes the installed packages' complete license files in the embedded notice asset and rejects
 license changes for review. Review these tracked copies on dependency updates.
-Neither package adds transitive runtime dependencies. New browser dependencies
+The xterm packages add no transitive runtime dependencies. New browser dependencies
 must have a concrete feature purpose and update this inventory and build
 license inputs; the allowance in [AGENTS.md](../AGENTS.md#bun-runtime) is scoped
 to browser feature needs.

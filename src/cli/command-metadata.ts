@@ -190,6 +190,20 @@ export const repositoryOperationDefinitions = {
 } satisfies Record<string, CommandDefinition>;
 
 export const commandDefinitions = {
+  browser: {
+    name: "browser",
+    description:
+      "Serve a foreground authenticated terminal for an existing Workspace Session",
+    parameters: {
+      path,
+      branch: worktreeBranch,
+      port: stringOption(
+        "port",
+        "IPv4 loopback port (default: OS-selected)",
+        "PORT",
+      ),
+    },
+  },
   cd: {
     name: "cd",
     description: "Open a shell in a worktree directory",

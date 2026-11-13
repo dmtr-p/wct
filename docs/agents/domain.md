@@ -24,6 +24,8 @@ files in `docs/adr/` for engineering decisions.
   in [testing](../testing.md).
   Browser bundling, embedded static assets and dependency notices belong in
   [browser assets](../browser-assets.md).
+  The foreground local endpoint, authentication and experiment limits belong in
+  [browser terminal](../browser-terminal.md).
   Shared host schemas, RPC boundaries, identity and connector semantics belong
   in [host contracts](../host-contracts.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine

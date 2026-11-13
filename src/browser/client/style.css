@@ -9,9 +9,10 @@
 
 body {
   margin: 0;
-  padding: 1.5rem;
+  padding: 0.75rem;
 }
 
 #terminal {
-  height: 24rem;
+  height: calc(100dvh - 7rem);
+  min-height: 10rem;
 }

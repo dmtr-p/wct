@@ -247,6 +247,10 @@ During Open, a profile without `copy` uses the [copy-source precedence](#copying
 
 Use `--profile ""` to select the base configuration without automatic matching.
 
+The `wct browser` experiment currently refuses launch pending a strict input
+fencing adapter. See [local browser terminal](docs/browser-terminal.md) for
+authentication, lifetime and current limits.
+
 ## TUI
 
 `wct tui` opens an interactive sidebar for registered projects. Repos stay expanded; use `↑`/`↓` to navigate, `→` to show branch details, and `←` to hide them. Multiple branches can remain expanded.

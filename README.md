@@ -247,8 +247,8 @@ During Open, a profile without `copy` uses the [copy-source precedence](#copying
 
 Use `--profile ""` to select the base configuration without automatic matching.
 
-The `wct browser` experiment currently refuses launch pending a strict input
-fencing adapter. See [local browser terminal](docs/browser-terminal.md) for
+Run `wct browser` to attach a local browser to an existing Workspace Session.
+See [local browser terminal](docs/browser-terminal.md) for
 authentication, lifetime and current limits.
 
 ## TUI

@@ -2,13 +2,14 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import {
+  AttachmentCreated,
+  decode,
   decodeFrame,
   encodeFrame,
-  type LocalHeader,
-  type LocalRef,
   type LocalTarget,
   policy,
   same,
+  TicketIssued,
 } from "../protocol";
 
 // Clear the fragment before any network exchange, including failed bootstrap.
@@ -41,17 +42,19 @@ async function connect(container: HTMLElement) {
   terminal.loadAddon(fit);
   terminal.open(container);
   fit.fit();
-  const dimensions = () => ({
+  const dimensions = {
     cols: Math.min(500, Math.max(1, terminal.cols)),
     rows: Math.min(200, Math.max(1, terminal.rows)),
-  });
-  const attachment = (await post("/api/attachments", {
-    dimensions: dimensions(),
-  })) as { ref: LocalRef; target: LocalTarget };
-  const ticket = (await post("/api/tickets", { ref: attachment.ref })) as {
-    ticket: string;
-    streamId: string;
   };
+  terminal.resize(dimensions.cols, dimensions.rows);
+  const attachment = decode(
+    AttachmentCreated,
+    await post("/api/attachments", { dimensions }),
+  );
+  const ticket = decode(
+    TicketIssued,
+    await post("/api/tickets", { ref: attachment.ref }),
+  );
   const url = new URL("/terminal", location.href);
   url.protocol = "ws:";
   url.searchParams.set("ticket", ticket.ticket);
@@ -79,12 +82,14 @@ async function connect(container: HTMLElement) {
       )
         throw new Error("Stale terminal stream");
       if (header.kind === "target") {
-        if (target || !same(header.target, attachment.target))
+        if (!target && !same(header.target, attachment.target))
           throw new Error("Unexpected terminal target");
         target = header.target;
         terminal.options.disableStdin = false;
         terminal.focus();
-        display("Connected · Ctrl-B D detaches this tab");
+        display(
+          `Connected · ${"sessionName" in target ? target.sessionName : target.branch} · Ctrl-B D detaches this tab`,
+        );
       } else if (
         header.kind === "output" &&
         target &&
@@ -118,8 +123,7 @@ async function connect(container: HTMLElement) {
       const frame = encodeFrame(
         {
           ref: attachment.ref,
-          streamId: ticket.streamId as LocalHeader["streamId"],
-          target,
+          streamId: ticket.streamId,
           kind: "input",
           sequence: inputSequence++,
           byteLength: part.length,
@@ -147,10 +151,12 @@ async function connect(container: HTMLElement) {
     }
     input(Uint8Array.from(text, (char) => char.charCodeAt(0)));
   });
-  socket.onclose = () => {
+  socket.onclose = (event) => {
     terminal.options.disableStdin = true;
     display(
-      "Disconnected. Reload to attach again; Workspace workloads keep running.",
+      event.reason
+        ? `${event.reason}. Workspace workloads keep running.`
+        : "Disconnected. Reload to attach again; Workspace workloads keep running.",
     );
   };
   socket.onerror = () =>

@@ -1,53 +1,62 @@
-# Local browser terminal prototype
+# Local browser terminal
 
-`wct browser` currently refuses launch before loading the endpoint, opening a
-listener or creating a tmux client. Strict per-session input fencing and the full
-native tmux keyboard interface are both required; the raw PTY adapter does not
-establish that boundary. See the proposed [ADR 0007](adr/0007-local-browser-terminal.md).
-The prototype is incomplete and is not a usable public endpoint.
+Run `wct browser` in a Workspace with an existing verified tmux session, or select
+it with `--path <worktree>` or `--branch <branch>`. `--port <port>` selects a port;
+the default is OS-selected. The command stays in the foreground and prints a
+one-time bootstrap link. Open it in a local browser. Another tab on the same
+origin shares authentication and creates its own tmux client and exclusive PTY.
+Ctrl-C closes experiment-owned clients and connections while Workspace workloads
+keep running. No Workspace lifecycle API, daemon or shell-command RPC is exposed.
 
-## Implemented prototype
+The endpoint binds only `127.0.0.1`. Treat a browser terminal as shell access with
+the executing user's privileges. Normal tmux keys work, including prefix commands,
+copy mode and session navigation. Input is authorized to the owned tmux client,
+not confined to the previously observed Workspace: a session switch and later
+bytes in one input burst can reach the newly selected session. Browser metadata
+shows the last observed session; polling cannot attribute each byte atomically.
+See [ADR 0007](adr/0007-local-browser-terminal.md) for the trust and wire boundary.
 
-The service harness serves embedded manifest assets on `127.0.0.1`, with an
-OS-selected or explicit port. Its unexposed CLI adapter selects an existing
-verified Workspace Session through current-directory, `--path` and `--branch`
-conventions. It creates no Workspace, daemon or lifecycle operation.
+## Authentication and limits
 
-A 256-bit, single-use bootstrap secret expires after five minutes. The browser
-removes its fragment before authentication. A process-local host-only HttpOnly
-SameSite=Strict cookie expires absolutely after eight hours. Exact Host and
-Origin checks protect privileged requests. Tickets are single-use,
-owner/generation/stream-bound and expire after 30 seconds. Tabs share browser
-authentication but have separate tmux clients and exclusive PTYs.
+The 256-bit bootstrap secret expires after five minutes and can be exchanged once.
+The browser clears its fragment before exchanging it. The process-local host-only
+HttpOnly SameSite=Strict cookie expires absolutely after eight hours. Exact Host
+and Origin checks protect privileged requests. WebSocket upgrades require that
+cookie and a single-use owner/generation/stream-bound ticket, valid for 30 seconds.
+Restart invalidates every credential and attachment. Keep bootstrap links private.
 
-Bounds are published in the creation reply: 64 KiB data frames, 16 KiB
-controls/bodies, 1–500 columns, 1–200 rows, 256 KiB conservatively accounted input,
-1 MiB output including socket buffering, and eight pending/live/closing
-attachments. Application queues also have frame/chunk count limits. Failed
-bootstrap exchanges are limited to ten per minute. Input accounting remains
-conservative until Bun reports drain; immediately flushed writes need not report
-it, so the prototype can exhaust its allowance despite an empty PTY buffer.
+Creation publishes the policy: 64 KiB terminal payloads, 16 KiB controls and HTTP
+bodies, dimensions 1–500 columns by 1–200 rows, 256 KiB input and 1 MiB output
+including WebSocket transport buffering. At most eight pending/live/closing
+attachments exist, with bounded frame counts and HTTP requests. Saturation closes
+only that attachment. The browser also bounds retained renderer frames and input.
 
-Initial dimensions use the browser container and tmux's shared-session sizing.
-There is no resize control or renderer drain acknowledgement. Launch and initial
-connection have ten-second deadlines. Pings run every 30 seconds; 60 seconds
-without pong closes a stream. Cleanup uses a shared two-second detach/exit budget,
-then TERM for two seconds, followed by KILL and an awaited child exit. Ownership
-and PTY exclusivity remain until that exit is confirmed. Cleanup targets only the
-owned client, leaving Workspace Sessions and workloads running.
+Bun 1.4.4 accepts complete PTY writes without exposing pending bytes. Its drain
+callback need not fire for immediately flushed input. The approved conservative
+input budget counts accepted bytes until a real drain event; **256 KiB of typing
+can therefore exhaust a tab's budget even when the PTY is idle**. The disconnect
+message explains that reloading creates a fresh attachment. Idle time, output and
+polling never replenish input credit. No partial write is retried.
 
-## Unsatisfied input invariant
+Initial dimensions come from the browser container and use tmux's normal shared
+session sizing. There is no live resize, renderer credit, scrollback replay or
+automatic reconnect. Reloading creates a fresh client and screen. Sidebar
+navigation and evaluated sizing/reconnect remain in #343/#344.
 
-The prototype checks client/session ownership before writing a frame to its PTY.
-That cannot prevent a frame containing tmux session-switch keys followed by text
-from reaching another session: tmux consumes those bytes internally before the
-host can query again. Closing after observing navigation cannot undo the input.
-Native navigation is not an exception to strict session fencing. A pane-only
-input backend does not preserve the required tmux keyboard interface either.
-Neither alternative is authorized.
+## Lifetime
 
-The CLI remains unavailable until an input adapter proves the expected session
-at consumption while preserving tmux's keyboard behavior. Sidebar navigation,
-reconnect, render credit and evaluated sizing remain separate follow-ups.
-[Terminal attachments](terminal-attachments.md) describes the existing ownership
-boundary; [browser assets](browser-assets.md) describes embedding and licenses.
+Launch and initial connection each have their own ten-second deadline. The server
+pings every 30 seconds; 60 seconds without pong or browser-session expiry closes
+the stream. Disconnect has no retained PTY grace. Cleanup stops input, discards
+bounded unsent output, attempts owned-client detach and waits up to two seconds,
+then sends TERM to only its child, waits two seconds, and sends KILL if needed.
+The PTY and attachment slot stay owned until child exit is confirmed, including
+suspension/unavailability. No cleanup kills a Workspace Session or tmux server.
+
+Managed attachments require the live tmux server's client-environment format
+capability. Unsupported servers fail before launching a client; native CLI/TUI
+remain available. Bun PTYs require POSIX; capability-dependent regression skips
+are not evidence that a platform supports this endpoint.
+
+[Terminal attachments](terminal-attachments.md) describes ownership;
+[browser assets](browser-assets.md) describes embedding and notices.

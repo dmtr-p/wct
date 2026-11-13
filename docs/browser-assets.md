@@ -2,9 +2,8 @@
 
 `src/browser/client/index.html` is the browser entry point. Bun bundles its
 TypeScript and CSS, including xterm.js and the fit addon, for the browser.
-The prototype shell targets the authenticated foreground
-[browser terminal](browser-terminal.md) endpoint; CLI launch remains unavailable
-until strict session input fencing is established. Browser code must not import CLI, Ink or server services.
+The shell targets the authenticated foreground [browser terminal](browser-terminal.md)
+endpoint. Browser code must not import CLI, Ink or server services.
 The packaging boundary is recorded in [ADR 0003](adr/0003-browser-assets.md).
 
 ## Build and loading

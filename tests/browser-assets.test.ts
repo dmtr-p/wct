@@ -170,7 +170,9 @@ if (!result.success) throw new AggregateError(result.logs, "Compile failed");`,
       ]);
       expect(code).toBe(1);
       expect(stdout).toBe("");
-      expect(stderr).toContain("strict per-session input fencing");
+      expect(stderr).toContain(
+        "foreground browser terminal requires human output",
+      );
       expect(stderr).not.toContain("UI initialized");
       expect(stderr).not.toContain("UI loaded");
     }

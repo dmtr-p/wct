@@ -358,7 +358,7 @@ test.skipIf(!tmuxPath)(
         expect(response.status).toBe(201);
         return response.json() as Promise<{
           ref: LocalHeader["ref"];
-          target: LocalHeader["target"];
+          target: import("../src/browser/protocol").LocalTarget;
         }>;
       };
       const [first, second] = await Promise.all([create(), create()]);
@@ -415,8 +415,10 @@ test.skipIf(!tmuxPath)(
             const { header, bytes } = decodeFrame(new Uint8Array(event.data));
             frames[index]?.push(header);
             if (header.kind === "target") {
-              expect(header.target).toEqual(attachment.target);
-              resolve(ws);
+              if (frames[index]?.length === 1) {
+                expect(header.target).toEqual(attachment.target);
+                resolve(ws);
+              }
             }
             if (header.kind === "output")
               output[index] += new TextDecoder().decode(bytes);
@@ -439,7 +441,6 @@ test.skipIf(!tmuxPath)(
             {
               kind: "input",
               ref: a.ref,
-              target: a.target,
               streamId,
               sequence,
               byteLength: bytes.length,
@@ -462,16 +463,58 @@ test.skipIf(!tmuxPath)(
       ).toContain(String(native.pid));
       expect(frames[0]?.[0]?.kind).toBe("target");
       frames[0]?.forEach((frame, index) => expect(frame.sequence).toBe(index));
-      send(one, { ...first, ref: second.ref }, fresh.streamId, "echo BAD\r", 1);
+      const other = await command(
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{session_id}",
+        "-s",
+        "native-navigation",
+        "-c",
+        tempDir,
+      );
+      await command("bind-key", "n", "switch-client", "-t", other);
+      // A native prefix switch and later bytes in one write have normal tmux
+      // semantics. Only the stream/attachment, not an expected session, is fenced.
+      send(one, first, fresh.streamId, "\x02nprintf 'RAW_SWITCH_OK\\n'\r", 1);
+      await vi.waitFor(() =>
+        expect(
+          frames[0]?.some(
+            (frame) =>
+              frame.kind === "target" && frame.target.sessionId === other,
+          ),
+        ).toBe(true),
+      );
+      await vi.waitFor(async () =>
+        expect(await command("capture-pane", "-p", "-t", other)).toContain(
+          "RAW_SWITCH_OK",
+        ),
+      );
+      expect(one.readyState).toBe(WebSocket.OPEN);
+      expect(output[1]).not.toContain("RAW_SWITCH_OK");
+      send(one, { ...first, ref: second.ref }, fresh.streamId, "echo BAD\r", 2);
       await vi.waitFor(() => expect(one.readyState).toBe(WebSocket.CLOSED));
       expect(two.readyState).toBe(WebSocket.OPEN);
       expect(await command("has-session", "-t", session.id)).toBe("");
+      const suspended = await runBunPromise(
+        tmux.queryAttachment({
+          id: second.ref.attachmentId,
+          generation: second.ref.generation,
+          kind: "browser",
+          server: second.ref.server,
+        }),
+      );
+      if (!suspended?.pid) throw new Error("Missing owned tmux client");
+      await command("suspend-client", "-t", suspended.name ?? suspended.tty);
+      process.kill(Number(suspended.pid), "SIGSTOP");
       clock += policy.sessionMs;
       await vi.waitFor(() => expect(two.readyState).toBe(WebSocket.CLOSED), {
         timeout: 4000,
       });
       await endpoint.stop();
       endpoint = undefined;
+      expect(() => process.kill(Number(suspended.pid), 0)).toThrow();
       const remaining = await runBunPromise(tmux.listClients);
       expect(remaining.filter((client) => client.attachment)).toHaveLength(0);
       expect(

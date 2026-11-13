@@ -4,21 +4,19 @@ status: proposed
 
 # Foreground IPv4 loopback browser terminal experiment
 
-## Required input boundary
+## Input trust boundary
 
-Strict per-session fencing and the full native tmux keyboard interface are both
-required. The foreground CLI currently refuses launch before opening the listener
-or creating a client. The raw PTY adapter below is not an approved input boundary:
-a single write can contain a tmux session-switch key followed by input, and tmux
-can route the remaining bytes to the replacement session before a host query.
-A pre-write query or close after detecting navigation cannot undo that routing.
-The endpoint cannot be declared ready until a backend checks the expected session
-at input consumption without losing the full tmux keyboard interface. Pane-only
-input and a native-navigation trust exception do not satisfy these requirements.
+Authenticated bytes have ordinary owned tmux client semantics, including the full
+native keyboard interface. Prefix commands may switch sessions, and later bytes
+in the same write may reach the newly selected session. The maintainer permits
+this explicitly. There is no per-byte expected-Workspace confinement, pre-write
+session guard or close solely for native navigation. Authorization binds the
+browser to an attachment/stream/server generation; explicit host controls and
+initial creation still validate their actual targets.
 
 ## Boundary
 
-The prototype serves embedded manifest assets on `127.0.0.1`, with an
+The endpoint serves embedded manifest assets on `127.0.0.1`, with an
 OS-selected port unless `--port` is supplied. It selects an existing verified
 Workspace Session using the same current-directory, `--path`, and `--branch`
 conventions as `up`. It creates no Workspace, daemon, lifecycle operation,
@@ -75,25 +73,28 @@ The experiment shares Effect schemas for dimensions, IDs, counters and strict
 acceptance parsing with #346. It intentionally does not instantiate `RuntimeRef`,
 `HostDescriptor`, host RPCs or durable identity. `LocalRef` names an ephemeral
 endpoint UUID, attachment ID/generation and #341's actual tmux server generation
-string. `LocalTarget` carries canonical local Workspace paths/branch and verified
-server/session IDs. These are experiment-local references, not enrolled hosts.
+string. `LocalTarget` carries verified Workspace paths/branch or an observed
+native session name, together with actual server/session IDs. These are
+experiment-local references, not enrolled hosts.
 
 Creation and ticket issuance are authenticated POSTs. A separate WebSocket carries
 binary terminal frames: four-byte big-endian JSON header length, a strict UTF-8
-schema-decoded header, then exactly the declared raw bytes. Headers carry explicit
-local connection/target, direction, sequence and byte length. The first output
-frame establishes the verified target with no payload; output follows with
-contiguous sequence numbers. Client input has its own contiguous sequence.
-Server-only target/output headers, foreign/stale references, unknown fields,
-invalid lengths and out-of-order input are rejected.
+schema-decoded header, then exactly the declared raw bytes. Headers carry explicit local connection, direction, sequence and byte length.
+Input carries no expected session: it addresses only the owned raw client. Output
+and zero-payload target observations share a contiguous sequence. Sequence zero
+establishes the initially verified Workspace Session. Subsequent observations can
+name any native tmux session; Workspace paths are included only when verified.
+An observation precedes output published with that observation. Buffered PTY data
+can span a session change before polling observes it, so these headers do not
+attribute historical bytes atomically. The browser displays the observed session
+without a sidebar. Unknown fields, invalid lengths, server-only headers on input,
+stale attachment/stream references and out-of-order input are rejected.
 
-This first experiment fixes the CLI-selected Workspace Session. Every queued
-input action and output batch rechecks the managed client and original verified
-Workspace Session. Navigation away closes the attachment, discarding pending
-output; #343 will supply ordered changes to another verified target. It does not
-claim that sampling tmux state assigns each historical PTY byte to a pane. These ownership checks do not establish the required input-consumption fence,
-including for native navigation; the CLI stays unavailable. There is no stream
-replacement in this prototype.
+There is no stream replacement or explicit switch API in this experiment. A fresh
+attachment has a new generation and stream; an old socket never reaches it. Close
+controls re-query and compare the explicit observed target as well as connection
+references. Shared daemon contracts retain their own stronger target/control
+rules; this local adapter does not pretend to implement those RPCs.
 
 Only close controls are exposed, on the same per-attachment connector as input,
 with an increasing control sequence. There is no successful resize or renderer
@@ -115,11 +116,14 @@ server shutdown kills a Workspace Session, tmux server or workload.
 
 [Pinned Bun 1.4.4 source](https://github.com/oven-sh/bun/blob/bun-v1.4.4/src/runtime/api/bun/Terminal.rs) and its installed `bun-types` document that `Terminal.write` accepts
 all bytes and buffers internally; its return value is not a partial-write count.
-The raw prototype therefore retains conservative outstanding-byte accounting
-until a PTY drain callback, never re-sends a remainder, and closes on saturation.
-Immediately flushed writes may never emit drain; this accounting is conservative
-and can expire an idle input allowance. It is another reason the raw prototype
-is not a completed input adapter. It does
+The endpoint therefore retains conservative outstanding-byte accounting until a
+real PTY drain, never re-sends a remainder, and closes on saturation. Immediately
+flushed writes may never emit drain. The maintainer approved the resulting
+conservative 256 KiB input budget: even an idle PTY can exhaust it through
+cumulative input, requiring a fresh attachment. This evidence-based restriction is
+advertised as `inputAccounting: conservative-until-drain` and explained in the
+disconnect message and usage docs. Time, output and tmux queries cannot prove
+input drain and do not release credit. It does
 not infer child exit from PTY EOF. Bun PTY is a POSIX capability; release targets
 remain macOS/Linux. Regression coverage uses real Bun WebSockets/PTYs and isolated
 tmux sockets, with an explicit capability-dependent skip when the live server

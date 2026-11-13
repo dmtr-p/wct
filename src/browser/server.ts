@@ -23,6 +23,8 @@ import {
   policy,
   same,
   TicketRequest,
+  type WorkspaceTarget,
+  WorkspaceTarget as WorkspaceTargetSchema,
 } from "./protocol";
 
 export interface AttachmentBackend {
@@ -30,7 +32,7 @@ export interface AttachmentBackend {
   query(ref: TerminalAttachment): Promise<TmuxClient | null>;
   detach(ref: TerminalAttachment): Promise<void>;
   /** Must reverify both Workspace ownership and the exact tmux session generation. */
-  verify(client: TmuxClient): Promise<LocalTarget>;
+  verify(client: TmuxClient): Promise<WorkspaceTarget>;
 }
 interface Connection {
   attachment: Attachment;
@@ -63,7 +65,7 @@ interface Attachment {
   ptyBytes: number;
   output: Uint8Array[];
   outputBytes: number;
-  pumping: boolean;
+  pumping?: Promise<void>;
   actions: Promise<void>;
 }
 
@@ -125,18 +127,27 @@ export async function startLocalTerminal(options: {
     auth.alive(a.owner) &&
     (!ws || (a.socket === ws && a.streamId === ws.data.streamId));
 
-  async function verify(a: Attachment) {
+  async function observe(a: Attachment) {
     const client = await options.backend.query(a.launch.attachment);
-    if (!client || client.server !== a.ref.server)
+    if (!client || client.server !== a.ref.server || !client.sessionId)
       throw new Error("Attachment unavailable");
-    const target = decode(
-      LocalTargetSchema,
-      await options.backend.verify(client),
-    );
-    // This experiment fixes the CLI-selected Workspace. Native tmux navigation
-    // away closes the stream; #343 adds explicitly ordered navigation.
-    if (a.target && !same(a.target, target))
-      throw new Error("Attachment target changed; open a fresh attachment");
+    let target: LocalTarget;
+    try {
+      target = decode(LocalTargetSchema, await options.backend.verify(client));
+      if (
+        target.server !== client.server ||
+        target.sessionId !== client.sessionId
+      )
+        throw new Error("Inconsistent target observation");
+    } catch {
+      // Native tmux navigation may select any session. Only publish Workspace
+      // metadata when the backend actually verifies it; polling attributes no bytes.
+      target = decode(LocalTargetSchema, {
+        server: client.server,
+        sessionId: client.sessionId,
+        sessionName: client.session,
+      });
+    }
     return target;
   }
   function send(a: Attachment, header: LocalHeader, bytes?: Uint8Array) {
@@ -173,28 +184,38 @@ export async function startLocalTerminal(options: {
     // The shared frame codec validates this on the browser as well.
     return decode(LocalHeaderSchema, value);
   }
-  async function pump(a: Attachment) {
+  function pump(a: Attachment) {
     if (a.pumping || !a.socket || !a.activated || a.closing) return;
-    a.pumping = true;
-    try {
-      await verify(a);
-      while (a.output.length && valid(a)) {
-        const bytes = a.output.shift();
-        if (!bytes) break;
-        a.outputBytes -= bytes.length;
-        send(a, header(a, "output", bytes.length), bytes);
+    a.pumping = (async () => {
+      try {
+        const target = await observe(a);
+        if (!valid(a)) return;
+        if (!same(a.target, target)) {
+          a.target = target;
+          send(a, header(a, "target", 0));
+        }
+        while (a.output.length && valid(a)) {
+          const bytes = a.output[0];
+          if (!bytes) break;
+          send(a, header(a, "output", bytes.length), bytes);
+          a.output.shift();
+          a.outputBytes -= bytes.length + policy.controlBytes + 4;
+        }
+      } catch {
+        void close(a, "Terminal output or target validation failed");
       }
-    } catch {
-      void close(a, "Terminal output or target validation failed");
-    } finally {
-      a.pumping = false;
-    }
+    })().finally(() => {
+      a.pumping = undefined;
+    });
   }
   function output(a: Attachment, data: Uint8Array) {
     if (a.closing) return;
     if (
       a.output.length + Math.ceil(data.length / policy.dataBytes) > 256 ||
-      data.length + a.outputBytes + (a.socket?.getBufferedAmount() ?? 0) >
+      data.length +
+        Math.ceil(data.length / policy.dataBytes) * (policy.controlBytes + 4) +
+        a.outputBytes +
+        (a.socket?.getBufferedAmount() ?? 0) >
         policy.outputBytes
     ) {
       void close(a, "Terminal output limit exceeded");
@@ -203,9 +224,9 @@ export async function startLocalTerminal(options: {
     for (let offset = 0; offset < data.length; offset += policy.dataBytes) {
       const chunk = data.slice(offset, offset + policy.dataBytes);
       a.output.push(chunk);
-      a.outputBytes += chunk.length;
+      a.outputBytes += chunk.length + policy.controlBytes + 4;
     }
-    void pump(a);
+    pump(a);
   }
   async function cleanup(a: Attachment, reason: string) {
     forgetTickets(a);
@@ -260,6 +281,9 @@ export async function startLocalTerminal(options: {
         `Attachment ${a.ref.attachmentId}: record cleanup failed after child exit`,
       );
     }
+    // Retain the slot while ordered callbacks still hold input buffers or an
+    // observation. Closing fences new work; the existing callbacks must settle.
+    await Promise.allSettled([a.actions, a.pumping]);
     attachments.delete(a.ref.attachmentId);
   }
   function close(a: Attachment, reason = "Terminal disconnected") {
@@ -292,6 +316,10 @@ export async function startLocalTerminal(options: {
     const launchTimer = setTimeout(() => {
       expired = true;
       if (a) void close(a, "Attachment launch timed out");
+      else
+        diagnostic(
+          "Attachment preparation timed out; retaining its pending reservation until preparation settles",
+        );
     }, policy.handshakeMs);
     try {
       prepared = await options.backend.prepare();
@@ -323,7 +351,6 @@ export async function startLocalTerminal(options: {
         ptyBytes: 0,
         output: [],
         outputBytes: 0,
-        pumping: false,
         actions: Promise.resolve(),
       };
       const attachment = a;
@@ -334,8 +361,13 @@ export async function startLocalTerminal(options: {
         ...dimensions,
         name: "xterm-256color",
         data: (_terminal, bytes) => output(attachment, bytes),
+        // Bun accepts full writes, including internally buffered tails. Credit
+        // only an actual drain; idle time and output prove nothing about input.
         drain: () => {
           attachment.ptyBytes = 0;
+        },
+        exit: () => {
+          void close(attachment, "Terminal PTY closed");
         },
       });
       a.child = Bun.spawn([prepared.command, ...prepared.args], {
@@ -358,14 +390,21 @@ export async function startLocalTerminal(options: {
         const client = await options.backend.query(prepared.attachment);
         if (client) {
           a.target = decode(
-            LocalTargetSchema,
+            WorkspaceTargetSchema,
             await options.backend.verify(client),
           );
+          if (
+            client.server !== a.ref.server ||
+            a.target.server !== a.ref.server ||
+            client.sessionId !== a.target.sessionId
+          )
+            throw new Error("Attachment launch target changed");
           break;
         }
         await delay(20);
       }
-      if (!valid(a)) throw new Error("Attachment launch cancelled");
+      if (!valid(a) || expired || now() >= deadline)
+        throw new Error("Attachment launch cancelled");
       a.readyAt = now();
       return a;
     } catch (error) {
@@ -390,7 +429,7 @@ export async function startLocalTerminal(options: {
       length + a.inputBytes + a.ptyBytes > policy.inputBytes ||
       (typeof message === "string" && length > policy.controlBytes)
     ) {
-      void close(a, "Terminal input limit exceeded");
+      void close(a, "Input budget exhausted; reload for a fresh attachment");
       return;
     }
     a.inputBytes += length;
@@ -400,14 +439,14 @@ export async function startLocalTerminal(options: {
     a.actions = a.actions
       .then(async () => {
         if (!valid(a, ws)) return;
-        await verify(a);
-        if (!valid(a, ws)) return;
         if (typeof message === "string") {
+          const target = await observe(a);
+          if (!valid(a, ws)) return;
           const control = decode(LocalControl, JSON.parse(message));
           if (
             !same(a.ref, control.ref) ||
             control.streamId !== a.streamId ||
-            !same(a.target, control.target) ||
+            !same(target, control.target) ||
             control.controlSequence !== a.controlSequence
           )
             throw new Error("Stale terminal control");
@@ -420,7 +459,6 @@ export async function startLocalTerminal(options: {
             input.kind !== "input" ||
             !same(a.ref, input.ref) ||
             input.streamId !== a.streamId ||
-            !same(a.target, input.target) ||
             input.sequence !== a.inputSequence
           )
             throw new Error("Stale terminal input");
@@ -620,7 +658,7 @@ export async function startLocalTerminal(options: {
         a.lastPong = now();
         try {
           send(a, header(a, "target", 0));
-          void pump(a);
+          pump(a);
         } catch {
           void close(a);
         }
@@ -633,7 +671,7 @@ export async function startLocalTerminal(options: {
         if (ws.data.attachment.socket === ws) void close(ws.data.attachment);
       },
       drain(ws) {
-        void pump(ws.data.attachment);
+        pump(ws.data.attachment);
       },
     },
     error() {
@@ -644,6 +682,7 @@ export async function startLocalTerminal(options: {
     for (const [key, ticket] of tickets)
       if (now() >= ticket.expires) tickets.delete(key);
     for (const a of attachments.values()) {
+      if (a.closing) continue;
       if (
         !auth.alive(a.owner) ||
         (!a.socket &&
@@ -654,28 +693,33 @@ export async function startLocalTerminal(options: {
         void close(a, "Terminal authentication or heartbeat expired");
         continue;
       }
+      if (a.socket) pump(a);
       if (a.socket && now() - a.lastPing >= policy.pingMs) {
         a.lastPing = now();
         a.socket.ping();
       }
     }
   }, 1000);
+  let stopped: Promise<void> | undefined;
   return {
     url: `http://127.0.0.1:${server.port}/`,
     bootstrapUrl: `http://127.0.0.1:${server.port}/#${auth.bootstrap}`,
-    async stop() {
-      if (stopping) return;
+    stop() {
+      if (stopped) return stopped;
       stopping = true;
-      clearInterval(timer);
-      tickets.clear();
-      auth.clear();
-      for (const controller of inFlight.keys()) controller.abort();
-      await Promise.allSettled(inFlight.values());
-      await Promise.allSettled(
-        [...attachments.values()].map((a) => close(a, "Endpoint stopped")),
-      );
-      await Promise.allSettled(preparations);
-      await server.stop(true);
+      stopped = (async () => {
+        clearInterval(timer);
+        tickets.clear();
+        auth.clear();
+        for (const controller of inFlight.keys()) controller.abort();
+        await Promise.allSettled(inFlight.values());
+        await Promise.allSettled(
+          [...attachments.values()].map((a) => close(a, "Endpoint stopped")),
+        );
+        await Promise.allSettled(preparations);
+        await server.stop(true);
+      })();
+      return stopped;
     },
   };
 }

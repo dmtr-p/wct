@@ -21,6 +21,7 @@ export const policy = {
   dataBytes: 64 * 1024,
   controlBytes: 16 * 1024,
   inputBytes: 256 * 1024,
+  inputAccounting: "conservative-until-drain",
   outputBytes: 1024 * 1024,
   handshakeMs: 10_000,
   pingMs: 30_000,
@@ -39,25 +40,39 @@ export const LocalRef = Schema.Struct({
   server: Text,
 });
 export type LocalRef = typeof LocalRef.Type;
-export const LocalTarget = Schema.Struct({
+export const WorkspaceTarget = Schema.Struct({
   mainRepoPath: HostPath,
   worktreePath: HostPath,
   branch: Branch,
   server: Text,
   sessionId: Schema.String.check(Schema.isPattern(/^\$\d+$/)),
 });
+export type WorkspaceTarget = typeof WorkspaceTarget.Type;
+export const LocalTarget = Schema.Union([
+  WorkspaceTarget,
+  Schema.Struct({
+    server: Text,
+    sessionId: Schema.String.check(Schema.isPattern(/^\$\d+$/)),
+    sessionName: Text,
+  }),
+]);
 export type LocalTarget = typeof LocalTarget.Type;
 const connection = { ref: LocalRef, streamId: TerminalStreamId };
 const data = {
   ...connection,
-  target: LocalTarget,
   sequence: Counter,
   byteLength: Counter.check(Schema.isLessThanOrEqualTo(policy.dataBytes)),
 };
 export const LocalHeader = Schema.Union([
-  Schema.Struct({ ...data, kind: Schema.Literals(["input", "output"]) }),
+  Schema.Struct({ ...data, kind: Schema.Literal("input") }),
   Schema.Struct({
     ...data,
+    target: LocalTarget,
+    kind: Schema.Literal("output"),
+  }),
+  Schema.Struct({
+    ...data,
+    target: LocalTarget,
     kind: Schema.Literal("target"),
     byteLength: Schema.Literal(0),
   }),
@@ -72,6 +87,16 @@ export const LocalControl = Schema.Struct({
 export type LocalControl = typeof LocalControl.Type;
 export const CreateLocalAttachment = Schema.Struct({
   dimensions: LocalDimensions,
+});
+export const AttachmentCreated = Schema.Struct({
+  ref: LocalRef,
+  target: WorkspaceTarget,
+  policy: Schema.Unknown,
+});
+export const TicketIssued = Schema.Struct({
+  ticket: Text,
+  streamId: TerminalStreamId,
+  expiresAt: Counter,
 });
 export const Bootstrap = Schema.Struct({
   secret: Schema.String.check(Schema.isMaxLength(128)),

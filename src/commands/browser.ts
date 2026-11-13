@@ -16,30 +16,6 @@ export function browserCommand(options: {
   branch?: string;
   port?: string;
 }) {
-  return Effect.suspend(() => {
-    // A raw PTY write cannot compare the session when tmux consumes each key.
-    // Keep CLI launch closed until an adapter can preserve the full keyboard
-    // interface and enforce the required per-session input fence together.
-    if (!strictSessionInputAvailable())
-      return Effect.fail(
-        commandError(
-          "tmux_error",
-          "Browser terminal unavailable: strict per-session input fencing with the full tmux keyboard interface requires additional tmux adapter support",
-        ),
-      );
-    return startBrowserCommand(options);
-  });
-}
-
-function strictSessionInputAvailable(): boolean {
-  return false;
-}
-
-function startBrowserCommand(options: {
-  path?: string;
-  branch?: string;
-  port?: string;
-}) {
   return Effect.scoped(
     Effect.gen(function* () {
       if (yield* JsonFlag)

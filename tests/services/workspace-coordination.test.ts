@@ -318,6 +318,35 @@ describe("cross-process Workspace coordination", () => {
     ).toBe("workspace_coordination_error");
   });
 
+  test("a caught acquisition failure releases its attempted lock before the caller scope ends", async () => {
+    const owner = launch("hold");
+    const acquired = await owner.message("Acquired");
+    await kill(owner.child);
+    if (!acquired.ownership) throw new Error("Missing original reservation");
+    const ownership = acquired.ownership;
+    const coordination = await service();
+    await runBunPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const failure = yield* Effect.flip(coordination.acquire(target()));
+          expect(failure.code).toBe("workspace_coordination_error");
+          expect((yield* coordination.inspect(target())).status).toBe(
+            "outcome-unknown",
+          );
+          yield* coordination.reconcile(target(), reconciliation(ownership));
+          expect((yield* coordination.inspect(target())).status).toBe(
+            "available",
+          );
+          const replacement = yield* coordination.acquire(target());
+          expect(replacement.ownership.operationId).not.toBe(
+            ownership.operationId,
+          );
+        }),
+      ),
+    );
+    expect((await inspect()).status).toBe("available");
+  });
+
   test("cancelling a script fences its generation and refuses further user code", async () => {
     const coordination = await service();
     await runBunPromise(
@@ -528,6 +557,22 @@ describe("cross-process Workspace coordination", () => {
     await expect
       .poll(async () => (await inspect()).status)
       .toBe("outcome-unknown");
+    const file = (await readdir(root)).find((name) => name.endsWith(".json"));
+    if (!file) throw new Error("Missing transfer journal");
+    const journal = JSON.parse(await readFile(join(root, file), "utf8"));
+    const ticket = {
+      root,
+      identity: journal.identity,
+      operationId: journal.reservation.operationId,
+      generation: journal.reservation.generation,
+      nonce: journal.reservation.transfer.nonce,
+      nextGeneration: journal.reservation.transfer.generation,
+    };
+    const restarted = launch("stale-transfer", { ticket });
+    const rejected = await restarted.message("Failed");
+    expect(rejected.error).toContain("different worker generation");
+    expect(await restarted.child.exited).toBe(1);
+    expect((await inspect()).status).toBe("outcome-unknown");
   });
 
   test("lost Adopted acknowledgement preserves the new worker generation after caller cancellation", async () => {

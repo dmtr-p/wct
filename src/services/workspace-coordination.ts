@@ -56,6 +56,7 @@ const Reservation = Schema.Struct({
       nonce: Schema.String,
       generation: Schema.String,
       committed: Schema.Boolean,
+      recipient: Schema.optional(Generation),
     }),
   ),
 });
@@ -116,6 +117,7 @@ export interface WorkspaceLease {
     WctError
   >;
   commitTransfer: Effect.Effect<void, WctError>;
+  registerTransferWorker: (pid: number) => Effect.Effect<void, WctError>;
   /** Call only after the prospective worker is proven exited, before Start. */
   cancelTransfer: Effect.Effect<void, WctError>;
   closeTransferred: Effect.Effect<void>;
@@ -382,13 +384,39 @@ function makeLease(
         },
       };
     }),
+    registerTransferWorker: (pid) =>
+      guarded(() => {
+        if (mode !== "offered")
+          throw coordinationError("Workspace transfer is not prepared");
+        const recipient = processGeneration(pid);
+        update((current) => {
+          if (
+            !current.transfer ||
+            current.transfer.committed ||
+            current.transfer.recipient
+          )
+            throw coordinationError(
+              "Workspace transfer recipient is already fixed",
+            );
+          return { ...current, transfer: { ...current.transfer, recipient } };
+        });
+      }),
     commitTransfer: guarded(() => {
       if (mode !== "offered")
         throw coordinationError("Workspace transfer is not prepared");
-      mode = "committed";
       update((current) => {
-        if (!current.transfer)
+        if (!current.transfer?.recipient)
           throw coordinationError("Missing prepared Workspace transfer");
+        if (
+          !sameProcessGeneration(
+            current.transfer.recipient,
+            processGeneration(current.transfer.recipient.pid),
+          )
+        )
+          throw coordinationError(
+            "Workspace transfer recipient generation changed",
+          );
+        mode = "committed";
         return {
           ...current,
           transfer: { ...current.transfer, committed: true },
@@ -482,28 +510,41 @@ export function makeWorkspaceCoordinationService(
           const handle = yield* Effect.acquireRelease(
             guarded(() => {
               const fd = openWorkspaceLock(files.lock);
-              return { fd, release: Effect.sync(() => closeWorkspaceLock(fd)) };
+              let closed = false;
+              return {
+                fd,
+                release: Effect.sync(() => {
+                  if (!closed) {
+                    closed = true;
+                    closeWorkspaceLock(fd);
+                  }
+                }),
+              };
             }),
             (handle) => handle.release,
           );
-          while (!(yield* guarded(() => tryWorkspaceLock(handle.fd)))) {
-            if (options?.onWait) yield* options.onWait.pipe(Effect.ignoreCause);
-            yield* Effect.sleep(`${pollMilliseconds} millis`);
-          }
-          return yield* guarded(() => {
-            const journal = readJournal(files.journal, identity);
-            if (journal.reservation) throw unknownOutcome(journal.reservation);
-            const reservation: WorkspaceReservation = {
-              operationId: randomUUID(),
-              generation: randomUUID(),
-              owner: processGeneration(process.pid),
-              phase: "owned",
-            };
-            writeJournal(files.journal, { ...journal, reservation });
-            const owned = makeLease(root, identity, handle.fd, reservation);
-            handle.release = owned.release;
-            return owned.lease;
-          });
+          return yield* Effect.gen(function* () {
+            while (!(yield* guarded(() => tryWorkspaceLock(handle.fd)))) {
+              if (options?.onWait)
+                yield* options.onWait.pipe(Effect.ignoreCause);
+              yield* Effect.sleep(`${pollMilliseconds} millis`);
+            }
+            return yield* guarded(() => {
+              const journal = readJournal(files.journal, identity);
+              if (journal.reservation)
+                throw unknownOutcome(journal.reservation);
+              const reservation: WorkspaceReservation = {
+                operationId: randomUUID(),
+                generation: randomUUID(),
+                owner: processGeneration(process.pid),
+                phase: "owned",
+              };
+              writeJournal(files.journal, { ...journal, reservation });
+              const owned = makeLease(root, identity, handle.fd, reservation);
+              handle.release = owned.release;
+              return owned.lease;
+            });
+          }).pipe(Effect.onError(() => handle.release));
         }),
       inspect: (target) =>
         Effect.gen(function* () {
@@ -613,6 +654,16 @@ export function receiveWorkspaceTransfer(
         current.transfer.generation !== ticket.nextGeneration
       )
         throw coordinationError("Stale or invalid Workspace transfer ticket");
+      if (
+        !current.transfer.recipient ||
+        !sameProcessGeneration(
+          current.transfer.recipient,
+          processGeneration(process.pid),
+        )
+      )
+        throw coordinationError(
+          "Workspace transfer is bound to a different worker generation",
+        );
       return { root, files, current };
     }).pipe(Effect.onError(() => custody.close));
     return {
@@ -631,7 +682,12 @@ export function receiveWorkspaceTransfer(
             !journal.reservation ||
             !sameFence(journal.reservation, ticket) ||
             journal.reservation.transfer?.nonce !== ticket.nonce ||
-            !journal.reservation.transfer.committed
+            !journal.reservation.transfer.committed ||
+            !journal.reservation.transfer.recipient ||
+            !sameProcessGeneration(
+              journal.reservation.transfer.recipient,
+              owner,
+            )
           )
             throw coordinationError(
               "Workspace transfer changed before adoption",

@@ -12,6 +12,7 @@ import {
   receiveWorkspaceTransfer,
   type WorkspaceTransferTicket,
 } from "../../src/services/workspace-coordination";
+import { openWorkspaceLock } from "../../src/services/workspace-lock";
 import {
   acceptWorkspaceFromCaller,
   transferWorkspaceToWorker,
@@ -21,7 +22,14 @@ interface Arguments {
   root: string;
   mainRepoPath: string;
   branch: string;
-  mode: "hold" | "command" | "transfer" | "worker" | "background" | "registry";
+  mode:
+    | "hold"
+    | "command"
+    | "transfer"
+    | "worker"
+    | "background"
+    | "registry"
+    | "stale-transfer";
   script?: string;
   marker?: string;
   home?: string;
@@ -32,6 +40,7 @@ interface Arguments {
   cancellableTransfer?: boolean;
   omitTicket?: boolean;
   catchDisconnect?: boolean;
+  ticket?: WorkspaceTransferTicket;
 }
 const args = JSON.parse(process.argv[2] ?? "{}") as Arguments;
 const send = (value: unknown) => {
@@ -115,6 +124,20 @@ const program = Effect.scoped(
         ),
       );
       return yield* Effect.forever(Effect.sleep("1 second"));
+    }
+    if (args.mode === "stale-transfer") {
+      if (!args.ticket)
+        return yield* Effect.die(new Error("Missing stale ticket fixture"));
+      const ticket = args.ticket;
+      const hash = new Bun.CryptoHasher("sha256")
+        .update(ticket.identity)
+        .digest("hex");
+      const fd = yield* Effect.sync(() =>
+        openWorkspaceLock(join(ticket.root, `${hash}.lock`)),
+      );
+      const pending = yield* receiveWorkspaceTransfer(ticket, fd);
+      yield* pending.adopt;
+      return yield* Effect.die(new Error("A stale worker adopted custody"));
     }
     const service = yield* makeWorkspaceCoordinationService({
       root: args.root,

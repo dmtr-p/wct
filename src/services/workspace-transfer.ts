@@ -105,6 +105,7 @@ export function transferWorkspaceToWorker(
         });
         yield* restore(awaitAck(listening.promise));
         const worker = child;
+        yield* lease.registerTransferWorker(worker.pid);
         yield* Effect.try({
           try: () =>
             worker.send({

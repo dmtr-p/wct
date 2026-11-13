@@ -84,7 +84,10 @@ Transfer starts only with no uncertain/in-flight command. Durable uncertainty
 from earlier work cannot be erased by offering a worker a lock. The worker
 inherits the same flock description at descriptor 4; Bun owns its IPC channel
 separately. It validates the inode, full identity, exact operation/generation,
-and fresh transfer nonce before `Ready`. It does not reacquire by path.
+fresh transfer nonce, and its intended recipient PID/boot/start generation before
+`Ready`. The caller durably fixes that recipient before sending the ticket.
+Restarting a worker cannot adopt an old ticket even with an independently opened
+descriptor to the same now-free inode. It does not reacquire by path.
 
 The caller announces handoff before `Start`. Committing Start durably marks the
 transfer and irrevocably retires the caller's mutation authority **before** the

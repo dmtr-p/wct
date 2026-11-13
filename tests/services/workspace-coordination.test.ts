@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Effect, Fiber } from "effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runBunPromise } from "../../src/effect/runtime";
@@ -24,10 +25,9 @@ import {
   sameProcessGeneration,
 } from "../../src/services/workspace-lock";
 
-const fixture = new URL(
-  "../fixtures/workspace-coordination.ts",
-  import.meta.url,
-).pathname;
+const fixture = fileURLToPath(
+  new URL("../fixtures/workspace-coordination.ts", import.meta.url),
+);
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 interface Message {
   _tag: string;

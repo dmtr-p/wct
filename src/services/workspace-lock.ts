@@ -3,6 +3,7 @@ import {
   closeSync,
   constants,
   fstatSync,
+  fsyncSync,
   openSync,
   readFileSync,
 } from "node:fs";
@@ -45,6 +46,21 @@ function loadNativeLock() {
 
 let nativeLock: ReturnType<typeof loadNativeLock> | undefined;
 const native = () => (nativeLock ??= loadNativeLock());
+
+/** Use regular files only: filesystem support for directory F_FULLFSYNC is
+ * not assumed. Darwin's command ignores arg, preserving the two-argument ABI. */
+export function fullSyncWorkspaceFile(fd: number): void {
+  if (!fstatSync(fd).isFile())
+    throw new Error("Workspace media flush requires a regular file");
+  if (process.platform !== "darwin") {
+    fsyncSync(fd);
+    return;
+  }
+  const api = native();
+  const F_FULLFSYNC = 51; // Darwin sys/fcntl.h; arg is ignored.
+  if (api.fcntl(fd, F_FULLFSYNC) < 0)
+    throw new Error(`Cannot fully flush Workspace journal (${api.errno()})`);
+}
 
 // Never LOCK_UN: worker duplicates share the open-file description. Closing
 // only our reference preserves custody until the last custodian closes it.

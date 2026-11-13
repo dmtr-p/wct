@@ -9,9 +9,6 @@ import {
   openSync,
   readFileSync,
   realpathSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Context, Effect, FileSystem, Schema, type Scope } from "effect";
@@ -19,6 +16,7 @@ import { commandError, WctCommandError, type WctError } from "../errors";
 import { getWctDir } from "./db";
 import { type WorkspaceIdentityKey, workspaceIdentityKey } from "./identities";
 import { canonicalSessionPath } from "./session-identity";
+import { publishWorkspaceJournal } from "./workspace-journal";
 import {
   closeWorkspaceLock,
   openWorkspaceLock,
@@ -210,38 +208,11 @@ function readJournal(path: string, identity: string): WorkspaceJournal {
   }
 }
 
-// The fence is durable before the process boundary opens: file fsync, atomic
-// same-directory rename, then directory fsync. Release uses the same ordering.
 function writeJournal(path: string, journal: WorkspaceJournal): void {
   const content = JSON.stringify(journal);
   if (Buffer.byteLength(content) > 64 * 1024)
     throw coordinationError("Workspace ownership journal exceeds 64 KiB");
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  const fd = openSync(
-    temporary,
-    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
-    0o600,
-  );
-  try {
-    writeFileSync(fd, content);
-    fsyncSync(fd);
-  } catch (error) {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      /* Preserve the write failure. */
-    }
-    throw error;
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(temporary, path);
-  const directory = openSync(dirname(path), constants.O_RDONLY);
-  try {
-    fsyncSync(directory);
-  } finally {
-    closeSync(directory);
-  }
+  publishWorkspaceJournal(path, content);
 }
 
 function sameFence(

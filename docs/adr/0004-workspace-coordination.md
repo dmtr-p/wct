@@ -45,11 +45,40 @@ Completing one command changes its phase back to owned; it never releases the
 encompassing operation.
 
 Before launching a process, persist a command boundary with a fresh command ID.
-Write a mode-0600 temporary journal in the same directory, fsync it, rename over
-the journal, and fsync the directory. Only then may user code execute. Record
+Write a mode-0600 temporary journal in the same directory, fully synchronize it,
+retain its descriptor while renaming it over the journal, fsync the containing
+directory, then fully synchronize the same regular file again. Only then may
+user code execute. On Linux these file barriers use `fsync`; on Darwin they use
+`fcntl(fd, F_FULLFSYNC)` with no optional argument. Record
 the child's PID and OS start generation after spawning. A child that exits too
 quickly to inspect has an explicitly unknown diagnostic generation; the durable
 boundary already protects the spawn/inspection window.
+
+Darwin's `fsync` submits data to the drive cache; `F_FULLFSYNC` additionally asks
+the drive to flush all buffered data to permanent media. The first full flush
+prevents publication of unflushed contents. Directory fsync submits the rename's
+namespace metadata; the second full flush drains those already-submitted writes
+before permitting subsequent work. This ordering uses the documented whole-drive
+flush semantics, rather than inferring that flushing file contents also commits
+an unsynchronized directory. The initial fsync of the root's existing parent
+precedes these media barriers, covering a newly created same-volume root entry.
+
+Do not issue `F_FULLFSYNC` on a directory: its availability is filesystem-specific,
+and the protocol needs no assumption about directory support for that command.
+XNU dispatches the request to the filesystem vnode operation. Apple documents
+the no-argument command; the two-fixed-argument FFI binding avoids Darwin arm64's
+different ABI for a variadic integer. Do not substitute `F_BARRIERFSYNC`, which
+orders writes but does not request the same completed media flush.
+
+Any required file or directory synchronization failure fails the operation; no
+fallback from full flush to plain fsync is permitted on Darwin. A failure after
+rename may leave the new journal visible and is not a rollback. The lease's
+uncertainty latch is set before publication and prevents cleanup from clearing
+the reservation after such a failure. These guarantees depend on the local
+filesystem and device honoring successful synchronization requests, as does the
+Linux fsync protocol; they do not claim to withstand a device lying about flush
+completion. Call-level capability and failure-injection tests are not physical
+power-cut tests.
 
 Collection of the direct command's exit and output acknowledges command
 completion, including a known nonzero exit. This ends that command's descendant
@@ -143,3 +172,8 @@ Sources: [flock semantics](https://man7.org/linux/man-pages/man2/flock.2.html),
 [Linux subreapers](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html),
 [Bun cgroup spawn](https://bun.com/docs/runtime/child-process#resource-limits-with-cgroups-linux),
 and [cgroup membership](https://docs.kernel.org/admin-guide/cgroup-v2.html).
+The persistence protocol follows Apple's [fsync](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fsync.2.html)
+and [fcntl](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html)
+contracts, the cache/whole-drive-flush distinction in
+[WWDC19 storage guidance](https://developer.apple.com/videos/play/wwdc2019/419/?time=746),
+and [XNU's F_FULLFSYNC dispatch](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_descrip.c).

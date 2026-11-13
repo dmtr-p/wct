@@ -124,3 +124,12 @@ quit reports the retained worktree and asks for an explicit retry; it does not
 open an inaccessible force confirmation or authorize removal. Quitting from an
 already visible force confirmation reports the retained worktree as well.
 Ink and React remain lazy imports of the TUI command.
+
+Cross-process lifecycle conflicts show a Waiting phase. Escape on the selected
+Workspace cancels only its waiting action. When that selection has no wait,
+Escape cancels the first Pending Open waiter in the selected repository. Agents
+view routes Escape to the selected agent's waiting Workspace, or its first listed
+waiter when that selection has no wait. The next cancellation target is marked
+`Esc cancels`; repeated Escape cancels one waiting action at a time. Quit also cancels acquisition for actions
+still preparing, and drains active mutations. Fenced errors direct recovery to the owner-local CLI; see
+[Workspace recovery](workspace-operations.md#cross-process-ownership-and-recovery).

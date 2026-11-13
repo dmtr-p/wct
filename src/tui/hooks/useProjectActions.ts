@@ -1,12 +1,17 @@
 import { Effect } from "effect";
-import type { RefObject } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { toWctError } from "../../errors";
 import { PrCacheService } from "../../services/pr-cache-service";
 import { RegistryService } from "../../services/registry-service";
 import { workspaceSessionTarget } from "../../services/session-identity";
 import { TmuxService } from "../../services/tmux";
 import { WorkspaceService } from "../../services/workspace-service";
-import { lifecycleBusyMessage, type LifecycleState } from "../lifecycle";
+import {
+  beginLifecycle,
+  lifecycleBusyMessage,
+  type LifecycleClaims,
+  type LifecycleState,
+} from "../lifecycle";
 import type { TuiLifetime } from "../lifetime";
 import { tuiRuntime } from "../runtime";
 import type { ReturnSlot } from "../tree-navigation";
@@ -22,6 +27,8 @@ export interface ProjectActionDeps {
   selectedIndex: number;
   mode: Mode;
   lifecycle: LifecycleState;
+  lifecycleClaims?: LifecycleClaims;
+  setLifecycle?: Dispatch<SetStateAction<LifecycleState>>;
 
   captureTreeReturnPosition: (slot: ReturnSlot) => void;
   restoreTreeReturnPosition: (slot: ReturnSlot) => void;
@@ -86,7 +93,11 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
 
       const resolved = yield* Effect.forEach(repo.worktrees, (worktree) =>
         TmuxService.use((service) =>
-          service.resolveSession(workspaceSessionTarget(repoPath, worktree)),
+          service.resolveSession(
+            workspaceSessionTarget(repoPath, worktree),
+            undefined,
+            { readOnly: true },
+          ),
         ),
       );
       const sessionNames = resolved.flatMap((session) =>
@@ -107,8 +118,43 @@ export function createExecuteRemoveProject(deps: ProjectActionDeps) {
       const [stopped, failures] = yield* Effect.partition(
         repo.worktrees,
         (worktree) =>
-          WorkspaceService.use((service) =>
-            service.down({ path: worktree.path }),
+          Effect.acquireUseRelease(
+            Effect.sync(() =>
+              deps.lifecycleClaims && deps.setLifecycle
+                ? beginLifecycle({
+                    claims: deps.lifecycleClaims,
+                    setLifecycle: deps.setLifecycle,
+                    entry: {
+                      operation: "down",
+                      repoPath,
+                      project,
+                      branch: worktree.branch,
+                      phase: { _tag: "Preparing" },
+                    },
+                    showActionError: deps.showActionError,
+                  })
+                : undefined,
+            ),
+            (lifecycle) =>
+              lifecycle === null
+                ? Effect.fail(
+                    toWctError(
+                      new Error(
+                        `Workspace '${worktree.branch}' is already busy`,
+                      ),
+                    ),
+                  )
+                : WorkspaceService.use((service) =>
+                    service.down({
+                      path: worktree.path,
+                      expectedTarget: workspaceSessionTarget(
+                        repoPath,
+                        worktree,
+                      ),
+                      ...(lifecycle ? { reporter: lifecycle.reporter } : {}),
+                    }),
+                  ),
+            (lifecycle) => Effect.sync(() => lifecycle?.end()),
           ).pipe(
             Effect.mapError((error) => ({
               branch: worktree.branch,

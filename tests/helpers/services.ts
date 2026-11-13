@@ -47,11 +47,39 @@ export function withTestServices<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   overrides: ServiceOverrides = {},
 ) {
+  const tmux = overrides.tmux ?? noopTmuxService;
+  const killed = new Set<string>();
+  const identities = new Map<string, string>();
   return Effect.provide(
     effect,
     makeWctServicesLayer({
       ...overrides,
-      tmux: overrides.tmux ?? noopTmuxService,
+      tmux: {
+        ...tmux,
+        resolveSession: (...args) =>
+          tmux.resolveSession(...args).pipe(
+            Effect.map((session) => {
+              if (session?.id)
+                identities.set(
+                  session.id,
+                  JSON.stringify([session.id, session.server]),
+                );
+              return session &&
+                killed.has(JSON.stringify([session.id, session.server]))
+                ? null
+                : session;
+            }),
+          ),
+        killSession: (id) =>
+          tmux.killSession(id).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                const identity = identities.get(id);
+                if (identity) killed.add(identity);
+              }),
+            ),
+          ),
+      },
     }),
   );
 }

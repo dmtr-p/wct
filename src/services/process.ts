@@ -2,7 +2,10 @@ import { Context, Data, Effect, Semaphore } from "effect";
 import { ChildProcess } from "effect/process";
 import { commandError, WctCommandError } from "../errors";
 import { decodeText } from "./process-output";
-import { CurrentWorkspaceLease } from "./workspace-coordination";
+import {
+  CurrentRepositoryLease,
+  CurrentWorkspaceLease,
+} from "./workspace-coordination";
 
 export const ObservationProcessBudget = Context.Reference<
   Semaphore.Semaphore | undefined
@@ -74,18 +77,20 @@ function collectOutput(
   const collected = Effect.scoped(
     Effect.gen(function* () {
       const ownership = yield* CurrentWorkspaceLease;
+      const repository = yield* CurrentRepositoryLease;
       const handle = yield* makeCommand(command, args, {
         ...options,
         // Effect's default detached group cleanup kills intentional background
         // workloads even after a successful shell exit. Under custody, an
         // interrupted command retains a durable fence instead of claiming that
         // process-group cleanup proves descendant quiescence.
-        ...(ownership ? { detached: false } : {}),
+        ...(ownership || repository ? { detached: false } : {}),
         stdin: options?.stdin ?? "pipe",
         stdout: options?.stdout ?? "pipe",
         stderr: options?.stderr ?? "pipe",
       });
       if (ownership) yield* ownership.childStarted(Number(handle.pid));
+      if (repository) yield* repository.childStarted(Number(handle.pid));
 
       const limit =
         options?.maxOutputBytes === undefined
@@ -110,11 +115,18 @@ function collectOutput(
       };
     }),
   );
-  return Effect.flatMap(CurrentWorkspaceLease, (ownership) => {
-    const guarded = ownership
-      ? ownership.command(command, collected)
+  return Effect.gen(function* () {
+    const ownership = yield* CurrentWorkspaceLease;
+    const repository = yield* CurrentRepositoryLease;
+    // Only raw collection is supervised. A collected nonzero exit is known
+    // completion for both leases; business errors are classified afterward.
+    const repoGuarded = repository
+      ? repository.command(command, collected)
       : collected;
-    return Effect.flatMap(ObservationProcessBudget, (budget) =>
+    const guarded = ownership
+      ? ownership.command(command, repoGuarded)
+      : repoGuarded;
+    return yield* Effect.flatMap(ObservationProcessBudget, (budget) =>
       budget ? budget.withPermits(1)(guarded) : guarded,
     );
   });

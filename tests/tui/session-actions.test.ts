@@ -905,13 +905,15 @@ describe("createExecuteClose", () => {
       reporter: expect.anything(),
     });
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.ConfirmCloseForce(
-        "my-session",
-        "feat",
-        "/tmp/wt",
-        workspaceIdentityKey("/repo", "feat"),
-        "/repo",
-        "proj",
+      expect.objectContaining(
+        Mode.ConfirmCloseForce(
+          "my-session",
+          "feat",
+          "/tmp/wt",
+          workspaceIdentityKey("/repo", "feat"),
+          "/repo",
+          "proj",
+        ),
       ),
     );
     expect(deps.restoreTreeReturnPosition).toHaveBeenCalledOnce();
@@ -1267,14 +1269,16 @@ describe("createHandleDownSelectedWorktree", () => {
       createHandleDownSelectedWorktree(deps)();
       expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("down");
       expect(deps.setMode).toHaveBeenCalledWith(
-        Mode.ConfirmDown({
-          sessionName: expect.stringMatching(/^feat-[0-9a-f]{10}$/),
-          branch: "feat",
-          worktreePath: "/repo/feat",
-          workspaceKey: workspaceIdentityKey("/repo", "feat"),
-          repoPath: "/repo",
-          project: "proj",
-        }),
+        expect.objectContaining(
+          Mode.ConfirmDown({
+            sessionName: expect.stringMatching(/^feat-[0-9a-f]{10}$/),
+            branch: "feat",
+            worktreePath: "/repo/feat",
+            workspaceKey: workspaceIdentityKey("/repo", "feat"),
+            repoPath: "/repo",
+            project: "proj",
+          }),
+        ),
       );
 
       runtime.mockResolvedValueOnce({ warnings: [] });
@@ -1332,14 +1336,16 @@ describe("createHandleDownSelectedWorktree", () => {
     expect(deps.captureTreeReturnPosition).toHaveBeenCalledWith("down");
     expect(returnModeRef.current).toEqual(Mode.Navigate);
     expect(deps.setMode).toHaveBeenCalledWith(
-      Mode.ConfirmDown({
-        sessionName: "feat",
-        branch: "feat",
-        worktreePath: "/repo/feat",
-        workspaceKey: workspaceIdentityKey("/repo", "feat"),
-        repoPath: "/repo",
-        project: "proj",
-      }),
+      expect.objectContaining(
+        Mode.ConfirmDown({
+          sessionName: "feat",
+          branch: "feat",
+          worktreePath: "/repo/feat",
+          workspaceKey: workspaceIdentityKey("/repo", "feat"),
+          repoPath: "/repo",
+          project: "proj",
+        }),
+      ),
     );
   });
 

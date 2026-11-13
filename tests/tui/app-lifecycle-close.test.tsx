@@ -527,13 +527,15 @@ describe("TUI close lifecycle", () => {
     await run.settled;
 
     expect(setMode).toHaveBeenCalledWith(
-      Mode.ConfirmCloseForce(
-        "feat",
-        BRANCH,
-        WORKTREE_PATH,
-        WORKTREE_KEY,
-        REPO_PATH,
-        PROJECT,
+      expect.objectContaining(
+        Mode.ConfirmCloseForce(
+          "feat",
+          BRANCH,
+          WORKTREE_PATH,
+          WORKTREE_KEY,
+          REPO_PATH,
+          PROJECT,
+        ),
       ),
     );
     expect(entriesAtConfirm).toBe(0);

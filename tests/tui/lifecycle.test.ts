@@ -14,6 +14,7 @@ import {
   lifecycleProgressContent,
   type LifecycleState,
   workspaceIdentityKey,
+  worktreeWaitCancellationTarget,
 } from "../../src/tui/lifecycle";
 import {
   buildTreeItems,
@@ -38,6 +39,27 @@ function lifecycleOf(
     ],
   ]);
 }
+
+test("pending waits have a deterministic operation-local Escape fallback", () => {
+  const repo = { repoPath: "/repo", worktrees: [{ branch: "main" }] };
+  const lifecycle: Map<WorkspaceIdentityKey, LifecycleEntry> = new Map();
+  for (const branch of ["first", "second", "main"])
+    lifecycle.set(workspaceIdentityKey(repo.repoPath, branch), {
+      repoPath: repo.repoPath,
+      project: "fixture",
+      branch,
+      operation: "open",
+      phase: { _tag: "Waiting", mainRepoPath: repo.repoPath, branch },
+    });
+  expect(worktreeWaitCancellationTarget(lifecycle, repo, "main")?.branch).toBe(
+    "main",
+  );
+  expect(worktreeWaitCancellationTarget(lifecycle, repo)?.branch).toBe("first");
+  lifecycle.delete(workspaceIdentityKey(repo.repoPath, "first"));
+  expect(worktreeWaitCancellationTarget(lifecycle, repo)?.branch).toBe(
+    "second",
+  );
+});
 
 describe("lifecyclePhaseLabel", () => {
   test("maps every phase to its canonical label", () => {

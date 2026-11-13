@@ -20,6 +20,7 @@ export function useAgentNavigation(
   onJump: (paneId: string) => void,
   onKill: (item: AgentListItem) => void,
   onClose: (item: AgentListItem) => void,
+  onCancelWait?: (item: AgentListItem | undefined) => void,
 ) {
   // Undefined allows initial selection once agents arrive; null keeps a lost
   // foreground generation deselected until the user explicitly selects a row.
@@ -125,7 +126,10 @@ export function useAgentNavigation(
   useGuardedInput(
     (input, key) => {
       lastClick.current = null;
-      if (key.upArrow || input === "k") select(Math.max(0, selectedIndex - 1));
+      if (key.escape) onCancelWait?.(selectedItem);
+      else if (viewportRows <= 0) return;
+      else if (key.upArrow || input === "k")
+        select(Math.max(0, selectedIndex - 1));
       else if (key.downArrow || input === "j")
         select(Math.min(items.length - 1, selectedIndex + 1));
       else if (key.home) select(0);

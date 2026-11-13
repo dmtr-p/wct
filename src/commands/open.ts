@@ -12,6 +12,7 @@ import {
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { logTmuxResult, maybeAttachSession } from "./session";
+import { withWorkspaceWaitReporter } from "./workspace-wait";
 
 export { openCommandDef as commandDef } from "../cli/command-metadata";
 
@@ -142,9 +143,11 @@ export function openCommand(
   return Effect.gen(function* () {
     const { noAttach, ...workspaceOptions } = options;
     const json = yield* JsonFlag;
-    const reporter = json
-      ? undefined
-      : createOpenHumanReporter(workspaceOptions, yield* Stdio.Stdio);
+    const reporter = withWorkspaceWaitReporter(
+      json
+        ? undefined
+        : createOpenHumanReporter(workspaceOptions, yield* Stdio.Stdio),
+    );
     const result = yield* WorkspaceService.use((service) =>
       service.open({
         ...workspaceOptions,

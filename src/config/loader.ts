@@ -15,6 +15,10 @@ function homeDir(): string {
   return process.env.HOME ?? homedir();
 }
 
+export function getGlobalConfigPath(): string {
+  return join(homeDir(), CONFIG_FILENAME);
+}
+
 export function expandTilde(path: string): string {
   if (path.startsWith("~/")) {
     return join(homeDir(), path.slice(2));
@@ -133,7 +137,7 @@ export function loadWorkspaceConfig(
 ): Effect.Effect<LoadedWorkspaceConfig, ConfigError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const projectConfigPath = join(projectDir, CONFIG_FILENAME);
-    const globalConfigPath = join(homeDir(), CONFIG_FILENAME);
+    const globalConfigPath = getGlobalConfigPath();
 
     const [projectResult, globalResult] = yield* Effect.all([
       captureConfigFile(projectConfigPath),

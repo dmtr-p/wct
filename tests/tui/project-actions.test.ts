@@ -169,8 +169,22 @@ describe("createExecuteRemoveProject", () => {
       "project-feature",
     ]);
     expect(down).toHaveBeenCalledTimes(2);
-    expect(down).toHaveBeenCalledWith({ path: "/repos/project" });
-    expect(down).toHaveBeenCalledWith({ path: "/worktrees/project-feature" });
+    expect(down).toHaveBeenCalledWith({
+      path: "/repos/project",
+      expectedTarget: {
+        mainRepoPath: "/repos/project",
+        worktreePath: "/repos/project",
+        branch: "main",
+      },
+    });
+    expect(down).toHaveBeenCalledWith({
+      path: "/worktrees/project-feature",
+      expectedTarget: {
+        mainRepoPath: "/repos/project",
+        worktreePath: "/worktrees/project-feature",
+        branch: "feature",
+      },
+    });
     expect(unregister).toHaveBeenCalledWith(repo.repoPath);
     expect(invalidate).toHaveBeenCalledExactlyOnceWith(repo.repoPath);
     expect(deps.refreshAll).toHaveBeenCalled();

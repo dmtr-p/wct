@@ -12,7 +12,11 @@ import { formatSync } from "../../services/worktree-service";
 import type { WorkspaceAgentSnapshot } from "../hooks/useAgents";
 import type { RepoInfo } from "../hooks/useRegistry";
 import type { TmuxSessionInfo } from "../hooks/useTmux";
-import { type LifecycleState, workspaceIdentityKey } from "../lifecycle";
+import {
+  type LifecycleState,
+  workspaceIdentityKey,
+  worktreeWaitCancellationTarget,
+} from "../lifecycle";
 import { isWorktreeEffectivelyExpanded, type TreeRow } from "../tree-helpers";
 import type { PaneInfo, TreeItem } from "../types";
 import { ConfirmModal, type ConfirmMode } from "./ConfirmModal";
@@ -188,10 +192,27 @@ function renderRow(row: TreeRow, ctx: RenderRowContext): React.ReactNode {
     case "lifecycle-progress": {
       const repo = ctx.repos[row.repoIndex];
       if (!repo) return null;
+      const selectedRepo = ctx.selectedItem
+        ? ctx.repos[ctx.selectedItem.repoIndex]
+        : undefined;
+      const selectedBranch =
+        selectedRepo && ctx.selectedItem && ctx.selectedItem.type !== "repo"
+          ? selectedRepo.worktrees[ctx.selectedItem.worktreeIndex]?.branch
+          : undefined;
+      const target = selectedRepo
+        ? worktreeWaitCancellationTarget(
+            ctx.lifecycle,
+            selectedRepo,
+            selectedBranch,
+          )
+        : undefined;
       return (
         <LifecycleProgressRow
           key={`lifecycle-${repo.id}-${row.branch}`}
           phase={row.phase}
+          canCancel={
+            target?.repoPath === repo.repoPath && target.branch === row.branch
+          }
           maxWidth={ctx.maxWidth}
         />
       );

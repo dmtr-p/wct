@@ -123,6 +123,72 @@ export const projectDefinitions = {
   },
 } satisfies Record<string, CommandDefinition>;
 
+const operationRepo = stringOption(
+  "repo",
+  "Repository path (defaults to current repository)",
+  "PATH",
+);
+export const operationDefinitions = {
+  inspect: {
+    name: "inspect",
+    description: "Inspect owner-local Workspace custody and uncertain outcomes",
+    parameters: { branch, repo: operationRepo },
+    completionType: "branch",
+  },
+  reconcile: {
+    name: "reconcile",
+    description:
+      "Release an exact uncertain Workspace reservation after inspection",
+    parameters: {
+      branch,
+      repo: operationRepo,
+      operation: stringOption(
+        "operation",
+        "Exact uncertain operation ID from inspect",
+        "ID",
+      ),
+      generation: stringOption(
+        "generation",
+        "Exact ownership generation from inspect",
+        "GENERATION",
+      ),
+      acknowledgeUncertainSideEffects: booleanOption(
+        "acknowledge-uncertain-side-effects",
+        "Acknowledge potentially surviving work and uncertain side effects",
+      ),
+      reason: stringOption(
+        "reason",
+        "Nonempty reason describing inspection and reconciliation",
+        "REASON",
+      ),
+    },
+    completionType: "branch",
+  },
+} satisfies Record<string, CommandDefinition>;
+
+export const repositoryOperationDefinitions = {
+  inspect: {
+    name: "inspect-repository",
+    description:
+      "Inspect repository mutation custody and uncertain Git outcomes",
+    parameters: { repo: operationRepo },
+  },
+  reconcile: {
+    name: "reconcile-repository",
+    description:
+      "Release exact uncertain repository mutation custody after inspection",
+    parameters: {
+      repo: operationRepo,
+      operation: operationDefinitions.reconcile.parameters.operation,
+      generation: operationDefinitions.reconcile.parameters.generation,
+      acknowledgeUncertainSideEffects:
+        operationDefinitions.reconcile.parameters
+          .acknowledgeUncertainSideEffects,
+      reason: operationDefinitions.reconcile.parameters.reason,
+    },
+  },
+} satisfies Record<string, CommandDefinition>;
+
 export const commandDefinitions = {
   cd: {
     name: "cd",
@@ -179,6 +245,16 @@ export const commandDefinitions = {
       profile,
     },
     completionType: "branch",
+  },
+  operations: {
+    name: "operations",
+    description:
+      "Inspect and explicitly reconcile owner-local Workspace operations",
+    parameters: {},
+    subcommands: [
+      ...Object.values(operationDefinitions),
+      ...Object.values(repositoryOperationDefinitions),
+    ],
   },
   projects: {
     name: "projects",

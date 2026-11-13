@@ -10,6 +10,11 @@ import {
 } from "../agent-view";
 import { useAgentNavigation } from "../hooks/useAgentNavigation";
 import type { RepoInfo } from "../hooks/useRegistry";
+import {
+  lifecyclePhaseLabel,
+  type LifecycleState,
+  workspaceIdentityKey,
+} from "../lifecycle";
 import { toSingleLine, truncateBranch } from "../utils/truncate";
 import {
   ConfirmModal,
@@ -24,6 +29,8 @@ import {
 
 interface Props {
   repos: readonly RepoInfo[];
+  lifecycle?: LifecycleState;
+  onCancelWait?: (repoPath: string, branch: string) => void;
   agents: AgentSnapshot;
   panes: ReadonlyMap<string, readonly TmuxPaneInfo[]>;
   maxWidth: number;
@@ -56,6 +63,8 @@ const STATE_MARKERS: Record<AgentState, string> = {
 
 export function AgentsView({
   repos,
+  lifecycle,
+  onCancelWait,
   agents,
   panes,
   maxWidth,
@@ -66,12 +75,27 @@ export function AgentsView({
   onClose,
   confirmation,
 }: Props) {
+  const waiting = [...(lifecycle?.values() ?? [])].filter(
+    (entry) => entry.phase._tag === "Waiting",
+  );
+  const maxQuestionRows = Math.max(1, viewportRows - 4);
+  const reservedConfirmationRows = confirmation
+    ? confirmModalRowCount(
+        confirmation.mode,
+        confirmation.width,
+        maxQuestionRows,
+      )
+    : 0;
+  const shownWaiting = waiting.slice(
+    0,
+    Math.max(0, viewportRows - reservedConfirmationRows),
+  );
+  const agentViewportRows = Math.max(0, viewportRows - shownWaiting.length);
   const { items, rows: baseRows } = useMemo(
     () => buildAgentList(repos, agents, panes),
     [repos, agents, panes],
   );
   // Reserve the modal's borders, spacer, and action row before wrapping copy.
-  const maxQuestionRows = Math.max(1, viewportRows - 4);
   const rows = useMemo(() => {
     if (!confirmation) return baseRows;
     const targetIndex = items.findIndex(
@@ -90,25 +114,57 @@ export function AgentsView({
   const { selectedIndex, offset, hoveredItemIndex } = useAgentNavigation(
     items,
     rows,
-    viewportRows,
+    agentViewportRows,
     isActive,
     onJump,
     onKill,
     onClose,
+    (item) => {
+      const entry = item
+        ? lifecycle?.get(workspaceIdentityKey(item.repoPath, item.branch))
+        : undefined;
+      const target = entry?.phase._tag === "Waiting" ? entry : waiting[0];
+      if (target) onCancelWait?.(target.repoPath, target.branch);
+    },
   );
 
+  const selectedAgent = items[selectedIndex];
+  const selectedWait = selectedAgent
+    ? lifecycle?.get(
+        workspaceIdentityKey(selectedAgent.repoPath, selectedAgent.branch),
+      )
+    : undefined;
+  const cancellationTarget =
+    selectedWait?.phase._tag === "Waiting" ? selectedWait : waiting[0];
+  const waitRows = shownWaiting.map((entry) => (
+    <Text
+      key={workspaceIdentityKey(entry.repoPath, entry.branch)}
+      color="yellow"
+      wrap="truncate"
+    >
+      {truncateBranch(
+        `${toSingleLine(entry.branch)}: ${lifecyclePhaseLabel(entry.phase)}${entry === cancellationTarget ? " (Esc cancels)" : ""}`,
+        maxWidth,
+      )}
+    </Text>
+  ));
   if (!rows.length) {
     return (
-      <Text dimColor wrap="truncate">
-        {" "}
-        No running agents in registered projects
-      </Text>
+      <Box flexDirection="column">
+        {agentViewportRows > 0 && (
+          <Text dimColor wrap="truncate">
+            {" "}
+            No running agents in registered projects
+          </Text>
+        )}
+        {waitRows}
+      </Box>
     );
   }
 
   return (
     <Box flexDirection="column">
-      {rows.slice(offset, offset + viewportRows).map((row) => {
+      {rows.slice(offset, offset + agentViewportRows).map((row) => {
         if (row.kind === "confirmation") {
           if (row.partIndex !== 0 || !confirmation) return null;
           return (
@@ -165,6 +221,7 @@ export function AgentsView({
           </Text>
         );
       })}
+      {waitRows}
     </Box>
   );
 }

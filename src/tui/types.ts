@@ -31,6 +31,7 @@ export type Mode =
     }
   | {
       type: "ConfirmDown";
+      confirmation?: import("../services/workspace-target").WorkspaceConfirmation;
       sessionName: string;
       branch: string;
       worktreePath: string;
@@ -40,6 +41,7 @@ export type Mode =
     }
   | {
       type: "ConfirmClose";
+      confirmation?: import("../services/workspace-target").WorkspaceConfirmation;
       agentItemId?: string;
       sessionName: string;
       branch: string;
@@ -51,6 +53,7 @@ export type Mode =
     }
   | {
       type: "ConfirmCloseForce";
+      previousClose?: import("../services/workspace-service").WorkspaceCloseResult;
       agentItemId?: string;
       sessionName: string;
       branch: string;

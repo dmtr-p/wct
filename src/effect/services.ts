@@ -35,6 +35,11 @@ import {
   type TmuxServiceImplementation,
 } from "../services/tmux";
 import {
+  makeWorkspaceCoordinationService,
+  WorkspaceCoordinationService,
+  type WorkspaceCoordinationServiceApi,
+} from "../services/workspace-coordination";
+import {
   makeWorkspaceService,
   WorkspaceService,
   type WorkspaceService as WorkspaceServiceApi,
@@ -56,7 +61,8 @@ export type WctServices =
   | SetupServiceApi
   | TmuxServiceApi
   | WorktreeServiceApi
-  | WorkspaceServiceApi;
+  | WorkspaceServiceApi
+  | WorkspaceCoordinationServiceApi;
 
 export interface WctServiceOverrides {
   github?: GitHubServiceImplementation;
@@ -68,10 +74,17 @@ export interface WctServiceOverrides {
   tmux?: TmuxServiceImplementation;
   worktree?: WorktreeServiceImplementation;
   workspace?: WorkspaceServiceImplementation;
+  coordination?: WorkspaceCoordinationServiceApi;
 }
 
 export function makeWctServicesLayer(overrides: WctServiceOverrides = {}) {
   const dependencies = Layer.mergeAll(
+    overrides.coordination
+      ? Layer.succeed(WorkspaceCoordinationService, overrides.coordination)
+      : Layer.effect(
+          WorkspaceCoordinationService,
+          makeWorkspaceCoordinationService(),
+        ),
     Layer.effect(GitHubService, makeGitHubService(overrides.github)),
     Layer.succeed(PrCacheService, overrides.prCache ?? livePrCacheService),
     Layer.effect(SetupService, makeSetupService(overrides.setup)),

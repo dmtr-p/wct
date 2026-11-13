@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,6 +23,7 @@ import {
   type SetupService,
 } from "../src/services/setup-service";
 import type { TmuxService } from "../src/services/tmux";
+import { CurrentWorkspaceLease } from "../src/services/workspace-coordination";
 import {
   liveWorkspaceService,
   type WorkspaceOpenResult,
@@ -66,7 +68,9 @@ describe("WorkspaceService target resolution", () => {
   let cwdSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/current-worktree");
+    cwdSpy = vi
+      .spyOn(process, "cwd")
+      .mockReturnValue(join(realpathSync("/tmp"), "current-worktree"));
   });
 
   afterEach(() => {
@@ -86,7 +90,7 @@ describe("WorkspaceService target resolution", () => {
         Effect.succeed(
           branch === "feature"
             ? {
-                path: "/tmp/feature-worktree",
+                path: join(realpathSync("/tmp"), "feature-worktree"),
                 branch,
                 commit: "abc123",
                 isBare: false,
@@ -109,7 +113,9 @@ describe("WorkspaceService target resolution", () => {
     const explicit = await runBunPromise(
       withTestServices(
         WorkspaceService.use((service) =>
-          service.down({ path: "/tmp/explicit-worktree" }),
+          service.down({
+            path: join(realpathSync("/tmp"), "explicit-worktree"),
+          }),
         ),
         { tmux, worktree },
       ),
@@ -121,13 +127,19 @@ describe("WorkspaceService target resolution", () => {
       ),
     );
 
-    expect(current.worktreePath).toBe("/tmp/current-worktree");
-    expect(explicit.worktreePath).toBe("/tmp/explicit-worktree");
-    expect(branch.worktreePath).toBe("/tmp/feature-worktree");
-    expect(seenPaths).toEqual([
-      "/tmp/current-worktree",
-      "/tmp/explicit-worktree",
-      "/tmp/feature-worktree",
+    expect(current.worktreePath).toBe(
+      join(realpathSync("/tmp"), "current-worktree"),
+    );
+    expect(explicit.worktreePath).toBe(
+      join(realpathSync("/tmp"), "explicit-worktree"),
+    );
+    expect(branch.worktreePath).toBe(
+      join(realpathSync("/tmp"), "feature-worktree"),
+    );
+    expect([...new Set(seenPaths)]).toEqual([
+      join(realpathSync("/tmp"), "current-worktree"),
+      join(realpathSync("/tmp"), "explicit-worktree"),
+      join(realpathSync("/tmp"), "feature-worktree"),
     ]);
   });
 
@@ -136,7 +148,10 @@ describe("WorkspaceService target resolution", () => {
       runBunPromise(
         withTestServices(
           WorkspaceService.use((service) =>
-            service.down({ path: "/tmp/a", branch: "feature" }),
+            service.down({
+              path: join(realpathSync("/tmp"), "a"),
+              branch: "feature",
+            }),
           ),
         ),
       ),
@@ -152,14 +167,15 @@ describe("WorkspaceService target resolution", () => {
         Effect.succeed(
           branch === "feature"
             ? {
-                path: "/tmp/feature-worktree",
+                path: join(realpathSync("/tmp"), "feature-worktree"),
                 branch,
                 commit: "abc123",
                 isBare: false,
               }
             : null,
         ),
-      isGitRepo: (cwd) => Effect.succeed(cwd === "/tmp/feature-worktree"),
+      isGitRepo: (cwd) =>
+        Effect.succeed(cwd === join(realpathSync("/tmp"), "feature-worktree")),
       getMainRepoPath: () => Effect.succeed(mainRepoPath),
       getCurrentBranch: () => Effect.succeed("feature"),
     };
@@ -184,7 +200,9 @@ describe("WorkspaceService target resolution", () => {
         ),
       );
 
-      expect(result.worktreePath).toBe("/tmp/feature-worktree");
+      expect(result.worktreePath).toBe(
+        join(realpathSync("/tmp"), "feature-worktree"),
+      );
       expect(result.branch).toBe("feature");
     } finally {
       await rm(mainRepoPath, { recursive: true, force: true });
@@ -229,6 +247,60 @@ describe("WorkspaceService open", () => {
       ...overrides,
     };
   }
+
+  test.each(["setup", "tmux"] as const)(
+    "keeps uncertain %s fatal through warning adapters",
+    async (step) => {
+      await writeConfig(
+        repoDir,
+        `setup:\n  - name: optional setup\n    optional: true\n    command: "true"\n`,
+      );
+      const uncertain = commandError(
+        "workspace_coordination_error",
+        "Uncertain operation op-339, generation gen-339; reconcile explicitly",
+      );
+      const wrapped = commandError(
+        step === "tmux" ? "tmux_error" : "worktree_error",
+        "adapter context",
+        uncertain,
+      );
+      expect(wrapped).toBe(uncertain);
+      const tmuxStart = vi.fn(() =>
+        step === "tmux"
+          ? Effect.fail(wrapped)
+          : Effect.succeed({
+              _tag: "Created" as const,
+              sessionName: "session",
+            }),
+      );
+      await expect(
+        runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              service.open({ branch: "uncertain", cwd: repoDir }),
+            ),
+            {
+              worktree: makeWorktreeService(),
+              setup: {
+                ...liveSetupService,
+                runSetupCommands: () =>
+                  step === "setup"
+                    ? Effect.fail(wrapped)
+                    : Effect.succeed([
+                        { _tag: "Succeeded" as const, name: "optional setup" },
+                      ]),
+              },
+              tmux: { ...noopTmuxService, createSession: tmuxStart },
+            },
+          ),
+        ),
+      ).rejects.toMatchObject({
+        code: "workspace_coordination_error",
+        message: uncertain.message,
+      });
+      expect(tmuxStart).toHaveBeenCalledTimes(step === "tmux" ? 1 : 0);
+    },
+  );
 
   test("opens a branch workspace with base-config path", async () => {
     await writeConfig(
@@ -648,6 +720,7 @@ describe("WorkspaceService open", () => {
     expect(result.branch).toBe("existing-local");
     expect(calls).toEqual([
       "resolve:42",
+      "resolve:42",
       "fetch:alice-fork/existing-local",
       "exists:existing-local",
       "create:existing-local:true:none",
@@ -722,9 +795,12 @@ setup:
           }),
         fetchBranch: () => Effect.void,
         resolveBaseRepo: () =>
-          failedStep === "repository lookup"
-            ? Effect.fail(commandError("pr_error", "lookup failed"))
-            : Effect.succeed("acme/wct"),
+          Effect.gen(function* () {
+            expect(yield* CurrentWorkspaceLease).toBeUndefined();
+            if (failedStep === "repository lookup")
+              return yield* commandError("pr_error", "lookup failed");
+            return "acme/wct";
+          }),
       };
       const prCache: PrCacheServiceApi = {
         ...livePrCacheService,
@@ -999,7 +1075,9 @@ describe("WorkspaceService down", () => {
   let cwdSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/myapp-feature");
+    cwdSpy = vi
+      .spyOn(process, "cwd")
+      .mockReturnValue(join(realpathSync("/tmp"), "myapp-feature"));
   });
 
   afterEach(() => {
@@ -1032,7 +1110,7 @@ describe("WorkspaceService down", () => {
 
     expect(result).toEqual({
       operation: "down",
-      worktreePath: "/tmp/myapp-feature",
+      worktreePath: join(realpathSync("/tmp"), "myapp-feature"),
       sessionName: "myapp-feature",
       existed: true,
       status: "killed",
@@ -1129,7 +1207,9 @@ describe("WorkspaceService close", () => {
   let cwdSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/myapp-feature");
+    cwdSpy = vi
+      .spyOn(process, "cwd")
+      .mockReturnValue(join(realpathSync("/tmp"), "myapp-feature"));
   });
 
   afterEach(() => {
@@ -1163,7 +1243,7 @@ describe("WorkspaceService close", () => {
 
     expect(result).toEqual({
       operation: "close",
-      worktreePath: "/tmp/myapp-feature",
+      worktreePath: join(realpathSync("/tmp"), "myapp-feature"),
       sessionName: expect.stringMatching(/^myapp-feature-[0-9a-f]{10}$/),
       existed: false,
       status: "removed",
@@ -1176,12 +1256,17 @@ describe("WorkspaceService close", () => {
         remove: {
           attempted: true,
           ok: true,
-          value: { _tag: "Removed", path: "/tmp/myapp-feature" },
+          value: {
+            _tag: "Removed",
+            path: join(realpathSync("/tmp"), "myapp-feature"),
+          },
         },
       },
       warnings: [],
     });
-    expect(removeCalls).toEqual([{ path: "/tmp/myapp-feature", force: false }]);
+    expect(removeCalls).toEqual([
+      { path: join(realpathSync("/tmp"), "myapp-feature"), force: false },
+    ]);
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
 
@@ -1223,7 +1308,10 @@ describe("WorkspaceService close", () => {
 
     expect(result.status).toBe("removed");
     expect(result.sessionName).toBe("myapp-feature");
-    expect(calls).toEqual(["kill:$1", "remove:/tmp/myapp-feature"]);
+    expect(calls).toEqual([
+      "kill:$1",
+      `remove:${join(realpathSync("/tmp"), "myapp-feature")}`,
+    ]);
   });
 
   test("resolves a relative branch path before closing a missing worktree", async () => {
@@ -1281,7 +1369,7 @@ describe("WorkspaceService close", () => {
     const result = await runBunPromise(
       withTestServices(
         WorkspaceService.use((service) =>
-          service.close({ path: "/tmp/myapp-explicit" }),
+          service.close({ path: join(realpathSync("/tmp"), "myapp-explicit") }),
         ),
         {
           worktree: {
@@ -1302,14 +1390,21 @@ describe("WorkspaceService close", () => {
       ),
     );
 
-    expect(result.worktreePath).toBe("/tmp/myapp-explicit");
+    expect(result.worktreePath).toBe(
+      join(realpathSync("/tmp"), "myapp-explicit"),
+    );
     expect(result.sessionName).toMatch(/^myapp-explicit-[0-9a-f]{10}$/);
     expect(result.attempts.remove).toEqual({
       attempted: true,
       ok: true,
-      value: { _tag: "Removed", path: "/tmp/myapp-explicit" },
+      value: {
+        _tag: "Removed",
+        path: join(realpathSync("/tmp"), "myapp-explicit"),
+      },
     });
-    expect(seenPaths).toEqual(["/tmp/myapp-explicit"]);
+    expect([...new Set(seenPaths)]).toEqual([
+      join(realpathSync("/tmp"), "myapp-explicit"),
+    ]);
   });
 
   test("kill failure is fatal and prevents removal", async () => {
@@ -1366,7 +1461,10 @@ describe("WorkspaceService close", () => {
     expect(result.attempts.remove).toEqual({
       attempted: true,
       ok: true,
-      value: { _tag: "BlockedByChanges", path: "/tmp/myapp-feature" },
+      value: {
+        _tag: "BlockedByChanges",
+        path: join(realpathSync("/tmp"), "myapp-feature"),
+      },
     });
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
@@ -1410,7 +1508,7 @@ describe("WorkspaceService close", () => {
       withTestServices(
         WorkspaceService.use((service) =>
           service.close({
-            path: "/tmp/myapp-feature",
+            path: join(realpathSync("/tmp"), "myapp-feature"),
             cwd: "/repos/myapp",
           }),
         ),
@@ -1434,7 +1532,11 @@ describe("WorkspaceService close", () => {
 
     expect(result.status).toBe("removed");
     expect(removeCalls).toEqual([
-      { path: "/tmp/myapp-feature", force: false, cwd: "/repos/myapp" },
+      {
+        path: join(realpathSync("/tmp"), "myapp-feature"),
+        force: false,
+        cwd: "/repos/myapp",
+      },
     ]);
   });
 });
@@ -1467,7 +1569,10 @@ describe("WorkspaceService reporter", () => {
       runBunPromise(
         withTestServices(
           WorkspaceService.use((service) =>
-            service.down({ path: "/tmp/myapp-feature", reporter }),
+            service.down({
+              path: join(realpathSync("/tmp"), "myapp-feature"),
+              reporter,
+            }),
           ),
           {
             worktree: {
@@ -1492,7 +1597,7 @@ describe("WorkspaceService reporter", () => {
       {
         operation: "down",
         _tag: "TargetResolved",
-        worktreePath: "/tmp/myapp-feature",
+        worktreePath: join(realpathSync("/tmp"), "myapp-feature"),
       },
       {
         operation: "down",
@@ -1514,7 +1619,10 @@ describe("WorkspaceService reporter", () => {
       runBunPromise(
         withTestServices(
           WorkspaceService.use((service) =>
-            service.down({ path: "/tmp/myapp-feature", reporter }),
+            service.down({
+              path: join(realpathSync("/tmp"), "myapp-feature"),
+              reporter,
+            }),
           ),
           {
             worktree: {
@@ -2127,7 +2235,10 @@ project_name: "myapp"
         await runBunPromise(
           withTestServices(
             WorkspaceService.use((service) =>
-              service.down({ path: "/tmp/myapp-feature", reporter }),
+              service.down({
+                path: join(realpathSync("/tmp"), "myapp-feature"),
+                reporter,
+              }),
             ),
             overrides,
           ),
@@ -2137,7 +2248,10 @@ project_name: "myapp"
       await runBunPromise(
         withTestServices(
           WorkspaceService.use((service) =>
-            service.close({ path: "/tmp/myapp-feature", reporter }),
+            service.close({
+              path: join(realpathSync("/tmp"), "myapp-feature"),
+              reporter,
+            }),
           ),
           overrides,
         ),
@@ -2176,7 +2290,10 @@ project_name: "myapp"
     await runBunPromise(
       withTestServices(
         WorkspaceService.use((service) =>
-          service.close({ path: "/tmp/myapp-feature", reporter }),
+          service.close({
+            path: join(realpathSync("/tmp"), "myapp-feature"),
+            reporter,
+          }),
         ),
         {
           worktree: {

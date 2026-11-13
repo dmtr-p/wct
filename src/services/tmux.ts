@@ -37,6 +37,7 @@ import {
   type TerminalAttachment,
   type TmuxClient,
 } from "./terminal-attachments";
+import { CurrentWorkspaceLease } from "./workspace-coordination";
 export type { TmuxClient } from "./terminal-attachments";
 export { formatSessionName } from "./session-identity";
 
@@ -181,6 +182,7 @@ export interface TmuxService {
   resolveSession: (
     target: WorkspaceSessionTarget,
     expected?: WorkspaceSession | null,
+    options?: { readOnly?: boolean },
   ) => Effect.Effect<TmuxSession | null, WctError>;
   sessionExists: (name: string) => Effect.Effect<boolean, WctError>;
   createSession: (
@@ -340,6 +342,7 @@ function noTmuxSessions(error: unknown): boolean {
 
 function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
   return Effect.gen(function* () {
+    const lease = yield* CurrentWorkspaceLease;
     const result = yield* execProcess("tmux", [
       "list-sessions",
       "-F",
@@ -382,7 +385,7 @@ function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
           ? inspected.pipe(Effect.orElseSucceed(() => session))
           : inspected;
       },
-      { concurrency: 4 },
+      { concurrency: lease ? 1 : 4 },
     );
   });
 }
@@ -390,6 +393,7 @@ function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
 function resolveSessionImpl(
   target: WorkspaceSessionTarget,
   expected?: WorkspaceSession | null,
+  options?: { readOnly?: boolean },
 ) {
   return Effect.gen(function* () {
     const canonical = yield* canonicalSessionTarget(target);
@@ -412,7 +416,12 @@ function resolveSessionImpl(
         "Workspace tmux session changed after resolution; retry the operation",
       );
     }
-    if (session && session.ownership?.identity === undefined && session.id) {
+    if (
+      !options?.readOnly &&
+      session &&
+      session.ownership?.identity === undefined &&
+      session.id
+    ) {
       yield* execProcess("tmux", [
         "set-environment",
         "-t",

@@ -6,6 +6,7 @@ import { WorkspaceService } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { logTmuxResult, maybeAttachSession } from "./session";
+import { withWorkspaceWaitReporter } from "./workspace-wait";
 
 export { upCommandDef as commandDef } from "../cli/command-metadata";
 
@@ -22,7 +23,12 @@ export function upCommand(
   return Effect.gen(function* () {
     const { noAttach, profile, path, branch } = options ?? {};
     const result = yield* WorkspaceService.use((service) =>
-      service.up({ profile, path, branch }),
+      service.up({
+        profile,
+        path,
+        branch,
+        reporter: withWorkspaceWaitReporter(),
+      }),
     );
     const json = yield* JsonFlag;
 

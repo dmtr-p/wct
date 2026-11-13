@@ -2,6 +2,7 @@ import { Effect, FileSystem } from "effect";
 import { describe, expect, test, vi } from "vitest";
 import { WorkspaceService } from "../../src/services/workspace-service";
 import {
+  beginLifecycle,
   createLifecycleClaims,
   type LifecycleState,
   runLifecycleOperation,
@@ -18,6 +19,37 @@ function deferred() {
 }
 
 describe("tui runtime lifecycle", () => {
+  test("quit during preflight cancels future acquisition but leaves running work to drain", async () => {
+    const lifetime = createTuiLifetime(async () => {});
+    const claims = createLifecycleClaims(lifetime);
+    let state: LifecycleState = new Map();
+    const controller = beginLifecycle({
+      claims,
+      entry: {
+        operation: "down",
+        repoPath: "/repo",
+        project: "fixture",
+        branch: "feature",
+        phase: { _tag: "Preparing" },
+      },
+      setLifecycle: (update) => {
+        state = typeof update === "function" ? update(state) : update;
+      },
+      showActionError: () => {},
+    });
+    expect(controller?.reporter.waitSignal?.aborted).toBe(false);
+    await lifetime.quit();
+    expect(controller?.reporter.waitSignal?.aborted).toBe(true);
+    controller?.setPhase({
+      _tag: "Waiting",
+      mainRepoPath: "/repo",
+      branch: "feature",
+    });
+    expect(controller?.reporter.waitSignal?.aborted).toBe(true);
+    controller?.end();
+    expect(state.size).toBe(0);
+  });
+
   test("idle exit stops rendering and input before disposing once", async () => {
     const events: string[] = [];
     await runTuiInvocation({

@@ -42,6 +42,12 @@ export function transferWorkspaceToWorker(
     cwd?: string;
     env?: Record<string, string | undefined>;
     beforeStart?: Effect.Effect<void, WctError>;
+    onMessage?: (message: unknown) => void;
+    onExit?: (
+      code: number | null,
+      signal: NodeJS.Signals | number | null,
+      error?: Error,
+    ) => void;
   } = {},
 ) {
   return Effect.uninterruptibleMask((restore) =>
@@ -90,14 +96,16 @@ export function transferWorkspaceToWorker(
                   message.nonce === offer.ticket.nonce
                 )
                   adopted.resolve();
+                else options.onMessage?.(message);
               },
-              onExit: () => {
+              onExit: (_child, code, signal, exitError) => {
                 const error = handoffError(
                   "Workspace worker exited during ownership transfer",
                 );
                 listening.reject(error);
                 ready.reject(error);
                 adopted.reject(error);
+                options.onExit?.(code, signal, exitError);
               },
             }),
           catch: (error) =>

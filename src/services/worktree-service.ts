@@ -8,6 +8,7 @@ import {
 import { commandError, type WctError } from "../errors";
 import * as logger from "../utils/logger";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
+import { withRepositoryMutation } from "./repository-mutation";
 
 export interface Worktree {
   path: string;
@@ -53,6 +54,7 @@ export interface WorktreeService {
     path: string,
     force?: boolean,
     cwd?: string,
+    revalidate?: Effect.Effect<void, WctError>,
   ) => Effect.Effect<RemoveWorktreeResult, WctError>;
   findWorktreeByBranch: (
     branch: string,
@@ -391,11 +393,29 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       ),
     ),
   isGitRepo: (cwd) =>
-    runProcess(
-      "git",
-      ["rev-parse", "--git-dir"],
-      cwd ? { cwd } : undefined,
-    ).pipe(Effect.map((result) => result.success)),
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      if (
+        cwd &&
+        !(yield* fs
+          .exists(cwd)
+          .pipe(
+            Effect.mapError((error) =>
+              commandError(
+                "worktree_error",
+                "Cannot inspect repository path",
+                error,
+              ),
+            ),
+          ))
+      )
+        return false;
+      return yield* runProcess(
+        "git",
+        ["rev-parse", "--git-dir"],
+        cwd ? { cwd } : undefined,
+      ).pipe(Effect.map((result) => result.success));
+    }),
   listWorktrees: (cwd) =>
     listWorktreesImpl(cwd).pipe(
       Effect.mapError((error) =>
@@ -414,113 +434,116 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       ),
     ),
   createWorktree: (path, branch, useExisting, base, cwd, pushRemote) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const exists = yield* fs.exists(path);
+    withRepositoryMutation(
+      cwd,
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const exists = yield* fs.exists(path);
 
-      if (exists) {
-        const worktrees = yield* listWorktreesImpl(cwd);
-        const existing = worktrees.find((worktree) => worktree.path === path);
-        if (existing?.branch === branch) {
-          yield* finishPendingPushRemote(branch, cwd);
-          return {
-            _tag: "AlreadyExists" as const,
-            path,
-          };
-        }
+        if (exists) {
+          const worktrees = yield* listWorktreesImpl(cwd);
+          const existing = worktrees.find((worktree) => worktree.path === path);
+          if (existing?.branch === branch) {
+            yield* finishPendingPushRemote(branch, cwd);
+            return {
+              _tag: "AlreadyExists" as const,
+              path,
+            };
+          }
 
-        if (existing) {
+          if (existing) {
+            return {
+              _tag: "PathConflict" as const,
+              path,
+              existingBranch: existing.branch,
+            };
+          }
+
           return {
             _tag: "PathConflict" as const,
             path,
-            existingBranch: existing.branch,
           };
         }
 
-        return {
-          _tag: "PathConflict" as const,
-          path,
-        };
-      }
-
-      if (!useExisting && pushRemote) {
-        yield* execProcess(
-          "git",
-          ["remote", "get-url", "--", pushRemote],
-          cwd ? { cwd } : undefined,
-        );
-        yield* execProcess(
-          "git",
-          ["check-ref-format", "--branch", branch],
-          cwd ? { cwd } : undefined,
-        );
-        const localBranch = yield* runProcess(
-          "git",
-          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-          cwd ? { cwd } : undefined,
-        );
-        if (localBranch.success) {
-          return yield* commandError(
-            "worktree_error",
-            `A branch named '${branch}' already exists`,
+        if (!useExisting && pushRemote) {
+          yield* execProcess(
+            "git",
+            ["remote", "get-url", "--", pushRemote],
+            cwd ? { cwd } : undefined,
+          );
+          yield* execProcess(
+            "git",
+            ["check-ref-format", "--branch", branch],
+            cwd ? { cwd } : undefined,
+          );
+          const localBranch = yield* runProcess(
+            "git",
+            ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+            cwd ? { cwd } : undefined,
+          );
+          if (localBranch.success) {
+            return yield* commandError(
+              "worktree_error",
+              `A branch named '${branch}' already exists`,
+            );
+          }
+          if (localBranch.exitCode !== 1) {
+            return yield* commandError(
+              "worktree_error",
+              `Failed to check branch '${branch}': ${localBranch.stderr.trim()}`,
+            );
+          }
+          // Record the intent before creation so a later config-write failure can resume.
+          yield* execProcess(
+            "git",
+            ["config", "--local", pendingPushRemoteKey(branch), pushRemote],
+            cwd ? { cwd } : undefined,
           );
         }
-        if (localBranch.exitCode !== 1) {
-          return yield* commandError(
-            "worktree_error",
-            `Failed to check branch '${branch}': ${localBranch.stderr.trim()}`,
-          );
-        }
-        // Record the intent before creation so a later config-write failure can resume.
-        yield* execProcess(
-          "git",
-          ["config", "--local", pendingPushRemoteKey(branch), pushRemote],
-          cwd ? { cwd } : undefined,
-        );
-      }
 
-      const args = useExisting
-        ? ["worktree", "add", path, branch]
-        : ["worktree", "add", "-b", branch, path, ...(base ? [base] : [])];
-      yield* execProcess("git", args, cwd ? { cwd } : undefined).pipe(
-        Effect.catch((error) =>
-          Effect.gen(function* () {
-            if (!useExisting && pushRemote) {
-              const localBranch = yield* runProcess(
-                "git",
-                ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-                cwd ? { cwd } : undefined,
-              );
-              if (!localBranch.success && localBranch.exitCode === 1) {
-                yield* execProcess(
+        const args = useExisting
+          ? ["worktree", "add", path, branch]
+          : ["worktree", "add", "-b", branch, path, ...(base ? [base] : [])];
+        yield* execProcess("git", args, cwd ? { cwd } : undefined).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              if (!useExisting && pushRemote) {
+                const localBranch = yield* runProcess(
                   "git",
-                  [
-                    "config",
-                    "--local",
-                    "--unset-all",
-                    pendingPushRemoteKey(branch),
-                  ],
+                  ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
                   cwd ? { cwd } : undefined,
                 );
+                if (!localBranch.success && localBranch.exitCode === 1) {
+                  yield* execProcess(
+                    "git",
+                    [
+                      "config",
+                      "--local",
+                      "--unset-all",
+                      pendingPushRemoteKey(branch),
+                    ],
+                    cwd ? { cwd } : undefined,
+                  );
+                }
               }
-            }
-            return yield* error;
-          }),
+              return yield* error;
+            }),
+          ),
+        );
+
+        yield* finishPendingPushRemote(branch, cwd);
+
+        return { _tag: "Created" as const, path };
+      }).pipe(
+        Effect.mapError((error) =>
+          commandError("worktree_error", extractShellError(error), error),
         ),
-      );
-
-      yield* finishPendingPushRemote(branch, cwd);
-
-      return { _tag: "Created" as const, path };
-    }).pipe(
-      Effect.mapError((error) =>
-        commandError("worktree_error", extractShellError(error), error),
-      ),
-      Effect.mapError((error) =>
-        commandError(
-          "worktree_error",
-          `Failed to create worktree '${branch}' at '${path}': ${error.message}`,
-          error,
+        Effect.mapError((error) =>
+          commandError(
+            "worktree_error",
+            `Failed to create worktree '${branch}' at '${path}': ${error.message}`,
+            error,
+          ),
         ),
       ),
     ),
@@ -530,28 +553,32 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       ["rev-parse", "--verify", branch],
       cwd ? { cwd } : undefined,
     ).pipe(Effect.map((result) => result.success)),
-  removeWorktree: (path, force = false, cwd) =>
-    Effect.gen(function* () {
-      const args = force
-        ? ["worktree", "remove", "--force", path]
-        : ["worktree", "remove", path];
-      yield* execProcess("git", args, cwd ? { cwd } : undefined);
-      return { _tag: "Removed" as const, path };
-    }).pipe(
-      Effect.catch((error) => {
-        const message = extractShellError(error);
-        if (/contains modified or untracked files/i.test(message)) {
-          return Effect.succeed({ _tag: "BlockedByChanges" as const, path });
-        }
-        return Effect.fail(
-          commandError("worktree_remove_failed", message, error),
-        );
-      }),
-      Effect.mapError((error) =>
-        commandError(
-          "worktree_remove_failed",
-          `Failed to remove worktree '${path}'`,
-          error,
+  removeWorktree: (path, force = false, cwd, revalidate) =>
+    withRepositoryMutation(
+      cwd,
+      Effect.gen(function* () {
+        if (revalidate) yield* revalidate;
+        const args = force
+          ? ["worktree", "remove", "--force", path]
+          : ["worktree", "remove", path];
+        yield* execProcess("git", args, cwd ? { cwd } : undefined);
+        return { _tag: "Removed" as const, path };
+      }).pipe(
+        Effect.catch((error) => {
+          const message = extractShellError(error);
+          if (/contains modified or untracked files/i.test(message)) {
+            return Effect.succeed({ _tag: "BlockedByChanges" as const, path });
+          }
+          return Effect.fail(
+            commandError("worktree_remove_failed", message, error),
+          );
+        }),
+        Effect.mapError((error) =>
+          commandError(
+            "worktree_remove_failed",
+            `Failed to remove worktree '${path}': ${getProcessErrorMessage(error)}`,
+            error,
+          ),
         ),
       ),
     ),

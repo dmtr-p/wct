@@ -56,13 +56,14 @@ import {
 import type { NavigateContext } from "./input/navigate";
 import { handleNavigateInput } from "./input/navigate";
 import { createTerminalInput } from "./input/terminal-input";
-import type { LifecycleState } from "./lifecycle";
 import {
   closeRetentionMessage,
   createLifecycleClaims,
   isLifecycleActive,
   workspaceIdentityKey,
+  worktreeWaitCancellationTarget,
 } from "./lifecycle";
+import type { LifecycleState } from "./lifecycle";
 import {
   createTuiLifetime,
   runTuiInvocation,
@@ -761,6 +762,8 @@ export function App({
     selectedIndex,
     mode,
     lifecycle,
+    lifecycleClaims,
+    setLifecycle,
     captureTreeReturnPosition,
     restoreTreeReturnPosition,
     setMode,
@@ -878,7 +881,17 @@ export function App({
     // async work settles. Leaving now would make the action look cancelled
     // while it continues in the background, and its completion could later
     // overwrite whatever mode or selection the user moved to.
-    if (confirmPendingRef.current) return;
+    if (confirmPendingRef.current) {
+      if (mode.type === "ConfirmRemoveProject") {
+        const waiting = [...lifecycle.values()].find(
+          (entry) =>
+            entry.repoPath === mode.repoPath && entry.phase._tag === "Waiting",
+        );
+        if (waiting)
+          lifecycleClaims.cancelWait?.(waiting.repoPath, waiting.branch);
+      }
+      return;
+    }
     returnFromConfirmation(mode);
   }
 
@@ -956,6 +969,7 @@ export function App({
             mode.worktreePath,
             mode.repoPath,
             mode.project,
+            mode.confirmation,
           )
           .finally(() => {
             confirmPendingRef.current = false;
@@ -976,6 +990,8 @@ export function App({
             mode.project,
             mode.type === "ConfirmCloseForce",
             mode.agentItemId,
+            mode.type === "ConfirmCloseForce" ? mode.previousClose : undefined,
+            mode.type === "ConfirmClose" ? mode.confirmation : undefined,
           )
           .finally(() => {
             confirmPendingRef.current = false;
@@ -1203,7 +1219,28 @@ export function App({
         }
       }
 
+      if (
+        key.escape &&
+        !agentsView &&
+        (mode.type === "Navigate" || mode.type === "Expanded")
+      ) {
+        const item = treeItems[selectedIndex];
+        const repo = item ? filteredRepos[item.repoIndex] : undefined;
+        const wt =
+          repo && item && item.type !== "repo"
+            ? repo.worktrees[item.worktreeIndex]
+            : undefined;
+        const target = repo
+          ? worktreeWaitCancellationTarget(lifecycle, repo, wt?.branch)
+          : undefined;
+        if (
+          target &&
+          lifecycleClaims.cancelWait?.(target.repoPath, target.branch)
+        )
+          return;
+      }
       if (key.ctrl && input === "c") {
+        lifecycleClaims.cancelAllWaits?.();
         requestQuit();
         return;
       }
@@ -1222,6 +1259,7 @@ export function App({
         mode.type !== "ConfirmCloseForce" &&
         mode.type !== "ConfirmRemoveProject"
       ) {
+        lifecycleClaims.cancelAllWaits?.();
         requestQuit();
         return;
       }
@@ -1348,6 +1386,10 @@ export function App({
           {agentsView ? (
             <AgentsView
               repos={repos}
+              lifecycle={lifecycle}
+              onCancelWait={(repoPath, branch) =>
+                lifecycleClaims.cancelWait?.(repoPath, branch)
+              }
               agents={agents}
               panes={panes}
               maxWidth={termCols}

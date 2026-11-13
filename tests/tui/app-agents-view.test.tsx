@@ -13,9 +13,15 @@ import type { WorkspaceCloseResult } from "../../src/services/workspace-service"
 import { buildAgentList as buildProjectedAgentList } from "../../src/tui/agent-view";
 import type { WorkspaceAgentSnapshot } from "../../src/tui/hooks/useAgents";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import {
+  type LifecycleEntry,
+  workspaceIdentityKey,
+} from "../../src/tui/lifecycle";
 import { createTuiLifetime } from "../../src/tui/lifetime";
+import { Mode } from "../../src/tui/types";
 import { projectFixtureSessions } from "../helpers/session-projections";
 import {
+  emitWorkspacePhase,
   lastWorkspaceCall,
   makeWorktree,
   registryItems,
@@ -164,6 +170,166 @@ describe("App agents view", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  test("waits filling the Agents viewport block hidden-agent actions but retain Escape cancellation", async () => {
+    const { AgentsView } = await import("../../src/tui/components/AgentsView");
+    const repoPath = join(root, "alpha");
+    const repos: RepoInfo[] = [
+      {
+        id: RegistrationId("alpha"),
+        project: "alpha",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            ...makeWorktree(repoPath, "alpha-branch"),
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: null,
+          },
+        ],
+      },
+    ];
+    const lifecycle = new Map<
+      ReturnType<typeof workspaceIdentityKey>,
+      LifecycleEntry
+    >();
+    for (let i = 0; i < 6; i++) {
+      const branch = `waiting-${i}`;
+      lifecycle.set(workspaceIdentityKey(repoPath, branch), {
+        repoPath,
+        project: "alpha",
+        branch,
+        operation: "open",
+        phase: { _tag: "Waiting", mainRepoPath: repoPath, branch },
+      });
+    }
+    const onJump = vi.fn();
+    const onKill = vi.fn();
+    const onClose = vi.fn();
+    const onCancelWait = vi.fn();
+    const props = {
+      repos,
+      agents: {
+        ...fixtures.snapshot,
+        memberships: projectFixtureSessions(
+          repos,
+          fixtures.snapshot.memberships,
+        ),
+      },
+      panes: projectFixtureSessions(repos, tmuxFixtures.panes),
+      viewportRows: 6,
+      maxWidth: 60,
+      isActive: true,
+      onJump,
+      onKill,
+      onClose,
+      onCancelWait,
+    };
+    const app = await renderApp(
+      <AgentsView {...props} lifecycle={lifecycle} />,
+      10,
+      60,
+    );
+    try {
+      await tick(30);
+      expect(app.lines().join("\n")).toContain("waiting-0");
+      expect(app.lines().join("\n")).not.toContain("Add agents view toggle");
+      for (const key of ["\r", " ", "x", "c"]) await sendKeys(app.stdin, key);
+      expect(onJump).not.toHaveBeenCalled();
+      expect(onKill).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      await sendKeys(app.stdin, "\x1b");
+      await vi.waitFor(() =>
+        expect(onCancelWait).toHaveBeenCalledWith(repoPath, "waiting-0"),
+      );
+
+      app.instance.rerender(<AgentsView {...props} />);
+      await tick(30);
+      expect(app.lines().join("\n")).toContain("Add agents view toggle");
+      await sendKeys(app.stdin, "\r");
+      await vi.waitFor(() => expect(onJump).toHaveBeenCalledTimes(1));
+    } finally {
+      app.unmount();
+    }
+  });
+
+  test("waiting rows cannot hide an active confirmation in a small Agents viewport", async () => {
+    const { AgentsView } = await import("../../src/tui/components/AgentsView");
+    const repoPath = join(root, "alpha");
+    const repos: RepoInfo[] = [
+      {
+        id: RegistrationId("alpha"),
+        project: "alpha",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            ...makeWorktree(repoPath, "alpha-branch"),
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: null,
+          },
+        ],
+      },
+    ];
+    const list = buildAgentList(repos, fixtures.snapshot, tmuxFixtures.panes);
+    const item = list.items[0];
+    if (!item) throw new Error("Missing fixture agent");
+    const lifecycle = new Map<
+      ReturnType<typeof workspaceIdentityKey>,
+      LifecycleEntry
+    >();
+    for (let i = 0; i < 12; i++) {
+      const branch = `waiting-${i}`;
+      lifecycle.set(workspaceIdentityKey(repoPath, branch), {
+        repoPath,
+        project: "alpha",
+        branch,
+        operation: "open",
+        phase: { _tag: "Waiting", mainRepoPath: repoPath, branch },
+      });
+    }
+    const confirmationMode = Mode.ConfirmAgentKill(
+      item.id,
+      item.paneId,
+      item.observation.generation,
+      "fixture agent",
+    );
+    if (confirmationMode.type !== "ConfirmAgentKill")
+      throw new Error("Unexpected confirmation mode");
+    const app = await renderApp(
+      <AgentsView
+        repos={repos}
+        agents={fixtures.snapshot}
+        panes={tmuxFixtures.panes}
+        lifecycle={lifecycle}
+        viewportRows={6}
+        maxWidth={60}
+        isActive={false}
+        onJump={() => {}}
+        onClose={() => {}}
+        onKill={() => {}}
+        confirmation={{
+          itemId: item.id,
+          mode: confirmationMode,
+          width: 60,
+          onConfirm: () => {},
+          onCancel: () => {},
+        }}
+      />,
+      10,
+      60,
+    );
+    try {
+      await tick(30);
+      expect(app.lines().join("\n")).toContain("Kill Pane");
+      expect(app.lines().join("\n")).toContain("enter:confirm");
+      expect(app.lines().join("\n")).toContain("esc:cancel");
+    } finally {
+      app.unmount();
+    }
+  });
+
   test("toggles views, groups agents, and switches the selected pane without worktree actions", async () => {
     const app = await renderApp(<App />);
     try {
@@ -297,8 +463,8 @@ describe("App agents view", () => {
           const forced = lastWorkspaceCall("close");
           expect(forced.options).toMatchObject({
             path,
-            cwd: join(root, "beta"),
             force: true,
+            removalOnly: true,
           });
           worktreeFixtures.byRepoPath.set(join(root, "beta"), []);
           forced.resolve(closeResult(path));
@@ -1095,6 +1261,42 @@ describe("App agents view", () => {
       await sendKeys(app.stdin, "\r");
       expect(tmuxFixtures.switchCalls).toHaveLength(0);
       expect(app.lines().join("\n")).toContain("No tmux client selected");
+    } finally {
+      app.unmount();
+    }
+  });
+  test("Agents view shows a cross-process close wait and Escape cancels its acquisition", async () => {
+    const app = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(app.stdin, "g");
+      await sendKeys(app.stdin, "c");
+      await sendKeys(app.stdin, "\r");
+      const close = lastWorkspaceCall("close");
+      const path = String(close.options.path);
+      const repoPath = String(close.options.cwd);
+      const branch = path.split("/").at(-1) ?? "";
+      emitWorkspacePhase(close, {
+        _tag: "Waiting",
+        mainRepoPath: repoPath,
+        branch,
+      });
+      await tick(10);
+      expect(app.lines().join("\n")).toContain(
+        "Waiting for Workspace ownership",
+      );
+      const signal = (
+        close.options
+          .reporter as import("../../src/services/workspace-service").WorkspaceReporter
+      ).waitSignal;
+      expect(signal?.aborted).toBe(false);
+      await sendKeys(app.stdin, "\x1b");
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      close.reject(new Error("Cancelled waiting for Workspace ownership"));
+      await tick(20);
+      expect(app.lines().join("\n")).not.toContain(
+        "Waiting for Workspace ownership",
+      );
     } finally {
       app.unmount();
     }

@@ -5,10 +5,12 @@ import { Cause, Context, Effect, FileSystem, PlatformError } from "effect";
 import { afterEach, expect, test, vi } from "vitest";
 import { runBunPromise } from "../src/effect/runtime";
 import { commandError } from "../src/errors";
+import { workspaceIdentityKey } from "../src/services/identities";
+import { runDetachedShutdown } from "../src/services/shutdown-runner";
 import {
-  runDetachedShutdown,
-  type ShutdownMessage,
-} from "../src/services/shutdown-runner";
+  CurrentWorkspaceLease,
+  type WorkspaceLease,
+} from "../src/services/workspace-coordination";
 import type {
   WorkspaceDownResult,
   WorkspaceReporterEvent,
@@ -18,6 +20,29 @@ const ReporterEvents = Context.Reference<WorkspaceReporterEvent[]>(
   "wct/test/ReporterEvents",
   { defaultValue: () => [] },
 );
+
+const ticket = {
+  root: "/fixture",
+  identity: workspaceIdentityKey("/fixture", "feature"),
+  operationId: "operation",
+  generation: "caller",
+  nextGeneration: "worker",
+  nonce: "nonce",
+};
+const lease: WorkspaceLease = {
+  identity: ticket.identity,
+  ownership: ticket,
+  command: (_name, effect) =>
+    Effect.mapError(effect, (error) =>
+      commandError("workspace_coordination_error", String(error)),
+    ),
+  childStarted: () => Effect.void,
+  offerTransfer: Effect.succeed({ ticket, descriptor: 4 }),
+  commitTransfer: Effect.void,
+  registerTransferWorker: () => Effect.void,
+  cancelTransfer: Effect.void,
+  closeTransferred: Effect.void,
+};
 
 let directory: string | undefined;
 
@@ -54,20 +79,34 @@ test.each(["success", "failure", "defect", "mixed"])(
       sessionName: result.sessionName,
     };
     const child = {
-      send: () => {
+      pid: process.pid,
+      disconnect: vi.fn(),
+      unref: vi.fn(),
+      send: (message: { _tag: string }) => {
+        if (message._tag === "WorkspaceTransfer") {
+          queueMicrotask(() =>
+            emit({ _tag: "WorkspaceReady", nonce: ticket.nonce }),
+          );
+          return;
+        }
+        emit({ _tag: "WorkspaceAdopted", nonce: ticket.nonce });
         emit({ _tag: "Event", event: phase });
         emit({ _tag: "Event", event: killed });
         emit({ _tag: "Completed", outcome: { ok: true, data: result } });
+        queueMicrotask(() => {
+          const options = spawn.mock.calls[0]?.[1];
+          void options?.onExit?.(child, 0, null, undefined);
+        });
       },
       kill: vi.fn(),
     } as unknown as ReturnType<typeof Bun.spawn>;
     const spawn = vi.spyOn(Bun, "spawn").mockImplementation((command) => {
       if (!Array.isArray(command)) throw new Error("Expected worker command");
       directory = command.at(-1);
-      queueMicrotask(() => emit({ _tag: "Ready" }));
+      queueMicrotask(() => emit({ _tag: "WorkspaceWorkerListening" }));
       return child;
     });
-    function emit(message: ShutdownMessage) {
+    function emit(message: unknown) {
       const options = spawn.mock.calls[0]?.[1];
       if (!options?.ipc) throw new Error("Expected worker IPC callback");
       options.ipc(message, child);
@@ -104,7 +143,10 @@ test.each(["success", "failure", "defect", "mixed"])(
               ),
             ),
         },
-      ).pipe(Effect.provideService(ReporterEvents, events)),
+      ).pipe(
+        Effect.provideService(ReporterEvents, events),
+        Effect.provideService(CurrentWorkspaceLease, lease),
+      ),
     );
 
     expect(outcome).toEqual(result);
@@ -178,9 +220,13 @@ test("spawn failures remain command errors when staging cleanup fails", async ()
     runDetachedShutdown({
       operation: "down",
       worktreePath: "/project/worktree",
-    }).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.flip),
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(CurrentWorkspaceLease, lease),
+      Effect.flip,
+    ),
   );
-  expect(result.message).toBe("Failed to start independent shutdown");
+  expect(result.message).toBe("Cannot spawn Workspace worker");
   expect(result.cause).toBe(failure);
-  expect(remove).toHaveBeenCalledOnce();
+  expect(remove).not.toHaveBeenCalled();
 });

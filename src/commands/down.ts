@@ -6,6 +6,7 @@ import { WorkspaceService } from "../services/workspace-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { createDownHumanReporter } from "./down-reporter";
+import { withWorkspaceWaitReporter } from "./workspace-wait";
 
 export { downCommandDef as commandDef } from "../cli/command-metadata";
 
@@ -20,9 +21,9 @@ export function downCommand(
 ): Effect.Effect<void, WctError, WctServices | "effect/cli/GlobalFlag/json"> {
   return Effect.gen(function* () {
     const json = yield* JsonFlag;
-    const reporter = json
-      ? undefined
-      : createDownHumanReporter(yield* Stdio.Stdio);
+    const reporter = withWorkspaceWaitReporter(
+      json ? undefined : createDownHumanReporter(yield* Stdio.Stdio),
+    );
     const result = yield* WorkspaceService.use((service) =>
       service.down({
         path: options?.path,

@@ -276,6 +276,8 @@ describe("open workflow", () => {
       },
     ]);
     expect(repoCalls).toEqual([
+      { method: "getMainRepoPath", cwd: fixture.repoDir },
+      { method: "getMainRepoPath", cwd: fixture.repoDir },
       { method: "isGitRepo", cwd: fixture.repoDir },
       { method: "getMainRepoPath", cwd: fixture.repoDir },
     ]);
@@ -622,7 +624,7 @@ describe("open workflow", () => {
             json: true,
             workspace: {
               open: (options) => {
-                expect(options.reporter).toBeUndefined();
+                expect(options.reporter).toBeDefined();
                 return Effect.succeed(workspaceResult);
               },
               up: () => Effect.die("unused"),

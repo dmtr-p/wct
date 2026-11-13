@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { Effect } from "effect";
 import { Command } from "effect/cli";
 import {
@@ -72,7 +74,9 @@ describe("downCommand behavior", () => {
   let worktreeOverrides: WorktreeService;
 
   beforeEach(() => {
-    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/outside-git-repo");
+    cwdSpy = vi
+      .spyOn(process, "cwd")
+      .mockReturnValue(join(realpathSync("/tmp"), "outside-git-repo"));
     worktreeOverrides = {
       ...shutdownWorktreeService,
       isGitRepo: () => Effect.succeed(true),
@@ -108,7 +112,7 @@ describe("downCommand behavior", () => {
           return true;
         }),
     };
-    cwdSpy.mockReturnValue("/tmp/myapp-feature-auth");
+    cwdSpy.mockReturnValue(join(realpathSync("/tmp"), "myapp-feature-auth"));
 
     await expect(
       runCommand(undefined, {
@@ -116,14 +120,14 @@ describe("downCommand behavior", () => {
         worktree: worktreeOverrides,
       }),
     ).resolves.toBeUndefined();
-    expect(isGitRepoArg).toBe("/tmp/myapp-feature-auth");
+    expect(isGitRepoArg).toBe(join(realpathSync("/tmp"), "myapp-feature-auth"));
     expect(killCalls).toEqual(["$1"]);
   });
 
   test("kills tmux session for worktree specified by --path", async () => {
     const killCalls: string[] = [];
     let isGitRepoArg: string | undefined;
-    cwdSpy.mockReturnValue("/tmp/outside-git-repo");
+    cwdSpy.mockReturnValue(join(realpathSync("/tmp"), "outside-git-repo"));
     const pathOverrides: TmuxService = {
       ...noopTmuxService,
       resolveSession: (target: WorkspaceSessionTarget) =>
@@ -143,18 +147,20 @@ describe("downCommand behavior", () => {
     };
 
     await runCommand(
-      { path: "/tmp/myproject-feature-x" },
+      { path: join(realpathSync("/tmp"), "myproject-feature-x") },
       { tmux: pathOverrides, worktree: worktreePathOverrides },
     );
 
-    expect(isGitRepoArg).toBe("/tmp/myproject-feature-x");
+    expect(isGitRepoArg).toBe(
+      join(realpathSync("/tmp"), "myproject-feature-x"),
+    );
     expect(killCalls).toEqual(["$1"]);
   });
 
   test("parses down --path through the root command", async () => {
     const killCalls: string[] = [];
     let isGitRepoArg: string | undefined;
-    cwdSpy.mockReturnValue("/tmp/outside-git-repo");
+    cwdSpy.mockReturnValue(join(realpathSync("/tmp"), "outside-git-repo"));
     const tmuxOverridesViaRoot: TmuxService = {
       ...noopTmuxService,
       resolveSession: (target: WorkspaceSessionTarget) =>
@@ -173,19 +179,24 @@ describe("downCommand behavior", () => {
         }),
     };
 
-    await runRootCommand(["down", "--path", "/tmp/myproject-feature-x"], {
-      tmux: tmuxOverridesViaRoot,
-      worktree: worktreeOverridesViaRoot,
-    });
+    await runRootCommand(
+      ["down", "--path", join(realpathSync("/tmp"), "myproject-feature-x")],
+      {
+        tmux: tmuxOverridesViaRoot,
+        worktree: worktreeOverridesViaRoot,
+      },
+    );
 
-    expect(isGitRepoArg).toBe("/tmp/myproject-feature-x");
+    expect(isGitRepoArg).toBe(
+      join(realpathSync("/tmp"), "myproject-feature-x"),
+    );
     expect(killCalls).toEqual(["$1"]);
   });
 
   test("kills tmux session for worktree resolved by --branch", async () => {
     const killCalls: string[] = [];
     let isGitRepoArg: string | undefined;
-    cwdSpy.mockReturnValue("/tmp/outside-git-repo");
+    cwdSpy.mockReturnValue(join(realpathSync("/tmp"), "outside-git-repo"));
     const tmuxOverridesByBranch: TmuxService = {
       ...noopTmuxService,
       resolveSession: (target: WorkspaceSessionTarget) =>
@@ -206,7 +217,7 @@ describe("downCommand behavior", () => {
         Effect.succeed(
           branch === "feat-y"
             ? {
-                path: "/tmp/myproject-feat-y",
+                path: join(realpathSync("/tmp"), "myproject-feat-y"),
                 branch: "feat-y",
                 commit: "abc123",
                 isBare: false,
@@ -220,7 +231,7 @@ describe("downCommand behavior", () => {
       { tmux: tmuxOverridesByBranch, worktree: worktreeOverridesByBranch },
     );
 
-    expect(isGitRepoArg).toBe("/tmp/myproject-feat-y");
+    expect(isGitRepoArg).toBe(join(realpathSync("/tmp"), "myproject-feat-y"));
     expect(killCalls).toEqual(["$1"]);
   });
 
@@ -244,7 +255,7 @@ describe("downCommand behavior", () => {
       ...tmuxOverrides,
       resolveSession: () => Effect.succeed(null),
     };
-    cwdSpy.mockReturnValue("/tmp/myapp-feature-auth");
+    cwdSpy.mockReturnValue(join(realpathSync("/tmp"), "myapp-feature-auth"));
 
     try {
       await runCommand(undefined, {
@@ -269,7 +280,7 @@ describe("downCommand behavior", () => {
 
     try {
       await runCommand(
-        { path: "/tmp/myapp-feature-auth" },
+        { path: join(realpathSync("/tmp"), "myapp-feature-auth") },
         {
           json: true,
           workspace: {
@@ -278,7 +289,7 @@ describe("downCommand behavior", () => {
             down: () =>
               Effect.succeed({
                 operation: "down",
-                worktreePath: "/tmp/myapp-feature-auth",
+                worktreePath: join(realpathSync("/tmp"), "myapp-feature-auth"),
                 sessionName: "myapp-feature-auth",
                 existed: false,
                 status: "absent",
@@ -306,7 +317,7 @@ describe("downCommand behavior", () => {
         ok: true,
         data: {
           operation: "down",
-          worktreePath: "/tmp/myapp-feature-auth",
+          worktreePath: join(realpathSync("/tmp"), "myapp-feature-auth"),
           sessionName: "myapp-feature-auth",
           existed: false,
           status: "absent",

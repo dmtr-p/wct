@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 import { CliError, Command } from "effect/cli";
+import { browserCommand } from "../commands/browser";
 import { cdCommand } from "../commands/cd";
 import { closeCommand } from "../commands/close";
 import { downCommand } from "../commands/down";
@@ -47,6 +48,29 @@ function validateWorkspaceTarget({
       )
     : Effect.void;
 }
+
+const browserCliCommand = Command.make(
+  defs.browser.name,
+  commandConfig(defs.browser),
+  ({ path, branch, port }) =>
+    browserCommand({
+      path: optionToUndefined(path),
+      branch: optionToUndefined(branch),
+      port: optionToUndefined(port),
+    }),
+).pipe(
+  commandMetadata(defs.browser),
+  Command.validate((input) => {
+    const port = optionToUndefined(input.port);
+    if (port !== undefined && (!/^\d+$/.test(port) || Number(port) > 65535))
+      return Effect.fail(
+        new CliError.ValidationError({
+          message: "--port must be an integer from 0 to 65535",
+        }),
+      );
+    return validateWorkspaceTarget(input);
+  }),
+);
 
 const cdCliCommand = Command.make(
   defs.cd.name,
@@ -264,6 +288,7 @@ export const rootCommand = Command.make("wct").pipe(
     },
   ]),
   Command.withSubcommands([
+    browserCliCommand,
     cdCliCommand,
     closeCliCommand,
     downCliCommand,

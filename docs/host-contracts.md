@@ -236,6 +236,14 @@ is already displayed; an operation outcome alone cannot satisfy that validation.
 
 ## Attachments and terminal connectors
 
+The foreground [browser experiment](browser-terminal.md) uses an explicitly local
+adapter, not these daemon RPCs or durable host identities. Its authenticated raw
+input retains native tmux client semantics, including in-terminal session changes;
+it carries no expected-Workspace confinement. Ordered target observations are
+snapshots, not atomic byte attribution. Initial creation and explicit controls
+still validate targets; attachment, stream and server generations remain fenced.
+[ADR 0007](adr/0007-local-browser-terminal.md) specifies that adapter and its bounds.
+
 Creation uses a client request ID and allocates an opaque server attachment ID
 plus generation. The ID is also the managed-client marker excluded from native
 TUI discovery. Duplicate creation returns the original attachment within the

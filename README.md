@@ -13,6 +13,7 @@ wct list                # Show worktrees with tmux, changes, and sync status
 wct switch <branch>     # Switch to another worktree's tmux session
 wct cd <branch>         # Open a shell in a worktree directory
 wct tui                 # Interactive TUI sidebar for managing worktrees
+wct browser             # Attach a local browser to an existing Workspace Session
 wct init                # Generate a starter .wct.yaml config file
 wct projects add [path] [--name NAME]  # Add a repo to the project registry
 wct projects remove [path]             # Remove a repo from the project registry
@@ -24,6 +25,10 @@ wct projects list                      # List registered projects
 `wct open --pr <number-or-url>` opens a worktree for a GitHub PR without requiring
 a branch argument. `up` and `down` accept `--path <path>` or `--branch <name>`
 to target another checkout. `wct list --short` prints branch names only.
+
+Run `wct browser` to attach a local browser to an existing Workspace Session.
+See [local browser terminal](docs/browser-terminal.md) for
+authentication, lifetime and current limits.
 
 ### JSON and terminal output
 

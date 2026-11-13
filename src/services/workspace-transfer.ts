@@ -33,7 +33,7 @@ function handoffError(message: string, cause?: unknown) {
   return commandError("workspace_coordination_error", message, cause);
 }
 
-/** A scoped primitive for #339's worker adapter; Start irrevocably retires the
+/** Start irrevocably retires the
  * parent's mutation authority even when delivery or the adoption ACK is lost. */
 export function transferWorkspaceToWorker(
   lease: WorkspaceLease,
@@ -137,8 +137,13 @@ export function transferWorkspaceToWorker(
                 yield* Effect.sync(() => {
                   // A failed/cancelled caller must not remain alive solely for
                   // the detached worker's IPC or process handle.
-                  worker.disconnect();
-                  worker.unref();
+                  try {
+                    worker.disconnect();
+                  } catch {
+                    /* The worker may already have disconnected. */
+                  } finally {
+                    worker.unref();
+                  }
                 });
               }
             } else {

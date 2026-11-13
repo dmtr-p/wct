@@ -503,6 +503,18 @@ describe("cross-process Workspace coordination", () => {
       .toBe("outcome-unknown");
   });
 
+  test("caller death before the first ticket closes inherited custody even when the worker catches the error", async () => {
+    const marker = join(directory, "worker");
+    const parent = launch("transfer", { marker, omitTicket: true });
+    const ready = await parent.message("Ready");
+    if (!ready.pid) throw new Error("Missing prospective worker PID");
+    detached.push(ready.pid);
+    await kill(parent.child);
+    expect(await markerPid(`${marker}.closed`)).toBe(ready.pid);
+    expect(processGeneration(ready.pid).pid).toBe(ready.pid);
+    expect((await inspect()).status).toBe("outcome-unknown");
+  });
+
   test("loss after Start before Adopted retains outcome unknown", async () => {
     const marker = join(directory, "worker");
     const parent = launch("transfer", { marker, workerStage: "before-adopt" });

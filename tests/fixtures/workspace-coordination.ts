@@ -30,6 +30,8 @@ interface Arguments {
   finishMarker?: string;
   cancelBeforeStart?: boolean;
   cancellableTransfer?: boolean;
+  omitTicket?: boolean;
+  catchDisconnect?: boolean;
 }
 const args = JSON.parse(process.argv[2] ?? "{}") as Arguments;
 const send = (value: unknown) => {
@@ -104,6 +106,16 @@ const program = Effect.scoped(
     }
     if (args.mode === "worker" && args.stage === "reject")
       return yield* Effect.die(new Error("Rejected worker fixture"));
+    if (args.mode === "worker" && args.catchDisconnect) {
+      yield* acceptWorkspaceFromCaller.pipe(
+        Effect.catchCause(() =>
+          Effect.sync(() =>
+            writeFileSync(`${args.marker}.closed`, String(process.pid)),
+          ),
+        ),
+      );
+      return yield* Effect.forever(Effect.sleep("1 second"));
+    }
     const service = yield* makeWorkspaceCoordinationService({
       root: args.root,
       pollMilliseconds: 10,
@@ -122,6 +134,38 @@ const program = Effect.scoped(
         writeFileSync(args.marker, String(process.pid));
     });
     if (args.mode === "transfer") {
+      if (args.omitTicket) {
+        const offer = yield* lease.offerTransfer;
+        const worker = yield* Effect.sync(() =>
+          Bun.spawn(
+            [
+              process.execPath,
+              "run",
+              import.meta.filename,
+              JSON.stringify({
+                ...args,
+                mode: "worker",
+                catchDisconnect: true,
+              }),
+            ],
+            {
+              detached: true,
+              stdio: ["ignore", "ignore", "ignore", "ignore", offer.descriptor],
+              ipc: (message: unknown, child) => {
+                if (
+                  typeof message === "object" &&
+                  message !== null &&
+                  "_tag" in message &&
+                  message._tag === "WorkspaceWorkerListening"
+                )
+                  send({ _tag: "Ready", pid: child.pid });
+              },
+            },
+          ),
+        );
+        yield* Effect.promise(() => worker.exited);
+        return;
+      }
       const transfer = transferWorkspaceToWorker(
         lease,
         [

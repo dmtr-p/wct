@@ -275,6 +275,10 @@ function makeLease(
   const update = (
     f: (current: WorkspaceReservation) => WorkspaceReservation,
   ) => {
+    if (mode === "closed")
+      throw coordinationError(
+        "Workspace custody is closed; refusing stale owner mutation",
+      );
     const journal = readJournal(path, identity);
     if (!journal.reservation || !sameFence(journal.reservation, ownership))
       throw coordinationError(

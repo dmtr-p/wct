@@ -127,6 +127,7 @@ export function useAgentNavigation(
     (input, key) => {
       lastClick.current = null;
       if (key.escape) onCancelWait?.(selectedItem);
+      else if (viewportRows <= 0) return;
       else if (key.upArrow || input === "k")
         select(Math.max(0, selectedIndex - 1));
       else if (key.downArrow || input === "j")

@@ -170,6 +170,89 @@ describe("App agents view", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  test("waits filling the Agents viewport block hidden-agent actions but retain Escape cancellation", async () => {
+    const { AgentsView } = await import("../../src/tui/components/AgentsView");
+    const repoPath = join(root, "alpha");
+    const repos: RepoInfo[] = [
+      {
+        id: RegistrationId("alpha"),
+        project: "alpha",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            ...makeWorktree(repoPath, "alpha-branch"),
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: null,
+          },
+        ],
+      },
+    ];
+    const lifecycle = new Map<
+      ReturnType<typeof workspaceIdentityKey>,
+      LifecycleEntry
+    >();
+    for (let i = 0; i < 6; i++) {
+      const branch = `waiting-${i}`;
+      lifecycle.set(workspaceIdentityKey(repoPath, branch), {
+        repoPath,
+        project: "alpha",
+        branch,
+        operation: "open",
+        phase: { _tag: "Waiting", mainRepoPath: repoPath, branch },
+      });
+    }
+    const onJump = vi.fn();
+    const onKill = vi.fn();
+    const onClose = vi.fn();
+    const onCancelWait = vi.fn();
+    const props = {
+      repos,
+      agents: {
+        ...fixtures.snapshot,
+        memberships: projectFixtureSessions(
+          repos,
+          fixtures.snapshot.memberships,
+        ),
+      },
+      panes: projectFixtureSessions(repos, tmuxFixtures.panes),
+      viewportRows: 6,
+      maxWidth: 60,
+      isActive: true,
+      onJump,
+      onKill,
+      onClose,
+      onCancelWait,
+    };
+    const app = await renderApp(
+      <AgentsView {...props} lifecycle={lifecycle} />,
+      10,
+      60,
+    );
+    try {
+      await tick(30);
+      expect(app.lines().join("\n")).toContain("waiting-0");
+      expect(app.lines().join("\n")).not.toContain("Add agents view toggle");
+      for (const key of ["\r", " ", "x", "c"]) await sendKeys(app.stdin, key);
+      expect(onJump).not.toHaveBeenCalled();
+      expect(onKill).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      await sendKeys(app.stdin, "\x1b");
+      await vi.waitFor(() =>
+        expect(onCancelWait).toHaveBeenCalledWith(repoPath, "waiting-0"),
+      );
+
+      app.instance.rerender(<AgentsView {...props} />);
+      await tick(30);
+      expect(app.lines().join("\n")).toContain("Add agents view toggle");
+      await sendKeys(app.stdin, "\r");
+      await vi.waitFor(() => expect(onJump).toHaveBeenCalledTimes(1));
+    } finally {
+      app.unmount();
+    }
+  });
+
   test("waiting rows cannot hide an active confirmation in a small Agents viewport", async () => {
     const { AgentsView } = await import("../../src/tui/components/AgentsView");
     const repoPath = join(root, "alpha");

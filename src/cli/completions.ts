@@ -99,6 +99,10 @@ function generateFishCompletions(): string {
           lines.push(
             `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}' -a '(__fish_complete_directories)' -d 'Path to repo'`,
           );
+        } else if (sub.completionType === "branch") {
+          lines.push(
+            `complete -c wct -n '__fish_seen_subcommand_from ${command.name}; and __fish_seen_subcommand_from ${sub.name}' -a '(__wct_branches)' -d 'Branch'`,
+          );
         }
       }
     }
@@ -392,6 +396,23 @@ function generateBashCompletions(): string {
           `                            COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
         );
         lines.push("                        fi");
+      } else if (sub.completionType === "branch") {
+        if (stringValuePrevCheck) {
+          lines.push(
+            `                        if [[ ${stringValuePrevCheck} ]]; then`,
+          );
+          lines.push("                            COMPREPLY=()");
+          lines.push('                        elif [[ "$cur" != -* ]]; then');
+        } else
+          lines.push('                        if [[ "$cur" != -* ]]; then');
+        lines.push(
+          '                            COMPREPLY=($(compgen -W "$(_wct_branches)" -- "$cur"))',
+        );
+        lines.push("                        else");
+        lines.push(
+          `                            COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
+        );
+        lines.push("                        fi");
       } else {
         lines.push(
           `                        COMPREPLY=($(compgen -W '${allFlags}' -- "$cur"))`,
@@ -555,6 +576,10 @@ function generateZshCompletions(): string {
         if (isPathSub) {
           argParts.push(
             "                                    '*:path:_files -/'",
+          );
+        } else if (sub.completionType === "branch") {
+          argParts.push(
+            "                                    '*:branch:_wct_branches'",
           );
         }
         lines.push(

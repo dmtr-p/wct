@@ -12,11 +12,13 @@ import {
   type WorkspaceCloseResult,
   WorkspaceService,
 } from "../services/workspace-service";
+import { inspectWorkspaceTarget } from "../services/workspace-target";
 import { WorktreeService } from "../services/worktree-service";
 import { jsonSuccess } from "../utils/json-output";
 import * as logger from "../utils/logger";
 import { confirm } from "../utils/prompt";
 import { createDownHumanReporter } from "./down-reporter";
+import { withWorkspaceWaitReporter } from "./workspace-wait";
 
 export { closeCommandDef as commandDef } from "../cli/command-metadata";
 
@@ -54,9 +56,9 @@ export function closeCommand(
       WorkspaceCloseResult | ReturnType<typeof jsonAborted>
     > = [];
     const json = yield* JsonFlag;
-    const reporter = json
-      ? undefined
-      : createDownHumanReporter(yield* Stdio.Stdio);
+    const reporter = withWorkspaceWaitReporter(
+      json ? undefined : createDownHumanReporter(yield* Stdio.Stdio),
+    );
 
     const repo = yield* WorktreeService.use((service) => service.isGitRepo());
     if (!repo) {
@@ -97,7 +99,7 @@ export function closeCommand(
         workspaceSessionTarget(mainRepoPath, worktree),
       );
       const session = yield* TmuxService.use((service) =>
-        service.resolveSession(target),
+        service.resolveSession(target, undefined, { readOnly: true }),
       );
       const sessionName = session?.name ?? workspaceSessionName(target);
 
@@ -122,6 +124,11 @@ export function closeCommand(
           `Closing branch '${branch}' (${processedCount + 1}/${branches.length})`,
         );
       }
+
+      const confirmedTarget = yield* inspectWorkspaceTarget(
+        worktreePath,
+        mainRepoPath,
+      );
 
       if (!yes) {
         const confirmed = yield* Effect.mapError(
@@ -178,6 +185,7 @@ export function closeCommand(
       let result = yield* WorkspaceService.use((service) =>
         service.close({
           path: worktreePath,
+          confirmedTarget,
           force,
           ...(yes && !force ? { retryWithForce: true } : {}),
           ...(options.profile !== undefined

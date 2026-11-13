@@ -27,9 +27,9 @@ Bun Ready/Start/Adopted custody boundary. Workers inherit descriptor 4 and must
 accept ownership before mutating; ordinary scripts never inherit that descriptor.
 Use a scope covering the worker's entire operation and outcome persistence.
 The returned child has a dedicated ownership IPC protocol; an adapter needing
-progress/result messages must compose those separately. These primitives do not
-automatically wrap CLI/TUI lifecycle actions or the existing shutdown runner;
-that wiring belongs to the Workspace service adapter.
+progress/result messages must compose those separately. The Workspace service adapter wraps CLI/TUI lifecycle actions and composes
+shutdown progress/results with this protocol; see
+[Workspace Operations](workspace-operations.md#cross-process-ownership-and-recovery).
 
 For an `outcome-unknown` reservation, inspect potentially surviving script work
 first. Then call `reconcile(target, request)` with the exact `expectedOwnership`
@@ -38,8 +38,9 @@ operation ID/generation, `acknowledgeUncertainSideEffects: true`,
 `reason`. Reconciliation refuses a live custodian or a stale generation and
 never executes scripts. If custody is busy, wait or cancel; reconciliation is
 not an override for a running owner. Invalid or unreadable journals fail closed
-and require diagnosis rather than automatic deletion. The API is the recovery
-boundary for caller adapters; no recovery CLI is installed by this primitive.
+and require diagnosis rather than automatic deletion. The owner-local `wct operations inspect` and `wct operations reconcile` commands
+expose this recovery boundary; see the
+[recovery workflow](workspace-operations.md#cross-process-ownership-and-recovery).
 
 See [ADR 0004](adr/0004-workspace-coordination.md) for fsync ordering, acknowledged
 background workloads, the crash table, platform requirements and limitations.

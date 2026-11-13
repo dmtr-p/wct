@@ -7,6 +7,10 @@ import { initCommand } from "../commands/init";
 import { listCommand } from "../commands/list";
 import { openCommand } from "../commands/open";
 import {
+  inspectOperationCommand,
+  reconcileOperationCommand,
+} from "../commands/operations";
+import {
   projectsAddCommand,
   projectsListCommand,
   projectsRemoveCommand,
@@ -18,6 +22,7 @@ import {
   commandConfig,
   commandDefinitions as defs,
   commandMetadata,
+  operationDefinitions,
   projectDefinitions,
 } from "./command-metadata";
 import { JsonFlag } from "./json-flag";
@@ -171,6 +176,38 @@ const projectsCliCommand = Command.make(defs.projects.name).pipe(
   ]),
 );
 
+const operationsCliCommand = Command.make(defs.operations.name).pipe(
+  commandMetadata(defs.operations),
+  Command.withSubcommands([
+    Command.make(
+      operationDefinitions.inspect.name,
+      commandConfig(operationDefinitions.inspect),
+      ({ branch, repo }) =>
+        inspectOperationCommand({ branch, repo: optionToUndefined(repo) }),
+    ).pipe(commandMetadata(operationDefinitions.inspect)),
+    Command.make(
+      operationDefinitions.reconcile.name,
+      commandConfig(operationDefinitions.reconcile),
+      ({
+        branch,
+        repo,
+        operation,
+        generation,
+        reason,
+        acknowledgeUncertainSideEffects,
+      }) =>
+        reconcileOperationCommand({
+          branch,
+          repo: optionToUndefined(repo),
+          operation: optionToUndefined(operation),
+          generation: optionToUndefined(generation),
+          reason: optionToUndefined(reason),
+          acknowledgeUncertainSideEffects,
+        }),
+    ).pipe(commandMetadata(operationDefinitions.reconcile)),
+  ]),
+);
+
 const tuiCliCommand = Command.make(
   defs.tui.name,
   commandConfig(defs.tui),
@@ -202,6 +239,7 @@ export const rootCommand = Command.make("wct").pipe(
     listCliCommand,
     openCliCommand,
     projectsCliCommand,
+    operationsCliCommand,
     switchCliCommand,
     tuiCliCommand,
     upCliCommand,

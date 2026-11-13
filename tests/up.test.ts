@@ -329,6 +329,7 @@ describe("upCommand", { concurrent: false }, () => {
         profile: "focused",
         path: "/tmp/myapp-feature",
         branch: "feature",
+        reporter: expect.anything(),
       },
     ]);
     expect(registerCalls).toEqual([]);

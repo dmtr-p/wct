@@ -16,6 +16,7 @@ import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
 import { createTuiLifetime } from "../../src/tui/lifetime";
 import { projectFixtureSessions } from "../helpers/session-projections";
 import {
+  emitWorkspacePhase,
   lastWorkspaceCall,
   makeWorktree,
   registryItems,
@@ -297,8 +298,8 @@ describe("App agents view", () => {
           const forced = lastWorkspaceCall("close");
           expect(forced.options).toMatchObject({
             path,
-            cwd: join(root, "beta"),
             force: true,
+            removalOnly: true,
           });
           worktreeFixtures.byRepoPath.set(join(root, "beta"), []);
           forced.resolve(closeResult(path));
@@ -1095,6 +1096,42 @@ describe("App agents view", () => {
       await sendKeys(app.stdin, "\r");
       expect(tmuxFixtures.switchCalls).toHaveLength(0);
       expect(app.lines().join("\n")).toContain("No tmux client selected");
+    } finally {
+      app.unmount();
+    }
+  });
+  test("Agents view shows a cross-process close wait and Escape cancels its acquisition", async () => {
+    const app = await renderApp(<App />);
+    try {
+      await tick(20);
+      await sendKeys(app.stdin, "g");
+      await sendKeys(app.stdin, "c");
+      await sendKeys(app.stdin, "\r");
+      const close = lastWorkspaceCall("close");
+      const path = String(close.options.path);
+      const repoPath = String(close.options.cwd);
+      const branch = path.split("/").at(-1) ?? "";
+      emitWorkspacePhase(close, {
+        _tag: "Waiting",
+        mainRepoPath: repoPath,
+        branch,
+      });
+      await tick(10);
+      expect(app.lines().join("\n")).toContain(
+        "Waiting for Workspace ownership",
+      );
+      const signal = (
+        close.options
+          .reporter as import("../../src/services/workspace-service").WorkspaceReporter
+      ).waitSignal;
+      expect(signal?.aborted).toBe(false);
+      await sendKeys(app.stdin, "\x1b");
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      close.reject(new Error("Cancelled waiting for Workspace ownership"));
+      await tick(20);
+      expect(app.lines().join("\n")).not.toContain(
+        "Waiting for Workspace ownership",
+      );
     } finally {
       app.unmount();
     }

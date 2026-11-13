@@ -24,6 +24,10 @@ import { withTestServices } from "./helpers/services";
 // `closeCommand` resolves its branch through the real WorktreeService; stub just that lookup.
 const worktree: WorktreeService = {
   ...liveWorktreeService,
+  isGitRepo: () => Effect.succeed(true),
+  getWorktreeRoot: (path) => Effect.succeed(path),
+  getMainRepoPath: () => Effect.succeed("/repos/myapp"),
+  getCurrentBranch: () => Effect.succeed("feature"),
   findWorktreeByBranch: (branch) =>
     Effect.succeed({
       path: "/tmp/myapp-feature",
@@ -274,7 +278,7 @@ describe("semantic phases and CLI output", () => {
     }
 
     // Human shutdown output uses a reporter; JSON stays silent.
-    expect(withPhasesOptions[1]?.reporter).toBeUndefined();
+    expect(withPhasesOptions[1]?.reporter).toBeDefined();
     expect(withPhasesOptions[2]?.reporter).toBeDefined();
     expect(withPhasesOptions[3]?.reporter).toBeDefined();
   });

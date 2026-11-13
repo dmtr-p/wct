@@ -378,6 +378,18 @@ vi.mock("../../src/services/workspace-service", async () => {
           up: wrap("up"),
           down: wrap("down"),
           close: wrap("close"),
+          retryCloseRemoval: (
+            previous: import("../../src/services/workspace-service").WorkspaceCloseResult,
+            options: Record<string, unknown>,
+          ) =>
+            wrap("close")({
+              ...options,
+              path: previous.worktreePath,
+              cwd: previous.removalTarget?.target.mainRepoPath,
+              force: true,
+              removalOnly: true,
+              previous,
+            }),
         }),
     },
   };

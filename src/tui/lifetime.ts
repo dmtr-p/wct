@@ -2,11 +2,13 @@
 export function createTuiLifetime(dispose: () => Promise<void>) {
   const messages: string[] = [];
   const active = new Set<Promise<unknown>>();
+  const waitCancellation = new AbortController();
   let closing = false;
   let drain: Promise<void> | undefined;
   let finalization: Promise<void> | undefined;
   return {
     messages,
+    waitSignal: waitCancellation.signal,
     report(message: string) {
       messages.push(message);
     },
@@ -36,6 +38,7 @@ export function createTuiLifetime(dispose: () => Promise<void>) {
     },
     quit(): Promise<void> {
       closing = true;
+      waitCancellation.abort();
       drain ??= Promise.allSettled(active).then(() => undefined);
       return drain;
     },

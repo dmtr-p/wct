@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -22,7 +22,9 @@ describe("Workspace Operation profile validation", () => {
   let worktreePath: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "wct-profile-validation-"));
+    root = await realpath(
+      await mkdtemp(join(tmpdir(), "wct-profile-validation-")),
+    );
     main = join(root, "main");
     worktreePath = join(root, "worktrees", "demo-feature");
     await mkdir(main);

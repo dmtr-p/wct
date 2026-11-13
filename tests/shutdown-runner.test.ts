@@ -54,6 +54,7 @@ describe("shutdown across terminal loss", () => {
   let session: string;
   let cli: ReturnType<typeof Bun.spawn> | undefined;
   let externalResults: string[];
+  let crashedWorker = false;
 
   beforeAll(async () => {
     buildDirectory = await mkdtemp(join(tmpdir(), "wct-shutdown-build-"));
@@ -84,6 +85,7 @@ describe("shutdown across terminal loss", () => {
 
   beforeEach(async () => {
     externalResults = [];
+    crashedWorker = false;
     root = await realpath(
       await mkdtemp(join(tmpdir(), "wct-terminal-shutdown-")),
     );
@@ -128,9 +130,11 @@ if (command === "display-message") {
   console.log(process.env.WCT_TEST_SESSION);
 } else if (command === "list-sessions") {
   if (await Bun.file(root + "/session").exists()) console.log((await Bun.file(root + "/started-session").exists() ? await Bun.file(root + "/started-session").text() : process.env.WCT_TEST_SESSION) + ":0:1\\t$1\\t/fake/socket|1|0");
+  if (await Bun.file(root + "/session").exists()) console.log("unrelated:0:1\\t$2\\t/fake/socket|1|0");
 } else if (command === "show-environment") {
+  const unrelated = process.argv[process.argv.indexOf("-t") + 1] === "$2";
   const key = process.argv[process.argv.indexOf("-t") + 2];
-  const values = {
+  const values = unrelated ? { WCT_MAIN_DIR: root + "/foreign", WCT_WORKTREE_DIR: root + "/foreign", WCT_BRANCH: "other" } : {
     WCT_MAIN_DIR: root + "/project",
     WCT_WORKTREE_DIR: root + (process.env.WCT_TEST_SESSION === "project" ? "/project" : "/demo-feature"),
     WCT_BRANCH: process.env.WCT_TEST_SESSION === "project" ? "main" : "feature",
@@ -146,6 +150,7 @@ if (command === "display-message") {
   await Bun.write(root + "/session", "exists");
   console.log("$1");
 } else if (command === "set-environment" || command === "select-window") {
+  if (process.argv.includes("WCT_WORKSPACE_ID")) await Bun.write(root + "/stamped", "yes");
   process.exit(0);
 } else if (command === "kill-session") {
   if (!process.argv.includes("$1")) process.exit(91);
@@ -172,6 +177,15 @@ if (command === "display-message") {
     for (const directory of directories.filter((name) =>
       name.startsWith("wct-shutdown-"),
     )) {
+      if (crashedWorker) {
+        expect(
+          await Bun.file(join(root, "tmp", directory, "request.json")).exists(),
+        ).toBe(true);
+        expect(
+          await Bun.file(join(root, "tmp", directory, "result.json")).exists(),
+        ).toBe(false);
+        continue;
+      }
       await vi.waitFor(
         async () => {
           expect(
@@ -575,5 +589,98 @@ if (command === "display-message") {
       join(main, "apps/web"),
       main,
     ]);
+  });
+  test("adopted shutdown worker crash retains exact fencing and prevents removal", async () => {
+    const workerPidPath = join(root, "worker-pid");
+    const release = join(root, "release-worker");
+    await Bun.write(
+      join(main, ".wct.yaml"),
+      JSON.stringify({
+        project_name: "demo",
+        work_dir: "apps/web",
+        down: [
+          {
+            name: "uncertain optional cleanup",
+            optional: true,
+            command: `echo "$PPID" > ${quote(workerPidPath)}; while [ ! -f ${quote(release)} ]; do sleep 0.02; done; echo should-not-remove >> ${quote(trace)}`,
+          },
+        ],
+      }),
+    );
+    let workerPid: number | undefined;
+    try {
+      const parent = start(
+        "source",
+        ["close", "feature", "--yes", "--force"],
+        true,
+      );
+      const stdout = new Response(parent.stdout).text();
+      const stderr = new Response(parent.stderr).text();
+      await parent.exited;
+      expect(parent.signalCode, await stderr).toBe("SIGHUP");
+      expect(await stdout).toContain("Shutdown continues independently");
+      await vi.waitFor(
+        async () => {
+          workerPid = Number(await Bun.file(workerPidPath).text());
+          expect(workerPid).toBeGreaterThan(0);
+        },
+        { timeout: 5000 },
+      );
+      const inspection = start(
+        "source",
+        ["operations", "inspect", "feature", "--json"],
+        false,
+        main,
+      );
+      const inspectionOutput = new Response(inspection.stdout).text();
+      const inspectionError = new Response(inspection.stderr).text();
+      expect(await inspection.exited, await inspectionError).toBe(0);
+      const busy = JSON.parse(await inspectionOutput).data;
+      expect(busy.status).toBe("busy");
+      expect(busy.reservation.owner.pid).toBe(workerPid);
+      if (!workerPid) throw new Error("Missing worker PID");
+      process.kill(workerPid, "SIGKILL");
+      crashedWorker = true;
+      workerPid = undefined;
+      await Bun.write(release, "release descendant");
+      const blocked = start(
+        "source",
+        ["down", "--branch", "feature", "--json"],
+        false,
+        main,
+      );
+      const blockedOutput = new Response(blocked.stdout).text();
+      const blockedError = new Response(blocked.stderr).text();
+      expect(await blocked.exited).not.toBe(0);
+      expect(await blockedOutput).toBe("");
+      const failure = await blockedError;
+      expect(failure).toContain(busy.reservation.operationId);
+      expect(failure).toContain(busy.reservation.generation);
+      expect(await Bun.file(join(worktree, ".git")).exists()).toBe(true);
+      expect(
+        Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
+          cwd: main,
+          env: gitEnv(),
+        }).stdout.toString(),
+      ).toContain(`worktree ${worktree}\n`);
+    } finally {
+      await Bun.write(release, "release descendant");
+      if (workerPid) {
+        try {
+          process.kill(workerPid, "SIGKILL");
+        } catch {
+          /* Already exited. */
+        }
+      }
+    }
+  }, 15000);
+  test("declined Close inspection does not stamp a legacy session before custody", async () => {
+    const child = start("source", ["close", "feature", "--json"], false, main);
+    const stdout = new Response(child.stdout).text();
+    const stderr = new Response(child.stderr).text();
+    expect(await child.exited, await stderr).toBe(0);
+    expect(JSON.parse(await stdout).data[0].status).toBe("aborted");
+    expect(await Bun.file(join(root, "stamped")).exists()).toBe(false);
+    expect(await Bun.file(trace).text()).toBe("");
   });
 });

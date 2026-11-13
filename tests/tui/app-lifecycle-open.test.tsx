@@ -221,6 +221,45 @@ describe("TUI open lifecycle", () => {
     },
   );
 
+  test("Escape cancels a visible Pending Open wait before a checkout exists", async () => {
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />);
+    try {
+      await waitForText(app, "main");
+      await openBranchFromModal(app.stdin, "feature/waiting");
+      const call = await waitForWorkspaceCall("open");
+      emitWorkspacePhase(call, {
+        _tag: "Waiting",
+        mainRepoPath: repoPath,
+        branch: "feature/waiting",
+      });
+      await waitForText(app, "(Esc cancels)");
+      const signal = (
+        call.options
+          .reporter as import("../../src/services/workspace-service").WorkspaceReporter
+      ).waitSignal;
+      expect(signal?.aborted).toBe(false);
+      await sendKeys(app.stdin, "?");
+      await waitForText(app, "Shortcuts");
+      await sendKeys(app.stdin, "\x1b");
+      await waitForFrame(app, (lines) =>
+        expect(lines.join("\n")).not.toContain("Shortcuts"),
+      );
+      expect(signal?.aborted).toBe(false);
+      await sendKeys(app.stdin, "\x1b");
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      call.reject(new Error("Cancelled pending wait"));
+      await waitForFrame(app, (lines) =>
+        expect(lines.join("\n")).not.toContain(
+          "Waiting for Workspace ownership",
+        ),
+      );
+      expect(worktreeFixtures.byRepoPath.get(repoPath)).toHaveLength(1);
+    } finally {
+      app.unmount();
+    }
+  });
+
   test("shows an inert Pending Workspace reading 'Preparing Workspace…' before the worktree exists", async () => {
     const { App } = await import("../../src/tui/App");
     const app = await renderApp(<App />);

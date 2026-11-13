@@ -3,23 +3,27 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect, FileSystem, Result } from "effect";
 import type { ResolvedConfig } from "../config/schema";
-import { commandError, toWctError, type WctError } from "../errors";
+import { commandError, type WctError } from "../errors";
 import type { WctEnv } from "../types/env";
 import { processEnvironment } from "./process";
 import type {
   WorkspaceSession,
   WorkspaceSessionTarget,
 } from "./session-identity";
+import { CurrentWorkspaceLease } from "./workspace-coordination";
 import type {
   WorkspaceCloseResult,
   WorkspaceDownResult,
   WorkspaceReporter,
   WorkspaceReporterEvent,
 } from "./workspace-service";
+import type { WorkspaceTargetEvidence } from "./workspace-target";
+import { transferWorkspaceToWorker } from "./workspace-transfer";
 
 export const SHUTDOWN_WORKER_FLAG = "--wct-shutdown-worker";
 
 export interface ShutdownRequest {
+  targetEvidence?: WorkspaceTargetEvidence;
   sessionTarget?: WorkspaceSessionTarget;
   session?: WorkspaceSession | null;
   operation: "down" | "close";
@@ -36,7 +40,6 @@ export type ShutdownOutcome =
   | { ok: false; error: { code: WctError["code"]; message: string } };
 
 export type ShutdownMessage =
-  | { _tag: "Ready" }
   | { _tag: "Event"; event: WorkspaceReporterEvent }
   | { _tag: "Completed"; outcome: ShutdownOutcome };
 
@@ -121,110 +124,63 @@ export function runDetachedShutdown(
       ),
     );
     const resultPath = join(directory, "result.json");
-    const ready = Promise.withResolvers<void>();
+    const lease = yield* CurrentWorkspaceLease;
+    if (!lease)
+      return yield* commandError(
+        "workspace_coordination_error",
+        "Independent shutdown requires current Workspace custody",
+      );
     const completed = Promise.withResolvers<ShutdownOutcome>();
-    // A startup failure can reject both promises before the second is awaited.
     void completed.promise.catch(() => undefined);
     let events = Promise.resolve();
-    let started = false;
     const env = yield* processEnvironment;
-    const child = yield* Effect.try({
-      try: () =>
-        Bun.spawn(shutdownWorkerCommand(directory), {
-          cwd: request.shutdown?.env.WCT_MAIN_DIR ?? request.cwd,
-          env,
-          detached: true,
-          stdin: "ignore",
-          stdout: "ignore",
-          stderr: "ignore",
-          ipc: (message: ShutdownMessage) => {
-            if (message._tag === "Ready") ready.resolve();
-            else if (message._tag === "Completed")
-              completed.resolve(message.outcome);
-            else if (message._tag === "Event" && reporter) {
-              events = events.then(() =>
-                Effect.runPromiseWith(context)(
-                  Effect.suspend(() => reporter.event(message.event)).pipe(
-                    Effect.ignoreCause,
-                  ),
+    const child = yield* transferWorkspaceToWorker(
+      lease,
+      shutdownWorkerCommand(directory),
+      {
+        cwd: request.shutdown?.env.WCT_MAIN_DIR ?? request.cwd,
+        env,
+        beforeStart: reporter
+          ? Effect.suspend(() =>
+              reporter.event({
+                operation: request.operation,
+                _tag: "ShutdownDelegated",
+                resultPath,
+              }),
+            ).pipe(Effect.ignoreCause)
+          : Effect.void,
+        onMessage: (message) => {
+          if (!message || typeof message !== "object" || !("_tag" in message))
+            return;
+          const shutdown = message as ShutdownMessage;
+          if (shutdown._tag === "Completed")
+            completed.resolve(shutdown.outcome);
+          else if (shutdown._tag === "Event" && reporter) {
+            events = events.then(() =>
+              Effect.runPromiseWith(context)(
+                Effect.suspend(() => reporter.event(shutdown.event)).pipe(
+                  Effect.ignoreCause,
                 ),
-              );
-            }
-          },
-          onExit: async (_child, code, signal, error) => {
-            const failure = commandError(
-              "unexpected_error",
-              `Independent shutdown exited before returning a result (${error?.message ?? signal ?? code}); inspect ${resultPath}`,
+              ),
             );
-            ready.reject(failure);
-            // A final IPC message may race process exit; the saved outcome is authoritative.
-            try {
-              completed.resolve(
-                JSON.parse(
-                  await Effect.runPromiseWith(context)(
-                    fs.readFileString(resultPath),
-                  ),
-                ) as ShutdownOutcome,
-              );
-            } catch {
-              completed.reject(failure);
-            }
-          },
-        }),
-      catch: (error) =>
-        commandError(
-          "unexpected_error",
-          "Failed to start independent shutdown",
-          error,
-        ),
-    }).pipe(
-      Effect.onError(() =>
-        fs
-          .remove(directory, { recursive: true, force: true })
-          .pipe(Effect.ignore),
-      ),
-    );
-    yield* Effect.tryPromise({
-      try: () => ready.promise,
-      catch: (error) => toWctError(error),
-    }).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.mapError((error) =>
-        commandError(
-          "unexpected_error",
-          "Independent shutdown did not become ready",
-          error,
-        ),
-      ),
-      Effect.onError(() =>
-        Effect.sync(() => {
-          if (!started) child.kill();
-        }),
-      ),
-    );
-    // The worker cannot kill the pane until its caller has announced the handoff.
-    if (reporter) {
-      yield* Effect.suspend(() =>
-        reporter.event({
-          operation: request.operation,
-          _tag: "ShutdownDelegated",
-          resultPath,
-        }),
-      ).pipe(Effect.ignoreCause);
-    }
-    yield* Effect.try({
-      try: () => {
-        child.send({ _tag: "Start" });
-        started = true;
+          }
+        },
+        onExit: () => {
+          // The persisted result is authoritative if final IPC races process exit.
+          void Effect.runPromiseWith(context)(fs.readFileString(resultPath))
+            .then((content) =>
+              completed.resolve(JSON.parse(content) as ShutdownOutcome),
+            )
+            .catch(() =>
+              completed.reject(
+                commandError(
+                  "workspace_coordination_error",
+                  `Independent shutdown exited without an outcome; inspect ${resultPath} and Workspace ownership before retrying`,
+                ),
+              ),
+            );
+        },
       },
-      catch: (error) =>
-        commandError("unexpected_error", "Failed to hand off shutdown", error),
-    }).pipe(
-      Effect.onError(() =>
-        Effect.sync(() => {
-          if (!started) child.kill();
-        }),
-      ),
     );
     // Once committed, cancellation or loss of the caller must not kill cleanup.
     const outcome = yield* Effect.tryPromise({
@@ -235,7 +191,20 @@ export function runDetachedShutdown(
           `Independent shutdown failed; inspect ${resultPath}`,
           error,
         ),
-    });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (child) {
+            try {
+              child.disconnect();
+            } catch {
+              /* Already disconnected. */
+            }
+            child.unref();
+          }
+        }),
+      ),
+    );
     yield* Effect.promise(() => events);
     if (!outcome.ok) {
       return yield* commandError(

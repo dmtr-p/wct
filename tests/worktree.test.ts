@@ -215,7 +215,7 @@ describe("createWorktree with base branch", { concurrent: false }, () => {
           { tmux: noopTmuxService },
         ),
       ),
-    ).rejects.toThrow("Not a git repository");
+    ).rejects.toThrow("No registered Workspace");
   });
 
   test("creates worktree with base branch", async () => {

@@ -43,6 +43,9 @@ export function lifecycleEntryFor(
  */
 export interface LifecycleClaims {
   lifetime?: TuiLifetime;
+  setWaitCancellation?: (entry: LifecycleEntry, cancel: () => void) => void;
+  cancelWait?: (mainRepoPath: string, branch: string) => boolean;
+  cancelAllWaits?: () => void;
   claim: (entry: LifecycleEntry) => boolean;
   record: (entry: LifecycleEntry) => void;
   /**
@@ -60,8 +63,35 @@ export function createLifecycleClaims(lifetime?: TuiLifetime): LifecycleClaims {
     WorkspaceIdentityKey,
     { owner: LifecycleEntry; current: LifecycleEntry }
   >();
+  const cancellations = new Map<WorkspaceIdentityKey, () => void>();
+  const cancelWait = (repo: string, branch: string) => {
+    const key = workspaceIdentityKey(repo, branch);
+    if (held.get(key)?.current.phase._tag !== "Waiting") return false;
+    cancellations.get(key)?.();
+    return true;
+  };
+  lifetime?.waitSignal.addEventListener(
+    "abort",
+    () => {
+      for (const cancel of cancellations.values()) cancel();
+    },
+    { once: true },
+  );
   return {
     lifetime,
+    setWaitCancellation: (entry, cancel) => {
+      cancellations.set(
+        workspaceIdentityKey(entry.repoPath, entry.branch),
+        cancel,
+      );
+      if (lifetime?.closing) cancel();
+    },
+    cancelWait,
+    cancelAllWaits: () => {
+      // Signals only guard acquisition. Abort preflight actions too, so quit
+      // cannot miss an action which reaches a conflicting owner afterward.
+      for (const cancel of cancellations.values()) cancel();
+    },
     claim: (entry) => {
       const key = workspaceIdentityKey(entry.repoPath, entry.branch);
       if (held.has(key)) return false;
@@ -78,6 +108,7 @@ export function createLifecycleClaims(lifetime?: TuiLifetime): LifecycleClaims {
       const key = workspaceIdentityKey(entry.repoPath, entry.branch);
       if (held.get(key)?.owner !== entry) return;
       held.delete(key);
+      cancellations.delete(key);
     },
     active: (mainRepoPath, branch) =>
       held.get(workspaceIdentityKey(mainRepoPath, branch))?.current,
@@ -124,8 +155,29 @@ export function rejectIfLifecycleActive({
   return true;
 }
 
+export function worktreeWaitCancellationTarget(
+  lifecycle: LifecycleState,
+  repo: { repoPath: string; worktrees: readonly { branch: string }[] },
+  selectedBranch?: string,
+): LifecycleEntry | undefined {
+  const selected =
+    selectedBranch === undefined
+      ? undefined
+      : lifecycleEntryFor(lifecycle, repo.repoPath, selectedBranch);
+  if (selected?.phase._tag === "Waiting") return selected;
+  return [...lifecycle.values()].find(
+    (entry) =>
+      entry.repoPath === repo.repoPath &&
+      entry.operation === "open" &&
+      entry.phase._tag === "Waiting" &&
+      !repo.worktrees.some((worktree) => worktree.branch === entry.branch),
+  );
+}
+
 export function lifecyclePhaseLabel(phase: LifecyclePhase): string {
   switch (phase._tag) {
+    case "Waiting":
+      return "Waiting for Workspace ownership…";
     case "Preparing":
       return "Preparing Workspace…";
     case "CreatingWorktree":
@@ -162,8 +214,11 @@ export const LIFECYCLE_ROW_PREFIX = "     └ ";
 export function lifecycleProgressContent(
   phase: LifecyclePhase,
   maxWidth: number,
+  canCancel = false,
 ): string {
-  const label = lifecyclePhaseLabel(phase);
+  const label =
+    lifecyclePhaseLabel(phase) +
+    (canCancel && phase._tag === "Waiting" ? " (Esc cancels)" : "");
   const available = maxWidth - LIFECYCLE_ROW_PREFIX.length;
   if (available <= 0) return "";
   return `${LIFECYCLE_ROW_PREFIX}${truncateBranch(label, available)}`;
@@ -213,6 +268,9 @@ export function beginLifecycle(
     return new Map(previous).set(key, entry);
   });
 
+  const wait = new AbortController();
+  claims.setWaitCancellation?.(entry, () => wait.abort());
+
   // Inline cleanup and finally can straddle a successor's claim. Latch teardown
   // so the second call cannot remove that successor's entry.
   let ended = false;
@@ -249,6 +307,7 @@ export function beginLifecycle(
     setPhase,
     end,
     reporter: {
+      waitSignal: wait.signal,
       event: (event) =>
         Effect.sync(() => {
           if (event._tag !== "PhaseStarted") return;

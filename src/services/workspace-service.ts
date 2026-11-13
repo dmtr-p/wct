@@ -40,6 +40,18 @@ import {
   TmuxService,
   type TmuxService as TmuxServiceApi,
 } from "./tmux";
+import {
+  CurrentWorkspaceLease,
+  WorkspaceCoordinationService,
+  type WorkspaceCoordinationServiceApi,
+} from "./workspace-coordination";
+import {
+  assertWorkspaceConfirmation,
+  assertWorkspaceTarget,
+  inspectWorkspaceTarget,
+  type WorkspaceConfirmation,
+  type WorkspaceTargetEvidence,
+} from "./workspace-target";
 import { resolveWorktreeInclude } from "./worktree-include";
 import {
   type CreateWorktreeResult,
@@ -85,6 +97,7 @@ export type WorkspaceWarning =
 
 export type WorkspacePhase =
   | { _tag: "Preparing" }
+  | { _tag: "Waiting"; mainRepoPath: string; branch: string }
   | { _tag: "CreatingWorktree" }
   | { _tag: "CopyingFiles" }
   | { _tag: "RunningSetup"; name: string }
@@ -165,12 +178,17 @@ export type WorkspaceReporterEvent =
     };
 
 export interface WorkspaceReporter {
+  waitSignal?: AbortSignal;
   event: (event: WorkspaceReporterEvent) => Effect.Effect<void, WctError>;
 }
 
 export interface ResolveWorkspaceTargetOptions {
   path?: string;
   branch?: string;
+  confirmedTarget?: WorkspaceTargetEvidence;
+  confirmation?: WorkspaceConfirmation;
+  expectedTarget?: import("./session-identity").WorkspaceSessionTarget;
+  expectedSession?: import("./session-identity").WorkspaceSession | null;
 }
 
 export interface WorkspaceUpOptions extends ResolveWorkspaceTargetOptions {
@@ -250,6 +268,7 @@ export interface WorkspaceDownResult {
 }
 
 export interface WorkspaceCloseResult {
+  removalTarget?: WorkspaceTargetEvidence;
   operation: "close";
   worktreePath: string;
   sessionName: string;
@@ -316,18 +335,20 @@ function emitPhase(
 
 function captureAttempt<A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<WorkspaceAttempt<A>, never, R> {
-  return Effect.match(effect, {
-    onFailure: (error) => ({
-      attempted: true as const,
-      ok: false as const,
-      error: toWorkspaceError(error),
-    }),
-    onSuccess: (value) => ({
-      attempted: true as const,
-      ok: true as const,
-      value,
-    }),
+): Effect.Effect<WorkspaceAttempt<A>, WctError, R> {
+  return Effect.matchEffect(effect, {
+    onFailure: (error) => {
+      const failure = toWctError(error);
+      return failure.code === "workspace_coordination_error"
+        ? Effect.fail(failure)
+        : Effect.succeed({
+            attempted: true as const,
+            ok: false as const,
+            error: toWorkspaceError(error),
+          });
+    },
+    onSuccess: (value) =>
+      Effect.succeed({ attempted: true as const, ok: true as const, value }),
   });
 }
 
@@ -578,7 +599,10 @@ function resolveWorkspaceProfile(
   });
 }
 
-function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
+function resolveOpenIntent(
+  options: WorkspaceOpenOptions,
+  expectedBranch?: string,
+): Effect.Effect<
   Required<Pick<WorkspaceOpenOptions, "branch" | "existing">> &
     Omit<WorkspaceOpenOptions, "branch" | "existing" | "pr" | "reporter"> & {
       prNumber?: number;
@@ -633,6 +657,11 @@ function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
         service.resolvePr(prNumber, cwd),
       );
       const resolvedBranch = resolvedPr.branch;
+      if (expectedBranch !== undefined && resolvedBranch !== expectedBranch)
+        return yield* commandError(
+          "pr_error",
+          "PR branch changed while waiting; retry Open",
+        );
       let remote = "origin";
 
       if (resolvedPr.headOwner && resolvedPr.headRepo) {
@@ -679,6 +708,7 @@ function resolveOpenIntent(options: WorkspaceOpenOptions): Effect.Effect<
 
 function openImpl(
   options: WorkspaceOpenOptions,
+  expectedBranch?: string,
 ): Effect.Effect<
   WorkspaceOpenResult,
   WctError,
@@ -692,7 +722,7 @@ function openImpl(
   return Effect.gen(function* () {
     const reporter = options.reporter;
     yield* emitPhase(reporter, "open", { _tag: "Preparing" });
-    const resolvedOptions = yield* resolveOpenIntent(options);
+    const resolvedOptions = yield* resolveOpenIntent(options, expectedBranch);
     const { branch, existing, cwd, profile } = resolvedOptions;
     const explicitBase = resolvedOptions.base;
 
@@ -815,6 +845,8 @@ function openImpl(
 
     if (resolvedOptions.prNumber !== undefined) {
       const prNumber = resolvedOptions.prNumber;
+      // This read-only PR observation and cache write are best effort. Keep their
+      // timeout outside command supervision while retaining the operation lease.
       yield* Effect.ignore(
         Effect.gen(function* () {
           const baseRepository = yield* GitHubService.use((service) =>
@@ -827,7 +859,7 @@ function openImpl(
             }),
           );
         }),
-      );
+      ).pipe(Effect.provideService(CurrentWorkspaceLease, undefined));
     }
 
     const copy = yield* copyWorkspaceFiles({
@@ -1201,6 +1233,12 @@ export function executeWorkspaceShutdown(
         warnings,
       };
     }
+    const removalTarget = request.targetEvidence
+      ? yield* assertWorkspaceTarget(
+          { ...request.targetEvidence, session: null },
+          { removalOnly: true, afterScripts: true },
+        )
+      : yield* inspectWorkspaceTarget(worktreePath, request.cwd);
     let removeResult = yield* removeWorkspace(
       worktreePath,
       request.force ?? false,
@@ -1228,6 +1266,7 @@ export function executeWorkspaceShutdown(
         remove: { attempted: true, ok: true, value: removeResult },
       },
       warnings,
+      ...(removeResult._tag === "BlockedByChanges" ? { removalTarget } : {}),
     };
   });
 }
@@ -1279,7 +1318,15 @@ function finishShutdown(
     const session = yield* TmuxService.use((service) =>
       service.resolveSession(sessionTarget),
     );
-    const resolved = { ...request, sessionTarget, session };
+    const resolved = {
+      ...request,
+      sessionTarget,
+      session,
+      targetEvidence: yield* inspectWorkspaceTarget(
+        request.worktreePath,
+        request.cwd ?? sessionTarget.mainRepoPath,
+      ),
+    };
     const { tmux, pane } = yield* loadRuntimeConfig(
       Config.all({
         tmux: Config.String("TMUX").pipe(Config.withDefault("")),
@@ -1379,11 +1426,7 @@ function retryCloseRemovalImpl(
         "Removal retry requires a close result blocked by changes",
       );
     }
-    const cwd =
-      options.cwd ??
-      (yield* WorktreeService.use((service) =>
-        service.getMainRepoPath(previous.worktreePath),
-      ));
+    const cwd = previous.removalTarget?.target.mainRepoPath ?? options.cwd;
     if (!cwd) {
       return yield* commandError(
         "worktree_error",
@@ -1503,13 +1546,228 @@ function closeImpl(
   });
 }
 
+function acquireWorkspace(
+  target: { mainRepoPath: string; branch: string },
+  operation: WorkspaceOperation,
+  reporter?: WorkspaceReporter,
+) {
+  return Effect.gen(function* () {
+    const coordination = yield* WorkspaceCoordinationService;
+    let waiting = false;
+    const acquire = coordination
+      .acquire(target, {
+        onWait: Effect.gen(function* () {
+          if (waiting) return;
+          waiting = true;
+          yield* emitPhase(reporter, operation, { _tag: "Waiting", ...target });
+        }),
+      })
+      .pipe(
+        Effect.mapError((error) =>
+          commandError(
+            "workspace_coordination_error",
+            `${error.message} Use wct operations inspect <branch> --repo <main-repository> for target '${target.branch}' in '${target.mainRepoPath}'.`,
+          ),
+        ),
+      );
+    if (!reporter?.waitSignal) return yield* acquire;
+    const signal = reporter.waitSignal;
+    const cancelled = Effect.callback<never, WctError>((resume) => {
+      const cancel = () =>
+        resume(
+          Effect.fail(
+            commandError(
+              "invalid_options",
+              "Cancelled waiting for Workspace ownership",
+            ),
+          ),
+        );
+      signal.addEventListener("abort", cancel, { once: true });
+      if (signal.aborted) cancel();
+      return Effect.sync(() => signal.removeEventListener("abort", cancel));
+    });
+    return yield* Effect.raceFirst(acquire, cancelled);
+  });
+}
+
+function coordinatedTarget<A, E, R>(
+  operation: WorkspaceOperation,
+  options: WorkspaceDownOptions & { cwd?: string },
+  run: (
+    target: WorkspaceTargetEvidence,
+    path: string,
+  ) => Effect.Effect<A, E, R>,
+) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const path = yield* resolveTargetImpl(options);
+      const initial =
+        options.confirmedTarget ??
+        (yield* inspectWorkspaceTarget(path, options.cwd));
+      if (options.expectedTarget) {
+        const expected = yield* canonicalSessionTarget(options.expectedTarget);
+        if (JSON.stringify(expected) !== JSON.stringify(initial.target))
+          return yield* commandError(
+            "worktree_error",
+            "Selected Workspace changed; confirm the action again",
+          );
+      }
+      if (options.expectedSession !== undefined) {
+        const expected = options.expectedSession;
+        const actual = initial.session;
+        if (
+          (expected === null) !== (actual === null) ||
+          (expected &&
+            actual &&
+            (expected.name !== actual.name ||
+              expected.id !== actual.id ||
+              expected.server !== actual.server))
+        )
+          return yield* commandError(
+            "tmux_error",
+            "Confirmed Workspace Session changed; confirm the action again",
+          );
+      }
+      if (resolve(path) !== resolve(initial.target.worktreePath)) {
+        // A caller in a subdirectory is resolved to the retained checkout below.
+        const root = yield* WorktreeService.use((service) =>
+          service.getWorktreeRoot(path),
+        );
+        const canonical = yield* canonicalSessionTarget({
+          ...initial.target,
+          worktreePath: root,
+        });
+        if (canonical.worktreePath !== initial.target.worktreePath)
+          return yield* commandError(
+            "worktree_error",
+            "Confirmed Workspace path changed; confirm the action again",
+          );
+      }
+      const lease = yield* acquireWorkspace(
+        { ...initial.target, branch: initial.coordinationBranch },
+        operation,
+        options.reporter,
+      );
+      return yield* Effect.gen(function* () {
+        const current = yield* assertWorkspaceTarget(initial);
+        if (options.confirmation)
+          yield* assertWorkspaceConfirmation(options.confirmation, current);
+        return yield* run(current, path);
+      }).pipe(Effect.provideService(CurrentWorkspaceLease, lease));
+    }),
+  );
+}
+
+function coordinatedOpen(options: WorkspaceOpenOptions) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      if (options.pr && options.branch)
+        return yield* commandError(
+          "invalid_options",
+          "Cannot use --pr together with a branch argument",
+        );
+      if (options.pr && options.base)
+        return yield* commandError(
+          "invalid_options",
+          "Cannot use --pr together with --base",
+        );
+      if (options.pr && options.existing)
+        return yield* commandError(
+          "invalid_options",
+          "Cannot use --pr together with --existing",
+        );
+      // PR lookup is read-only. Fetching and adding a fork remote happen under custody.
+      let branch = options.branch;
+      if (options.pr) {
+        const number = parsePrArg(options.pr);
+        if (number === null)
+          return yield* commandError(
+            "pr_error",
+            `Invalid --pr value: '${options.pr}'`,
+          );
+        const installed = yield* GitHubService.use(
+          (service) => service.isGhInstalled,
+        );
+        if (!installed)
+          return yield* commandError(
+            "gh_not_installed",
+            "GitHub CLI (gh) is not installed.\n\nInstall it from https://cli.github.com/ and run 'gh auth login'",
+          );
+        branch = (yield* GitHubService.use((service) =>
+          service.resolvePr(number, options.cwd),
+        )).branch;
+      }
+      if (!branch)
+        return yield* commandError("missing_branch_arg", "Missing branch name");
+      const main = yield* WorktreeService.use((service) =>
+        service.getMainRepoPath(options.cwd),
+      );
+      if (!main)
+        return yield* commandError("not_git_repo", "Not a git repository");
+      const target = yield* canonicalSessionTarget({
+        mainRepoPath: main,
+        branch,
+        worktreePath: main,
+      });
+      const lease = yield* acquireWorkspace(target, "open", options.reporter);
+      // Preserve the invoking checkout's HEAD when no base was supplied.
+      const currentMain = yield* WorktreeService.use((service) =>
+        service.getMainRepoPath(options.cwd),
+      );
+      if (
+        !currentMain ||
+        (yield* canonicalSessionTarget({
+          ...target,
+          mainRepoPath: currentMain,
+        })).mainRepoPath !== target.mainRepoPath
+      )
+        return yield* commandError(
+          "worktree_error",
+          "Main Repository changed while waiting; retry Open",
+        );
+      return yield* openImpl(options, branch).pipe(
+        Effect.provideService(CurrentWorkspaceLease, lease),
+      );
+    }),
+  );
+}
+
+function coordinatedRemoval(
+  previous: WorkspaceCloseResult,
+  options: { cwd?: string; reporter?: WorkspaceReporter } = {},
+) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const target = previous.removalTarget;
+      if (!target)
+        return yield* commandError(
+          "invalid_options",
+          "Removal retry requires retained canonical target evidence; inspect and confirm Close again",
+        );
+      const lease = yield* acquireWorkspace(
+        { ...target.target, branch: target.coordinationBranch },
+        "close",
+        options.reporter,
+      );
+      return yield* Effect.gen(function* () {
+        yield* assertWorkspaceTarget(target, { removalOnly: true });
+        return yield* retryCloseRemovalImpl(previous, {
+          ...options,
+          cwd: options.cwd ?? target.target.mainRepoPath,
+        });
+      }).pipe(Effect.provideService(CurrentWorkspaceLease, lease));
+    }),
+  );
+}
+
 type WorkspaceServiceDependencies =
   | BunServices.BunServices
   | WorktreeServiceApi
   | TmuxServiceApi
   | SetupServiceApi
   | GitHubServiceApi
-  | PrCacheServiceApi;
+  | PrCacheServiceApi
+  | WorkspaceCoordinationServiceApi;
 
 export type WorkspaceServiceImplementation = ServiceImplementation<
   WorkspaceService,
@@ -1517,11 +1775,33 @@ export type WorkspaceServiceImplementation = ServiceImplementation<
 >;
 
 export const liveWorkspaceService: WorkspaceServiceImplementation = {
-  open: openImpl,
-  up: upImpl,
-  down: downImpl,
-  close: closeImpl,
-  retryCloseRemoval: retryCloseRemovalImpl,
+  open: coordinatedOpen,
+  up: (options = {}) =>
+    coordinatedTarget("up", options, (_target, path) =>
+      upImpl({
+        ...options,
+        path,
+        branch: undefined,
+      }),
+    ),
+  down: (options = {}) =>
+    coordinatedTarget("down", options, (_target, path) =>
+      downImpl({
+        ...options,
+        path,
+        branch: undefined,
+      }),
+    ),
+  close: (options = {}) =>
+    coordinatedTarget("close", options, (target, path) =>
+      closeImpl({
+        ...options,
+        path,
+        branch: undefined,
+        cwd: options.cwd ?? target.target.mainRepoPath,
+      }),
+    ),
+  retryCloseRemoval: coordinatedRemoval,
 };
 
 export function makeWorkspaceService(
@@ -1537,6 +1817,7 @@ export function makeWorkspaceService(
         SetupService,
         GitHubService,
         PrCacheService,
+        WorkspaceCoordinationService,
       )(context),
     ),
   );

@@ -155,6 +155,32 @@ The host-local target is implicitly this host plus canonical repository/branch;
 a future protocol can wrap it in the host-qualified fence without changing
 these semantics. Runtime and host validation belong at that protocol boundary.
 
+## Lifecycle and shutdown adapters
+
+The Workspace service acquires once around each complete operation. Best-effort
+PR identity observation and association caching run outside command supervision
+while the operation still holds custody: a read-only observation timeout does not
+make setup/down completion uncertain. Tmux ownership queries remain sequential
+while a lifecycle lease is present; ordinary observation retains bounded parallelism.
+Preflight
+inspection is read-only, including legacy session resolution; after ownership,
+identity, checkout/registration generation, configuration and confirmed session
+targets are revalidated. Removal-only retries carry immutable target evidence
+rather than rediscovering a possibly replaced checkout as a new authority.
+
+The shutdown adapter composes progress/results over the same Bun IPC channel as
+the dedicated custody protocol. Ready/Start/Adopted remains the sole execution
+authority; the old independent Start message is unnecessary. The adopted worker
+provides CurrentWorkspaceLease around cleanup and durable result publication.
+This keeps caller loss and lost adoption ACKs within the existing crash table.
+
+Git's ref, pack and per-worktree protection does not serialize multi-command
+local config intent and repair transactions. A separate repository lock covers
+worktree add/remove and fork-remote/config transactions only. Lock ordering is
+Workspace then repository; no repository lock spans scripts, prompts or handoff
+waits. Fetch keeps Git's native protection rather than holding this lock across
+network work.
+
 ## Evidence and limitations
 
 The separate-process suite exercises actual Bun descriptor inheritance and

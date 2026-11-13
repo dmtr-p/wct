@@ -42,6 +42,8 @@ export function transferWorkspaceToWorker(
     cwd?: string;
     env?: Record<string, string | undefined>;
     beforeStart?: Effect.Effect<void, WctError>;
+    onMessage?: (message: unknown) => void;
+    onExit?: () => void;
   } = {},
 ) {
   return Effect.uninterruptibleMask((restore) =>
@@ -90,6 +92,7 @@ export function transferWorkspaceToWorker(
                   message.nonce === offer.ticket.nonce
                 )
                   adopted.resolve();
+                else options.onMessage?.(message);
               },
               onExit: () => {
                 const error = handoffError(
@@ -98,6 +101,7 @@ export function transferWorkspaceToWorker(
                 listening.reject(error);
                 ready.reject(error);
                 adopted.reject(error);
+                options.onExit?.();
               },
             }),
           catch: (error) =>

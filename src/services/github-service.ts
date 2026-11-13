@@ -7,6 +7,7 @@ import {
 import { commandError, toWctError, type WctError } from "../errors";
 import { graphQlAliasError, queryGitHub } from "./github-graphql";
 import { execProcess, getProcessErrorMessage, runProcess } from "./process";
+import { withRepositoryMutation } from "./repository-mutation";
 
 const GITHUB_PR_URL_PATTERN =
   /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)\/?$/;
@@ -394,47 +395,50 @@ export const liveGitHubService: GitHubServiceImplementation = {
             ),
     ),
   addForkRemote: (remoteName, owner, repo, cwd) =>
-    Effect.gen(function* () {
-      const url = yield* detectRemoteUrl(owner, repo, cwd);
+    withRepositoryMutation(
+      cwd,
+      Effect.gen(function* () {
+        const url = yield* detectRemoteUrl(owner, repo, cwd);
 
-      const existingRemote = yield* Effect.orElseSucceed(
-        execProcess(
-          "git",
-          ["remote", "get-url", remoteName],
-          cwd ? { cwd } : undefined,
-        ).pipe(Effect.map((result) => result.stdout.trim())),
-        () => null,
-      );
+        const existingRemote = yield* Effect.orElseSucceed(
+          execProcess(
+            "git",
+            ["remote", "get-url", remoteName],
+            cwd ? { cwd } : undefined,
+          ).pipe(Effect.map((result) => result.stdout.trim())),
+          () => null,
+        );
 
-      if (existingRemote !== null) {
-        const sshUrl = `git@github.com:${owner}/${repo}.git`;
-        const httpsUrl = `https://github.com/${owner}/${repo}.git`;
-        if (existingRemote === sshUrl || existingRemote === httpsUrl) {
-          return;
+        if (existingRemote !== null) {
+          const sshUrl = `git@github.com:${owner}/${repo}.git`;
+          const httpsUrl = `https://github.com/${owner}/${repo}.git`;
+          if (existingRemote === sshUrl || existingRemote === httpsUrl) {
+            return;
+          }
+
+          return yield* commandError(
+            "pr_error",
+            `Failed to add remote '${remoteName}': Remote '${remoteName}' already exists with URL '${existingRemote}' (expected ${url})`,
+          );
         }
 
-        return yield* commandError(
-          "pr_error",
-          `Failed to add remote '${remoteName}': Remote '${remoteName}' already exists with URL '${existingRemote}' (expected ${url})`,
+        yield* Effect.mapError(
+          execProcess(
+            "git",
+            ["remote", "add", remoteName, url],
+            cwd ? { cwd } : undefined,
+          ),
+          (error) =>
+            error instanceof Error && "code" in error
+              ? toWctError(error)
+              : commandError(
+                  "pr_error",
+                  `Failed to add remote '${remoteName}': ${extractShellError(error)}`,
+                  error,
+                ),
         );
-      }
-
-      yield* Effect.mapError(
-        execProcess(
-          "git",
-          ["remote", "add", remoteName, url],
-          cwd ? { cwd } : undefined,
-        ),
-        (error) =>
-          error instanceof Error && "code" in error
-            ? toWctError(error)
-            : commandError(
-                "pr_error",
-                `Failed to add remote '${remoteName}': ${extractShellError(error)}`,
-                error,
-              ),
-      );
-    }),
+      }),
+    ),
   fetchBranch: (branch, remote = "origin", cwd) =>
     Effect.mapError(
       execProcess(

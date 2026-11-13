@@ -22,6 +22,7 @@ import {
   type SetupService,
 } from "../src/services/setup-service";
 import type { TmuxService } from "../src/services/tmux";
+import { CurrentWorkspaceLease } from "../src/services/workspace-coordination";
 import {
   liveWorkspaceService,
   type WorkspaceOpenResult,
@@ -124,7 +125,7 @@ describe("WorkspaceService target resolution", () => {
     expect(current.worktreePath).toBe("/tmp/current-worktree");
     expect(explicit.worktreePath).toBe("/tmp/explicit-worktree");
     expect(branch.worktreePath).toBe("/tmp/feature-worktree");
-    expect(seenPaths).toEqual([
+    expect([...new Set(seenPaths)]).toEqual([
       "/tmp/current-worktree",
       "/tmp/explicit-worktree",
       "/tmp/feature-worktree",
@@ -229,6 +230,60 @@ describe("WorkspaceService open", () => {
       ...overrides,
     };
   }
+
+  test.each(["setup", "tmux"] as const)(
+    "keeps uncertain %s fatal through warning adapters",
+    async (step) => {
+      await writeConfig(
+        repoDir,
+        `setup:\n  - name: optional setup\n    optional: true\n    command: "true"\n`,
+      );
+      const uncertain = commandError(
+        "workspace_coordination_error",
+        "Uncertain operation op-339, generation gen-339; reconcile explicitly",
+      );
+      const wrapped = commandError(
+        step === "tmux" ? "tmux_error" : "worktree_error",
+        "adapter context",
+        uncertain,
+      );
+      expect(wrapped).toBe(uncertain);
+      const tmuxStart = vi.fn(() =>
+        step === "tmux"
+          ? Effect.fail(wrapped)
+          : Effect.succeed({
+              _tag: "Created" as const,
+              sessionName: "session",
+            }),
+      );
+      await expect(
+        runBunPromise(
+          withTestServices(
+            WorkspaceService.use((service) =>
+              service.open({ branch: "uncertain", cwd: repoDir }),
+            ),
+            {
+              worktree: makeWorktreeService(),
+              setup: {
+                ...liveSetupService,
+                runSetupCommands: () =>
+                  step === "setup"
+                    ? Effect.fail(wrapped)
+                    : Effect.succeed([
+                        { _tag: "Succeeded" as const, name: "optional setup" },
+                      ]),
+              },
+              tmux: { ...noopTmuxService, createSession: tmuxStart },
+            },
+          ),
+        ),
+      ).rejects.toMatchObject({
+        code: "workspace_coordination_error",
+        message: uncertain.message,
+      });
+      expect(tmuxStart).toHaveBeenCalledTimes(step === "tmux" ? 1 : 0);
+    },
+  );
 
   test("opens a branch workspace with base-config path", async () => {
     await writeConfig(
@@ -648,6 +703,7 @@ describe("WorkspaceService open", () => {
     expect(result.branch).toBe("existing-local");
     expect(calls).toEqual([
       "resolve:42",
+      "resolve:42",
       "fetch:alice-fork/existing-local",
       "exists:existing-local",
       "create:existing-local:true:none",
@@ -722,9 +778,12 @@ setup:
           }),
         fetchBranch: () => Effect.void,
         resolveBaseRepo: () =>
-          failedStep === "repository lookup"
-            ? Effect.fail(commandError("pr_error", "lookup failed"))
-            : Effect.succeed("acme/wct"),
+          Effect.gen(function* () {
+            expect(yield* CurrentWorkspaceLease).toBeUndefined();
+            if (failedStep === "repository lookup")
+              return yield* commandError("pr_error", "lookup failed");
+            return "acme/wct";
+          }),
       };
       const prCache: PrCacheServiceApi = {
         ...livePrCacheService,
@@ -1309,7 +1368,7 @@ describe("WorkspaceService close", () => {
       ok: true,
       value: { _tag: "Removed", path: "/tmp/myapp-explicit" },
     });
-    expect(seenPaths).toEqual(["/tmp/myapp-explicit"]);
+    expect([...new Set(seenPaths)]).toEqual(["/tmp/myapp-explicit"]);
   });
 
   test("kill failure is fatal and prevents removal", async () => {

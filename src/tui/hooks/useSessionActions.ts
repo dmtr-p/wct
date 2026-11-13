@@ -15,6 +15,10 @@ import {
   type WorkspaceUpResult,
 } from "../../services/workspace-service";
 import {
+  captureWorkspaceConfirmation,
+  type WorkspaceConfirmation,
+} from "../../services/workspace-target";
+import {
   closeRetentionMessage,
   type LifecycleClaims,
   type LifecycleState,
@@ -266,6 +270,7 @@ export function createExecuteDown(deps: SessionActionDeps) {
     worktreePath: string,
     repoPath: string,
     project: string,
+    confirmation?: WorkspaceConfirmation,
   ) => {
     deps.clearActionError();
 
@@ -299,7 +304,11 @@ export function createExecuteDown(deps: SessionActionDeps) {
 
         return tuiRuntime.runPromise(
           WorkspaceService.use((service) =>
-            service.down({ path: worktreePath, reporter }),
+            service.down({
+              path: worktreePath,
+              reporter,
+              ...(confirmation ? { confirmation } : {}),
+            }),
           ),
         );
       },
@@ -337,18 +346,29 @@ export function createHandleCloseWorktree(deps: SessionActionDeps) {
       : deps.mode.type === "Expanded"
         ? Mode.Expanded(workspaceKey)
         : Mode.Navigate;
-    deps.setMode(
-      Mode.ConfirmClose(
-        sessionName,
-        wt.branch,
-        wt.path,
-        workspaceKey,
-        repo.repoPath,
-        repo.project,
-        wt.changedFiles,
-        agentItemId,
-      ),
+    const mode = Mode.ConfirmClose(
+      sessionName,
+      wt.branch,
+      wt.path,
+      workspaceKey,
+      repo.repoPath,
+      repo.project,
+      wt.changedFiles,
+      agentItemId,
     );
+    try {
+      if (mode.type === "ConfirmClose")
+        mode.confirmation = captureWorkspaceConfirmation(
+          workspaceSessionTarget(repo.repoPath, wt),
+          findWorkspaceSession(
+            deps.sessions,
+            workspaceSessionTarget(repo.repoPath, wt),
+          ) ?? null,
+        );
+      deps.setMode(mode);
+    } catch (error) {
+      deps.showActionError(toWctError(error).message);
+    }
   };
 }
 
@@ -364,6 +384,8 @@ export function createExecuteClose(deps: SessionActionDeps) {
     project: string,
     force: boolean,
     agentItemId?: string,
+    previousClose?: WorkspaceCloseResult,
+    confirmation?: WorkspaceConfirmation,
   ) => {
     deps.clearActionError();
     const restoredMode = deps.confirmCloseReturnModeRef.current;
@@ -399,11 +421,24 @@ export function createExecuteClose(deps: SessionActionDeps) {
 
         return tuiRuntime.runPromise(
           WorkspaceService.use((service) =>
-            service.close(
-              force
-                ? { path: worktreePath, cwd: repoPath, force, reporter }
-                : { path: worktreePath, cwd: repoPath, reporter },
-            ),
+            previousClose
+              ? service.retryCloseRemoval(previousClose, { reporter })
+              : service.close(
+                  force
+                    ? {
+                        path: worktreePath,
+                        cwd: repoPath,
+                        force,
+                        reporter,
+                        ...(confirmation ? { confirmation } : {}),
+                      }
+                    : {
+                        path: worktreePath,
+                        cwd: repoPath,
+                        reporter,
+                        ...(confirmation ? { confirmation } : {}),
+                      },
+                ),
           ),
         );
       },
@@ -430,6 +465,8 @@ export function createExecuteClose(deps: SessionActionDeps) {
           project,
           agentItemId,
         );
+        if (forceMode.type === "ConfirmCloseForce")
+          forceMode.previousClose = result;
         // Quit can arrive before React commits the deferred confirmation.
         deps.modeRef.current = forceMode;
         deps.setMode(forceMode);
@@ -463,16 +500,27 @@ export function createHandleDownSelectedWorktree(deps: SessionActionDeps) {
       deps.mode.type === "Expanded"
         ? Mode.Expanded(workspaceKey)
         : Mode.Navigate;
-    deps.setMode(
-      Mode.ConfirmDown({
-        sessionName,
-        branch: wt.branch,
-        worktreePath: wt.path,
-        workspaceKey,
-        repoPath: repo.repoPath,
-        project: repo.project,
-      }),
-    );
+    const mode = Mode.ConfirmDown({
+      sessionName,
+      branch: wt.branch,
+      worktreePath: wt.path,
+      workspaceKey,
+      repoPath: repo.repoPath,
+      project: repo.project,
+    });
+    try {
+      if (mode.type === "ConfirmDown")
+        mode.confirmation = captureWorkspaceConfirmation(
+          workspaceSessionTarget(repo.repoPath, wt),
+          findWorkspaceSession(
+            deps.sessions,
+            workspaceSessionTarget(repo.repoPath, wt),
+          ) ?? null,
+        );
+      deps.setMode(mode);
+    } catch (error) {
+      deps.showActionError(toWctError(error).message);
+    }
   };
 }
 

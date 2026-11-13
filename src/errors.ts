@@ -37,6 +37,12 @@ export function commandError(
   details: string,
   cause?: unknown,
 ): WctCommandError {
+  // Custody failures must remain fatal through subsystem warning adapters.
+  if (
+    cause instanceof WctCommandError &&
+    cause.code === "workspace_coordination_error"
+  )
+    return cause;
   return new WctCommandError({ code, details, cause });
 }
 

@@ -3,6 +3,58 @@
 CLI commands and TUI actions share Workspace lifecycle services. See the
 [domain glossary](../CONTEXT.md#workspace-operation) for Workspace terminology.
 
+## Cross-process ownership and recovery
+
+Open, Start, Stop, Close and removal-only retries acquire host-local custody for
+the canonical Main Repository and exact branch. The operation keeps that lease
+across copying, all commands, tmux changes and removal until it finishes or
+transfers custody to the shutdown worker. Independent Workspaces can progress
+concurrently. In-process TUI duplicate-action claims remain in effect.
+
+A conflicting caller displays a waiting phase. Ctrl-C cancels a CLI wait;
+Escape on the selected TUI Workspace cancels its wait and restores its lifecycle
+presentation. Quitting the TUI cancels waiting actions while active mutations
+drain. Cancellation never interrupts the existing owner. JSON diagnostics go to
+stderr and stdout retains the ordinary result envelope. After acquisition,
+the service rechecks canonical identity, checkout and Git registration evidence,
+configuration and the verified session generation. A changed destructive target
+requires a fresh confirmation. Direct CLI scripts retain the invoking environment.
+
+Acknowledged command completion permits intentional background workloads to
+continue, while the operation still holds custody between commands. Known exits
+retain the setup/down failure policy below. Interrupted or uncertain completion,
+including an optional command, stops later mutations and leaves durable fencing.
+An ambiguous crash cannot be cleared by a timeout, PID check or free kernel lock.
+
+Inspect custody from the owning machine and user account, even when the checkout
+is missing:
+
+```sh
+wct operations inspect feature --repo /path/to/main-repository
+wct operations inspect feature --repo /path/to/main-repository --json
+```
+
+Inspection reports `available`, `busy` or `outcome-unknown`, the canonical target,
+and the exact operation ID and ownership generation when reserved. For an unknown
+outcome, inspect potentially surviving work and side effects before explicitly
+releasing that exact reservation:
+
+```sh
+wct operations reconcile feature --repo /path/to/main-repository \
+  --operation OPERATION_ID --generation GENERATION \
+  --acknowledge-uncertain-side-effects --reason 'Inspected surviving work and side effects'
+```
+
+Reconciliation uses the coordination service's compare-and-swap, rejects live or
+newer ownership, records the inspection reason and never executes scripts. Never
+delete lock files or journals. See [Workspace coordination](workspace-coordination.md)
+for durability and platform limits.
+
+Shared Git configuration transactions, worktree creation and removal use a
+repository mutation lock, always after Workspace custody when part of a lifecycle.
+Only the Git operation holds it; scripts, prompts and worker handoff waits do not.
+Fetch uses Git's own ref/pack locks and reports competing Git failures normally.
+
 ## Open
 
 `base_branch` supplies the starting ref for new branches when `wct open` has no
@@ -178,10 +230,19 @@ A project or profile `down` list replaces its inherited list; `down: []` disable
 inherited scripts. Scripts run again on separate down/close calls, so make
 cleanup safe to repeat. The CLI's internal force-removal retry skips scripts
 already run by that close action. Removal retries resolve the main repository
-from the worktree root because cleanup scripts may delete the invoking directory.
+from retained canonical evidence because cleanup scripts may delete the invoking
+directory. TUI force-removal retries also retain the blocked Close result and
+skip completed scripts. Retries reacquire custody and reject replaced checkout,
+registration, configuration or session targets; they cannot bypass crash fencing.
 If a registered worktree directory has already been deleted, close skips scripts
 and cleans up the Git registration.
 
 The detached worker uses configuration and environment resolved before handoff.
 Its saved outcome is staged outside the checkout even when a project-local
 temporary directory or symlink points into it.
+
+The worker adopts inherited descriptor-4 custody using Ready/Start/Adopted before
+mutating and provides its adopted lease to process execution. It never reacquires
+its own lock. Progress and result messages share IPC with the dedicated custody
+protocol. The worker retains ownership through durable outcome publication;
+loss of an adoption acknowledgement after Start cannot restore caller authority.

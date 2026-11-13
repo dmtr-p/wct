@@ -1,6 +1,6 @@
 import { connect } from "node:net";
 import { expect, vi } from "vitest";
-import { encodeFrame, policy } from "../src/browser/protocol";
+import { decodeFrame, encodeFrame, policy } from "../src/browser/protocol";
 import { browserEndpoint } from "./helpers/browser-endpoint";
 import { test } from "./helpers/temp-dir";
 
@@ -494,10 +494,13 @@ test("real buffered Bun PTY drain replenishes conservative credit without resend
     pid = e.pids.get(a.ref.attachmentId);
     if (!pid) throw new Error("Missing child");
     let output = "";
+    const decoder = new TextDecoder();
     ws.onmessage = (event) => {
-      output += new TextDecoder().decode(
+      const { header, bytes } = decodeFrame(
         new Uint8Array(event.data as ArrayBuffer),
       );
+      if (header.kind === "output")
+        output += decoder.decode(bytes, { stream: true });
     };
     process.kill(pid, "SIGSTOP");
     const bytes = new Uint8Array(60 * 1024);

@@ -93,6 +93,10 @@ test.each(["success", "failure", "defect", "mixed"])(
         emit({ _tag: "Event", event: phase });
         emit({ _tag: "Event", event: killed });
         emit({ _tag: "Completed", outcome: { ok: true, data: result } });
+        queueMicrotask(() => {
+          const options = spawn.mock.calls[0]?.[1];
+          void options?.onExit?.(child, 0, null, undefined);
+        });
       },
       kill: vi.fn(),
     } as unknown as ReturnType<typeof Bun.spawn>;

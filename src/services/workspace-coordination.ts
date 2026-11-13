@@ -125,6 +125,10 @@ export const CurrentWorkspaceLease = Context.Reference<
   WorkspaceLease | undefined
 >("wct/CurrentWorkspaceLease", { defaultValue: () => undefined });
 
+export const CurrentRepositoryLease = Context.Reference<
+  WorkspaceLease | undefined
+>("wct/CurrentRepositoryLease", { defaultValue: () => undefined });
+
 function coordinationError(details: string, cause?: unknown): WctError {
   return commandError("workspace_coordination_error", details, cause);
 }

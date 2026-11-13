@@ -881,7 +881,17 @@ export function App({
     // async work settles. Leaving now would make the action look cancelled
     // while it continues in the background, and its completion could later
     // overwrite whatever mode or selection the user moved to.
-    if (confirmPendingRef.current) return;
+    if (confirmPendingRef.current) {
+      if (mode.type === "ConfirmRemoveProject") {
+        const waiting = [...lifecycle.values()].find(
+          (entry) =>
+            entry.repoPath === mode.repoPath && entry.phase._tag === "Waiting",
+        );
+        if (waiting)
+          lifecycleClaims.cancelWait?.(waiting.repoPath, waiting.branch);
+      }
+      return;
+    }
     returnFromConfirmation(mode);
   }
 

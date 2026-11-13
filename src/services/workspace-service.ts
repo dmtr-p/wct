@@ -1244,6 +1244,7 @@ export function executeWorkspaceShutdown(
       request.force ?? false,
       request.cwd,
       reporter,
+      removalTarget,
     );
     if (removeResult._tag === "BlockedByChanges" && request.retryWithForce) {
       removeResult = yield* removeWorkspace(
@@ -1251,6 +1252,7 @@ export function executeWorkspaceShutdown(
         true,
         request.cwd,
         reporter,
+        removalTarget,
       );
     }
     return {
@@ -1392,6 +1394,7 @@ function removeWorkspace(
   force: boolean,
   cwd?: string,
   reporter?: WorkspaceReporter,
+  target?: WorkspaceTargetEvidence,
 ) {
   return Effect.gen(function* () {
     yield* emitPhase(reporter, "close", { _tag: "RemovingWorktree" });
@@ -1400,8 +1403,21 @@ function removeWorkspace(
       _tag: "AttemptStarted",
       attempt: "worktree",
     });
+    const context = yield* Effect.context<
+      WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
+    >();
     return yield* WorktreeService.use((service) =>
-      service.removeWorktree(worktreePath, force, cwd),
+      service.removeWorktree(
+        worktreePath,
+        force,
+        cwd,
+        target
+          ? assertWorkspaceTarget(target, {
+              removalOnly: true,
+              afterScripts: true,
+            }).pipe(Effect.asVoid, Effect.provideContext(context))
+          : undefined,
+      ),
     );
   });
 }
@@ -1412,7 +1428,7 @@ function retryCloseRemovalImpl(
 ): Effect.Effect<
   WorkspaceCloseResult,
   WctError,
-  WorktreeServiceApi | BunServices.BunServices
+  WorktreeServiceApi | TmuxServiceApi | BunServices.BunServices
 > {
   return Effect.gen(function* () {
     if (
@@ -1438,6 +1454,7 @@ function retryCloseRemovalImpl(
       true,
       cwd,
       options.reporter,
+      previous.removalTarget,
     );
     return {
       ...previous,
@@ -1652,7 +1669,7 @@ function coordinatedTarget<A, E, R>(
         const current = yield* assertWorkspaceTarget(initial);
         if (options.confirmation)
           yield* assertWorkspaceConfirmation(options.confirmation, current);
-        return yield* run(current, path);
+        return yield* run(current, current.target.worktreePath);
       }).pipe(Effect.provideService(CurrentWorkspaceLease, lease));
     }),
   );

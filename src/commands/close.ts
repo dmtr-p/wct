@@ -186,6 +186,7 @@ export function closeCommand(
         service.close({
           path: worktreePath,
           confirmedTarget,
+          expectedTarget: target,
           force,
           ...(yes && !force ? { retryWithForce: true } : {}),
           ...(options.profile !== undefined

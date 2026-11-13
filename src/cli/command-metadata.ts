@@ -166,6 +166,29 @@ export const operationDefinitions = {
   },
 } satisfies Record<string, CommandDefinition>;
 
+export const repositoryOperationDefinitions = {
+  inspect: {
+    name: "inspect-repository",
+    description:
+      "Inspect repository mutation custody and uncertain Git outcomes",
+    parameters: { repo: operationRepo },
+  },
+  reconcile: {
+    name: "reconcile-repository",
+    description:
+      "Release exact uncertain repository mutation custody after inspection",
+    parameters: {
+      repo: operationRepo,
+      operation: operationDefinitions.reconcile.parameters.operation,
+      generation: operationDefinitions.reconcile.parameters.generation,
+      acknowledgeUncertainSideEffects:
+        operationDefinitions.reconcile.parameters
+          .acknowledgeUncertainSideEffects,
+      reason: operationDefinitions.reconcile.parameters.reason,
+    },
+  },
+} satisfies Record<string, CommandDefinition>;
+
 export const commandDefinitions = {
   cd: {
     name: "cd",
@@ -228,7 +251,10 @@ export const commandDefinitions = {
     description:
       "Inspect and explicitly reconcile owner-local Workspace operations",
     parameters: {},
-    subcommands: Object.values(operationDefinitions),
+    subcommands: [
+      ...Object.values(operationDefinitions),
+      ...Object.values(repositoryOperationDefinitions),
+    ],
   },
   projects: {
     name: "projects",

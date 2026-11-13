@@ -78,13 +78,24 @@ export function AgentsView({
   const waiting = [...(lifecycle?.values() ?? [])].filter(
     (entry) => entry.phase._tag === "Waiting",
   );
-  const agentViewportRows = Math.max(0, viewportRows - waiting.length);
+  const maxQuestionRows = Math.max(1, viewportRows - 4);
+  const reservedConfirmationRows = confirmation
+    ? confirmModalRowCount(
+        confirmation.mode,
+        confirmation.width,
+        maxQuestionRows,
+      )
+    : 0;
+  const shownWaiting = waiting.slice(
+    0,
+    Math.max(0, viewportRows - reservedConfirmationRows),
+  );
+  const agentViewportRows = Math.max(0, viewportRows - shownWaiting.length);
   const { items, rows: baseRows } = useMemo(
     () => buildAgentList(repos, agents, panes),
     [repos, agents, panes],
   );
   // Reserve the modal's borders, spacer, and action row before wrapping copy.
-  const maxQuestionRows = Math.max(1, viewportRows - 4);
   const rows = useMemo(() => {
     if (!confirmation) return baseRows;
     const targetIndex = items.findIndex(
@@ -125,7 +136,7 @@ export function AgentsView({
     : undefined;
   const cancellationTarget =
     selectedWait?.phase._tag === "Waiting" ? selectedWait : waiting[0];
-  const waitRows = waiting.slice(0, viewportRows).map((entry) => (
+  const waitRows = shownWaiting.map((entry) => (
     <Text
       key={workspaceIdentityKey(entry.repoPath, entry.branch)}
       color="yellow"

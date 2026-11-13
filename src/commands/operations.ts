@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import { JsonFlag } from "../cli/json-flag";
 import { commandError } from "../errors";
+import {
+  makeRepositoryCoordinationService,
+  repositoryMutationTarget,
+} from "../services/repository-mutation";
 import { canonicalSessionPath } from "../services/session-identity";
 import { WorkspaceCoordinationService } from "../services/workspace-coordination";
 import { WorktreeService } from "../services/worktree-service";
@@ -42,15 +46,21 @@ function resolveOperationTarget(options: OperationTargetOptions) {
   });
 }
 
-export function inspectOperationCommand(options: OperationTargetOptions) {
+export function inspectOperationCommand(
+  options: OperationTargetOptions,
+  repository = false,
+) {
   return Effect.gen(function* () {
-    const target = yield* resolveOperationTarget(options);
-    const status = yield* WorkspaceCoordinationService.use((service) =>
-      service.inspect(target),
-    );
+    const target = yield* repository
+      ? repositoryMutationTarget(options.repo)
+      : resolveOperationTarget(options);
+    const coordination = yield* repository
+      ? makeRepositoryCoordinationService()
+      : WorkspaceCoordinationService;
+    const status = yield* coordination.inspect(target);
     if (yield* JsonFlag) return yield* jsonSuccess({ target, ...status });
     yield* logger.info(
-      `Workspace '${target.branch}' in '${target.mainRepoPath}': ${status.status}`,
+      `${repository ? "Repository mutation" : `Workspace '${target.branch}'`} in '${target.mainRepoPath}': ${status.status}`,
     );
     if (status.status !== "available" && status.reservation) {
       const owner = status.reservation;
@@ -60,12 +70,15 @@ export function inspectOperationCommand(options: OperationTargetOptions) {
     }
     if (status.status === "outcome-unknown")
       yield* logger.info(
-        "Inspect potentially surviving setup/down work, then use wct operations reconcile with --operation, --generation, --acknowledge-uncertain-side-effects and --reason. Reconciliation never replays scripts.",
+        `Inspect potentially surviving ${repository ? "Git mutations and partial config/worktree intent" : "setup/down work"}, then use wct operations ${repository ? "reconcile-repository" : "reconcile"} with --operation, --generation, --acknowledge-uncertain-side-effects and --reason. Reconciliation never replays commands.`,
       );
   });
 }
 
-export function reconcileOperationCommand(options: ReconcileOptions) {
+export function reconcileOperationCommand(
+  options: ReconcileOptions,
+  repository = false,
+) {
   return Effect.gen(function* () {
     if (
       !options.operation?.trim() ||
@@ -78,20 +91,23 @@ export function reconcileOperationCommand(options: ReconcileOptions) {
         "Reconciliation requires --operation, --generation, --acknowledge-uncertain-side-effects and a nonempty --reason after inspection",
       );
     const reason = options.reason;
-    const target = yield* resolveOperationTarget(options);
+    const target = yield* repository
+      ? repositoryMutationTarget(options.repo)
+      : resolveOperationTarget(options);
+    const coordination = yield* repository
+      ? makeRepositoryCoordinationService()
+      : WorkspaceCoordinationService;
     const expectedOwnership = {
       operationId: options.operation,
       generation: options.generation,
     };
-    yield* WorkspaceCoordinationService.use((service) =>
-      service.reconcile(target, {
-        expectedOwnership,
-        acknowledgeUncertainSideEffects: true,
-        resolution: "release-after-inspection",
-        requestId: randomUUID(),
-        reason,
-      }),
-    );
+    yield* coordination.reconcile(target, {
+      expectedOwnership,
+      acknowledgeUncertainSideEffects: true,
+      resolution: "release-after-inspection",
+      requestId: randomUUID(),
+      reason,
+    });
     if (yield* JsonFlag)
       return yield* jsonSuccess({
         target,
@@ -99,7 +115,7 @@ export function reconcileOperationCommand(options: ReconcileOptions) {
         expectedOwnership,
       });
     yield* logger.success(
-      `Reconciled operation ${expectedOwnership.operationId}, generation ${expectedOwnership.generation}; Workspace '${target.branch}' is available`,
+      `Reconciled operation ${expectedOwnership.operationId}, generation ${expectedOwnership.generation}; ${repository ? `Repository mutation custody in '${target.mainRepoPath}'` : `Workspace '${target.branch}'`} is available`,
     );
   });
 }

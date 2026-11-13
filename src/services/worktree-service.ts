@@ -54,6 +54,7 @@ export interface WorktreeService {
     path: string,
     force?: boolean,
     cwd?: string,
+    revalidate?: Effect.Effect<void, WctError>,
   ) => Effect.Effect<RemoveWorktreeResult, WctError>;
   findWorktreeByBranch: (
     branch: string,
@@ -552,10 +553,11 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
       ["rev-parse", "--verify", branch],
       cwd ? { cwd } : undefined,
     ).pipe(Effect.map((result) => result.success)),
-  removeWorktree: (path, force = false, cwd) =>
+  removeWorktree: (path, force = false, cwd, revalidate) =>
     withRepositoryMutation(
       cwd,
       Effect.gen(function* () {
+        if (revalidate) yield* revalidate;
         const args = force
           ? ["worktree", "remove", "--force", path]
           : ["worktree", "remove", path];
@@ -574,7 +576,7 @@ export const liveWorktreeService: WorktreeServiceImplementation = {
         Effect.mapError((error) =>
           commandError(
             "worktree_remove_failed",
-            `Failed to remove worktree '${path}'`,
+            `Failed to remove worktree '${path}': ${getProcessErrorMessage(error)}`,
             error,
           ),
         ),

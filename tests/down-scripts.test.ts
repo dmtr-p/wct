@@ -443,7 +443,12 @@ describe("down scripts", () => {
     );
     expect(result.status).toBe("removed");
     expect(resolveMain).toHaveBeenLastCalledWith(worktreePath);
-    expect(remove).toHaveBeenLastCalledWith(worktreePath, true, main);
+    expect(remove).toHaveBeenLastCalledWith(
+      worktreePath,
+      true,
+      main,
+      expect.anything(),
+    );
     expect(result.attempts.down).toEqual(previous.attempts.down);
     expect(result.attempts.kill).toEqual(previous.attempts.kill);
     expect(result.existed).toBe(true);

@@ -44,3 +44,34 @@ expose this recovery boundary; see the
 
 See [ADR 0004](adr/0004-workspace-coordination.md) for fsync ordering, acknowledged
 background workloads, the crash table, platform requirements and limitations.
+
+## Repository mutation custody
+
+Shared Git mutation transactions reuse the same durable lock/journal protocol in
+`~/.wct-repository-coordination`, a separate namespace keyed by the canonical Git
+common directory. Workspace custody precedes repository custody. Only the Git
+critical section holds the repository lease; scripts, prompts, network fetches
+and worker handoff waits remain outside it.
+
+Process collection participates in both current leases. A known collected nonzero
+exit acknowledges both command boundaries before business-error handling. A crash,
+interruption or uncertain collection fences both scopes; a crash between commands
+also retains the repository reservation. No descriptor is delegated to arbitrary
+Git hooks, and parent-death signaling is not proof of descendant quiescence.
+
+Use `wct operations inspect-repository --repo <checkout-or-git-directory>` to see
+the common-directory target and exact operation/generation. After inspecting
+surviving Git work and partial config/worktree intent, explicitly release it with
+`wct operations reconcile-repository --repo <path> --operation <id>
+--generation <generation> --acknowledge-uncertain-side-effects --reason <reason>`.
+Human and JSON output use the same rules as Workspace recovery. Live/newer owners
+are refused. If both scopes are fenced, inspect and reconcile each exact scope;
+repository reconciliation never releases a Workspace reservation or replays Git.
+
+Git config/ref locks prevent torn individual writes but do not prove a partially
+completed transaction finished. After a crash, inspect remote URLs, worktree/branch
+registration and any branch-specific pending push-remote intent before retrying.
+Existing pending-intent repair remains available only after explicit recovery;
+reconciliation itself neither completes nor rolls back those writes. Unmanaged
+Git callers do not participate in this advisory protocol, so removal revalidates
+retained checkout/registration evidence after repository acquisition as well.

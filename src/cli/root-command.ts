@@ -24,6 +24,7 @@ import {
   commandMetadata,
   operationDefinitions,
   projectDefinitions,
+  repositoryOperationDefinitions,
 } from "./command-metadata";
 import { JsonFlag } from "./json-flag";
 
@@ -205,6 +206,37 @@ const operationsCliCommand = Command.make(defs.operations.name).pipe(
           acknowledgeUncertainSideEffects,
         }),
     ).pipe(commandMetadata(operationDefinitions.reconcile)),
+    Command.make(
+      repositoryOperationDefinitions.inspect.name,
+      commandConfig(repositoryOperationDefinitions.inspect),
+      ({ repo }) =>
+        inspectOperationCommand(
+          { branch: "repository-mutation", repo: optionToUndefined(repo) },
+          true,
+        ),
+    ).pipe(commandMetadata(repositoryOperationDefinitions.inspect)),
+    Command.make(
+      repositoryOperationDefinitions.reconcile.name,
+      commandConfig(repositoryOperationDefinitions.reconcile),
+      ({
+        repo,
+        operation,
+        generation,
+        reason,
+        acknowledgeUncertainSideEffects,
+      }) =>
+        reconcileOperationCommand(
+          {
+            branch: "repository-mutation",
+            repo: optionToUndefined(repo),
+            operation: optionToUndefined(operation),
+            generation: optionToUndefined(generation),
+            reason: optionToUndefined(reason),
+            acknowledgeUncertainSideEffects,
+          },
+          true,
+        ),
+    ).pipe(commandMetadata(repositoryOperationDefinitions.reconcile)),
   ]),
 );
 

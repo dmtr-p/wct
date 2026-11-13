@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { Effect } from "effect";
 import { getGlobalConfigPath, loadConfig } from "../config/loader";
 import { commandError } from "../errors";
+import { gitCommonDirectory } from "./git-directory";
 import {
   canonicalSessionTarget,
   type WorkspaceSession,
@@ -45,15 +46,23 @@ function registration(
   const git = join(path, ".git");
   const id = stamp(git);
   if (!id) {
-    const worktrees = join(mainRepoPath, ".git", "worktrees");
+    const worktrees = join(gitCommonDirectory(mainRepoPath), "worktrees");
     if (!stamp(worktrees)) return null;
     const matches = readdirSync(worktrees).flatMap((name) => {
       const directory = join(worktrees, name);
-      if (
-        resolve(readFileSync(join(directory, "gitdir"), "utf8").trim()) !==
-        join(path, ".git")
-      )
-        return [];
+      let pointer: string;
+      try {
+        pointer = readFileSync(join(directory, "gitdir"), "utf8");
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          return [];
+        throw error;
+      }
+      if (resolve(pointer.trim()) !== join(path, ".git")) return [];
       const generation = stamp(directory);
       return [{ entry: "missing", directory, generation }];
     });

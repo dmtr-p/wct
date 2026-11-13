@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { Effect } from "effect";
 import {
   afterEach,
@@ -54,7 +56,7 @@ interface CloseCommandSpies {
 
 function makeWorktree(branch: string) {
   return {
-    path: `/tmp/myapp-${branch}`,
+    path: `${realpathSync("/tmp")}/myapp-${branch}`,
     branch,
     commit: "abc123",
     isBare: false,
@@ -62,7 +64,7 @@ function makeWorktree(branch: string) {
 }
 
 function removedCloseResult(branch: string): WorkspaceCloseResult {
-  const worktreePath = `/tmp/myapp-${branch}`;
+  const worktreePath = `${realpathSync("/tmp")}/myapp-${branch}`;
   return {
     operation: "close",
     worktreePath,
@@ -92,7 +94,15 @@ function setupMocks(): CloseCommandSpies {
     ...noopTmuxService,
     getCurrentSession: Effect.succeed(null),
     resolveSession: (target: WorkspaceSessionTarget) =>
-      Effect.succeed(legacySession(target)),
+      Effect.succeed({
+        ...legacySession(target),
+        id:
+          target.branch === "feature-b"
+            ? "$2"
+            : target.branch === "feature-c"
+              ? "$3"
+              : "$1",
+      }),
     killSession: (name: string) =>
       Effect.sync(() => {
         tmuxCalls.push(name);
@@ -101,6 +111,13 @@ function setupMocks(): CloseCommandSpies {
   const worktree = {
     ...shutdownWorktreeService,
     isGitRepo: () => Effect.succeed(true),
+    getCurrentBranch: (path?: string) =>
+      Effect.succeed(
+        path
+          ?.split("/")
+          .at(-1)
+          ?.replace(/^myapp-/, "") ?? "feature",
+      ),
     findWorktreeByBranch: (branch: string) =>
       Effect.succeed(makeWorktree(branch)),
     removeWorktree: (path: string) =>
@@ -152,10 +169,10 @@ describe("closeCommand", () => {
       ),
     ).resolves.toBeUndefined();
     expect(mocks.confirmSpy).toHaveBeenCalledTimes(2);
-    expect(mocks.tmuxCalls).toEqual(["$1", "$1"]);
+    expect(mocks.tmuxCalls).toEqual(["$1", "$2"]);
     expect(mocks.worktreeCalls).toEqual([
-      "/tmp/myapp-feature-a",
-      "/tmp/myapp-feature-b",
+      join(realpathSync("/tmp"), "myapp-feature-a"),
+      join(realpathSync("/tmp"), "myapp-feature-b"),
     ]);
   });
 
@@ -186,8 +203,8 @@ describe("closeCommand", () => {
     );
 
     expect(closeCalls).toMatchObject([
-      { path: "/tmp/myapp-feature-a", force: false },
-      { path: "/tmp/myapp-feature-b", force: false },
+      { path: join(realpathSync("/tmp"), "myapp-feature-a"), force: false },
+      { path: join(realpathSync("/tmp"), "myapp-feature-b"), force: false },
     ]);
   });
 
@@ -246,7 +263,7 @@ describe("closeCommand", () => {
       "Worktree has uncommitted changes. Force remove anyway?",
     );
     expect(forceRemoveCalled).toBe(true);
-    expect(mocks.tmuxCalls).toEqual(["$1", "$1", "$1"]);
+    expect(mocks.tmuxCalls).toEqual(["$1", "$2", "$3"]);
     // feature-a, feature-b (blocked), feature-b (force), feature-c
     expect(mocks.worktreeCalls).toHaveLength(4);
   });
@@ -301,7 +318,7 @@ describe("closeCommand", () => {
                   ok: true as const,
                   value: {
                     _tag: "BlockedByChanges" as const,
-                    path: "/tmp/myapp-feature-a",
+                    path: join(realpathSync("/tmp"), "myapp-feature-a"),
                   },
                 },
               },
@@ -326,8 +343,8 @@ describe("closeCommand", () => {
       "Worktree has uncommitted changes. Force remove anyway?",
     );
     expect(closeCalls).toMatchObject([
-      { path: "/tmp/myapp-feature-a", force: false },
-      { retry: "/tmp/myapp-feature-a" },
+      { path: join(realpathSync("/tmp"), "myapp-feature-a"), force: false },
+      { retry: join(realpathSync("/tmp"), "myapp-feature-a") },
     ]);
   });
 
@@ -363,7 +380,7 @@ describe("closeCommand", () => {
           const branch = options?.path?.endsWith("feature-a")
             ? "feature-a"
             : "unknown";
-          const worktreePath = `/tmp/myapp-${branch}`;
+          const worktreePath = `${realpathSync("/tmp")}/myapp-${branch}`;
           if (!options?.force) {
             return {
               ...removedCloseResult(branch),
@@ -427,8 +444,8 @@ describe("closeCommand", () => {
       );
 
       expect(closeCalls).toMatchObject([
-        { path: "/tmp/myapp-feature-a", force: false },
-        { retry: "/tmp/myapp-feature-a" },
+        { path: join(realpathSync("/tmp"), "myapp-feature-a"), force: false },
+        { retry: join(realpathSync("/tmp"), "myapp-feature-a") },
       ]);
       const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string);
       expect(output.data[0]).toMatchObject({
@@ -441,7 +458,10 @@ describe("closeCommand", () => {
           remove: {
             attempted: true,
             ok: true,
-            value: { _tag: "Removed", path: "/tmp/myapp-feature-a" },
+            value: {
+              _tag: "Removed",
+              path: join(realpathSync("/tmp"), "myapp-feature-a"),
+            },
           },
         },
       });
@@ -647,7 +667,7 @@ describe("closeCommand", () => {
             operation: "close",
             status: "aborted",
             branch: "feature-a",
-            worktreePath: "/tmp/myapp-feature-a",
+            worktreePath: join(realpathSync("/tmp"), "myapp-feature-a"),
             sessionName: "myapp-feature-a",
             reason: "confirmation_declined",
           },
@@ -698,7 +718,7 @@ describe("closeCommand", () => {
             operation: "close",
             status: "aborted",
             branch: "feature-a",
-            worktreePath: "/tmp/myapp-feature-a",
+            worktreePath: join(realpathSync("/tmp"), "myapp-feature-a"),
             sessionName: "myapp-feature-a",
             reason: "confirmation_declined",
           },
@@ -784,7 +804,7 @@ describe("closeCommand", () => {
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
-          if (options?.path === "/tmp/myapp-feature-a") {
+          if (options?.path === join(realpathSync("/tmp"), "myapp-feature-a")) {
             throw new Error("kill boom");
           }
           return removedCloseResult("unknown");
@@ -807,7 +827,7 @@ describe("closeCommand", () => {
       ).rejects.toThrow("kill boom");
 
       expect(closeCalls).toMatchObject([
-        { path: "/tmp/myapp-feature-a", force: false },
+        { path: join(realpathSync("/tmp"), "myapp-feature-a"), force: false },
       ]);
       const loggedLines = logSpy.mock.calls.map((args) => String(args[0]));
       expect(
@@ -832,7 +852,7 @@ describe("closeCommand", () => {
       close: (options) =>
         Effect.sync(() => {
           closeCalls.push(options);
-          if (options?.path === "/tmp/myapp-feature-a") {
+          if (options?.path === join(realpathSync("/tmp"), "myapp-feature-a")) {
             throw new Error("kill boom");
           }
           return removedCloseResult("unknown");
@@ -856,7 +876,7 @@ describe("closeCommand", () => {
       ).rejects.toThrow("kill boom");
 
       expect(closeCalls).toMatchObject([
-        { path: "/tmp/myapp-feature-a", force: false },
+        { path: join(realpathSync("/tmp"), "myapp-feature-a"), force: false },
       ]);
       expect(logSpy).not.toHaveBeenCalled();
     } finally {
@@ -886,10 +906,10 @@ describe("closeCommand", () => {
         },
       ),
     ).resolves.toBeUndefined();
-    expect(mocks.tmuxCalls).toEqual(["$1", "$1"]);
+    expect(mocks.tmuxCalls).toEqual(["$2", "$1"]);
     expect(mocks.worktreeCalls).toEqual([
-      "/tmp/myapp-feature-b",
-      "/tmp/myapp-feature-a",
+      join(realpathSync("/tmp"), "myapp-feature-b"),
+      join(realpathSync("/tmp"), "myapp-feature-a"),
     ]);
     expect(prompts[0]).toContain("feature-b");
     expect(prompts[1]).toContain("feature-a");

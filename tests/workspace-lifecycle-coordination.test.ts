@@ -140,7 +140,7 @@ describe("Workspace lifecycle across CLI and TUI processes", () => {
   async function configure() {
     await Bun.write(
       join(repo, ".wct.yaml"),
-      `version: 1\nproject_name: fixture\nworktree_dir: ../trees\nsetup:\n  - name: gated optional setup\n    optional: true\n    command: >-\n      if [ "$WCT_BRANCH" = held ]; then echo started >> ${quote(join(root, "trace"))}; touch ${quote(join(root, "started"))}; while [ ! -f ${quote(join(root, "release"))} ]; do sleep 0.02; done; fi\ndown:\n  - name: cleanup\n    command: echo down >> ${quote(join(root, "trace"))}\n`,
+      `version: 1\nproject_name: fixture\nworktree_dir: ../trees\nsetup:\n  - name: gated optional setup\n    optional: true\n    command: >-\n      if [ "$WCT_BRANCH" = held ]; then echo started >> ${quote(join(root, "trace"))}; touch ${quote(join(root, "started"))}; while [ -d ${quote(root)} ] && [ ! -f ${quote(join(root, "release"))} ]; do sleep 0.02; done; fi\ndown:\n  - name: cleanup\n    command: echo down >> ${quote(join(root, "trace"))}\n`,
     );
   }
   test("cancels only the TUI waiter while another Workspace completes", async () => {

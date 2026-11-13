@@ -49,7 +49,7 @@ export function withTestServices<A, E, R>(
 ) {
   const tmux = overrides.tmux ?? noopTmuxService;
   const killed = new Set<string>();
-  const names = new Map<string, string>();
+  const identities = new Map<string, string>();
   return Effect.provide(
     effect,
     makeWctServicesLayer({
@@ -59,15 +59,23 @@ export function withTestServices<A, E, R>(
         resolveSession: (...args) =>
           tmux.resolveSession(...args).pipe(
             Effect.map((session) => {
-              if (session?.id) names.set(session.id, session.name);
-              return session && killed.has(session.name) ? null : session;
+              if (session?.id)
+                identities.set(
+                  session.id,
+                  JSON.stringify([session.id, session.server]),
+                );
+              return session &&
+                killed.has(JSON.stringify([session.id, session.server]))
+                ? null
+                : session;
             }),
           ),
         killSession: (id) =>
           tmux.killSession(id).pipe(
             Effect.tap(() =>
               Effect.sync(() => {
-                killed.add(names.get(id) ?? id);
+                const identity = identities.get(id);
+                if (identity) killed.add(identity);
               }),
             ),
           ),

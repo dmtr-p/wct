@@ -51,7 +51,7 @@ delete lock files or journals. See [Workspace coordination](workspace-coordinati
 for durability and platform limits.
 
 Shared Git configuration transactions, worktree creation and removal use a
-repository mutation lock, always after Workspace custody when part of a lifecycle.
+durable repository mutation lease, always after Workspace custody when part of a lifecycle.
 Only the Git operation holds it; scripts, prompts and worker handoff waits do not.
 Fetch uses Git's own ref/pack locks and reports competing Git failures normally.
 
@@ -246,3 +246,8 @@ mutating and provides its adopted lease to process execution. It never reacquire
 its own lock. Progress and result messages share IPC with the dedicated custody
 protocol. The worker retains ownership through durable outcome publication;
 loss of an adoption acknowledgement after Start cannot restore caller authority.
+Successful worker completion additionally requires durable result publication,
+custody finalization and clean exit. A parseable saved result from a failed or
+killed worker is insufficient proof of success. See
+[repository recovery](workspace-coordination.md#repository-mutation-custody) for
+separately fenced Git mutation transactions and their explicit recovery CLI.

@@ -97,6 +97,7 @@ function createShutdownDirectory(worktreePath: string) {
 export function runDetachedShutdown(
   request: ShutdownRequest,
   reporter?: WorkspaceReporter,
+  options: { workerCommand?: (directory: string) => readonly string[] } = {},
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -133,10 +134,11 @@ export function runDetachedShutdown(
     const completed = Promise.withResolvers<ShutdownOutcome>();
     void completed.promise.catch(() => undefined);
     let events = Promise.resolve();
+    let reportedOutcome: ShutdownOutcome | undefined;
     const env = yield* processEnvironment;
     const child = yield* transferWorkspaceToWorker(
       lease,
-      shutdownWorkerCommand(directory),
+      options.workerCommand?.(directory) ?? shutdownWorkerCommand(directory),
       {
         cwd: request.shutdown?.env.WCT_MAIN_DIR ?? request.cwd,
         env,
@@ -153,8 +155,7 @@ export function runDetachedShutdown(
           if (!message || typeof message !== "object" || !("_tag" in message))
             return;
           const shutdown = message as ShutdownMessage;
-          if (shutdown._tag === "Completed")
-            completed.resolve(shutdown.outcome);
+          if (shutdown._tag === "Completed") reportedOutcome = shutdown.outcome;
           else if (shutdown._tag === "Event" && reporter) {
             events = events.then(() =>
               Effect.runPromiseWith(context)(
@@ -165,8 +166,22 @@ export function runDetachedShutdown(
             );
           }
         },
-        onExit: () => {
-          // The persisted result is authoritative if final IPC races process exit.
+        onExit: (code, signal, error) => {
+          if (code !== 0 || signal || error) {
+            completed.reject(
+              commandError(
+                "workspace_coordination_error",
+                `Independent shutdown did not prove completion (exit ${code}, signal ${signal ?? "none"}); inspect ${resultPath} and ownership before retrying`,
+              ),
+            );
+            return;
+          }
+          if (reportedOutcome) {
+            completed.resolve(reportedOutcome);
+            return;
+          }
+          // A clean worker exit proves publication and custody finalization.
+          // Only the final Completed message may be lost in this fallback.
           void Effect.runPromiseWith(context)(fs.readFileString(resultPath))
             .then((content) =>
               completed.resolve(JSON.parse(content) as ShutdownOutcome),
@@ -175,7 +190,7 @@ export function runDetachedShutdown(
               completed.reject(
                 commandError(
                   "workspace_coordination_error",
-                  `Independent shutdown exited without an outcome; inspect ${resultPath} and Workspace ownership before retrying`,
+                  `Independent shutdown exited without an outcome; inspect ${resultPath} and ownership before retrying`,
                 ),
               ),
             );

@@ -13,7 +13,12 @@ import type { WorkspaceCloseResult } from "../../src/services/workspace-service"
 import { buildAgentList as buildProjectedAgentList } from "../../src/tui/agent-view";
 import type { WorkspaceAgentSnapshot } from "../../src/tui/hooks/useAgents";
 import type { RepoInfo } from "../../src/tui/hooks/useRegistry";
+import {
+  type LifecycleEntry,
+  workspaceIdentityKey,
+} from "../../src/tui/lifecycle";
 import { createTuiLifetime } from "../../src/tui/lifetime";
+import { Mode } from "../../src/tui/types";
 import { projectFixtureSessions } from "../helpers/session-projections";
 import {
   emitWorkspacePhase,
@@ -163,6 +168,83 @@ describe("App agents view", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     rmSync(root, { recursive: true, force: true });
+  });
+
+  test("waiting rows cannot hide an active confirmation in a small Agents viewport", async () => {
+    const { AgentsView } = await import("../../src/tui/components/AgentsView");
+    const repoPath = join(root, "alpha");
+    const repos: RepoInfo[] = [
+      {
+        id: RegistrationId("alpha"),
+        project: "alpha",
+        repoPath,
+        profileNames: [],
+        worktrees: [
+          {
+            ...makeWorktree(repoPath, "alpha-branch"),
+            isMainWorktree: false,
+            changedFiles: 0,
+            sync: null,
+          },
+        ],
+      },
+    ];
+    const list = buildAgentList(repos, fixtures.snapshot, tmuxFixtures.panes);
+    const item = list.items[0];
+    if (!item) throw new Error("Missing fixture agent");
+    const lifecycle = new Map<
+      ReturnType<typeof workspaceIdentityKey>,
+      LifecycleEntry
+    >();
+    for (let i = 0; i < 12; i++) {
+      const branch = `waiting-${i}`;
+      lifecycle.set(workspaceIdentityKey(repoPath, branch), {
+        repoPath,
+        project: "alpha",
+        branch,
+        operation: "open",
+        phase: { _tag: "Waiting", mainRepoPath: repoPath, branch },
+      });
+    }
+    const confirmationMode = Mode.ConfirmAgentKill(
+      item.id,
+      item.paneId,
+      item.observation.generation,
+      "fixture agent",
+    );
+    if (confirmationMode.type !== "ConfirmAgentKill")
+      throw new Error("Unexpected confirmation mode");
+    const app = await renderApp(
+      <AgentsView
+        repos={repos}
+        agents={fixtures.snapshot}
+        panes={tmuxFixtures.panes}
+        lifecycle={lifecycle}
+        viewportRows={6}
+        maxWidth={60}
+        isActive={false}
+        onJump={() => {}}
+        onClose={() => {}}
+        onKill={() => {}}
+        confirmation={{
+          itemId: item.id,
+          mode: confirmationMode,
+          width: 60,
+          onConfirm: () => {},
+          onCancel: () => {},
+        }}
+      />,
+      10,
+      60,
+    );
+    try {
+      await tick(30);
+      expect(app.lines().join("\n")).toContain("Kill Pane");
+      expect(app.lines().join("\n")).toContain("enter:confirm");
+      expect(app.lines().join("\n")).toContain("esc:cancel");
+    } finally {
+      app.unmount();
+    }
   });
 
   test("toggles views, groups agents, and switches the selected pane without worktree actions", async () => {

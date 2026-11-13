@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RegistrationId } from "../../src/services/identities";
 import {
+  emitWorkspacePhase,
   lastWorkspaceCall,
   makeWorktree,
   registryItems,
@@ -41,6 +42,34 @@ describe("TUI project removal", () => {
     vi.unstubAllEnvs();
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(repoPath, { recursive: true, force: true });
+  });
+
+  test("Escape cancels a submitted project removal's waiter without dismissing active cleanup", async () => {
+    const { App } = await import("../../src/tui/App");
+    const app = await renderApp(<App />);
+    try {
+      await vi.waitFor(() => expect(app.lines().join("\n")).toContain("main"));
+      await sendKeys(app.stdin, MAC_DELETE);
+      await sendKeys(app.stdin, ENTER);
+      await vi.waitFor(() => expect(lastWorkspaceCall("down")).toBeDefined());
+      const call = lastWorkspaceCall("down");
+      emitWorkspacePhase(call, {
+        _tag: "Waiting",
+        mainRepoPath: repoPath,
+        branch: "main",
+      });
+      const signal = (
+        call.options
+          .reporter as import("../../src/services/workspace-service").WorkspaceReporter
+      ).waitSignal;
+      await sendKeys(app.stdin, ESCAPE);
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      expect(app.lines().join("\n")).toContain("Remove project alpha?");
+      call.reject(new Error("Cancelled waiting for project cleanup custody"));
+      await tick(20);
+    } finally {
+      app.unmount();
+    }
   });
 
   test("ignores Escape while confirmed removal is pending", async () => {

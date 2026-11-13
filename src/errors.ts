@@ -1,6 +1,7 @@
 import { Data } from "effect";
 
 export type ErrorCode =
+  | "workspace_coordination_error"
   | "not_git_repo"
   | "config_error"
   | "invalid_options"

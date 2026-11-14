@@ -1,12 +1,19 @@
 import { resolve } from "node:path";
 import { Effect } from "effect";
+import { type LocalTarget, sameLocalTarget } from "../browser/protocol";
+import { inspectLocalTarget } from "../browser/target";
 import { JsonFlag } from "../cli/json-flag";
+import type { BunServices } from "../effect/runtime";
 import { commandError, toWctError } from "../errors";
 import { processEnvironment } from "../services/process";
 import {
   canonicalSessionTarget,
   ownsWorkspaceSession,
 } from "../services/session-identity";
+import {
+  prepareSessionAttachment,
+  type TmuxClient,
+} from "../services/terminal-attachments";
 import { TmuxService } from "../services/tmux";
 import { WorktreeService } from "../services/worktree-service";
 import * as logger from "../utils/logger";
@@ -59,13 +66,31 @@ export function browserCommand(options: {
           "tmux_error",
           "An existing verified Workspace Session is required; start it with wct up",
         );
-      const context = yield* Effect.context<never>();
+      const context = yield* Effect.context<BunServices.BunServices>();
       const run = Effect.runPromiseWith(context);
       const env = yield* processEnvironment;
       const { startLocalTerminal } = yield* Effect.tryPromise({
         try: () => import("../browser/server"),
         catch: (error) => toWctError(error, "Cannot load browser terminal"),
       });
+      const initial = {
+        ...target,
+        server: session.server,
+        sessionId: session.id,
+      };
+      const inspect = (client: TmuxClient) =>
+        inspectLocalTarget(client, {
+          initial,
+          sessions: () =>
+            run(tmux.listSessions.pipe(Effect.timeout("2 seconds"))),
+          canonical: (target) => run(canonicalSessionTarget(target)),
+          worktrees: (path) =>
+            run(worktree.listWorktrees(path).pipe(Effect.timeout("2 seconds"))),
+          root: (path) =>
+            run(
+              worktree.getWorktreeRoot(path).pipe(Effect.timeout("2 seconds")),
+            ),
+        });
       const endpoint = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
@@ -76,10 +101,28 @@ export function browserCommand(options: {
                 process.stderr.write(`${message}\n`);
               },
               backend: {
-                prepare: () =>
-                  // A deadline must not interrupt reservation acquisition after
-                  // tmux writes its record but before we receive its handle.
-                  run(tmux.prepareAttachment(target, "browser")),
+                prepare: async (expected) => {
+                  // Preparation is never interrupted after reserving a tmux record.
+                  // Recovery names the exact observed session, including native navigation.
+                  const selected: LocalTarget = expected ?? initial;
+                  const current = await inspect({
+                    tty: "",
+                    session: "",
+                    server: selected.server,
+                    sessionId: selected.sessionId,
+                  });
+                  if (!sameLocalTarget(current, selected))
+                    throw new Error("Recovery target changed");
+                  return {
+                    ...(await run(
+                      prepareSessionAttachment(
+                        { id: selected.sessionId, server: selected.server },
+                        "browser",
+                      ),
+                    )),
+                    target: selected,
+                  };
+                },
                 query: (ref) =>
                   run(
                     tmux.queryAttachment(ref).pipe(Effect.timeout("2 seconds")),
@@ -90,28 +133,7 @@ export function browserCommand(options: {
                       .detachAttachment(ref)
                       .pipe(Effect.timeout("2 seconds")),
                   ),
-                verify: async (client) => {
-                  const current = await run(
-                    tmux
-                      .resolveSession(target, session, { readOnly: true })
-                      .pipe(Effect.timeout("2 seconds")),
-                  );
-                  if (
-                    !current?.id ||
-                    !current.server ||
-                    !ownsWorkspaceSession(current, target) ||
-                    current.id !== session.id ||
-                    current.server !== session.server ||
-                    client.sessionId !== current.id ||
-                    client.server !== current.server
-                  )
-                    throw new Error("Workspace Session changed");
-                  return {
-                    ...target,
-                    server: current.server,
-                    sessionId: current.id,
-                  };
-                },
+                verify: inspect,
               },
             }),
           catch: (error) => toWctError(error, "Cannot start browser terminal"),

@@ -4,11 +4,15 @@ import { join } from "node:path";
 import { expect, vi } from "vitest";
 import {
   decodeFrame,
+  encodeFrame,
   type LocalRef,
   type LocalTarget,
 } from "../../src/browser/protocol";
 import { startLocalTerminal } from "../../src/browser/server";
-import type { TerminalAttachment } from "../../src/services/terminal-attachments";
+import type {
+  TerminalAttachment,
+  TmuxClient,
+} from "../../src/services/terminal-attachments";
 
 const Socket = WebSocket as unknown as {
   new (url: string, options: Bun.WebSocketOptions): WebSocket;
@@ -20,6 +24,9 @@ export async function browserEndpoint(
     now?: () => number;
     prepare?: () => Promise<void>;
     query?: () => Promise<void>;
+    verify?: (client: TmuxClient) => Promise<LocalTarget>;
+    prepared?: (expected?: LocalTarget) => void;
+    client?: () => Partial<TmuxClient>;
     ignoreTerm?: boolean;
     quiet?: boolean;
     unavailableDetach?: boolean;
@@ -30,16 +37,17 @@ export async function browserEndpoint(
   await Bun.write(
     script,
     `
-await Bun.write(process.argv[2], String(process.pid));
 process.stdin.setRawMode(true);
 ${options.ignoreTerm ? 'process.on("SIGTERM", () => {});' : ""}
 let read = 0;
 process.on("SIGUSR1", () => process.stdout.write(Buffer.alloc(32 * 1024 * 1024, 120)));
+process.on("SIGUSR2", () => process.stdout.write(Buffer.alloc(128 * 1024, 120)));
 process.stdin.on("data", bytes => {
   if (bytes.toString().includes("FLOOD")) process.stdout.write(Buffer.alloc(2 * 1024 * 1024, 120));
   else ${options.quiet ? '{ read += bytes.length; process.stdout.write("READ:" + read + "\\n"); }' : "process.stdout.write(bytes);"}
 });
 process.stdin.resume();
+await Bun.write(process.argv[2], String(process.pid));
 `,
   );
   const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
@@ -73,7 +81,8 @@ process.stdin.resume();
     env: { ...process.env, PATH: `${tempDir}:${process.env.PATH}` },
     diagnostic: (message) => diagnostics.push(message),
     backend: {
-      prepare: async () => {
+      prepare: async (expected) => {
+        options.prepared?.(expected);
         await options.prepare?.();
         const id = randomUUID();
         ids.push(id);
@@ -84,6 +93,7 @@ process.stdin.resume();
             kind: "browser",
             server: initialTarget.server,
           },
+          target: expected ?? initialTarget,
           command: "tmux",
           args: [join(tempDir, `${id}.pid`)],
           env: {},
@@ -94,6 +104,7 @@ process.stdin.resume();
         const file = Bun.file(join(tempDir, `${ref.id}.pid`));
         if (!(await file.exists())) return null;
         const pid = Number(await file.text());
+        if (!Number.isSafeInteger(pid) || pid <= 0) return null;
         pids.set(ref.id, pid);
         return {
           tty: "/dev/fixture",
@@ -101,10 +112,12 @@ process.stdin.resume();
           sessionId: "$1",
           session: "fixture",
           pid: String(pid),
+          ...options.client?.(),
         };
       },
       detach,
-      verify: async () => initialTarget,
+      verify: async (client) =>
+        options.verify ? options.verify(client) : initialTarget,
     },
   });
   const origin = new URL(endpoint.url).origin;
@@ -121,9 +134,10 @@ process.stdin.resume();
   expect(auth.status).toBe(204);
   cookie = auth.headers.get("set-cookie")?.split(";")[0] ?? "";
   const sockets: WebSocket[] = [];
-  const create = async () => {
+  const create = async (reconnect?: LocalRef) => {
     const response = await post("/api/attachments", {
       dimensions: { cols: 80, rows: 24 },
+      ...(reconnect ? { reconnect } : {}),
     });
     expect(response.status).toBe(201);
     return response.json() as Promise<{ ref: LocalRef; target: LocalTarget }>;
@@ -147,6 +161,14 @@ process.stdin.resume();
     await new Promise<void>((resolve, reject) => {
       ws.onmessage = (event) => {
         const frame = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
+        if ("target" in frame.header && frame.header.kind !== "ack")
+          ws.send(
+            encodeFrame({
+              ...frame.header,
+              kind: "ack",
+              byteLength: 0,
+            }),
+          );
         if (frame.header.kind === "target") resolve();
       };
       ws.onerror = () => reject(new Error("Expected accepted stream"));

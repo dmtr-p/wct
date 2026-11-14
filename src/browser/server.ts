@@ -22,17 +22,19 @@ import {
   LocalTarget as LocalTargetSchema,
   policy,
   same,
+  sameLocalTarget,
   TicketRequest,
-  type WorkspaceTarget,
   WorkspaceTarget as WorkspaceTargetSchema,
 } from "./protocol";
 
 export interface AttachmentBackend {
-  prepare(): Promise<AttachmentLaunch>;
+  prepare(
+    expected?: LocalTarget,
+  ): Promise<AttachmentLaunch & { target: LocalTarget }>;
   query(ref: TerminalAttachment): Promise<TmuxClient | null>;
   detach(ref: TerminalAttachment): Promise<void>;
   /** Must reverify both Workspace ownership and the exact tmux session generation. */
-  verify(client: TmuxClient): Promise<WorkspaceTarget>;
+  verify(client: TmuxClient): Promise<LocalTarget>;
 }
 interface Connection {
   attachment: Attachment;
@@ -44,6 +46,7 @@ interface Ticket extends Connection {
 }
 interface Attachment {
   owner: string;
+  dimensions: { cols: number; rows: number };
   readyAt?: number;
   ref: LocalRef;
   launch: AttachmentLaunch;
@@ -65,6 +68,9 @@ interface Attachment {
   ptyBytes: number;
   output: Uint8Array[];
   outputBytes: number;
+  sent: { sequence: number; cost: number; target: LocalTarget; at: number }[];
+  sentBytes: number;
+  lastAck: number;
   pumping?: Promise<void>;
   actions: Promise<void>;
 }
@@ -111,6 +117,17 @@ export async function startLocalTerminal(options: {
   const assets = await loadBrowserAssets();
   const attachments = new Map<string, Attachment>();
   const tickets = new Map<string, Ticket>();
+  const recoveries = new Map<
+    string,
+    {
+      ref: LocalRef;
+      owner: string;
+      expires: number;
+      target?: LocalTarget;
+      settled: boolean;
+      creation?: Promise<Attachment>;
+    }
+  >();
   const preparations = new Set<Promise<unknown>>();
   const inFlight = new Map<AbortController, Promise<void>>();
   let reserved = 0;
@@ -131,25 +148,39 @@ export async function startLocalTerminal(options: {
     const client = await options.backend.query(a.launch.attachment);
     if (!client || client.server !== a.ref.server || !client.sessionId)
       throw new Error("Attachment unavailable");
-    let target: LocalTarget;
-    try {
-      target = decode(LocalTargetSchema, await options.backend.verify(client));
-      if (
-        target.server !== client.server ||
-        target.sessionId !== client.sessionId
-      )
-        throw new Error("Inconsistent target observation");
-    } catch {
-      // Native tmux navigation may select any session. Only publish Workspace
-      // metadata when the backend actually verifies it; polling attributes no bytes.
-      target = decode(LocalTargetSchema, {
-        server: client.server,
-        sessionId: client.sessionId,
-        sessionName: client.session,
-      });
+    const previous = a.target;
+    if (previous && previous.sessionId !== client.sessionId) {
+      const stillPresent = decode(
+        LocalTargetSchema,
+        await options.backend.verify({
+          tty: "",
+          session: "sessionName" in previous ? previous.sessionName : "",
+          server: previous.server,
+          sessionId: previous.sessionId,
+        }),
+      );
+      if (!sameLocalTarget(stillPresent, previous))
+        throw new Error("Previous Workspace or session disappeared");
     }
+    const target = decode(
+      LocalTargetSchema,
+      await options.backend.verify(client),
+    );
+    if (
+      target.server !== client.server ||
+      target.sessionId !== client.sessionId
+    )
+      throw new Error("Inconsistent target observation");
+    if (
+      a.target &&
+      "mainRepoPath" in a.target &&
+      a.target.sessionId === target.sessionId &&
+      !same(a.target, target)
+    )
+      throw new Error("Workspace ownership changed or disappeared");
     return target;
   }
+
   function send(a: Attachment, header: LocalHeader, bytes?: Uint8Array) {
     const ws = a.socket;
     if (!ws || !valid(a, ws)) throw new Error("Terminal stream closed");
@@ -157,10 +188,24 @@ export async function startLocalTerminal(options: {
     // Bun checks its backpressure limit before adding a frame. Account for
     // this frame and our application queue before calling send.
     if (
-      ws.getBufferedAmount() + a.outputBytes + frame.length >
-      policy.outputBytes
+      a.sent.length + a.output.length >= 256 ||
+      ws.getBufferedAmount() +
+        a.outputBytes +
+        a.sentBytes +
+        frame.length +
+        128 >
+        policy.outputBytes
     )
       throw new Error("Terminal output limit exceeded");
+    if (header.kind === "input" || header.kind === "ack")
+      throw new Error("Invalid server direction");
+    a.sent.push({
+      sequence: header.sequence,
+      cost: frame.length + 128,
+      target: header.target,
+      at: now(),
+    });
+    a.sentBytes += frame.length + 128;
     if (ws.sendBinary(frame) === 0)
       throw new Error("Terminal transport unavailable");
   }
@@ -197,9 +242,9 @@ export async function startLocalTerminal(options: {
         while (a.output.length && valid(a)) {
           const bytes = a.output[0];
           if (!bytes) break;
-          send(a, header(a, "output", bytes.length), bytes);
           a.output.shift();
-          a.outputBytes -= bytes.length + policy.controlBytes + 4;
+          a.outputBytes -= bytes.length + policy.controlBytes + 4 + 128;
+          send(a, header(a, "output", bytes.length), bytes);
         }
       } catch {
         void close(a, "Terminal output or target validation failed");
@@ -211,9 +256,14 @@ export async function startLocalTerminal(options: {
   function output(a: Attachment, data: Uint8Array) {
     if (a.closing) return;
     if (
-      a.output.length + Math.ceil(data.length / policy.dataBytes) > 256 ||
+      a.output.length +
+        a.sent.length +
+        Math.ceil(data.length / policy.dataBytes) >
+        256 ||
       data.length +
-        Math.ceil(data.length / policy.dataBytes) * (policy.controlBytes + 4) +
+        Math.ceil(data.length / policy.dataBytes) *
+          (policy.controlBytes + 4 + 128) +
+        a.sentBytes +
         a.outputBytes +
         (a.socket?.getBufferedAmount() ?? 0) >
         policy.outputBytes
@@ -224,15 +274,28 @@ export async function startLocalTerminal(options: {
     for (let offset = 0; offset < data.length; offset += policy.dataBytes) {
       const chunk = data.slice(offset, offset + policy.dataBytes);
       a.output.push(chunk);
-      a.outputBytes += chunk.length + policy.controlBytes + 4;
+      a.outputBytes += chunk.length + policy.controlBytes + 4 + 128;
     }
     pump(a);
   }
   async function cleanup(a: Attachment, reason: string) {
+    const recovery = recoveries.get(a.ref.attachmentId);
     forgetTickets(a);
     a.socket?.close(1000, reason.slice(0, 100));
+    const finalObservation = recovery ? observe(a) : undefined;
+    // Capture native navigation even when its last target header was lost.
+    // Failure leaves recovery unavailable rather than guessing the old target.
+    if (recovery && finalObservation) {
+      try {
+        recovery.target = await within(finalObservation, policy.drainMs);
+      } catch {
+        recovery.target = undefined;
+      }
+    }
     a.output = [];
     a.outputBytes = 0;
+    a.sent = [];
+    a.sentBytes = 0;
     // PTY buffers and the tmux reservation stay exclusive until confirmed exit.
     const child = a.child;
     if (child && !a.exited) {
@@ -283,11 +346,24 @@ export async function startLocalTerminal(options: {
     }
     // Retain the slot while ordered callbacks still hold input buffers or an
     // observation. Closing fences new work; the existing callbacks must settle.
-    await Promise.allSettled([a.actions, a.pumping]);
+    await Promise.allSettled([a.actions, a.pumping, finalObservation]);
     attachments.delete(a.ref.attachmentId);
+    if (recovery) recovery.settled = true;
   }
   function close(a: Attachment, reason = "Terminal disconnected") {
     if (a.closing) return a.closing;
+    if (a.readyAt !== undefined && !stopping) {
+      if (recoveries.size >= policy.maxRecoveries) {
+        const oldest = recoveries.keys().next().value;
+        if (oldest) recoveries.delete(oldest);
+      }
+      recoveries.set(a.ref.attachmentId, {
+        ref: a.ref,
+        owner: a.owner,
+        expires: now() + policy.recoveryMs,
+        settled: false,
+      });
+    }
     // Set the fence before cleanup performs its first asynchronous operation.
     let finish!: () => void;
     a.closing = new Promise<void>((resolve) => {
@@ -305,12 +381,13 @@ export async function startLocalTerminal(options: {
   async function launch(
     owner: string,
     dimensions: { cols: number; rows: number },
+    expected?: LocalTarget,
   ) {
     if (stopping) throw new Error("Endpoint stopped");
     reserved++;
     const started = now();
     let pending = true;
-    let prepared: AttachmentLaunch | undefined;
+    let prepared: (AttachmentLaunch & { target: LocalTarget }) | undefined;
     let a: Attachment | undefined;
     let expired = false;
     const launchTimer = setTimeout(() => {
@@ -322,7 +399,7 @@ export async function startLocalTerminal(options: {
         );
     }, policy.handshakeMs);
     try {
-      prepared = await options.backend.prepare();
+      prepared = await options.backend.prepare(expected);
       if (
         stopping ||
         expired ||
@@ -330,8 +407,15 @@ export async function startLocalTerminal(options: {
         now() - started >= policy.handshakeMs
       )
         throw new Error("Endpoint closed");
+      const selected = decode(
+        expected ? LocalTargetSchema : WorkspaceTargetSchema,
+        prepared.target,
+      );
+      if (expected && !sameLocalTarget(selected, expected))
+        throw new Error("Recovery preparation target changed");
       a = {
         owner,
+        dimensions,
         ref: decode(LocalRefSchema, {
           endpoint,
           attachmentId: prepared.attachment.id,
@@ -351,6 +435,9 @@ export async function startLocalTerminal(options: {
         ptyBytes: 0,
         output: [],
         outputBytes: 0,
+        sent: [],
+        sentBytes: 0,
+        lastAck: -1,
         actions: Promise.resolve(),
       };
       const attachment = a;
@@ -390,13 +477,14 @@ export async function startLocalTerminal(options: {
         const client = await options.backend.query(prepared.attachment);
         if (client) {
           a.target = decode(
-            WorkspaceTargetSchema,
+            expected ? LocalTargetSchema : WorkspaceTargetSchema,
             await options.backend.verify(client),
           );
           if (
             client.server !== a.ref.server ||
             a.target.server !== a.ref.server ||
-            client.sessionId !== a.target.sessionId
+            client.sessionId !== a.target.sessionId ||
+            !sameLocalTarget(selected, a.target)
           )
             throw new Error("Attachment launch target changed");
           break;
@@ -432,6 +520,31 @@ export async function startLocalTerminal(options: {
       void close(a, "Input budget exhausted; reload for a fresh attachment");
       return;
     }
+    if (typeof message !== "string") {
+      try {
+        const { header: ack } = decodeFrame(message);
+        if (ack.kind === "ack") {
+          const through = a.sent.findIndex(
+            (frame) => frame.sequence === ack.sequence,
+          );
+          if (
+            !same(ack.ref, a.ref) ||
+            ack.streamId !== a.streamId ||
+            ack.sequence <= a.lastAck ||
+            through < 0 ||
+            !same(a.sent[through]?.target, ack.target)
+          )
+            throw new Error("Invalid renderer acknowledgement");
+          for (const frame of a.sent.splice(0, through + 1))
+            a.sentBytes -= frame.cost;
+          a.lastAck = ack.sequence;
+          return;
+        }
+      } catch {
+        void close(a, "Terminal frame rejected");
+        return;
+      }
+    }
     a.inputBytes += length;
     a.inputFrames++;
     // One bounded ordered queue per attachment; a busy attachment cannot hold
@@ -440,18 +553,65 @@ export async function startLocalTerminal(options: {
       .then(async () => {
         if (!valid(a, ws)) return;
         if (typeof message === "string") {
+          const control = decode(LocalControl, JSON.parse(message));
+          const deadline = now() + policy.drainMs;
+          const started = Date.now();
+          const expired = () =>
+            now() >= deadline || Date.now() - started >= policy.drainMs;
           const target = await observe(a);
           if (!valid(a, ws)) return;
-          const control = decode(LocalControl, JSON.parse(message));
           if (
             !same(a.ref, control.ref) ||
             control.streamId !== a.streamId ||
-            !same(target, control.target) ||
+            !sameLocalTarget(target, control.target) ||
             control.controlSequence !== a.controlSequence
           )
             throw new Error("Stale terminal control");
           a.controlSequence++;
-          void close(a);
+          if (control.kind === "close") {
+            void close(a);
+            return;
+          }
+          if (
+            control.throughInput !==
+            (a.inputSequence === 0 ? null : a.inputSequence - 1)
+          )
+            throw new Error("Resize input watermark mismatch");
+          const drained = () =>
+            !a.ptyBytes &&
+            !a.output.length &&
+            !a.pumping &&
+            a.lastAck === a.outputSequence - 1;
+          for (;;) {
+            if (!valid(a, ws)) return;
+            if (expired()) throw new Error("Resize drain deadline exceeded");
+            if (!drained()) {
+              await delay(10);
+              continue;
+            }
+            const current = await observe(a);
+            if (!valid(a, ws)) return;
+            if (expired())
+              throw new Error("Resize verification deadline exceeded");
+            if (!sameLocalTarget(current, control.target))
+              throw new Error("Resize target changed");
+            // Verification is asynchronous: output published meanwhile must be
+            // consumed before changing xterm's grid. Recheck without an await gap.
+            if (drained()) break;
+          }
+          a.terminal?.resize(control.dimensions.cols, control.dimensions.rows);
+          // Bun's ioctl does not reliably signal this spawned client on Darwin.
+          // Signal only the exclusive child, whose exit fences PID reuse.
+          if (!a.child || a.exited) throw new Error("Resize child unavailable");
+          a.child.kill("SIGWINCH");
+          a.dimensions = control.dimensions;
+          const resized = decodeHeader({
+            ...header(a, "target", 0),
+            kind: "resized",
+            dimensions: control.dimensions,
+            controlSequence: control.controlSequence,
+          });
+          send(a, resized);
           return;
         } else {
           const { header: input, bytes } = decodeFrame(message);
@@ -550,17 +710,68 @@ export async function startLocalTerminal(options: {
             await boundedJson(request, controller.signal),
           );
           if (stopping) return response(503, { error: "Endpoint stopped" });
-          if (attachments.size + reserved >= policy.maxAttachments)
-            return response(429, { error: "Attachment capacity reached" });
-          const task = launch(owner, body.dimensions);
-          preparations.add(task);
-          try {
-            const a = await within(task, policy.handshakeMs);
-            return response(201, { ref: a.ref, target: a.target, policy });
-          } finally {
-            void task.finally(() => preparations.delete(task)).catch(() => {});
+          let expected: LocalTarget | undefined;
+          let recovery: ReturnType<typeof recoveries.get>;
+          if (body.reconnect) {
+            const previous = attachments.get(body.reconnect.attachmentId);
+            if (
+              previous &&
+              previous.owner === owner &&
+              same(previous.ref, body.reconnect) &&
+              !previous.closing
+            )
+              void close(previous, "Replacing attachment for fresh recovery");
+            recovery = recoveries.get(body.reconnect.attachmentId);
+            if (
+              !recovery ||
+              recovery.owner !== owner ||
+              !same(recovery.ref, body.reconnect) ||
+              now() >= recovery.expires
+            )
+              return response(410, {
+                error:
+                  "Recovery expired or unavailable; open a new terminal explicitly",
+              });
+            if (!recovery.settled)
+              return response(409, {
+                error: "Previous attachment cleanup is still in progress",
+              });
+            if (!recovery.target)
+              return response(410, {
+                error: "Workspace or session disappeared; recovery stopped",
+              });
+            expected = recovery.target;
           }
+          let task = recovery?.creation;
+          if (!task) {
+            if (attachments.size + reserved >= policy.maxAttachments)
+              return response(429, { error: "Attachment capacity reached" });
+            task = launch(owner, body.dimensions, expected);
+            if (recovery) recovery.creation = task;
+            preparations.add(task);
+            const preparation = task;
+            void task
+              .finally(() => preparations.delete(preparation))
+              .catch(() => {});
+          }
+          const a = await within(task, policy.handshakeMs);
+          if (
+            !valid(a) ||
+            a.activated ||
+            a.readyAt === undefined ||
+            now() - a.readyAt >= policy.handshakeMs
+          )
+            return response(410, {
+              error: "Recovery attachment expired or already connected",
+            });
+          return response(201, {
+            ref: a.ref,
+            target: a.target,
+            dimensions: a.dimensions,
+            policy,
+          });
         }
+
         if (
           url.pathname === "/api/tickets" &&
           request.method === "POST" &&
@@ -633,7 +844,10 @@ export async function startLocalTerminal(options: {
         }
         return response(404, { error: "Not found" });
       } catch {
-        return response(400, { error: "Local terminal request rejected" });
+        return response(400, {
+          error:
+            "Local terminal request rejected; Workspace or session may have disappeared",
+        });
       } finally {
         requests--;
         inFlight.delete(controller);
@@ -681,6 +895,8 @@ export async function startLocalTerminal(options: {
   const timer = setInterval(() => {
     for (const [key, ticket] of tickets)
       if (now() >= ticket.expires) tickets.delete(key);
+    for (const [key, recovery] of recoveries)
+      if (now() >= recovery.expires) recoveries.delete(key);
     for (const a of attachments.values()) {
       if (a.closing) continue;
       if (
@@ -691,6 +907,10 @@ export async function startLocalTerminal(options: {
         (a.socket && now() - a.lastPong >= policy.heartbeatMs)
       ) {
         void close(a, "Terminal authentication or heartbeat expired");
+        continue;
+      }
+      if (a.sent[0] && now() - a.sent[0].at >= policy.renderMs) {
+        void close(a, "Terminal renderer acknowledgement timed out");
         continue;
       }
       if (a.socket) pump(a);

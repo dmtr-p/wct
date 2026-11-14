@@ -1,5 +1,12 @@
 import { afterEach, expect, vi } from "vitest";
-import { encodeFrame, type LocalHeader, policy } from "../src/browser/protocol";
+import {
+  decode,
+  decodeFrame,
+  encodeFrame,
+  type LocalHeader,
+  LocalRef,
+  policy,
+} from "../src/browser/protocol";
 import { test } from "./helpers/temp-dir";
 
 const state = vi.hoisted(() => ({
@@ -7,6 +14,8 @@ const state = vi.hoisted(() => ({
   cols: 80,
   rows: 24,
   resized: [] as number[][],
+  disposed: 0,
+  resize: () => {},
   writes: [] as { bytes: Uint8Array; done: () => void }[],
   data: (_text: string) => {},
   binary: (_text: string) => {},
@@ -24,6 +33,9 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon() {}
     open() {}
     focus() {}
+    dispose() {
+      state.disposed++;
+    }
     onData(callback: (text: string) => void) {
       state.data = callback;
     }
@@ -38,10 +50,16 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
     fit() {}
+    proposeDimensions() {
+      return { cols: state.cols, rows: state.rows };
+    }
   },
 }));
 
+const cleanup: (() => void)[] = [];
 afterEach(() => {
+  cleanup.splice(0).forEach((fn) => fn());
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -51,12 +69,13 @@ async function client() {
   state.options.disableStdin = true;
   state.writes = [];
   state.resized = [];
-  const ref = {
+  state.disposed = 0;
+  const ref = decode(LocalRef, {
     endpoint: "local",
     attachmentId: "11111111-1111-4111-8111-111111111111",
     generation: "22222222-2222-4222-8222-222222222222",
     server: "fixture",
-  };
+  });
   const target = {
     server: "fixture",
     sessionId: "$1",
@@ -80,7 +99,19 @@ async function client() {
   vi.stubGlobal("document", {
     getElementById: (id: string) => (id === "status" ? status : {}),
   });
-  vi.stubGlobal("window", { addEventListener: vi.fn() });
+  vi.stubGlobal("window", {
+    addEventListener: (_event: string, fn: () => void) => cleanup.push(fn),
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(fn: () => void) {
+        state.resize = fn;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, options: RequestInit) => {
@@ -92,9 +123,16 @@ async function client() {
         );
         return new Response(null, { status: 204 });
       }
+      if (typeof options.body !== "string")
+        throw new Error("Expected JSON body");
       return Response.json(
         path === "/api/attachments"
-          ? { ref, target, policy }
+          ? {
+              ref,
+              target,
+              policy,
+              dimensions: JSON.parse(options.body).dimensions,
+            }
           : { ticket: "one-use-ticket", streamId, expiresAt: 30000 },
       );
     }),
@@ -107,12 +145,12 @@ async function client() {
     onmessage?: (event: { data: ArrayBuffer }) => void;
     onclose?: (event: { reason: string }) => void;
     onerror?: () => void;
-    sent: Uint8Array[] = [];
+    sent: (Uint8Array | string)[] = [];
     constructor(url: URL) {
       urls.push(String(url));
       sockets.push(this);
     }
-    send(bytes: Uint8Array) {
+    send(bytes: Uint8Array | string) {
       this.sent.push(bytes);
     }
     close() {
@@ -144,7 +182,7 @@ async function client() {
     );
     socket.onmessage?.({ data: frame.buffer });
   };
-  return { ref, target, socket, send, status, order, urls };
+  return { ref, target, socket, sockets, send, status, order, urls };
 }
 
 test("clears bootstrap fragment before exchange and accepts ordered native target observations", async () => {
@@ -163,7 +201,12 @@ test("clears bootstrap fragment before exchange and accepts ordered native targe
   c.send("target", { ...c.target, sessionId: "$2", branch: "other" });
   expect(c.status.textContent).toContain("other");
   state.data("\x02nhello");
-  expect(c.socket.sent).toHaveLength(1);
+  expect(
+    c.socket.sent.filter(
+      (frame) =>
+        typeof frame !== "string" && decodeFrame(frame).header.kind === "input",
+    ),
+  ).toHaveLength(1);
   c.send(
     "output",
     { ...c.target, sessionId: "$2", branch: "other" },
@@ -207,12 +250,22 @@ test("render callbacks release credit; socket input and oversized paste fail clo
   expect(c.socket.readyState).toBe(1);
   c.socket.bufferedAmount = policy.inputBytes;
   state.data("x");
-  expect(c.socket.sent).toHaveLength(0);
+  expect(
+    c.socket.sent.filter(
+      (frame) =>
+        typeof frame !== "string" && decodeFrame(frame).header.kind === "input",
+    ),
+  ).toHaveLength(0);
   expect(c.socket.readyState).toBe(3);
   const next = await client();
   next.send("target");
   state.data("x".repeat(policy.inputBytes));
-  expect(next.socket.sent).toHaveLength(0);
+  expect(
+    next.socket.sent.filter(
+      (frame) =>
+        typeof frame !== "string" && decodeFrame(frame).header.kind === "input",
+    ),
+  ).toHaveLength(0);
   expect(next.status.textContent).toContain("paste exceeds");
 });
 
@@ -224,6 +277,131 @@ test("initial renderer grid matches bounded PTY dimensions on oversized containe
     expect(state.resized).toEqual([[500, 200]]);
     c.send("target");
     expect(c.socket.readyState).toBe(1);
+  } finally {
+    state.cols = 80;
+    state.rows = 24;
+  }
+});
+
+test("cumulative renderer ACK waits for actual xterm consumption and has its own sequence space", async () => {
+  const c = await client();
+  c.send("target");
+  c.socket.sent = [];
+  c.send("output", c.target, new Uint8Array([65]));
+  c.send("output", c.target, new Uint8Array([66]));
+  expect(c.socket.sent).toHaveLength(0);
+  state.writes[1]?.done();
+  expect(c.socket.sent).toHaveLength(0);
+  state.writes[0]?.done();
+  expect(c.socket.sent).toHaveLength(1);
+  const ack = c.socket.sent[0];
+  if (typeof ack === "string" || !ack) throw new Error("Missing binary ACK");
+  expect(decodeFrame(ack).header).toMatchObject({
+    kind: "ack",
+    sequence: 2,
+    byteLength: 0,
+  });
+  state.data("x");
+  const input = c.socket.sent[1];
+  if (typeof input === "string" || !input) throw new Error("Missing input");
+  expect(decodeFrame(input).header).toMatchObject({
+    kind: "input",
+    sequence: 0,
+  });
+});
+
+test("fresh reconnect disposes the old screen and fences late socket and renderer callbacks", async () => {
+  const c = await client();
+  c.send("target");
+  c.send("output", c.target, new Uint8Array([65]));
+  const oldRender = state.writes[0]?.done;
+  const oldInput = state.data;
+  const sent = c.socket.sent.length;
+  vi.useFakeTimers();
+  c.socket.onclose?.({ reason: "Connection lost" });
+  oldRender?.();
+  oldInput("stale");
+  expect(c.socket.sent).toHaveLength(sent);
+  await vi.advanceTimersByTimeAsync(policy.reconnectMinMs * 1.3);
+  expect(c.sockets).toHaveLength(2);
+  expect(state.disposed).toBe(1);
+  expect(state.options.disableStdin).toBe(true);
+  const request = vi
+    .mocked(fetch)
+    .mock.calls.filter(([path]) => path === "/api/attachments")[1];
+  const body = request?.[1]?.body;
+  if (typeof body !== "string") throw new Error("Missing JSON body");
+  expect(JSON.parse(body)).toEqual({
+    dimensions: { cols: 80, rows: 24 },
+    reconnect: c.ref,
+  });
+  c.send("target", { ...c.target, branch: "stale" });
+  expect(state.options.disableStdin).toBe(true);
+});
+
+test("live fit sends an ordered resize with input watermark and waits before changing the grid", async () => {
+  const c = await client();
+  c.send("target");
+  c.socket.sent = [];
+  vi.useFakeTimers();
+  state.cols = 100;
+  state.rows = 30;
+  try {
+    state.resize();
+    await vi.advanceTimersByTimeAsync(100);
+    const resize = c.socket.sent[0];
+    expect(typeof resize).toBe("string");
+    expect(JSON.parse(String(resize))).toMatchObject({
+      kind: "resize",
+      controlSequence: 0,
+      throughInput: null,
+      dimensions: { cols: 100, rows: 30 },
+      target: c.target,
+    });
+    expect(state.resized).toEqual([[80, 24]]);
+    expect(state.options.disableStdin).toBe(true);
+    const frame = encodeFrame({
+      ref: c.ref,
+      streamId: "33333333-3333-4333-8333-333333333333" as never,
+      kind: "resized",
+      target: c.target,
+      sequence: 1,
+      byteLength: 0,
+      controlSequence: 0,
+      dimensions: { cols: 100, rows: 30 },
+    });
+    c.socket.onmessage?.({ data: frame.buffer });
+    expect(state.resized).toEqual([
+      [80, 24],
+      [100, 30],
+    ]);
+    expect(state.options.disableStdin).toBe(false);
+  } finally {
+    state.cols = 80;
+    state.rows = 24;
+  }
+});
+
+test("continuous rendering cannot postpone a scheduled container resize", async () => {
+  const c = await client();
+  c.send("target");
+  c.socket.sent = [];
+  vi.useFakeTimers();
+  state.cols = 90;
+  state.rows = 28;
+  try {
+    state.resize();
+    for (let i = 0; i < 4; i++) {
+      c.send("output", c.target, new Uint8Array([65]));
+      state.writes.at(-1)?.done();
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    expect(
+      c.socket.sent.some(
+        (frame) =>
+          typeof frame === "string" && JSON.parse(frame).kind === "resize",
+      ),
+    ).toBe(true);
   } finally {
     state.cols = 80;
     state.rows = 24;

@@ -87,3 +87,22 @@ Neither PTY EOF nor a timeout proves child exit. Cleanup targets only the owned
 client and retains custody until exit, preserving Workspace workloads.
 Capability-dependent regression skips are not support evidence. See the
 [lifetime contract](../browser-terminal.md#lifetime) for cleanup sequencing.
+
+## Fresh recovery and shared sizing
+
+Recover with a new tmux client into a new renderer rather than retaining a PTY
+whose disconnected output was discarded. Tmux's attach redraw reconstructs the
+visible screen without replaying device queries or relying on a dimension change.
+Wait for old PTY custody to end; a recovery reference authorizes only its verified
+current session, never a new Workspace session found under the same name.
+
+Keep render credit until xterm reports write consumption, separately from input
+sequence accounting. Transport delivery cannot establish renderer consumption.
+Use the ordered terminal connector for resize, with explicit input and renderer
+drain boundaries rather than a second control transport with implicit ordering.
+
+Preserve configured tmux window sizing: changing a shared window option for a
+browser would also change native clients' behavior. Interactive browser clients
+participate in that existing policy, while observers always ignore size. See
+[live and shared sizing](../browser-terminal.md#live-and-shared-sizing) for limits,
+evaluated alternatives and the conservative drain limitation.

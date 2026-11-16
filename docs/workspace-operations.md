@@ -176,7 +176,10 @@ The session-scoped `WCT_WORKSPACE_ID` environment entry stores the full identity
 in Base64. A name or hash alone never establishes ownership. Open, Start,
 Stop, Close, switching, and CLI/TUI discovery share ownership resolution.
 Pane and agent discovery attributes only verified sessions to Workspaces.
-Recorded repository, branch, and checkout fields must agree with the target
+Recorded repository and checkout paths identify an existing session across
+branch switches, including detached HEAD. Its full identity must agree with its
+recorded branch; the session name and environment retain their creation values.
+Without complete checkout metadata, recorded fields must agree with the target
 even when the full identity matches. Failed ownership inspection blocks
 lifecycle actions; observation can show the session without attributing it to
 a Workspace.
@@ -197,9 +200,9 @@ targets the ID returned by successful creation. A failed acquisition never
 authorizes cleanup of an existing session. Shutdown carries the resolved
 Workspace identity and session ID/server generation to its detached worker and
 revalidates them before stopping the session. A replacement requires retrying
-the operation. When HEAD is detached, shutdown can identify the session through
-its canonical repository and checkout paths and verify its recorded branch
-identity.
+the operation. After a branch switch or when HEAD is detached, shutdown identifies
+the session through its canonical repository and checkout paths and verifies its
+recorded branch identity.
 
 ## Shutdown
 

@@ -403,6 +403,21 @@ export function prepareAttachment(
         "tmux_error",
         "A verified Workspace Session is required for an attachment",
       );
+    return yield* prepareSessionAttachment(
+      { id: session.id, server: session.server },
+      kind,
+    );
+  });
+}
+
+/** Caller verifies ownership; this primitive fences the exact live server/session at launch. */
+export function prepareSessionAttachment(
+  session: { id: string; server: string },
+  kind: AttachmentKind,
+) {
+  return Effect.gen(function* () {
+    if (!/^\$\d+$/.test(session.id) || !session.server)
+      return yield* commandError("tmux_error", "Invalid attachment session");
     const capability = yield* probeClientFormats();
     if (!capability.supported || capability.server !== session.server)
       return yield* commandError(
@@ -450,6 +465,7 @@ export function prepareAttachment(
         "-F",
         and(
           equals(SERVER_FORMAT, attachment.server),
+          equals(`#{S:#{?${equals("#{session_id}", session.id)},1,}}`, "1"),
           equals(MARKER_FORMAT, token),
           equals(`#{${recordKey(attachment)}}`, pending),
         ),

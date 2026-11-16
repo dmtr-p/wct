@@ -17,6 +17,7 @@ import {
 import { startLocalTerminal } from "../src/browser/server";
 import { runBunPromise } from "../src/effect/runtime";
 import { workspaceSessionName } from "../src/services/session-identity";
+import { prepareSessionAttachment } from "../src/services/terminal-attachments";
 import { makeTmuxService } from "../src/services/tmux";
 import { test } from "./helpers/temp-dir";
 
@@ -267,6 +268,8 @@ test.skipIf(!tmuxPath)(
       );
       if (!session?.id || !session.server)
         throw new Error("Missing verified fixture session");
+      const sessionId = session.id;
+      const serverGeneration = session.server;
       endpoint = await startLocalTerminal({
         env: {
           ...process.env,
@@ -275,11 +278,26 @@ test.skipIf(!tmuxPath)(
         },
         now: () => clock,
         backend: {
-          prepare: () =>
-            runBunPromise(tmux.prepareAttachment(target, "browser")),
+          prepare: async (expected) => ({
+            ...(await (expected
+              ? runBunPromise(
+                  prepareSessionAttachment(
+                    { id: expected.sessionId, server: expected.server },
+                    "browser",
+                  ),
+                )
+              : runBunPromise(tmux.prepareAttachment(target, "browser")))),
+            target: expected ?? {
+              ...target,
+              server: serverGeneration,
+              sessionId: sessionId,
+            },
+          }),
           query: (ref) => runBunPromise(tmux.queryAttachment(ref)),
           detach: (ref) => runBunPromise(tmux.detachAttachment(ref)),
           verify: async (client) => {
+            if (!client.server || !client.sessionId)
+              throw new Error("Missing client identity");
             const current = await runBunPromise(
               tmux.resolveSession(target, session, { readOnly: true }),
             );
@@ -287,7 +305,11 @@ test.skipIf(!tmuxPath)(
               client.sessionId !== current?.id ||
               client.server !== current?.server
             )
-              throw new Error("Wrong target");
+              return {
+                server: client.server,
+                sessionId: client.sessionId,
+                sessionName: client.session,
+              };
             return {
               ...target,
               server: session.server ?? "",
@@ -422,10 +444,21 @@ test.skipIf(!tmuxPath)(
             }
             if (header.kind === "output")
               output[index] += new TextDecoder().decode(bytes);
+            if ("target" in header && header.kind !== "ack")
+              ws.send(
+                encodeFrame({
+                  ref: header.ref,
+                  streamId: header.streamId,
+                  target: header.target,
+                  kind: "ack",
+                  sequence: header.sequence,
+                  byteLength: 0,
+                }),
+              );
           };
         });
       }
-      const one = await open(first, fresh, 0);
+      let one = await open(first, fresh, 0);
       const two = await open(second, await issue(second.ref), 1);
       await reject(fresh.ticket);
       const send = (
@@ -449,9 +482,141 @@ test.skipIf(!tmuxPath)(
           ),
         );
       };
+      one.send(
+        JSON.stringify({
+          ref: first.ref,
+          streamId: fresh.streamId,
+          target: first.target,
+          kind: "resize",
+          dimensions: { cols: 100, rows: 30 },
+          controlSequence: 0,
+          throughInput: null,
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(frames[0]?.some((f) => f.kind === "resized")).toBe(true),
+      );
+      const resizedClient = (await runBunPromise(tmux.listClients)).find(
+        (c) => c.attachment?.id === first.ref.attachmentId,
+      );
+      await vi.waitFor(async () =>
+        expect(
+          await command(
+            "list-clients",
+            "-F",
+            "#{client_pid}:#{client_width}x#{client_height}",
+          ),
+        ).toContain(`${resizedClient?.pid}:100x30`),
+      );
       send(one, first, fresh.streamId, "printf 'WCT_BROWSER_342\\n'\r");
       await vi.waitFor(() => expect(output[0]).toContain("WCT_BROWSER_342"));
       await vi.waitFor(() => expect(output[1]).toContain("WCT_BROWSER_342"));
+      // Evaluate shared sizing with two browser clients, a larger native client,
+      // and a tiny managed observer. No browser code changes window options.
+      native.kill();
+      await native.exited;
+      nativeTerminal.close();
+      nativeTerminal = new Bun.Terminal({ cols: 120, rows: 40, data() {} });
+      native = Bun.spawn([executable, "attach-session", "-t", session.id], {
+        terminal: nativeTerminal,
+        env: { ...process.env, TMUX: "", TERM: "xterm-256color" },
+      });
+      launched.push(native);
+      const observerLaunch = await runBunPromise(
+        tmux.prepareAttachment(target, "observer"),
+      );
+      const observer = Bun.spawn([executable, "-C", ...observerLaunch.args], {
+        stdin: "pipe",
+        stdout: "ignore",
+        stderr: "ignore",
+        env: { ...process.env, TMUX: "", ...observerLaunch.env },
+      });
+      launched.push(observer);
+      await vi.waitFor(async () =>
+        expect(
+          (await runBunPromise(tmux.listClients)).some(
+            (c) => c.attachment?.id === observerLaunch.attachment.id,
+          ),
+        ).toBe(true),
+      );
+      for (const [mode, size] of [
+        ["latest", "120x39"],
+        ["smallest", "80x23"],
+        ["largest", "120x39"],
+      ] as const) {
+        await command(
+          "set-option",
+          "-w",
+          "-t",
+          session.id,
+          "window-size",
+          mode,
+        );
+        await vi.waitFor(async () =>
+          expect(
+            await command(
+              "display-message",
+              "-p",
+              "-t",
+              sessionId,
+              "#{window_width}x#{window_height}",
+            ),
+          ).toBe(size),
+        );
+      }
+      await command(
+        "set-option",
+        "-w",
+        "-t",
+        session.id,
+        "window-size",
+        "smallest",
+      );
+      const managed = (await runBunPromise(tmux.listClients)).filter(
+        (c) => c.attachment?.kind === "browser",
+      );
+      for (const c of managed)
+        await command(
+          "refresh-client",
+          "-t",
+          c.name ?? c.tty,
+          "-f",
+          "ignore-size",
+        );
+      await vi.waitFor(async () =>
+        expect(
+          await command(
+            "display-message",
+            "-p",
+            "-t",
+            sessionId,
+            "#{window_width}x#{window_height}",
+          ),
+        ).toBe("120x39"),
+      );
+      nativeTerminal.resize(110, 35);
+      native.kill("SIGWINCH");
+      await vi.waitFor(async () =>
+        expect(
+          await command(
+            "display-message",
+            "-p",
+            "-t",
+            sessionId,
+            "#{window_width}x#{window_height}",
+          ),
+        ).toBe("110x34"),
+      );
+      for (const c of managed)
+        await command(
+          "refresh-client",
+          "-t",
+          c.name ?? c.tty,
+          "-f",
+          "!ignore-size",
+        );
+      await runBunPromise(tmux.detachAttachment(observerLaunch.attachment));
+      await observer.exited;
       const clients = await runBunPromise(tmux.listClients);
       expect(
         clients.filter((client) => client.attachment?.kind === "browser"),
@@ -493,7 +658,41 @@ test.skipIf(!tmuxPath)(
       );
       expect(one.readyState).toBe(WebSocket.OPEN);
       expect(output[1]).not.toContain("RAW_SWITCH_OK");
-      send(one, { ...first, ref: second.ref }, fresh.streamId, "echo BAD\r", 2);
+      one.close();
+      await vi.waitFor(() => expect(one.readyState).toBe(WebSocket.CLOSED));
+      await command(
+        "send-keys",
+        "-t",
+        other,
+        "printf '\\033[2J\\033[HREDRAW_WHILE_DISCONNECTED_344\\n'",
+        "Enter",
+      );
+      await vi.waitFor(async () =>
+        expect(await command("capture-pane", "-p", "-t", other)).toContain(
+          "REDRAW_WHILE_DISCONNECTED_344",
+        ),
+      );
+      let recovered!: typeof first;
+      await vi.waitFor(async () => {
+        const res = await post(
+          "/api/attachments",
+          { reconnect: first.ref, dimensions: { cols: 100, rows: 30 } },
+          cookie,
+        );
+        expect(res.status).toBe(201);
+        recovered = (await res.json()) as typeof first;
+      });
+      expect(recovered.ref).not.toEqual(first.ref);
+      expect(recovered.target.sessionId).toBe(other);
+      frames[0] = [];
+      output[0] = "";
+      const recoveredTicket = await issue(recovered.ref);
+      one = await open(recovered, recoveredTicket, 0);
+      await vi.waitFor(() =>
+        expect(output[0]).toContain("REDRAW_WHILE_DISCONNECTED_344"),
+      );
+      // Old attachment references cannot authorize input on the replacement stream.
+      send(one, first, recoveredTicket.streamId, "echo BAD\r", 0);
       await vi.waitFor(() => expect(one.readyState).toBe(WebSocket.CLOSED));
       expect(two.readyState).toBe(WebSocket.OPEN);
       expect(await command("has-session", "-t", session.id)).toBe("");
@@ -644,7 +843,19 @@ test("shutdown retains pending preparation until its late handle can be detached
       prepare: async () => {
         prepared = true;
         await gate;
-        return { attachment: ref, command: "tmux", args: [], env: {} };
+        return {
+          attachment: ref,
+          command: "tmux",
+          args: [],
+          env: {},
+          target: {
+            server: ref.server,
+            sessionId: "$1",
+            mainRepoPath: "/fixture",
+            worktreePath: "/fixture",
+            branch: "main",
+          },
+        };
       },
       query,
       detach,

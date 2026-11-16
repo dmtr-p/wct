@@ -28,6 +28,12 @@ export const policy = {
   heartbeatMs: 60_000,
   drainMs: 2_000,
   termMs: 2_000,
+  renderMs: 10_000,
+  recoveryMs: 120_000,
+  maxRecoveries: 32,
+  reconnectMinMs: 500,
+  reconnectMaxMs: 10_000,
+  sizing: "inherit-window-policy",
 } as const;
 
 export const LocalDimensions = Dimensions.check(
@@ -73,24 +79,48 @@ export const LocalHeader = Schema.Union([
   Schema.Struct({
     ...data,
     target: LocalTarget,
+    kind: Schema.Literal("ack"),
+    byteLength: Schema.Literal(0),
+  }),
+  Schema.Struct({
+    ...data,
+    target: LocalTarget,
+    kind: Schema.Literal("resized"),
+    dimensions: LocalDimensions,
+    controlSequence: Counter,
+    byteLength: Schema.Literal(0),
+  }),
+  Schema.Struct({
+    ...data,
+    target: LocalTarget,
     kind: Schema.Literal("target"),
     byteLength: Schema.Literal(0),
   }),
 ]);
 export type LocalHeader = typeof LocalHeader.Type;
-export const LocalControl = Schema.Struct({
+const control = {
   ...connection,
   target: LocalTarget,
   controlSequence: Counter,
-  kind: Schema.Literal("close"),
-});
+};
+export const LocalControl = Schema.Union([
+  Schema.Struct({ ...control, kind: Schema.Literal("close") }),
+  Schema.Struct({
+    ...control,
+    kind: Schema.Literal("resize"),
+    dimensions: LocalDimensions,
+    throughInput: Schema.NullOr(Counter),
+  }),
+]);
 export type LocalControl = typeof LocalControl.Type;
 export const CreateLocalAttachment = Schema.Struct({
   dimensions: LocalDimensions,
+  reconnect: Schema.optional(LocalRef),
 });
 export const AttachmentCreated = Schema.Struct({
   ref: LocalRef,
-  target: WorkspaceTarget,
+  target: LocalTarget,
+  dimensions: LocalDimensions,
   policy: Schema.Unknown,
 });
 export const TicketIssued = Schema.Struct({
@@ -111,6 +141,11 @@ export function decode<S extends Schema.ConstraintDecoder<unknown>>(
 export function same(a: unknown, b: unknown): boolean {
   // All compared values have first passed the same schema decoder.
   return JSON.stringify(a) === JSON.stringify(b);
+}
+export function sameLocalTarget(a: LocalTarget, b: LocalTarget): boolean {
+  if ("mainRepoPath" in a || "mainRepoPath" in b) return same(a, b);
+  // Native names are display data; IDs are never recycled within this server generation.
+  return a.server === b.server && a.sessionId === b.sessionId;
 }
 export function encodeFrame(
   header: LocalHeader,

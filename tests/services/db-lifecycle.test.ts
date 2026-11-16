@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -33,12 +34,14 @@ describe("database connection lifetimes", { concurrent: false }, () => {
         return {
           version: getCurrentSchemaVersion(db),
           journal: db.query("PRAGMA journal_mode").get(),
+          busy: db.query("PRAGMA busy_timeout").get(),
         };
       }),
     );
     expect(result).toEqual({
       version: TARGET_SCHEMA_VERSION,
       journal: { journal_mode: "wal" },
+      busy: { timeout: 1000 },
     });
     expect(() => connection?.query("SELECT 1").get()).toThrow();
   });
@@ -118,11 +121,14 @@ describe("database connection lifetimes", { concurrent: false }, () => {
   );
 
   describe.each(["sync", "effect"] as const)("%s initialization", (kind) => {
-    test.each(["WAL", "migration"] as const)(
+    test.each(["busy handler", "WAL", "migration"] as const)(
       "%s failure closes the connection without replacing the original error",
       (stage) => {
         const cause = new Error(`${stage} failed`);
         const run = vi.spyOn(Database.prototype, "run");
+        if (stage !== "busy handler") {
+          run.mockReturnValueOnce({ changes: 0, lastInsertRowid: 0 });
+        }
         if (stage === "migration") {
           run.mockReturnValueOnce({ changes: 0, lastInsertRowid: 0 });
         }
@@ -153,6 +159,69 @@ describe("database connection lifetimes", { concurrent: false }, () => {
         expect(failure.cause).toBe(cause);
         expect(callback).not.toHaveBeenCalled();
         expect(close).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    test.each(["released", "held"] as const)(
+      "handles an initialization lock %s by another process without replaying the callback",
+      async (state) => {
+        Effect.runSync(withDb("registry_error", "initialize", () => undefined));
+        const listening = Promise.withResolvers<void>();
+        const child = Bun.spawn(
+          [
+            process.execPath,
+            fileURLToPath(
+              new URL("../fixtures/database-contention.ts", import.meta.url),
+            ),
+            join(home, ".wct/wct.db"),
+          ],
+          {
+            stdout: "ignore",
+            stderr: "pipe",
+            ipc: (message: unknown) => {
+              if (message === "locked") listening.resolve();
+            },
+          },
+        );
+        const errors = new Response(child.stderr).text();
+        const readyTimer = setTimeout(
+          () =>
+            listening.reject(
+              new Error("Database lock fixture readiness timed out"),
+            ),
+          2000,
+        );
+        try {
+          await Promise.race([
+            listening.promise,
+            child.exited.then(() => {
+              throw new Error("Database lock fixture exited before readiness");
+            }),
+          ]);
+          clearTimeout(readyTimer);
+          if (state === "released") child.send("release");
+          const callback = vi.fn((db: Database) => getCurrentSchemaVersion(db));
+          const operation =
+            kind === "sync"
+              ? withDb("registry_error", "read after contention", callback)
+              : withDbEffect("registry_error", "read after contention", (db) =>
+                  Effect.sync(() => callback(db)),
+                );
+          if (state === "released") {
+            expect(Effect.runSync(operation)).toBe(TARGET_SCHEMA_VERSION);
+            expect(callback).toHaveBeenCalledTimes(1);
+            expect(await child.exited, await errors).toBe(0);
+          } else {
+            const failure = Effect.runSync(Effect.flip(operation));
+            expect(failure.code).toBe("registry_error");
+            expect(failure.cause).toMatchObject({ code: "SQLITE_BUSY" });
+            expect(callback).not.toHaveBeenCalled();
+          }
+        } finally {
+          clearTimeout(readyTimer);
+          if (child.exitCode === null) child.kill();
+          await child.exited;
+        }
       },
     );
   });

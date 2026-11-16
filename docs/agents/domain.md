@@ -26,6 +26,9 @@ files in `docs/adr/` for engineering decisions.
   [browser assets](../browser-assets.md).
   The foreground local endpoint, authentication and experiment limits belong in
   [browser terminal](../browser-terminal.md).
+  Repeatable integrated validation belongs in
+  [coordination and browser validation](../coordination-browser-validation.md);
+  run evidence and rollout decisions remain on the tracking issue.
   Shared host schemas, RPC boundaries, identity and connector semantics belong
   in [host contracts](../host-contracts.md).
 - `docs/adr/` owns architectural decisions, constraints, and rationale. Routine

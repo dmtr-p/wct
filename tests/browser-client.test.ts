@@ -7,6 +7,7 @@ import {
   LocalRef,
   policy,
 } from "../src/browser/protocol";
+import { sidebarDocument } from "./helpers/sidebar-dom";
 import { test } from "./helpers/temp-dir";
 
 const state = vi.hoisted(() => ({
@@ -64,7 +65,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-async function client() {
+async function client(withSidebar = false) {
   vi.resetModules();
   state.options.disableStdin = true;
   state.writes = [];
@@ -96,8 +97,17 @@ async function client() {
     href: "http://127.0.0.1:1234/#private-bootstrap",
   });
   vi.stubGlobal("history", { replaceState: replace });
+  const dom = sidebarDocument();
   vi.stubGlobal("document", {
-    getElementById: (id: string) => (id === "status" ? status : {}),
+    createElement: dom.createElement,
+    getElementById: (id: string) =>
+      id === "status"
+        ? status
+        : id === "terminal"
+          ? {}
+          : withSidebar
+            ? dom.getElementById(id)
+            : {},
   });
   vi.stubGlobal("window", {
     addEventListener: (_event: string, fn: () => void) => cleanup.push(fn),
@@ -125,6 +135,30 @@ async function client() {
       }
       if (typeof options.body !== "string")
         throw new Error("Expected JSON body");
+      if (path === "/api/sidebar")
+        return Response.json({
+          ref,
+          streamId,
+          revision: 1,
+          projects: [
+            {
+              mainRepoPath: "/repo",
+              displayName: "Project",
+              workspaces: [
+                {
+                  branch: "other",
+                  worktreePath: "/repo/other",
+                  target: {
+                    ...target,
+                    branch: "other",
+                    worktreePath: "/repo/other",
+                    sessionId: "$2",
+                  },
+                },
+              ],
+            },
+          ],
+        });
       return Response.json(
         path === "/api/attachments"
           ? {
@@ -182,7 +216,7 @@ async function client() {
     );
     socket.onmessage?.({ data: frame.buffer });
   };
-  return { ref, target, socket, sockets, send, status, order, urls };
+  return { ref, target, socket, sockets, send, status, order, urls, dom };
 }
 
 test("clears bootstrap fragment before exchange and accepts ordered native target observations", async () => {
@@ -488,3 +522,119 @@ test.for(["/api/attachments", "/api/tickets"])(
     expect(c.sockets).toHaveLength(1);
   },
 );
+
+test("sidebar switch pauses input, verifies ordered reply and preserves container resize barriers", async () => {
+  state.cols = 80;
+  state.rows = 24;
+  const c = await client(true);
+  c.send("target");
+  await vi.waitFor(() => expect(c.dom.rows()).toHaveLength(1));
+  c.send("output", c.target, new Uint8Array([65]));
+  expect(state.writes).toHaveLength(1);
+  c.dom.rows()[0]?.click();
+  const control = c.socket.sent.find((frame) => typeof frame === "string");
+  if (typeof control !== "string") throw new Error("Missing select control");
+  const selection = JSON.parse(control);
+  expect(selection.kind).toBe("select");
+  expect(selection.throughInput).toBeNull();
+  expect(state.options.disableStdin).toBe(true);
+  const count = c.socket.sent.length;
+  state.data("BLOCKED");
+  expect(c.socket.sent).toHaveLength(count);
+  state.cols = 100;
+  state.rows = 30;
+  state.resize();
+  state.writes[0]?.done();
+  c.socket.onmessage?.({
+    data: encodeFrame({
+      ref: c.ref,
+      streamId: selection.streamId,
+      kind: "selected",
+      target: selection.selection,
+      controlSequence: 0,
+      sequence: 2,
+      byteLength: 0,
+    }).buffer,
+  });
+  expect(state.options.disableStdin).toBe(false);
+  expect(c.dom.rows()[0]?.attributes.get("aria-current")).toBe("true");
+  await vi.waitFor(() =>
+    expect(
+      c.socket.sent.filter((frame) => typeof frame === "string"),
+    ).toHaveLength(2),
+  );
+  expect(
+    JSON.parse(
+      c.socket.sent.filter((frame) => typeof frame === "string")[1] as string,
+    ).kind,
+  ).toBe("resize");
+});
+
+test("a catalog response from a disconnected attempt cannot repopulate that tab's rows", async () => {
+  const c = await client(true);
+  const fetcher = vi.mocked(fetch);
+  const original = fetcher.getMockImplementation();
+  let release: ((response: Response) => void) | undefined;
+  fetcher.mockImplementation((input, options) => {
+    if (input === "/api/sidebar")
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    if (!original) throw new Error("Missing fetch fixture");
+    return original(input, options);
+  });
+  c.send("target");
+  await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+  c.socket.onclose?.({ reason: "Connection lost" });
+  release?.(
+    Response.json({
+      ref: c.ref,
+      streamId: "33333333-3333-4333-8333-333333333333",
+      revision: 999,
+      projects: [
+        {
+          mainRepoPath: "/repo",
+          displayName: "Stale",
+          workspaces: [
+            { branch: "main", worktreePath: "/repo", target: c.target },
+          ],
+        },
+      ],
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(c.dom.rows()).toHaveLength(0);
+});
+
+test("a delayed initial retry cannot reuse its creation ID after the retention window", async () => {
+  vi.resetModules();
+  vi.useFakeTimers();
+  const status = { textContent: "" };
+  vi.stubGlobal("location", {
+    hash: "",
+    pathname: "/",
+    href: "http://127.0.0.1:1234/",
+  });
+  vi.stubGlobal("history", { replaceState() {} });
+  vi.stubGlobal("document", {
+    getElementById: (id: string) =>
+      id === "status" ? status : id === "terminal" ? {} : null,
+  });
+  vi.stubGlobal("window", {
+    addEventListener: (_event: string, fn: () => void) => cleanup.push(fn),
+  });
+  let creations = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      creations++;
+      throw new Error("Initial response lost");
+    }),
+  );
+  await import("../src/browser/client/main");
+  await vi.waitFor(() => expect(creations).toBe(1));
+  vi.setSystemTime(Date.now() + policy.recoveryMs);
+  await vi.runOnlyPendingTimersAsync();
+  expect(creations).toBe(1);
+  expect(status.textContent).toContain("creation expired");
+});

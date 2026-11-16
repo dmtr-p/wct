@@ -14,6 +14,7 @@ import {
   same,
   TicketIssued,
 } from "../protocol";
+import { createSidebar, readCatalog } from "./sidebar";
 
 const secret = location.hash.slice(1);
 history.replaceState(null, "", location.pathname);
@@ -52,10 +53,13 @@ async function post(path: string, body: unknown) {
   return result.status === 204 ? undefined : result.json();
 }
 async function supervise(container: HTMLElement) {
+  const sidebar = createSidebar();
   if (secret) await post("/api/bootstrap", { secret });
   let stopped = false;
   let generation = 0;
   let recovery: LocalRef | undefined;
+  const creationId = crypto.randomUUID();
+  const creationStarted = Date.now();
   let recoveryStarted = 0;
   let retry = policy.reconnectMinMs as number;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -80,8 +84,17 @@ async function supervise(container: HTMLElement) {
     retry = Math.min(policy.reconnectMaxMs, retry * 2);
   }
   async function attempt() {
+    // A lost initial response must not reuse an evicted creation reference.
+    if (!recovery && Date.now() - creationStarted >= policy.recoveryMs) {
+      stopped = true;
+      display(
+        "Initial attachment creation expired. Open a new terminal explicitly.",
+      );
+      return;
+    }
     const current = ++generation;
     dispose();
+    sidebar?.connection(undefined);
     const terminal = new Terminal({ disableStdin: true, scrollback: 5000 });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -96,11 +109,17 @@ async function supervise(container: HTMLElement) {
     let socket: WebSocket | undefined;
     let observer: ResizeObserver | undefined;
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    let catalogTimer: ReturnType<typeof setTimeout> | undefined;
+    let controlTimer: ReturnType<typeof setTimeout> | undefined;
+    let catalogRequest: AbortController | undefined;
     let alive = true;
     const active = () => alive && !stopped && current === generation;
     dispose = () => {
       alive = false;
       clearTimeout(resizeTimer);
+      clearTimeout(catalogTimer);
+      clearTimeout(controlTimer);
+      catalogRequest?.abort();
       observer?.disconnect();
       socket?.close();
       terminal.dispose();
@@ -109,6 +128,10 @@ async function supervise(container: HTMLElement) {
       if (!active()) return;
       terminal.options.disableStdin = true;
       stopped = true;
+      sidebar?.connection(undefined);
+      clearTimeout(catalogTimer);
+      clearTimeout(controlTimer);
+      catalogRequest?.abort();
       display(message);
       socket?.close();
     }
@@ -117,7 +140,7 @@ async function supervise(container: HTMLElement) {
         AttachmentCreated,
         await post("/api/attachments", {
           dimensions,
-          ...(recovery ? { reconnect: recovery } : {}),
+          ...(recovery ? { reconnect: recovery } : { creationId }),
         }),
       );
       if (!active()) return;
@@ -143,6 +166,7 @@ async function supervise(container: HTMLElement) {
       let outputSequence = 0;
       let controlSequence = 0;
       let resizing: { cols: number; rows: number } | undefined;
+      let selecting: LocalTarget | undefined;
       let renderBytes = 0;
       const rendering: {
         header: LocalHeader & { target: LocalTarget };
@@ -187,6 +211,7 @@ async function supervise(container: HTMLElement) {
           !active() ||
           !target ||
           resizing ||
+          selecting ||
           rendering.length ||
           ws.readyState !== WebSocket.OPEN
         )
@@ -196,6 +221,8 @@ async function supervise(container: HTMLElement) {
         const next = bounded(proposed);
         if (same(next, dimensions)) return;
         resizing = next;
+        sidebar?.connection(undefined);
+        controlDeadline();
         terminal.options.disableStdin = true;
         send(
           JSON.stringify({
@@ -208,6 +235,81 @@ async function supervise(container: HTMLElement) {
             throughInput: inputSequence === 0 ? null : inputSequence - 1,
           }),
         );
+      }
+      function controlDeadline() {
+        clearTimeout(controlTimer);
+        controlTimer = setTimeout(() => {
+          if (active()) ws.close();
+        }, policy.handshakeMs);
+      }
+      function enableSelection() {
+        sidebar?.connection(
+          active() && target && !resizing && !selecting
+            ? (selection, catalogRevision) => {
+                if (
+                  !active() ||
+                  !target ||
+                  resizing ||
+                  selecting ||
+                  ws.readyState !== WebSocket.OPEN
+                )
+                  return;
+                selecting = selection;
+                sidebar?.connection(undefined);
+                terminal.options.disableStdin = true;
+                controlDeadline();
+                send(
+                  JSON.stringify({
+                    ref: attachment.ref,
+                    streamId: ticket.streamId,
+                    target,
+                    kind: "select",
+                    selection,
+                    catalogRevision,
+                    controlSequence: controlSequence++,
+                    throughInput:
+                      inputSequence === 0 ? null : inputSequence - 1,
+                  }),
+                );
+              }
+            : undefined,
+        );
+      }
+      async function pollCatalog() {
+        if (!active() || !sidebar || ws.readyState !== WebSocket.OPEN) return;
+        const request = new AbortController();
+        catalogRequest = request;
+        const deadline = setTimeout(() => request.abort(), policy.handshakeMs);
+        try {
+          const response = await fetch("/api/sidebar", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              ref: attachment.ref,
+              streamId: ticket.streamId,
+            }),
+            signal: request.signal,
+          });
+          if (!response.ok) throw new RequestFailure(response.status);
+          const snapshot = await readCatalog(response);
+          if (!active() || request.signal.aborted) return;
+          if (
+            !same(snapshot.ref, attachment.ref) ||
+            snapshot.streamId !== ticket.streamId
+          )
+            throw new Error("Stale sidebar response");
+          sidebar.snapshot(snapshot);
+        } catch {
+          if (active()) sidebar?.unavailable();
+        } finally {
+          clearTimeout(deadline);
+          if (active())
+            catalogTimer = setTimeout(
+              () => void pollCatalog(),
+              policy.catalogMs,
+            );
+        }
       }
       function queueResize() {
         if (resizeTimer !== undefined) return;
@@ -248,11 +350,33 @@ async function supervise(container: HTMLElement) {
               throw new Error("Unexpected terminal target");
             connectedAt ??= Date.now();
             target = header.target;
-            terminal.options.disableStdin = !!resizing;
+            terminal.options.disableStdin = !!resizing || !!selecting;
+            sidebar?.target(target);
+            enableSelection();
+            if (header.sequence === 0) void pollCatalog();
             terminal.focus();
             display(
               `Connected · ${"sessionName" in target ? target.sessionName : target.branch} · Ctrl-B D detaches this tab`,
             );
+          } else if (header.kind === "selected") {
+            if (
+              !selecting ||
+              header.controlSequence !== controlSequence - 1 ||
+              !same(header.target, selecting)
+            )
+              throw new Error("Unexpected selection acknowledgement");
+            if (rendering.some((frame) => frame !== retained && !frame.done))
+              throw new Error("Selection overtook renderer consumption");
+            clearTimeout(controlTimer);
+            selecting = undefined;
+            target = header.target;
+            sidebar?.target(target);
+            terminal.options.disableStdin = !!resizing;
+            enableSelection();
+            display(
+              `Connected · ${"sessionName" in target ? target.sessionName : target.branch} · Ctrl-B D detaches this tab`,
+            );
+            queueResize();
           } else if (header.kind === "resized") {
             if (
               !resizing ||
@@ -266,6 +390,8 @@ async function supervise(container: HTMLElement) {
             dimensions = header.dimensions;
             terminal.resize(dimensions.cols, dimensions.rows);
             resizing = undefined;
+            clearTimeout(controlTimer);
+            enableSelection();
             terminal.options.disableStdin = false;
             queueResize();
           } else if (target && same(target, header.target)) {
@@ -286,6 +412,7 @@ async function supervise(container: HTMLElement) {
           !active() ||
           !target ||
           resizing ||
+          selecting ||
           ws.readyState !== WebSocket.OPEN
         )
           return;
@@ -334,6 +461,10 @@ async function supervise(container: HTMLElement) {
         if (!active()) return;
         terminal.options.disableStdin = true;
         alive = false;
+        sidebar?.connection(undefined);
+        clearTimeout(catalogTimer);
+        clearTimeout(controlTimer);
+        catalogRequest?.abort();
         observer?.disconnect();
         clearTimeout(resizeTimer);
         if (

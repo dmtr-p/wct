@@ -46,6 +46,10 @@ terminal. No mutable session-name map determines attachment identity.
 
 `switchAttachment(reference, target)` resolves verified Workspace Session
 ownership and switches only this attachment on the expected server.
+An optional expected destination server/session ID and source session ID fence
+sidebar selections. They must match resolution and the synchronous tmux mutation
+guard, which also checks destination ownership metadata. Resolution is read-only;
+selection does not backfill session environment or create a session.
 `detachAttachment(reference)` detaches only its verified live client and removes
 its record. Cleanup of an already dead client removes only a matching stale
 record. Neither operation kills a Workspace Session. Stale-generation actions

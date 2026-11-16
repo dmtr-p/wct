@@ -510,18 +510,45 @@ export function switchAttachment(
   attachment: TerminalAttachment,
   target: WorkspaceSessionTarget,
   resolve: ResolveSession,
+  expected?: { sessionId: string; server: string; fromSessionId: string },
 ) {
   return Effect.gen(function* () {
     const client = yield* queryAttachment(attachment);
     const session = yield* resolve(target);
-    if (!client || !session?.id || session.server !== attachment.server)
+    if (
+      !client ||
+      !session?.id ||
+      session.server !== attachment.server ||
+      (expected &&
+        (session.id !== expected.sessionId ||
+          session.server !== expected.server ||
+          client.sessionId !== expected.fromSessionId))
+    )
       return yield* commandError(
         "tmux_error",
         "Attachment or Workspace Session is no longer available on the expected tmux server",
       );
     yield* preflightClientTarget(client);
+    const evidence = session.ownershipEvidence ?? session.ownership;
     yield* guarded(
-      clientCondition(client, marker(attachment), record(attachment, client)),
+      and(
+        clientCondition(client, marker(attachment), record(attachment, client)),
+        ...(expected
+          ? [
+              `#{L:#{?${and(equals(IDENTITY_FORMAT, identity(client) ?? ""), equals(SESSION_ID_FORMAT, expected.fromSessionId))},1,}}`,
+              equals(
+                `#{S:#{?${and(
+                  equals("#{session_id}", expected.sessionId),
+                  equals("#{WCT_WORKSPACE_ID}", evidence?.identity ?? ""),
+                  equals("#{WCT_MAIN_DIR}", evidence?.mainRepoPath ?? ""),
+                  equals("#{WCT_WORKTREE_DIR}", evidence?.worktreePath ?? ""),
+                  equals("#{WCT_BRANCH}", evidence?.branch ?? ""),
+                )},1,}}`,
+                "1",
+              ),
+            ]
+          : []),
+      ),
       [
         "switch-client",
         "-E",

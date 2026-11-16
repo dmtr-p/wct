@@ -34,6 +34,9 @@ export const policy = {
   reconnectMinMs: 500,
   reconnectMaxMs: 10_000,
   sizing: "inherit-window-policy",
+  catalogMs: 5_000,
+  catalogBytes: 1024 * 1024,
+  catalogRows: 512,
 } as const;
 
 export const LocalDimensions = Dimensions.check(
@@ -54,6 +57,21 @@ export const WorkspaceTarget = Schema.Struct({
   sessionId: Schema.String.check(Schema.isPattern(/^\$\d+$/)),
 });
 export type WorkspaceTarget = typeof WorkspaceTarget.Type;
+export const LocalCatalogProjects = Schema.Array(
+  Schema.Struct({
+    mainRepoPath: HostPath,
+    displayName: Text,
+    error: Schema.optional(Text),
+    workspaces: Schema.Array(
+      Schema.Struct({
+        worktreePath: HostPath,
+        branch: Branch,
+        target: Schema.NullOr(WorkspaceTarget),
+      }),
+    ).check(Schema.isMaxLength(policy.catalogRows)),
+  }),
+).check(Schema.isMaxLength(policy.catalogRows));
+export type LocalCatalogProjects = typeof LocalCatalogProjects.Type;
 export const LocalTarget = Schema.Union([
   WorkspaceTarget,
   Schema.Struct({
@@ -71,6 +89,13 @@ const data = {
 };
 export const LocalHeader = Schema.Union([
   Schema.Struct({ ...data, kind: Schema.Literal("input") }),
+  Schema.Struct({
+    ...data,
+    target: LocalTarget,
+    kind: Schema.Literal("selected"),
+    controlSequence: Counter,
+    byteLength: Schema.Literal(0),
+  }),
   Schema.Struct({
     ...data,
     target: LocalTarget,
@@ -107,6 +132,13 @@ export const LocalControl = Schema.Union([
   Schema.Struct({ ...control, kind: Schema.Literal("close") }),
   Schema.Struct({
     ...control,
+    kind: Schema.Literal("select"),
+    selection: WorkspaceTarget,
+    catalogRevision: Counter,
+    throughInput: Schema.NullOr(Counter),
+  }),
+  Schema.Struct({
+    ...control,
     kind: Schema.Literal("resize"),
     dimensions: LocalDimensions,
     throughInput: Schema.NullOr(Counter),
@@ -115,6 +147,7 @@ export const LocalControl = Schema.Union([
 export type LocalControl = typeof LocalControl.Type;
 export const CreateLocalAttachment = Schema.Struct({
   dimensions: LocalDimensions,
+  creationId: Schema.optional(AttachmentId),
   reconnect: Schema.optional(LocalRef),
 });
 export const AttachmentCreated = Schema.Struct({
@@ -132,6 +165,13 @@ export const Bootstrap = Schema.Struct({
   secret: Schema.String.check(Schema.isMaxLength(128)),
 });
 export const TicketRequest = Schema.Struct({ ref: LocalRef });
+export const CatalogRequest = Schema.Struct(connection);
+export const LocalCatalog = Schema.Struct({
+  ...connection,
+  revision: Counter,
+  projects: LocalCatalogProjects,
+});
+export type LocalCatalog = typeof LocalCatalog.Type;
 export function decode<S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
   value: unknown,

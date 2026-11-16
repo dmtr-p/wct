@@ -45,6 +45,8 @@ export interface TmuxSession extends WorkspaceSession {
   name: string;
   attached: boolean;
   windows: number;
+  /** Original environment snapshot for synchronous guards after canonical validation. */
+  ownershipEvidence?: SessionOwnership;
 }
 
 export interface TmuxPaneInfo {
@@ -207,6 +209,7 @@ export interface TmuxService {
   switchAttachment: (
     attachment: TerminalAttachment,
     target: WorkspaceSessionTarget,
+    expected?: { sessionId: string; server: string; fromSessionId: string },
   ) => Effect.Effect<TmuxClient | null, WctError>;
   detachAttachment: (
     attachment: TerminalAttachment,
@@ -340,7 +343,10 @@ function noTmuxSessions(error: unknown): boolean {
   );
 }
 
-function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
+function listSessionsImpl({
+  tolerateOwnershipErrors = false,
+  ownershipEvidence = false,
+} = {}) {
   return Effect.gen(function* () {
     const lease = yield* CurrentWorkspaceLease;
     const result = yield* execProcess("tmux", [
@@ -374,6 +380,7 @@ function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
           });
           return {
             ...session,
+            ...(ownershipEvidence ? { ownershipEvidence: ownership } : {}),
             ownership: {
               ...ownership,
               ...paths,
@@ -393,11 +400,13 @@ function listSessionsImpl({ tolerateOwnershipErrors = false } = {}) {
 function resolveSessionImpl(
   target: WorkspaceSessionTarget,
   expected?: WorkspaceSession | null,
-  options?: { readOnly?: boolean },
+  options?: { readOnly?: boolean; ownershipEvidence?: boolean },
 ) {
   return Effect.gen(function* () {
     const canonical = yield* canonicalSessionTarget(target);
-    const sessions = yield* listSessionsImpl().pipe(
+    const sessions = yield* listSessionsImpl({
+      ownershipEvidence: options?.ownershipEvidence,
+    }).pipe(
       Effect.catchIf(noTmuxSessions, () => Effect.succeed([] as TmuxSession[])),
     );
     const selection = selectWorkspaceSession(sessions, canonical);
@@ -840,8 +849,17 @@ export const liveTmuxService: TmuxServiceImplementation = {
   prepareAttachment: (target, kind) =>
     prepareAttachment(target, kind, resolveSessionImpl),
   queryAttachment,
-  switchAttachment: (attachment, target) =>
-    switchAttachment(attachment, target, resolveSessionImpl),
+  switchAttachment: (attachment, target, expected) =>
+    switchAttachment(
+      attachment,
+      target,
+      (value) =>
+        resolveSessionImpl(value, undefined, {
+          readOnly: true,
+          ownershipEvidence: !!expected,
+        }),
+      expected,
+    ),
   detachAttachment,
   detachClient: (client) =>
     Effect.mapError(nativeClientAction(client), (error) =>

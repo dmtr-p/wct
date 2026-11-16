@@ -9,10 +9,12 @@ import { boundedJson, LocalAuth, validRequestAuthority } from "./auth";
 import { loadBrowserAssets } from "./load-assets";
 import {
   Bootstrap,
+  CatalogRequest,
   CreateLocalAttachment,
   decode,
   decodeFrame,
   encodeFrame,
+  LocalCatalogProjects,
   LocalControl,
   type LocalHeader,
   LocalHeader as LocalHeaderSchema,
@@ -24,10 +26,17 @@ import {
   same,
   sameLocalTarget,
   TicketRequest,
+  type WorkspaceTarget,
   WorkspaceTarget as WorkspaceTargetSchema,
 } from "./protocol";
 
 export interface AttachmentBackend {
+  catalog?(): Promise<LocalCatalogProjects>;
+  select?(
+    ref: TerminalAttachment,
+    target: WorkspaceTarget,
+    from: LocalTarget,
+  ): Promise<void>;
   prepare(
     expected?: LocalTarget,
   ): Promise<AttachmentLaunch & { target: LocalTarget }>;
@@ -73,6 +82,7 @@ interface Attachment {
   sentBytes: number;
   lastAck: number;
   pumping?: Promise<void>;
+  selecting?: boolean;
   actions: Promise<void>;
 }
 
@@ -130,10 +140,45 @@ export async function startLocalTerminal(options: {
     }
   >();
   const preparations = new Set<Promise<unknown>>();
+  const creations = new Map<
+    string,
+    { owner: string; expires: number; task: Promise<Attachment> }
+  >();
   const inFlight = new Map<AbortController, Promise<void>>();
   let reserved = 0;
   let requests = 0;
   let stopping = false;
+  let catalog:
+    | { projects: LocalCatalogProjects; revision: number; at: number }
+    | undefined;
+  let catalogQuery: Promise<void> | undefined;
+  let catalogRevision = 0;
+  async function refreshCatalog() {
+    if (catalog && now() - catalog.at < policy.catalogMs) return;
+    if (!catalogQuery) {
+      catalogQuery = (async () => {
+        if (!options.backend.catalog) throw new Error("Catalog unavailable");
+        const projects = decode(
+          LocalCatalogProjects,
+          await options.backend.catalog(),
+        );
+        if (
+          projects.reduce(
+            (rows, project) => rows + project.workspaces.length + 1,
+            0,
+          ) > policy.catalogRows ||
+          Buffer.byteLength(JSON.stringify(projects)) >
+            policy.catalogBytes - policy.controlBytes
+        )
+          throw new Error("Catalog exceeds bounds");
+        if (!stopping)
+          catalog = { projects, revision: ++catalogRevision, at: now() };
+      })().finally(() => {
+        catalogQuery = undefined;
+      });
+    }
+    await within(catalogQuery, policy.handshakeMs);
+  }
   const diagnostic = options.diagnostic ?? (() => {});
   const forgetTickets = (a: Attachment) => {
     for (const [key, ticket] of tickets)
@@ -231,7 +276,8 @@ export async function startLocalTerminal(options: {
     return decode(LocalHeaderSchema, value);
   }
   function pump(a: Attachment) {
-    if (a.pumping || !a.socket || !a.activated || a.closing) return;
+    if (a.pumping || a.selecting || !a.socket || !a.activated || a.closing)
+      return;
     a.pumping = (async () => {
       try {
         const target = await observe(a);
@@ -285,7 +331,12 @@ export async function startLocalTerminal(options: {
     const recovery = recoveries.get(a.ref.attachmentId);
     forgetTickets(a);
     a.socket?.close(1000, reason.slice(0, 100));
-    const finalObservation = recovery ? observe(a) : undefined;
+    const finalObservation = recovery
+      ? (async () => {
+          if (a.selecting) await a.actions;
+          return observe(a);
+        })()
+      : undefined;
     // Capture native navigation even when its last target header was lost.
     // Failure leaves recovery unavailable rather than guessing the old target.
     if (recovery && finalObservation) {
@@ -613,6 +664,51 @@ export async function startLocalTerminal(options: {
           // Compare its semantic revision at the synchronous mutation boundary.
           if (!publishedTargetMatches())
             throw new Error("Resize published target changed");
+          if (control.kind === "select") {
+            const snapshot = catalog;
+            if (
+              !snapshot ||
+              snapshot.revision !== control.catalogRevision ||
+              now() - snapshot.at >= policy.catalogMs * 3 ||
+              control.selection.server !== a.ref.server ||
+              !snapshot.projects.some((project) =>
+                project.workspaces.some((workspace) =>
+                  same(workspace.target, control.selection),
+                ),
+              ) ||
+              !options.backend.select
+            )
+              throw new Error("Stale sidebar selection");
+            // Pumping cannot publish a pre-switch observation after this boundary.
+            // New PTY output remains in the existing bounded queue until selection settles.
+            a.selecting = true;
+            try {
+              await options.backend.select(
+                a.launch.attachment,
+                control.selection,
+                control.target,
+              );
+              if (!valid(a, ws)) return;
+              const selected = await observe(a);
+              if (!valid(a, ws)) return;
+              if (!sameLocalTarget(selected, control.selection))
+                throw new Error("Selection target changed");
+              a.targetRevision++;
+              a.target = selected;
+              send(
+                a,
+                decodeHeader({
+                  ...header(a, "target", 0),
+                  kind: "selected",
+                  controlSequence: control.controlSequence,
+                }),
+              );
+            } finally {
+              a.selecting = false;
+            }
+            pump(a);
+            return;
+          }
           a.terminal?.resize(control.dimensions.cols, control.dimensions.rows);
           // Bun's ioctl does not reliably signal this spawned client on Darwin.
           // Signal only the exclusive child, whose exit fences PID reuse.
@@ -715,6 +811,34 @@ export async function startLocalTerminal(options: {
         if (!owner)
           return response(401, { error: "Browser authentication required" });
         if (
+          url.pathname === "/api/sidebar" &&
+          request.method === "POST" &&
+          !url.search
+        ) {
+          const body = decode(
+            CatalogRequest,
+            await boundedJson(request, controller.signal),
+          );
+          const a = attachments.get(body.ref.attachmentId);
+          const authorized = () =>
+            a &&
+            a.owner === owner &&
+            same(a.ref, body.ref) &&
+            a.streamId === body.streamId &&
+            a.activated &&
+            valid(a);
+          if (!authorized())
+            return response(409, { error: "Attachment unavailable" });
+          await refreshCatalog();
+          if (!authorized() || !catalog)
+            return response(409, { error: "Attachment changed" });
+          return response(200, {
+            ...body,
+            revision: catalog.revision,
+            projects: catalog.projects,
+          });
+        }
+        if (
           url.pathname === "/api/attachments" &&
           request.method === "POST" &&
           !url.search
@@ -756,12 +880,39 @@ export async function startLocalTerminal(options: {
               });
             expected = recovery.target;
           }
-          let task = recovery?.creation;
+          const creation = body.creationId
+            ? creations.get(body.creationId)
+            : undefined;
+          if (
+            !body.reconnect &&
+            creation &&
+            (creation.owner !== owner || now() >= creation.expires)
+          )
+            return response(410, {
+              error: "Creation reference expired or unavailable",
+            });
+          let task =
+            recovery?.creation ??
+            (!body.reconnect ? creation?.task : undefined);
           if (!task) {
             if (attachments.size + reserved >= policy.maxAttachments)
               return response(429, { error: "Attachment capacity reached" });
+            if (
+              !body.reconnect &&
+              body.creationId &&
+              creations.size >= policy.maxRecoveries
+            )
+              return response(429, {
+                error: "Creation reference capacity reached",
+              });
             task = launch(owner, body.dimensions, expected);
             if (recovery) recovery.creation = task;
+            else if (body.creationId)
+              creations.set(body.creationId, {
+                owner,
+                expires: now() + policy.recoveryMs,
+                task,
+              });
             preparations.add(task);
             const preparation = task;
             void task
@@ -907,6 +1058,8 @@ export async function startLocalTerminal(options: {
     },
   });
   const timer = setInterval(() => {
+    for (const [key, creation] of creations)
+      if (now() >= creation.expires) creations.delete(key);
     for (const [key, ticket] of tickets)
       if (now() >= ticket.expires) tickets.delete(key);
     for (const [key, recovery] of recoveries)
@@ -951,6 +1104,7 @@ export async function startLocalTerminal(options: {
           [...attachments.values()].map((a) => close(a, "Endpoint stopped")),
         );
         await Promise.allSettled(preparations);
+        await Promise.allSettled([catalogQuery]);
         await server.stop(true);
       })();
       return stopped;

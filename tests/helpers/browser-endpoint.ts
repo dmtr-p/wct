@@ -5,8 +5,10 @@ import { expect, vi } from "vitest";
 import {
   decodeFrame,
   encodeFrame,
+  type LocalCatalogProjects,
   type LocalRef,
   type LocalTarget,
+  type WorkspaceTarget,
 } from "../../src/browser/protocol";
 import { startLocalTerminal } from "../../src/browser/server";
 import type {
@@ -26,7 +28,13 @@ export async function browserEndpoint(
     query?: () => Promise<void>;
     verify?: (client: TmuxClient) => Promise<LocalTarget>;
     prepared?: (expected?: LocalTarget) => void;
-    client?: () => Partial<TmuxClient>;
+    client?: (ref: TerminalAttachment) => Partial<TmuxClient>;
+    catalog?: () => Promise<LocalCatalogProjects>;
+    select?: (
+      ref: TerminalAttachment,
+      target: WorkspaceTarget,
+      from: LocalTarget,
+    ) => Promise<void>;
     ignoreTerm?: boolean;
     quiet?: boolean;
     unavailableDetach?: boolean;
@@ -58,6 +66,7 @@ await Bun.write(process.argv[2], String(process.pid));
   await chmod(executable, 0o755);
   const ids: string[] = [];
   const pids = new Map<string, number>();
+  const preparedTargets = new Map<string, LocalTarget>();
   const diagnostics: string[] = [];
   const initialTarget = {
     server: "/tmp/fixture|1|2",
@@ -81,11 +90,14 @@ await Bun.write(process.argv[2], String(process.pid));
     env: { ...process.env, PATH: `${tempDir}:${process.env.PATH}` },
     diagnostic: (message) => diagnostics.push(message),
     backend: {
+      catalog: options.catalog,
+      select: options.select,
       prepare: async (expected) => {
         options.prepared?.(expected);
         await options.prepare?.();
         const id = randomUUID();
         ids.push(id);
+        preparedTargets.set(id, expected ?? initialTarget);
         return {
           attachment: {
             id,
@@ -109,10 +121,10 @@ await Bun.write(process.argv[2], String(process.pid));
         return {
           tty: "/dev/fixture",
           server: initialTarget.server,
-          sessionId: "$1",
+          sessionId: preparedTargets.get(ref.id)?.sessionId ?? "$1",
           session: "fixture",
           pid: String(pid),
-          ...options.client?.(),
+          ...options.client?.(ref),
         };
       },
       detach,
@@ -180,6 +192,7 @@ await Bun.write(process.argv[2], String(process.pid));
   };
   return {
     ...endpoint,
+    initialTarget,
     ids,
     pids,
     detach,

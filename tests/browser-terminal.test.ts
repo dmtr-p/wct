@@ -1,4 +1,4 @@
-import { chmod } from "node:fs/promises";
+import { chmod, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 import {
@@ -270,6 +270,52 @@ test.skipIf(!tmuxPath)(
         throw new Error("Missing verified fixture session");
       const sessionId = session.id;
       const serverGeneration = session.server;
+      const alternate = {
+        ...target,
+        worktreePath: join(tempDir, "other"),
+        branch: "other",
+      };
+      await mkdir(alternate.worktreePath);
+      await runBunPromise(
+        tmux.createSession(
+          workspaceSessionName(alternate),
+          alternate.worktreePath,
+          undefined,
+          {
+            WCT_MAIN_DIR: tempDir,
+            WCT_WORKTREE_DIR: alternate.worktreePath,
+            WCT_BRANCH: "other",
+            WCT_WORK_DIR: alternate.worktreePath,
+            WCT_PROJECT: "fixture",
+          },
+        ),
+      );
+      const alternateSession = await runBunPromise(
+        tmux.resolveSession(alternate, undefined, { readOnly: true }),
+      );
+      if (!alternateSession?.id || !alternateSession.server)
+        throw new Error("Missing alternate session");
+      const alternateTarget = {
+        ...alternate,
+        server: alternateSession.server,
+        sessionId: alternateSession.id,
+      };
+      const alias = join(tempDir, "alias");
+      await symlink(tempDir, alias);
+      await command(
+        "set-environment",
+        "-t",
+        alternateSession.id,
+        "WCT_MAIN_DIR",
+        alias,
+      );
+      await command(
+        "set-environment",
+        "-t",
+        alternateSession.id,
+        "WCT_WORKTREE_DIR",
+        join(alias, "other"),
+      );
       endpoint = await startLocalTerminal({
         env: {
           ...process.env,
@@ -278,6 +324,33 @@ test.skipIf(!tmuxPath)(
         },
         now: () => clock,
         backend: {
+          catalog: async () => [
+            {
+              mainRepoPath: tempDir,
+              displayName: "Fixture project",
+              workspaces: [
+                {
+                  branch: target.branch,
+                  worktreePath: target.worktreePath,
+                  target: { ...target, sessionId, server: serverGeneration },
+                },
+                {
+                  branch: alternate.branch,
+                  worktreePath: alternate.worktreePath,
+                  target: alternateTarget,
+                },
+              ],
+            },
+          ],
+          select: async (ref, selected, from) => {
+            await runBunPromise(
+              tmux.switchAttachment(ref, selected, {
+                sessionId: selected.sessionId,
+                server: selected.server,
+                fromSessionId: from.sessionId,
+              }),
+            );
+          },
           prepare: async (expected) => ({
             ...(await (expected
               ? runBunPromise(
@@ -298,6 +371,11 @@ test.skipIf(!tmuxPath)(
           verify: async (client) => {
             if (!client.server || !client.sessionId)
               throw new Error("Missing client identity");
+            if (
+              client.sessionId === alternateSession.id &&
+              client.server === alternateSession.server
+            )
+              return alternateTarget;
             const current = await runBunPromise(
               tmux.resolveSession(target, session, { readOnly: true }),
             );
@@ -459,7 +537,8 @@ test.skipIf(!tmuxPath)(
         });
       }
       let one = await open(first, fresh, 0);
-      const two = await open(second, await issue(second.ref), 1);
+      const secondTicket = await issue(second.ref);
+      const two = await open(second, secondTicket, 1);
       await reject(fresh.ticket);
       const send = (
         ws: WebSocket,
@@ -482,6 +561,99 @@ test.skipIf(!tmuxPath)(
           ),
         );
       };
+      const catalogResponse = await post(
+        "/api/sidebar",
+        { ref: first.ref, streamId: fresh.streamId },
+        cookie,
+      );
+      expect(catalogResponse.status).toBe(200);
+      const catalog = (await catalogResponse.json()) as { revision: number };
+      const select = (
+        ws: WebSocket,
+        a: typeof first,
+        streamId: string,
+        from: typeof first.target,
+        selected: typeof alternateTarget,
+        controlSequence: number,
+      ) =>
+        ws.send(
+          JSON.stringify({
+            ref: a.ref,
+            streamId,
+            target: from,
+            kind: "select",
+            selection: selected,
+            catalogRevision: catalog.revision,
+            controlSequence,
+            throughInput: null,
+          }),
+        );
+      select(one, first, fresh.streamId, first.target, alternateTarget, 0);
+      await vi.waitFor(() =>
+        expect(
+          frames[0]?.some(
+            (f) =>
+              f.kind === "selected" &&
+              f.target.sessionId === alternateSession.id,
+          ),
+        ).toBe(true),
+      );
+      let liveClients = await runBunPromise(tmux.listClients);
+      expect(
+        liveClients.find((c) => c.attachment?.id === second.ref.attachmentId)
+          ?.sessionId,
+      ).toBe(sessionId);
+      expect(
+        liveClients.find((c) => c.pid === String(native?.pid))?.sessionId,
+      ).toBe(sessionId);
+      // Same-session viewing changes neither the other tab nor the native client's explicit target.
+      select(
+        two,
+        second,
+        secondTicket.streamId,
+        second.target,
+        alternateTarget,
+        0,
+      );
+      await vi.waitFor(() =>
+        expect(frames[1]?.some((f) => f.kind === "selected")).toBe(true),
+      );
+      await command(
+        "rename-session",
+        "-t",
+        alternateSession.id,
+        "renamed-sidebar-workspace",
+      );
+      liveClients = await runBunPromise(tmux.listClients);
+      const firstAttachment = liveClients.find(
+        (c) => c.attachment?.id === first.ref.attachmentId,
+      )?.attachment;
+      if (!firstAttachment) throw new Error("Missing sidebar attachment");
+      await expect(
+        runBunPromise(
+          tmux.switchAttachment(firstAttachment, target, {
+            sessionId: "$99999",
+            server: serverGeneration,
+            fromSessionId: alternateSession.id,
+          }),
+        ),
+      ).rejects.toThrow();
+      const originalTarget = { ...target, sessionId, server: serverGeneration };
+      select(one, first, fresh.streamId, alternateTarget, originalTarget, 1);
+      select(
+        two,
+        second,
+        secondTicket.streamId,
+        alternateTarget,
+        originalTarget,
+        1,
+      );
+      await vi.waitFor(() =>
+        expect(frames[0]?.filter((f) => f.kind === "selected")).toHaveLength(2),
+      );
+      await vi.waitFor(() =>
+        expect(frames[1]?.filter((f) => f.kind === "selected")).toHaveLength(2),
+      );
       one.send(
         JSON.stringify({
           ref: first.ref,
@@ -489,7 +661,7 @@ test.skipIf(!tmuxPath)(
           target: first.target,
           kind: "resize",
           dimensions: { cols: 100, rows: 30 },
-          controlSequence: 0,
+          controlSequence: 2,
           throughInput: null,
         }),
       );

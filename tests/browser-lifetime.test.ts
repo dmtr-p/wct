@@ -675,16 +675,18 @@ test("invalid cumulative ACKs cannot mint credit or affect a second attachment",
   try {
     const b = await e.create(),
       two = await e.open((await e.ticket(b.ref)).ticket);
-    for (const variant of [
-      "future",
-      "duplicate",
-      "stream",
-      "target",
-      "generation",
-    ]) {
+    for (const variant of ["future", "stream", "target", "generation"]) {
       const a = await e.create(),
         key = await e.ticket(a.ref),
-        ws = await e.open(key.ticket);
+        ws = e.connect(key.ticket);
+      await new Promise<void>((resolve) => {
+        ws.onmessage = (event) => {
+          const { header } = decodeFrame(
+            new Uint8Array(event.data as ArrayBuffer),
+          );
+          if (header.kind === "target") resolve();
+        };
+      });
       const ack = {
         ref:
           variant === "generation"
@@ -700,11 +702,35 @@ test("invalid cumulative ACKs cannot mint credit or affect a second attachment",
         sequence: variant === "future" ? 500 : 0,
         byteLength: 0 as const,
       };
-      // e.open has already ACKed sequence zero. Repeating it is invalid.
+      // Sequence zero is still unacknowledged, isolating each identity guard.
       ws.send(encodeFrame(ack as Parameters<typeof encodeFrame>[0]));
       await closed(ws);
       expect(two.readyState).toBe(WebSocket.OPEN);
     }
+  } finally {
+    await e.dispose();
+  }
+});
+
+test("duplicate render ACK is rejected after an otherwise valid acknowledgement", async ({
+  tempDir,
+}) => {
+  const e = await browserEndpoint(tempDir);
+  try {
+    const a = await e.create(),
+      key = await e.ticket(a.ref),
+      ws = await e.open(key.ticket);
+    ws.send(
+      encodeFrame({
+        ref: a.ref,
+        streamId: key.streamId as never,
+        target: a.target,
+        kind: "ack",
+        sequence: 0,
+        byteLength: 0,
+      }),
+    );
+    await closed(ws);
   } finally {
     await e.dispose();
   }
@@ -770,6 +796,61 @@ test("fresh recovery waits for old child exit and captures unreported native nav
       ).toBe(201);
     });
     expect(prepared[2]).toEqual(navigated);
+  } finally {
+    await e.dispose();
+  }
+});
+
+test("default fixture ACKs resize replies without closing the stream", async ({
+  tempDir,
+}) => {
+  const e = await browserEndpoint(tempDir);
+  try {
+    const a = await e.create(),
+      key = await e.ticket(a.ref),
+      ws = await e.open(key.ticket);
+    const resized = new Promise<void>((resolve) => {
+      ws.addEventListener("message", (event) => {
+        const { header } = decodeFrame(
+          new Uint8Array(event.data as ArrayBuffer),
+        );
+        if (header.kind === "resized") resolve();
+      });
+    });
+    ws.send(
+      JSON.stringify({
+        ref: a.ref,
+        streamId: key.streamId,
+        target: a.target,
+        kind: "resize",
+        dimensions: { cols: 100, rows: 30 },
+        controlSequence: 0,
+        throughInput: null,
+      }),
+    );
+    await resized;
+    const echoed = new Promise<void>((resolve) => {
+      ws.addEventListener("message", (event) => {
+        const { header, bytes } = decodeFrame(
+          new Uint8Array(event.data as ArrayBuffer),
+        );
+        if (header.kind === "output" && bytes.includes(65)) resolve();
+      });
+    });
+    ws.send(
+      encodeFrame(
+        {
+          ref: a.ref,
+          streamId: key.streamId as never,
+          kind: "input",
+          sequence: 0,
+          byteLength: 1,
+        },
+        new Uint8Array([65]),
+      ),
+    );
+    await echoed;
+    expect(ws.readyState).toBe(WebSocket.OPEN);
   } finally {
     await e.dispose();
   }

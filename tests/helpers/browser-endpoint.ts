@@ -164,7 +164,10 @@ await Bun.write(process.argv[2], String(process.pid));
         if ("target" in frame.header && frame.header.kind !== "ack")
           ws.send(
             encodeFrame({
-              ...frame.header,
+              ref: frame.header.ref,
+              streamId: frame.header.streamId,
+              target: frame.header.target,
+              sequence: frame.header.sequence,
               kind: "ack",
               byteLength: 0,
             }),

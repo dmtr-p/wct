@@ -1,5 +1,6 @@
 import { connect } from "node:net";
 import { expect, vi } from "vitest";
+import * as protocol from "../src/browser/protocol";
 import { decodeFrame, encodeFrame, policy } from "../src/browser/protocol";
 import { browserEndpoint } from "./helpers/browser-endpoint";
 import { test } from "./helpers/temp-dir";
@@ -1279,3 +1280,144 @@ test("native rename followed by navigation and recovery keeps targeting session 
     await e.dispose();
   }
 });
+
+test.for([false, true])(
+  "resize rejects a stale verification after published navigation, including return to A=%s",
+  async (returnToA, { tempDir }) => {
+    let currentSession = "$1",
+      gatedPid = "",
+      gatedAttachment = "";
+    let armed = false,
+      observations = 0,
+      controlObservations = 0;
+    let release!: () => void, blocked!: () => void;
+    const verificationGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const verificationBlocked = new Promise<void>((resolve) => {
+      blocked = resolve;
+    });
+    const aTarget = {
+      server: "/tmp/fixture|1|2",
+      sessionId: "$1",
+      mainRepoPath: tempDir,
+      worktreePath: tempDir,
+      branch: "main",
+    };
+    const bTarget = {
+      server: aTarget.server,
+      sessionId: "$2",
+      sessionName: "native-B",
+    };
+    let expectedSession = "$2",
+      throughSequence: number | undefined,
+      acknowledged = () => {};
+    const actualDecode = protocol.decodeFrame;
+    const codec = vi
+      .spyOn(protocol, "decodeFrame")
+      .mockImplementation((frame) => {
+        const decoded = actualDecode(frame);
+        const header = decoded.header;
+        // ACK decoding runs synchronously inside receive(). Resolving here resumes
+        // the test only after receive() has retired that cumulative renderer credit.
+        if (
+          header.kind === "ack" &&
+          header.ref.attachmentId === gatedAttachment &&
+          header.target.sessionId === expectedSession &&
+          throughSequence !== undefined &&
+          header.sequence >= throughSequence
+        )
+          acknowledged();
+        return decoded;
+      });
+    const e = await browserEndpoint(tempDir, {
+      client: () => ({ sessionId: currentSession }),
+      verify: async (client) => {
+        observations++;
+        const snapshot = client.sessionId === "$2" ? bTarget : aTarget;
+        if (armed && client.pid === gatedPid && ++controlObservations === 2) {
+          blocked();
+          await verificationGate;
+        }
+        return snapshot;
+      },
+    });
+    const resize = vi.spyOn(Bun.Terminal.prototype, "resize");
+    try {
+      const b = await e.create(),
+        other = await e.open((await e.ticket(b.ref)).ticket);
+      const a = await e.create(),
+        key = await e.ticket(a.ref),
+        ws = await e.open(key.ticket);
+      await vi.waitFor(() => expect(observations).toBeGreaterThanOrEqual(4));
+      const pid = e.pids.get(a.ref.attachmentId),
+        otherPid = e.pids.get(b.ref.attachmentId);
+      if (!pid || !otherPid) throw new Error("Missing owned children");
+      const ownedPid = pid;
+      gatedPid = String(ownedPid);
+      gatedAttachment = a.ref.attachmentId;
+      let publishedSession = "$1",
+        received = 0,
+        resizeReplies = 0,
+        closeReason = "";
+      ws.addEventListener("message", (event) => {
+        const { header, bytes } = decodeFrame(
+          new Uint8Array(event.data as ArrayBuffer),
+        );
+        if (header.kind === "resized") resizeReplies++;
+        if (header.kind === "target")
+          publishedSession = header.target.sessionId;
+        if (
+          header.kind === "output" &&
+          header.target.sessionId === expectedSession
+        ) {
+          received += bytes.length;
+          if (received >= 128 * 1024) throughSequence = header.sequence;
+        }
+      });
+      ws.addEventListener("close", (event) => {
+        closeReason = event.reason;
+      });
+      armed = true;
+      ws.send(
+        JSON.stringify({
+          ref: a.ref,
+          streamId: key.streamId,
+          target: a.target,
+          kind: "resize",
+          dimensions: { cols: 100, rows: 30 },
+          controlSequence: 0,
+          throughInput: null,
+        }),
+      );
+      await verificationBlocked;
+      async function publishAndConsume(sessionId: string) {
+        currentSession = expectedSession = sessionId;
+        received = 0;
+        throughSequence = undefined;
+        const consumed = new Promise<void>((resolve) => {
+          acknowledged = resolve;
+        });
+        process.kill(ownedPid, "SIGUSR2");
+        await consumed;
+        expect(publishedSession).toBe(sessionId);
+      }
+      await publishAndConsume("$2");
+      if (returnToA) await publishAndConsume("$1");
+      expect(resize).not.toHaveBeenCalled();
+      release();
+      await closed(ws);
+      expect(resize).not.toHaveBeenCalled();
+      expect(resizeReplies).toBe(0);
+      expect(closeReason).toBe("Terminal input or control rejected");
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+      expect(other.readyState).toBe(WebSocket.OPEN);
+      expect(() => process.kill(otherPid, 0)).not.toThrow();
+    } finally {
+      release();
+      codec.mockRestore();
+      resize.mockRestore();
+      await e.dispose();
+    }
+  },
+);

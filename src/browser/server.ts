@@ -58,6 +58,7 @@ interface Attachment {
   streamId?: string;
   activated: boolean;
   target?: LocalTarget;
+  targetRevision: number;
   lastPong: number;
   lastPing: number;
   inputSequence: number;
@@ -236,6 +237,8 @@ export async function startLocalTerminal(options: {
         const target = await observe(a);
         if (!valid(a)) return;
         if (!same(a.target, target)) {
+          if (!a.target || !sameLocalTarget(a.target, target))
+            a.targetRevision++;
           a.target = target;
           send(a, header(a, "target", 0));
         }
@@ -425,6 +428,7 @@ export async function startLocalTerminal(options: {
         launch: prepared,
         exited: false,
         activated: false,
+        targetRevision: 0,
         lastPong: now(),
         lastPing: now(),
         inputSequence: 0,
@@ -554,6 +558,11 @@ export async function startLocalTerminal(options: {
         if (!valid(a, ws)) return;
         if (typeof message === "string") {
           const control = decode(LocalControl, JSON.parse(message));
+          const targetRevision = a.targetRevision;
+          const publishedTargetMatches = () =>
+            a.targetRevision === targetRevision &&
+            a.target !== undefined &&
+            sameLocalTarget(a.target, control.target);
           const deadline = now() + policy.drainMs;
           const started = Date.now();
           const expired = () =>
@@ -564,6 +573,7 @@ export async function startLocalTerminal(options: {
             !same(a.ref, control.ref) ||
             control.streamId !== a.streamId ||
             !sameLocalTarget(target, control.target) ||
+            !publishedTargetMatches() ||
             control.controlSequence !== a.controlSequence
           )
             throw new Error("Stale terminal control");
@@ -599,6 +609,10 @@ export async function startLocalTerminal(options: {
             // consumed before changing xterm's grid. Recheck without an await gap.
             if (drained()) break;
           }
+          // A verifier may return an older snapshot than the pump published.
+          // Compare its semantic revision at the synchronous mutation boundary.
+          if (!publishedTargetMatches())
+            throw new Error("Resize published target changed");
           a.terminal?.resize(control.dimensions.cols, control.dimensions.rows);
           // Bun's ioctl does not reliably signal this spawned client on Darwin.
           // Signal only the exclusive child, whose exit fences PID reuse.

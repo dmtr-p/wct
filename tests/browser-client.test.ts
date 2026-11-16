@@ -315,8 +315,31 @@ test("fresh reconnect disposes the old screen and fences late socket and rendere
   c.send("target");
   c.send("output", c.target, new Uint8Array([65]));
   const oldRender = state.writes[0]?.done;
+  if (!oldRender) throw new Error("Missing old render callback");
   const oldInput = state.data;
   const sent = c.socket.sent.length;
+  const replacementRef = decode(LocalRef, {
+    ...c.ref,
+    attachmentId: "44444444-4444-4444-8444-444444444444",
+    generation: "55555555-5555-4555-8555-555555555555",
+  });
+  const replacementStreamId = "66666666-6666-4666-8666-666666666666";
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(
+      Response.json({
+        ref: replacementRef,
+        target: c.target,
+        policy,
+        dimensions: { cols: 80, rows: 24 },
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        ticket: "replacement-ticket",
+        streamId: replacementStreamId,
+        expiresAt: 30000,
+      }),
+    );
   vi.useFakeTimers();
   c.socket.onclose?.({ reason: "Connection lost" });
   oldRender?.();
@@ -337,6 +360,37 @@ test("fresh reconnect disposes the old screen and fences late socket and rendere
   });
   c.send("target", { ...c.target, branch: "stale" });
   expect(state.options.disableStdin).toBe(true);
+  const replacement = c.sockets[1];
+  if (!replacement) throw new Error("Missing replacement socket");
+  const targetFrame = encodeFrame({
+    ref: replacementRef,
+    streamId: replacementStreamId as never,
+    kind: "target",
+    sequence: 0,
+    target: c.target,
+    byteLength: 0,
+  });
+  replacement.onmessage?.({ data: targetFrame.buffer });
+  expect(state.options.disableStdin).toBe(false);
+  expect(c.status.textContent).toContain("Connected");
+  const oldSent = [...c.socket.sent];
+  const newSent = [...replacement.sent];
+  oldRender();
+  oldInput("stale after replacement activation");
+  c.send("target", { ...c.target, branch: "stale after activation" });
+  expect(c.socket.sent).toEqual(oldSent);
+  expect(replacement.sent).toEqual(newSent);
+  expect(state.options.disableStdin).toBe(false);
+  state.data("fresh");
+  const input = replacement.sent.at(-1);
+  if (!input || typeof input === "string")
+    throw new Error("Missing new-stream input");
+  expect(decodeFrame(input).header).toMatchObject({
+    kind: "input",
+    sequence: 0,
+    ref: replacementRef,
+    streamId: replacementStreamId,
+  });
 });
 
 test("live fit sends an ordered resize with input watermark and waits before changing the grid", async () => {
@@ -407,3 +461,30 @@ test("continuous rendering cannot postpone a scheduled container resize", async 
     state.rows = 24;
   }
 });
+
+test.for(["/api/attachments", "/api/tickets"])(
+  "HTTP 500 from %s stops recovery with explicit guidance",
+  async (path) => {
+    const c = await client();
+    c.send("target");
+    const request = vi.mocked(fetch).getMockImplementation();
+    if (!request) throw new Error("Missing request fixture");
+    vi.mocked(fetch).mockImplementation(async (input, options) =>
+      input === path
+        ? new Response(null, { status: 500 })
+        : request(input, options),
+    );
+    vi.useFakeTimers();
+    c.socket.onclose?.({ reason: "Connection lost" });
+    await vi.advanceTimersByTimeAsync(policy.reconnectMinMs * 1.3);
+    expect(c.status.textContent).toContain("HTTP 500");
+    expect(c.status.textContent).toContain("Recovery stopped");
+    expect(c.status.textContent).toContain("Open a new terminal");
+    expect(c.status.textContent).not.toContain("Retrying");
+    expect(state.options.disableStdin).toBe(true);
+    const requests = vi.mocked(fetch).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(policy.recoveryMs * 2);
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requests);
+    expect(c.sockets).toHaveLength(1);
+  },
+);

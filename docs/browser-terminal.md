@@ -101,8 +101,11 @@ does not change the server/session identity used by controls and recovery. A fai
 recovery instead of guessing a stale target.
 
 Reconnect uses jittered exponential delays from 500 ms to ten seconds, bounded by
-the two-minute recovery window. Cleanup-in-progress and capacity responses retry;
-authentication, expired recovery and target refusal stop with visible guidance.
+the two-minute recovery window. HTTP 409 (cleanup), 429 (capacity) and 503
+(temporary unavailability) responses and transport failures retry. Other HTTP failures, including 500, stop with
+explicit guidance to open a new terminal or inspect the CLI; an ambiguous server
+error does not authorize another attachment creation. Authentication, expired
+recovery and target refusal also stop with visible guidance.
 A connection established for 60 seconds resets the retry window and backoff.
 The bootstrap exchange is never replayed. No lifecycle action or input is retried.
 
@@ -113,7 +116,12 @@ rows. Resize controls use the same ordered socket as input and carry the exact
 attachment, stream, target, increasing control sequence and last input watermark.
 The browser pauses input until the resize reply and applies the new xterm grid
 only after that reply. The server verifies the target again after draining accepted
-input and all queued and sent output, including output published during target verification. Only a real Bun drain supplies input
+input and all queued and sent output, including output published during target
+verification.
+At the synchronous mutation boundary, the currently published target must still
+match the control and its semantic target revision must be unchanged. Navigation
+away and back during verification rejects the stale control; a native display-name
+rename alone does not change that revision. Only a real Bun drain supplies input
 credit; renderer ACKs supply output credit. Both must settle within two seconds,
 or the attachment closes and fresh recovery uses the new container dimensions.
 Consequently, the approved conservative input accounting can force fresh recovery

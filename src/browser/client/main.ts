@@ -22,6 +22,7 @@ const status = document.getElementById("status");
 function display(message: string) {
   if (status) status.textContent = message;
 }
+const retryableStatus = (status: number) => [409, 429, 503].includes(status);
 class RequestFailure extends Data.TaggedError("BrowserRequestFailure")<{
   status: number;
   message: string;
@@ -34,7 +35,9 @@ class RequestFailure extends Data.TaggedError("BrowserRequestFailure")<{
           ? "Authentication expired or rejected. Use the CLI bootstrap link."
           : status === 410 || status === 400
             ? "Workspace or session disappeared, changed, or recovery expired. Open a new terminal explicitly."
-            : "Terminal unavailable. Retrying within the recovery window.",
+            : retryableStatus(status)
+              ? "Terminal unavailable. Retrying within the recovery window."
+              : `Terminal request failed (HTTP ${status}). Recovery stopped. Open a new terminal explicitly or check the CLI.`,
     });
   }
 }
@@ -348,10 +351,7 @@ async function supervise(container: HTMLElement) {
     } catch (error) {
       if (!active()) return;
       terminal.options.disableStdin = true;
-      if (
-        error instanceof RequestFailure &&
-        ![409, 429, 503].includes(error.status)
-      ) {
+      if (error instanceof RequestFailure && !retryableStatus(error.status)) {
         fail(error.message);
         return;
       }

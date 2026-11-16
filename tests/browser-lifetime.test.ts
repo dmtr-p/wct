@@ -418,6 +418,26 @@ test("non-reading transport is disconnected and its output cannot stall another 
       { timeout: 7000 },
     );
     expect(two.readyState).toBe(WebSocket.OPEN);
+    let echoed = "";
+    const decoder = new TextDecoder();
+    two.addEventListener("message", (event) => {
+      const { bytes } = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
+      echoed += decoder.decode(bytes, { stream: true });
+    });
+    const input = new TextEncoder().encode("healthy-after-pause");
+    two.send(
+      encodeFrame(
+        {
+          ref: b.ref,
+          streamId: key.streamId as never,
+          kind: "input",
+          sequence: 0,
+          byteLength: input.length,
+        },
+        input,
+      ),
+    );
+    await vi.waitFor(() => expect(echoed).toContain("healthy-after-pause"));
   } finally {
     raw?.socket.destroy();
     await e.dispose();
@@ -566,6 +586,145 @@ test("real buffered Bun PTY drain replenishes conservative credit without resend
     await e.dispose();
   }
 });
+
+test.for(["budget", "resize", "select"] as const)(
+  "a real non-draining PTY rejects %s locally and recovers through a fresh child",
+  async (action, { tempDir }) => {
+    const target = {
+      server: "/tmp/fixture|1|2",
+      sessionId: "$1",
+      mainRepoPath: tempDir,
+      worktreePath: tempDir,
+      branch: "main",
+    };
+    const destination = {
+      ...target,
+      sessionId: "$2",
+      worktreePath: `${tempDir}/other`,
+      branch: "other",
+    };
+    const select = vi.fn(async () => {});
+    const e = await browserEndpoint(tempDir, {
+      quiet: true,
+      select,
+      catalog: async () => [
+        {
+          mainRepoPath: tempDir,
+          displayName: "Fixture",
+          workspaces: [target, destination].map((value) => ({
+            branch: value.branch,
+            worktreePath: value.worktreePath,
+            target: value,
+          })),
+        },
+      ],
+    });
+    let stoppedPid: number | undefined;
+    try {
+      const a = await e.create(),
+        key = await e.ticket(a.ref),
+        ws = await e.open(key.ticket);
+      const b = await e.create(),
+        healthy = await e.open((await e.ticket(b.ref)).ticket);
+      const pid = e.pids.get(a.ref.attachmentId);
+      if (!pid) throw new Error("Missing PTY child");
+      stoppedPid = pid;
+      process.kill(pid, "SIGSTOP");
+      // The real reader remains stopped: no mocked write or fabricated drain.
+      const bytes = new Uint8Array(60 * 1024);
+      const count = action === "budget" ? 4 : 1;
+      for (let sequence = 0; sequence < count; sequence++) {
+        ws.send(
+          encodeFrame(
+            {
+              ref: a.ref,
+              streamId: key.streamId as never,
+              kind: "input",
+              sequence,
+              byteLength: bytes.length,
+            },
+            bytes,
+          ),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(ws.readyState).toBe(WebSocket.OPEN);
+      let reason = "";
+      ws.addEventListener("close", (event) => {
+        reason = event.reason;
+      });
+      if (action === "budget") {
+        ws.send(
+          encodeFrame(
+            {
+              ref: a.ref,
+              streamId: key.streamId as never,
+              kind: "input",
+              sequence: count,
+              byteLength: bytes.length,
+            },
+            bytes,
+          ),
+        );
+      } else {
+        const catalog = await (
+          await e.post("/api/sidebar", {
+            ref: a.ref,
+            streamId: key.streamId,
+          })
+        ).json();
+        ws.send(
+          JSON.stringify({
+            ref: a.ref,
+            streamId: key.streamId,
+            target: a.target,
+            kind: action,
+            ...(action === "resize"
+              ? { dimensions: { cols: 100, rows: 30 } }
+              : { selection: destination, catalogRevision: catalog.revision }),
+            controlSequence: 0,
+            throughInput: count - 1,
+          }),
+        );
+      }
+      await closed(ws);
+      expect(reason).toBe(
+        action === "budget"
+          ? "Input budget exhausted; reload for a fresh attachment"
+          : "Terminal input or control rejected",
+      );
+      expect(select).not.toHaveBeenCalled();
+      expect(healthy.readyState).toBe(WebSocket.OPEN);
+      process.kill(pid, "SIGCONT");
+      stoppedPid = undefined;
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+      let reply!: Response;
+      await vi.waitFor(async () => {
+        reply = await e.post("/api/attachments", {
+          reconnect: a.ref,
+          dimensions: { cols: 80, rows: 24 },
+        });
+        expect(reply.status).toBe(201);
+      });
+      const replacement = (await reply.json()) as Awaited<
+        ReturnType<typeof e.create>
+      >;
+      const freshKey = await e.ticket(replacement.ref);
+      const fresh = await e.open(freshKey.ticket);
+      expect(replacement.ref.attachmentId).not.toBe(a.ref.attachmentId);
+      expect(freshKey.streamId).not.toBe(key.streamId);
+      expect(e.pids.get(replacement.ref.attachmentId)).not.toBe(pid);
+      expect(fresh.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      if (stoppedPid) {
+        try {
+          process.kill(stoppedPid, "SIGCONT");
+        } catch {}
+      }
+      await e.dispose();
+    }
+  },
+);
 
 test("shutdown retains closing callbacks after child exit until observation settles", async ({
   tempDir,

@@ -3,8 +3,27 @@
 This procedure collects the interaction evidence required by [#345](https://github.com/dmtr-p/wct/issues/345).
 Record run outcomes, raw logs, platform limitations and the rollout assessment on
 the issue, outside current-behavior documentation. Passing implementation tests
-does not clear this gate. Technical validation and a named second-host need or
-material duplicate-observation cost are independent inputs.
+does not clear this gate. The maintainer explicitly requires the daemon;
+technical acceptance remains authoritative before coordinator assessment and the
+next roadmap increment. A second-host use case or benchmark materiality is not
+an additional product prerequisite.
+
+## Acceptance evidence
+
+Combine actual browser/native and live Linux PTY observations with meaningful
+process/integration regressions run by the normal hooks. Attribute each result to
+its exact source, platform, capability and fixture boundary. For example, the
+browser lifetime fixture uses real Bun PTYs, HTTP and WebSockets with a
+deterministic process backend; it does not establish tmux ownership or browser
+rendering. Those have separate live evidence. Transfer regressions use actual
+processes, inherited descriptors and durable journals; simulated session adapters
+must still be identified.
+
+The scenarios below describe acceptance behavior, not a demand to reproduce every
+state-machine permutation manually. Distinguish a known defect, a required
+acceptance gap and optional coverage improvements. Mocks and capability skips
+alone cannot establish integrated support, but do not discard meaningful real
+process regressions when assessing failure windows alongside live interactions.
 
 ## Isolation and source identity
 
@@ -152,6 +171,10 @@ Check the [documented policies](browser-terminal.md) without changing them:
    during the attempt, report exhaustion as unobserved; do not manufacture credit
    or claim that crossing 256 KiB proves the non-draining case. Fault-injected
    drain behavior must be labelled separately from the native runtime.
+   A stopped real PTY reader can establish the non-draining condition in a process
+   regression. Suspending a tmux client alone does not establish it: the tmux
+   server may still service that terminal. Verify the condition rather than
+   inferring it from a PID signal.
 8. Reject unauthenticated creation, missing/null/foreign Origin, alternate Host,
    consumed/expired tickets and stale attachment/stream controls. Withhold ACKs
    to exercise renderer timeout and bounded output. Place a healthy consumer on
@@ -201,7 +224,8 @@ imply several complete repository scans. Retain revisions and process attributio
 to distinguish a cache hit from a fresh shared query.
 
 Publish raw samples, methodology, exact run identities, measured rates, latency,
-CPU/RSS limits and uncertainty. Ask the maintainer whether the measured cost is
-material for their workflow. Scan counts alone do not authorize a daemon. Keep
-#345 open/no-go if technical evidence or the need decision is still missing;
-implementation ticket closure and CI cannot substitute for either input.
+CPU/RSS limits and uncertainty. These measurements are diagnostic; they do not
+prove material savings or supply an invented second-host use case. The maintainer
+already requires the daemon. Keep #345 open until its technical recommendation
+has been assessed by the coordinator; implementation ticket closure and CI alone
+cannot substitute for the integrated acceptance evidence.

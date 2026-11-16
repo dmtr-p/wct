@@ -81,7 +81,7 @@ test("publishes native navigation with incomplete or unverified metadata without
   }
 });
 
-test("verified ownership cannot hide a missing checkout or changed branch behind a native fallback", async () => {
+test("verified ownership follows branch changes and rejects missing checkouts", async () => {
   const input = sources({
     mainRepoPath: target.mainRepoPath,
     worktreePath: target.worktreePath,
@@ -95,9 +95,10 @@ test("verified ownership cannot hide a missing checkout or changed branch behind
   input.worktrees = async () => [
     { path: target.worktreePath, branch: "other" },
   ];
-  await expect(inspectLocalTarget(client, input)).rejects.toThrow(
-    "Workspace ownership changed",
-  );
+  expect(await inspectLocalTarget(client, input)).toEqual({
+    ...target,
+    branch: "other",
+  });
   input.worktrees = async () => [{ path: target.worktreePath, branch: "main" }];
   input.root = async () => {
     throw new Error("Missing checkout");

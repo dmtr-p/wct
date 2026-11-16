@@ -161,7 +161,11 @@ test.skipIf(!tmuxPath)(
       worktreePath: tempDir,
       branch: "main",
     };
-    const other = { ...target, branch: "other" };
+    const other = {
+      ...target,
+      worktreePath: join(tempDir, "other"),
+      branch: "other",
+    };
     try {
       await command(
         "new-session",
@@ -188,7 +192,7 @@ test.skipIf(!tmuxPath)(
           );
         for (const [key, value] of Object.entries({
           WCT_MAIN_DIR: tempDir,
-          WCT_WORKTREE_DIR: tempDir,
+          WCT_WORKTREE_DIR: item.worktreePath,
           WCT_BRANCH: item.branch,
         }))
           await command(

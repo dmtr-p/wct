@@ -126,6 +126,32 @@ describe("Workspace session identity", () => {
     ).toBeUndefined();
   });
 
+  test("rejects duplicate checkout sessions across branch changes", () => {
+    const previous = { ...target, branch: "previous" };
+    const session = {
+      ...owned(previous),
+      ownership: { ...previous, identity: sessionIdentity(previous) },
+    };
+    expect(selectWorkspaceSession([session], target)).toEqual({
+      type: "owned",
+      session,
+    });
+    expect(
+      selectWorkspaceSession([session, { ...owned(), id: "$2" }], target).type,
+    ).toBe("conflict");
+    expect(
+      selectWorkspaceSession(
+        [
+          {
+            ...session,
+            ownership: { ...session.ownership, identity: "corrupt" },
+          },
+        ],
+        target,
+      ).type,
+    ).toBe("conflict");
+  });
+
   test("rejects duplicate owned sessions", () => {
     expect(
       selectWorkspaceSession(
@@ -666,28 +692,27 @@ describe("verified tmux session lifecycle", () => {
     },
   );
 
-  test.each([
-    {},
-    { ...environment(), WCT_BRANCH: "other" },
-    { ...environment(), WCT_WORKSPACE_ID: "corrupt" },
-  ])("leaves ambiguous or foreign legacy sessions untouched", async (env) => {
-    sessions.set("$1", { name: "api", env });
-    await expect(
-      runBunPromise(liveTmuxService.resolveSession(target)),
-    ).rejects.toThrow("ownership");
-    await expect(
-      runBunPromise(
-        liveTmuxService.createSession(
-          workspaceSessionName(target),
-          target.worktreePath,
-          undefined,
-          environment(),
+  test.each([{}, { ...environment(), WCT_WORKSPACE_ID: "corrupt" }])(
+    "leaves ambiguous or foreign legacy sessions untouched",
+    async (env) => {
+      sessions.set("$1", { name: "api", env });
+      await expect(
+        runBunPromise(liveTmuxService.resolveSession(target)),
+      ).rejects.toThrow("ownership");
+      await expect(
+        runBunPromise(
+          liveTmuxService.createSession(
+            workspaceSessionName(target),
+            target.worktreePath,
+            undefined,
+            environment(),
+          ),
         ),
-      ),
-    ).rejects.toThrow("ownership");
-    expect(sessions.get("$1")?.env).toEqual(env);
-    expect(killed).toEqual([]);
-  });
+      ).rejects.toThrow("ownership");
+      expect(sessions.get("$1")?.env).toEqual(env);
+      expect(killed).toEqual([]);
+    },
+  );
 
   test("revalidates pinned IDs and server generations across shutdown handoff", async () => {
     sessions.set("$1", {
@@ -724,6 +749,34 @@ describe("verified tmux session lifecycle", () => {
       ),
     ).toMatchObject({ id: "$1" });
   });
+
+  test.each(["other", ""])(
+    "reuses the checkout session after switching HEAD to %s",
+    async (branch) => {
+      const name = workspaceSessionName(target);
+      sessions.set("$1", {
+        name,
+        env: { ...environment(), WCT_WORKSPACE_ID: sessionIdentity(target) },
+      });
+      const switched = { ...target, branch };
+      expect(
+        await runBunPromise(liveTmuxService.resolveSession(switched)),
+      ).toMatchObject({ id: "$1", name });
+      expect(
+        await runBunPromise(
+          liveTmuxService.createSession(
+            workspaceSessionName(switched),
+            switched.worktreePath,
+            undefined,
+            environment(switched),
+          ),
+        ),
+      ).toEqual({ _tag: "AlreadyExists", sessionName: name });
+      expect(
+        exec.mock.calls.some(([, args = []]) => args[0] === "new-session"),
+      ).toBe(false);
+    },
+  );
 
   test("CLI switching and Workspace shutdown use the same verified session ID", async () => {
     sessions.set("$1", { name: "api", env: { ...environment() } });

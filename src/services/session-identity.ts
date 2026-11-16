@@ -92,15 +92,19 @@ export function ownsWorkspaceSession(
 ): boolean {
   const owner = session.ownership;
   if (!owner || !session.id || !session.server) return false;
-  if (target.branch === "") {
+  // Checkout paths survive branch switches; validate the saved identity against
+  // its recorded branch rather than the checkout's current HEAD.
+  if (
+    owner.mainRepoPath === target.mainRepoPath &&
+    owner.worktreePath === target.worktreePath &&
+    owner.branch !== undefined
+  ) {
     return (
-      owner.mainRepoPath === target.mainRepoPath &&
-      owner.worktreePath === target.worktreePath &&
-      owner.branch !== undefined &&
-      (owner.identity === undefined ||
-        owner.identity === sessionIdentity({ ...target, branch: owner.branch }))
+      owner.identity === undefined ||
+      owner.identity === sessionIdentity({ ...target, branch: owner.branch })
     );
   }
+  if (target.branch === "") return false;
   if (owner.identity !== undefined)
     return (
       owner.identity === sessionIdentity(target) &&
@@ -148,7 +152,8 @@ export function selectWorkspaceSession<S extends WorkspaceSession>(
       session.name === name ||
       (session.name === legacy && !verifiedForeignLegacy(session)) ||
       session.ownership?.identity === identity ||
-      (target.branch === "" && ownsWorkspaceSession(session, target)),
+      (session.ownership?.mainRepoPath === target.mainRepoPath &&
+        session.ownership?.worktreePath === target.worktreePath),
   );
   const owned = candidates.filter((session) =>
     ownsWorkspaceSession(session, target),
@@ -159,7 +164,10 @@ export function selectWorkspaceSession<S extends WorkspaceSession>(
     owned.length === 1 &&
     !candidates.some(
       (session) =>
-        (session.name === name || session.ownership?.identity === identity) &&
+        (session.name === name ||
+          session.ownership?.identity === identity ||
+          (session.ownership?.mainRepoPath === target.mainRepoPath &&
+            session.ownership?.worktreePath === target.worktreePath)) &&
         !ownsWorkspaceSession(session, target),
     )
   ) {

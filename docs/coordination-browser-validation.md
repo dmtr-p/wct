@@ -30,11 +30,35 @@ mise exec -- bun run prepare
 ```
 
 Run preparation in the bound worktree. Tests and lint remain owned by the enabled
-[normal hooks](development.md#hooks). Source execution uses
-`mise exec -- bun run src/index.ts`; record whether a scenario instead uses a
-compiled binary, its hash and build command. Preserve generated browser asset
-input hashes with the evidence. Record any instrumentation or fixture code
-separately from the application SHA.
+[normal hooks](development.md#hooks). Before changing directory or applying the
+isolated child environment, resolve the reviewed source and pinned tools there:
+
+```sh
+export WCT_VALIDATION_ENTRY="$(pwd -P)/src/index.ts"
+export WCT_VALIDATION_BUN="$(mise which bun)"
+validation_tool_path=$(mise exec -- sh -c 'printf "%s" "$PATH"')
+"$WCT_VALIDATION_BUN" --version
+```
+
+Create an executable `wct` wrapper in the fixture children's executable directory:
+
+```sh
+#!/bin/sh
+set -eu
+exec "$WCT_VALIDATION_BUN" run "$WCT_VALIDATION_ENTRY" "$@"
+```
+
+Pass both exported variables and `PATH="$fixture_bin:$validation_tool_path"` to
+every fixture child, alongside its isolated home. Here `fixture_bin` is the
+absolute directory containing these wrappers. Run subsequent `wct` commands from
+the intended fixture checkout. The wrapper preserves that working directory and
+uses the absolute reviewed entrypoint and pinned Bun without resolving mise from
+the fixture or its isolated home. The captured tool path also preserves the
+reviewed tool resolution behind the fixture wrappers.
+
+Record whether a scenario instead uses a compiled binary, its hash and build
+command. Preserve generated browser asset input hashes with the evidence. Record
+any instrumentation or fixture code separately from the application SHA.
 
 Put a `tmux` executable ahead of the real executable in the fixture children's
 `PATH`. It must forward every invocation to the same absolute socket:

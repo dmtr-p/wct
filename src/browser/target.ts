@@ -18,6 +18,7 @@ export async function inspectLocalTarget(
       mainRepoPath: string,
     ) => Promise<{ path: string; branch: string }[]>;
     root: (path: string) => Promise<string>;
+    known?: () => Promise<WorkspaceSessionTarget[]>;
   },
 ): Promise<LocalTarget> {
   const current = (await sources.sessions())?.find(
@@ -50,7 +51,14 @@ export async function inspectLocalTarget(
       branch: owner.branch,
     });
     if (!ownsWorkspaceSession(current, target)) return native;
-  } else return native;
+  } else {
+    if (!owner?.identity) return native;
+    const known = (await sources.known?.())?.filter((target) =>
+      ownsWorkspaceSession(current, target),
+    );
+    if (known?.length !== 1 || !known[0]) return native;
+    target = known[0];
+  }
   const checkout = (await sources.worktrees(target.mainRepoPath)).find(
     (w) => w.path === target.worktreePath,
   );

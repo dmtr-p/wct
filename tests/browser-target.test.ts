@@ -106,3 +106,18 @@ test("verified ownership cannot hide a missing checkout or changed branch behind
     "Missing checkout",
   );
 });
+
+test("identity-only registered Workspaces are recognized after native or sidebar navigation", async () => {
+  const input = {
+    ...sources({ identity: sessionIdentity(target) }),
+    known: async () => [target],
+  };
+  input.initial = { ...target, sessionId: "$9" };
+  expect(await inspectLocalTarget(client, input)).toEqual(target);
+  input.known = async () => [];
+  expect(await inspectLocalTarget(client, input)).toEqual({
+    server: "server",
+    sessionId: "$1",
+    sessionName: "fixture",
+  });
+});

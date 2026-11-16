@@ -12,7 +12,74 @@ body {
   padding: 0.75rem;
 }
 
+main {
+  display: flex;
+  gap: 1rem;
+  height: calc(100dvh - 1.5rem);
+}
+#sidebar {
+  width: 260px;
+  min-width: 180px;
+  max-width: min(480px, 50vw);
+  overflow: auto;
+  flex-shrink: 0;
+  border-right: 1px solid #34404c;
+  padding-right: 0.75rem;
+}
+#terminal-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+#status,
+#sidebar-status {
+  font-size: 0.85rem;
+}
+#sidebar label {
+  display: block;
+  font-size: 0.8rem;
+  margin: 0.75rem 0;
+}
+#sidebar input {
+  box-sizing: border-box;
+  width: 100%;
+}
+#sidebar button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+#sidebar button:hover {
+  background: #25313d;
+}
+#sidebar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#sidebar .workspace {
+  padding-left: 1.5rem;
+}
+#sidebar button[aria-current="true"] {
+  background: #18436b;
+}
+#sidebar .project,
+#local-host {
+  font-weight: 600;
+}
+
 #terminal {
-  height: calc(100dvh - 7rem);
+  flex: 1;
+  min-width: 0;
   min-height: 10rem;
 }

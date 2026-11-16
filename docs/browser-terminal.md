@@ -16,6 +16,53 @@ bytes in one input burst can reach the newly selected session. Browser metadata
 shows the last observed session; polling cannot attribute each byte atomically.
 See [ADR 0007](adr/0007-local-browser-terminal.md) for the architectural rationale.
 
+## Workspace sidebar
+
+The sidebar labels the executing machine **Local host · this machine**. This is
+an ephemeral foreground endpoint, with no enrolled host or daemon identity.
+Registered Projects and their existing Workspaces come from the shared local
+observation service and Project Registry. Project Display Names are labels;
+the shared Workspace ownership selector determines which sessions are selectable.
+Workspaces without a verified session remain visible and disabled. The initial
+attachment still uses the CLI-selected existing Workspace, including one outside
+the registry. The sidebar does not register projects or expose Start, Stop, Close,
+setup, deletion, or a command execution API.
+
+Filter text, host/project expansion, sidebar width, actual selection and terminal
+dimensions belong to each browser page. They survive that page's attachment
+recovery without being stored in shared browser storage. Two tabs can select the
+same Workspace or different Workspaces. Ordinary tmux sessions share their current
+window, active pane and pane layout with all viewers, including native clients;
+there are no grouped sessions or independent pane layouts.
+
+Authenticated catalog requests carry the active attachment and stream references,
+rechecked after observation. One endpoint-wide query is shared across requests and
+cached for five seconds. Catalogs have at most 512 total project/Workspace rows and
+a 1 MiB encoded response budget. A failed refresh clears selectable rows until the
+next successful refresh. Browser requests are serial, bounded, cancelled on
+disconnect and fenced by the current attempt; old responses cannot update a new
+attachment. Detached row handlers cannot act after a render or connection change.
+
+A click carries its catalog revision, exact Workspace paths/branch and tmux
+server/session IDs, the observed source target, stream, control sequence and input
+watermark. The current catalog must still contain it and be less than 15 seconds
+old. Controls wait for the same actual input drain and renderer consumption barrier
+as resize. The backend revalidates ownership and exact destination, then switches
+only the owned client with a synchronous tmux guard for the source, destination,
+server and ownership metadata. It never resolves a replacement by branch or name.
+Output stays bounded while the switch settles; its ordered `selected` reply
+establishes the observed destination before queued output is published. Container
+changes caused by sidebar width follow the existing resize path.
+
+Native keyboard navigation updates the target header and sidebar selection. A
+native session without verified Workspace ownership is explicitly labelled outside
+Workspace selection. Renames retain the session's identity. External Stop/Close,
+server replacement, stale catalog selections or failed control validation close
+only the affected attachment. Automatic tmux fallback after a session disappears
+does not authorize recovery into that substitute. Lost selection replies are not
+retried: fresh recovery queries the actual owned client's final session after any
+pending switch settles. Missing or ambiguous final observations stop recovery.
+
 ## Authentication and limits
 
 The 256-bit bootstrap secret expires after five minutes and can be exchanged once.
@@ -57,7 +104,7 @@ polling never replenish input credit. No partial write is retried.
 
 ## Rendering and recovery
 
-Output and target/resize headers share a contiguous output sequence. Input has
+Output and target/resize/selection headers share a contiguous output sequence. Input has
 its own contiguous sequence. Cumulative binary ACKs name an output sequence and
 its recorded target; they never consume an input or control sequence. A target
 header is consumed immediately, while terminal bytes are consumed only in the
@@ -99,6 +146,12 @@ the attachment rather than accepting the substitute. Native navigation between
 still-existing sessions remains allowed. Native names are display data; a rename
 does not change the server/session identity used by controls and recovery. A failed final observation also stops
 recovery instead of guessing a stale target.
+
+The browser also sends one random initial creation ID per page. Retrying a lost
+initial HTTP response returns the same pending attachment and original dimensions;
+within that window it cannot allocate another PTY. The page stops automatic initial
+creation attempts when its original two-minute window ends. At most 32 owner-bound creation records remain for
+two minutes. The normal ten-second pending-attachment deadline still applies.
 
 Reconnect uses jittered exponential delays from 500 ms to ten seconds, bounded by
 the two-minute recovery window. HTTP 409 (cleanup), 429 (capacity) and 503
@@ -143,7 +196,6 @@ for `smallest` and 120×39 for `largest` and the newly active larger client unde
 `latest` (one status row). Ignoring the small client left 120×39; resizing/signalling
 the native client produced 110×34 while the observer remained excluded. These
 measurements establish the evaluated shared policy, not cross-platform support.
-Sidebar navigation remains a separate feature.
 
 ## Local wire adapter
 
@@ -169,11 +221,12 @@ output published with it, but buffered data may span an unobserved session chang
 Unknown fields, malformed lengths, server-only input headers, stale references
 and out-of-order input are rejected.
 
-Resize and close controls use the same ordered connector as input. Each has an
+Resize, select and close controls use the same ordered connector as input. Each has an
 increasing control sequence, connection references and an explicit target that is
 re-queried and compared. Resize includes the processed input watermark and an
 ordered zero-payload reply; no separately transported control can overtake input.
-There is no switch API or retained-stream resume. This local adapter has no daemon
+Selection also carries its catalog revision and exact destination and has an ordered
+zero-payload reply. There is no retained-stream resume. This local adapter has no daemon
 RPC acknowledgement, durable host identity or durable request receipt.
 
 ## Lifetime

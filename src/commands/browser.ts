@@ -1,14 +1,17 @@
 import { resolve } from "node:path";
 import { Effect } from "effect";
+import { projectLocalCatalog } from "../browser/catalog";
 import { type LocalTarget, sameLocalTarget } from "../browser/protocol";
 import { inspectLocalTarget } from "../browser/target";
 import { JsonFlag } from "../cli/json-flag";
 import type { BunServices } from "../effect/runtime";
 import { commandError, toWctError } from "../errors";
+import { makeLocalObservationService } from "../services/local-observation-service";
 import { processEnvironment } from "../services/process";
 import {
   canonicalSessionTarget,
   ownsWorkspaceSession,
+  workspaceSessionTarget,
 } from "../services/session-identity";
 import {
   prepareSessionAttachment,
@@ -32,6 +35,7 @@ export function browserCommand(options: {
         );
       const worktree = yield* WorktreeService;
       const tmux = yield* TmuxService;
+      const observation = yield* makeLocalObservationService;
       const path = options.path
         ? resolve(options.path)
         : options.branch
@@ -90,6 +94,16 @@ export function browserCommand(options: {
             run(
               worktree.getWorktreeRoot(path).pipe(Effect.timeout("2 seconds")),
             ),
+          known: async () =>
+            (
+              await run(
+                observation.repositories.pipe(Effect.timeout("10 seconds")),
+              )
+            ).flatMap((repo) =>
+              repo.worktrees.map((tree) =>
+                workspaceSessionTarget(repo.repoPath, tree),
+              ),
+            ),
         });
       const endpoint = yield* Effect.acquireRelease(
         Effect.tryPromise({
@@ -101,6 +115,36 @@ export function browserCommand(options: {
                 process.stderr.write(`${message}\n`);
               },
               backend: {
+                catalog: async () => {
+                  const [repos, sessions] = await Promise.all([
+                    run(
+                      observation.repositories.pipe(
+                        Effect.timeout("10 seconds"),
+                      ),
+                    ),
+                    run(tmux.listSessions.pipe(Effect.timeout("2 seconds"))),
+                  ]);
+                  return projectLocalCatalog(repos, sessions ?? []);
+                },
+                select: async (ref, selected, from) => {
+                  const current = await inspect({
+                    tty: "",
+                    session: "",
+                    server: selected.server,
+                    sessionId: selected.sessionId,
+                  });
+                  if (!sameLocalTarget(current, selected))
+                    throw new Error("Selection changed");
+                  await run(
+                    tmux
+                      .switchAttachment(ref, selected, {
+                        sessionId: selected.sessionId,
+                        server: selected.server,
+                        fromSessionId: from.sessionId,
+                      })
+                      .pipe(Effect.timeout("2 seconds")),
+                  );
+                },
                 prepare: async (expected) => {
                   // Preparation is never interrupted after reserving a tmux record.
                   // Recovery names the exact observed session, including native navigation.

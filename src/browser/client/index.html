@@ -9,9 +9,30 @@
   </head>
   <body>
     <main>
-      <h1>wct terminal</h1>
-      <p id="status" role="status">Connecting…</p>
-      <div id="terminal" aria-label="Workspace terminal"></div>
+      <aside id="sidebar" aria-label="Workspaces">
+        <button id="local-host" aria-expanded="true">
+          ▾ Local host · this machine
+        </button>
+        <p id="sidebar-status" role="status">Loading existing Workspaces…</p>
+        <label
+          >Filter <input id="workspace-filter" type="search" autocomplete="off"
+        /></label>
+        <label
+          >Sidebar width
+          <input
+            id="sidebar-width"
+            type="range"
+            min="180"
+            max="480"
+            value="260"
+        /></label>
+        <nav id="workspace-tree" aria-label="Projects and Workspaces"></nav>
+      </aside>
+      <section id="terminal-area">
+        <h1>wct terminal</h1>
+        <p id="status" role="status">Connecting…</p>
+        <div id="terminal" aria-label="Workspace terminal"></div>
+      </section>
     </main>
   </body>
 </html>

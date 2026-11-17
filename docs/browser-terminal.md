@@ -8,6 +8,10 @@ origin shares authentication and creates its own tmux client and exclusive PTY.
 Ctrl-C closes experiment-owned clients and connections while Workspace workloads
 keep running. No Workspace lifecycle API, daemon or shell-command RPC is exposed.
 
+The [integrated validation procedure](coordination-browser-validation.md) covers
+isolated browser/native interaction, coordination recovery and observation-cost
+evidence for the rollout gate.
+
 The endpoint binds only `127.0.0.1`. Treat a browser terminal as shell access with
 the executing user's privileges. Normal tmux keys work, including prefix commands,
 copy mode and session navigation. Input is authorized to the owned tmux client,

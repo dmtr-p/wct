@@ -107,6 +107,9 @@ function openDatabase(): Database {
   mkdirSync(getWctDir(), { recursive: true });
   const db = new Database(getDbPath(), { create: true });
   try {
+    // Separate clients can briefly hold the WAL recovery or initialization lock.
+    // Bound SQLite's wait without retrying the caller's operation callback.
+    db.run("PRAGMA busy_timeout=1000");
     db.run("PRAGMA journal_mode=WAL");
     runMigrations(db);
     return db;
